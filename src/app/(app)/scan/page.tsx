@@ -481,6 +481,8 @@ export default function ScanPage() {
             title="Noch keine Dokumente"
             description="Scanne dein erstes Dokument — Ordilo hilft dir beim Sortieren und Finden."
             icon={ScanLine}
+            actionLabel="Dokument hochladen"
+            onAction={() => cameraInputRef.current?.click()}
           />
         )}
       </div>

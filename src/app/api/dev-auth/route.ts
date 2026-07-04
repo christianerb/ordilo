@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import {
+  ensureEmptyDocumentsFixture,
+  EMPTY_FIXTURE_EMAIL,
+} from "@/lib/dev-fixtures";
 import type { Database } from "@/types/database";
 
 /**
@@ -9,20 +13,53 @@ import type { Database } from "@/types/database";
  *
  * Uses the admin API to generate a magic link, follows the redirect to
  * extract access/refresh tokens, then calls setSession() to write the
- * auth cookies directly on the redirect response. Redirects to /home.
+ * auth cookies directly on the redirect response.
  *
- * This route is removed after verification. It should never be deployed.
+ * Two fixtures are supported via the `?fixture=` query parameter:
+ *
+ * - `?fixture=empty` (default for empty-state validation):
+ *     Signs in as a dedicated, disposable empty-documents fixture user
+ *     (`EMPTY_FIXTURE_EMAIL`) that has exactly one family and zero
+ *     documents. The fixture is reset to zero documents on every call
+ *     without touching any shared validation family. Redirects to
+ *     `/scan` so the validator lands directly on the scan page.
+ *
+ * - no parameter / any other value (shared test user):
+ *     Signs in as the shared test user (`TEST_EMAIL`). Redirects to
+ *     `/home`. Use this for general validation that needs the shared
+ *     family and its members.
+ *
+ * This route should never be deployed. It exists solely to make
+ * browser-based validation reliable in the local dev environment.
  */
 
+/** Shared test user (has a family + members). */
 const TEST_EMAIL = "ordilo.auth.test@gmail.com";
 
-export async function GET() {
+/** Base URL for building redirect targets. */
+const BASE_URL = "http://localhost:3100";
+
+/**
+ * Establish a Supabase session for the given email by generating a magic
+ * link, following it to extract tokens, and writing auth cookies onto a
+ * redirect response. An optional `onUser` hook runs after the user id is
+ * known but before the token exchange — used to prepare the empty fixture.
+ *
+ * @returns A redirect NextResponse with auth cookies set, or a 500 JSON
+ *   error response on any failure.
+ */
+async function establishSession(options: {
+  email: string;
+  redirectPath: string;
+  onUser?: (userId: string) => Promise<void>;
+}): Promise<NextResponse> {
+  const { email, redirectPath, onUser } = options;
   const admin = createAdminClient();
 
-  // Generate a magic link for the test user.
+  // Generate a magic link for the user (creates the user if absent).
   const { data, error } = await admin.auth.admin.generateLink({
     type: "magiclink",
-    email: TEST_EMAIL,
+    email,
   });
 
   if (error || !data) {
@@ -40,6 +77,29 @@ export async function GET() {
     );
   }
 
+  const userId = data.user?.id;
+  if (!userId) {
+    return NextResponse.json(
+      { error: "No user returned from generateLink" },
+      { status: 500 },
+    );
+  }
+
+  // Optional hook — e.g. ensure the empty fixture has zero documents.
+  if (onUser) {
+    try {
+      await onUser(userId);
+    } catch (err) {
+      return NextResponse.json(
+        {
+          error: "Fixture preparation failed",
+          detail: err instanceof Error ? err.message : String(err),
+        },
+        { status: 500 },
+      );
+    }
+  }
+
   // Follow the action link manually (don't auto-redirect) to capture
   // the Location header which contains #access_token=...&refresh_token=...
   const verifyResponse = await fetch(actionLink, {
@@ -49,7 +109,10 @@ export async function GET() {
   const locationHeader = verifyResponse.headers.get("location");
   if (!locationHeader) {
     return NextResponse.json(
-      { error: "No redirect in verify response", status: verifyResponse.status },
+      {
+        error: "No redirect in verify response",
+        status: verifyResponse.status,
+      },
       { status: 500 },
     );
   }
@@ -78,9 +141,7 @@ export async function GET() {
   // This ensures the auth cookies are carried by the redirect response
   // to the browser. (Using cookies().set() separately does NOT propagate
   // to a NextResponse.redirect() — they go to different response objects.)
-  const response = NextResponse.redirect(
-    new URL("/home", "http://localhost:3100"),
-  );
+  const response = NextResponse.redirect(new URL(redirectPath, BASE_URL));
 
   // Create a server client that writes cookies directly on the redirect
   // response. The setSession call will populate the auth cookies.
@@ -114,4 +175,27 @@ export async function GET() {
   }
 
   return response;
+}
+
+export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const fixture = url.searchParams.get("fixture");
+
+  if (fixture === "empty") {
+    // Disposable empty-documents fixture — reset to zero documents and
+    // land on /scan so the validator sees the warm empty state.
+    return establishSession({
+      email: EMPTY_FIXTURE_EMAIL,
+      redirectPath: "/scan",
+      onUser: async (userId) => {
+        await ensureEmptyDocumentsFixture(userId);
+      },
+    });
+  }
+
+  // Default: shared test user → /home.
+  return establishSession({
+    email: TEST_EMAIL,
+    redirectPath: "/home",
+  });
 }
