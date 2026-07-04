@@ -1,0 +1,175 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Ordilo Design System — Tailwind v4 theme tokens
+   Warm, premium, calm aesthetic. Extracted from user mockups (July 2026).
+   --------------------------------------------------------------------------- */
+
+@theme inline {
+  /* shadcn/ui semantic color variables (mapped to warm palette) */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* Radius tokens — shadcn uses a single --radius that drives sm/md/lg/xl */
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 4px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Font family */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Animation keyframes used by shadcn components */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
+  }
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Design tokens — warm color palette
+   --------------------------------------------------------------------------- */
+
+:root {
+  /* Surfaces */
+  --warm-white: #FCFCFC;
+  --sand: #FCFCF0;
+  --sand-light: #FCF8F4;
+  --sand-warm: #FCF0E4;
+
+  /* Text */
+  --graphite: #242424;
+  --mist-light: #CCCCCC;
+  --mist: #9C9C9C;
+  --mist-dark: #606060;
+
+  /* Accents */
+  --petrol: #305460;
+  --petrol-dark: #285064;
+  --petrol-darker: #193232;
+  --apricot: #E46018;
+  --apricot-light: #F0B4A0;
+  --blue-soft: #E4F0FC;
+
+  /* Radius — Ordilo uses 20-28px on primary cards */
+  --radius: 0.625rem; /* 10px base; shadcn derives sm/md/lg/xl from this */
+
+  /* Ordilo-specific radius tokens (used by app components) */
+  --radius-ordilo-sm: 12px;
+  --radius-ordilo-md: 20px;
+  --radius-ordilo-lg: 24px;
+  --radius-ordilo-xl: 28px;
+  --radius-ordilo-pill: 9999px;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Shadows — subtle, warm-toned */
+  --shadow-card: 0 2px 8px rgba(36, 36, 36, 0.06);
+  --shadow-card-hover: 0 4px 16px rgba(36, 36, 36, 0.08);
+
+  /* shadcn/ui semantic mappings (light theme — warm) */
+  --background: var(--warm-white);
+  --foreground: var(--graphite);
+  --card: var(--sand);
+  --card-foreground: var(--graphite);
+  --popover: var(--warm-white);
+  --popover-foreground: var(--graphite);
+  --primary: var(--petrol);
+  --primary-foreground: #FCFCFC;
+  --secondary: var(--sand-light);
+  --secondary-foreground: var(--graphite);
+  --muted: var(--sand-light);
+  --muted-foreground: var(--mist-dark);
+  --accent: var(--sand-warm);
+  --accent-foreground: var(--graphite);
+  --destructive: #C0392B;
+  --destructive-foreground: #FCFCFC;
+  --border: var(--mist-light);
+  --input: var(--mist-light);
+  --ring: var(--petrol);
+}
+
+/* Dark theme — Ordilo uses dark petrol for navigation surfaces.
+   Kept for completeness but the app is primarily light/warm. */
+.dark {
+  --background: var(--petrol-darker);
+  --foreground: var(--warm-white);
+  --card: #1F3D3D;
+  --card-foreground: var(--warm-white);
+  --popover: var(--petrol-darker);
+  --popover-foreground: var(--warm-white);
+  --primary: var(--apricot);
+  --primary-foreground: var(--warm-white);
+  --secondary: #244854;
+  --secondary-foreground: var(--warm-white);
+  --muted: #244854;
+  --muted-foreground: #B4C4C4;
+  --accent: #244854;
+  --accent-foreground: var(--warm-white);
+  --destructive: #E57373;
+  --destructive-foreground: var(--warm-white);
+  --border: #3C5050;
+  --input: #3C5050;
+  --ring: var(--apricot);
+}
+
+/* ---------------------------------------------------------------------------
+   Base styles
+   --------------------------------------------------------------------------- */
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Ordilo utility classes
+   --------------------------------------------------------------------------- */
+
+@layer utilities {
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-card-hover {
+    box-shadow: var(--shadow-card-hover);
+  }
+}

@@ -1,0 +1,32 @@
+# dependencies
+node_modules/
+
+# env files (secrets)
+.env
+.env.local
+.env*.local
+
+# next.js
+.next/
+out/
+
+# supabase
+supabase/.branches
+supabase/.temp
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# testing
+coverage/
+
+# research (internal)
+.research/
