@@ -16,6 +16,8 @@ import {
   isImageMimeType,
   isPdfMimeType,
   uploadFamilyIdSchema,
+  isValidTransition,
+  OCR_ALLOWED_SOURCE_STATUSES,
 } from "@/lib/schemas/document";
 
 // ---------------------------------------------------------------------------
@@ -317,5 +319,103 @@ describe("uploadFamilyIdSchema", () => {
   it("rejects a missing family_id", () => {
     const result = uploadFamilyIdSchema.safeParse({});
     expect(result.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// State machine — isValidTransition
+// ---------------------------------------------------------------------------
+
+describe("isValidTransition", () => {
+  it("allows uploaded → ocr_processing", () => {
+    expect(isValidTransition("uploaded", "ocr_processing")).toBe(true);
+  });
+
+  it("allows ocr_processing → ocr_done", () => {
+    expect(isValidTransition("ocr_processing", "ocr_done")).toBe(true);
+  });
+
+  it("allows ocr_processing → failed", () => {
+    expect(isValidTransition("ocr_processing", "failed")).toBe(true);
+  });
+
+  it("allows ocr_done → analyzing", () => {
+    expect(isValidTransition("ocr_done", "analyzing")).toBe(true);
+  });
+
+  it("allows analyzing → analyzed", () => {
+    expect(isValidTransition("analyzing", "analyzed")).toBe(true);
+  });
+
+  it("allows analyzed → confirmed", () => {
+    expect(isValidTransition("analyzed", "confirmed")).toBe(true);
+  });
+
+  it("allows failed → ocr_processing (retry OCR)", () => {
+    expect(isValidTransition("failed", "ocr_processing")).toBe(true);
+  });
+
+  it("allows failed → analyzing (retry analysis)", () => {
+    expect(isValidTransition("failed", "analyzing")).toBe(true);
+  });
+
+  // --- Invalid transitions ---
+
+  it("rejects uploaded → ocr_done (skipping ocr_processing)", () => {
+    expect(isValidTransition("uploaded", "ocr_done")).toBe(false);
+  });
+
+  it("rejects uploaded → confirmed (skipping entire pipeline)", () => {
+    expect(isValidTransition("uploaded", "confirmed")).toBe(false);
+  });
+
+  it("rejects ocr_done → ocr_processing (going backwards)", () => {
+    expect(isValidTransition("ocr_done", "ocr_processing")).toBe(false);
+  });
+
+  it("rejects confirmed → uploaded (going backwards)", () => {
+    expect(isValidTransition("confirmed", "uploaded")).toBe(false);
+  });
+
+  it("rejects confirmed → ocr_processing (cannot re-run OCR from confirmed)", () => {
+    expect(isValidTransition("confirmed", "ocr_processing")).toBe(false);
+  });
+
+  it("rejects uploaded → uploaded (self-transition)", () => {
+    expect(isValidTransition("uploaded", "uploaded")).toBe(false);
+  });
+
+  it("rejects unknown source status", () => {
+    expect(isValidTransition("unknown", "ocr_processing")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OCR_ALLOWED_SOURCE_STATUSES
+// ---------------------------------------------------------------------------
+
+describe("OCR_ALLOWED_SOURCE_STATUSES", () => {
+  it("includes uploaded (initial OCR run)", () => {
+    expect(OCR_ALLOWED_SOURCE_STATUSES.has("uploaded")).toBe(true);
+  });
+
+  it("includes failed (retry after OCR failure)", () => {
+    expect(OCR_ALLOWED_SOURCE_STATUSES.has("failed")).toBe(true);
+  });
+
+  it("does not include ocr_processing (already processing)", () => {
+    expect(OCR_ALLOWED_SOURCE_STATUSES.has("ocr_processing")).toBe(false);
+  });
+
+  it("does not include ocr_done (already OCR'd)", () => {
+    expect(OCR_ALLOWED_SOURCE_STATUSES.has("ocr_done")).toBe(false);
+  });
+
+  it("does not include confirmed", () => {
+    expect(OCR_ALLOWED_SOURCE_STATUSES.has("confirmed")).toBe(false);
+  });
+
+  it("does not include analyzed", () => {
+    expect(OCR_ALLOWED_SOURCE_STATUSES.has("analyzed")).toBe(false);
   });
 });

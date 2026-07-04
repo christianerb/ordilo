@@ -13,10 +13,12 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFile } from "@/lib/upload";
+import { triggerOcr } from "@/lib/ocr";
 import {
   validateFile,
   isImageMimeType,
   isPdfMimeType,
+  isProcessingStatus,
   ACCEPTED_FILE_EXTENSIONS,
   MAX_FILE_SIZE_LABEL,
 } from "@/lib/schemas/document";
@@ -166,14 +168,14 @@ export default function ScanPage() {
           );
         });
 
-        // Transition to "processing" state briefly (transitioning to OCR).
+        // Transition to "processing" state (transitioning to OCR).
         setUploads((prev) =>
           prev.map((u) =>
             u.id === uploadId ? { ...u, phase: "processing", progress: 100 } : u,
           ),
         );
 
-        // Refetch documents to show the new one.
+        // Refetch documents to show the new one (status: uploaded).
         await fetchDocuments();
 
         // Remove the upload entry after a brief delay (let user see the
@@ -182,9 +184,26 @@ export default function ScanPage() {
           setUploads((prev) => prev.filter((u) => u.id !== uploadId));
         }, 1200);
 
-        // Silence unused variable — result.document_id is available if needed.
-        void result;
+        // Auto-trigger OCR for the newly uploaded document.
+        // This is a fire-and-forget call — the route sets status to
+        // ocr_processing immediately, then polls Datalab server-side.
+        // The UI reflects the processing state via the document list
+        // polling below.
+        triggerOcr(result.document_id).catch(() => {
+          // OCR failure is handled by the document list polling — the
+          // route sets the document status to "failed" with an error
+          // message, which the DocumentCard displays with a retry button.
+          // Refetch to surface the failed status immediately.
+          fetchDocuments();
+        });
+
+        // Refetch shortly after to pick up the ocr_processing status
+        // (the OCR route sets it before the Datalab call).
+        setTimeout(() => fetchDocuments(), 1500);
       } catch (err) {
+        // Upload failure (Storage write or network) — shown on the upload
+        // card, NOT on a document card (no documents row is created).
+        // This distinguishes upload failures from OCR failures.
         const message =
           err instanceof Error
             ? err.message
@@ -211,6 +230,48 @@ export default function ScanPage() {
       handleFileUpload(upload.file);
     },
     [uploads, handleFileUpload],
+  );
+
+  // --- OCR status polling ---
+  // While any document is in a processing state (ocr_processing or
+  // analyzing), poll the document list every 3 seconds to update the UI.
+  // This keeps the document cards in sync with server-side processing
+  // without requiring a page reload. Stops when no documents are processing.
+  const hasProcessingDocs = documents.some((d) => isProcessingStatus(d.status));
+
+  useEffect(() => {
+    if (!hasProcessingDocs || !familyId) return;
+
+    const interval = setInterval(() => {
+      fetchDocuments();
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [hasProcessingDocs, familyId, fetchDocuments]);
+
+  // --- Retry OCR for a failed document ---
+  const handleRetryOcr = useCallback(
+    async (documentId: string) => {
+      // Optimistically update the document status to ocr_processing
+      // so the UI shows the processing animation immediately.
+      setDocuments((prev) =>
+        prev.map((d) =>
+          d.id === documentId
+            ? { ...d, status: "ocr_processing", error_message: null }
+            : d,
+        ),
+      );
+
+      try {
+        await triggerOcr(documentId);
+        // OCR succeeded — refetch to get the final state.
+        await fetchDocuments();
+      } catch {
+        // OCR failed again — refetch to get the failed status + error message.
+        await fetchDocuments();
+      }
+    },
+    [fetchDocuments],
   );
 
   // --- File input handlers ---
@@ -407,6 +468,11 @@ export default function ScanPage() {
                 status={doc.status}
                 createdAt={doc.created_at}
                 errorMessage={doc.error_message}
+                onRetry={
+                  doc.status === "failed"
+                    ? () => handleRetryOcr(doc.id)
+                    : undefined
+                }
               />
             ))}
           </div>

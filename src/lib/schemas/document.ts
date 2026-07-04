@@ -249,3 +249,70 @@ export const uploadFamilyIdSchema = z.object({
 });
 
 export type UploadFamilyIdInput = z.infer<typeof uploadFamilyIdSchema>;
+
+// ---------------------------------------------------------------------------
+// State machine — valid transitions
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid status transitions in the document processing pipeline.
+ *
+ *   uploaded → ocr_processing → ocr_done → analyzing → analyzed → confirmed
+ *                 ↓                              ↓
+ *               failed                         failed
+ *
+ * `failed` can retry to its preceding processing state:
+ *   failed → ocr_processing (retry OCR from uploaded-stage failure)
+ *   failed → analyzing      (retry analysis from ocr-stage failure)
+ */
+const VALID_TRANSITIONS: Record<string, ReadonlySet<string>> = {
+  uploaded: new Set(["ocr_processing"]),
+  ocr_processing: new Set(["ocr_done", "failed"]),
+  ocr_done: new Set(["analyzing", "failed"]),
+  analyzing: new Set(["analyzed", "failed"]),
+  analyzed: new Set(["confirmed", "analyzing", "failed"]),
+  confirmed: new Set(["analyzing"]), // re-analyze from confirmed
+  failed: new Set(["ocr_processing", "analyzing"]), // retry from failed
+};
+
+/**
+ * Check whether a status transition is valid per the state machine.
+ *
+ * @param from - The current document status.
+ * @param to - The target status.
+ * @returns true if the transition is allowed, false otherwise.
+ */
+export function isValidTransition(from: string, to: string): boolean {
+  const allowed = VALID_TRANSITIONS[from];
+  return allowed ? allowed.has(to) : false;
+}
+
+/**
+ * Statuses from which OCR can be (re-)triggered.
+ * OCR starts from `uploaded` (initial run) or `failed` (retry after a
+ * prior OCR failure).
+ */
+export const OCR_ALLOWED_SOURCE_STATUSES: ReadonlySet<string> = new Set([
+  "uploaded",
+  "failed",
+]);
+
+// ---------------------------------------------------------------------------
+// OCR API response types
+// ---------------------------------------------------------------------------
+
+/**
+ * Successful OCR API response.
+ */
+export type OcrSuccessResponse = {
+  status: "ocr_done";
+  page_count: number;
+};
+
+/**
+ * Error OCR API response (same shape as upload errors).
+ */
+export type OcrErrorResponse = {
+  error: string;
+  code: string;
+};
