@@ -1,27 +1,66 @@
-import { Sparkles } from "lucide-react";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { OnboardingFlow } from "./onboarding-flow";
+import type { OnboardingState } from "./onboarding-flow";
+import type { Database } from "@/types/database";
+
+type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
 /**
- * Onboarding entry point (placeholder).
+ * Onboarding entry point (server component).
  *
- * The full conversational onboarding flow is built by a subsequent
- * feature. This minimal page shows the welcoming prompt so that first-time
- * users land on the right destination after the magic link callback.
+ * Determines the current onboarding state by checking the database:
+ * - No family → start at the family-name step (welcome + family name input)
+ * - Family exists, no members → resume at the add-member step
+ * - Family exists, has members → onboarding is complete → redirect to /home
+ *
+ * This handles reload mid-onboarding gracefully: the user resumes at the
+ * appropriate step without creating duplicate families.
  */
-export default function OnboardingPage() {
-  return (
-    <div className="flex min-h-[70vh] flex-col items-center justify-center space-y-6 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-lg bg-primary text-primary-foreground shadow-card">
-        <Sparkles className="h-8 w-8" />
-      </div>
-      <div className="space-y-3">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
-          Willkommen
-        </h1>
-        <p className="max-w-sm text-sm leading-relaxed text-muted-foreground">
-          Ich helfe dir, euren Familienordner automatisch zu organisieren.
-          Wen soll ich anlegen?
-        </p>
-      </div>
-    </div>
-  );
+export default async function OnboardingPage() {
+  const supabase = await createClient();
+
+  // Fetch the user's family (RLS-scoped to the authenticated user).
+  const { data: family } = await supabase
+    .from("families")
+    .select("id, name")
+    .limit(1)
+    .maybeSingle();
+
+  // If a family exists, fetch its members.
+  let members: MemberRow[] = [];
+  if (family) {
+    const { data: memberData } = await supabase
+      .from("family_members")
+      .select("*")
+      .eq("family_id", family.id)
+      .order("created_at", { ascending: true });
+    members = memberData ?? [];
+  }
+
+  // Onboarding is complete when the user has a family with at least one
+  // member. Redirect to /home — they should not see onboarding again.
+  if (family && members.length > 0) {
+    redirect("/home");
+  }
+
+  // Build the initial onboarding state for the client component.
+  const initialState: OnboardingState =
+    family && members.length === 0
+      ? {
+          // Resume: family already created, no members yet.
+          step: "add-member",
+          familyId: family.id,
+          familyName: family.name,
+          members: [],
+        }
+      : {
+          // Fresh start: no family yet.
+          step: "family-name",
+          familyId: null,
+          familyName: null,
+          members: [],
+        };
+
+  return <OnboardingFlow initialState={initialState} />;
 }
