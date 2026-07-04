@@ -13,16 +13,18 @@ import {
  *
  * Triggers OCR processing for a document:
  *   1. Authenticate the user (requireUser → 401 if no session)
- *   2. Fetch the document (RLS-scoped server client → 404 if not found)
- *   3. Verify family ownership (RLS enforces this; 403/404 if not owner)
- *   4. Validate state machine: only `uploaded` or `failed` can start OCR
- *      (409 for invalid source state)
- *   5. Set status to `ocr_processing` (before the Datalab call)
- *   6. Download the file from Supabase Storage
- *   7. Call Datalab OCR (POST /api/v1/convert → poll until complete)
- *   8. Store one document_pages row per page, concatenate to ocr_text,
- *      set page_count, update status to `ocr_done`
- *   9. Return { status: "ocr_done", page_count }
+ *   2. Validate the document ID is a UUID
+ *   3. Atomically transition the document from `uploaded` or `failed` to
+ *      `ocr_processing` using a conditional UPDATE. This is race-safe:
+ *      only one concurrent request can succeed in moving the document
+ *      into `ocr_processing`. If 0 rows are updated, a follow-up read
+ *      determines whether the document doesn't exist (→ 404) or is in
+ *      the wrong state (→ 409).
+ *   4. Download the file from Supabase Storage
+ *   5. Call Datalab OCR (POST /api/v1/convert → poll until complete)
+ *   6. Store one document_pages row per page (with per-page layout_json),
+ *      concatenate to ocr_text, set page_count, update status to `ocr_done`
+ *   7. Return { status: "ocr_done", page_count }
  *
  * Failure handling:
  *   - If Datalab fails, times out, or throws → set status to `failed`
@@ -33,9 +35,18 @@ import {
  * and polls Datalab server-side. The client sees `ocr_processing` via the
  * document list and shows a processing animation.
  *
- * RLS: The document fetch uses the server client (RLS-scoped), so a user
- * who does not own the document's family gets a 404 (not a 403, to avoid
- * leaking existence). No Datalab call is made for non-owned documents.
+ * RLS: The atomic update and all subsequent queries use the server client
+ * (RLS-scoped), so a user who does not own the document's family gets a
+ * 404 (not a 403, to avoid leaking existence). No Datalab call is made
+ * for non-owned documents.
+ *
+ * Atomicity: The `uploaded|failed → ocr_processing` transition uses a
+ * single conditional UPDATE with `WHERE id = ? AND status IN
+ * ('uploaded', 'failed')` (via PostgREST's `.in()` filter). This ensures
+ * that concurrent OCR start requests for the same document are rejected:
+ * only the first request transitions the status, and the second finds
+ * the document already in `ocr_processing` (not in the allowed set) and
+ * gets 0 updated rows → 409.
  */
 export async function POST(
   request: Request,
@@ -62,43 +73,27 @@ export async function POST(
     return Response.json(body, { status: 400 });
   }
 
-  // 3. Fetch the document (RLS-scoped) ------------------------------------
-  // Using the server client enforces RLS: a user who doesn't own the
-  // document's family will get no row (→ 404).
+  // 3. Atomic conditional transition to ocr_processing ---------------------
+  // This single UPDATE atomically checks the current status AND transitions
+  // to ocr_processing. Only a document in 'uploaded' or 'failed' state can
+  // be transitioned. If another concurrent request already moved the
+  // document to ocr_processing, this update matches 0 rows.
+  //
+  // The .select() returns the full updated row so we get the document data
+  // (file_url, original_filename, etc.) without a separate fetch.
+  //
+  // RLS is enforced by the server client: a non-owner gets 0 rows (→ 404).
   const serverClient = await createServerClient();
-  const { data: document, error: docError } = await serverClient
-    .from("documents")
-    .select("*")
-    .eq("id", documentId)
-    .maybeSingle();
-
-  if (docError || !document) {
-    // 404 (not 403) to avoid leaking document existence to non-owners.
-    const body: OcrErrorResponse = {
-      error: "Dokument nicht gefunden oder kein Zugriff.",
-      code: "DOCUMENT_NOT_FOUND",
-    };
-    return Response.json(body, { status: 404 });
-  }
-
-  // 4. State machine validation -------------------------------------------
-  if (!OCR_ALLOWED_SOURCE_STATUSES.has(document.status)) {
-    const body: OcrErrorResponse = {
-      error: `OCR kann für ein Dokument im Status „${document.status}“ nicht gestartet werden.`,
-      code: "INVALID_STATUS_TRANSITION",
-    };
-    return Response.json(body, { status: 409 });
-  }
-
-  // 5. Transition to ocr_processing (before the Datalab call) --------------
-  // Clear any prior error_message when retrying from `failed`.
-  const { error: transitionError } = await serverClient
+  const { data: document, error: transitionError } = await serverClient
     .from("documents")
     .update({
       status: "ocr_processing",
       error_message: null,
     })
-    .eq("id", documentId);
+    .eq("id", documentId)
+    .in("status", [...OCR_ALLOWED_SOURCE_STATUSES])
+    .select()
+    .maybeSingle();
 
   if (transitionError) {
     const body: OcrErrorResponse = {
@@ -108,7 +103,35 @@ export async function POST(
     return Response.json(body, { status: 500 });
   }
 
-  // 6. Download the file from Storage -------------------------------------
+  // If the atomic update matched 0 rows, the document either doesn't exist
+  // (or RLS blocks access) → 404, or it's in the wrong state → 409.
+  // Do a follow-up read to determine the correct error code. This read is
+  // not part of the transition — the transition is already atomic.
+  if (!document) {
+    const { data: existingDoc } = await serverClient
+      .from("documents")
+      .select("id, status")
+      .eq("id", documentId)
+      .maybeSingle();
+
+    if (!existingDoc) {
+      // 404 (not 403) to avoid leaking document existence to non-owners.
+      const body: OcrErrorResponse = {
+        error: "Dokument nicht gefunden oder kein Zugriff.",
+        code: "DOCUMENT_NOT_FOUND",
+      };
+      return Response.json(body, { status: 404 });
+    }
+
+    // Document exists but is not in an allowed source state.
+    const body: OcrErrorResponse = {
+      error: `OCR kann für ein Dokument im Status „${existingDoc.status}“ nicht gestartet werden.`,
+      code: "INVALID_STATUS_TRANSITION",
+    };
+    return Response.json(body, { status: 409 });
+  }
+
+  // 4. Download the file from Storage -------------------------------------
   const adminClient = createAdminClient();
 
   let fileData: Blob;
@@ -142,14 +165,14 @@ export async function POST(
     return Response.json(body, { status: 500 });
   }
 
-  // 7. Call Datalab OCR ---------------------------------------------------
+  // 5. Call Datalab OCR ---------------------------------------------------
   try {
     const ocrResult = await runOcr(
       fileData,
       document.original_filename || "document",
     );
 
-    // 8. Store results immediately (1-hour eviction window) ---------------
+    // 6. Store results immediately (1-hour eviction window) ---------------
     // Insert one document_pages row per page.
     if (ocrResult.pages.length > 0) {
       const pageInserts = ocrResult.pages.map((page) => ({
@@ -189,7 +212,7 @@ export async function POST(
       );
     }
 
-    // 9. Success ----------------------------------------------------------
+    // 7. Success ----------------------------------------------------------
     const body: OcrSuccessResponse = {
       status: "ocr_done",
       page_count: ocrResult.page_count,

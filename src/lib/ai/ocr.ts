@@ -12,6 +12,13 @@
  * Results are deleted from Datalab servers 1 hour after completion, so
  * callers must persist them immediately upon receiving the complete
  * response.
+ *
+ * Per-page layout data: we request `output_format=markdown,json` so the
+ * response includes both the paginated markdown (with {PAGE_BREAK}
+ * delimiters) and the structured JSON output (Marker block tree with
+ * per-page layout blocks, bounding boxes, and block types). Each page's
+ * `layout_json` is the page-specific block data from the JSON output —
+ * NOT the document-level `metadata` object.
  */
 
 // ---------------------------------------------------------------------------
@@ -137,31 +144,33 @@ function sleep(ms: number): Promise<void> {
  * whitespace from each page.
  *
  * If no delimiters are found, the entire markdown is returned as a
- * single page (which is correct for single-page documents like photos).
+ * single element (which is correct for single-page documents like photos,
+ * or for multi-page documents where the markdown lacks delimiters — in
+ * that case the caller is responsible for reconciling with `page_count`
+ * and the per-page JSON layout data, or failing explicitly).
+ *
+ * This function does NOT silently undercount pages. If the split produces
+ * fewer parts than `page_count`, the caller must handle the mismatch.
  *
  * @param markdown - The full markdown string (with page delimiters).
- * @param page_count - The page count reported by Datalab.
- * @returns An array of per-page markdown strings (1-based order).
+ * @param page_count - The page count reported by Datalab (used to trim
+ *                     excess parts from trailing delimiters).
+ * @returns An array of per-page markdown strings (in order, may be fewer
+ *          than `page_count` if delimiters are missing).
  */
 export function splitMarkdownByPages(
   markdown: string,
   page_count: number,
 ): string[] {
-  // If the markdown is empty, return empty pages.
+  // If the markdown is empty, return empty array.
   if (!markdown || !markdown.trim()) {
     return [];
   }
 
   const parts = markdown.split(PAGE_DELIMITER);
 
-  // Trim each page and filter out fully-empty trailing pages (Datalab may
-  // append a trailing delimiter).
+  // Trim each page.
   const trimmed = parts.map((p) => p.trim());
-
-  // If splitting produced the expected number of pages, return them.
-  if (trimmed.length === page_count) {
-    return trimmed;
-  }
 
   // If splitting produced more parts than page_count (e.g. a trailing empty
   // page from a trailing delimiter), trim to page_count.
@@ -169,17 +178,10 @@ export function splitMarkdownByPages(
     return trimmed.slice(0, page_count);
   }
 
-  // If splitting produced fewer parts than page_count, we cannot reliably
-  // distribute. Fall back: return what we have (at least 1 page).
-  // This handles single-page documents (no delimiter) and edge cases.
-  if (trimmed.length === 1 && page_count > 1) {
-    // No delimiters found but multi-page — store entire markdown as page 1
-    // and create empty placeholder pages for the rest. This is a fallback;
-    // the ocr_text will still contain the full content.
-    return [trimmed[0]];
-  }
-
-  return trimmed.length > 0 ? trimmed : [markdown];
+  // Return all parts found. The caller is responsible for reconciling
+  // the part count with page_count and the per-page JSON layout data,
+  // and for failing explicitly if the pages cannot be mapped safely.
+  return trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,9 +193,11 @@ export function splitMarkdownByPages(
  *
  * Sends a multipart/form-data POST to `/api/v1/convert` with:
  *   - file: the document file
- *   - output_format: "markdown"
+ *   - output_format: "markdown,json" (gets both paginated markdown and
+ *     per-page JSON layout data with block types and bounding boxes)
  *   - use_llm: "true" (per the feature contract — enables LLM-enhanced layout)
- *   - paginate: "true" (adds page delimiters for per-page splitting)
+ *   - paginate: "true" (adds {PAGE_BREAK} delimiters for per-page splitting)
+ *   - include_markdown_in_chunks: "true" (includes markdown in JSON output)
  *   - mode: "accurate" (best for scanned documents and complex layouts)
  *
  * @param file - The file content as a Blob.
@@ -209,9 +213,10 @@ export async function submitConversion(
 
   const formData = new FormData();
   formData.append("file", file, filename);
-  formData.append("output_format", "markdown");
+  formData.append("output_format", "markdown,json");
   formData.append("use_llm", "true");
   formData.append("paginate", "true");
+  formData.append("include_markdown_in_chunks", "true");
   formData.append("mode", "accurate");
 
   let response: Response;
@@ -375,22 +380,205 @@ export async function pollConversion(
 }
 
 /**
+ * Extract per-page layout blocks from the Datalab JSON output.
+ *
+ * The Marker JSON output (requested via `output_format=markdown,json`) has
+ * a tree structure where top-level children are Page blocks. Each Page
+ * block contains the layout blocks (text, tables, images) for that page
+ * with bounding boxes, block types, and other structural metadata.
+ *
+ * This function defensively parses the JSON to find page-level blocks,
+ * handling both object and string (JSON-encoded) formats, and various
+ * structural shapes the API may return.
+ *
+ * @param json - The `json` field from the Datalab poll response.
+ * @returns Array of page block objects (sorted by page_id, in page order),
+ *          or null if the JSON doesn't contain recognizable per-page block
+ *          data.
+ */
+export function extractPerPageLayout(json: unknown): unknown[] | null {
+  if (!json) return null;
+
+  // The json field may be a JSON-encoded string or an object.
+  let parsed: unknown = json;
+  if (typeof json === "string") {
+    if (!json.trim()) return null;
+    try {
+      parsed = JSON.parse(json);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // The Marker JSON output has a top-level object with a `children` array
+  // of page blocks. Handle both { children: [...] } and direct array forms.
+  let candidates: unknown[] | undefined;
+  if (Array.isArray(parsed)) {
+    candidates = parsed;
+  } else if (
+    Array.isArray((parsed as Record<string, unknown>).children)
+  ) {
+    candidates = (parsed as Record<string, unknown>).children as unknown[];
+  }
+
+  if (!candidates || candidates.length === 0) return null;
+
+  // Filter for page-like blocks. Marker uses block_type: "Page".
+  const pageBlocks = candidates.filter(
+    (child): child is Record<string, unknown> => {
+      if (!child || typeof child !== "object") return false;
+      const blockType = (child as Record<string, unknown>).block_type;
+      return (
+        typeof blockType === "string" &&
+        (blockType === "Page" || blockType === "page")
+      );
+    },
+  );
+
+  // Sort page blocks by page_id (0-indexed in the API, returned in order).
+  const sortByPageId = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+    const aId = a.page_id;
+    const bId = b.page_id;
+    return (
+      (typeof aId === "number" ? aId : 0) -
+      (typeof bId === "number" ? bId : 0)
+    );
+  };
+
+  if (pageBlocks.length > 0) {
+    return pageBlocks.sort(sortByPageId);
+  }
+
+  // Fallback: if no explicit Page block_type, look for objects with page_id.
+  const pageIdObjects = candidates.filter(
+    (child): child is Record<string, unknown> => {
+      if (!child || typeof child !== "object") return false;
+      return "page_id" in (child as Record<string, unknown>);
+    },
+  );
+
+  if (pageIdObjects.length > 0) {
+    return pageIdObjects.sort(sortByPageId);
+  }
+
+  return null;
+}
+
+/**
+ * Build per-page OCR results from the Datalab response data.
+ *
+ * Reconciles three data sources to produce one `OcrPage` per page:
+ *   1. The paginated markdown (with `{PAGE_BREAK}` delimiters)
+ *   2. The JSON page blocks (per-page layout data from the Marker output)
+ *   3. The reported `page_count` from the Datalab response
+ *
+ * Each page's `layout_json` is the page-specific block data from the JSON
+ * output (NOT the document-level `metadata` object). When no JSON page
+ * data is available, `layout_json` is null.
+ *
+ * If the response data cannot be mapped safely to all reported pages
+ * (e.g. `page_count > 1` but the markdown has no `{PAGE_BREAK}` and no
+ * JSON page blocks are available), this function throws a
+ * `DatalabOcrError` with code `PAGE_COUNT_MISMATCH` instead of
+ * silently undercounting pages.
+ *
+ * @param markdown - The full markdown string (may contain {PAGE_BREAK}).
+ * @param json - The `json` field from the Datalab poll response.
+ * @param pageCount - The page_count reported by Datalab.
+ * @returns Array of OcrPage objects (one per page, 1-based page numbers).
+ * @throws {DatalabOcrError} with code PAGE_COUNT_MISMATCH if the data
+ *         cannot be safely mapped to all reported pages.
+ */
+export function buildPages(
+  markdown: string,
+  json: unknown,
+  pageCount: number,
+): OcrPage[] {
+  // Extract per-page layout blocks from the JSON output.
+  const pageLayouts = extractPerPageLayout(json);
+
+  // Split markdown by {PAGE_BREAK} delimiter.
+  const pageMarkdowns = splitMarkdownByPages(markdown, Math.max(pageCount, 1));
+
+  // --- Case 1: Per-page layout data available from JSON ---
+  // This is the preferred path: we have page-specific block data from the
+  // Marker JSON output, which gives us accurate per-page layout_json.
+  if (pageLayouts && pageLayouts.length > 0) {
+    const numPages = pageLayouts.length;
+
+    // If the JSON has fewer pages than reported, we can't safely map.
+    if (numPages < pageCount) {
+      throw new DatalabOcrError(
+        "OCR-Ergebnisse konnten nicht sicher auf alle gemeldeten Seiten abgebildet werden.",
+        "PAGE_COUNT_MISMATCH",
+      );
+    }
+
+    // Build one page per JSON page block. Use markdown from {PAGE_BREAK}
+    // splitting when available; for pages without split markdown, assign
+    // the full markdown to page 1 and empty string to the rest.
+    return pageLayouts.map((pageLayout, index) => ({
+      page_number: index + 1,
+      ocr_markdown:
+        pageMarkdowns[index] ?? (index === 0 ? markdown.trim() : ""),
+      layout_json: pageLayout as Record<string, unknown>,
+    }));
+  }
+
+  // --- Case 2: No per-page JSON data, rely on {PAGE_BREAK} splitting ---
+  // This handles single-page documents (photos) and multi-page documents
+  // where the markdown has proper {PAGE_BREAK} delimiters.
+  if (pageMarkdowns.length === pageCount) {
+    return pageMarkdowns.map((md, index) => ({
+      page_number: index + 1,
+      ocr_markdown: md,
+      layout_json: null, // No per-page layout data available.
+    }));
+  }
+
+  // --- Case 3: Empty markdown (blank or unreadable document) ---
+  if (pageMarkdowns.length === 0) {
+    return [];
+  }
+
+  // --- Case 4: Cannot reconcile — fail explicitly ---
+  // This handles the critical case: page_count > 1 but the markdown has no
+  // {PAGE_BREAK} delimiters AND no JSON page blocks are available.
+  // Rather than silently undercounting (storing 1 row instead of N), we
+  // fail explicitly so the caller can mark the document as failed.
+  throw new DatalabOcrError(
+    "OCR-Ergebnisse konnten nicht sicher auf alle gemeldeten Seiten abgebildet werden.",
+    "PAGE_COUNT_MISMATCH",
+  );
+}
+
+/**
  * Run the full OCR pipeline: submit the file, poll until complete, and
  * return structured per-page results.
  *
  * This is the high-level entry point used by the OCR API route. It:
  *   1. Submits the file to Datalab (returns request_id)
  *   2. Polls until status=complete (or fails/times out)
- *   3. Splits the markdown into per-page chunks
- *   4. Returns an `OcrResult` with pages, page_count, and full_markdown
+ *   3. Extracts per-page layout data from the JSON output
+ *   4. Splits the markdown into per-page chunks
+ *   5. Reconciles page counts and builds one OcrPage per page
+ *
+ * Each page's `layout_json` contains page-specific block data from the
+ * Datalab JSON output (bounding boxes, block types, etc.) — NOT the
+ * document-level `metadata` object. The document-level metadata is
+ * available separately on the `OcrResult.metadata` field.
  *
  * Results must be persisted immediately by the caller — Datalab deletes
  * results 1 hour after completion.
  *
  * @param file - The file content as a Blob.
  * @param filename - The original filename.
- * @returns The OCR result with per-page markdown and metadata.
- * @throws {DatalabOcrError} on any failure (network, auth, timeout, conversion).
+ * @returns The OCR result with per-page markdown, per-page layout, and
+ *          document-level metadata.
+ * @throws {DatalabOcrError} on any failure (network, auth, timeout,
+ *         conversion, or page-count mismatch).
  */
 export async function runOcr(
   file: Blob,
@@ -402,22 +590,18 @@ export async function runOcr(
   // 2. Poll until complete.
   const result = await pollConversion(requestId);
 
-  // 3. Extract markdown and page count.
+  // 3. Extract markdown, JSON layout data, and page count.
   const markdown = result.markdown || "";
   const pageCount = result.page_count ?? 1;
   const metadata = result.metadata ?? null;
+  const json = result.json ?? null;
 
-  // 4. Split into per-page chunks.
-  const pageMarkdowns = splitMarkdownByPages(markdown, pageCount);
+  // 4. Build per-page results with proper page-specific layout data.
+  //    This reconciles the markdown, JSON page blocks, and page_count,
+  //    and throws PAGE_COUNT_MISMATCH if the data can't be safely mapped.
+  const pages = buildPages(markdown, json, pageCount);
 
-  // 5. Build the pages array (1-based page numbers).
-  const pages: OcrPage[] = pageMarkdowns.map((md, index) => ({
-    page_number: index + 1,
-    ocr_markdown: md,
-    layout_json: metadata,
-  }));
-
-  // 6. Build the full concatenated markdown.
+  // 5. Build the full concatenated markdown.
   const fullMarkdown = pages.map((p) => p.ocr_markdown).join("\n\n");
 
   return {

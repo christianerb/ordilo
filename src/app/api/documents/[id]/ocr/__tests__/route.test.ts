@@ -70,30 +70,44 @@ function mockDocumentRow(overrides: Partial<{
   };
 }
 
-/** Build a mock server Supabase client. */
+/**
+ * Build a mock server Supabase client that supports the atomic conditional
+ * update pattern used by the OCR route.
+ *
+ * The route performs these DB operations on the `documents` table:
+ *   1. Atomic transition: .update({status:"ocr_processing"}).eq("id",...).in("status",[...]).select().maybeSingle()
+ *      → returns the updated doc (or null if 0 rows matched)
+ *   2. Follow-up read (if transition returned null): .select("id, status").eq("id",...).maybeSingle()
+ *      → returns {id, status} or null (to distinguish 404 vs 409)
+ *   3. Final update: .update({status:"ocr_done",...}).eq("id",...)
+ *      → awaited directly (thenable), returns {data, error}
+ *   4. markFailed: .update({status:"failed",...}).eq("id",...)
+ *      → awaited directly (thenable), returns {data, error}
+ *
+ * The mock distinguishes these by inspecting the update payload's `status` field.
+ */
 function mockServerClient(options: {
   user?: { id: string; email: string } | null;
-  document?: ReturnType<typeof mockDocumentRow> | null;
-  docError?: unknown;
-  updateError?: unknown;
+  /** Document returned by the atomic transition (null = 0 rows updated). */
+  transitionDoc?: ReturnType<typeof mockDocumentRow> | null;
+  transitionError?: unknown;
+  /** Document found in the follow-up read (null = not found / RLS blocked). */
+  followUpDoc?: { id: string; status: string } | null;
+  followUpError?: unknown;
+  /** Error for the final ocr_done update. */
+  finalUpdateError?: unknown;
+  /** Error for document_pages insert. */
   pagesInsertError?: unknown;
-}) {
+} = {}) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
-    document = mockDocumentRow(),
-    docError = null,
-    updateError = null,
+    transitionDoc = mockDocumentRow(),
+    transitionError = null,
+    followUpDoc = null,
+    followUpError = null,
+    finalUpdateError = null,
     pagesInsertError = null,
   } = options;
-
-  const docSelectChain = {
-    eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: document, error: docError }),
-  };
-
-  const updateChain = {
-    eq: vi.fn().mockResolvedValue({ data: null, error: updateError }),
-  };
 
   // document_pages insert — the route does `await .insert(pageInserts)`
   // directly (no chaining), so insert must return a Promise.
@@ -102,23 +116,64 @@ function mockServerClient(options: {
     error: pagesInsertError,
   });
 
+  // Build the documents table builder.
+  const documentsBuilder = {
+    // Select chain (for the follow-up read).
+    select: vi.fn(() => ({
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: followUpDoc ?? null,
+        error: followUpError ?? null,
+      }),
+    })),
+    // Update chain (for atomic transition, final update, markFailed).
+    // Distinguished by the payload's status field.
+    update: vi.fn((payload: Record<string, unknown>) => {
+      const isTransition = payload.status === "ocr_processing";
+      const isFinalUpdate = payload.status === "ocr_done";
+
+      // Build a thenable chain that supports .eq().in().select().maybeSingle()
+      // and also direct await (for final update and markFailed).
+      const chain: Record<string, unknown> = {
+        eq: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(),
+        select: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue(
+          isTransition
+            ? { data: transitionDoc, error: transitionError }
+            : { data: null, error: null },
+        ),
+      };
+
+      // Make the chain thenable for direct await (final update, markFailed).
+      // When `await chain` is called, JS calls chain.then(resolve, reject).
+      chain.then = vi.fn(
+        (resolve: (value: unknown) => void, reject?: (reason?: unknown) => void) => {
+          const error = isFinalUpdate ? finalUpdateError ?? null : null;
+          return Promise.resolve({ data: null, error }).then(resolve, reject);
+        },
+      );
+
+      return chain;
+    }),
+  };
+
   return {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user } }),
     },
     from: vi.fn((table: string) => {
-      if (table === "documents") {
-        return {
-          select: vi.fn(() => docSelectChain),
-          update: vi.fn(() => updateChain),
-        };
-      }
-      if (table === "document_pages") {
-        return { insert: pagesInsertMock };
-      }
+      if (table === "documents") return documentsBuilder;
+      if (table === "document_pages") return { insert: pagesInsertMock };
       throw new Error(`Unexpected table: ${table}`);
     }),
-  } as unknown as Awaited<ReturnType<typeof createServerClient>>;
+    // Expose the pages insert mock for test assertions.
+    _pagesInsertMock: pagesInsertMock,
+    _documentsBuilder: documentsBuilder,
+  } as unknown as Awaited<ReturnType<typeof createServerClient>> & {
+    _pagesInsertMock: typeof pagesInsertMock;
+    _documentsBuilder: typeof documentsBuilder;
+  };
 }
 
 /** Build a mock admin Supabase client. */
@@ -138,18 +193,30 @@ function mockAdminClient(options: {
   } as unknown as Awaited<ReturnType<typeof createAdminClient>>;
 }
 
-/** Build a mock OcrResult. */
+/** Build a mock OcrResult with per-page layout data. */
 function mockOcrResult(pageCount: number = 1): OcrResult {
   const pages = Array.from({ length: pageCount }, (_, i) => ({
     page_number: i + 1,
     ocr_markdown: `# Page ${i + 1}\n\nContent for page ${i + 1}`,
-    layout_json: { quality: 4.5 },
+    // Per-page layout_json (page-specific, NOT document-level metadata)
+    layout_json: {
+      block_type: "Page",
+      page_id: i,
+      children: [
+        {
+          block_type: "Text",
+          html: `<p>Content for page ${i + 1}</p>`,
+          bbox: [0, i * 100, 500, i * 100 + 100],
+        },
+      ],
+    } as Record<string, unknown>,
   }));
   return {
     pages,
     page_count: pageCount,
     full_markdown: pages.map((p) => p.ocr_markdown).join("\n\n"),
-    metadata: { quality: 4.5 },
+    // Document-level metadata (separate from per-page layout)
+    metadata: { quality: 4.5, cost: 10 },
   };
 }
 
@@ -202,8 +269,12 @@ describe("POST /api/documents/[id]/ocr", () => {
   // --- Document not found (RLS) ---
 
   it("returns 404 when document is not found (RLS blocks non-owner)", async () => {
+    // Atomic transition returns null (0 rows updated), follow-up returns null
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ document: null }),
+      mockServerClient({
+        transitionDoc: null,
+        followUpDoc: null,
+      }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
       mockAdminClient({}),
@@ -217,23 +288,15 @@ describe("POST /api/documents/[id]/ocr", () => {
     expect(runOcr).not.toHaveBeenCalled();
   });
 
-  it("returns 404 on document query error", async () => {
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ document: null, docError: new Error("RLS blocked") }),
-    );
-    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
-      mockAdminClient({}),
-    );
-
-    const response = await POST(new Request("http://localhost"), createParams());
-    expect(response.status).toBe(404);
-  });
-
-  // --- State machine ---
+  // --- State machine: invalid source states ---
 
   it("returns 409 when document is not in uploaded or failed status", async () => {
+    // Atomic transition returns null (wrong status), follow-up shows the doc
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ document: mockDocumentRow({ status: "ocr_done" }) }),
+      mockServerClient({
+        transitionDoc: null,
+        followUpDoc: { id: VALID_DOC_ID, status: "ocr_done" },
+      }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
       mockAdminClient({}),
@@ -249,7 +312,10 @@ describe("POST /api/documents/[id]/ocr", () => {
 
   it("returns 409 when document is already confirmed", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ document: mockDocumentRow({ status: "confirmed" }) }),
+      mockServerClient({
+        transitionDoc: null,
+        followUpDoc: { id: VALID_DOC_ID, status: "confirmed" },
+      }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
       mockAdminClient({}),
@@ -259,22 +325,60 @@ describe("POST /api/documents/[id]/ocr", () => {
     expect(response.status).toBe(409);
   });
 
-  it("returns 409 when document is in ocr_processing", async () => {
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ document: mockDocumentRow({ status: "ocr_processing" }) }),
-    );
-    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
-      mockAdminClient({}),
-    );
+  // --- Concurrent double-start rejection (atomic transition) ---
 
-    const response = await POST(new Request("http://localhost"), createParams());
-    expect(response.status).toBe(409);
-  });
-
-  it("allows retry from failed status", async () => {
+  it("returns 409 when another concurrent request already moved to ocr_processing", async () => {
+    // Simulates a race: the atomic transition finds the document already
+    // in ocr_processing (not in ['uploaded', 'failed']), so 0 rows are updated.
+    // The follow-up read confirms the document exists but is in ocr_processing.
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockServerClient({
-        document: mockDocumentRow({ status: "failed", error_message: "Prior error" }),
+        transitionDoc: null, // 0 rows updated (already ocr_processing)
+        followUpDoc: { id: VALID_DOC_ID, status: "ocr_processing" },
+      }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("INVALID_STATUS_TRANSITION");
+    // Crucially, runOcr is NOT called — the second request is rejected
+    expect(runOcr).not.toHaveBeenCalled();
+  });
+
+  it("atomic transition prevents two concurrent OCR starts from both proceeding", async () => {
+    // This test verifies the atomic conditional update pattern: if the
+    // transition returns null (because another request got there first),
+    // the route does NOT proceed to download or call Datalab.
+    const serverClient = mockServerClient({
+      transitionDoc: null,
+      followUpDoc: { id: VALID_DOC_ID, status: "ocr_processing" },
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+
+    await POST(new Request("http://localhost"), createParams());
+
+    // The update was called (the atomic transition attempt)
+    expect(serverClient._documentsBuilder.update).toHaveBeenCalled();
+    // But runOcr was NOT called (the transition failed)
+    expect(runOcr).not.toHaveBeenCalled();
+  });
+
+  // --- Retry from failed status ---
+
+  it("allows retry from failed status", async () => {
+    // The atomic transition succeeds: the document is in 'failed' state,
+    // which is in the allowed set, so the update matches and returns the doc.
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        transitionDoc: mockDocumentRow({ status: "ocr_processing", error_message: null }),
       }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -308,8 +412,14 @@ describe("POST /api/documents/[id]/ocr", () => {
 
     // runOcr was called (meaning the route proceeded past the transition).
     expect(runOcrCalled).toBe(true);
-    // The documents table was queried and updated (transition + final).
-    expect(serverClient.from).toHaveBeenCalledWith("documents");
+    // The documents table update was called for the atomic transition
+    expect(serverClient._documentsBuilder.update).toHaveBeenCalled();
+    // Verify the transition update payload sets ocr_processing
+    const updateCalls = serverClient._documentsBuilder.update.mock.calls;
+    const transitionCall = updateCalls.find(
+      ([payload]: [Record<string, unknown>]) => payload.status === "ocr_processing",
+    );
+    expect(transitionCall).toBeDefined();
   });
 
   // --- Storage download failure ---
@@ -383,6 +493,27 @@ describe("POST /api/documents/[id]/ocr", () => {
     expect(response.status).toBe(429);
   });
 
+  it("marks document as failed on PAGE_COUNT_MISMATCH", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new DatalabOcrError(
+        "OCR-Ergebnisse konnten nicht sicher auf alle gemeldeten Seiten abgebildet werden.",
+        "PAGE_COUNT_MISMATCH",
+      ),
+    );
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.code).toBe("PAGE_COUNT_MISMATCH");
+  });
+
   // --- DB insert failure for document_pages ---
 
   it("marks document as failed when document_pages insert fails", async () => {
@@ -448,13 +579,82 @@ describe("POST /api/documents/[id]/ocr", () => {
     await POST(new Request("http://localhost"), createParams());
 
     expect(serverClient.from).toHaveBeenCalledWith("document_pages");
+    expect(serverClient._pagesInsertMock).toHaveBeenCalled();
+  });
+
+  // --- Per-page layout persistence ---
+
+  it("persists per-page layout_json (page-specific, not document-level metadata)", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    const ocrResult = mockOcrResult(3);
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(ocrResult);
+
+    await POST(new Request("http://localhost"), createParams());
+
+    // Verify the insert was called with per-page layout data
+    const insertCall = serverClient._pagesInsertMock.mock.calls[0];
+    const insertedPages = insertCall[0] as Array<{
+      document_id: string;
+      page_number: number;
+      ocr_markdown: string;
+      layout_json: Record<string, unknown> | null;
+    }>;
+
+    expect(insertedPages).toHaveLength(3);
+
+    // Each page should have page-specific layout_json (not the shared metadata)
+    expect(insertedPages[0].layout_json).not.toBeNull();
+    expect(insertedPages[1].layout_json).not.toBeNull();
+    expect(insertedPages[2].layout_json).not.toBeNull();
+
+    // Each page's layout_json should be page-specific (different page_id)
+    expect(insertedPages[0].layout_json!.page_id).toBe(0);
+    expect(insertedPages[1].layout_json!.page_id).toBe(1);
+    expect(insertedPages[2].layout_json!.page_id).toBe(2);
+
+    // layout_json should NOT be the document-level metadata object
+    expect(insertedPages[0].layout_json).not.toEqual(ocrResult.metadata);
+    expect(insertedPages[1].layout_json).not.toEqual(ocrResult.metadata);
+    expect(insertedPages[2].layout_json).not.toEqual(ocrResult.metadata);
+
+    // Page numbers should be contiguous 1, 2, 3
+    expect(insertedPages[0].page_number).toBe(1);
+    expect(insertedPages[1].page_number).toBe(2);
+    expect(insertedPages[2].page_number).toBe(3);
+  });
+
+  it("multi-page document gets one document_pages row per reported page", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(mockOcrResult(7));
+
+    await POST(new Request("http://localhost"), createParams());
+
+    const insertCall = serverClient._pagesInsertMock.mock.calls[0];
+    const insertedPages = insertCall[0] as Array<{ page_number: number }>;
+
+    // Exactly 7 rows, one per page, with contiguous page numbers 1..7
+    expect(insertedPages).toHaveLength(7);
+    for (let i = 0; i < 7; i++) {
+      expect(insertedPages[i].page_number).toBe(i + 1);
+    }
   });
 
   // --- Error response shape ---
 
   it("error responses include both error and code fields", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ document: null }),
+      mockServerClient({
+        transitionDoc: null,
+        followUpDoc: null,
+      }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
       mockAdminClient({}),
