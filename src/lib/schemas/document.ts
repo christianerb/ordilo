@@ -297,6 +297,19 @@ export const OCR_ALLOWED_SOURCE_STATUSES: ReadonlySet<string> = new Set([
   "failed",
 ]);
 
+/**
+ * Statuses from which the LLM analysis can be (re-)triggered.
+ * Analysis starts from `ocr_done` (initial run), `analyzed` (re-analyze),
+ * `confirmed` (re-analyze after confirmation), or `failed` (retry after a
+ * prior analysis failure).
+ */
+export const ANALYZE_ALLOWED_SOURCE_STATUSES: ReadonlySet<string> = new Set([
+  "ocr_done",
+  "analyzed",
+  "confirmed",
+  "failed",
+]);
+
 // ---------------------------------------------------------------------------
 // OCR API response types
 // ---------------------------------------------------------------------------
