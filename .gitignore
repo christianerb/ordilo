@@ -30,3 +30,6 @@ coverage/
 
 # research (internal)
 .research/
+
+# playwright-mcp test artifacts
+.playwright-mcp/
