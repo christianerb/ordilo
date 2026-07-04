@@ -33,6 +33,13 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
+  /* Ordilo-specific radius tokens (design system: 12/20/24/28px) */
+  --radius-ordilo-sm: 12px;
+  --radius-ordilo-md: 20px;
+  --radius-ordilo-lg: 24px;
+  --radius-ordilo-xl: 28px;
+  --radius-ordilo-pill: 9999px;
+
   /* Font family */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
 
