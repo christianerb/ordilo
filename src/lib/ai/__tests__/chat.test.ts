@@ -421,10 +421,12 @@ describe("generateChatAnswer", () => {
   });
 
   it("uses gpt-4.1-mini model", async () => {
-    mockCreate.mockResolvedValue(mockChatResponse("Antwort"));
+    mockCreate.mockResolvedValue(
+      mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
+    );
 
     await generateChatAnswer("Frage", [
-      { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
+      { document_id: "d", title: "Testdokument", excerpt: "Inhalt", score: 0.9 },
     ]);
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
@@ -436,10 +438,12 @@ describe("generateChatAnswer", () => {
   });
 
   it("sends system and user messages", async () => {
-    mockCreate.mockResolvedValue(mockChatResponse("Antwort"));
+    mockCreate.mockResolvedValue(
+      mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
+    );
 
     await generateChatAnswer("Testfrage", [
-      { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
+      { document_id: "d", title: "Testdokument", excerpt: "Inhalt", score: 0.9 },
     ]);
 
     const callArgs = mockCreate.mock.calls[0][0] as {
@@ -609,10 +613,12 @@ describe("generateChatAnswer", () => {
   });
 
   it("does not expose the API key in the request content", async () => {
-    mockCreate.mockResolvedValue(mockChatResponse("Antwort"));
+    mockCreate.mockResolvedValue(
+      mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
+    );
 
     await generateChatAnswer("Frage", [
-      { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
+      { document_id: "d", title: "Testdokument", excerpt: "Inhalt", score: 0.9 },
     ]);
 
     const callArgs = mockCreate.mock.calls[0][0] as {
@@ -761,19 +767,71 @@ describe("generateChatAnswer", () => {
     expect(answer).not.toContain("45 Euro");
   });
 
-  it("does not trigger citation fail-closed when source titles are too short to verify", async () => {
-    // Title "T" is shorter than MIN_CITATION_TITLE_LENGTH → citation cannot
-    // be verified → must NOT fail-closed, even though the answer doesn't
-    // reference "T".
+  it("does not trigger citation fail-closed when source titles are too short but the answer cites by content", async () => {
+    // Title "T" is shorter than MIN_CITATION_TITLE_LENGTH → title matching
+    // cannot fire, but the answer contains a distinctive content fragment
+    // from the excerpt → content-based citation passes, no fail-closed.
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse("Die Antwort ist 42."),
+      mockChatResponse("Die Einschulung am 15. August ist bestätigt."),
     );
 
     const answer = await generateChatAnswer("Frage", [
-      { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
+      {
+        document_id: "d",
+        title: "T",
+        excerpt: "Einschulung am 15. August",
+        score: 0.9,
+      },
     ]);
 
-    expect(answer).toBe("Die Antwort ist 42.");
+    expect(answer).toBe("Die Einschulung am 15. August ist bestätigt.");
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("triggers citation fail-closed when source titles are short and the answer does not match content", async () => {
+    // Title "T" is too short and the answer does not contain a content
+    // fragment from the excerpt → uncited → regenerate → still uncited →
+    // fail-closed. The bypass is removed: short titles no longer get a
+    // free pass.
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Die Antwort ist 42."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Der Termin ist bald."),
+      );
+
+    const answer = await generateChatAnswer("Frage", [
+      {
+        document_id: "d",
+        title: "T",
+        excerpt: "Einschulung am 15. August",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe(FAIL_CLOSED_CITATION);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not trigger citation fail-closed when source titles are null but the answer cites by content", async () => {
+    // All titles are null → title matching cannot fire, but the answer
+    // contains a distinctive content fragment → content-based citation
+    // passes, no regeneration, no fail-closed.
+    mockCreate.mockResolvedValueOnce(
+      mockChatResponse("Die Einschulung am 15. August ist bestätigt."),
+    );
+
+    const answer = await generateChatAnswer("Frage", [
+      {
+        document_id: "d",
+        title: null,
+        excerpt: "Einschulung am 15. August",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe("Die Einschulung am 15. August ist bestätigt.");
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 

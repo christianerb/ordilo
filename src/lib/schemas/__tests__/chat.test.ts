@@ -8,6 +8,8 @@ import {
   FAIL_CLOSED_HEDGING,
   FAIL_CLOSED_CITATION,
   MIN_CITATION_TITLE_LENGTH,
+  MIN_CONTENT_FRAGMENT_WORDS,
+  MIN_CONTENT_FRAGMENT_CHARS,
   type ChatSource,
 } from "@/lib/schemas/chat";
 
@@ -242,12 +244,13 @@ describe("FAIL_CLOSED constants", () => {
 describe("answerCitesSources", () => {
   function source(
     title: string | null,
+    excerpt = "Inhalt",
     docId = "doc-1",
   ): ChatSource {
     return {
       document_id: docId,
       title,
-      excerpt: "Inhalt",
+      excerpt,
       score: 0.9,
     };
   }
@@ -276,16 +279,52 @@ describe("answerCitesSources", () => {
     expect(answerCitesSources("Irgendeine Antwort", [])).toBe(true);
   });
 
-  it("returns true when all source titles are null (cannot verify)", () => {
+  it("returns true when all source titles are null but the answer matches source content (content-based citation)", () => {
+    // Titles are null → title matching cannot fire, but content matching
+    // finds a distinctive fragment from the excerpt in the answer.
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Die Einschulung am 15. August ist bestätigt worden.";
     expect(
-      answerCitesSources("Irgendeine Antwort", [source(null), source(null)]),
+      answerCitesSources(answer, [source(null, excerpt), source(null, excerpt)]),
     ).toBe(true);
   });
 
-  it("returns true when all source titles are shorter than MIN_CITATION_TITLE_LENGTH", () => {
+  it("returns false when all source titles are null and the answer does not match source content (no bypass)", () => {
+    // With the bypass removed, null titles no longer automatically pass.
+    // If the answer does not contain a content fragment either, it is
+    // considered uncited.
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Irgendeine Antwort ohne Bezug zur Quelle.";
     expect(
-      answerCitesSources("Antwort ohne Nennung", [source("T"), source("A")]),
+      answerCitesSources(answer, [source(null, excerpt), source(null, excerpt)]),
+    ).toBe(false);
+  });
+
+  it("returns true when all source titles are shorter than MIN_CITATION_TITLE_LENGTH but the answer matches source content", () => {
+    // Titles "T" and "A" are too short for title matching, but content
+    // matching finds a distinctive fragment from the excerpt.
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Die Einschulung am 15. August ist bestätigt.";
+    expect(
+      answerCitesSources(answer, [source("T", excerpt), source("A", excerpt)]),
     ).toBe(true);
+  });
+
+  it("returns false when all source titles are short and the answer does not match source content (no bypass)", () => {
+    // Short titles + no content match → uncited (no bypass).
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Antwort ohne Nennung der Quelle.";
+    expect(
+      answerCitesSources(answer, [source("T", excerpt), source("A", excerpt)]),
+    ).toBe(false);
+  });
+
+  it("returns false when all sources have null titles and excerpts too short for content fragments (no bypass)", () => {
+    // Both title and content matching have nothing to check, but the
+    // bypass is removed → uncited.
+    expect(
+      answerCitesSources("Irgendeine Antwort", [source(null, "AB"), source(null, "CD")]),
+    ).toBe(false);
   });
 
   it("is case-insensitive when matching titles", () => {
@@ -327,6 +366,95 @@ describe("answerCitesSources", () => {
     expect(
       answerCitesSources(answer, [source(null), source("Kita-Brief")]),
     ).toBe(false);
+  });
+
+  // --- Content-based citation matching ---
+
+  it("returns true when the answer contains a content fragment from the excerpt (content-based citation)", () => {
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Die Einschulung am 15. August ist bestätigt.";
+    expect(
+      answerCitesSources(answer, [source("Dokument", excerpt)]),
+    ).toBe(true);
+  });
+
+  it("returns true when the answer matches content but not the title (content fallback)", () => {
+    // Title not in answer, but content fragment is.
+    const excerpt = "Die Einschulung von Emma findet am 15. August statt";
+    const answer = "Die Einschulung von Emma findet am 15. August statt.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief", excerpt)]),
+    ).toBe(true);
+  });
+
+  it("returns false when the answer shares only a short phrase with the excerpt (below fragment word threshold)", () => {
+    // "am 15. August" is only 3 words — below MIN_CONTENT_FRAGMENT_WORDS.
+    // The answer restates the date but does not quote a distinctive enough
+    // portion of the source content, and the title is not referenced.
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Die Einschulung findet am 15. August statt.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief", excerpt)]),
+    ).toBe(false);
+  });
+
+  it("is case-insensitive when matching content fragments", () => {
+    const excerpt = "Einschulung am 15. August";
+    const answer = "die EINSCHULUNG AM 15. AUGUST ist bestätigt.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief", excerpt)]),
+    ).toBe(true);
+  });
+
+  it("handles German umlauts in content fragments", () => {
+    const excerpt = "Müller & Söhne Rechnung vom März";
+    const answer = "Die Müller & Söhne Rechnung vom März wurde bezahlt.";
+    expect(
+      answerCitesSources(answer, [source("Rechnung", excerpt)]),
+    ).toBe(true);
+  });
+
+  it("title OR content: passes when either a title or a content fragment matches", () => {
+    // Title matches but content does not.
+    expect(
+      answerCitesSources("Laut dem Kita-Brief ist alles klar.", [
+        source("Kita-Brief", "Einschulung am 15. August"),
+      ]),
+    ).toBe(true);
+    // Content matches but title does not.
+    expect(
+      answerCitesSources("Die Einschulung am 15. August ist bestätigt.", [
+        source("Kita-Brief", "Einschulung am 15. August"),
+      ]),
+    ).toBe(true);
+  });
+
+  it("returns true if at least one source is cited by content among multiple sources", () => {
+    const answer = "Die Einschulung am 15. August ist bestätigt.";
+    expect(
+      answerCitesSources(answer, [
+        source("Rechnung", "Betrag: 45 EUR"),
+        source(null, "Einschulung am 15. August"),
+      ]),
+    ).toBe(true);
+  });
+
+  it("returns false when none of multiple sources are cited by title or content", () => {
+    const answer = "Der Termin ist am 15. August.";
+    expect(
+      answerCitesSources(answer, [
+        source("Stromrechnung", "Betrag: 45 EUR"),
+        source("Kita-Brief", "Einschulung am 15. August"),
+      ]),
+    ).toBe(false);
+  });
+
+  it("MIN_CONTENT_FRAGMENT_WORDS is 4", () => {
+    expect(MIN_CONTENT_FRAGMENT_WORDS).toBe(4);
+  });
+
+  it("MIN_CONTENT_FRAGMENT_CHARS is 10", () => {
+    expect(MIN_CONTENT_FRAGMENT_CHARS).toBe(10);
   });
 
   it("MIN_CITATION_TITLE_LENGTH is 3", () => {

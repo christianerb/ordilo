@@ -151,6 +151,24 @@ export function containsHedgingLanguage(text: string): boolean {
 export const MIN_CITATION_TITLE_LENGTH = 3;
 
 /**
+ * Minimum number of consecutive words from a source excerpt required to
+ * form a checkable "content fragment". A content fragment of this length
+ * is distinctive enough to verify citation by content matching. Shorter
+ * sequences (e.g. a 3-word date like "am 15. August") are too generic and
+ * could appear in an answer that merely states the same fact without
+ * actually referencing the source document.
+ */
+export const MIN_CONTENT_FRAGMENT_WORDS = 4;
+
+/**
+ * Minimum character length (after joining words with single spaces) for a
+ * content fragment to be considered checkable. Fragments shorter than this
+ * are too generic to verify. This is a safety net on top of the word-count
+ * threshold.
+ */
+export const MIN_CONTENT_FRAGMENT_CHARS = 10;
+
+/**
  * Deterministic fail-closed message returned when the generated answer
  * contains forbidden hedging language AND a single regeneration could not
  * remove it. The hedged answer is never returned to the client.
@@ -168,28 +186,79 @@ export const FAIL_CLOSED_CITATION =
   "Die generierte Antwort nennt keine Quelle und wird daher nicht angezeigt. Bitte stelle die Frage erneut.";
 
 /**
- * Check whether the answer text references at least one source by title.
+ * Normalize whitespace in a string: collapse runs of whitespace to a single
+ * space and trim. Used for content-fragment matching so that formatting
+ * differences do not prevent a match.
+ */
+function normalizeWhitespace(text: string): string {
+  return text.trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Extract checkable content fragments from a source excerpt.
+ *
+ * A content fragment is a sequence of `MIN_CONTENT_FRAGMENT_WORDS`
+ * consecutive words from the excerpt. Only fragments whose joined length
+ * is at least `MIN_CONTENT_FRAGMENT_CHARS` are returned (shorter fragments
+ * are too generic to verify citation).
+ *
+ * @param excerpt - The source excerpt (document content snippet).
+ * @returns Array of normalized content fragment strings.
+ */
+function extractContentFragments(excerpt: string): string[] {
+  const normalized = normalizeWhitespace(excerpt);
+  if (!normalized) return [];
+
+  const words = normalized.split(" ");
+  if (words.length < MIN_CONTENT_FRAGMENT_WORDS) return [];
+
+  const fragments: string[] = [];
+  for (let i = 0; i <= words.length - MIN_CONTENT_FRAGMENT_WORDS; i++) {
+    const fragment = words
+      .slice(i, i + MIN_CONTENT_FRAGMENT_WORDS)
+      .join(" ");
+    if (fragment.length >= MIN_CONTENT_FRAGMENT_CHARS) {
+      fragments.push(fragment);
+    }
+  }
+  return fragments;
+}
+
+/**
+ * Check whether the answer text references at least one source.
  *
  * Used for post-generation citation validation (chat-api-guardrails):
  * when sources were provided and the answer asserts document-derived
  * facts, the answer should reference at least one source document by
- * title. If it does not, the caller regenerates once or fails closed.
+ * title OR by source content. If it does not, the caller regenerates
+ * once or fails closed (VAL-CHAT-004).
+ *
+ * Validation strategy (title OR content):
+ *   1. **Title matching**: the answer (case-insensitive, whitespace-
+ *      normalized) contains a checkable source title (non-null, trimmed,
+ *      length >= MIN_CITATION_TITLE_LENGTH).
+ *   2. **Content matching**: the answer contains a checkable content
+ *      fragment extracted from a source excerpt (a distinctive sequence
+ *      of MIN_CONTENT_FRAGMENT_WORDS consecutive words, at least
+ *      MIN_CONTENT_FRAGMENT_CHARS characters long).
  *
  * Rules:
  *   - The no-results fallback ("Ich finde dazu kein Dokument.") is always
  *     acceptable — it asserts no facts.
- *   - Titles shorter than `MIN_CITATION_TITLE_LENGTH` (after trim) are
- *     skipped as too generic to verify.
- *   - If NO source has a checkable title (all null or too short), the
- *     check passes (we cannot verify citation by title, so we do not
- *     fail-closed and risk blocking a valid answer).
- *   - Otherwise, the check passes if the answer (case-insensitive)
- *     contains at least one checkable source title.
+ *   - If no sources are provided (empty array), the check passes (there is
+ *     nothing to cite — the caller handles the no-results case).
+ *   - Otherwise, the check passes if and only if the answer references at
+ *     least one source by title OR by content. There is NO bypass when all
+ *     titles are null/short: content matching is used instead, and if no
+ *     checkable reference can be found from any source, the answer is
+ *     considered uncited (returns false) so the caller can regenerate or
+ *     fail-closed.
  *
  * @param answer - The generated answer text.
  * @param sources - The source documents provided as context.
- * @returns true if the answer cites at least one source (or citation
- *          cannot be verified due to short/null titles).
+ * @returns true if the answer cites at least one source (by title or
+ *          content), or if there are no sources to cite. false if sources
+ *          exist but the answer references none of them.
  */
 export function answerCitesSources(
   answer: string,
@@ -198,18 +267,31 @@ export function answerCitesSources(
   // The no-results fallback asserts no facts — always acceptable.
   if (answer.trim() === NO_RESULTS_FALLBACK) return true;
 
-  // Collect checkable titles (non-null, trimmed, long enough to verify).
-  const checkableTitles = sources
-    .map((s) => s.title?.trim())
-    .filter(
-      (t): t is string => !!t && t.length >= MIN_CITATION_TITLE_LENGTH,
-    );
+  // No sources provided → nothing to cite → acceptable (the caller
+  // handles the no-results case by returning the fallback directly).
+  if (sources.length === 0) return true;
 
-  // No checkable titles → cannot verify citation → do not fail-closed.
-  if (checkableTitles.length === 0) return true;
+  const normalizedAnswer = normalizeWhitespace(answer).toLowerCase();
 
-  const lowerAnswer = answer.toLowerCase();
-  return checkableTitles.some((title) =>
-    lowerAnswer.includes(title.toLowerCase()),
-  );
+  // Check each source for a title match OR a content-fragment match.
+  for (const source of sources) {
+    // --- Title matching ---
+    const title = source.title?.trim();
+    if (title && title.length >= MIN_CITATION_TITLE_LENGTH) {
+      if (normalizedAnswer.includes(title.toLowerCase())) {
+        return true;
+      }
+    }
+
+    // --- Content matching ---
+    const fragments = extractContentFragments(source.excerpt);
+    for (const fragment of fragments) {
+      if (normalizedAnswer.includes(fragment.toLowerCase())) {
+        return true;
+      }
+    }
+  }
+
+  // No source was referenced by title or content → uncited.
+  return false;
 }

@@ -247,12 +247,14 @@ function getOpenAIClient(): OpenAI {
  *      after the single regeneration, a deterministic fail-closed message
  *      (`FAIL_CLOSED_HEDGING`) is returned instead of the hedged answer.
  *   2. **Source citation**: after generation, the answer is checked to
- *      verify it references at least one source by title (when checkable
- *      titles exist and the answer is not the no-results fallback). If
+ *      verify it references at least one source by title OR by source
+ *      content (a distinctive content fragment from the excerpt). If
  *      citation is missing, the model is re-prompted once with a stricter
  *      citation instruction. If citation is still missing after the single
  *      regeneration, a deterministic fail-closed message
  *      (`FAIL_CLOSED_CITATION`) is returned instead of an uncited answer.
+ *      There is no bypass when all source titles are null or short —
+ *      content matching is used instead (VAL-CHAT-004).
  *
  * Both guardrails share a single regeneration attempt: if either fails on
  * the first answer, one combined correction re-prompt is issued. If either
