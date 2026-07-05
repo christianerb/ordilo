@@ -325,6 +325,37 @@ export async function generateEmbeddings(
 }
 
 // ---------------------------------------------------------------------------
+// Query embedding (for semantic search)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate an embedding for a single search query string.
+ *
+ * This is a convenience wrapper around `generateEmbeddings` for the search
+ * use case, where we embed one user query at a time. The resulting vector
+ * is used for pgvector cosine similarity (`1 - <=>`) against
+ * `document_embeddings`.
+ *
+ * @param query - The user's search query text.
+ * @returns A 1536-dimensional embedding vector for the query.
+ * @throws {EmbeddingError} if the query is empty or the OpenAI call fails.
+ */
+export async function generateQueryEmbedding(
+  query: string,
+): Promise<number[]> {
+  if (!query || !query.trim()) {
+    throw new EmbeddingError(
+      "Suchanfrage darf nicht leer sein.",
+      "EMPTY_QUERY",
+    );
+  }
+
+  const chunks: TextChunk[] = [{ text: query.trim(), index: 0 }];
+  const embeddings = await generateEmbeddings(chunks);
+  return embeddings[0];
+}
+
+// ---------------------------------------------------------------------------
 // Vector format helper
 // ---------------------------------------------------------------------------
 

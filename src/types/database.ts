@@ -63,6 +63,15 @@ export type ConfirmRpcResult = {
   document_id?: string;
 };
 
+/** A single row returned by the semantic_search RPC. */
+export type SemanticSearchRow = {
+  document_id: string;
+  title: string | null;
+  chunk_text: string;
+  /** Cosine similarity score: 1 - (embedding <=> query_embedding), in [0, 1]. */
+  score: number;
+};
+
 export type Database = {
   public: {
     Tables: {
@@ -412,6 +421,18 @@ export type Database = {
           p_tasks: ConfirmRpcTask[];
         };
         Returns: ConfirmRpcResult;
+      };
+      // semantic_search — pgvector cosine similarity search RPC.
+      // See supabase/migrations/0006_semantic_search_rpc.sql.
+      // SECURITY INVOKER (RLS enforced). Returns top-k confirmed-document
+      // chunks ranked by cosine similarity (1 - <=>).
+      semantic_search: {
+        Args: {
+          p_query_embedding: string; // pgvector text format "[v1,v2,...]"
+          p_family_id: string;
+          p_limit?: number;
+        };
+        Returns: SemanticSearchRow[];
       };
     };
     Enums: Record<string, never>;

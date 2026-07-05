@@ -31,6 +31,7 @@ import {
   chunkText,
   chunkPages,
   generateEmbeddings,
+  generateQueryEmbedding,
   embeddingToVectorString,
   EmbeddingError,
   EMBEDDING_DIMENSIONS,
@@ -416,6 +417,106 @@ describe("generateEmbeddings", () => {
 
     expect(result).toHaveLength(150);
     expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateQueryEmbedding
+// ---------------------------------------------------------------------------
+
+describe("generateQueryEmbedding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setApiKey();
+  });
+
+  it("returns a 1536-dimensional embedding for a valid query", async () => {
+    mockCreate.mockResolvedValueOnce(
+      mockEmbeddingsResponse(["Stromrechnung"]),
+    );
+
+    const result = await generateQueryEmbedding("Stromrechnung");
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(EMBEDDING_DIMENSIONS);
+  });
+
+  it("calls OpenAI with the correct model", async () => {
+    mockCreate.mockResolvedValueOnce(
+      mockEmbeddingsResponse(["test query"]),
+    );
+
+    await generateQueryEmbedding("test query");
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const callArgs = mockCreate.mock.calls[0][0];
+    expect(callArgs.model).toBe("text-embedding-3-small");
+    expect(callArgs.input).toBeInstanceOf(Array);
+    expect(callArgs.input).toHaveLength(1);
+  });
+
+  it("trims whitespace from the query before embedding", async () => {
+    mockCreate.mockResolvedValueOnce(
+      mockEmbeddingsResponse(["Stromrechnung"]),
+    );
+
+    await generateQueryEmbedding("  Stromrechnung  ");
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    const callArgs = mockCreate.mock.calls[0][0];
+    expect(callArgs.input[0]).toBe("Stromrechnung");
+  });
+
+  it("throws EmbeddingError for empty query", async () => {
+    await expect(generateQueryEmbedding("")).rejects.toThrow(EmbeddingError);
+    try {
+      await generateQueryEmbedding("");
+    } catch (err) {
+      expect((err as EmbeddingError).code).toBe("EMPTY_QUERY");
+    }
+  });
+
+  it("throws EmbeddingError for whitespace-only query", async () => {
+    await expect(generateQueryEmbedding("   ")).rejects.toThrow(EmbeddingError);
+    try {
+      await generateQueryEmbedding("   ");
+    } catch (err) {
+      expect((err as EmbeddingError).code).toBe("EMPTY_QUERY");
+    }
+  });
+
+  it("does not call OpenAI for empty query", async () => {
+    try {
+      await generateQueryEmbedding("");
+    } catch {
+      // expected
+    }
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("propagates OpenAI API errors as EmbeddingError", async () => {
+    const { APIError } = await import("openai");
+    const MockErr = APIError as unknown as new (msg: string, status?: number) => Error;
+    mockCreate.mockRejectedValueOnce(new MockErr("Unauthorized", 401));
+
+    try {
+      await generateQueryEmbedding("test");
+      expect.fail("Should have thrown");
+    } catch (err) {
+      expect(err).toBeInstanceOf(EmbeddingError);
+      expect((err as EmbeddingError).code).toBe("OPENAI_AUTH_ERROR");
+    }
+  });
+
+  it("does not expose the API key in the result", async () => {
+    setApiKey("sk-secret-query-key");
+    mockCreate.mockResolvedValueOnce(
+      mockEmbeddingsResponse(["test"]),
+    );
+
+    const result = await generateQueryEmbedding("test");
+
+    expect(JSON.stringify(result)).not.toContain("sk-secret-query-key");
   });
 });
 
