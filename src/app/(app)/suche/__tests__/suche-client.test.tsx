@@ -638,6 +638,202 @@ describe("SucheClient — Result-Aware Filter Chips (VAL-SEARCH-032)", () => {
   });
 });
 
+describe("SucheClient — Stale Filter Reconciliation (m4 scrutiny round 2)", () => {
+  it("drops stale filters referencing facets absent from a new result set so new source cards are not hidden", async () => {
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        // First search: returns all three docs (Emma + Hanna).
+        return Promise.resolve(
+          mockChatResponse("Antwort 1.", [
+            { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+            { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.7 },
+            { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+          ]),
+        );
+      }
+      // Second search: returns only Emma docs (Hanna facet absent).
+      return Promise.resolve(
+        mockChatResponse("Antwort 2.", [
+          { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.85 },
+          { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.75 },
+        ]),
+      );
+    }) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    // First search → all three docs returned, filter chips appear.
+    let input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Alle" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    // Activate the "Hanna" person filter → only doc-3 visible.
+    fireEvent.click(screen.getByRole("button", { name: /^Hanna$/ }));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("source-card")).toHaveLength(1);
+      expect(screen.getByText("Arztbrief Hanna")).toBeDefined();
+    });
+
+    // Second search → only Emma docs returned (Hanna facet absent).
+    input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Emma" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    // The stale Hanna filter must be reconciled away so the new Emma
+    // source cards are NOT hidden. Without reconciliation, the stale
+    // Hanna filter would hide both new Emma source cards (bug).
+    await waitFor(() => {
+      // New Emma source cards are visible after the second search.
+      expect(screen.queryAllByText("Stromrechnung Juli").length).toBeGreaterThan(0);
+      expect(screen.queryAllByText("Kita-Brief für Emma").length).toBeGreaterThan(0);
+    });
+
+    // The Hanna chip is no longer present (result-aware chips) and the
+    // active Hanna filter has been dropped by reconciliation, so no
+    // "Zurücksetzen" button should remain.
+    expect(screen.queryByRole("button", { name: /^Hanna$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Zurücksetzen/i })).toBeNull();
+  });
+
+  it("keeps filters still present in the new result set applied", async () => {
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(
+          mockChatResponse("Antwort 1.", [
+            { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+            { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.7 },
+            { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+          ]),
+        );
+      }
+      // Second search: Emma still present (doc-1, doc-2) alongside Hanna.
+      return Promise.resolve(
+        mockChatResponse("Antwort 2.", [
+          { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.85 },
+          { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.75 },
+          { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.65 },
+        ]),
+      );
+    }) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    let input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Alle" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    // Activate the "Emma" person filter → only Emma docs visible (doc-1, doc-2).
+    fireEvent.click(screen.getByRole("button", { name: /^Emma$/ }));
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("source-card")).toHaveLength(2);
+    });
+
+    // Second search → Emma still present in the result set. The Emma
+    // filter must REMAIN applied (not cleared by reconciliation), so
+    // doc-3 (Hanna) stays hidden in the new message.
+    input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Nochmal" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByText("Antwort 2.")).toBeDefined();
+    });
+
+    // The Emma chip should still be active (pressed).
+    const emmaChip = screen.getByRole("button", { name: /^Emma$/ });
+    expect(emmaChip.getAttribute("aria-pressed")).toBe("true");
+
+    // Arztbrief Hanna (doc-3) must remain hidden by the still-active Emma filter.
+    expect(screen.queryAllByText("Arztbrief Hanna").length).toBe(0);
+
+    // Zurücksetzen should still be present (the Emma filter remains active).
+    expect(screen.getByRole("button", { name: /Zurücksetzen/i })).toBeDefined();
+  });
+
+  it("clears all active filters when a subsequent search returns no sources", async () => {
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(
+          mockChatResponse("Antwort 1.", [
+            { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+            { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+          ]),
+        );
+      }
+      if (callCount === 2) {
+        // Second search: no sources → no result set, no facets.
+        return Promise.resolve(
+          mockChatResponse("Ich finde dazu kein Dokument.", []),
+        );
+      }
+      // Third search: Hanna doc returns. If the stale Hanna filter had been
+      // left active, the Hanna chip would render pressed after this search.
+      return Promise.resolve(
+        mockChatResponse("Antwort 3.", [
+          { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+        ]),
+      );
+    }) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    let input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Hanna" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    // Activate the Hanna filter.
+    fireEvent.click(screen.getByRole("button", { name: /^Hanna$/ }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Zurücksetzen/i })).toBeDefined();
+    });
+
+    // Second search → no sources. The stale Hanna filter must be cleared
+    // (no facets to match against), and no chips / Zurücksetzen remain.
+    input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Nichts" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("filter-chips")).toBeNull();
+    });
+    expect(screen.queryByRole("button", { name: /Zurücksetzen/i })).toBeNull();
+
+    // Third search → Hanna doc returns. The Hanna chip must NOT be pressed,
+    // proving the stale filter was actually cleared from state (not just
+    // visually hidden). Without reconciliation the chip would still be pressed.
+    input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Hanna2" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+    const hannaChipAfter = screen.getByRole("button", { name: /^Hanna$/ });
+    expect(hannaChipAfter.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("button", { name: /Zurücksetzen/i })).toBeNull();
+  });
+});
+
 describe("SucheClient — No Internal Terminology", () => {
   it("does not expose 'Knowledge Graph' in the UI", () => {
     const { container } = render(<SucheClient {...defaultProps} />);

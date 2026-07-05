@@ -284,6 +284,50 @@ export function SucheClient({
   }, []);
 
   // -------------------------------------------------------------------------
+  // Stale filter reconciliation (m4 scrutiny round 2)
+  // -------------------------------------------------------------------------
+
+  /**
+   * When a new result set arrives, drop any active filter whose facet value
+   * is no longer present in the current result set. Without this, a filter
+   * activated from a previous answer (e.g. person "Hanna") would persist and
+   * hide source cards in subsequent answers that do not reference that facet,
+   * until the user manually clicks "Zurücksetzen".
+   *
+   * Filters still present in the new result set remain applied. When the
+   * latest query returns no sources, all active filters are cleared (there
+   * are no facets to match against).
+   *
+   * The effect depends on `facets`, which is recomputed (new reference) only
+   * when the result set changes, so toggling a filter does not trigger
+   * reconciliation.
+   */
+  useEffect(() => {
+    setActiveFilters((prev) => {
+      if (prev.length === 0) return prev;
+
+      const validKeys = new Set<string>();
+      for (const chip of facets.personChips) {
+        validKeys.add(`person::${chip.value.toLowerCase()}`);
+      }
+      for (const chip of facets.categoryChips) {
+        validKeys.add(`category::${chip.value.toLowerCase()}`);
+      }
+      for (const chip of facets.docTypeChips) {
+        validKeys.add(`document_type::${chip.value.toLowerCase()}`);
+      }
+
+      const reconciled = prev.filter((f) =>
+        validKeys.has(`${f.type}::${f.value.toLowerCase()}`),
+      );
+
+      // Avoid a state update (and extra render) when nothing changed.
+      if (reconciled.length === prev.length) return prev;
+      return reconciled;
+    });
+  }, [facets]);
+
+  // -------------------------------------------------------------------------
   // Auto-scroll to latest message (VAL-CHAT-022)
   // -------------------------------------------------------------------------
 
