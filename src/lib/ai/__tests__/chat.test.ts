@@ -40,6 +40,7 @@ import {
   buildChatSystemPrompt,
   buildChatUserMessage,
   generateChatAnswer,
+  filterByRelevanceThreshold,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -48,6 +49,7 @@ import {
   FAIL_CLOSED_CITATION,
   containsHedgingLanguage,
 } from "@/lib/schemas/chat";
+import { RELEVANCE_THRESHOLD } from "@/lib/ai/search";
 import type { SearchResult } from "@/lib/schemas/search";
 
 // ---------------------------------------------------------------------------
@@ -114,6 +116,65 @@ function mockChatResponse(content: string): {
     choices: [{ message: { content } }],
   };
 }
+
+// ---------------------------------------------------------------------------
+// filterByRelevanceThreshold
+// ---------------------------------------------------------------------------
+
+describe("filterByRelevanceThreshold", () => {
+  it("keeps semantic results at or above the threshold", () => {
+    const results = [
+      makeSemanticResult("doc-1", "Brief", "Inhalt", RELEVANCE_THRESHOLD),
+      makeSemanticResult("doc-2", "Brief 2", "Inhalt 2", 0.9),
+    ];
+    const filtered = filterByRelevanceThreshold(results);
+    expect(filtered).toHaveLength(2);
+  });
+
+  it("drops semantic results below the threshold", () => {
+    const results = [
+      makeSemanticResult("doc-1", "Brief", "Inhalt", 0.1),
+      makeSemanticResult("doc-2", "Brief 2", "Inhalt 2", 0.05),
+    ];
+    const filtered = filterByRelevanceThreshold(results);
+    expect(filtered).toEqual([]);
+  });
+
+  it("returns empty when all semantic results are below the threshold", () => {
+    const results = [
+      makeSemanticResult("doc-1", "Brief", "Inhalt", 0.15),
+      makeSemanticResult("doc-2", "Brief 2", "Inhalt 2", 0.2),
+    ];
+    const filtered = filterByRelevanceThreshold(results);
+    expect(filtered).toEqual([]);
+  });
+
+  it("keeps above-threshold results and drops below-threshold results in a mixed set", () => {
+    const results = [
+      makeSemanticResult("doc-1", "Relevant", "Wichtiger Inhalt", 0.85),
+      makeSemanticResult("doc-2", "Irrelevant", "Zufälliger Text", 0.1),
+      makeSemanticResult("doc-3", "Also Relevant", "Passender Inhalt", 0.5),
+    ];
+    const filtered = filterByRelevanceThreshold(results);
+    expect(filtered).toHaveLength(2);
+    const docIds = filtered.map((r) => r.document_id);
+    expect(docIds).toContain("doc-1");
+    expect(docIds).toContain("doc-3");
+    expect(docIds).not.toContain("doc-2");
+  });
+
+  it("returns empty for an empty input array", () => {
+    expect(filterByRelevanceThreshold([])).toEqual([]);
+  });
+
+  it("uses a conservative threshold value (0.3) that does not regress genuine low-but-relevant matches", () => {
+    // The threshold should be conservative — low enough to keep genuine
+    // low-relevance matches (e.g. 0.35) while filtering clear noise
+    // (e.g. 0.1–0.2). A threshold of 0.3 is the conventional cutoff for
+    // text-embedding-3-small cosine similarity.
+    expect(RELEVANCE_THRESHOLD).toBe(0.3);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // combineSearchResults

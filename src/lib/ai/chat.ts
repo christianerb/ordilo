@@ -9,7 +9,7 @@ import {
   FAIL_CLOSED_CITATION,
   type ChatSource,
 } from "@/lib/schemas/chat";
-import { MAX_RESULTS } from "@/lib/ai/search";
+import { MAX_RESULTS, RELEVANCE_THRESHOLD } from "@/lib/ai/search";
 
 /**
  * Chat with sources — combines semantic + graph search results into
@@ -65,6 +65,38 @@ export class ChatError extends Error {
     this.code = code;
     this.statusCode = statusCode;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Relevance threshold filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter semantic search results by the relevance threshold, dropping
+ * documents whose cosine-similarity score is below `RELEVANCE_THRESHOLD`.
+ *
+ * This prevents the chat fallback "Ich finde dazu kein Dokument." from being
+ * returned together with a non-empty sources array. Without this filter,
+ * semantic search surfaces low-relevance documents even for nonsense/irrelevant
+ * queries (pgvector always returns the nearest neighbours regardless of
+ * absolute similarity), which would make the fallback answer contradict its
+ * own sources (chat-api-fallback-relevance-threshold).
+ *
+ * Only semantic results are filtered — graph results (person/task matches)
+ * are inherently relevant (they match via word-boundary name/keyword matching)
+ * and are not subject to this threshold. The caller passes only the semantic
+ * results to this function before combining them with graph results.
+ *
+ * @param semanticResults - The raw semantic search results (scored by
+ *   cosine similarity: `1 - (embedding <=> query_embedding)`).
+ * @returns The semantic results with sub-threshold entries dropped.
+ */
+export function filterByRelevanceThreshold(
+  semanticResults: SearchResult[],
+): SearchResult[] {
+  return semanticResults.filter(
+    (result) => result.score >= RELEVANCE_THRESHOLD,
+  );
 }
 
 // ---------------------------------------------------------------------------

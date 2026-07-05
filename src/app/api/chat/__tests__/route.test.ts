@@ -32,6 +32,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import {
   semanticSearch,
   graphSearch,
+  RELEVANCE_THRESHOLD,
 } from "@/lib/ai/search";
 import { generateChatAnswer, ChatError } from "@/lib/ai/chat";
 import { EmbeddingError } from "@/lib/ai/embeddings";
@@ -220,6 +221,110 @@ describe("POST /api/chat", () => {
     expect(body.sources).toEqual([]);
     // OpenAI should NOT be called when there are no sources
     expect(generateChatAnswer).not.toHaveBeenCalled();
+  });
+
+  // --- Relevance threshold filtering (chat-api-fallback-relevance-threshold) ---
+
+  it("returns fallback with empty sources when all semantic matches are below the relevance threshold and graph is empty", async () => {
+    // Irrelevant/nonsense query: semantic search still surfaces documents,
+    // but all with very low cosine-similarity scores (below RELEVANCE_THRESHOLD).
+    // Graph search finds nothing (no person name or task keyword in the query).
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Zufälliges Dokument", "Irrelevant content", 0.12),
+      semanticResult(DOC_ID_2, "Anderes Dokument", "More irrelevant text", 0.08),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const response = await POST(
+      createRequest(validBody({ message: "asdf qwerty xyz" })),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    // The fallback answer must be returned, NOT a synthesized answer
+    expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+    // The sources array must be EMPTY — the fallback and sources must
+    // never be mutually contradictory
+    expect(body.sources).toEqual([]);
+    // OpenAI must NOT be called — no relevant sources to synthesize from
+    expect(generateChatAnswer).not.toHaveBeenCalled();
+  });
+
+  it("returns fallback with empty sources when semantic matches are below the threshold even if graph returns sub-threshold results", async () => {
+    // Edge case: graph results can have low confidence scores too, but
+    // graph:person matches are legitimate (the name was found via
+    // word-boundary matching). Here we test the pure semantic-only
+    // sub-threshold case where graph is empty.
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Doc", "text", RELEVANCE_THRESHOLD - 0.01),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+    expect(body.sources).toEqual([]);
+    expect(generateChatAnswer).not.toHaveBeenCalled();
+  });
+
+  it("returns synthesized cited answer with only above-threshold sources when some semantic results are below the threshold", async () => {
+    // A query with at least one above-threshold semantic source: the
+    // sub-threshold results must be dropped, but the above-threshold one
+    // must be kept and the answer synthesized from it.
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Kita-Brief", "Einschulung am 15. August", 0.85),
+      semanticResult(DOC_ID_2, "Zufälliges Dokument", "Irrelevant content", 0.1),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
+    );
+
+    const response = await POST(
+      createRequest(validBody({ message: "Wann wird Emma eingeschult?" })),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.answer).toBe(
+      "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
+    );
+    // Only the above-threshold source should be in the response
+    expect(body.sources).toHaveLength(1);
+    expect(body.sources[0].document_id).toBe(DOC_ID_1);
+    expect(body.sources[0].title).toBe("Kita-Brief");
+    // The sub-threshold document must NOT appear in sources
+    const docIds = body.sources.map(
+      (s: { document_id: string }) => s.document_id,
+    );
+    expect(docIds).not.toContain(DOC_ID_2);
+    // OpenAI WAS called (there is at least one relevant source)
+    expect(generateChatAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it("never returns the fallback answer together with a non-empty sources array", async () => {
+    // Regression guard: the fallback and sources array must never be
+    // mutually contradictory. This test verifies the invariant holds
+    // when all semantic results are below the threshold.
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Doc", "text", 0.05),
+      semanticResult(DOC_ID_2, "Doc 2", "text 2", 0.15),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    // If the answer is the fallback, sources MUST be empty
+    if (body.answer === NO_RESULTS_FALLBACK) {
+      expect(body.sources).toEqual([]);
+    }
+    // If sources are non-empty, the answer must NOT be the fallback
+    if (body.sources.length > 0) {
+      expect(body.answer).not.toBe(NO_RESULTS_FALLBACK);
+    }
   });
 
   // --- Successful chat with sources (VAL-CHAT-001) ---

@@ -29,6 +29,27 @@ import {
 /** Maximum number of results to return (top-k limit — VAL-SEARCH-004). */
 export const MAX_RESULTS = 10;
 
+/**
+ * Minimum cosine-similarity score for a semantic search result to be
+ * considered relevant when assembling chat context/sources
+ * (chat-api-fallback-relevance-threshold).
+ *
+ * The `semantic_search` RPC returns `score = 1 - (embedding <=> query_embedding)`,
+ * i.e. cosine similarity in [0, 1] for normalised text embeddings. Scores
+ * below this threshold indicate that the document is not meaningfully
+ * related to the query (typical noise floor for text-embedding-3-small is
+ * 0.0–0.25). The threshold is conservative (0.3) so genuine low-but-relevant
+ * matches (e.g. 0.35–0.5 for queries using different terminology than the
+ * document) are NOT regressed, while clearly irrelevant documents surfaced
+ * for nonsense/irrelevant queries are dropped before they reach the chat
+ * synthesis step.
+ *
+ * This threshold is ONLY applied to semantic search results — graph results
+ * (person/task matches) are inherently relevant (they match via word-boundary
+ * name/keyword matching) and are not subject to this filter.
+ */
+export const RELEVANCE_THRESHOLD = 0.3;
+
 /** How many days ahead to look for upcoming task deadlines. */
 export const TASK_DEADLINE_WINDOW_DAYS = 7;
 

@@ -5,6 +5,7 @@ import { semanticSearch, graphSearch } from "@/lib/ai/search";
 import {
   generateChatAnswer,
   combineSearchResults,
+  filterByRelevanceThreshold,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -29,10 +30,13 @@ import {
  *   2. Validate input with Zod (400 on missing message/family_id —
  *      VAL-CHAT-003)
  *   3. Run BOTH semantic AND graph search (always — VAL-CHAT-007)
- *   4. Combine results into deduplicated ChatSource[] (one per document)
+ *   4. Filter semantic results by relevance threshold (drop sub-threshold
+ *      noise), then combine into deduplicated ChatSource[] (one per document)
  *   5. If no sources found → return fallback "Ich finde dazu kein Dokument."
  *      with empty sources array (VAL-CHAT-005). OpenAI is NOT called in
  *      this case, saving cost and guaranteeing the exact fallback string.
+ *      The relevance threshold ensures the fallback and sources array are
+ *      never mutually contradictory (no fallback with non-empty sources).
  *   6. Call OpenAI GPT-4.1 Mini with system prompt (German answers, source
  *      citation, no hedging, hallucination protection) + user message
  *      (query + context) (VAL-CHAT-010)
@@ -115,7 +119,15 @@ export async function POST(
   }
 
   // 4. Combine results into deduplicated sources ---------------------------
-  const sources = combineSearchResults(semanticResults, graphResults);
+  // Filter semantic results by the relevance threshold so that low-relevance
+  // documents (below RELEVANCE_THRESHOLD) are dropped before assembling chat
+  // context. This prevents the fallback answer from being returned together
+  // with a non-empty sources array when semantic search surfaces noise for
+  // nonsense/irrelevant queries (chat-api-fallback-relevance-threshold).
+  // Graph results are NOT filtered — they are inherently relevant (matched
+  // via word-boundary name/keyword matching).
+  const relevantSemantic = filterByRelevanceThreshold(semanticResults);
+  const sources = combineSearchResults(relevantSemantic, graphResults);
 
   // 5. Hallucination fallback: no sources → return fallback (VAL-CHAT-005) -
   if (sources.length === 0) {
