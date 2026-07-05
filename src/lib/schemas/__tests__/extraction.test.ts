@@ -163,15 +163,20 @@ describe("documentAnalysisSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects extra fields (additionalProperties: false)", () => {
+  it("rejects an extra top-level field (strict mode, VAL-EXTRACT-002)", () => {
     const analysis = validAnalysis();
     const withExtra = { ...analysis, extra_field: "should fail" };
     const result = documentAnalysisSchema.safeParse(withExtra);
-    // Zod default behavior: extra fields are stripped (not rejected).
-    // But the parsed data should NOT contain the extra field.
-    if (result.success) {
-      expect(result.data).not.toHaveProperty("extra_field");
-    }
+    // Strict mode: extra top-level fields must cause validation to fail,
+    // matching the OpenAI strict json_schema request (additionalProperties: false).
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a different extra top-level key (VAL-EXTRACT-002)", () => {
+    const analysis = validAnalysis();
+    const withExtra = { ...analysis, unexpected_key: 42 };
+    const result = documentAnalysisSchema.safeParse(withExtra);
+    expect(result.success).toBe(false);
   });
 });
 

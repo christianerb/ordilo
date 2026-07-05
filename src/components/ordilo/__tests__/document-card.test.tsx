@@ -173,24 +173,43 @@ describe("DocumentCard", () => {
   // Failed state
   // ---------------------------------------------------------------------------
 
-  it("shows error message when status is failed and errorMessage is provided", () => {
+  it("shows friendly German copy when status is failed (VAL-REVIEW-014)", () => {
     render(
       <DocumentCard
         status="failed"
-        errorMessage="OCR fehlgeschlagen"
+        errorMessage="OpenAI: API-Fehler"
       />,
     );
-    expect(screen.getByText("OCR fehlgeschlagen")).toBeDefined();
+    // Raw provider/backend text must NEVER be user-visible.
+    expect(screen.queryByText("OpenAI: API-Fehler")).toBeNull();
+    // Friendly German copy should be shown instead.
+    expect(screen.getByText("Analyse fehlgeschlagen")).toBeDefined();
   });
 
-  it("does not show error message when status is not failed", () => {
+  it("shows friendly German copy, not raw 'Could not parse PDF' (VAL-REVIEW-014)", () => {
+    render(
+      <DocumentCard
+        status="failed"
+        errorMessage="Could not parse PDF"
+      />,
+    );
+    expect(screen.queryByText("Could not parse PDF")).toBeNull();
+    expect(screen.getByText("Analyse fehlgeschlagen")).toBeDefined();
+  });
+
+  it("shows friendly copy even when no errorMessage is provided", () => {
+    render(<DocumentCard status="failed" />);
+    expect(screen.getByText("Analyse fehlgeschlagen")).toBeDefined();
+  });
+
+  it("does not show error copy when status is not failed", () => {
     render(
       <DocumentCard
         status="uploaded"
         errorMessage="OCR fehlgeschlagen"
       />,
     );
-    expect(screen.queryByText("OCR fehlgeschlagen")).toBeNull();
+    expect(screen.queryByText("Analyse fehlgeschlagen")).toBeNull();
   });
 
   it("shows a retry button when status is failed and onRetry is provided", () => {

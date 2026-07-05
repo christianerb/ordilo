@@ -17,6 +17,7 @@ import {
   isProcessingStatus,
   isImageMimeType,
   isPdfMimeType,
+  FAILED_CARD_COPY,
 } from "@/lib/schemas/document";
 
 /**
@@ -33,7 +34,7 @@ export interface DocumentCardProps {
   status: string;
   /** Created-at ISO timestamp — shown as relative date. */
   createdAt?: string | null;
-  /** Error message — shown when status is "failed". */
+  /** Error message — accepted for API compatibility but NOT rendered. Friendly German copy is shown instead (VAL-REVIEW-014). */
   errorMessage?: string | null;
   /** Click handler — when provided, the card is interactive (navigates to detail). */
   onClick?: () => void;
@@ -122,7 +123,6 @@ export function DocumentCard({
   mimeType,
   status,
   createdAt,
-  errorMessage,
   onClick,
   onRetry,
   className,
@@ -155,8 +155,13 @@ export function DocumentCard({
         {relativeTime && (
           <p className="truncate text-sm text-muted-foreground">{relativeTime}</p>
         )}
-        {isFailed && errorMessage && (
-          <p className="mt-0.5 truncate text-sm text-destructive">{errorMessage}</p>
+        {isFailed && (
+          <p
+            className="mt-0.5 truncate text-sm text-destructive"
+            data-testid="document-failed-copy"
+          >
+            {FAILED_CARD_COPY}
+          </p>
         )}
       </div>
 

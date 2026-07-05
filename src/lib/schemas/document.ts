@@ -299,6 +299,18 @@ export function getFailedStage(doc: {
   return "ocr";
 }
 
+/**
+ * Friendly German copy shown on the collapsed DocumentCard row for any
+ * failed document.
+ *
+ * The raw backend/provider error (e.g. "OpenAI: API-Fehler",
+ * "Could not parse PDF") is never surfaced to the user. This constant
+ * ensures the same friendly German failed-state copy is rendered on the
+ * collapsed document row as on the expanded ReviewCard
+ * (VAL-REVIEW-014).
+ */
+export const FAILED_CARD_COPY = "Analyse fehlgeschlagen";
+
 // ---------------------------------------------------------------------------
 // State machine — valid transitions
 // ---------------------------------------------------------------------------

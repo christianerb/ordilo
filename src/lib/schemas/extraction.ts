@@ -132,7 +132,9 @@ const taskSchema = z.object({
  *
  * This validates the OpenAI structured output response. All fields are
  * required (matching the strict-mode JSON schema). The `document_type`
- * is constrained to the enum.
+ * is constrained to the enum. The top-level object is strict (`.strict()`)
+ * so extra/unknown top-level keys cause validation to fail, matching the
+ * OpenAI strict json_schema request (`additionalProperties: false`).
  */
 export const documentAnalysisSchema = z.object({
   document_type: z.enum(DOCUMENT_TYPES),
@@ -146,7 +148,7 @@ export const documentAnalysisSchema = z.object({
   suggested_category: z.string(),
   tags: z.array(z.string()),
   needs_user_review: z.boolean(),
-});
+}).strict();
 
 export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
 

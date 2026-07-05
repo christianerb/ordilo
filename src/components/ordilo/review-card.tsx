@@ -25,6 +25,7 @@ import {
   LOW_CONFIDENCE_THRESHOLD,
   type DocumentAnalysis,
 } from "@/lib/schemas/extraction";
+import { FAILED_CARD_COPY } from "@/lib/schemas/document";
 import {
   fetchDocumentAnalysis,
   fetchFamilyMembers,
@@ -399,7 +400,11 @@ export function ReviewCard({
   // --- Render: confirmed ---
   if (confirmed || status === "confirmed") {
     return (
-      <ReviewCardConfirmed className={className} />
+      <ReviewCardConfirmed
+        onReanalyze={handleReanalyze}
+        reanalyzing={reanalyzing}
+        className={className}
+      />
     );
   }
 
@@ -1298,9 +1303,11 @@ function ReviewCardSkeleton({ className }: { className?: string }) {
  *
  * The raw backend/provider error (e.g. "OpenAI: API-Fehler",
  * "Could not parse PDF") is never surfaced to the user. Provider-specific
- * details are kept out of the UI (VAL-REVIEW-014).
+ * details are kept out of the UI (VAL-REVIEW-014). This uses the shared
+ * `FAILED_CARD_COPY` constant from the document schema module so the
+ * collapsed DocumentCard row and the expanded ReviewCard show the same
+ * friendly German failed-state copy.
  */
-const FRIENDLY_FAILURE_COPY = "Analyse fehlgeschlagen. Bitte erneut versuchen.";
 
 /**
  * Error state for the review card.
@@ -1341,7 +1348,7 @@ function ReviewCardError({
           Analyse fehlgeschlagen
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {FRIENDLY_FAILURE_COPY}
+          {FAILED_CARD_COPY}. Bitte erneut versuchen.
         </p>
         {onRetry && (
           <Button
@@ -1363,8 +1370,21 @@ function ReviewCardError({
 
 /**
  * Confirmed state for the review card.
+ *
+ * Shows a success message and a "Neu analysieren" (re-analyze) button so
+ * the user can re-run extraction from the confirmed state
+ * (VAL-EXTRACT-012). The re-analyze action calls the analyze route which
+ * resets the document status to `analyzed` and clears prior results.
  */
-function ReviewCardConfirmed({ className }: { className?: string }) {
+function ReviewCardConfirmed({
+  onReanalyze,
+  reanalyzing = false,
+  className,
+}: {
+  onReanalyze?: () => void;
+  reanalyzing?: boolean;
+  className?: string;
+}) {
   return (
     <div
       data-testid="review-card-confirmed"
@@ -1390,6 +1410,29 @@ function ReviewCardConfirmed({ className }: { className?: string }) {
         <p className="mt-1 text-sm text-muted-foreground">
           Dieses Dokument wurde bestätigt und ist jetzt durchsuchbar.
         </p>
+        {onReanalyze && (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={onReanalyze}
+            disabled={reanalyzing}
+            className="mt-4 h-11 rounded-ordilo-md"
+            data-testid="confirmed-reanalyze-button"
+          >
+            {reanalyzing ? (
+              <>
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                wird analysiert …
+              </>
+            ) : (
+              <>
+                <RefreshCw className="size-4" aria-hidden="true" />
+                Neu analysieren
+              </>
+            )}
+          </Button>
+        )}
       </div>
     </div>
   );

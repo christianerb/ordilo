@@ -215,6 +215,39 @@ describe("ReviewCard", () => {
     expect(screen.queryByTestId("confirm-button")).toBeNull();
   });
 
+  it("shows 'Neu analysieren' button in confirmed state (VAL-EXTRACT-012)", () => {
+    render(
+      <ReviewCard documentId="doc-1" status="confirmed" />,
+    );
+    expect(screen.getByTestId("review-card-confirmed")).toBeDefined();
+    // The confirmed state must expose a re-analyze affordance so the user
+    // can trigger the confirmed→analyzed re-analyze flow from the UI.
+    expect(screen.getByTestId("confirmed-reanalyze-button")).toBeDefined();
+  });
+
+  it("calls the analyze API when 'Neu analysieren' is clicked in confirmed state (VAL-EXTRACT-012)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "analyzed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="confirmed" />,
+    );
+
+    // The re-analyze button should be present in the confirmed state.
+    const reanalyzeButton = screen.getByTestId("confirmed-reanalyze-button");
+    fireEvent.click(reanalyzeButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/documents/doc-1/analyze",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    fetchSpy.mockRestore();
+  });
+
   // ---------------------------------------------------------------------------
   // Analyzed state — full content
   // ---------------------------------------------------------------------------
