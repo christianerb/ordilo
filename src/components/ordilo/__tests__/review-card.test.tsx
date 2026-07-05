@@ -1,0 +1,681 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+
+import { ReviewCard } from "@/components/ordilo/review-card";
+import type { DocumentAnalysis } from "@/lib/schemas/extraction";
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+
+// Mock the analysis fetching module.
+vi.mock("@/lib/analysis", () => ({
+  fetchDocumentAnalysis: vi.fn(),
+  fetchFamilyMembers: vi.fn(),
+  fetchExistingCategories: vi.fn(),
+}));
+
+// Import the mocked functions for per-test configuration.
+import {
+  fetchDocumentAnalysis,
+  fetchFamilyMembers,
+  fetchExistingCategories,
+} from "@/lib/analysis";
+
+// Mock the supabase client (used by analysis.ts internally).
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: vi.fn(() => ({})),
+}));
+
+// ---------------------------------------------------------------------------
+// Test fixtures
+// ---------------------------------------------------------------------------
+
+const mockFamilyMembers = [
+  { id: "member-1", name: "Emma", role: "Kind" },
+  { id: "member-2", name: "Hanna", role: "Kind" },
+  { id: "member-3", name: "Papa", role: "Vater" },
+];
+
+const mockCategories = ["Kita", "Versicherung", "Arzt"];
+
+const fullAnalysis: DocumentAnalysis = {
+  document_type: "school",
+  title: "Kita-Brief für Emma",
+  summary: "Ein Brief der Kita bezüglich der Anmeldung von Emma.",
+  family_members: [
+    { person_id: "member-1", name: "Emma", confidence: 0.95 },
+  ],
+  organizations: [
+    { name: "Kita Sonnenschein", type: "Kita", confidence: 0.9 },
+  ],
+  dates: [
+    { date: "2026-08-15", type: "deadline", label: "Anmeldefrist", confidence: 0.88 },
+  ],
+  amounts: [
+    { amount: "150", currency: "EUR", label: "Anmeldegebühr", confidence: 0.82 },
+  ],
+  tasks: [
+    {
+      title: "Anmeldung abschicken",
+      due_date: "2026-08-15",
+      priority: "high",
+      confidence: 0.91,
+    },
+  ],
+  suggested_category: "Kita",
+  tags: ["Anmeldung", "Kita", "Emma"],
+  needs_user_review: false,
+};
+
+const lowConfidenceAnalysis: DocumentAnalysis = {
+  document_type: "school",
+  title: "Kita-Brief",
+  summary: "Ein Brief der Kita.",
+  family_members: [
+    { person_id: null, name: "Emma", confidence: 0.55 },
+  ],
+  organizations: [],
+  dates: [],
+  amounts: [],
+  tasks: [],
+  suggested_category: "Kita",
+  tags: [],
+  needs_user_review: true,
+};
+
+const emptyAnalysis: DocumentAnalysis = {
+  document_type: "other",
+  title: "Dokument",
+  summary: "",
+  family_members: [],
+  organizations: [],
+  dates: [],
+  amounts: [],
+  tasks: [],
+  suggested_category: "Sonstiges",
+  tags: [],
+  needs_user_review: false,
+};
+
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(fetchFamilyMembers).mockResolvedValue(mockFamilyMembers);
+  vi.mocked(fetchExistingCategories).mockResolvedValue(mockCategories);
+});
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("ReviewCard", () => {
+  // ---------------------------------------------------------------------------
+  // Analyzing / loading state (skeleton)
+  // ---------------------------------------------------------------------------
+
+  it("renders a skeleton when status is 'analyzing'", () => {
+    render(
+      <ReviewCard documentId="doc-1" status="analyzing" />,
+    );
+    expect(screen.getByTestId("review-card-skeleton")).toBeDefined();
+  });
+
+  it("does not render the confirm button during analyzing", () => {
+    render(
+      <ReviewCard documentId="doc-1" status="analyzing" />,
+    );
+    expect(screen.queryByTestId("confirm-button")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Failed state
+  // ---------------------------------------------------------------------------
+
+  it("renders an error state when status is 'failed'", () => {
+    render(
+      <ReviewCard
+        documentId="doc-1"
+        status="failed"
+        errorMessage="OpenAI: API-Fehler"
+      />,
+    );
+    expect(screen.getByTestId("review-card-error")).toBeDefined();
+    expect(screen.getByText("OpenAI: API-Fehler")).toBeDefined();
+  });
+
+  it("shows a retry button in the error state", () => {
+    render(
+      <ReviewCard documentId="doc-1" status="failed" />,
+    );
+    expect(screen.getByTestId("review-retry-button")).toBeDefined();
+  });
+
+  it("calls onRetry when the retry button is clicked", () => {
+    const onRetry = vi.fn();
+    render(
+      <ReviewCard documentId="doc-1" status="failed" onRetry={onRetry} />,
+    );
+    fireEvent.click(screen.getByTestId("review-retry-button"));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a default error message when errorMessage is null", () => {
+    render(
+      <ReviewCard documentId="doc-1" status="failed" errorMessage={null} />,
+    );
+    expect(
+      screen.getByText(/Die Analyse konnte nicht abgeschlossen werden/),
+    ).toBeDefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Confirmed state
+  // ---------------------------------------------------------------------------
+
+  it("renders a confirmed state when status is 'confirmed'", () => {
+    render(
+      <ReviewCard documentId="doc-1" status="confirmed" />,
+    );
+    expect(screen.getByTestId("review-card-confirmed")).toBeDefined();
+    expect(screen.queryByTestId("confirm-button")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Analyzed state — full content
+  // ---------------------------------------------------------------------------
+
+  it("renders the review card with all fields when analyzed", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    // Wait for the analysis to load.
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    // Headline
+    expect(screen.getByTestId("review-headline")).toBeDefined();
+    expect(screen.getByText(/Ich glaube/)).toBeDefined();
+
+    // Summary
+    expect(screen.getByTestId("review-summary")).toBeDefined();
+
+    // All field sections
+    expect(screen.getByTestId("review-persons")).toBeDefined();
+    expect(screen.getByTestId("review-organizations")).toBeDefined();
+    expect(screen.getByTestId("review-dates")).toBeDefined();
+    expect(screen.getByTestId("review-amounts")).toBeDefined();
+    expect(screen.getByTestId("review-tasks")).toBeDefined();
+    expect(screen.getByTestId("review-category")).toBeDefined();
+    expect(screen.getByTestId("review-tags")).toBeDefined();
+  });
+
+  it("shows the German analysis headline with document type and person", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-headline")).toBeDefined();
+    });
+
+    // "Ich glaube, das ist ein Schule für Emma"
+    // (document_type is "school" → label "Schule")
+    expect(screen.getByText(/Ich glaube, das ist.*Schule.*Emma/)).toBeDefined();
+  });
+
+  it("shows 'Alles bestätigen' button enabled when analyzed", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-button")).toBeDefined();
+    });
+
+    const confirmButton = screen.getByTestId("confirm-button");
+    expect(confirmButton.getAttribute("disabled")).toBeNull();
+  });
+
+  it("shows 'Neu analysieren' button when analyzed", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("reanalyze-button")).toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Confidence badges
+  // ---------------------------------------------------------------------------
+
+  it("renders confidence badges for entities", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    const badges = screen.getAllByTestId("confidence-badge");
+    // Should have badges for: person, organization, date, amount, task
+    expect(badges.length).toBeGreaterThanOrEqual(5);
+  });
+
+  // ---------------------------------------------------------------------------
+  // needs_user_review visual emphasis
+  // ---------------------------------------------------------------------------
+
+  it("shows 'Überprüfung nötig' badge when needs_user_review is true", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-needed-badge")).toBeDefined();
+    });
+  });
+
+  it("does not show 'Überprüfung nötig' badge when needs_user_review is false", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("review-needed-badge")).toBeNull();
+  });
+
+  it("applies highlight styling to the card when needs_user_review is true", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    const card = screen.getByTestId("review-card");
+    expect(card.getAttribute("data-needs-review")).toBe("true");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Disambiguation prompt
+  // ---------------------------------------------------------------------------
+
+  it("shows disambiguation prompt for low-confidence person with multiple family members", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("disambiguation-prompt")).toBeDefined();
+    });
+
+    // Should show candidate family member options
+    expect(
+      screen.getByTestId("disambiguation-option-member-1"),
+    ).toBeDefined();
+    expect(
+      screen.getByTestId("disambiguation-option-member-2"),
+    ).toBeDefined();
+  });
+
+  it("does not show disambiguation prompt when all persons have high confidence", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("disambiguation-prompt")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Edit person flow
+  // ---------------------------------------------------------------------------
+
+  it("renders a person edit dropdown with family members", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    const select = screen.getByTestId("person-edit-select");
+    expect(select).toBeDefined();
+
+    // Should have options for each family member.
+    const options = select.querySelectorAll("option");
+    const optionTexts = Array.from(options).map((o) => o.textContent);
+    expect(optionTexts).toContain("Emma (Kind)");
+    expect(optionTexts).toContain("Hanna (Kind)");
+  });
+
+  it("marks person as 'bearbeitet' after editing", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    // Initially no edited tag.
+    expect(screen.queryAllByTestId("edited-tag").length).toBe(0);
+
+    // Change the person.
+    const select = screen.getByTestId(
+      "person-edit-select",
+    ) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "member-2" } });
+
+    // Should now show the edited tag.
+    await waitFor(() => {
+      expect(screen.getAllByTestId("edited-tag").length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Edit category flow
+  // ---------------------------------------------------------------------------
+
+  it("renders a category edit control with existing categories", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    const select = screen.getByTestId("category-edit-select");
+    expect(select).toBeDefined();
+
+    const options = select.querySelectorAll("option");
+    const optionTexts = Array.from(options).map((o) => o.textContent);
+    expect(optionTexts).toContain("Kita");
+    expect(optionTexts).toContain("Versicherung");
+    expect(optionTexts).toContain("Arzt");
+  });
+
+  it("marks category as 'bearbeitet' after editing", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    // Change the category.
+    const select = screen.getByTestId(
+      "category-edit-select",
+    ) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "Versicherung" } });
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("edited-tag").length).toBeGreaterThan(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Delete task flow
+  // ---------------------------------------------------------------------------
+
+  it("removes a task when the delete button is clicked", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-task-0")).toBeDefined();
+    });
+
+    // Click delete.
+    fireEvent.click(screen.getByTestId("delete-task-0"));
+
+    // Task should be removed from the UI.
+    await waitFor(() => {
+      expect(screen.queryByTestId("review-task-0")).toBeNull();
+    });
+  });
+
+  it("shows empty tasks message when all tasks are deleted", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-task-0")).toBeDefined();
+    });
+
+    // Delete the only task.
+    fireEvent.click(screen.getByTestId("delete-task-0"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("Alle Aufgaben wurden entfernt."),
+      ).toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Empty / partial extraction
+  // ---------------------------------------------------------------------------
+
+  it("renders gracefully with an empty extraction (no entities)", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(emptyAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    // Should still render the card and confirm button.
+    expect(screen.getByTestId("confirm-button")).toBeDefined();
+    expect(screen.getByTestId("review-headline")).toBeDefined();
+
+    // Should not render empty field sections.
+    expect(screen.queryByTestId("review-persons")).toBeNull();
+    expect(screen.queryByTestId("review-organizations")).toBeNull();
+    expect(screen.queryByTestId("review-tasks")).toBeNull();
+    expect(screen.queryByTestId("review-tags")).toBeNull();
+
+    // Category is always shown.
+    expect(screen.getByTestId("review-category")).toBeDefined();
+  });
+
+  it("does not render the summary section when summary is empty", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(emptyAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("review-summary")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Re-analyze
+  // ---------------------------------------------------------------------------
+
+  it("calls the analyze API when 'Neu analysieren' is clicked", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "analyzed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("reanalyze-button")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("reanalyze-button"));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/documents/doc-1/analyze",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Confirm
+  // ---------------------------------------------------------------------------
+
+  it("calls the confirm API when 'Alles bestätigen' is clicked", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-button")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/documents/doc-1/confirm",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("shows confirmed state after successful confirm", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-button")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card-confirmed")).toBeDefined();
+    });
+  });
+
+  it("shows an error message when confirm fails", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({ error: "Bestätigung fehlgeschlagen." }),
+        { status: 500 },
+      ),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-button")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Bestätigung fehlgeschlagen.")).toBeDefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Tags
+  // ---------------------------------------------------------------------------
+
+  it("renders tags as pills", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-tags")).toBeDefined();
+    });
+
+    const tagsSection = screen.getByTestId("review-tags");
+    expect(within(tagsSection).getByText("Anmeldung")).toBeDefined();
+    expect(within(tagsSection).getByText("Kita")).toBeDefined();
+    expect(within(tagsSection).getByText("Emma")).toBeDefined();
+  });
+});

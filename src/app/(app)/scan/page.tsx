@@ -9,6 +9,8 @@ import {
   AlertCircle,
   RefreshCw,
   ScanLine,
+  ChevronDown,
+  ChevronUp,
   type LucideIcon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -25,6 +27,7 @@ import {
 import type { Database } from "@/types/database";
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
+import { ReviewCard } from "@/components/ordilo/review-card";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -76,6 +79,11 @@ export default function ScanPage() {
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
+  // Track which document is expanded to show the Review Card.
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
+  // Track documents for which analysis has been auto-triggered (to avoid
+  // duplicate calls when the polling effect re-runs).
+  const triggeredAnalysisRef = useRef<Set<string>>(new Set());
 
   // Refs for file inputs (to reset them after selection).
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -274,6 +282,61 @@ export default function ScanPage() {
     [fetchDocuments],
   );
 
+  // --- Trigger analysis for a document ---
+  const triggerAnalysis = useCallback(
+    async (documentId: string) => {
+      try {
+        const response = await fetch(
+          `/api/documents/${documentId}/analyze`,
+          { method: "POST" },
+        );
+        if (response.ok) {
+          // Analysis succeeded — refetch to get the analyzed state.
+          await fetchDocuments();
+        } else {
+          // Analysis failed — refetch to get the failed status.
+          await fetchDocuments();
+        }
+      } catch {
+        // Network error — refetch to get the current status.
+        await fetchDocuments();
+      }
+    },
+    [fetchDocuments],
+  );
+
+  // --- Auto-trigger analysis when a document reaches ocr_done ---
+  // When OCR completes, automatically start the LLM analysis so the
+  // user sees the Review Card without an extra manual step.
+  useEffect(() => {
+    for (const doc of documents) {
+      if (
+        doc.status === "ocr_done" &&
+        !triggeredAnalysisRef.current.has(doc.id)
+      ) {
+        triggeredAnalysisRef.current.add(doc.id);
+        // Optimistically update status to analyzing.
+        setDocuments((prev) =>
+          prev.map((d) =>
+            d.id === doc.id
+              ? { ...d, status: "analyzing", error_message: null }
+              : d,
+          ),
+        );
+        triggerAnalysis(doc.id);
+      }
+    }
+  }, [documents, triggerAnalysis]);
+
+  // --- Handle confirm/re-analyze success from Review Card ---
+  const handleConfirmSuccess = useCallback(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
+
+  const handleReanalyzeSuccess = useCallback(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
+
   // --- File input handlers ---
   const handleCameraSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -459,22 +522,80 @@ export default function ScanPage() {
           </div>
         ) : hasDocuments ? (
           <div className="space-y-3" data-testid="document-list">
-            {documents.map((doc) => (
-              <DocumentCard
-                key={doc.id}
-                title={doc.title}
-                originalFilename={doc.original_filename}
-                mimeType={doc.mime_type}
-                status={doc.status}
-                createdAt={doc.created_at}
-                errorMessage={doc.error_message}
-                onRetry={
-                  doc.status === "failed"
-                    ? () => handleRetryOcr(doc.id)
-                    : undefined
-                }
-              />
-            ))}
+            {documents.map((doc) => {
+              // Documents in these statuses can show a Review Card
+              // when expanded.
+              const canShowReview = [
+                "analyzed",
+                "analyzing",
+                "failed",
+                "confirmed",
+              ].includes(doc.status);
+              const isExpanded = expandedDocId === doc.id;
+
+              return (
+                <div key={doc.id} className="space-y-2">
+                  <div className="relative">
+                    <DocumentCard
+                      title={doc.title}
+                      originalFilename={doc.original_filename}
+                      mimeType={doc.mime_type}
+                      status={doc.status}
+                      createdAt={doc.created_at}
+                      errorMessage={doc.error_message}
+                      onClick={
+                        canShowReview
+                          ? () =>
+                              setExpandedDocId((prev) =>
+                                prev === doc.id ? null : doc.id,
+                              )
+                          : undefined
+                      }
+                      onRetry={
+                        doc.status === "failed"
+                          ? () => handleRetryOcr(doc.id)
+                          : undefined
+                      }
+                    />
+                    {/* Expand/collapse indicator for reviewable documents */}
+                    {canShowReview && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedDocId((prev) =>
+                            prev === doc.id ? null : doc.id,
+                          )
+                        }
+                        className="absolute top-1/2 right-16 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        aria-label={
+                          isExpanded
+                            ? "Review schließen"
+                            : "Review öffnen"
+                        }
+                        aria-expanded={isExpanded}
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="size-4" aria-hidden="true" />
+                        ) : (
+                          <ChevronDown className="size-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    )}
+                  </div>
+                  {/* Review Card (shown when expanded) */}
+                  {canShowReview && isExpanded && (
+                    <ReviewCard
+                      documentId={doc.id}
+                      status={doc.status}
+                      errorMessage={doc.error_message}
+                      onConfirmSuccess={handleConfirmSuccess}
+                      onReanalyzeSuccess={handleReanalyzeSuccess}
+                      onRetry={() => triggerAnalysis(doc.id)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <EmptyState
