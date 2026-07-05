@@ -1,0 +1,464 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock the supabase server client.
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: vi.fn(),
+}));
+
+// Mock the search functions (partial mock — keep types, override functions).
+vi.mock("@/lib/ai/search", async (importOriginal) => {
+  const actual =
+    (await importOriginal()) as typeof import("@/lib/ai/search");
+  return {
+    ...actual,
+    semanticSearch: vi.fn(),
+    graphSearch: vi.fn(),
+  };
+});
+
+// Mock the chat AI module — override generateChatAnswer (which calls OpenAI),
+// but keep combineSearchResults (pure function) and ChatError (class) real.
+vi.mock("@/lib/ai/chat", async (importOriginal) => {
+  const actual =
+    (await importOriginal()) as typeof import("@/lib/ai/chat");
+  return {
+    ...actual,
+    generateChatAnswer: vi.fn(),
+  };
+});
+
+import { POST, GET } from "@/app/api/chat/route";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import {
+  semanticSearch,
+  graphSearch,
+} from "@/lib/ai/search";
+import { generateChatAnswer, ChatError } from "@/lib/ai/chat";
+import { EmbeddingError } from "@/lib/ai/embeddings";
+import { NO_RESULTS_FALLBACK } from "@/lib/schemas/chat";
+import type { SearchResult } from "@/lib/schemas/search";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
+const DOC_ID_1 = "550e8400-e29b-41d4-a716-446655440000";
+const DOC_ID_2 = "550e8400-e29b-41d4-a716-446655440001";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Create a JSON Request with the given body. */
+function createRequest(body: unknown): Request {
+  return new Request("http://localhost/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** A valid chat request body. */
+function validBody(overrides: Record<string, unknown> = {}) {
+  return {
+    message: "Zeig mir alle Briefe zur Einschulung von Emma",
+    family_id: FAMILY_ID,
+    ...overrides,
+  };
+}
+
+/** Mock the supabase server client to return an authenticated or unauthenticated user. */
+function mockServerClient(user: { id: string; email: string } | null) {
+  (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue({
+    auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user } }),
+    },
+  });
+}
+
+/** A semantic search result. */
+function semanticResult(
+  docId: string,
+  title: string,
+  chunkText: string,
+  score: number,
+): SearchResult {
+  return {
+    document_id: docId,
+    title,
+    chunk_text: chunkText,
+    score,
+    source: "semantic",
+  };
+}
+
+/** A graph person search result. */
+function graphPersonResult(
+  docId: string,
+  title: string,
+  personName: string,
+  score: number,
+): SearchResult {
+  return {
+    document_id: docId,
+    title,
+    chunk_text: `Person: ${personName}`,
+    score,
+    source: "graph:person",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/chat
+// ---------------------------------------------------------------------------
+
+describe("POST /api/chat", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Default: authenticated user
+    mockServerClient({ id: "user-1", email: "test@ordilo.test" });
+    // Default: search returns empty, chat returns a default answer
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "Antwort",
+    );
+  });
+
+  // --- Authentication (VAL-CHAT-002) ---
+
+  it("returns 401 when unauthenticated", async () => {
+    mockServerClient(null);
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("UNAUTHENTICATED");
+    expect(semanticSearch).not.toHaveBeenCalled();
+    expect(graphSearch).not.toHaveBeenCalled();
+  });
+
+  // --- Zod validation (VAL-CHAT-003) ---
+
+  it("returns 400 when message is missing", async () => {
+    const response = await POST(
+      createRequest({ family_id: FAMILY_ID }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+  });
+
+  it("returns 400 when family_id is missing", async () => {
+    const response = await POST(
+      createRequest({ message: "test question" }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+  });
+
+  it("returns 400 when message is empty", async () => {
+    const response = await POST(
+      createRequest({ message: "", family_id: FAMILY_ID }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+  });
+
+  it("returns 400 when message is whitespace only", async () => {
+    const response = await POST(
+      createRequest({ message: "   ", family_id: FAMILY_ID }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+  });
+
+  it("returns 400 when family_id is not a UUID", async () => {
+    const response = await POST(
+      createRequest({ message: "test", family_id: "not-a-uuid" }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+  });
+
+  it("returns 400 for invalid JSON body", async () => {
+    const response = await POST(
+      new Request("http://localhost/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "not valid json",
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_JSON");
+  });
+
+  // --- Hallucination fallback (VAL-CHAT-005) ---
+
+  it("returns fallback answer with empty sources when no results found", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+    expect(body.sources).toEqual([]);
+    // OpenAI should NOT be called when there are no sources
+    expect(generateChatAnswer).not.toHaveBeenCalled();
+  });
+
+  // --- Successful chat with sources (VAL-CHAT-001) ---
+
+  it("returns German answer with sources when results are found", async () => {
+    const semantic = [
+      semanticResult(DOC_ID_1, "Kita-Brief", "Einschulung am 15. August", 0.85),
+    ];
+    const graph = [
+      graphPersonResult(DOC_ID_1, "Kita-Brief", "Emma", 0.9),
+    ];
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue(semantic);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue(graph);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "Laut dem Kita-Brief wird Emma am 15. August eingeschult.",
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.answer).toBe(
+      "Laut dem Kita-Brief wird Emma am 15. August eingeschult.",
+    );
+    expect(body.sources).toHaveLength(1);
+    expect(body.sources[0].document_id).toBe(DOC_ID_1);
+    expect(body.sources[0].title).toBe("Kita-Brief");
+    expect(body.sources[0].excerpt).toBe("Einschulung am 15. August");
+    expect(body.sources[0].score).toBe(0.9);
+  });
+
+  // --- Combines semantic and graph search (VAL-CHAT-007) ---
+
+  it("calls both semanticSearch and graphSearch", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Brief", "Inhalt", 0.8),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      graphPersonResult(DOC_ID_2, "Brief 2", "Emma", 0.9),
+    ]);
+
+    await POST(createRequest(validBody()));
+
+    expect(semanticSearch).toHaveBeenCalledTimes(1);
+    expect(graphSearch).toHaveBeenCalledTimes(1);
+    // Verify family_id and message are passed correctly
+    const semanticArgs = (
+      semanticSearch as ReturnType<typeof vi.fn>
+    ).mock.calls[0];
+    expect(semanticArgs[1]).toBe("Zeig mir alle Briefe zur Einschulung von Emma");
+    expect(semanticArgs[2]).toBe(FAMILY_ID);
+  });
+
+  it("combines sources from both semantic and graph search", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Stromrechnung", "Betrag: 45 EUR", 0.8),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      graphPersonResult(DOC_ID_2, "Kita-Brief", "Emma", 0.9),
+    ]);
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.sources).toHaveLength(2);
+    const docIds = body.sources.map((s: { document_id: string }) => s.document_id);
+    expect(docIds).toContain(DOC_ID_1);
+    expect(docIds).toContain(DOC_ID_2);
+  });
+
+  it("deduplicates sources when both searches find the same document", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Kita-Brief", "Einschulung", 0.85),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      graphPersonResult(DOC_ID_1, "Kita-Brief", "Emma", 0.95),
+    ]);
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(body.sources).toHaveLength(1);
+    expect(body.sources[0].document_id).toBe(DOC_ID_1);
+    // Should prefer the semantic excerpt
+    expect(body.sources[0].excerpt).toBe("Einschulung");
+    // Should take the max score
+    expect(body.sources[0].score).toBe(0.95);
+  });
+
+  // --- Special characters (VAL-CHAT-034) ---
+
+  it("handles umlauts and special characters in the message", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    const response = await POST(
+      createRequest({
+        message: 'Müller & Söhne "Rechnung" — äöü',
+        family_id: FAMILY_ID,
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    // No results → fallback (no 500 error from special chars)
+    expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+  });
+
+  // --- Error handling (VAL-CHAT-011) ---
+
+  it("returns 502 when embedding generation fails (EmbeddingError)", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new EmbeddingError("OpenAI error", "OPENAI_API_ERROR", 500),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.code).toBe("OPENAI_API_ERROR");
+    expect(body.error).toBeDefined();
+  });
+
+  it("returns 502 when embedding auth fails (401 EmbeddingError)", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new EmbeddingError("Auth failed", "OPENAI_AUTH_ERROR", 401),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("OPENAI_AUTH_ERROR");
+  });
+
+  it("returns 500 when graph search fails with a generic error", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("DB error"),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.code).toBe("SEARCH_FAILED");
+  });
+
+  it("returns 500 when generateChatAnswer fails (ChatError, no status)", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Brief", "Inhalt", 0.9),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ChatError("Chat failed", "OPENAI_API_ERROR", 500),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.code).toBe("OPENAI_API_ERROR");
+  });
+
+  it("returns 401 when OpenAI auth fails (ChatError 401)", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Brief", "Inhalt", 0.9),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ChatError("Auth failed", "OPENAI_AUTH_ERROR", 401),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("OPENAI_AUTH_ERROR");
+  });
+
+  it("returns 429 when OpenAI rate limit (ChatError 429)", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Brief", "Inhalt", 0.9),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ChatError("Rate limited", "OPENAI_RATE_LIMITED", 429),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.code).toBe("OPENAI_RATE_LIMITED");
+  });
+
+  it("returns 500 with structured error for unexpected errors", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Brief", "Inhalt", 0.9),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new Error("Unexpected error"),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.code).toBe("CHAT_FAILED");
+    expect(body.error).toBeDefined();
+  });
+
+  it("does not expose the OpenAI API key in the response", async () => {
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Brief", "Inhalt", 0.9),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "Antwort",
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+    const bodyStr = JSON.stringify(body);
+
+    expect(bodyStr).not.toContain("OPENAI_API_KEY");
+    expect(bodyStr).not.toContain("api_key");
+    expect(bodyStr).not.toContain("sk-");
+  });
+
+  // --- Method not allowed ---
+
+  it("GET returns 405", async () => {
+    const response = await GET();
+    const body = await response.json();
+
+    expect(response.status).toBe(405);
+    expect(body.code).toBe("METHOD_NOT_ALLOWED");
+  });
+});
