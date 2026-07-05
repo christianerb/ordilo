@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatGermanDate } from "@/lib/format";
+import { formatGermanDate, toDateInputValue } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
 // formatGermanDate
@@ -45,5 +45,63 @@ describe("formatGermanDate", () => {
   it("preserves the date as-is (no timezone shift)", () => {
     // The date should not be shifted by timezone — it's a pure string format.
     expect(formatGermanDate("1985-06-15")).toBe("15.06.1985");
+  });
+
+  it("strips a time component from an ISO datetime string", () => {
+    expect(formatGermanDate("2026-07-15T18:00:00")).toBe("15.07.2026");
+  });
+
+  it("strips a space-separated time component", () => {
+    expect(formatGermanDate("2026-07-15 18:00:00")).toBe("15.07.2026");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// toDateInputValue
+// ---------------------------------------------------------------------------
+
+describe("toDateInputValue", () => {
+  it("strips a time component from an ISO datetime string", () => {
+    expect(toDateInputValue("2026-07-15T18:00:00")).toBe("2026-07-15");
+  });
+
+  it("strips a space-separated time component", () => {
+    expect(toDateInputValue("2026-07-15 18:00:00")).toBe("2026-07-15");
+  });
+
+  it("returns a plain yyyy-MM-dd date unchanged", () => {
+    expect(toDateInputValue("2026-07-15")).toBe("2026-07-15");
+  });
+
+  it("handles a date at the start of the year", () => {
+    expect(toDateInputValue("2000-01-01")).toBe("2000-01-01");
+  });
+
+  it("handles a date at the end of the year", () => {
+    expect(toDateInputValue("1999-12-31")).toBe("1999-12-31");
+  });
+
+  it("returns empty string for null input", () => {
+    expect(toDateInputValue(null)).toBe("");
+  });
+
+  it("returns empty string for empty string", () => {
+    expect(toDateInputValue("")).toBe("");
+  });
+
+  it("returns empty string for undefined", () => {
+    expect(toDateInputValue(undefined)).toBe("");
+  });
+
+  it("returns empty string for an invalid date string", () => {
+    expect(toDateInputValue("not-a-date")).toBe("");
+  });
+
+  it("returns empty string for a partial date", () => {
+    expect(toDateInputValue("2026-07")).toBe("");
+  });
+
+  it("returns empty string for a date with non-numeric parts", () => {
+    expect(toDateInputValue("20ab-07-15")).toBe("");
   });
 });

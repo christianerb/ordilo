@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   Check,
   RefreshCw,
@@ -32,7 +32,7 @@ import {
   fetchExistingCategories,
   type FamilyMemberOption,
 } from "@/lib/analysis";
-import { formatGermanDate } from "@/lib/format";
+import { formatGermanDate, toDateInputValue } from "@/lib/format";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1097,11 +1097,16 @@ function PersonEditControl({
   familyMembers: FamilyMemberOption[];
   onChange: (memberId: string | null) => void;
 }) {
+  const reactId = useId();
+  const selectId = `review-person-${reactId}`;
+
   if (familyMembers.length === 0) return null;
 
   return (
     <div className="relative">
       <select
+        id={selectId}
+        name="review-person"
         value={value ?? ""}
         onChange={(e) => onChange(e.target.value || null)}
         className="appearance-none rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -1136,6 +1141,9 @@ function CategoryEditControl({
   existingCategories: string[];
   onChange: (category: string) => void;
 }) {
+  const reactId = useId();
+  const selectId = `review-category-${reactId}`;
+  const inputId = `review-category-input-${reactId}`;
   const [isFreeText, setIsFreeText] = useState(false);
   const [freeTextValue, setFreeTextValue] = useState("");
 
@@ -1146,6 +1154,8 @@ function CategoryEditControl({
     return (
       <div className="flex items-center gap-1">
         <input
+          id={inputId}
+          name="review-category"
           type="text"
           value={freeTextValue || value}
           onChange={(e) => {
@@ -1174,6 +1184,8 @@ function CategoryEditControl({
   return (
     <div className="relative">
       <select
+        id={selectId}
+        name="review-category"
         value={value}
         onChange={(e) => {
           if (e.target.value === "__free__") {
@@ -1221,6 +1233,8 @@ function DateEditControl({
   compact?: boolean;
   showAddButton?: boolean;
 }) {
+  const reactId = useId();
+  const inputId = `review-date-${reactId}`;
   const [isEditing, setIsEditing] = useState(false);
 
   if (showAddButton && !isEditing) {
@@ -1254,8 +1268,10 @@ function DateEditControl({
 
   return (
     <input
+      id={inputId}
+      name="review-date"
       type="date"
-      value={value}
+      value={toDateInputValue(value)}
       onChange={(e) => onChange(e.target.value)}
       onBlur={() => setIsEditing(false)}
       autoFocus={isEditing}
