@@ -469,4 +469,98 @@ describe("answerCitesSources", () => {
       ]),
     ).toBe(true);
   });
+
+  // --- Punctuation-insensitive content matching (chat-api-citation-fallback-hardening) ---
+
+  it("recognizes content citation when the answer drops a period present in the excerpt", () => {
+    // Excerpt has "15." (with period), answer has "15" (without).
+    const excerpt = "am 15. August stattfinden die";
+    const answer = "am 15 August stattfinden die Feierlichkeiten.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(true);
+  });
+
+  it("recognizes content citation when the answer adds a period not present in the excerpt", () => {
+    // Excerpt has "15" (no period), answer has "15." (with period).
+    const excerpt = "am 15 August stattfinden die";
+    const answer = "am 15. August stattfinden die Feierlichkeiten.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(true);
+  });
+
+  it("recognizes content citation when comma and period differ in numbers", () => {
+    // Excerpt uses comma decimal separator, answer uses period.
+    const excerpt = "Betrag von 45,50 Euro laut";
+    const answer = "Der Betrag von 45.50 Euro laut Rechnung ist bezahlt.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(true);
+  });
+
+  it("recognizes content citation when quotation marks differ between excerpt and answer", () => {
+    // Excerpt has double quotes around "Einschulung", answer does not.
+    const excerpt = 'Die "Einschulung" findet am 15. August';
+    const answer = "Die Einschulung findet am 15 August statt.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(true);
+  });
+
+  it("recognizes content citation with both casing and punctuation differences", () => {
+    const excerpt = "Einschulung am 15. August";
+    const answer = "DIE EINSCHULUNG AM 15 AUGUST IST BESTÄTIGT.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(true);
+  });
+
+  it("recognizes content citation with null title and punctuation differences (no false fail-closed)", () => {
+    // Title is null → only content matching can fire. Punctuation differs
+    // but the content citation must still be recognized.
+    const excerpt = "am 15. August stattfinden die";
+    const answer = "am 15 August stattfinden die Feierlichkeiten.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(true);
+  });
+
+  it("recognizes content citation with short title and punctuation differences (no false fail-closed)", () => {
+    // Title "T" is too short for title matching → only content matching.
+    const excerpt = "am 15. August stattfinden die";
+    const answer = "am 15 August stattfinden die Feierlichkeiten.";
+    expect(
+      answerCitesSources(answer, [source("T", excerpt)]),
+    ).toBe(true);
+  });
+
+  it("title matching normalizes punctuation: recognizes title with hyphen when answer uses space", () => {
+    // Title "Kita-Brief" has a hyphen; the answer writes "Kita Brief" (space).
+    const answer = "Laut dem Kita Brief wird Emma eingeschult.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief")]),
+    ).toBe(true);
+  });
+
+  it("still fails closed when the answer does not match any content even with punctuation normalization", () => {
+    // Punctuation normalization must not weaken the guardrail: a completely
+    // unrelated answer still fails the citation check.
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Irgendeine völlig andere Antwort ohne Bezug.";
+    expect(
+      answerCitesSources(answer, [source(null, excerpt)]),
+    ).toBe(false);
+  });
+
+  it("still fails closed when a short sub-threshold phrase matches only after punctuation removal", () => {
+    // "am 15. August" is only 3 words — below MIN_CONTENT_FRAGMENT_WORDS.
+    // Even with punctuation removed, a 3-word match must NOT pass the
+    // citation check (the word-count threshold is still meaningful).
+    const excerpt = "Einschulung am 15. August";
+    const answer = "Die Einschulung findet am 15 August statt.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief", excerpt)]),
+    ).toBe(false);
+  });
 });

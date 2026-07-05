@@ -173,6 +173,41 @@ export function combineSearchResults(
 }
 
 // ---------------------------------------------------------------------------
+// Fallback reconciliation
+// ---------------------------------------------------------------------------
+
+/**
+ * Reconcile the answer and sources so they are never mutually
+ * contradictory.
+ *
+ * When the model emits the `NO_RESULTS_FALLBACK` answer (the provided
+ * sources do not answer the question), the sources array must be emptied
+ * so the response never returns a "no document found" answer together
+ * with a non-empty sources array (chat-api-citation-fallback-hardening).
+ *
+ * This handles the post-generation case: the route already guards the
+ * pre-generation case (returning the fallback directly when no sources
+ * are found). But the model can still emit the fallback text even when
+ * relevant sources exist (the system prompt instructs it to do so when
+ * the sources don't answer the question). In that case the sources must
+ * be reconciled to empty so the two outputs never contradict each other.
+ *
+ * @param answer - The generated answer text (after guardrails).
+ * @param sources - The source documents provided as context.
+ * @returns The sources array to return in the response: an empty array
+ *          if the answer is the fallback, otherwise the original sources.
+ */
+export function reconcileFallbackSources(
+  answer: string,
+  sources: ChatSource[],
+): ChatSource[] {
+  if (answer.trim() === NO_RESULTS_FALLBACK) {
+    return [];
+  }
+  return sources;
+}
+
+// ---------------------------------------------------------------------------
 // System prompt
 // ---------------------------------------------------------------------------
 

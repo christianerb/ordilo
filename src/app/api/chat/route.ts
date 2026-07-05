@@ -6,6 +6,7 @@ import {
   generateChatAnswer,
   combineSearchResults,
   filterByRelevanceThreshold,
+  reconcileFallbackSources,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -141,7 +142,12 @@ export async function POST(
   // 6. Call OpenAI GPT-4.1 Mini to generate the answer --------------------
   try {
     const answer = await generateChatAnswer(parsed.message, sources);
-    const body: ChatSuccessResponse = { answer, sources };
+    // Reconcile: if the model emitted the fallback answer (the sources
+    // don't answer the question), empty the sources array so the fallback
+    // is never returned together with non-empty sources. The two outputs
+    // must never contradict each other (chat-api-citation-fallback-hardening).
+    const reconciledSources = reconcileFallbackSources(answer, sources);
+    const body: ChatSuccessResponse = { answer, sources: reconciledSources };
     return Response.json(body, { status: 200 });
   } catch (err) {
     // ChatError from OpenAI chat completion failure

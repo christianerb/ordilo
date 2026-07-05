@@ -327,6 +327,50 @@ describe("POST /api/chat", () => {
     }
   });
 
+  // --- Model-emitted fallback reconciliation (chat-api-citation-fallback-hardening) ---
+
+  it("reconciles sources to empty when the model emits the fallback answer with sources present", async () => {
+    // Sources exist (above threshold), but the model decides they don't
+    // answer the question and emits the fallback. The route must reconcile
+    // so the fallback is never returned with a non-empty sources array.
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Kita-Brief", "Einschulung am 15. August", 0.85),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      NO_RESULTS_FALLBACK,
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+    // Sources MUST be empty — the fallback and sources must never contradict
+    expect(body.sources).toEqual([]);
+    // OpenAI WAS called (sources existed before reconciliation)
+    expect(generateChatAnswer).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves sources when the model emits a normal cited answer", async () => {
+    // Normal case: model emits a real answer → sources are preserved.
+    (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([
+      semanticResult(DOC_ID_1, "Kita-Brief", "Einschulung am 15. August", 0.85),
+    ]);
+    (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    (generateChatAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.answer).not.toBe(NO_RESULTS_FALLBACK);
+    expect(body.sources).toHaveLength(1);
+    expect(body.sources[0].document_id).toBe(DOC_ID_1);
+  });
+
   // --- Successful chat with sources (VAL-CHAT-001) ---
 
   it("returns German answer with sources when results are found", async () => {

@@ -41,6 +41,7 @@ import {
   buildChatUserMessage,
   generateChatAnswer,
   filterByRelevanceThreshold,
+  reconcileFallbackSources,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -48,6 +49,7 @@ import {
   FAIL_CLOSED_HEDGING,
   FAIL_CLOSED_CITATION,
   containsHedgingLanguage,
+  type ChatSource,
 } from "@/lib/schemas/chat";
 import { RELEVANCE_THRESHOLD } from "@/lib/ai/search";
 import type { SearchResult } from "@/lib/schemas/search";
@@ -309,6 +311,75 @@ describe("combineSearchResults", () => {
     expect(result).toHaveLength(2);
     expect(result[0].document_id).toBe("doc-1");
     expect(result[1].document_id).toBe("doc-2");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reconcileFallbackSources
+// ---------------------------------------------------------------------------
+
+describe("reconcileFallbackSources", () => {
+  function sources(): ChatSource[] {
+    return [
+      {
+        document_id: "doc-1",
+        title: "Kita-Brief",
+        excerpt: "Einschulung am 15. August",
+        score: 0.85,
+      },
+      {
+        document_id: "doc-2",
+        title: "Stromrechnung",
+        excerpt: "Betrag: 45 EUR",
+        score: 0.8,
+      },
+    ];
+  }
+
+  it("empties sources when the answer is the no-results fallback", () => {
+    expect(reconcileFallbackSources(NO_RESULTS_FALLBACK, sources())).toEqual([]);
+  });
+
+  it("preserves sources when the answer is a normal cited answer", () => {
+    const srcs = sources();
+    expect(
+      reconcileFallbackSources(
+        "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
+        srcs,
+      ),
+    ).toEqual(srcs);
+  });
+
+  it("empties sources when the answer is the fallback with surrounding whitespace", () => {
+    expect(
+      reconcileFallbackSources(`  ${NO_RESULTS_FALLBACK}  `, sources()),
+    ).toEqual([]);
+  });
+
+  it("preserves sources when the answer is a fail-closed hedging message (not the fallback)", () => {
+    // Fail-closed messages are not the fallback — sources are preserved.
+    const srcs = sources();
+    expect(reconcileFallbackSources(FAIL_CLOSED_HEDGING, srcs)).toEqual(srcs);
+  });
+
+  it("preserves sources when the answer is a fail-closed citation message (not the fallback)", () => {
+    const srcs = sources();
+    expect(reconcileFallbackSources(FAIL_CLOSED_CITATION, srcs)).toEqual(srcs);
+  });
+
+  it("preserves sources when the answer is an empty string", () => {
+    const srcs = sources();
+    expect(reconcileFallbackSources("", srcs)).toEqual(srcs);
+  });
+
+  it("returns empty array when sources are already empty and answer is fallback", () => {
+    expect(reconcileFallbackSources(NO_RESULTS_FALLBACK, [])).toEqual([]);
+  });
+
+  it("returns the same array reference when sources are not reconciled", () => {
+    // No unnecessary copy when the answer is not the fallback.
+    const srcs = sources();
+    expect(reconcileFallbackSources("Laut dem Brief...", srcs)).toBe(srcs);
   });
 });
 

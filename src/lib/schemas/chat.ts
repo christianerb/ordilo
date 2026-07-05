@@ -186,12 +186,22 @@ export const FAIL_CLOSED_CITATION =
   "Die generierte Antwort nennt keine Quelle und wird daher nicht angezeigt. Bitte stelle die Frage erneut.";
 
 /**
- * Normalize whitespace in a string: collapse runs of whitespace to a single
- * space and trim. Used for content-fragment matching so that formatting
- * differences do not prevent a match.
+ * Normalize text for citation comparison: lowercase, replace punctuation
+ * with spaces, collapse whitespace, and trim.
+ *
+ * This makes content and title matching robust to punctuation and casing
+ * differences between the answer and the source excerpt/title (e.g.
+ * "am 15. August" vs "am 15 August", or "Kita-Brief" vs "Kita Brief").
+ * Unicode letters (including German umlauts ä, ö, ü, ß) and digits are
+ * preserved; all other characters (punctuation, symbols) are replaced
+ * with spaces so that word boundaries are maintained after normalization.
  */
-function normalizeWhitespace(text: string): string {
-  return text.trim().replace(/\s+/g, " ");
+function normalizeForComparison(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -202,11 +212,16 @@ function normalizeWhitespace(text: string): string {
  * is at least `MIN_CONTENT_FRAGMENT_CHARS` are returned (shorter fragments
  * are too generic to verify citation).
  *
+ * The excerpt is normalized via `normalizeForComparison` (lowercase,
+ * punctuation replaced with spaces, whitespace collapsed) before
+ * extracting fragments, so that punctuation and casing differences
+ * between the answer and the excerpt do not prevent a match.
+ *
  * @param excerpt - The source excerpt (document content snippet).
  * @returns Array of normalized content fragment strings.
  */
 function extractContentFragments(excerpt: string): string[] {
-  const normalized = normalizeWhitespace(excerpt);
+  const normalized = normalizeForComparison(excerpt);
   if (!normalized) return [];
 
   const words = normalized.split(" ");
@@ -234,13 +249,17 @@ function extractContentFragments(excerpt: string): string[] {
  * once or fails closed (VAL-CHAT-004).
  *
  * Validation strategy (title OR content):
- *   1. **Title matching**: the answer (case-insensitive, whitespace-
- *      normalized) contains a checkable source title (non-null, trimmed,
+ *   1. **Title matching**: the answer (lowercased, punctuation-stripped,
+ *      whitespace-normalized) contains a checkable source title (non-null,
+ *      trimmed, raw length >= MIN_CITATION_TITLE_LENGTH, and normalized
  *      length >= MIN_CITATION_TITLE_LENGTH).
  *   2. **Content matching**: the answer contains a checkable content
  *      fragment extracted from a source excerpt (a distinctive sequence
  *      of MIN_CONTENT_FRAGMENT_WORDS consecutive words, at least
- *      MIN_CONTENT_FRAGMENT_CHARS characters long).
+ *      MIN_CONTENT_FRAGMENT_CHARS characters long). Both the answer and
+ *      the excerpt are normalized (lowercase, punctuation replaced with
+ *      spaces, whitespace collapsed) before comparison, so punctuation
+ *      and casing differences do not prevent a match.
  *
  * Rules:
  *   - The no-results fallback ("Ich finde dazu kein Dokument.") is always
@@ -271,22 +290,31 @@ export function answerCitesSources(
   // handles the no-results case by returning the fallback directly).
   if (sources.length === 0) return true;
 
-  const normalizedAnswer = normalizeWhitespace(answer).toLowerCase();
+  const normalizedAnswer = normalizeForComparison(answer);
 
   // Check each source for a title match OR a content-fragment match.
   for (const source of sources) {
     // --- Title matching ---
     const title = source.title?.trim();
     if (title && title.length >= MIN_CITATION_TITLE_LENGTH) {
-      if (normalizedAnswer.includes(title.toLowerCase())) {
+      const normalizedTitle = normalizeForComparison(title);
+      // Skip titles that normalize to fewer than MIN_CITATION_TITLE_LENGTH
+      // characters (e.g. "Dr." → "dr") — they are too generic for a
+      // reliable substring match after punctuation removal.
+      if (
+        normalizedTitle.length >= MIN_CITATION_TITLE_LENGTH &&
+        normalizedAnswer.includes(normalizedTitle)
+      ) {
         return true;
       }
     }
 
     // --- Content matching ---
+    // Fragments are already normalized (lowercase, punctuation-stripped)
+    // by extractContentFragments, so a direct substring check suffices.
     const fragments = extractContentFragments(source.excerpt);
     for (const fragment of fragments) {
-      if (normalizedAnswer.includes(fragment.toLowerCase())) {
+      if (normalizedAnswer.includes(fragment)) {
         return true;
       }
     }
