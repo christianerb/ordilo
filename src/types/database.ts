@@ -3,9 +3,65 @@
  *
  * Manually defined from the migration schema (supabase/migrations/
  * 0001_initial_schema.sql) until full type generation is wired up. Covers
- * all 9 tables, the user_belongs_to_family helper function, and the
- * embedding vector column.
+ * all 9 tables, the user_belongs_to_family helper function, the
+ * confirm_document RPC function, and the embedding vector column.
  */
+
+// ---------------------------------------------------------------------------
+// confirm_document RPC parameter types (passed as JSONB arrays)
+// ---------------------------------------------------------------------------
+
+/** A person node to upsert during confirm. */
+export type ConfirmRpcPerson = {
+  name: string;
+  /** Family member UUID (links knowledge node to a family_member), or null. */
+  person_id: string | null;
+  confidence: number;
+};
+
+/** An organization node to upsert during confirm. */
+export type ConfirmRpcOrganization = {
+  name: string;
+  type: string;
+  confidence: number;
+};
+
+/** A precomputed embedding chunk to insert during confirm. */
+export type ConfirmRpcEmbedding = {
+  chunk_text: string;
+  /** pgvector text format: "[v1,v2,...,v1536]". */
+  embedding: string;
+  page_number: number;
+  chunk_index: number;
+  chunk_total: number;
+};
+
+/** An extracted entity to insert (confirmed = true) during confirm. */
+export type ConfirmRpcEntity = {
+  entity_type: string;
+  entity_value: string;
+  normalized_value: string | null;
+  confidence: number;
+  /** Family member UUID for person entities, or null. */
+  linked_object_id: string | null;
+};
+
+/** A task to insert (confirmed = true) during confirm. */
+export type ConfirmRpcTask = {
+  title: string;
+  /** ISO date string "YYYY-MM-DD", or null. */
+  due_date: string | null;
+  priority: string;
+  confidence: number;
+};
+
+/** Result returned by the confirm_document RPC. */
+export type ConfirmRpcResult = {
+  /** "confirmed" on success, "status_changed" when not in 'analyzed' state. */
+  status: "confirmed" | "status_changed";
+  /** Present when status === "confirmed". */
+  document_id?: string;
+};
 
 export type Database = {
   public: {
@@ -336,6 +392,26 @@ export type Database = {
       user_belongs_to_family: {
         Args: { fam_id: string };
         Returns: boolean;
+      };
+      // confirm_document — single-transaction atomic confirm RPC.
+      // See supabase/migrations/0005_confirm_rpc.sql.
+      // The complex array params are passed as JSONB; the route serializes
+      // them and the RPC iterates with jsonb_array_elements.
+      confirm_document: {
+        Args: {
+          p_document_id: string;
+          p_family_id: string;
+          p_title: string;
+          p_summary: string;
+          p_document_type: string;
+          p_category: string;
+          p_persons: ConfirmRpcPerson[];
+          p_organizations: ConfirmRpcOrganization[];
+          p_embeddings: ConfirmRpcEmbedding[];
+          p_entities: ConfirmRpcEntity[];
+          p_tasks: ConfirmRpcTask[];
+        };
+        Returns: ConfirmRpcResult;
       };
     };
     Enums: Record<string, never>;

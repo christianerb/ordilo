@@ -92,8 +92,17 @@ function createRequest(body: unknown): Request {
 }
 
 /**
- * Build a mock server Supabase client that supports all the operations
- * the confirm route performs.
+ * Build a mock server Supabase client that supports the RPC-based confirm
+ * flow.
+ *
+ * The route performs:
+ *   - documents.select(...).eq("id").maybeSingle()  — read document
+ *   - document_pages.select(...).eq(...).order(...)  — fetch OCR pages
+ *   - documents.update({status:"failed",...}).eq("id",...)  — markFailed
+ *   - rpc("confirm_document", params)  — the single atomic confirm RPC
+ *
+ * All graph/embedding/entity/task mutations now happen inside the RPC, so
+ * the mock no longer needs per-table builders for those tables.
  */
 function mockServerClient(options: {
   user?: { id: string; email: string } | null;
@@ -101,15 +110,9 @@ function mockServerClient(options: {
   docOcrText?: string | null;
   docNotFound?: boolean;
   pages?: { ocr_markdown: string | null; page_number: number }[];
-  existingPersonNode?: { id: string } | null;
-  nodeCreateError?: boolean;
-  edgeInsertError?: boolean;
-  embeddingInsertError?: boolean;
-  entityInsertError?: boolean;
-  taskInsertError?: boolean;
-  clearError?: boolean;
-  transitionSuccess?: boolean;
-  transitionError?: boolean;
+  rpcResult?: { status: string; document_id?: string } | null;
+  rpcError?: unknown;
+  transitionStatusChanged?: boolean;
 } = {}) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
@@ -117,20 +120,15 @@ function mockServerClient(options: {
     docOcrText = "OCR text from document",
     docNotFound = false,
     pages = [{ ocr_markdown: "# Page 1\n\nOCR content", page_number: 1 }],
-    existingPersonNode = null,
-    nodeCreateError = false,
-    edgeInsertError = false,
-    embeddingInsertError = false,
-    entityInsertError = false,
-    taskInsertError = false,
-    clearError = false,
-    transitionSuccess = true,
-    transitionError = false,
+    rpcResult = { status: "confirmed", document_id: VALID_DOC_ID },
+    rpcError = null,
+    transitionStatusChanged = false,
   } = options;
 
   const operations: Record<string, number> = {};
+  const rpcCalls: unknown[] = [];
 
-  // Helper: make a chain thenable for direct await.
+  // Helper: make a chain thenable for direct await (used by markFailed).
   function thenable(result: { data: unknown; error: unknown }) {
     const chain: Record<string, unknown> = {};
     chain.then = vi.fn(
@@ -139,6 +137,11 @@ function mockServerClient(options: {
     );
     return chain;
   }
+
+  // If transitionStatusChanged, the RPC returns status_changed.
+  const effectiveRpcResult = transitionStatusChanged
+    ? { status: "status_changed" }
+    : rpcResult;
 
   // --- documents table ---
   const documentsBuilder = {
@@ -159,36 +162,9 @@ function mockServerClient(options: {
         }),
       };
     }),
-    // Update: .update(payload).eq("id",...).eq("status","analyzed").select("id").maybeSingle()
-    //   → conditional atomic transition (status='confirmed')
-    // Update: .update(payload).eq("id",...) → thenable
-    //   → markFailed (status='failed')
+    // update().eq("id",...) → thenable (used by markFailed only).
     update: vi.fn((payload: Record<string, unknown>) => {
-      const isTransition = payload.status === "confirmed";
-      const isMarkFailed = payload.status === "failed";
-
-      if (isTransition) {
-        operations.transition = (operations.transition ?? 0) + 1;
-        // Conditional transition: .eq("id",...).eq("status","analyzed").select("id").maybeSingle()
-        return {
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              select: vi.fn().mockReturnValue({
-                maybeSingle: vi.fn().mockResolvedValue({
-                  data: transitionError
-                    ? null
-                    : transitionSuccess
-                      ? { id: VALID_DOC_ID }
-                      : null,
-                  error: transitionError ? "transition error" : null,
-                }),
-              }),
-            }),
-          }),
-        };
-      }
-
-      if (isMarkFailed) {
+      if (payload.status === "failed") {
         operations.markFailed = (operations.markFailed ?? 0) + 1;
       }
       return {
@@ -210,103 +186,7 @@ function mockServerClient(options: {
     }),
   };
 
-  // --- knowledge_nodes table ---
-  // The confirm route:
-  //   1. delete().eq("type", "document").eq("properties_json->>document_id", docId)  — clear prior doc node
-  //   2. insert(docNode).select("id").single()  — create document node
-  //   3. For persons/orgs: select("id").eq("family_id").eq("type").eq("label").maybeSingle()  — find existing
-  //      If not found: insert(node).select("id").single()  — create new
-  const knowledgeNodesBuilder = {
-    delete: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue({
-        eq: vi.fn().mockReturnValue(
-          thenable({ data: null, error: clearError ? "delete error" : null }),
-        ),
-      }),
-    }),
-    insert: vi.fn(() => {
-      operations.nodeInsert = (operations.nodeInsert ?? 0) + 1;
-      return {
-        select: vi.fn().mockReturnValue({
-          single: vi.fn().mockResolvedValue({
-            data: nodeCreateError
-              ? null
-              : { id: `node-${operations.nodeInsert}` },
-            error: nodeCreateError ? "insert error" : null,
-          }),
-        }),
-      };
-    }),
-    select: vi.fn(() => {
-      operations.nodeFind = (operations.nodeFind ?? 0) + 1;
-      return {
-        eq: vi.fn().mockReturnThis(),
-        maybeSingle: vi.fn().mockResolvedValue({
-          data: existingPersonNode,
-          error: null,
-        }),
-      };
-    }),
-  };
-
-  // --- knowledge_edges table ---
-  const knowledgeEdgesBuilder = {
-    delete: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue(
-        thenable({ data: null, error: clearError ? "delete error" : null }),
-      ),
-    }),
-    insert: vi.fn().mockReturnValue(
-      thenable({ data: null, error: edgeInsertError ? "insert error" : null }),
-    ),
-  };
-
-  // --- document_embeddings table ---
-  const documentEmbeddingsBuilder = {
-    delete: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue(
-        thenable({ data: null, error: clearError ? "delete error" : null }),
-      ),
-    }),
-    insert: vi.fn().mockReturnValue(
-      thenable({
-        data: null,
-        error: embeddingInsertError ? "insert error" : null,
-      }),
-    ),
-  };
-
-  // --- extracted_entities table ---
-  const entitiesBuilder = {
-    delete: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue(
-        thenable({ data: null, error: clearError ? "delete error" : null }),
-      ),
-    }),
-    insert: vi.fn().mockReturnValue(
-      thenable({
-        data: null,
-        error: entityInsertError ? "insert error" : null,
-      }),
-    ),
-  };
-
-  // --- tasks table ---
-  const tasksBuilder = {
-    delete: vi.fn().mockReturnValue({
-      eq: vi.fn().mockReturnValue(
-        thenable({ data: null, error: clearError ? "delete error" : null }),
-      ),
-    }),
-    insert: vi.fn().mockReturnValue(
-      thenable({
-        data: null,
-        error: taskInsertError ? "insert error" : null,
-      }),
-    ),
-  };
-
-  return {
+  const client = {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user } }),
     },
@@ -316,34 +196,28 @@ function mockServerClient(options: {
           return documentsBuilder;
         case "document_pages":
           return pagesBuilder;
-        case "knowledge_nodes":
-          return knowledgeNodesBuilder;
-        case "knowledge_edges":
-          return knowledgeEdgesBuilder;
-        case "document_embeddings":
-          return documentEmbeddingsBuilder;
-        case "extracted_entities":
-          return entitiesBuilder;
-        case "tasks":
-          return tasksBuilder;
         default:
           throw new Error(`Unexpected table: ${table}`);
       }
     }),
+    rpc: vi.fn((fnName: string, params: unknown) => {
+      operations.rpc = (operations.rpc ?? 0) + 1;
+      rpcCalls.push({ fnName, params });
+      return Promise.resolve({
+        data: effectiveRpcResult,
+        error: rpcError,
+      });
+    }),
+  };
+
+  return {
+    ...client,
     _operations: operations,
-    _knowledgeNodesBuilder: knowledgeNodesBuilder,
-    _knowledgeEdgesBuilder: knowledgeEdgesBuilder,
-    _documentEmbeddingsBuilder: documentEmbeddingsBuilder,
-    _entitiesBuilder: entitiesBuilder,
-    _tasksBuilder: tasksBuilder,
+    _rpcCalls: rpcCalls,
     _documentsBuilder: documentsBuilder,
   } as unknown as Awaited<ReturnType<typeof createServerClient>> & {
     _operations: Record<string, number>;
-    _knowledgeNodesBuilder: { insert: ReturnType<typeof vi.fn>; select: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> };
-    _knowledgeEdgesBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
-    _documentEmbeddingsBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
-    _entitiesBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
-    _tasksBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
+    _rpcCalls: { fnName: string; params: unknown }[];
     _documentsBuilder: { update: ReturnType<typeof vi.fn> };
   };
 }
@@ -387,9 +261,12 @@ describe("POST /api/documents/[id]/confirm", () => {
     vi.clearAllMocks();
     // Default: embeddings succeed.
     (generateEmbeddings as ReturnType<typeof vi.fn>).mockResolvedValue([[0.1, 0.2]]);
-    (chunkPages as ReturnType<typeof vi.fn>).mockReturnValue([
-      { text: "chunk text", index: 0, page_number: 1 },
-    ]);
+    // Default: chunkPages is input-aware (empty input → empty output), so
+    // the "no OCR text" path does not generate embeddings.
+    (chunkPages as ReturnType<typeof vi.fn>).mockImplementation(
+      (pages: { text: string; page_number: number }[]) =>
+        pages.map((p, i) => ({ text: p.text, index: i, page_number: p.page_number })),
+    );
   });
 
   // --- Authentication ---
@@ -502,7 +379,7 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     expect(response.status).toBe(403);
     expect(body.code).toBe("FORBIDDEN");
-    // No knowledge_nodes/edges/embeddings should be created.
+    // No embeddings should be generated for non-owned documents.
     expect(generateEmbeddings).not.toHaveBeenCalled();
   });
 
@@ -584,59 +461,30 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(generateEmbeddings).toHaveBeenCalled();
   });
 
-  it("clears prior edges and embeddings before creating new ones", async () => {
+  it("calls the confirm_document RPC exactly once on success", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     await POST(createRequest(validPayload()), createParams());
 
-    // knowledge_edges delete was called (clear prior).
-    expect(client._knowledgeEdgesBuilder.delete).toHaveBeenCalled();
-    // document_embeddings delete was called (clear prior).
-    expect(client._documentEmbeddingsBuilder.delete).toHaveBeenCalled();
+    expect(client._operations.rpc).toBe(1);
+    expect(client._rpcCalls[0].fnName).toBe("confirm_document");
   });
 
-  it("deletes and re-inserts entities with confirmed=true", async () => {
+  it("passes the document and family IDs to the RPC", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     await POST(createRequest(validPayload()), createParams());
 
-    // Entities delete was called.
-    expect(client._entitiesBuilder.delete).toHaveBeenCalled();
-    // Entities insert was called.
-    expect(client._entitiesBuilder.insert).toHaveBeenCalled();
-  });
-
-  it("deletes and re-inserts tasks with confirmed=true", async () => {
-    const client = mockServerClient({});
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    await POST(createRequest(validPayload()), createParams());
-
-    // Tasks delete was called.
-    expect(client._tasksBuilder.delete).toHaveBeenCalled();
-    // Tasks insert was called.
-    expect(client._tasksBuilder.insert).toHaveBeenCalled();
-  });
-
-  it("updates document status to confirmed with confirmed_at via conditional transition", async () => {
-    const client = mockServerClient({});
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    await POST(createRequest(validPayload()), createParams());
-
-    // The conditional transition should have been called.
-    expect(client._operations.transition).toBe(1);
-    // Check that the update payload includes status=confirmed and confirmed_at.
-    const updateCall = client._documentsBuilder.update.mock.calls[0][0];
-    expect(updateCall.status).toBe("confirmed");
-    expect(updateCall.confirmed_at).toBeDefined();
+    const params = client._rpcCalls[0].params as Record<string, unknown>;
+    expect(params.p_document_id).toBe(VALID_DOC_ID);
+    expect(params.p_family_id).toBe(FAMILY_ID);
   });
 
   // --- Edited payload (VAL-CONFIRM-008) ---
 
-  it("uses edited payload values for document update", async () => {
+  it("passes edited payload values (title, summary, category) to the RPC", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -644,17 +492,19 @@ describe("POST /api/documents/[id]/confirm", () => {
       title: "Edited Title",
       summary: "Edited summary",
       suggested_category: "Edited Category",
+      document_type: "invoice",
     });
 
     await POST(createRequest(editedPayload), createParams());
 
-    const updateCall = client._documentsBuilder.update.mock.calls[0][0];
-    expect(updateCall.title).toBe("Edited Title");
-    expect(updateCall.summary).toBe("Edited summary");
-    expect(updateCall.category).toBe("Edited Category");
+    const params = client._rpcCalls[0].params as Record<string, unknown>;
+    expect(params.p_title).toBe("Edited Title");
+    expect(params.p_summary).toBe("Edited summary");
+    expect(params.p_category).toBe("Edited Category");
+    expect(params.p_document_type).toBe("invoice");
   });
 
-  it("uses edited person name for knowledge graph", async () => {
+  it("passes edited person name to the RPC (used for node upsert)", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -666,18 +516,15 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     await POST(createRequest(editedPayload), createParams());
 
-    // The knowledge_nodes insert should have been called with "Hanna".
-    const insertCalls = client._knowledgeNodesBuilder.insert.mock.calls;
-    const personNodeInsert = insertCalls.find(
-      (call: unknown[]) => {
-        const payload = call[0] as Record<string, unknown>;
-        return payload.type === "person" && payload.label === "Hanna";
-      },
-    );
-    expect(personNodeInsert).toBeDefined();
+    const params = client._rpcCalls[0].params as {
+      p_persons: { name: string; person_id: string | null; confidence: number }[];
+    };
+    expect(params.p_persons).toHaveLength(1);
+    expect(params.p_persons[0].name).toBe("Hanna");
+    expect(params.p_persons[0].person_id).toBe("member-2");
   });
 
-  it("excludes deleted tasks from task inserts", async () => {
+  it("excludes deleted tasks from the tasks passed to the RPC", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -688,103 +535,26 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     await POST(createRequest(payloadWithDeletedTasks), createParams());
 
-    // Tasks insert was called with an empty array (or not called).
-    const insertCall = client._tasksBuilder.insert.mock.calls[0];
-    if (insertCall) {
-      const taskInserts = insertCall[0];
-      expect(Array.isArray(taskInserts)).toBe(true);
-      expect(taskInserts).toHaveLength(0);
-    }
+    const params = client._rpcCalls[0].params as { p_tasks: unknown[] };
+    expect(params.p_tasks).toHaveLength(0);
   });
 
-  // --- Failure handling (VAL-CONFIRM-011) ---
-
-  it("marks document as failed and returns 502 on embedding error", async () => {
+  it("passes organizations to the RPC for node upsert", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
-    const { EmbeddingError } = await import("@/lib/ai/embeddings");
-    (generateEmbeddings as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-      new EmbeddingError("OpenAI error", "OPENAI_API_ERROR", 500),
-    );
+    await POST(createRequest(validPayload()), createParams());
 
-    const response = await POST(
-      createRequest(validPayload()),
-      createParams(),
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(502);
-    expect(body.code).toBe("OPENAI_API_ERROR");
-    // Document should have been marked as failed.
-    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
-  });
-
-  it("marks document as failed on node creation error", async () => {
-    const client = mockServerClient({ nodeCreateError: true });
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    const response = await POST(
-      createRequest(validPayload()),
-      createParams(),
-    );
-
-    expect(response.status).toBe(500);
-    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
-  });
-
-  it("marks document as failed on edge insert error", async () => {
-    const client = mockServerClient({ edgeInsertError: true });
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    const response = await POST(
-      createRequest(validPayload()),
-      createParams(),
-    );
-
-    expect(response.status).toBe(500);
-    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
-  });
-
-  it("returns 500 when conditional transition DB update errors", async () => {
-    const client = mockServerClient({ transitionError: true });
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    const response = await POST(
-      createRequest(validPayload()),
-      createParams(),
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(500);
-    expect(body.code).toBe("DB_UPDATE_FAILED");
-    // No graph mutations should happen.
-    expect(client._knowledgeEdgesBuilder.insert).not.toHaveBeenCalled();
-  });
-
-  // --- Atomic conditional transition (VAL-CONFIRM-011) ---
-
-  it("returns 409 when conditional transition matches 0 rows (double-submit / status changed)", async () => {
-    const client = mockServerClient({ transitionSuccess: false });
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    const response = await POST(
-      createRequest(validPayload()),
-      createParams(),
-    );
-    const body = await response.json();
-
-    expect(response.status).toBe(409);
-    expect(body.code).toBe("STATUS_CHANGED");
-    // No graph mutations or embeddings should happen.
-    expect(generateEmbeddings).not.toHaveBeenCalled();
-    expect(client._knowledgeEdgesBuilder.insert).not.toHaveBeenCalled();
-    expect(client._documentEmbeddingsBuilder.insert).not.toHaveBeenCalled();
+    const params = client._rpcCalls[0].params as {
+      p_organizations: { name: string; type: string; confidence: number }[];
+    };
+    expect(params.p_organizations).toHaveLength(1);
+    expect(params.p_organizations[0].name).toBe("Kita Sonnenblume");
   });
 
   // --- Page-aware embeddings (VAL-CONFIRM-005) ---
 
-  it("includes page_number in each document_embeddings metadata_json", async () => {
+  it("includes page_number in each embedding passed to the RPC", async () => {
     const client = mockServerClient({
       pages: [
         { ocr_markdown: "# Page 1\n\nContent A", page_number: 1 },
@@ -810,44 +580,134 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(pageArg[0].page_number).toBe(1);
     expect(pageArg[1].page_number).toBe(2);
 
-    // Verify the embedding insert includes page_number in metadata_json.
-    const insertArg = client._documentEmbeddingsBuilder.insert.mock.calls[0][0];
-    expect(insertArg[0].metadata_json.page_number).toBe(1);
-    expect(insertArg[1].metadata_json.page_number).toBe(2);
-    // metadata_json should also include document_id.
-    expect(insertArg[0].metadata_json.document_id).toBe(VALID_DOC_ID);
+    // Verify the embeddings param includes page_number provenance.
+    const params = client._rpcCalls[0].params as {
+      p_embeddings: {
+        chunk_text: string;
+        embedding: string;
+        page_number: number;
+        chunk_index: number;
+        chunk_total: number;
+      }[];
+    };
+    expect(params.p_embeddings).toHaveLength(2);
+    expect(params.p_embeddings[0].page_number).toBe(1);
+    expect(params.p_embeddings[1].page_number).toBe(2);
+    // metadata provenance: document_id is added by the RPC, not the route,
+    // but the chunk_index/chunk_total are passed.
+    expect(params.p_embeddings[0].chunk_total).toBe(2);
   });
 
-  // --- Idempotency (VAL-CONFIRM-012) ---
+  // --- Atomic rollback on RPC failure (VAL-CONFIRM-011) ---
+  //
+  // All DB mutations happen inside the single confirm_document RPC. If the
+  // RPC errors, the Postgres transaction rolls back — no partial graph,
+  // embedding, entity, or task state persists. The route then marks the
+  // document failed. This test verifies the route's contract: on RPC error
+  // it makes no individual graph/embedding/entity/task mutation calls
+  // (they are all inside the atomic RPC), marks the document failed, and
+  // returns a structured error.
 
-  it("clears prior edges and embeddings before creating new ones (idempotency)", async () => {
-    const client = mockServerClient({});
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
-
-    await POST(createRequest(validPayload()), createParams());
-
-    // Verify delete was called before insert for edges.
-    const edgesDeleteCall = client._knowledgeEdgesBuilder.delete;
-    const edgesInsertCall = client._knowledgeEdgesBuilder.insert;
-    expect(edgesDeleteCall).toHaveBeenCalled();
-    expect(edgesInsertCall).toHaveBeenCalled();
-  });
-
-  it("reuses existing person nodes (find before create)", async () => {
+  it("marks document failed and returns 500 when the RPC errors (atomic rollback)", async () => {
     const client = mockServerClient({
-      existingPersonNode: { id: "existing-node-1" },
+      rpcResult: null,
+      rpcError: { message: "constraint violation", code: "23505" },
     });
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
-    await POST(createRequest(validPayload()), createParams());
+    const response = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body = await response.json();
 
-    // The node find (select) should have been called.
-    expect(client._operations.nodeFind).toBeGreaterThanOrEqual(1);
+    expect(response.status).toBe(500);
+    expect(body.code).toBe("CONFIRM_RPC_FAILED");
+    // The RPC was called exactly once.
+    expect(client._operations.rpc).toBe(1);
+    // The document was marked failed.
+    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
   });
 
-  it("idempotent double-confirm: second call returns 409 and creates no duplicates", async () => {
-    // First confirm: succeeds (status was 'analyzed' → transition succeeds).
-    const client1 = mockServerClient({ transitionSuccess: true });
+  it("does not call the RPC when embedding generation fails (no DB mutations)", async () => {
+    const client = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const { EmbeddingError } = await import("@/lib/ai/embeddings");
+    (generateEmbeddings as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new EmbeddingError("OpenAI error", "OPENAI_API_ERROR", 500),
+    );
+
+    const response = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.code).toBe("OPENAI_API_ERROR");
+    // The RPC must NOT have been called (embeddings are generated first,
+    // before the DB transaction).
+    expect(client._operations.rpc).toBeUndefined();
+    // The document should have been marked failed.
+    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+  });
+
+  // --- Concurrent node reuse via upsert (VAL-CONFIRM-012) ---
+  //
+  // The person/organization nodes are upserted inside the RPC with
+  // ON CONFLICT DO UPDATE (see migration 0005). This test verifies the
+  // route passes the persons array to the RPC so the upsert can converge
+  // concurrent confirms on the same node. The DB-level ON CONFLICT is
+  // enforced by the migration's partial unique index
+  // knowledge_nodes_person_org_unique_idx.
+
+  it("passes person nodes to the RPC so concurrent confirms converge via upsert", async () => {
+    const client = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const payload = validPayload({
+      family_members: [
+        { person_id: "member-1", name: "Emma", confidence: 0.95 },
+        { person_id: null, name: "Max", confidence: 0.6 },
+      ],
+    });
+
+    await POST(createRequest(payload), createParams());
+
+    const params = client._rpcCalls[0].params as {
+      p_persons: { name: string; person_id: string | null; confidence: number }[];
+    };
+    expect(params.p_persons).toHaveLength(2);
+    expect(params.p_persons[0].name).toBe("Emma");
+    expect(params.p_persons[1].name).toBe("Max");
+    expect(params.p_persons[1].person_id).toBeNull();
+  });
+
+  // --- Idempotent double-confirm (VAL-CONFIRM-012) ---
+
+  it("returns 409 STATUS_CHANGED when RPC reports status_changed (double-submit)", async () => {
+    const client = mockServerClient({ transitionStatusChanged: true });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("STATUS_CHANGED");
+    // The RPC was called (it performed no mutations, just returned early).
+    expect(client._operations.rpc).toBe(1);
+    // The document must NOT be marked failed (it was likely confirmed by a
+    // concurrent request — this is a double-submit, not a failure).
+    expect(client._operations.markFailed).toBeUndefined();
+  });
+
+  it("idempotent double-confirm: second call returns 409 and does not mark failed", async () => {
+    // First confirm: succeeds.
+    const client1 = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client1);
 
     const response1 = await POST(
@@ -856,8 +716,8 @@ describe("POST /api/documents/[id]/confirm", () => {
     );
     expect(response1.status).toBe(200);
 
-    // Second confirm: transition fails (status is now 'confirmed', not 'analyzed').
-    const client2 = mockServerClient({ transitionSuccess: false });
+    // Second confirm: RPC reports status_changed (already confirmed).
+    const client2 = mockServerClient({ transitionStatusChanged: true });
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client2);
 
     const response2 = await POST(
@@ -868,22 +728,42 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     expect(response2.status).toBe(409);
     expect(body2.code).toBe("STATUS_CHANGED");
-    // No graph mutations should happen on the second call.
-    expect(client2._knowledgeEdgesBuilder.insert).not.toHaveBeenCalled();
-    expect(client2._documentEmbeddingsBuilder.insert).not.toHaveBeenCalled();
-    expect(client2._entitiesBuilder.insert).not.toHaveBeenCalled();
-    expect(client2._tasksBuilder.insert).not.toHaveBeenCalled();
+    // No markFailed on the second call.
+    expect(client2._operations.markFailed).toBeUndefined();
+    // The RPC was called exactly once on the second call.
+    expect(client2._operations.rpc).toBe(1);
   });
 
-  it("clears prior embeddings before inserting new ones (replace, not append)", async () => {
+  it("passes entities (persons, orgs, dates, category, tags) to the RPC", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     await POST(createRequest(validPayload()), createParams());
 
-    // Verify delete was called before insert for embeddings.
-    expect(client._documentEmbeddingsBuilder.delete).toHaveBeenCalled();
-    expect(client._documentEmbeddingsBuilder.insert).toHaveBeenCalled();
+    const params = client._rpcCalls[0].params as {
+      p_entities: { entity_type: string; entity_value: string; confidence: number }[];
+    };
+    const types = params.p_entities.map((e) => e.entity_type);
+    expect(types).toContain("person");
+    expect(types).toContain("organization");
+    expect(types).toContain("date");
+    expect(types).toContain("category");
+    expect(types).toContain("tag");
+  });
+
+  it("passes tasks with due_date and priority to the RPC", async () => {
+    const client = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(createRequest(validPayload()), createParams());
+
+    const params = client._rpcCalls[0].params as {
+      p_tasks: { title: string; due_date: string | null; priority: string }[];
+    };
+    expect(params.p_tasks).toHaveLength(1);
+    expect(params.p_tasks[0].title).toBe("Elternabend besuchen");
+    expect(params.p_tasks[0].due_date).toBe("2026-07-15");
+    expect(params.p_tasks[0].priority).toBe("medium");
   });
 
   // --- Empty OCR text ---
@@ -905,6 +785,10 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(body.status).toBe("confirmed");
     // generateEmbeddings should NOT have been called (no OCR text).
     expect(generateEmbeddings).not.toHaveBeenCalled();
+    // The RPC should still be called with an empty embeddings array.
+    expect(client._operations.rpc).toBe(1);
+    const params = client._rpcCalls[0].params as { p_embeddings: unknown[] };
+    expect(params.p_embeddings).toHaveLength(0);
   });
 
   it("falls back to documents.ocr_text when pages have no markdown", async () => {
@@ -924,6 +808,25 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(body.status).toBe("confirmed");
     // Embeddings should have been generated from the fallback OCR text.
     expect(generateEmbeddings).toHaveBeenCalled();
+  });
+
+  // --- Unexpected RPC result ---
+
+  it("marks failed and returns 500 when the RPC returns an unexpected result shape", async () => {
+    const client = mockServerClient({
+      rpcResult: { status: "something_else" } as { status: string; document_id?: string },
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(500);
+    expect(body.code).toBe("CONFIRM_UNEXPECTED_RESULT");
+    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
   });
 
   // --- Method not allowed ---
