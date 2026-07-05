@@ -64,7 +64,8 @@ interface ChatMessage {
 
 /**
  * The four example queries shown in the empty state (VAL-SEARCH-021).
- * Clicking an example populates and submits the query.
+ * Clicking an example populates the shared search bar so the user can
+ * review/edit the query before submitting (VAL-SEARCH-032 non-blocking).
  */
 const EXAMPLE_QUERIES = [
   "Zeig mir alle Dokumente von Emma",
@@ -127,31 +128,66 @@ export function SucheClient({
   // --- Filter state ---
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
+  // --- Search bar value (controlled) ---
+  // Owned by SucheClient so that example/suggested queries can populate the
+  // shared search bar for review/edit before submission, rather than
+  // submitting directly (VAL-SEARCH-032 non-blocking).
+  const [searchBarValue, setSearchBarValue] = useState("");
+
   // --- Auto-scroll ref ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // -------------------------------------------------------------------------
+  // Current result set (VAL-SEARCH-032)
+  // -------------------------------------------------------------------------
+
+  /**
+   * The document IDs of the current result set — the sources cited by the
+   * most recent AI message. When the latest query returned no sources (e.g.
+   * "Ich finde dazu kein Dokument."), there is no current result set and
+   * filter chips must not render.
+   *
+   * Person chips are derived strictly from these result documents, not the
+   * full family/confirmed-document set, so no unrelated chips appear.
+   */
+  const currentResultDocIds = useMemo(() => {
+    const lastAiMessage = [...messages]
+      .reverse()
+      .find((m) => m.role === "ai");
+    return new Set(lastAiMessage?.sources?.map((s) => s.document_id) ?? []);
+  }, [messages]);
+
+  const hasResults = currentResultDocIds.size > 0;
 
   // -------------------------------------------------------------------------
   // Filter chips computation (VAL-SEARCH-032)
   // -------------------------------------------------------------------------
 
   /**
-   * Compute available filter facets from the family's confirmed documents.
+   * Compute available filter facets from the CURRENT result set, not the
+   * full family/confirmed-document set.
    *
-   * - Person chips: family members linked to at least one confirmed document
-   *   (via the documents[].persons array).
-   * - Category chips: distinct non-null categories from confirmed documents.
-   * - Document type chips: distinct non-null document types from confirmed
+   * - Person chips: family members linked to at least one document in the
+   *   current result set (via the documents[].persons array).
+   * - Category chips: distinct non-null categories from the result
+   *   documents.
+   * - Document type chips: distinct non-null document types from the result
    *   documents, labeled in German.
+   *
+   * No empty chips are produced (null/blank category and document_type
+   * values are skipped). Chips only render after a result set exists (see
+   * `hasResults` / `hasFacets` in the render section).
    */
   const facets = useMemo(() => {
-    const personsInDocs = new Set<string>();
+    const personsInResults = new Set<string>();
     const categories = new Set<string>();
     const docTypes = new Set<string>();
 
     for (const doc of documents) {
+      if (!currentResultDocIds.has(doc.id)) continue;
       for (const person of doc.persons) {
-        personsInDocs.add(person);
+        if (person.trim()) personsInResults.add(person);
       }
       if (doc.category?.trim()) {
         categories.add(doc.category.trim());
@@ -161,9 +197,9 @@ export function SucheClient({
       }
     }
 
-    // Person chips: only members that appear in confirmed documents.
+    // Person chips: only members that appear in the current result set.
     const personChips = members
-      .filter((m) => personsInDocs.has(m.name))
+      .filter((m) => personsInResults.has(m.name))
       .map((m) => ({ value: m.name, label: m.name }));
 
     const categoryChips = [...categories]
@@ -178,7 +214,7 @@ export function SucheClient({
       }));
 
     return { personChips, categoryChips, docTypeChips };
-  }, [members, documents]);
+  }, [members, documents, currentResultDocIds]);
 
   // -------------------------------------------------------------------------
   // Source card filtering (VAL-SEARCH-028..031)
@@ -336,15 +372,23 @@ export function SucheClient({
   );
 
   // -------------------------------------------------------------------------
-  // Example query click handler (VAL-SEARCH-021)
+  // Example query click handler (VAL-SEARCH-021, VAL-SEARCH-032 non-blocking)
   // -------------------------------------------------------------------------
 
-  const handleExampleClick = useCallback(
-    (query: string) => {
-      handleSubmit(query);
-    },
-    [handleSubmit],
-  );
+  /**
+   * Populate the shared search bar with an example/suggested query so the
+   * user can review and edit it before submitting, rather than submitting
+   * directly. The query is visible and editable; the user presses Enter or
+   * the send button to run it.
+   */
+  const handleExampleClick = useCallback((query: string) => {
+    setSearchBarValue(query);
+    // Focus the search bar so the user can immediately edit/submit.
+    const textarea = document.querySelector<HTMLTextAreaElement>(
+      'textarea[aria-label="Such- und Chat-Eingabe"]',
+    );
+    textarea?.focus();
+  }, []);
 
   // -------------------------------------------------------------------------
   // Derived state
@@ -352,9 +396,10 @@ export function SucheClient({
 
   const hasMessages = messages.length > 0;
   const hasFacets =
-    facets.personChips.length > 0 ||
-    facets.categoryChips.length > 0 ||
-    facets.docTypeChips.length > 0;
+    hasResults &&
+    (facets.personChips.length > 0 ||
+      facets.categoryChips.length > 0 ||
+      facets.docTypeChips.length > 0);
 
   // -------------------------------------------------------------------------
   // Render
@@ -362,7 +407,10 @@ export function SucheClient({
 
   return (
     <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 140px)" }}>
-      {/* Filter chips (shown whenever facets are available — VAL-SEARCH-032) */}
+      {/* Filter chips — only rendered after a result set exists and at
+          least one facet is available (VAL-SEARCH-032). No chips render
+          before any results exist, and chips are derived from the current
+          result set so no empty or unrelated chips appear. */}
       {hasFacets && (
         <FilterChips
           facets={facets}
@@ -425,9 +473,13 @@ export function SucheClient({
         )}
       </div>
 
-      {/* AI search bar — fixed at the bottom of the content area */}
+      {/* AI search bar — fixed at the bottom of the content area.
+          Controlled by SucheClient so example/suggested queries can populate
+          the bar without submitting (VAL-SEARCH-032 non-blocking). */}
       <div className="sticky bottom-0 bg-background/95 pt-3 backdrop-blur-sm">
         <AISearchBar
+          value={searchBarValue}
+          onValueChange={setSearchBarValue}
           onSubmit={handleSubmit}
           isLoading={isLoading}
           placeholder="Frage Ordilo oder suche nach Dokumenten…"
@@ -445,7 +497,9 @@ export function SucheClient({
  * Empty state for the search page (VAL-SEARCH-021, VAL-DESIGN-002).
  *
  * Shows a warm welcome message and four clickable example queries.
- * Clicking an example populates and submits the query.
+ * Clicking an example populates the shared search bar (so the query is
+ * visible and editable before running) rather than submitting directly
+ * (VAL-SEARCH-032 non-blocking).
  */
 function EmptyState({
   onExampleClick,

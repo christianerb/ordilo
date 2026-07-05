@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 
 // Mock next/navigation useRouter
 const mockPush = vi.fn();
@@ -128,22 +128,27 @@ describe("SucheClient — Empty State", () => {
 });
 
 describe("SucheClient — Chat Interaction", () => {
-  it("submits an example query when clicked and shows user message", async () => {
-    global.fetch = vi.fn().mockResolvedValue(
+  it("populates the search bar with an example query without submitting it", () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
       mockChatResponse("Ich finde dazu kein Dokument.", []),
-    ) as unknown as typeof fetch;
+    );
+    global.fetch = fetchSpy as unknown as typeof fetch;
 
     render(<SucheClient {...defaultProps} />);
 
-    // Click the first example query
+    // Click the first example query (VAL-SEARCH-032 non-blocking: example
+    // queries should populate the shared search bar so the query is visible
+    // and editable before running, rather than submitting directly).
     fireEvent.click(screen.getByText("Zeig mir alle Dokumente von Emma"));
 
-    // The user message should appear
-    await waitFor(() => {
-      expect(
-        screen.getByText("Zeig mir alle Dokumente von Emma"),
-      ).toBeDefined();
-    });
+    // The shared search bar input should now hold the example query.
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.value).toBe("Zeig mir alle Dokumente von Emma");
+
+    // No chat submission should have occurred: no fetch, no user message,
+    // and the empty state is still shown (the query is pending review).
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("suche-empty-state")).toBeDefined();
   });
 
   it("shows AI answer bubble after response", async () => {
@@ -342,22 +347,91 @@ describe("SucheClient — Chat Interaction", () => {
 });
 
 describe("SucheClient — Filter Chips", () => {
-  it("renders filter chips for persons in the family", () => {
+  it("does not render filter chips before any results exist", () => {
     render(<SucheClient {...defaultProps} />);
-    // Person chips based on members
-    expect(screen.getByText("Emma")).toBeDefined();
-    expect(screen.getByText("Hanna")).toBeDefined();
+    expect(screen.queryByTestId("filter-chips")).toBeNull();
   });
 
-  it("renders filter chips for categories", () => {
+  it("does not render filter chips before results even when family documents exist", () => {
+    render(
+      <SucheClient
+        {...defaultProps}
+        documents={documents}
+        members={members}
+      />,
+    );
+    expect(screen.queryByTestId("filter-chips")).toBeNull();
+  });
+
+  it("renders person filter chips derived from the current result set", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      mockChatResponse("Antwort.", [
+        { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+        { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.7 },
+        { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+      ]),
+    ) as unknown as typeof fetch;
+
     render(<SucheClient {...defaultProps} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Alle" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    // Only members appearing in the result documents get chips.
+    expect(screen.getByRole("button", { name: /^Emma$/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Hanna$/ })).toBeDefined();
+    // Christian is a family member but appears in no result document.
+    expect(screen.queryByRole("button", { name: /^Christian$/ })).toBeNull();
+  });
+
+  it("renders category filter chips derived from the current result set", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      mockChatResponse("Antwort.", [
+        { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+        { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.7 },
+        { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+      ]),
+    ) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Alle" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
     expect(screen.getByText("Rechnungen")).toBeDefined();
     expect(screen.getByText("Schule")).toBeDefined();
     expect(screen.getByText("Gesundheit")).toBeDefined();
   });
 
-  it("renders filter chips for document types in German", () => {
+  it("renders document type filter chips in German derived from the result set", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      mockChatResponse("Antwort.", [
+        { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+        { document_id: "doc-2", title: "Kita-Brief für Emma", excerpt: "B", score: 0.7 },
+        { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+      ]),
+    ) as unknown as typeof fetch;
+
     render(<SucheClient {...defaultProps} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Alle" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
     // invoice → Rechnung, letter → Brief, medical → Arztbrief
     expect(screen.getByText("Rechnung")).toBeDefined();
     expect(screen.getByText("Brief")).toBeDefined();
@@ -432,17 +506,135 @@ describe("SucheClient — Filter Chips", () => {
     });
   });
 
-  it("does not render empty filter chips when no documents have a category", () => {
+  it("does not render empty filter chips when result documents have no category", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      mockChatResponse("Antwort.", [
+        { document_id: "doc-nocat", title: "Ohne Kategorie", excerpt: "X", score: 0.5 },
+      ]),
+    ) as unknown as typeof fetch;
+
     render(
       <SucheClient
         {...defaultProps}
         documents={[
-          { id: "doc-1", title: "Ohne Kategorie", category: null, document_type: "other", persons: [] },
+          { id: "doc-nocat", title: "Ohne Kategorie", category: null, document_type: "other", persons: [] },
         ]}
+        members={[{ id: "m1", name: "Emma" }]}
       />,
     );
-    // No category chips should be shown
-    expect(screen.queryByText("Rechnungen")).toBeNull();
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Test" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    // The doc-type chip "Sonstiges" should appear (document_type: "other"),
+    // but no empty/blank chip may be rendered for the null category, and no
+    // person chip should appear (the result doc has no persons).
+    expect(screen.getByText("Sonstiges")).toBeDefined();
+    const filterChipsContainer = screen.getByTestId("filter-chips");
+    const chipButtons = within(filterChipsContainer).getAllByRole("button");
+    for (const btn of chipButtons) {
+      expect(btn.textContent?.trim().length).toBeGreaterThan(0);
+    }
+    expect(screen.queryByRole("button", { name: /^Emma$/ })).toBeNull();
+  });
+});
+
+describe("SucheClient — Result-Aware Filter Chips (VAL-SEARCH-032)", () => {
+  it("person chips only list members appearing in the current result set, not the full family", async () => {
+    // Result set: only doc-3 (Hanna). Emma and Christian are family members
+    // (and Emma appears in other family documents), but neither appears in
+    // this result set → no chip for them.
+    global.fetch = vi.fn().mockResolvedValue(
+      mockChatResponse("Antwort.", [
+        { document_id: "doc-3", title: "Arztbrief Hanna", excerpt: "C", score: 0.6 },
+      ]),
+    ) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Hanna" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    expect(screen.getByRole("button", { name: /^Hanna$/ })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /^Emma$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Christian$/ })).toBeNull();
+  });
+
+  it("category/type chips only reflect values present in the current result set", async () => {
+    // Result set: only doc-1 (category "Rechnungen", type "invoice").
+    // The family has other categories/types, but they are not in this
+    // result set → no chips for them.
+    global.fetch = vi.fn().mockResolvedValue(
+      mockChatResponse("Antwort.", [
+        { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+      ]),
+    ) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Rechnung" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    // Only the result doc's category/type should produce chips.
+    expect(screen.getByRole("button", { name: /^Rechnungen$/ })).toBeDefined();
+    expect(screen.getByRole("button", { name: /^Rechnung$/ })).toBeDefined();
+    // Categories/types from docs NOT in the result set must not appear.
+    expect(screen.queryByRole("button", { name: /^Schule$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Gesundheit$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Brief$/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Arztbrief$/ })).toBeNull();
+  });
+
+  it("hides filter chips again when the latest query returns no sources", async () => {
+    let callCount = 0;
+    global.fetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(
+          mockChatResponse("Antwort.", [
+            { document_id: "doc-1", title: "Stromrechnung Juli", excerpt: "A", score: 0.8 },
+          ]),
+        );
+      }
+      return Promise.resolve(
+        mockChatResponse("Ich finde dazu kein Dokument.", []),
+      );
+    }) as unknown as typeof fetch;
+
+    render(<SucheClient {...defaultProps} />);
+
+    let input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Emma" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    // First query returns a result → chips appear.
+    await waitFor(() => {
+      expect(screen.getByTestId("filter-chips")).toBeDefined();
+    });
+
+    input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Nichts" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    // Second query returns no sources → no current result set → no chips.
+    await waitFor(() => {
+      expect(screen.queryByTestId("filter-chips")).toBeNull();
+    });
   });
 });
 

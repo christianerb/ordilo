@@ -12,6 +12,18 @@ export interface AISearchBarProps {
   onSubmit: (query: string) => void;
   /** Initial value for the input (e.g. pre-filled from home page). */
   initialValue?: string;
+  /**
+   * Optional controlled value. When provided, the input is controlled by
+   * the parent (the parent owns the value and is notified via
+   * `onValueChange`). Used on the /suche page so example/suggested queries
+   * can populate the bar without submitting (VAL-SEARCH-032 non-blocking).
+   */
+  value?: string;
+  /**
+   * Called when the input value changes. Required for controlled mode
+   * (when `value` is provided). The parent should update its `value` prop.
+   */
+  onValueChange?: (value: string) => void;
   /** Placeholder text (German). Defaults to "Frage Ordilo oder suche nach Dokumenten…". */
   placeholder?: string;
   /** When true, the input and send button are disabled and no submit fires. */
@@ -46,23 +58,46 @@ export interface AISearchBarProps {
 export function AISearchBar({
   onSubmit,
   initialValue = "",
+  value,
+  onValueChange,
   placeholder = "Frage Ordilo oder suche nach Dokumenten…",
   isLoading = false,
   className,
 }: AISearchBarProps) {
-  const [value, setValue] = useState(initialValue);
+  // Controlled mode is active when the parent provides a `value` prop.
+  // In controlled mode the parent owns the value; in uncontrolled mode the
+  // component manages its own internal state (backward-compatible).
+  const isControlled = value !== undefined;
+  const [internalValue, setInternalValue] = useState(initialValue);
+  const currentValue = isControlled ? (value as string) : internalValue;
+
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Notify the parent of a value change (controlled mode) or update the
+  // internal state (uncontrolled mode).
+  const setValue = useCallback(
+    (next: string) => {
+      if (isControlled) {
+        onValueChange?.(next);
+      } else {
+        setInternalValue(next);
+      }
+    },
+    [isControlled, onValueChange],
+  );
+
   const handleSubmit = useCallback(() => {
-    const trimmed = value.trim();
+    const trimmed = currentValue.trim();
     if (!trimmed || isLoading) return;
     onSubmit(trimmed);
+    // Clear the bar after a successful submit. In controlled mode this
+    // notifies the parent to reset its value.
     setValue("");
     // Reset textarea height after clearing.
     if (inputRef.current) {
       inputRef.current.style.height = "auto";
     }
-  }, [value, isLoading, onSubmit]);
+  }, [currentValue, isLoading, onSubmit, setValue]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -101,7 +136,7 @@ export function AISearchBar({
       {/* Textarea input (grows with content) */}
       <textarea
         ref={inputRef}
-        value={value}
+        value={currentValue}
         onChange={(e) => {
           setValue(e.target.value);
           handleInput();
@@ -118,11 +153,11 @@ export function AISearchBar({
       <button
         type="button"
         onClick={handleSubmit}
-        disabled={isLoading || !value.trim()}
+        disabled={isLoading || !currentValue.trim()}
         aria-label="Senden"
         className={cn(
           "mb-0.5 flex size-9 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          isLoading || !value.trim()
+          isLoading || !currentValue.trim()
             ? "bg-muted text-muted-foreground cursor-not-allowed"
             : "bg-[var(--petrol)] text-white hover:bg-[var(--petrol-dark)]",
         )}

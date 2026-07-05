@@ -109,3 +109,78 @@ describe("AISearchBar", () => {
     expect(input.getAttribute("placeholder")).toBe("Frage Ordilo…");
   });
 });
+
+describe("AISearchBar — Controlled mode", () => {
+  it("renders the provided value when controlled", () => {
+    render(
+      <AISearchBar
+        onSubmit={vi.fn()}
+        value="Vorausgefüllt"
+        onValueChange={vi.fn()}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.value).toBe("Vorausgefüllt");
+  });
+
+  it("calls onValueChange when the user types in controlled mode", () => {
+    const onValueChange = vi.fn();
+    render(
+      <AISearchBar
+        onSubmit={vi.fn()}
+        value=""
+        onValueChange={onValueChange}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Neuer Text" } });
+    expect(onValueChange).toHaveBeenCalledWith("Neuer Text");
+  });
+
+  it("does not call onSubmit when the controlled value is empty", () => {
+    const onSubmit = vi.fn();
+    render(
+      <AISearchBar
+        onSubmit={onSubmit}
+        value=""
+        onValueChange={vi.fn()}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("calls onSubmit with the controlled value and clears via onValueChange", () => {
+    const onSubmit = vi.fn();
+    const onValueChange = vi.fn();
+    render(
+      <AISearchBar
+        onSubmit={onSubmit}
+        value="Finde Rechnung"
+        onValueChange={onValueChange}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    expect(onSubmit).toHaveBeenCalledWith("Finde Rechnung");
+    // After submit, the bar clears by notifying the parent.
+    expect(onValueChange).toHaveBeenCalledWith("");
+  });
+
+  it("allows the parent to pre-fill the bar without submitting (example-query population)", () => {
+    const onSubmit = vi.fn();
+    const onValueChange = vi.fn();
+    render(
+      <AISearchBar
+        onSubmit={onSubmit}
+        value="Zeig mir alle Dokumente von Emma"
+        onValueChange={onValueChange}
+      />,
+    );
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    // The query is visible and editable, but not auto-submitted.
+    expect(input.value).toBe("Zeig mir alle Dokumente von Emma");
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
