@@ -269,6 +269,17 @@ export function ReviewCard({
   const handleConfirm = useCallback(async () => {
     if (!analysis || confirming) return;
 
+    // Block confirm while an unresolved low-confidence person
+    // disambiguation remains (VAL-REVIEW-009). The user must pick a
+    // family member first; the chosen value is sent as the edited
+    // person value via buildConfirmPayload.
+    if (hasUnresolvedDisambiguation) {
+      setConfirmError(
+        "Bitte wähle zuerst die richtige Person aus, bevor du bestätigst.",
+      );
+      return;
+    }
+
     setConfirming(true);
     setConfirmError(null);
 
@@ -312,7 +323,7 @@ export function ReviewCard({
     } finally {
       setConfirming(false);
     }
-  }, [analysis, confirming, edits, documentId, onConfirmSuccess]);
+  }, [analysis, confirming, edits, documentId, onConfirmSuccess, hasUnresolvedDisambiguation]);
 
   /** "Neu analysieren" — re-run extraction. */
   const handleReanalyze = useCallback(async () => {
@@ -885,7 +896,7 @@ function ReviewCardContent({
           type="button"
           size="lg"
           onClick={onConfirm}
-          disabled={confirming}
+          disabled={confirming || hasUnresolvedDisambiguation}
           className="h-12 rounded-ordilo-md w-full"
           data-testid="confirm-button"
         >
@@ -893,6 +904,11 @@ function ReviewCardContent({
             <>
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               Wird bestätigt …
+            </>
+          ) : hasUnresolvedDisambiguation ? (
+            <>
+              <AlertCircle className="size-4" aria-hidden="true" />
+              Bitte Person wählen
             </>
           ) : (
             <>
@@ -1278,10 +1294,23 @@ function ReviewCardSkeleton({ className }: { className?: string }) {
 }
 
 /**
+ * Friendly, user-safe German copy shown for any failed-analysis card.
+ *
+ * The raw backend/provider error (e.g. "OpenAI: API-Fehler",
+ * "Could not parse PDF") is never surfaced to the user. Provider-specific
+ * details are kept out of the UI (VAL-REVIEW-014).
+ */
+const FRIENDLY_FAILURE_COPY = "Analyse fehlgeschlagen. Bitte erneut versuchen.";
+
+/**
  * Error state for the review card.
+ *
+ * Always renders the same friendly German copy regardless of the
+ * underlying provider/backend error, so no raw error text leaks into
+ * the UI (VAL-REVIEW-014). The `errorMessage` prop is accepted for API
+ * compatibility but is intentionally not displayed.
  */
 function ReviewCardError({
-  errorMessage,
   onRetry,
   className,
 }: {
@@ -1312,8 +1341,7 @@ function ReviewCardError({
           Analyse fehlgeschlagen
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {errorMessage ||
-            "Die Analyse konnte nicht abgeschlossen werden. Bitte erneut versuchen."}
+          {FRIENDLY_FAILURE_COPY}
         </p>
         {onRetry && (
           <Button

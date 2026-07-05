@@ -188,6 +188,7 @@ export function DocumentCard({
             }}
             className="inline-flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             aria-label="Erneut versuchen"
+            data-testid="document-retry-button"
           >
             <RefreshCw className="size-3" aria-hidden="true" />
             Erneut versuchen

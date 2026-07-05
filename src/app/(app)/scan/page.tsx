@@ -21,6 +21,7 @@ import {
   isImageMimeType,
   isPdfMimeType,
   isProcessingStatus,
+  getFailedStage,
   ACCEPTED_FILE_EXTENSIONS,
   MAX_FILE_SIZE_LABEL,
 } from "@/lib/schemas/document";
@@ -257,29 +258,68 @@ export default function ScanPage() {
     return () => clearInterval(interval);
   }, [hasProcessingDocs, familyId, fetchDocuments]);
 
-  // --- Retry OCR for a failed document ---
-  const handleRetryOcr = useCallback(
+  // --- Retry a failed document (routed by failing pipeline stage) ---
+  // The generic `failed` status covers both OCR-stage and analysis-stage
+  // failures (see AGENTS.md). To retry correctly, we derive the failing
+  // stage from the persisted document state: a document that never
+  // produced OCR text failed at the OCR stage (retry via OCR endpoint);
+  // a document with OCR text present failed at the analysis stage
+  // (retry via the analyze endpoint). This prevents misrouting an
+  // OCR-stage failure through the analyze endpoint (which would reject
+  // it with NO_OCR_TEXT) and vice versa.
+  const handleRetryFailed = useCallback(
     async (documentId: string) => {
-      // Optimistically update the document status to ocr_processing
-      // so the UI shows the processing animation immediately.
+      const doc = documents.find((d) => d.id === documentId);
+      if (!doc) return;
+
+      const stage = getFailedStage(doc);
+
+      if (stage === "ocr") {
+        // OCR-stage failure → retry via the OCR endpoint.
+        // Optimistically update the document status to ocr_processing
+        // so the UI shows the processing animation immediately.
+        setDocuments((prev) =>
+          prev.map((d) =>
+            d.id === documentId
+              ? { ...d, status: "ocr_processing", error_message: null }
+              : d,
+          ),
+        );
+
+        try {
+          await triggerOcr(documentId);
+        } catch {
+          // OCR failed again — refetch to get the failed status + error.
+        }
+        await fetchDocuments();
+        return;
+      }
+
+      // Analysis-stage failure → retry via the analyze endpoint.
+      // Optimistically update the document status to analyzing so the
+      // UI shows the processing animation immediately.
       setDocuments((prev) =>
         prev.map((d) =>
           d.id === documentId
-            ? { ...d, status: "ocr_processing", error_message: null }
+            ? { ...d, status: "analyzing", error_message: null }
             : d,
         ),
-      );
+        );
 
       try {
-        await triggerOcr(documentId);
-        // OCR succeeded — refetch to get the final state.
-        await fetchDocuments();
+        const response = await fetch(
+          `/api/documents/${documentId}/analyze`,
+          { method: "POST" },
+        );
+        if (!response.ok) {
+          // Analysis failed again — refetch to get the failed status.
+        }
       } catch {
-        // OCR failed again — refetch to get the failed status + error message.
-        await fetchDocuments();
+        // Network error — refetch to get the current status.
       }
+      await fetchDocuments();
     },
-    [fetchDocuments],
+    [documents, fetchDocuments],
   );
 
   // --- Trigger analysis for a document ---
@@ -553,7 +593,7 @@ export default function ScanPage() {
                       }
                       onRetry={
                         doc.status === "failed"
-                          ? () => handleRetryOcr(doc.id)
+                          ? () => handleRetryFailed(doc.id)
                           : undefined
                       }
                     />
@@ -590,7 +630,7 @@ export default function ScanPage() {
                       errorMessage={doc.error_message}
                       onConfirmSuccess={handleConfirmSuccess}
                       onReanalyzeSuccess={handleReanalyzeSuccess}
-                      onRetry={() => triggerAnalysis(doc.id)}
+                      onRetry={() => handleRetryFailed(doc.id)}
                     />
                   )}
                 </div>

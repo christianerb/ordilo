@@ -144,7 +144,38 @@ describe("ReviewCard", () => {
       />,
     );
     expect(screen.getByTestId("review-card-error")).toBeDefined();
-    expect(screen.getByText("OpenAI: API-Fehler")).toBeDefined();
+  });
+
+  it("shows friendly German copy in the failed state, never raw provider text", () => {
+    render(
+      <ReviewCard
+        documentId="doc-1"
+        status="failed"
+        errorMessage="OpenAI: API-Fehler"
+      />,
+    );
+    // Friendly copy is shown.
+    expect(
+      screen.getByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+    ).toBeDefined();
+    // Raw provider/backend error text must NOT leak into the UI.
+    expect(screen.queryByText("OpenAI: API-Fehler")).toBeNull();
+    expect(screen.queryByText(/OpenAI/)).toBeNull();
+  });
+
+  it("does not leak other raw provider strings (e.g. 'Could not parse PDF')", () => {
+    render(
+      <ReviewCard
+        documentId="doc-1"
+        status="failed"
+        errorMessage="Could not parse PDF"
+      />,
+    );
+    expect(screen.queryByText("Could not parse PDF")).toBeNull();
+    expect(screen.queryByText(/parse PDF/i)).toBeNull();
+    expect(
+      screen.getByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+    ).toBeDefined();
   });
 
   it("shows a retry button in the error state", () => {
@@ -168,7 +199,7 @@ describe("ReviewCard", () => {
       <ReviewCard documentId="doc-1" status="failed" errorMessage={null} />,
     );
     expect(
-      screen.getByText(/Die Analyse konnte nicht abgeschlossen werden/),
+      screen.getByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
     ).toBeDefined();
   });
 
@@ -233,7 +264,7 @@ describe("ReviewCard", () => {
     expect(screen.getByText(/Ich glaube, das ist.*Schule.*Emma/)).toBeDefined();
   });
 
-  it("shows 'Alles bestätigen' button enabled when analyzed", async () => {
+  it("shows 'Alles bestätigen' button enabled when analyzed and no unresolved disambiguation", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
@@ -245,7 +276,131 @@ describe("ReviewCard", () => {
     });
 
     const confirmButton = screen.getByTestId("confirm-button");
+    // fullAnalysis has a high-confidence person (0.95) → no unresolved
+    // disambiguation → button is enabled.
     expect(confirmButton.getAttribute("disabled")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Disambiguation gating (VAL-REVIEW-009)
+  // ---------------------------------------------------------------------------
+
+  it("disables 'Alles bestätigen' while an unresolved low-confidence disambiguation remains", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("disambiguation-prompt")).toBeDefined();
+    });
+
+    const confirmButton = screen.getByTestId("confirm-button");
+    expect(confirmButton.getAttribute("disabled")).not.toBeNull();
+  });
+
+  it("does not call the confirm API when disambiguation is unresolved", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-button")).toBeDefined();
+    });
+
+    // Button is disabled, but even a forced click should not call confirm.
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    // Allow any pending microtasks to flush.
+    await waitFor(() => {
+      // No POST to the confirm endpoint should have been made.
+      const confirmCalls = fetchSpy.mock.calls.filter(
+        ([url]) =>
+          typeof url === "string" && url.includes("/confirm"),
+      );
+      expect(confirmCalls.length).toBe(0);
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("enables 'Alles bestätigen' after the user resolves the disambiguation", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("disambiguation-prompt")).toBeDefined();
+    });
+
+    // Initially disabled.
+    expect(
+      screen.getByTestId("confirm-button").getAttribute("disabled"),
+    ).not.toBeNull();
+
+    // Resolve the disambiguation by picking a family member.
+    fireEvent.click(screen.getByTestId("disambiguation-option-member-2"));
+
+    // Button should now be enabled.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("confirm-button").getAttribute("disabled"),
+      ).toBeNull();
+    });
+  });
+
+  it("sends the chosen disambiguation value as the edited person value on confirm", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("disambiguation-prompt")).toBeDefined();
+    });
+
+    // Resolve the disambiguation by picking "Hanna" (member-2).
+    fireEvent.click(screen.getByTestId("disambiguation-option-member-2"));
+
+    // Wait for the button to become enabled.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("confirm-button").getAttribute("disabled"),
+      ).toBeNull();
+    });
+
+    // Confirm.
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      const confirmCall = fetchSpy.mock.calls.find(
+        ([url]) =>
+          typeof url === "string" && url.includes("/confirm"),
+      );
+      expect(confirmCall).toBeDefined();
+      const body = JSON.parse(
+        (confirmCall![1] as RequestInit).body as string,
+      );
+      // The chosen family member (Hanna) is sent as the edited person.
+      expect(body.family_members[0].name).toBe("Hanna");
+      expect(body.family_members[0].person_id).toBe("member-2");
+    });
+
+    fetchSpy.mockRestore();
   });
 
   it("shows 'Neu analysieren' button when analyzed", async () => {

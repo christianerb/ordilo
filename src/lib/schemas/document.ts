@@ -251,6 +251,55 @@ export const uploadFamilyIdSchema = z.object({
 export type UploadFamilyIdInput = z.infer<typeof uploadFamilyIdSchema>;
 
 // ---------------------------------------------------------------------------
+// Failed-stage derivation (retry routing)
+// ---------------------------------------------------------------------------
+
+/**
+ * The pipeline stage at which a document failed.
+ *
+ * The document status machine uses a single generic `failed` status for
+ * both OCR-stage and analysis-stage failures (see AGENTS.md). To route
+ * retries correctly, the UI must know which stage failed:
+ *   - `"ocr"` → retry via the OCR endpoint (`POST /api/documents/[id]/ocr`)
+ *   - `"analysis"` → retry via the analyze endpoint
+ *     (`POST /api/documents/[id]/analyze`)
+ */
+export type FailedStage = "ocr" | "analysis";
+
+/**
+ * Derive the failing pipeline stage from the document's persisted state.
+ *
+ * A document that never produced OCR text (no `ocr_text` and no
+ * `page_count`) failed at the OCR stage. A document that did produce OCR
+ * text (OCR completed) but is now `failed` must have failed at the
+ * analysis stage.
+ *
+ * This derivation is robust because the OCR route only stores `ocr_text`
+ * and `page_count` on success (after Datalab returns `complete`). If
+ * Datalab fails, those fields remain null, so the failure is correctly
+ * attributed to the OCR stage.
+ *
+ * @param doc - A document row (or partial) with `ocr_text` and
+ *              `page_count` fields.
+ * @returns `"ocr"` if the failure occurred before OCR completed,
+ *          `"analysis"` if OCR completed but the document later failed.
+ */
+export function getFailedStage(doc: {
+  ocr_text?: string | null;
+  page_count?: number | null;
+}): FailedStage {
+  // OCR completed if there is any non-empty OCR text.
+  if (doc.ocr_text && doc.ocr_text.trim().length > 0) {
+    return "analysis";
+  }
+  // Fall back to page_count: OCR stores page_count on success.
+  if (doc.page_count && doc.page_count > 0) {
+    return "analysis";
+  }
+  return "ocr";
+}
+
+// ---------------------------------------------------------------------------
 // State machine — valid transitions
 // ---------------------------------------------------------------------------
 
