@@ -1,10 +1,12 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import {
-  chunkText,
+  chunkPages,
   generateEmbeddings,
   embeddingToVectorString,
   EmbeddingError,
+  type PageContent,
 } from "@/lib/ai/embeddings";
 import {
   confirmPayloadSchema,
@@ -28,42 +30,56 @@ import type { Database } from "@/types/database";
  *   2. Validate the document ID is a UUID
  *   3. Parse & validate the request body with Zod (confirm payload)
  *   4. Read the document (RLS-scoped) to check status and family_id
- *   5. If not found → 404 (not 403, to avoid leaking existence)
+ *   5. If not found via RLS → check admin client: exists but not owned → 403;
+ *      truly does not exist → 404 (VAL-CONFIRM-009)
  *   6. If status not "analyzed" → 409 (reject, per VAL-CONFIRM-010)
- *   7. Fetch OCR text (from document_pages or documents.ocr_text)
- *   8. Clear prior knowledge_edges and document_embeddings for this
- *      document (idempotency — no duplicates on retry, per VAL-CONFIRM-012)
- *   9. Create/reuse knowledge_nodes:
+ *   7. Fetch OCR text with page numbers (from document_pages or
+ *      documents.ocr_text fallback)
+ *   8. Conditional atomic transition: UPDATE ... SET status='confirmed'
+ *      WHERE status='analyzed' — prevents double-submit; 0 rows → 409
+ *   9. Clear prior knowledge_edges, document_embeddings, and document
+ *      knowledge_node for this document (idempotency, per VAL-CONFIRM-012)
+ *  10. Create/reuse knowledge_nodes:
  *      - Document node (type="document", label=title, properties={document_id})
  *      - Person nodes (type="person", label=name) — reused if exists per family
  *      - Organization nodes (type="organization", label=name) — reused if exists
- *  10. Create knowledge_edges linking document node → person/org nodes
+ *  11. Create knowledge_edges linking document node → person/org nodes
  *      (relation_type, source_document_id, confidence, confirmed=true)
- *  11. Chunk OCR text (~500-token chunks, ~50-token overlap)
- *  12. Generate embeddings via OpenAI text-embedding-3-small
- *  13. Store document_embeddings rows with vector(1536) and metadata
- *  14. Update extracted_entities: confirmed=true (and replace with edited values)
- *  15. Update tasks: confirmed=true (and replace with edited values, delete removed)
- *  16. Update document: status="confirmed", confirmed_at=now(), title, summary,
- *      document_type, category from the edited payload
+ *  12. Chunk OCR text page-aware (~500-token chunks, ~50-token overlap)
+ *  13. Generate embeddings via OpenAI text-embedding-3-small
+ *  14. Store document_embeddings rows with vector(1536) and metadata
+ *      including page_number provenance (VAL-CONFIRM-005)
+ *  15. Update extracted_entities: confirmed=true (and replace with edited values)
+ *  16. Update tasks: confirmed=true (and replace with edited values, delete removed)
  *  17. Return { status: "confirmed", document_id }
  *
- * Failure handling (VAL-CONFIRM-011):
- *   - If embedding generation or knowledge graph creation fails, the route
- *     sets status to "failed" and returns a structured error. The clearing
- *     at step 8 ensures no partial state persists on retry.
+ * Atomicity (VAL-CONFIRM-011):
+ *   - The analyzed→confirmed transition is performed conditionally
+ *     (UPDATE ... WHERE status='analyzed') as the first mutation, so
+ *     a double-submit or concurrent request cannot both proceed (only
+ *     one matches the WHERE clause; the other gets 0 rows → 409).
+ *   - All subsequent graph/embedding/entity/task mutations happen after
+ *     the conditional transition. If any step fails, the document is
+ *     marked 'failed' (clearing confirmed_at) so no partial confirmed
+ *     state persists.
  *
  * Idempotency (VAL-CONFIRM-012):
- *   - Prior edges and embeddings are cleared at the start, so retrying
- *     confirm (e.g. after a failure that left the document in "analyzed"
- *     or after re-analyze from "failed") does not create duplicates.
+ *   - Prior edges, embeddings, and the document node are cleared before
+ *     inserting new ones, so retrying confirm (e.g. after a failure that
+ *     left the document in "failed" or after re-analyze) does not create
+ *     duplicates.
  *   - Person and organization nodes are reused (find by family_id + type +
  *     label), so multiple documents referencing the same person share a
  *     single node.
+ *   - DB uniqueness constraints on knowledge_nodes, knowledge_edges, and
+ *     document_embeddings absorb any concurrent duplicate inserts.
  *
  * RLS: All queries use the server client (RLS-scoped), so a user who does
- * not own the document's family gets a 404. No knowledge graph mutations
- * or OpenAI calls are made for non-owned documents.
+ * not own the document's family gets no row. The route then uses the admin
+ * (service-role) client to distinguish existence from ownership: if the
+ * document exists but belongs to another family → 403; only if the document
+ * truly does not exist → 404. No knowledge graph mutations or OpenAI calls
+ * are made for non-owned documents (VAL-CONFIRM-009).
  *
  * Edited payload (VAL-CONFIRM-008):
  *   - The route uses the edited values from the payload (changed person,
@@ -136,10 +152,33 @@ export async function POST(
     return Response.json(body, { status: 500 });
   }
 
-  // 5. Not found (or RLS blocked) → 404 -----------------------------------
+  // 5. Not found (or RLS blocked) → distinguish 403 vs 404 -----------------
+  // The RLS-scoped read returns no row for both non-existent AND non-owned
+  // documents. Use the admin (service-role) client to check whether the
+  // document exists at all: if it exists but belongs to another family,
+  // return a structured 403; only return 404 when the document truly
+  // does not exist (VAL-CONFIRM-009). No mutations are performed in
+  // either case.
   if (!document) {
+    const adminClient = createAdminClient();
+    const { data: existingDoc } = await adminClient
+      .from("documents")
+      .select("id")
+      .eq("id", documentId)
+      .maybeSingle();
+
+    if (existingDoc) {
+      // Document exists but belongs to another family → 403
+      const body: ConfirmErrorResponse = {
+        error: "Kein Zugriff auf dieses Dokument.",
+        code: "FORBIDDEN",
+      };
+      return Response.json(body, { status: 403 });
+    }
+
+    // Document truly does not exist → 404
     const body: ConfirmErrorResponse = {
-      error: "Dokument nicht gefunden oder kein Zugriff.",
+      error: "Dokument nicht gefunden.",
       code: "DOCUMENT_NOT_FOUND",
     };
     return Response.json(body, { status: 404 });
@@ -156,10 +195,10 @@ export async function POST(
 
   const familyId = document.family_id;
 
-  // 7. Fetch OCR text ------------------------------------------------------
+  // 7. Fetch OCR text (with page numbers for provenance) -------------------
   const { data: pages, error: pagesError } = await serverClient
     .from("document_pages")
-    .select("ocr_markdown")
+    .select("ocr_markdown, page_number")
     .eq("document_id", documentId)
     .order("page_number", { ascending: true });
 
@@ -171,19 +210,80 @@ export async function POST(
     return Response.json(body, { status: 500 });
   }
 
-  const pageMarkdowns = (pages ?? [])
-    .map((p) => p.ocr_markdown)
-    .filter((md): md is string => Boolean(md && md.trim()));
-  const ocrMarkdown = pageMarkdowns.join("\n\n");
-  const fullOcrText =
-    ocrMarkdown.trim() || (document.ocr_text ?? "").trim();
+  // Build page-aware content for embedding chunking.
+  // Each non-empty page's markdown is chunked separately so that every
+  // embedding row carries its originating page_number in metadata_json
+  // (VAL-CONFIRM-005).
+  const pageContents: PageContent[] = (pages ?? [])
+    .filter((p) => p.ocr_markdown && p.ocr_markdown.trim())
+    .map((p) => ({
+      text: p.ocr_markdown!,
+      page_number: p.page_number,
+    }));
 
-  // 8-16. Perform the confirm operations -----------------------------------
+  // Fallback: if no page markdown is available, use documents.ocr_text
+  // as a single "page" (page_number = 1) so embeddings are still generated.
+  if (pageContents.length === 0) {
+    const fallbackText = (document.ocr_text ?? "").trim();
+    if (fallbackText) {
+      pageContents.push({ text: fallbackText, page_number: 1 });
+    }
+  }
+
+  // 8. Conditional atomic transition: analyzed → confirmed -----------------
+  // This single UPDATE atomically checks the current status AND transitions
+  // to 'confirmed'. Only a document in 'analyzed' state can be transitioned.
+  // If a concurrent request changed the status between our read (step 4)
+  // and this update, the update matches 0 rows → 409.
+  //
+  // This is the double-submit guard: two concurrent confirm requests
+  // cannot both transition the same document (VAL-CONFIRM-011,
+  // VAL-CONFIRM-012).
+  const { data: transitioned, error: transitionError } = await serverClient
+    .from("documents")
+    .update({
+      status: "confirmed",
+      confirmed_at: new Date().toISOString(),
+      title: payload.title,
+      summary: payload.summary,
+      document_type: payload.document_type,
+      category: payload.suggested_category,
+      error_message: null,
+    })
+    .eq("id", documentId)
+    .eq("status", "analyzed")
+    .select("id")
+    .maybeSingle();
+
+  if (transitionError) {
+    const body: ConfirmErrorResponse = {
+      error: "Status konnte nicht aktualisiert werden.",
+      code: "DB_UPDATE_FAILED",
+    };
+    return Response.json(body, { status: 500 });
+  }
+
+  if (!transitioned) {
+    // A concurrent request changed the status between our read and the
+    // atomic transition. Return 409.
+    const body: ConfirmErrorResponse = {
+      error: "Der Dokument-Status hat sich geändert. Bitte erneut versuchen.",
+      code: "STATUS_CHANGED",
+    };
+    return Response.json(body, { status: 409 });
+  }
+
+  // 9-15. Perform the confirm operations -----------------------------------
+  // All graph/embedding/entity/task mutations happen AFTER the conditional
+  // transition. If any step fails, the document is marked 'failed' so no
+  // partial confirmed state persists (VAL-CONFIRM-011). On retry (after
+  // re-analyze), the clear-before-insert pattern + uniqueness constraints
+  // ensure no duplicates (VAL-CONFIRM-012).
   try {
-    // 8. Clear prior edges and embeddings (idempotency) -------------------
+    // 9. Clear prior edges, embeddings, and document node (idempotency) --
     await clearPriorGraphData(serverClient, documentId);
 
-    // 9-10. Create knowledge graph (nodes + edges) ------------------------
+    // 10-11. Create knowledge graph (nodes + edges) ----------------------
     await createKnowledgeGraph(
       serverClient,
       familyId,
@@ -191,13 +291,13 @@ export async function POST(
       payload,
     );
 
-    // 11-13. Generate and store embeddings --------------------------------
-    if (fullOcrText) {
+    // 12-13. Generate and store page-aware embeddings --------------------
+    if (pageContents.length > 0) {
       await generateAndStoreEmbeddings(
         serverClient,
         familyId,
         documentId,
-        fullOcrText,
+        pageContents,
       );
     }
 
@@ -209,25 +309,7 @@ export async function POST(
       payload,
     );
 
-    // 16. Update document status to confirmed -----------------------------
-    const { error: updateError } = await serverClient
-      .from("documents")
-      .update({
-        status: "confirmed",
-        confirmed_at: new Date().toISOString(),
-        title: payload.title,
-        summary: payload.summary,
-        document_type: payload.document_type,
-        category: payload.suggested_category,
-        error_message: null,
-      })
-      .eq("id", documentId);
-
-    if (updateError) {
-      throw new Error("Dokument-Status konnte nicht aktualisiert werden.");
-    }
-
-    // 17. Success ---------------------------------------------------------
+    // 16. Success ---------------------------------------------------------
     const body: ConfirmSuccessResponse = {
       status: "confirmed",
       document_id: documentId,
@@ -474,28 +556,33 @@ async function findOrCreateNode(
 }
 
 /**
- * Chunk OCR text, generate embeddings via OpenAI, and store them in
- * document_embeddings.
+ * Chunk page-aware OCR text, generate embeddings via OpenAI, and store
+ * them in document_embeddings.
  *
- * Chunks are ~500 tokens with ~50-token overlap. Each chunk is embedded
- * with text-embedding-3-small (1536 dimensions) and stored with metadata
- * containing the document_id and chunk index.
+ * Each page's text is chunked independently (~500-token chunks with
+ * ~50-token overlap) so that every embedding row carries its originating
+ * page_number in metadata_json, preserving page provenance for
+ * page-aware search results (VAL-CONFIRM-005).
+ *
+ * Each chunk is embedded with text-embedding-3-small (1536 dimensions)
+ * and stored with metadata containing document_id, page_number, and
+ * chunk index.
  */
 async function generateAndStoreEmbeddings(
   client: Awaited<ReturnType<typeof createServerClient>>,
   familyId: string,
   documentId: string,
-  ocrText: string,
+  pages: PageContent[],
 ): Promise<void> {
-  // Chunk the OCR text.
-  const chunks = chunkText(ocrText);
+  // Chunk each page separately, preserving page_number provenance.
+  const chunks = chunkPages(pages);
 
   if (chunks.length === 0) return;
 
   // Generate embeddings for all chunks.
   const embeddings = await generateEmbeddings(chunks);
 
-  // Build insert rows.
+  // Build insert rows with page_number in metadata_json.
   type EmbeddingInsert =
     Database["public"]["Tables"]["document_embeddings"]["Insert"];
   const embeddingInserts: EmbeddingInsert[] = chunks.map((chunk, i) => ({
@@ -505,6 +592,7 @@ async function generateAndStoreEmbeddings(
     embedding: embeddingToVectorString(embeddings[i]),
     metadata_json: {
       document_id: documentId,
+      page_number: chunk.page_number,
       chunk_index: chunk.index,
       chunk_total: chunks.length,
     },
@@ -680,6 +768,10 @@ async function updateEntitiesAndTasks(
 /**
  * Mark a document as failed with an error message.
  *
+ * Also clears confirmed_at so that a failed confirm (which may have set
+ * confirmed_at during the conditional transition) does not leave a
+ * stale confirmed_at value on a failed document.
+ *
  * Best-effort: errors are silently ignored so we don't mask the primary
  * error with a secondary DB error.
  */
@@ -694,6 +786,7 @@ async function markFailed(
       .update({
         status: "failed",
         error_message: errorMessage,
+        confirmed_at: null,
       })
       .eq("id", documentId);
   } catch {

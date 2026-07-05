@@ -82,6 +82,31 @@ export interface TextChunk {
 }
 
 /**
+ * A single page's text content with its page number.
+ *
+ * Used by `chunkPages` to chunk text while preserving which page each
+ * chunk originated from.
+ */
+export interface PageContent {
+  /** The page's text (e.g. OCR markdown for that page). */
+  text: string;
+  /** 1-based page number from the document. */
+  page_number: number;
+}
+
+/**
+ * A text chunk with page provenance.
+ *
+ * Extends `TextChunk` with the page number the chunk originated from,
+ * so that `document_embeddings.metadata_json` can store `page_number`
+ * alongside `document_id` for page-aware search results.
+ */
+export interface PageTextChunk extends TextChunk {
+  /** 1-based page number from the source document. */
+  page_number: number;
+}
+
+/**
  * Split text into overlapping chunks of approximately `chunkSizeTokens`
  * tokens with `chunkOverlapTokens` overlap.
  *
@@ -142,6 +167,41 @@ export function chunkText(
   }
 
   return chunks.map((text, index) => ({ text, index }));
+}
+
+/**
+ * Split multiple pages of text into overlapping chunks while preserving
+ * page provenance.
+ *
+ * Each page's text is chunked independently using `chunkText`, and every
+ * resulting chunk is tagged with its originating `page_number`. Chunk
+ * indices are global (continuous across pages) so they remain unique
+ * within the document.
+ *
+ * This preserves page-level provenance for embeddings: each
+ * `document_embeddings` row can store `page_number` in its
+ * `metadata_json`, enabling page-aware search results and citations.
+ *
+ * @param pages - Array of page content (text + page number).
+ * @returns An array of page-aware text chunks, or an empty array if all
+ *          pages are empty/whitespace-only.
+ */
+export function chunkPages(pages: PageContent[]): PageTextChunk[] {
+  const chunks: PageTextChunk[] = [];
+  let globalIndex = 0;
+
+  for (const page of pages) {
+    const pageChunks = chunkText(page.text);
+    for (const chunk of pageChunks) {
+      chunks.push({
+        text: chunk.text,
+        index: globalIndex++,
+        page_number: page.page_number,
+      });
+    }
+  }
+
+  return chunks;
 }
 
 // ---------------------------------------------------------------------------

@@ -4,6 +4,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createClient: vi.fn(),
+}));
 vi.mock("@/lib/ai/extraction", () => ({
   runExtraction: vi.fn(),
   ExtractionError: class ExtractionError extends Error {
@@ -20,6 +23,7 @@ vi.mock("@/lib/ai/extraction", () => ({
 
 import { POST } from "@/app/api/documents/[id]/analyze/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runExtraction, ExtractionError } from "@/lib/ai/extraction";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
@@ -107,6 +111,7 @@ function mockServerClient(options: {
   docNotFound?: boolean;
   pages?: { ocr_markdown: string | null }[];
   members?: { id: string; name: string; role: string | null }[];
+  membersError?: boolean;
   categoryDocs?: { category: string | null }[];
   knowledgeNodes?: { type: string; label: string }[];
   transitionSuccess?: boolean;
@@ -120,6 +125,7 @@ function mockServerClient(options: {
     docNotFound = false,
     pages = [{ ocr_markdown: "# Page 1\n\nOCR content" }],
     members = [{ id: "member-1", name: "Emma", role: "Kind" }],
+    membersError = false,
     categoryDocs = [{ category: "Kita" }, { category: "Rechnungen" }],
     knowledgeNodes = [{ type: "organization", label: "Kita Sonnenblume" }],
     transitionSuccess = true,
@@ -239,7 +245,7 @@ function mockServerClient(options: {
     select: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         order: vi.fn().mockReturnValue(
-          thenable({ data: members, error: null }),
+          thenable({ data: members, error: membersError ? "members error" : null }),
         ),
       }),
     }),
@@ -343,6 +349,36 @@ function mockServerClient(options: {
   };
 }
 
+/**
+ * Build a mock admin (service-role) Supabase client.
+ *
+ * Used to distinguish existence from ownership: when the RLS-scoped
+ * server client returns no document, the route checks the admin client.
+ * If the admin client finds the document → 403 (not owned).
+ * If the admin client also returns null → 404 (truly not found).
+ */
+function mockAdminClient(options: { docExists?: boolean } = {}) {
+  const { docExists = false } = options;
+
+  const documentsBuilder = {
+    select: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: docExists ? { id: VALID_DOC_ID } : null,
+          error: null,
+        }),
+      }),
+    }),
+  };
+
+  return {
+    from: vi.fn((table: string) => {
+      if (table === "documents") return documentsBuilder;
+      throw new Error(`Unexpected table: ${table}`);
+    }),
+  } as unknown as ReturnType<typeof createAdminClient>;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/documents/[id]/analyze
 // ---------------------------------------------------------------------------
@@ -386,11 +422,14 @@ describe("POST /api/documents/[id]/analyze", () => {
     expect(body.code).toBe("INVALID_DOCUMENT_ID");
   });
 
-  // --- Document not found (RLS) ---
+  // --- Document not found / not owned (403 vs 404) ---
 
-  it("returns 404 when document is not found", async () => {
+  it("returns 404 when document truly does not exist (admin also finds nothing)", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockServerClient({ docNotFound: true }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({ docExists: false }),
     );
 
     const response = await POST(new Request("http://localhost"), createParams());
@@ -398,6 +437,22 @@ describe("POST /api/documents/[id]/analyze", () => {
 
     expect(response.status).toBe(404);
     expect(body.code).toBe("DOCUMENT_NOT_FOUND");
+    expect(runExtraction).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when document exists but belongs to another family (non-owner)", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ docNotFound: true }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({ docExists: true }),
+    );
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.code).toBe("FORBIDDEN");
     expect(runExtraction).not.toHaveBeenCalled();
   });
 
@@ -595,6 +650,23 @@ describe("POST /api/documents/[id]/analyze", () => {
     expect(response.status).toBe(502);
     expect(body.code).toBe("OPENAI_SCHEMA_VALIDATION_FAILED");
     expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+  });
+
+  // --- Analyze stuck-in-analyzing: context failure marks failed ---
+
+  it("marks document failed and returns structured error when family-context fetch fails after transition", async () => {
+    const client = mockServerClient({ membersError: true });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    // The document should be marked as failed (not stuck in 'analyzing').
+    expect(response.status).toBe(500);
+    expect(body.code).toBe("ANALYSIS_FAILED");
+    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+    // OpenAI extraction should NOT have been called (context fetch failed first).
+    expect(runExtraction).not.toHaveBeenCalled();
   });
 
   // --- Re-analyze (clear prior results) ---

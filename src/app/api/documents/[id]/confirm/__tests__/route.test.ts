@@ -4,8 +4,14 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createClient: vi.fn(),
+}));
 vi.mock("@/lib/ai/embeddings", () => ({
   chunkText: vi.fn((text: string) => [{ text, index: 0 }]),
+  chunkPages: vi.fn((pages: { text: string; page_number: number }[]) =>
+    pages.map((p, i) => ({ text: p.text, index: i, page_number: p.page_number })),
+  ),
   generateEmbeddings: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
   embeddingToVectorString: vi.fn((emb: number[]) => `[${emb.join(",")}]`),
   EmbeddingError: class EmbeddingError extends Error {
@@ -22,7 +28,8 @@ vi.mock("@/lib/ai/embeddings", () => ({
 
 import { POST } from "@/app/api/documents/[id]/confirm/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { generateEmbeddings, chunkText } from "@/lib/ai/embeddings";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { generateEmbeddings, chunkPages } from "@/lib/ai/embeddings";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
 // ---------------------------------------------------------------------------
@@ -93,7 +100,7 @@ function mockServerClient(options: {
   docStatus?: string;
   docOcrText?: string | null;
   docNotFound?: boolean;
-  pages?: { ocr_markdown: string | null }[];
+  pages?: { ocr_markdown: string | null; page_number: number }[];
   existingPersonNode?: { id: string } | null;
   nodeCreateError?: boolean;
   edgeInsertError?: boolean;
@@ -101,14 +108,15 @@ function mockServerClient(options: {
   entityInsertError?: boolean;
   taskInsertError?: boolean;
   clearError?: boolean;
-  finalUpdateError?: boolean;
+  transitionSuccess?: boolean;
+  transitionError?: boolean;
 } = {}) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
     docStatus = "analyzed",
     docOcrText = "OCR text from document",
     docNotFound = false,
-    pages = [{ ocr_markdown: "# Page 1\n\nOCR content" }],
+    pages = [{ ocr_markdown: "# Page 1\n\nOCR content", page_number: 1 }],
     existingPersonNode = null,
     nodeCreateError = false,
     edgeInsertError = false,
@@ -116,7 +124,8 @@ function mockServerClient(options: {
     entityInsertError = false,
     taskInsertError = false,
     clearError = false,
-    finalUpdateError = false,
+    transitionSuccess = true,
+    transitionError = false,
   } = options;
 
   const operations: Record<string, number> = {};
@@ -150,22 +159,41 @@ function mockServerClient(options: {
         }),
       };
     }),
+    // Update: .update(payload).eq("id",...).eq("status","analyzed").select("id").maybeSingle()
+    //   → conditional atomic transition (status='confirmed')
+    // Update: .update(payload).eq("id",...) → thenable
+    //   → markFailed (status='failed')
     update: vi.fn((payload: Record<string, unknown>) => {
-      const isFinalUpdate = payload.status === "confirmed";
+      const isTransition = payload.status === "confirmed";
       const isMarkFailed = payload.status === "failed";
 
-      if (isFinalUpdate) {
-        operations.finalUpdate = (operations.finalUpdate ?? 0) + 1;
+      if (isTransition) {
+        operations.transition = (operations.transition ?? 0) + 1;
+        // Conditional transition: .eq("id",...).eq("status","analyzed").select("id").maybeSingle()
+        return {
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: transitionError
+                    ? null
+                    : transitionSuccess
+                      ? { id: VALID_DOC_ID }
+                      : null,
+                  error: transitionError ? "transition error" : null,
+                }),
+              }),
+            }),
+          }),
+        };
       }
+
       if (isMarkFailed) {
         operations.markFailed = (operations.markFailed ?? 0) + 1;
       }
       return {
         eq: vi.fn().mockReturnValue(
-          thenable({
-            data: null,
-            error: finalUpdateError && isFinalUpdate ? "update error" : null,
-          }),
+          thenable({ data: null, error: null }),
         ),
       };
     }),
@@ -320,6 +348,36 @@ function mockServerClient(options: {
   };
 }
 
+/**
+ * Build a mock admin (service-role) Supabase client.
+ *
+ * Used to distinguish existence from ownership: when the RLS-scoped
+ * server client returns no document, the route checks the admin client.
+ * If the admin client finds the document → 403 (not owned).
+ * If the admin client also returns null → 404 (truly not found).
+ */
+function mockAdminClient(options: { docExists?: boolean } = {}) {
+  const { docExists = false } = options;
+
+  const documentsBuilder = {
+    select: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        maybeSingle: vi.fn().mockResolvedValue({
+          data: docExists ? { id: VALID_DOC_ID } : null,
+          error: null,
+        }),
+      }),
+    }),
+  };
+
+  return {
+    from: vi.fn((table: string) => {
+      if (table === "documents") return documentsBuilder;
+      throw new Error(`Unexpected table: ${table}`);
+    }),
+  } as unknown as ReturnType<typeof createAdminClient>;
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/documents/[id]/confirm
 // ---------------------------------------------------------------------------
@@ -329,8 +387,8 @@ describe("POST /api/documents/[id]/confirm", () => {
     vi.clearAllMocks();
     // Default: embeddings succeed.
     (generateEmbeddings as ReturnType<typeof vi.fn>).mockResolvedValue([[0.1, 0.2]]);
-    (chunkText as ReturnType<typeof vi.fn>).mockReturnValue([
-      { text: "chunk text", index: 0 },
+    (chunkPages as ReturnType<typeof vi.fn>).mockReturnValue([
+      { text: "chunk text", index: 0, page_number: 1 },
     ]);
   });
 
@@ -407,11 +465,14 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(body.code).toBe("INVALID_PAYLOAD");
   });
 
-  // --- Document not found (RLS) ---
+  // --- Document not found / not owned (403 vs 404) ---
 
-  it("returns 404 when document is not found", async () => {
+  it("returns 404 when document truly does not exist (admin also finds nothing)", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockServerClient({ docNotFound: true }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({ docExists: false }),
     );
 
     const response = await POST(
@@ -422,6 +483,26 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     expect(response.status).toBe(404);
     expect(body.code).toBe("DOCUMENT_NOT_FOUND");
+    expect(generateEmbeddings).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when document exists but belongs to another family (non-owner)", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ docNotFound: true }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({ docExists: true }),
+    );
+
+    const response = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(403);
+    expect(body.code).toBe("FORBIDDEN");
+    // No knowledge_nodes/edges/embeddings should be created.
     expect(generateEmbeddings).not.toHaveBeenCalled();
   });
 
@@ -499,7 +580,7 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     await POST(createRequest(validPayload()), createParams());
 
-    expect(chunkText).toHaveBeenCalled();
+    expect(chunkPages).toHaveBeenCalled();
     expect(generateEmbeddings).toHaveBeenCalled();
   });
 
@@ -539,14 +620,14 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(client._tasksBuilder.insert).toHaveBeenCalled();
   });
 
-  it("updates document status to confirmed with confirmed_at", async () => {
+  it("updates document status to confirmed with confirmed_at via conditional transition", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     await POST(createRequest(validPayload()), createParams());
 
-    // The final update should have been called.
-    expect(client._operations.finalUpdate).toBe(1);
+    // The conditional transition should have been called.
+    expect(client._operations.transition).toBe(1);
     // Check that the update payload includes status=confirmed and confirmed_at.
     const updateCall = client._documentsBuilder.update.mock.calls[0][0];
     expect(updateCall.status).toBe("confirmed");
@@ -665,8 +746,8 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
   });
 
-  it("marks document as failed on final update error", async () => {
-    const client = mockServerClient({ finalUpdateError: true });
+  it("returns 500 when conditional transition DB update errors", async () => {
+    const client = mockServerClient({ transitionError: true });
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     const response = await POST(
@@ -676,7 +757,65 @@ describe("POST /api/documents/[id]/confirm", () => {
     const body = await response.json();
 
     expect(response.status).toBe(500);
-    expect(body.code).toBe("CONFIRM_FAILED");
+    expect(body.code).toBe("DB_UPDATE_FAILED");
+    // No graph mutations should happen.
+    expect(client._knowledgeEdgesBuilder.insert).not.toHaveBeenCalled();
+  });
+
+  // --- Atomic conditional transition (VAL-CONFIRM-011) ---
+
+  it("returns 409 when conditional transition matches 0 rows (double-submit / status changed)", async () => {
+    const client = mockServerClient({ transitionSuccess: false });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body.code).toBe("STATUS_CHANGED");
+    // No graph mutations or embeddings should happen.
+    expect(generateEmbeddings).not.toHaveBeenCalled();
+    expect(client._knowledgeEdgesBuilder.insert).not.toHaveBeenCalled();
+    expect(client._documentEmbeddingsBuilder.insert).not.toHaveBeenCalled();
+  });
+
+  // --- Page-aware embeddings (VAL-CONFIRM-005) ---
+
+  it("includes page_number in each document_embeddings metadata_json", async () => {
+    const client = mockServerClient({
+      pages: [
+        { ocr_markdown: "# Page 1\n\nContent A", page_number: 1 },
+        { ocr_markdown: "# Page 2\n\nContent B", page_number: 2 },
+      ],
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+    (chunkPages as ReturnType<typeof vi.fn>).mockReturnValue([
+      { text: "Content A", index: 0, page_number: 1 },
+      { text: "Content B", index: 1, page_number: 2 },
+    ]);
+    // Return one embedding per chunk.
+    (generateEmbeddings as ReturnType<typeof vi.fn>).mockResolvedValue([
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ]);
+
+    await POST(createRequest(validPayload()), createParams());
+
+    // Verify chunkPages was called with page-aware content.
+    expect(chunkPages).toHaveBeenCalled();
+    const pageArg = (chunkPages as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(pageArg[0].page_number).toBe(1);
+    expect(pageArg[1].page_number).toBe(2);
+
+    // Verify the embedding insert includes page_number in metadata_json.
+    const insertArg = client._documentEmbeddingsBuilder.insert.mock.calls[0][0];
+    expect(insertArg[0].metadata_json.page_number).toBe(1);
+    expect(insertArg[1].metadata_json.page_number).toBe(2);
+    // metadata_json should also include document_id.
+    expect(insertArg[0].metadata_json.document_id).toBe(VALID_DOC_ID);
   });
 
   // --- Idempotency (VAL-CONFIRM-012) ---
@@ -706,12 +845,53 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(client._operations.nodeFind).toBeGreaterThanOrEqual(1);
   });
 
+  it("idempotent double-confirm: second call returns 409 and creates no duplicates", async () => {
+    // First confirm: succeeds (status was 'analyzed' → transition succeeds).
+    const client1 = mockServerClient({ transitionSuccess: true });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client1);
+
+    const response1 = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    expect(response1.status).toBe(200);
+
+    // Second confirm: transition fails (status is now 'confirmed', not 'analyzed').
+    const client2 = mockServerClient({ transitionSuccess: false });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client2);
+
+    const response2 = await POST(
+      createRequest(validPayload()),
+      createParams(),
+    );
+    const body2 = await response2.json();
+
+    expect(response2.status).toBe(409);
+    expect(body2.code).toBe("STATUS_CHANGED");
+    // No graph mutations should happen on the second call.
+    expect(client2._knowledgeEdgesBuilder.insert).not.toHaveBeenCalled();
+    expect(client2._documentEmbeddingsBuilder.insert).not.toHaveBeenCalled();
+    expect(client2._entitiesBuilder.insert).not.toHaveBeenCalled();
+    expect(client2._tasksBuilder.insert).not.toHaveBeenCalled();
+  });
+
+  it("clears prior embeddings before inserting new ones (replace, not append)", async () => {
+    const client = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(createRequest(validPayload()), createParams());
+
+    // Verify delete was called before insert for embeddings.
+    expect(client._documentEmbeddingsBuilder.delete).toHaveBeenCalled();
+    expect(client._documentEmbeddingsBuilder.insert).toHaveBeenCalled();
+  });
+
   // --- Empty OCR text ---
 
   it("succeeds without embeddings when OCR text is empty", async () => {
     const client = mockServerClient({
       docOcrText: null,
-      pages: [{ ocr_markdown: null }],
+      pages: [{ ocr_markdown: null, page_number: 1 }],
     });
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -730,7 +910,7 @@ describe("POST /api/documents/[id]/confirm", () => {
   it("falls back to documents.ocr_text when pages have no markdown", async () => {
     const client = mockServerClient({
       docOcrText: "Fallback OCR text from documents table",
-      pages: [{ ocr_markdown: null }],
+      pages: [{ ocr_markdown: null, page_number: 1 }],
     });
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 

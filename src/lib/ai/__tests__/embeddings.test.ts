@@ -29,6 +29,7 @@ vi.mock("openai", () => {
 
 import {
   chunkText,
+  chunkPages,
   generateEmbeddings,
   embeddingToVectorString,
   EmbeddingError,
@@ -158,6 +159,86 @@ describe("chunkText", () => {
     for (const chunk of chunks) {
       expect(chunk.text.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// chunkPages
+// ---------------------------------------------------------------------------
+
+describe("chunkPages", () => {
+  it("returns empty array for no pages", () => {
+    expect(chunkPages([])).toEqual([]);
+  });
+
+  it("returns empty array when all pages are empty", () => {
+    expect(chunkPages([
+      { text: "", page_number: 1 },
+      { text: "   ", page_number: 2 },
+    ])).toEqual([]);
+  });
+
+  it("produces a single chunk for a single short page", () => {
+    const chunks = chunkPages([
+      { text: "Short page text", page_number: 1 },
+    ]);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].text).toBe("Short page text");
+    expect(chunks[0].page_number).toBe(1);
+    expect(chunks[0].index).toBe(0);
+  });
+
+  it("preserves page_number across multiple pages", () => {
+    const chunks = chunkPages([
+      { text: "Page one content", page_number: 1 },
+      { text: "Page two content", page_number: 2 },
+      { text: "Page three content", page_number: 3 },
+    ]);
+    expect(chunks).toHaveLength(3);
+    expect(chunks[0].page_number).toBe(1);
+    expect(chunks[1].page_number).toBe(2);
+    expect(chunks[2].page_number).toBe(3);
+  });
+
+  it("assigns global continuous indices across pages", () => {
+    const chunks = chunkPages([
+      { text: "Page one content", page_number: 1 },
+      { text: "Page two content", page_number: 2 },
+    ]);
+    expect(chunks[0].index).toBe(0);
+    expect(chunks[1].index).toBe(1);
+  });
+
+  it("handles a long page that produces multiple chunks, all with same page_number", () => {
+    const longText = "x ".repeat(3000); // > 2000 chars → multiple chunks
+    const chunks = chunkPages([
+      { text: longText, page_number: 5 },
+    ]);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const chunk of chunks) {
+      expect(chunk.page_number).toBe(5);
+    }
+    // Indices should be continuous.
+    for (let i = 0; i < chunks.length; i++) {
+      expect(chunks[i].index).toBe(i);
+    }
+  });
+
+  it("assigns continuous global indices across multi-chunk pages", () => {
+    const longText = "x ".repeat(3000);
+    const chunks = chunkPages([
+      { text: longText, page_number: 1 },
+      { text: "short page", page_number: 2 },
+    ]);
+    // First page produces multiple chunks, second page produces one.
+    const firstPageChunkCount = chunks.filter((c) => c.page_number === 1).length;
+    expect(firstPageChunkCount).toBeGreaterThan(1);
+    // Global indices should be continuous.
+    for (let i = 0; i < chunks.length; i++) {
+      expect(chunks[i].index).toBe(i);
+    }
+    // The last chunk should be from page 2.
+    expect(chunks[chunks.length - 1].page_number).toBe(2);
   });
 });
 

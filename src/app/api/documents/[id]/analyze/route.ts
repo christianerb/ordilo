@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runExtraction, ExtractionError } from "@/lib/ai/extraction";
 import { ANALYZE_ALLOWED_SOURCE_STATUSES } from "@/lib/schemas/document";
 import {
@@ -18,7 +19,8 @@ import type { Database } from "@/types/database";
  *   1. Authenticate the user (requireUser → 401 if no session)
  *   2. Validate the document ID is a UUID
  *   3. Read the document (RLS-scoped) to check status and get family_id
- *   4. If not found → 404 (not 403, to avoid leaking existence)
+ *   4. If not found via RLS → check admin client: exists but not owned → 403;
+ *      truly does not exist → 404 (VAL-EXTRACT-007)
  *   5. If status not in allowed set (ocr_done, analyzed, confirmed, failed) → 409
  *   6. Fetch OCR markdown from document_pages; if empty → 400 error (no OpenAI call)
  *   7. Atomically transition to `analyzing` (conditional on allowed source status)
@@ -39,8 +41,11 @@ import type { Database } from "@/types/database";
  *   - The OPENAI_API_KEY is never exposed to the client.
  *
  * RLS: All queries use the server client (RLS-scoped), so a user who does
- * not own the document's family gets a 404 (not 403, to avoid leaking
- * existence). No OpenAI call is made for non-owned documents.
+ * not own the document's family gets no row. The route then uses the admin
+ * (service-role) client to distinguish existence from ownership: if the
+ * document exists but belongs to another family → 403; only if the document
+ * truly does not exist → 404. No OpenAI call is made in either case
+ * (VAL-EXTRACT-007).
  *
  * Re-analyze: When the document is already in `analyzed` or `confirmed`
  * status, the route clears prior extracted_entities and tasks before
@@ -89,10 +94,32 @@ export async function POST(
     return Response.json(body, { status: 500 });
   }
 
-  // 4. Not found (or RLS blocked) → 404 -----------------------------------
+  // 4. Not found (or RLS blocked) → distinguish 403 vs 404 -----------------
+  // The RLS-scoped read returns no row for both non-existent AND non-owned
+  // documents. Use the admin (service-role) client to check whether the
+  // document exists at all: if it exists but belongs to another family,
+  // return a structured 403; only return 404 when the document truly
+  // does not exist (VAL-EXTRACT-007).
   if (!document) {
+    const adminClient = createAdminClient();
+    const { data: existingDoc } = await adminClient
+      .from("documents")
+      .select("id")
+      .eq("id", documentId)
+      .maybeSingle();
+
+    if (existingDoc) {
+      // Document exists but belongs to another family → 403
+      const body: AnalyzeErrorResponse = {
+        error: "Kein Zugriff auf dieses Dokument.",
+        code: "FORBIDDEN",
+      };
+      return Response.json(body, { status: 403 });
+    }
+
+    // Document truly does not exist → 404
     const body: AnalyzeErrorResponse = {
-      error: "Dokument nicht gefunden oder kein Zugriff.",
+      error: "Dokument nicht gefunden.",
       code: "DOCUMENT_NOT_FOUND",
     };
     return Response.json(body, { status: 404 });
@@ -177,22 +204,30 @@ export async function POST(
     return Response.json(body, { status: 409 });
   }
 
-  // 8. Fetch family context ------------------------------------------------
-  const familyContext = await fetchFamilyContext(
-    serverClient,
-    document.family_id,
-  );
-
-  // 9. Call OpenAI extraction ----------------------------------------------
+  // 8-9. Fetch family context and call OpenAI extraction ------------------
+  // Both the family-context fetch and the OpenAI extraction happen AFTER
+  // the atomic transition to 'analyzing'. Any failure in either step must
+  // mark the document 'failed' and return a structured error so the
+  // document is never stranded in 'analyzing' (VAL-EXTRACT-008).
   let analysis: DocumentAnalysis;
   try {
+    const familyContext = await fetchFamilyContext(
+      serverClient,
+      document.family_id,
+    );
     analysis = await runExtraction(fullOcrText, familyContext);
   } catch (err) {
     const isExtractionError = err instanceof ExtractionError;
     const message = isExtractionError
       ? err.message
-      : "Analyse ist fehlgeschlagen. Bitte erneut versuchen.";
-    const code = isExtractionError ? err.code : "EXTRACTION_FAILED";
+      : err instanceof Error
+        ? err.message
+        : "Analyse ist fehlgeschlagen. Bitte erneut versuchen.";
+    const code = isExtractionError
+      ? err.code
+      : err instanceof Error
+        ? "ANALYSIS_FAILED"
+        : "EXTRACTION_FAILED";
 
     await markFailed(serverClient, documentId, message);
 
