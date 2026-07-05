@@ -132,6 +132,19 @@ export default function ScanPage() {
     fetchDocuments();
   }, [fetchDocuments]);
 
+  // --- Auto-expand document from query param (e.g. /scan?doc=ID) ---
+  // When the user navigates from the search page by clicking a source card,
+  // the URL contains ?doc=ID. We auto-expand that document's review card
+  // so the user sees the referenced document immediately (VAL-SEARCH-027).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const docId = params.get("doc");
+    if (docId) {
+      setExpandedDocId(docId);
+    }
+  }, []);
+
   // --- Upload handler ---
   const handleFileUpload = useCallback(
     async (file: File) => {
