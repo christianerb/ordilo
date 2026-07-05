@@ -118,6 +118,47 @@ export interface SearchErrorResponse {
 // ---------------------------------------------------------------------------
 
 /**
+ * Escape special regex characters in a string so it can be used as a literal
+ * pattern in a RegExp.
+ */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Check whether a keyword appears as a whole word (word-boundary match) in
+ * the given text. Unicode-aware (handles German umlauts via \p{L}).
+ * Case-insensitive.
+ *
+ * This prevents false positives where a keyword is merely a substring of a
+ * longer word. For example:
+ *   - matchesWordBoundary("Offenbach Stadtplan", "offen") → false
+ *     ("offen" is a substring of "Offenbach", not a whole word)
+ *   - matchesWordBoundary("Was ist noch offen?", "offen") → true
+ *     ("offen" is a whole word)
+ *   - matchesWordBoundary("Johanna", "hanna") → false
+ *     ("hanna" is a substring of "Johanna", not a whole word)
+ *   - matchesWordBoundary("Hanna", "hanna") → true
+ *
+ * Uses lookbehind/lookahead with Unicode property escapes (\p{L} for letters,
+ * \p{N} for numbers) to define word boundaries that include German umlauts
+ * and other Unicode letters.
+ *
+ * @param text - The text to search within.
+ * @param keyword - The keyword to match as a whole word.
+ * @returns true if the keyword appears as a whole word in the text.
+ */
+export function matchesWordBoundary(text: string, keyword: string): boolean {
+  const escapedKeyword = escapeRegExp(keyword.toLowerCase().trim());
+  if (!escapedKeyword) return false;
+  const regex = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapedKeyword}(?![\\p{L}\\p{N}])`,
+    "iu",
+  );
+  return regex.test(text.toLowerCase());
+}
+
+/**
  * German keywords that indicate a task-related query.
  *
  * Used by graph search (and auto mode) to detect whether the user is asking
@@ -145,21 +186,26 @@ export const TASK_KEYWORDS = [
 /**
  * Determine whether a query is task-related (mentions deadlines, tasks, etc.).
  *
- * Used by graph search and auto-mode selection. Case-insensitive.
+ * Used by graph search and auto-mode selection. Case-insensitive. Uses
+ * word-boundary matching so that a keyword appearing only as a substring of
+ * a longer word (e.g. "offen" in "Offenbach") does NOT trigger task mode.
  *
  * @param query - The user's search query.
- * @returns true if the query contains any task-related keyword.
+ * @returns true if the query contains any task-related keyword as a whole word.
  */
 export function isTaskQuery(query: string): boolean {
-  const lower = query.toLowerCase();
-  return TASK_KEYWORDS.some((kw) => lower.includes(kw));
+  return TASK_KEYWORDS.some((kw) => matchesWordBoundary(query, kw));
 }
 
 /**
  * Find family member names mentioned in the query.
  *
- * Compares each family member's name against the query (case-insensitive
- * whole-word-ish match). Returns the names that appear in the query.
+ * Compares each family member's name against the query using word-boundary
+ * matching (case-insensitive, Unicode-aware). Returns the names that appear
+ * in the query as whole words.
+ *
+ * This prevents false positives where one name is a substring of another
+ * (e.g. querying "Hanna" must not match member "Johanna", and vice versa).
  *
  * @param query - The user's search query.
  * @param memberNames - The family's member names to match against.
@@ -169,11 +215,10 @@ export function findMentionedMembers(
   query: string,
   memberNames: string[],
 ): string[] {
-  const lowerQuery = query.toLowerCase();
   return memberNames.filter((name) => {
-    const lowerName = name.toLowerCase().trim();
-    if (!lowerName) return false;
-    return lowerQuery.includes(lowerName);
+    const trimmedName = name.trim();
+    if (!trimmedName) return false;
+    return matchesWordBoundary(query, trimmedName);
   });
 }
 

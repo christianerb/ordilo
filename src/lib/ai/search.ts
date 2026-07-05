@@ -6,6 +6,7 @@ import {
   findMentionedMembers,
   isTaskQuery,
   selectAutoMode,
+  matchesWordBoundary,
   type SearchResult,
   type ExecutedSearchMode,
 } from "@/lib/schemas/search";
@@ -188,8 +189,11 @@ export async function graphSearch(
  * Search for documents linked to specific persons via extracted_entities.
  *
  * Queries extracted_entities where entity_type = 'person' and
- * normalized_value ILIKE '%name%', then fetches the confirmed documents
- * for those document_ids.
+ * normalized_value ILIKE '%name%' (broad substring pre-filter to reduce
+ * the DB result set), then applies a **word-boundary post-filter** in JS
+ * to exclude false positives (e.g. querying "Hanna" must not match an
+ * entity with normalized_value "johanna"). Finally fetches the confirmed
+ * documents for the filtered document_ids.
  *
  * @returns { results, docIds } — the SearchResult[] for person matches and
  *          the unique document_ids of confirmed documents linked to the
@@ -217,9 +221,18 @@ async function searchByPerson(
 
     if (!entities || entities.length === 0) continue;
 
-    // Get unique document_ids from the entity matches.
+    // Word-boundary post-filter: only keep entities where the queried
+    // name appears as a whole word in the entity's normalized_value.
+    // This prevents false positives like "Hanna" matching "Johanna".
+    const filteredEntities = entities.filter((entity) =>
+      matchesWordBoundary(entity.normalized_value ?? "", name),
+    );
+
+    if (filteredEntities.length === 0) continue;
+
+    // Get unique document_ids from the filtered entity matches.
     const entityDocIds = [
-      ...new Set(entities.map((e) => e.document_id)),
+      ...new Set(filteredEntities.map((e) => e.document_id)),
     ];
 
     // Fetch confirmed documents for these document_ids.
@@ -229,8 +242,8 @@ async function searchByPerson(
       entityDocIds,
     );
 
-    // Build results for each entity whose document is confirmed.
-    for (const entity of entities) {
+    // Build results for each filtered entity whose document is confirmed.
+    for (const entity of filteredEntities) {
       const doc = confirmedDocs.find((d) => d.id === entity.document_id);
       if (doc) {
         confirmedDocIds.add(doc.id);

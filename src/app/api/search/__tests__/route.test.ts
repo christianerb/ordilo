@@ -612,6 +612,95 @@ describe("POST /api/search", () => {
     expect(body.results).toEqual([]);
   });
 
+  // --- Graph search: person-name precision (Johanna/Hanna) ---
+  // Querying "Hanna" must NOT return documents linked to person "Johanna"
+  // (and vice versa). Match on whole tokens/word boundaries, not raw
+  // substring.
+
+  it("graph mode for 'Hanna' does NOT return documents linked to 'Johanna'", async () => {
+    const DOC_HANNA = "550e8400-e29b-41d4-a716-446655440010";
+    const DOC_JOHANNA = "550e8400-e29b-41d4-a716-446655440011";
+
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        members: [{ name: "Hanna" }, { name: "Johanna" }],
+        // The mock returns ALL entities regardless of the ILIKE filter,
+        // so both "hanna" and "johanna" entities are returned. The JS
+        // word-boundary post-filter in searchByPerson must exclude
+        // "johanna" when searching for "Hanna".
+        entities: [
+          {
+            document_id: DOC_HANNA,
+            entity_value: "Hanna",
+            normalized_value: "hanna",
+            confidence: 0.95,
+          },
+          {
+            document_id: DOC_JOHANNA,
+            entity_value: "Johanna",
+            normalized_value: "johanna",
+            confidence: 0.92,
+          },
+        ],
+        documents: [
+          { id: DOC_HANNA, title: "Brief für Hanna", status: "confirmed" },
+          { id: DOC_JOHANNA, title: "Brief für Johanna", status: "confirmed" },
+        ],
+      }),
+    );
+
+    const response = await POST(
+      createRequest(validBody({ query: "Zeig mir alles von Hanna", mode: "graph" })),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.mode).toBe("graph");
+    const docIds = body.results.map((r: SearchResult) => r.document_id);
+    expect(docIds).toContain(DOC_HANNA);
+    expect(docIds).not.toContain(DOC_JOHANNA);
+  });
+
+  it("graph mode for 'Johanna' does NOT return documents linked to 'Hanna'", async () => {
+    const DOC_HANNA = "550e8400-e29b-41d4-a716-446655440010";
+    const DOC_JOHANNA = "550e8400-e29b-41d4-a716-446655440011";
+
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        members: [{ name: "Hanna" }, { name: "Johanna" }],
+        entities: [
+          {
+            document_id: DOC_HANNA,
+            entity_value: "Hanna",
+            normalized_value: "hanna",
+            confidence: 0.95,
+          },
+          {
+            document_id: DOC_JOHANNA,
+            entity_value: "Johanna",
+            normalized_value: "johanna",
+            confidence: 0.92,
+          },
+        ],
+        documents: [
+          { id: DOC_HANNA, title: "Brief für Hanna", status: "confirmed" },
+          { id: DOC_JOHANNA, title: "Brief für Johanna", status: "confirmed" },
+        ],
+      }),
+    );
+
+    const response = await POST(
+      createRequest(validBody({ query: "Zeig mir alles von Johanna", mode: "graph" })),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.mode).toBe("graph");
+    const docIds = body.results.map((r: SearchResult) => r.document_id);
+    expect(docIds).toContain(DOC_JOHANNA);
+    expect(docIds).not.toContain(DOC_HANNA);
+  });
+
   // --- Auto mode (VAL-SEARCH-014) ---
 
   it("auto mode selects graph when a person name is mentioned", async () => {
@@ -715,6 +804,62 @@ describe("POST /api/search", () => {
     expect(response.status).toBe(200);
     expect(body.mode).not.toBe("auto");
     expect(["semantic", "graph"]).toContain(body.mode);
+  });
+
+  // --- Auto mode: over-triggering prevention ---
+  // Queries that merely contain a task keyword as a substring of a longer
+  // word must fall back to semantic mode, not graph/task mode.
+
+  it("auto mode selects semantic for 'Offenbach Stadtplan' (incidental 'offen' substring)", async () => {
+    const semanticResults: SearchResult[] = [
+      {
+        document_id: DOC_ID_1,
+        title: "Offenbach Stadtplan",
+        chunk_text: "Stadtplan",
+        score: 0.7,
+        source: "semantic",
+      },
+    ];
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        members: [{ name: "Emma" }],
+        semanticResults,
+      }),
+    );
+
+    const response = await POST(
+      createRequest(validBody({ query: "Offenbach Stadtplan", mode: "auto" })),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.mode).toBe("semantic");
+  });
+
+  it("auto mode selects semantic for 'Ferienwoche Planung' (incidental 'woche' substring)", async () => {
+    const semanticResults: SearchResult[] = [
+      {
+        document_id: DOC_ID_1,
+        title: "Ferienwoche",
+        chunk_text: "Planung",
+        score: 0.7,
+        source: "semantic",
+      },
+    ];
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        members: [{ name: "Emma" }],
+        semanticResults,
+      }),
+    );
+
+    const response = await POST(
+      createRequest(validBody({ query: "Ferienwoche Planung", mode: "auto" })),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.mode).toBe("semantic");
   });
 
   // --- RLS / family scoping (VAL-SEARCH-002) ---

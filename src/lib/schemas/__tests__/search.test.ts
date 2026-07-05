@@ -210,6 +210,30 @@ describe("isTaskQuery", () => {
     expect(isTaskQuery("FRISTEN")).toBe(true);
     expect(isTaskQuery("Erledigen")).toBe(true);
   });
+
+  // --- Word-boundary matching: prevent over-triggering on substrings ---
+  // A query merely containing a task keyword as a substring of a longer
+  // word must NOT trigger task mode.
+
+  it("returns false for 'Offenbach Stadtplan' (contains 'offen' as substring)", () => {
+    expect(isTaskQuery("Offenbach Stadtplan")).toBe(false);
+  });
+
+  it("returns false for 'Ferienwoche Planung' (contains 'woche' as substring)", () => {
+    expect(isTaskQuery("Ferienwoche Planung")).toBe(false);
+  });
+
+  it("returns false for 'Fristlos kündigen' (contains 'frist' as substring)", () => {
+    expect(isTaskQuery("Fristlos kündigen")).toBe(false);
+  });
+
+  it("returns false for 'Erinnerungsfoto' (contains 'erinnerung' as substring)", () => {
+    expect(isTaskQuery("Erinnerungsfoto")).toBe(false);
+  });
+
+  it("returns true for 'Offen' as a standalone word (genuinely task-related)", () => {
+    expect(isTaskQuery("Was ist noch offen?")).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -251,6 +275,46 @@ describe("findMentionedMembers", () => {
     const result = findMentionedMembers("Zeig mir alles", ["", "  "]);
     expect(result).toEqual([]);
   });
+
+  // --- Word-boundary matching: Johanna/Hanna precision ---
+  // Querying "Hanna" must NOT match member "Johanna" (and vice versa).
+
+  it("does NOT match 'Hanna' member when query is 'Johanna'", () => {
+    const result = findMentionedMembers("Johanna", ["Hanna", "Johanna"]);
+    expect(result).toEqual(["Johanna"]);
+  });
+
+  it("does NOT match 'Johanna' member when query is 'Hanna'", () => {
+    const result = findMentionedMembers("Hanna", ["Hanna", "Johanna"]);
+    expect(result).toEqual(["Hanna"]);
+  });
+
+  it("does NOT match 'Hanna' member when query mentions 'Johanna' in a sentence", () => {
+    const result = findMentionedMembers("Zeig mir alles von Johanna", ["Hanna", "Johanna"]);
+    expect(result).toEqual(["Johanna"]);
+  });
+
+  it("does NOT match 'Johanna' member when query mentions 'Hanna' in a sentence", () => {
+    const result = findMentionedMembers("Zeig mir alles von Hanna", ["Hanna", "Johanna"]);
+    expect(result).toEqual(["Hanna"]);
+  });
+
+  it("matches a name that is a whole word even when another name contains it as a substring", () => {
+    // "Anna" should match "anna" but NOT "johanna"
+    const result = findMentionedMembers("Zeig mir Dokumente von Anna", ["Anna", "Johanna"]);
+    expect(result).toEqual(["Anna"]);
+  });
+
+  it("does not match a member name embedded in a longer word in the query", () => {
+    // "Emma" should NOT match when query contains "Emmeline" (a different name)
+    const result = findMentionedMembers("Emmeline war hier", ["Emma"]);
+    expect(result).toEqual([]);
+  });
+
+  it("handles names with umlauts via Unicode-aware word boundaries", () => {
+    const result = findMentionedMembers("Zeig mir alles von Jürgen", ["Jürgen", "Jürg"]);
+    expect(result).toEqual(["Jürgen"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -280,5 +344,27 @@ describe("selectAutoMode", () => {
 
   it("prioritizes graph when both member and task keywords present", () => {
     expect(selectAutoMode("Was muss ich für Hanna erledigen?", ["Hanna"])).toBe("graph");
+  });
+
+  // --- Over-triggering: queries with incidental substrings fall back to semantic ---
+
+  it("selects semantic for 'Offenbach Stadtplan' (incidental 'offen' substring)", () => {
+    expect(selectAutoMode("Offenbach Stadtplan", ["Emma"])).toBe("semantic");
+  });
+
+  it("selects semantic for 'Ferienwoche Planung' (incidental 'woche' substring)", () => {
+    expect(selectAutoMode("Ferienwoche Planung", ["Emma"])).toBe("semantic");
+  });
+
+  it("selects semantic for 'Fristlos kündigen' (incidental 'frist' substring)", () => {
+    expect(selectAutoMode("Fristlos kündigen", ["Emma"])).toBe("semantic");
+  });
+
+  it("selects semantic for 'Erinnerungsfoto' (incidental 'erinnerung' substring)", () => {
+    expect(selectAutoMode("Erinnerungsfoto", ["Emma"])).toBe("semantic");
+  });
+
+  it("selects semantic for 'Johanna' when only 'Hanna' is a member (no whole-word match)", () => {
+    expect(selectAutoMode("Johanna", ["Hanna"])).toBe("semantic");
   });
 });
