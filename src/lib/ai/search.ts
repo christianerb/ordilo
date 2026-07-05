@@ -293,11 +293,16 @@ async function searchTasks(
     query = query.in("document_id", personDocIds);
   } else {
     // General task query: filter by upcoming deadlines (within 7 days).
+    // Apply a lower bound (>= today) so overdue/past tasks do not leak
+    // into "upcoming" results (chat-api-guardrails).
+    const today = new Date();
+    const todayStr = today.toISOString().split("T")[0];
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + TASK_DEADLINE_WINDOW_DAYS);
     const deadlineStr = deadline.toISOString().split("T")[0];
     query = query
       .not("due_date", "is", null)
+      .gte("due_date", todayStr)
       .lte("due_date", deadlineStr);
   }
 

@@ -42,7 +42,12 @@ import {
   generateChatAnswer,
   ChatError,
 } from "@/lib/ai/chat";
-import { NO_RESULTS_FALLBACK } from "@/lib/schemas/chat";
+import {
+  NO_RESULTS_FALLBACK,
+  FAIL_CLOSED_HEDGING,
+  FAIL_CLOSED_CITATION,
+  containsHedgingLanguage,
+} from "@/lib/schemas/chat";
 import type { SearchResult } from "@/lib/schemas/search";
 
 // ---------------------------------------------------------------------------
@@ -387,6 +392,9 @@ describe("buildChatUserMessage", () => {
 describe("generateChatAnswer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // mockReset clears the mockResolvedValueOnce queue so queued values
+    // from a previous test do not leak into the next test.
+    mockCreate.mockReset();
     setApiKey();
   });
 
@@ -613,5 +621,225 @@ describe("generateChatAnswer", () => {
     const allContent = callArgs.messages.map((m) => m.content).join(" ");
     expect(allContent).not.toContain("test-openai-key");
     expect(allContent).not.toContain("OPENAI_API_KEY");
+  });
+
+  // --- Hedging rejection: fail-closed when hedging persists (chat-api-guardrails) ---
+
+  it("returns fail-closed message when hedging persists after one regeneration", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Ich glaube, das ist ein Brief für Emma."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Vermutlich ist das ein Brief für Emma."),
+      );
+
+    const answer = await generateChatAnswer("Was ist das?", [
+      {
+        document_id: "doc-1",
+        title: "Brief",
+        excerpt: "Inhalt",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe(FAIL_CLOSED_HEDGING);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not return a hedged answer under any circumstance", async () => {
+    // First answer hedged, second also hedged → must NOT return either.
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Wahrscheinlich ist das eine Rechnung."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Könnte sein, dass das für Emma ist."),
+      );
+
+    const answer = await generateChatAnswer("Frage", [
+      { document_id: "doc-1", title: "Brief", excerpt: "Inhalt", score: 0.9 },
+    ]);
+
+    expect(answer).toBe(FAIL_CLOSED_HEDGING);
+    expect(containsHedgingLanguage(answer)).toBe(false);
+  });
+
+  it("regenerates when first answer is hedged and second is clean", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Ich glaube, das ist ein Brief."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Das Dokument ist ein Brief für Emma."),
+      );
+
+    const answer = await generateChatAnswer("Was ist das?", [
+      {
+        document_id: "doc-1",
+        title: "Brief",
+        excerpt: "Inhalt",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe("Das Dokument ist ein Brief für Emma.");
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  // --- Missing-citation handling: regenerate or fail-closed (chat-api-guardrails) ---
+
+  it("regenerates when the answer does not cite any source (first uncited, second cited)", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        // Answer asserts a fact but never references the source title.
+        mockChatResponse("Die Einschulung findet am 15. August statt."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse(
+          "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
+        ),
+      );
+
+    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
+      {
+        document_id: "doc-1",
+        title: "Kita-Brief",
+        excerpt: "Einschulung am 15. August",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe(
+      "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
+    );
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns fail-closed message when citation is missing after one regeneration", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Der Termin ist am 15. August."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Die Einschulung findet am 15. August statt."),
+      );
+
+    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
+      {
+        document_id: "doc-1",
+        title: "Kita-Brief",
+        excerpt: "Einschulung am 15. August",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe(FAIL_CLOSED_CITATION);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not return an uncited factual answer", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Die Rechnung beträgt 45 Euro."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Der Betrag wurde bereits bezahlt."),
+      );
+
+    const answer = await generateChatAnswer("Wie hoch ist die Rechnung?", [
+      {
+        document_id: "doc-1",
+        title: "Stromrechnung",
+        excerpt: "Betrag: 45 EUR",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe(FAIL_CLOSED_CITATION);
+    // The fail-closed message should not contain the uncited factual claim.
+    expect(answer).not.toContain("45 Euro");
+  });
+
+  it("does not trigger citation fail-closed when source titles are too short to verify", async () => {
+    // Title "T" is shorter than MIN_CITATION_TITLE_LENGTH → citation cannot
+    // be verified → must NOT fail-closed, even though the answer doesn't
+    // reference "T".
+    mockCreate.mockResolvedValueOnce(
+      mockChatResponse("Die Antwort ist 42."),
+    );
+
+    const answer = await generateChatAnswer("Frage", [
+      { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
+    ]);
+
+    expect(answer).toBe("Die Antwort ist 42.");
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trigger citation fail-closed for the no-results fallback", async () => {
+    // The model may respond with the fallback even when sources exist.
+    mockCreate.mockResolvedValueOnce(
+      mockChatResponse(NO_RESULTS_FALLBACK),
+    );
+
+    const answer = await generateChatAnswer("Frage", [
+      { document_id: "doc-1", title: "Kita-Brief", excerpt: "Inhalt", score: 0.9 },
+    ]);
+
+    expect(answer).toBe(NO_RESULTS_FALLBACK);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  // --- Combined hedging + citation guardrails ---
+
+  it("regenerates once when both hedging and citation fail, then succeeds", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        // Hedged AND uncited.
+        mockChatResponse("Ich glaube, der Termin ist am 15. August."),
+      )
+      .mockResolvedValueOnce(
+        // Clean and cited.
+        mockChatResponse(
+          "Laut dem Kita-Brief ist der Termin am 15. August.",
+        ),
+      );
+
+    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
+      {
+        document_id: "doc-1",
+        title: "Kita-Brief",
+        excerpt: "Einschulung am 15. August",
+        score: 0.9,
+      },
+    ]);
+
+    expect(answer).toBe("Laut dem Kita-Brief ist der Termin am 15. August.");
+    // Only ONE regeneration, not two.
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns hedging fail-closed when both hedging and citation persist after retry", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        mockChatResponse("Ich glaube, der Termin ist bald."),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Vermutlich ist der Termin bald."),
+      );
+
+    const answer = await generateChatAnswer("Wann?", [
+      {
+        document_id: "doc-1",
+        title: "Kita-Brief",
+        excerpt: "Inhalt",
+        score: 0.9,
+      },
+    ]);
+
+    // Hedging takes priority for the fail-closed message.
+    expect(answer).toBe(FAIL_CLOSED_HEDGING);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 });

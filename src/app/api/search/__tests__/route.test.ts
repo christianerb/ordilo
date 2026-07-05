@@ -68,6 +68,7 @@ function chainableQuery(result: { data: unknown; error: unknown }) {
     ilike: vi.fn(() => self),
     in: vi.fn(() => self),
     lte: vi.fn(() => self),
+    gte: vi.fn(() => self),
     not: vi.fn(() => self),
     order: vi.fn(() => self),
     limit: vi.fn(() => self),
@@ -525,6 +526,82 @@ describe("POST /api/search", () => {
     expect(body.results.length).toBeGreaterThanOrEqual(1);
     expect(body.results[0].document_id).toBe(DOC_ID_1);
     expect(body.results[0].source).toContain("task");
+  });
+
+  // --- Graph search: deadline lower bound (chat-api-guardrails) ---
+  // Upcoming-deadlines queries must apply a lower bound (>= today) so
+  // overdue/past tasks do not leak into "upcoming" results.
+
+  it("graph mode applies due_date >= today lower bound for upcoming-deadline queries", async () => {
+    const client = mockServerClient({
+      members: [{ name: "Emma" }],
+      tasks: [],
+      documents: [],
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(
+      createRequest(validBody({ query: "Welche Fristen laufen bald ab?", mode: "graph" })),
+    );
+
+    // The tasks query builder should have been called with gte("due_date", <today>).
+    // We inspect the mock calls on the "tasks" table chainable query builder.
+    // Since mockServerClient creates a fresh chainableQuery per `from("tasks")`
+    // call, we need to capture the builder. The `from` mock returns a new
+    // chainableQuery each time, so we instead verify via the today's date
+    // string that the lower bound was applied.
+    // We reconstruct today's date the same way search.ts does.
+    const todayStr = new Date().toISOString().split("T")[0];
+
+    // Access the tasks chainable builder through the from mock.
+    // The chainable builder's `gte` should have been called with
+    // ("due_date", todayStr).
+    const fromMock = (client as unknown as { from: ReturnType<typeof vi.fn> }).from;
+    // Find the call that returned the tasks builder. Since each call returns
+    // a fresh builder, we look at the table name argument.
+    const tasksCallIndex = fromMock.mock.calls.findIndex(
+      (call: unknown[]) => call[0] === "tasks",
+    );
+    expect(tasksCallIndex).toBeGreaterThanOrEqual(0);
+    // The builder returned for "tasks" has a `gte` mock we can inspect.
+    const tasksBuilder = fromMock.mock.results[tasksCallIndex].value as {
+      gte: ReturnType<typeof vi.fn>;
+    };
+    expect(tasksBuilder.gte).toHaveBeenCalledWith("due_date", todayStr);
+  });
+
+  it("graph mode does NOT apply the deadline lower bound for person-specific task queries", async () => {
+    // Person-specific queries ("Was muss ich für Hanna erledigen?") return
+    // all open tasks for that person's documents, regardless of due_date.
+    const client = mockServerClient({
+      members: [{ name: "Hanna" }, { name: "Emma" }],
+      entities: [
+        {
+          document_id: DOC_ID_1,
+          entity_value: "Hanna",
+          normalized_value: "hanna",
+          confidence: 0.9,
+        },
+      ],
+      tasks: [],
+      documents: [{ id: DOC_ID_1, title: "Brief für Hanna", status: "confirmed" }],
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(
+      createRequest(validBody({ query: "Was muss ich für Hanna erledigen?", mode: "graph" })),
+    );
+
+    const fromMock = (client as unknown as { from: ReturnType<typeof vi.fn> }).from;
+    const tasksCallIndex = fromMock.mock.calls.findIndex(
+      (call: unknown[]) => call[0] === "tasks",
+    );
+    expect(tasksCallIndex).toBeGreaterThanOrEqual(0);
+    const tasksBuilder = fromMock.mock.results[tasksCallIndex].value as {
+      gte: ReturnType<typeof vi.fn>;
+    };
+    // Person-specific task queries should NOT apply the lower bound.
+    expect(tasksBuilder.gte).not.toHaveBeenCalled();
   });
 
   // --- Graph search: tasks for specific person (VAL-SEARCH-012) ---

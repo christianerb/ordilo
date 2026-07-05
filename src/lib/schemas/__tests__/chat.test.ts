@@ -4,6 +4,11 @@ import {
   NO_RESULTS_FALLBACK,
   FORBIDDEN_HEDGING_PHRASES,
   containsHedgingLanguage,
+  answerCitesSources,
+  FAIL_CLOSED_HEDGING,
+  FAIL_CLOSED_CITATION,
+  MIN_CITATION_TITLE_LENGTH,
+  type ChatSource,
 } from "@/lib/schemas/chat";
 
 // ---------------------------------------------------------------------------
@@ -205,6 +210,135 @@ describe("containsHedgingLanguage", () => {
       containsHedgingLanguage(
         "Das Dokument ist eine Rechnung. Ich glaube, der Betrag ist 45 Euro.",
       ),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fail-closed constants
+// ---------------------------------------------------------------------------
+
+describe("FAIL_CLOSED constants", () => {
+  it("FAIL_CLOSED_HEDGING is a non-empty German string", () => {
+    expect(FAIL_CLOSED_HEDGING.length).toBeGreaterThan(10);
+    expect(FAIL_CLOSED_HEDGING).toContain("Bitte");
+  });
+
+  it("FAIL_CLOSED_CITATION is a non-empty German string", () => {
+    expect(FAIL_CLOSED_CITATION.length).toBeGreaterThan(10);
+    expect(FAIL_CLOSED_CITATION.toLowerCase()).toContain("quelle");
+  });
+
+  it("fail-closed messages do not contain hedging language", () => {
+    expect(containsHedgingLanguage(FAIL_CLOSED_HEDGING)).toBe(false);
+    expect(containsHedgingLanguage(FAIL_CLOSED_CITATION)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// answerCitesSources
+// ---------------------------------------------------------------------------
+
+describe("answerCitesSources", () => {
+  function source(
+    title: string | null,
+    docId = "doc-1",
+  ): ChatSource {
+    return {
+      document_id: docId,
+      title,
+      excerpt: "Inhalt",
+      score: 0.9,
+    };
+  }
+
+  it("returns true when the answer contains a source title", () => {
+    const answer = "Laut dem Kita-Brief wird Emma am 15. August eingeschult.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief")]),
+    ).toBe(true);
+  });
+
+  it("returns false when the answer does not contain any source title", () => {
+    const answer = "Die Einschulung findet am 15. August statt.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief")]),
+    ).toBe(false);
+  });
+
+  it("returns true when the answer is the no-results fallback", () => {
+    expect(
+      answerCitesSources(NO_RESULTS_FALLBACK, [source("Kita-Brief")]),
+    ).toBe(true);
+  });
+
+  it("returns true when no sources are provided (empty array)", () => {
+    expect(answerCitesSources("Irgendeine Antwort", [])).toBe(true);
+  });
+
+  it("returns true when all source titles are null (cannot verify)", () => {
+    expect(
+      answerCitesSources("Irgendeine Antwort", [source(null), source(null)]),
+    ).toBe(true);
+  });
+
+  it("returns true when all source titles are shorter than MIN_CITATION_TITLE_LENGTH", () => {
+    expect(
+      answerCitesSources("Antwort ohne Nennung", [source("T"), source("A")]),
+    ).toBe(true);
+  });
+
+  it("is case-insensitive when matching titles", () => {
+    const answer = "laut dem kita-brief wird emma eingeschult.";
+    expect(
+      answerCitesSources(answer, [source("Kita-Brief")]),
+    ).toBe(true);
+  });
+
+  it("handles German umlauts in titles", () => {
+    const answer = "Laut der Stromrechnung Müller & Söhne beträgt der Betrag 45 €.";
+    expect(
+      answerCitesSources(answer, [source("Stromrechnung Müller & Söhne")]),
+    ).toBe(true);
+  });
+
+  it("returns true if at least one of multiple titles is referenced", () => {
+    const answer = "Laut dem Kita-Brief findet die Einschulung statt.";
+    expect(
+      answerCitesSources(answer, [
+        source("Stromrechnung"),
+        source("Kita-Brief"),
+      ]),
+    ).toBe(true);
+  });
+
+  it("returns false when none of multiple checkable titles are referenced", () => {
+    const answer = "Der Termin ist am 15. August.";
+    expect(
+      answerCitesSources(answer, [
+        source("Stromrechnung"),
+        source("Kita-Brief"),
+      ]),
+    ).toBe(false);
+  });
+
+  it("ignores null titles but still checks non-null ones", () => {
+    const answer = "Ein Brief ohne Titelreferenz.";
+    expect(
+      answerCitesSources(answer, [source(null), source("Kita-Brief")]),
+    ).toBe(false);
+  });
+
+  it("MIN_CITATION_TITLE_LENGTH is 3", () => {
+    expect(MIN_CITATION_TITLE_LENGTH).toBe(3);
+  });
+
+  it("treats the fallback as cited even when titles exist", () => {
+    expect(
+      answerCitesSources(NO_RESULTS_FALLBACK, [
+        source("Kita-Brief"),
+        source("Stromrechnung"),
+      ]),
     ).toBe(true);
   });
 });

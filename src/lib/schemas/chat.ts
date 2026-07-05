@@ -138,3 +138,78 @@ export function containsHedgingLanguage(text: string): boolean {
     lower.includes(phrase.toLowerCase()),
   );
 }
+
+// ---------------------------------------------------------------------------
+// Source citation validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimum title length (after trim) for a source title to be considered a
+ * reliable citation reference. Titles shorter than this (e.g. "T", "A")
+ * are too generic to verify citation by substring match and are skipped.
+ */
+export const MIN_CITATION_TITLE_LENGTH = 3;
+
+/**
+ * Deterministic fail-closed message returned when the generated answer
+ * contains forbidden hedging language AND a single regeneration could not
+ * remove it. The hedged answer is never returned to the client.
+ */
+export const FAIL_CLOSED_HEDGING =
+  "Die generierte Antwort enthält unsichere Formulierungen und konnte nicht bereinigt werden. Bitte stelle die Frage erneut.";
+
+/**
+ * Deterministic fail-closed message returned when the generated answer
+ * asserts facts but does not cite any of the provided source documents
+ * AND a single regeneration could not fix the citation. An uncited factual
+ * answer is never returned to the client.
+ */
+export const FAIL_CLOSED_CITATION =
+  "Die generierte Antwort nennt keine Quelle und wird daher nicht angezeigt. Bitte stelle die Frage erneut.";
+
+/**
+ * Check whether the answer text references at least one source by title.
+ *
+ * Used for post-generation citation validation (chat-api-guardrails):
+ * when sources were provided and the answer asserts document-derived
+ * facts, the answer should reference at least one source document by
+ * title. If it does not, the caller regenerates once or fails closed.
+ *
+ * Rules:
+ *   - The no-results fallback ("Ich finde dazu kein Dokument.") is always
+ *     acceptable — it asserts no facts.
+ *   - Titles shorter than `MIN_CITATION_TITLE_LENGTH` (after trim) are
+ *     skipped as too generic to verify.
+ *   - If NO source has a checkable title (all null or too short), the
+ *     check passes (we cannot verify citation by title, so we do not
+ *     fail-closed and risk blocking a valid answer).
+ *   - Otherwise, the check passes if the answer (case-insensitive)
+ *     contains at least one checkable source title.
+ *
+ * @param answer - The generated answer text.
+ * @param sources - The source documents provided as context.
+ * @returns true if the answer cites at least one source (or citation
+ *          cannot be verified due to short/null titles).
+ */
+export function answerCitesSources(
+  answer: string,
+  sources: ChatSource[],
+): boolean {
+  // The no-results fallback asserts no facts — always acceptable.
+  if (answer.trim() === NO_RESULTS_FALLBACK) return true;
+
+  // Collect checkable titles (non-null, trimmed, long enough to verify).
+  const checkableTitles = sources
+    .map((s) => s.title?.trim())
+    .filter(
+      (t): t is string => !!t && t.length >= MIN_CITATION_TITLE_LENGTH,
+    );
+
+  // No checkable titles → cannot verify citation → do not fail-closed.
+  if (checkableTitles.length === 0) return true;
+
+  const lowerAnswer = answer.toLowerCase();
+  return checkableTitles.some((title) =>
+    lowerAnswer.includes(title.toLowerCase()),
+  );
+}

@@ -4,6 +4,9 @@ import {
   NO_RESULTS_FALLBACK,
   FORBIDDEN_HEDGING_PHRASES,
   containsHedgingLanguage,
+  answerCitesSources,
+  FAIL_CLOSED_HEDGING,
+  FAIL_CLOSED_CITATION,
   type ChatSource,
 } from "@/lib/schemas/chat";
 import { MAX_RESULTS } from "@/lib/ai/search";
@@ -237,16 +240,31 @@ function getOpenAIClient(): OpenAI {
  * language, and the hallucination fallback. The user message contains the
  * question and the source context.
  *
- * After generation, the answer is checked for forbidden hedging language.
- * If hedging language is detected, the model is re-prompted once with a
- * correction instruction. This is a safety net — the system prompt is the
- * primary defense (VAL-CHAT-006).
+ * Post-generation guardrails (chat-api-guardrails):
+ *   1. **No-hedging**: after generation, the answer is checked for
+ *      forbidden hedging language. If hedging is detected, the model is
+ *      re-prompted once with a stricter instruction. If hedging persists
+ *      after the single regeneration, a deterministic fail-closed message
+ *      (`FAIL_CLOSED_HEDGING`) is returned instead of the hedged answer.
+ *   2. **Source citation**: after generation, the answer is checked to
+ *      verify it references at least one source by title (when checkable
+ *      titles exist and the answer is not the no-results fallback). If
+ *      citation is missing, the model is re-prompted once with a stricter
+ *      citation instruction. If citation is still missing after the single
+ *      regeneration, a deterministic fail-closed message
+ *      (`FAIL_CLOSED_CITATION`) is returned instead of an uncited answer.
+ *
+ * Both guardrails share a single regeneration attempt: if either fails on
+ * the first answer, one combined correction re-prompt is issued. If either
+ * still fails after the regeneration, the corresponding fail-closed message
+ * is returned (hedging takes priority if both still fail).
  *
  * @param query - The user's natural-language question.
  * @param sources - The combined source documents to use as context. Must
  *                  be non-empty (the caller handles the empty case by
  *                  returning the fallback directly).
- * @returns The German answer string.
+ * @returns The German answer string, or a deterministic fail-closed message
+ *          if a guardrail could not be satisfied after one regeneration.
  * @throws {ChatError} if the API call fails, times out, or returns an
  *         empty/invalid response.
  */
@@ -258,23 +276,77 @@ export async function generateChatAnswer(
   const systemPrompt = buildChatSystemPrompt();
   const userMessage = buildChatUserMessage(query, sources);
 
-  let answer = await callOpenAI(client, systemPrompt, userMessage);
+  const answer = await callOpenAI(client, systemPrompt, userMessage);
 
-  // Safety net: if the answer contains hedging language, re-prompt once
-  // with a correction instruction (VAL-CHAT-006).
-  if (containsHedgingLanguage(answer)) {
-    const correctionMessage = `${userMessage}
+  // Post-generation guardrail checks.
+  const hedgingFailed = containsHedgingLanguage(answer);
+  const citationFailed = !answerCitesSources(answer, sources);
 
-HINWEIS: Deine vorherige Antwort enthielt verbotene Formulierungen (Ich glaube, Vermutlich, Wahrscheinlich, Könnte sein). Bitte formuliere unbedingt, direkt und bestimmt. Wiederhole die Antwort ohne diese Formulierungen.`;
-
-    const corrected = await callOpenAI(client, systemPrompt, correctionMessage);
-    // Only use the corrected answer if it's non-empty and has less hedging.
-    if (corrected && !containsHedgingLanguage(corrected)) {
-      answer = corrected;
-    }
+  // If both guardrails pass on the first try, return the answer as-is.
+  if (!hedgingFailed && !citationFailed) {
+    return answer;
   }
 
-  return answer;
+  // Regenerate once with a combined correction instruction addressing
+  // whichever guardrail(s) failed.
+  const correctionMessage = buildCorrectionMessage(
+    userMessage,
+    hedgingFailed,
+    citationFailed,
+  );
+  const corrected = await callOpenAI(client, systemPrompt, correctionMessage);
+
+  // Check the corrected answer against the same guardrails.
+  const correctedHedgingFailed = containsHedgingLanguage(corrected);
+  const correctedCitationFailed = !answerCitesSources(corrected, sources);
+
+  // If hedging still fails, fail closed with the hedging message.
+  if (correctedHedgingFailed) {
+    return FAIL_CLOSED_HEDGING;
+  }
+
+  // If citation still fails, fail closed with the citation message.
+  if (correctedCitationFailed) {
+    return FAIL_CLOSED_CITATION;
+  }
+
+  // Both guardrails pass on the corrected answer.
+  return corrected;
+}
+
+// ---------------------------------------------------------------------------
+// Internal: correction message builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the correction message for the single regeneration attempt.
+ *
+ * Appends a targeted instruction to the original user message based on
+ * which guardrail(s) failed. If both failed, both corrections are included.
+ *
+ * @param userMessage - The original user message (query + context).
+ * @param hedgingFailed - Whether the hedging guardrail failed.
+ * @param citationFailed - Whether the citation guardrail failed.
+ * @returns The correction message string.
+ */
+function buildCorrectionMessage(
+  userMessage: string,
+  hedgingFailed: boolean,
+  citationFailed: boolean,
+): string {
+  const hints: string[] = [];
+  if (hedgingFailed) {
+    const phrases = FORBIDDEN_HEDGING_PHRASES.map((p) => `"${p}"`).join(", ");
+    hints.push(
+      `Deine vorherige Antwort enthielt verbotene Formulierungen (${phrases}). Formuliere unbedingt, direkt und bestimmt. Verwende keine unsicheren oder spekulativen Ausdrücke.`,
+    );
+  }
+  if (citationFailed) {
+    hints.push(
+      `Deine vorherige Antwort nannte keine Quelle. Beziehe dich ausdrücklich auf das Dokument (z.B. "Laut dem Kita-Brief..." oder "Das Dokument 'Stromrechnung' zeigt...").`,
+    );
+  }
+  return `${userMessage}\n\nHINWEIS: ${hints.join(" ")}`;
 }
 
 // ---------------------------------------------------------------------------
