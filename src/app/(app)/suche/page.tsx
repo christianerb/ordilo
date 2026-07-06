@@ -10,13 +10,26 @@ import type { DocumentMetadata } from "./suche-client";
  * metadata for filter chips), and person-document associations (from
  * extracted_entities). Then renders the interactive chat/search client.
  *
+ * Accepts an optional `q` search param (e.g. /suche?q=Rechnung) from the
+ * Home dashboard's AI search bar. When present, the query is passed to
+ * SucheClient as `initialQuery` and auto-submitted on mount.
+ *
  * If the user has no family, they are redirected to onboarding.
  *
  * All data is fetched RLS-scoped (server client), so a user only sees their
  * own family's data (VAL-CHAT-030).
  */
-export default async function SuchePage() {
+export default async function SuchePage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createClient();
+
+  // Read the `q` search param (from the Home dashboard search bar).
+  const params = await searchParams;
+  const initialQuery =
+    typeof params.q === "string" ? params.q.trim() : "";
 
   // 1. Fetch the user's family (RLS-scoped).
   const { data: family } = await supabase
@@ -92,6 +105,7 @@ export default async function SuchePage() {
       familyName={family.name}
       members={members}
       documents={documents}
+      initialQuery={initialQuery}
     />
   );
 }

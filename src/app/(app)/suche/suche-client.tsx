@@ -40,6 +40,12 @@ export interface SucheClientProps {
   familyName: string;
   members: Array<{ id: string; name: string }>;
   documents: DocumentMetadata[];
+  /**
+   * Optional initial query (e.g. from the Home dashboard search bar via
+   * /suche?q=…). When provided and non-empty, the query is auto-submitted
+   * on mount (VAL-HOME-002).
+   */
+  initialQuery?: string;
 }
 
 /**
@@ -118,6 +124,7 @@ export function SucheClient({
   familyId,
   members,
   documents,
+  initialQuery = "",
 }: SucheClientProps) {
   const router = useRouter();
 
@@ -402,6 +409,26 @@ export function SucheClient({
     },
     [familyId, isLoading],
   );
+
+  // -------------------------------------------------------------------------
+  // Auto-submit initial query from Home dashboard (VAL-HOME-002)
+  // -------------------------------------------------------------------------
+
+  /**
+   * When the page is navigated to with a `q` param (e.g. from the Home
+   * dashboard's AI search bar), the initialQuery is auto-submitted once
+   * on mount. This populates the search bar and fetches the AI answer
+   * immediately, so the user sees results without an extra step.
+   */
+  const initialQuerySubmitted = useRef(false);
+  useEffect(() => {
+    if (initialQuery && !initialQuerySubmitted.current && !isLoading) {
+      initialQuerySubmitted.current = true;
+      setSearchBarValue(initialQuery);
+      handleSubmit(initialQuery);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery]);
 
   // -------------------------------------------------------------------------
   // Source card click handler (VAL-SEARCH-027)
