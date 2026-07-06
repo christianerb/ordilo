@@ -98,8 +98,12 @@ function mockServerClient(options: {
   finalUpdateError?: unknown;
   /** Error for document_pages insert. */
   pagesInsertError?: unknown;
-  /** Error for document_pages delete. */
+  /** Error for document_pages delete (applies to all delete calls). */
   pagesDeleteError?: unknown;
+  /** Error for the first (pre-insert) document_pages delete call only. */
+  pagesDeletePreInsertError?: unknown;
+  /** Error for the second (cleanup) document_pages delete call only. */
+  pagesDeleteCleanupError?: unknown;
 } = {}) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
@@ -119,12 +123,23 @@ function mockServerClient(options: {
     error: pagesInsertError,
   });
 
-  // document_pages delete — the route does
-  // `await .delete().eq("document_id", documentId)` so delete returns
-  // a chain with .eq() that resolves to { data, error }.
-  const pagesDeleteEqMock = vi.fn().mockResolvedValue({
-    data: null,
-    error: pagesDeleteError,
+  // document_pages delete — the route calls delete twice in some paths:
+  //   1. Pre-insert: .delete().eq("document_id", documentId) to clear
+  //      prior pages (retry idempotency).
+  //   2. Cleanup: .delete().eq("document_id", documentId) after a failed
+  //      document status update, to remove orphaned page rows.
+  // Tests need to control each delete call independently. We use a
+  // call-index-based error queue: the Nth call to .eq() returns the Nth
+  // error from the queue (falling back to the generic pagesDeleteError).
+  const deleteErrorByCall: unknown[] = [
+    options.pagesDeletePreInsertError ?? pagesDeleteError,
+    options.pagesDeleteCleanupError ?? pagesDeleteError,
+  ];
+  let pagesDeleteCallIndex = 0;
+  const pagesDeleteEqMock = vi.fn().mockImplementation(() => {
+    const error = deleteErrorByCall[pagesDeleteCallIndex] ?? null;
+    pagesDeleteCallIndex++;
+    return Promise.resolve({ data: null, error });
   });
   const pagesDeleteMock = vi.fn().mockReturnValue({
     eq: pagesDeleteEqMock,
@@ -645,6 +660,82 @@ describe("POST /api/documents/[id]/ocr", () => {
     expect(serverClient._pagesDeleteMock).toHaveBeenCalledBefore(
       serverClient._pagesInsertMock,
     );
+  });
+
+  // --- Delete-failure error handling ---
+
+  it("aborts before inserting when pre-insert document_pages delete fails (no duplicates)", async () => {
+    // If the pre-insert delete of existing document_pages fails, the route
+    // must abort with a structured error instead of proceeding to insert
+    // (which would create duplicate rows alongside the un-deleted old ones).
+    const serverClient = mockServerClient({
+      pagesDeletePreInsertError: new Error("Delete constraint violation"),
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(mockOcrResult(2));
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    // The route aborts with a structured error (not a 200 success)
+    expect(response.status).toBe(502);
+    expect(body.code).toBe("DB_DELETE_FAILED");
+    expect(body.error).toBe(
+      "Bestehende OCR-Seiten konnten nicht gelöscht werden.",
+    );
+
+    // CRITICAL: insert was NOT called — no duplicate rows created.
+    // The pre-insert delete failed, so the route must not insert new pages.
+    expect(serverClient._pagesInsertMock).not.toHaveBeenCalled();
+
+    // The pre-insert delete WAS attempted (once)
+    expect(serverClient._pagesDeleteMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces cleanup delete failure when document status update fails and cleanup also fails", async () => {
+    // When the document status update fails after insert, the route
+    // attempts a cleanup delete of the just-inserted document_pages.
+    // If that cleanup delete ALSO fails, the failure must be surfaced
+    // (logged) rather than silently swallowed — the orphaned rows are
+    // a data-integrity concern operators need to be aware of.
+    const consoleErrorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const serverClient = mockServerClient({
+      finalUpdateError: new Error("Connection lost"),
+      pagesDeleteCleanupError: new Error("Cleanup delete failed"),
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(mockOcrResult(2));
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    // The primary error (DB_UPDATE_FAILED) is still returned — the
+    // cleanup failure does not mask the primary error.
+    expect(response.status).toBe(502);
+    expect(body.code).toBe("DB_UPDATE_FAILED");
+
+    // The cleanup delete failure was surfaced/logged (not silently
+    // swallowed). console.error should have been called with a message
+    // referencing the document ID and/or the cleanup failure.
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    const errorMsg = String(consoleErrorSpy.mock.calls[0][0]);
+    expect(errorMsg).toContain(VALID_DOC_ID);
+
+    // Both deletes should have been called:
+    // 1. Pre-insert delete (succeeded)
+    // 2. Cleanup delete (failed, but still attempted)
+    expect(serverClient._pagesDeleteMock).toHaveBeenCalledTimes(2);
+
+    consoleErrorSpy.mockRestore();
   });
 
   // --- Success ---

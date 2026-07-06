@@ -176,10 +176,22 @@ export async function POST(
     // Delete any existing document_pages rows for this document FIRST.
     // This ensures that retries (failed → ocr_processing → ocr_done) do
     // not leave duplicate rows from a previous OCR attempt.
-    await serverClient
+    //
+    // CRITICAL: Check the delete result's error. If the delete fails, we
+    // must abort BEFORE inserting — otherwise the old (un-deleted) rows
+    // would remain alongside the new insert, creating duplicate
+    // document_pages for the same document.
+    const { error: preInsertDeleteError } = await serverClient
       .from("document_pages")
       .delete()
       .eq("document_id", documentId);
+
+    if (preInsertDeleteError) {
+      throw new DatalabOcrError(
+        "Bestehende OCR-Seiten konnten nicht gelöscht werden.",
+        "DB_DELETE_FAILED",
+      );
+    }
 
     // Insert one document_pages row per page.
     if (ocrResult.pages.length > 0) {
@@ -219,10 +231,25 @@ export async function POST(
       // failed by the catch block, but the page rows would remain without
       // a corresponding ocr_done document). Delete them to prevent
       // orphaned rows from a failed persistence attempt.
-      await serverClient
+      //
+      // CRITICAL: Check the cleanup delete result's error. If the cleanup
+      // delete ALSO fails, surface/log the failure rather than silently
+      // swallowing it — the orphaned rows are a data-integrity concern
+      // that operators need to be aware of. The primary error
+      // (DB_UPDATE_FAILED) is still thrown below; we don't mask it, but
+      // we also don't silently ignore the cleanup failure.
+      const { error: cleanupDeleteError } = await serverClient
         .from("document_pages")
         .delete()
         .eq("document_id", documentId);
+
+      if (cleanupDeleteError) {
+        console.error(
+          `[OCR] Cleanup failed: could not delete orphaned document_pages for document ${documentId}:`,
+          cleanupDeleteError,
+        );
+      }
+
       throw new DatalabOcrError(
         "Dokument-Status konnte nicht aktualisiert werden.",
         "DB_UPDATE_FAILED",
