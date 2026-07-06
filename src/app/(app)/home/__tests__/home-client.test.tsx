@@ -228,7 +228,19 @@ describe("HomeClient — Heute wichtig", () => {
     ).toBeNull();
   });
 
-  it("shows an empty state when there are no urgent tasks", () => {
+  it("excludes overdue tasks from 'Heute wichtig'", () => {
+    render(<HomeClient {...defaultProps} />);
+    // task-3 is due 2026-06-01 (overdue, before today 2026-07-06) → should NOT show
+    const section = screen
+      .getByText("Heute wichtig")
+      .closest("[data-testid='home-section-heute-wichtig']");
+    expect(section).not.toBeNull();
+    expect(
+      within(section as HTMLElement).queryByText("Alter Task"),
+    ).toBeNull();
+  });
+
+  it("shows an empty state with a scan CTA when there are no urgent tasks", () => {
     render(
       <HomeClient
         {...defaultProps}
@@ -241,6 +253,10 @@ describe("HomeClient — Heute wichtig", () => {
     expect(section).not.toBeNull();
     expect(
       within(section as HTMLElement).getByText("Nichts Dringendes"),
+    ).toBeDefined();
+    // VAL-HOME-007: empty state must include a scan CTA
+    expect(
+      within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
     ).toBeDefined();
   });
 });
@@ -267,7 +283,7 @@ describe("HomeClient — Neue Dokumente zur Bestätigung", () => {
     ).toBeDefined();
   });
 
-  it("shows an empty state when there are no analyzed documents", () => {
+  it("shows an empty state with a scan CTA when there are no analyzed documents", () => {
     render(
       <HomeClient
         {...defaultProps}
@@ -280,6 +296,10 @@ describe("HomeClient — Neue Dokumente zur Bestätigung", () => {
     expect(section).not.toBeNull();
     expect(
       within(section as HTMLElement).getByText("Keine neuen Dokumente"),
+    ).toBeDefined();
+    // VAL-HOME-007: empty state must include a scan CTA
+    expect(
+      within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
     ).toBeDefined();
   });
 });
@@ -312,7 +332,7 @@ describe("HomeClient — Fristen", () => {
     ).toBeNull();
   });
 
-  it("shows an empty state when there are no upcoming deadlines", () => {
+  it("shows an empty state with a scan CTA when there are no upcoming deadlines", () => {
     render(
       <HomeClient
         {...defaultProps}
@@ -325,6 +345,10 @@ describe("HomeClient — Fristen", () => {
     expect(section).not.toBeNull();
     expect(
       within(section as HTMLElement).getByText("Keine anstehenden Fristen"),
+    ).toBeDefined();
+    // VAL-HOME-007: empty state must include a scan CTA
+    expect(
+      within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
     ).toBeDefined();
   });
 });
@@ -341,7 +365,7 @@ describe("HomeClient — Zuletzt gescannt", () => {
     expect(screen.getByText("Versicherungsschreiben")).toBeDefined();
   });
 
-  it("shows an empty state when there are no documents", () => {
+  it("shows an empty state with a scan CTA when there are no documents", () => {
     render(
       <HomeClient
         {...defaultProps}
@@ -354,6 +378,10 @@ describe("HomeClient — Zuletzt gescannt", () => {
     expect(section).not.toBeNull();
     expect(
       within(section as HTMLElement).getByText("Noch keine Dokumente"),
+    ).toBeDefined();
+    // VAL-HOME-007: empty state must include a scan CTA
+    expect(
+      within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
     ).toBeDefined();
   });
 });
@@ -399,6 +427,76 @@ describe("HomeClient — German UI", () => {
     expect(container.textContent).not.toContain("Important today");
     expect(container.textContent).not.toContain("Deadlines");
     expect(container.textContent).not.toContain("Recently scanned");
+  });
+});
+
+describe("HomeClient — Empty State Scan CTA", () => {
+  it("scan CTA in 'Zuletzt gescannt' empty state navigates to /scan", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        recentDocuments={[]}
+      />,
+    );
+    const section = screen
+      .getByText("Zuletzt gescannt")
+      .closest("[data-testid='home-section-recent-docs']");
+    const cta = within(section as HTMLElement).getByRole("button", {
+      name: "Dokument scannen",
+    });
+    fireEvent.click(cta);
+    expect(mockPush).toHaveBeenCalledWith("/scan");
+  });
+
+  it("scan CTA in 'Heute wichtig' empty state navigates to /scan", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+      />,
+    );
+    const section = screen
+      .getByText("Heute wichtig")
+      .closest("[data-testid='home-section-heute-wichtig']");
+    const cta = within(section as HTMLElement).getByRole("button", {
+      name: "Dokument scannen",
+    });
+    fireEvent.click(cta);
+    expect(mockPush).toHaveBeenCalledWith("/scan");
+  });
+
+  it("scan CTA in 'Neue Dokumente' empty state navigates to /scan", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        analyzedDocuments={[]}
+      />,
+    );
+    const section = screen
+      .getByText("Neue Dokumente zur Bestätigung")
+      .closest("[data-testid='home-section-review-docs']");
+    const cta = within(section as HTMLElement).getByRole("button", {
+      name: "Dokument scannen",
+    });
+    fireEvent.click(cta);
+    expect(mockPush).toHaveBeenCalledWith("/scan");
+  });
+
+  it("scan CTA in 'Fristen' empty state navigates to /scan", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+      />,
+    );
+    const section = screen
+      .getByText("Fristen")
+      .closest("[data-testid='home-section-fristen']");
+    const cta = within(section as HTMLElement).getByRole("button", {
+      name: "Dokument scannen",
+    });
+    fireEvent.click(cta);
+    expect(mockPush).toHaveBeenCalledWith("/scan");
   });
 });
 

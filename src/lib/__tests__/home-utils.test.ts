@@ -57,13 +57,14 @@ describe("filterHeuteWichtig", () => {
     expect(result[0].id).toBe("t1");
   });
 
-  it("includes overdue tasks (due_date before today)", () => {
+  it("excludes overdue tasks (due_date before today)", () => {
     const tasks = [
-      makeTask({ id: "t1", due_date: "2026-07-01" }), // overdue
-      makeTask({ id: "t2", due_date: "2026-07-06" }), // today
+      makeTask({ id: "t1", due_date: "2026-07-01" }), // overdue → excluded
+      makeTask({ id: "t2", due_date: "2026-07-06" }), // today → included
     ];
     const result = filterHeuteWichtig(tasks, TODAY);
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("t2");
   });
 
   it("excludes tasks with status done or dismissed", () => {

@@ -61,8 +61,9 @@ export const RECENT_DOCS_LIMIT = 5;
 /**
  * Filter tasks for the "Heute wichtig" (Important today) section.
  *
- * Returns confirmed, open tasks with a due_date within the next 7 days
- * (including overdue tasks), sorted by due_date ascending (soonest first).
+ * Returns confirmed, open tasks with a due_date within the near-future
+ * horizon (today through ~7 days ahead), EXCLUDING overdue tasks.
+ * Sorted by due_date ascending (soonest first).
  * Limited to HEUTE_WICHTIG_LIMIT items.
  *
  * @param tasks - All tasks for the family.
@@ -73,6 +74,7 @@ export function filterHeuteWichtig(
   tasks: HomeTask[],
   referenceDate: Date = new Date(),
 ): HomeTask[] {
+  const today = toLocalDateStr(referenceDate);
   const horizon = toLocalDateStr(
     new Date(
       referenceDate.getFullYear(),
@@ -87,6 +89,7 @@ export function filterHeuteWichtig(
         t.status === "open" &&
         t.confirmed &&
         t.due_date !== null &&
+        t.due_date >= today &&
         t.due_date <= horizon,
     )
     .sort((a, b) => (a.due_date! < b.due_date! ? -1 : a.due_date! > b.due_date! ? 1 : 0))

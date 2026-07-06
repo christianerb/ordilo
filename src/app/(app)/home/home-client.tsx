@@ -257,6 +257,8 @@ export function HomeClient({
             title="Nichts Dringendes"
             description="Du hast aktuell keine dringenden Aufgaben. Scanne ein Dokument, um Fristen zu erkennen."
             icon={CalendarClock}
+            actionLabel="Dokument scannen"
+            onAction={() => router.push("/scan")}
           />
         )}
       </HomeSection>
@@ -290,6 +292,8 @@ export function HomeClient({
             title="Keine neuen Dokumente"
             description="Alle Dokumente sind bestätigt. Scanne ein neues Dokument, um es zu überprüfen."
             icon={FileCheck}
+            actionLabel="Dokument scannen"
+            onAction={() => router.push("/scan")}
           />
         )}
       </HomeSection>
@@ -315,8 +319,10 @@ export function HomeClient({
         ) : (
           <EmptyState
             title="Keine anstehenden Fristen"
-            description="Es sind keine offenen Fristen vorhanden."
+            description="Es sind keine offenen Fristen vorhanden. Scanne ein Dokument, um Fristen zu erkennen."
             icon={CalendarDays}
+            actionLabel="Dokument scannen"
+            onAction={() => router.push("/scan")}
           />
         )}
       </HomeSection>
