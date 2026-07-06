@@ -85,6 +85,13 @@ export default function ScanPage() {
   // Track documents for which analysis has been auto-triggered (to avoid
   // duplicate calls when the polling effect re-runs).
   const triggeredAnalysisRef = useRef<Set<string>>(new Set());
+  // One-time guard: on the initial fetchDocuments load, we seed
+  // triggeredAnalysisRef with the IDs of all documents already in
+  // 'ocr_done' so the auto-analyze effect does NOT fire for pre-existing
+  // documents (e.g. a stuck/OCR-less doc reached via source-card
+  // navigation from /suche). Only documents that transition to
+  // 'ocr_done' DURING this session (freshly uploaded) auto-analyze.
+  const seededPreExistingRef = useRef(false);
 
   // Refs for file inputs (to reset them after selection).
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -123,6 +130,22 @@ export default function ScanPage() {
       .order("created_at", { ascending: false });
 
     if (!error && data) {
+      // On the initial load, seed triggeredAnalysisRef with the IDs of
+      // all documents already in 'ocr_done' BEFORE updating state, so the
+      // auto-analyze effect sees them as already triggered and does not
+      // fire POST /analyze for pre-existing documents. This prevents the
+      // 400 NO_OCR_TEXT error (and the resulting console error) when
+      // navigating to /scan from a source card on /suche. Only documents
+      // that reach 'ocr_done' later (after an in-session upload) will
+      // auto-analyze.
+      if (!seededPreExistingRef.current) {
+        for (const doc of data) {
+          if (doc.status === "ocr_done") {
+            triggeredAnalysisRef.current.add(doc.id);
+          }
+        }
+        seededPreExistingRef.current = true;
+      }
       setDocuments(data);
     }
     setLoadingDocs(false);
