@@ -8,27 +8,18 @@ import type { Database } from "../../../types/database";
  * and the user_belongs_to_family helper function.
  */
 describe("database schema types", () => {
-  type PublicTables = keyof Database["public"]["Tables"];
-
   it("includes all 9 required tables", () => {
-    const required: PublicTables[] = [
-      "families",
-      "family_members",
-      "documents",
-      "document_pages",
-      "extracted_entities",
-      "tasks",
-      "knowledge_nodes",
-      "knowledge_edges",
-      "document_embeddings",
-    ];
-
     // expectTypeOf doesn't have a clean "includes all" assertion, so we
-    // verify each table name resolves to a valid Row type instead.
-    for (const table of required) {
-      const row = {} as Database["public"]["Tables"][typeof table]["Row"];
-      expectTypeOf(row).toBeObject();
-    }
+    // verify each table name resolves to a valid Row type individually.
+    expectTypeOf<Database["public"]["Tables"]["families"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["family_members"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["documents"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["document_pages"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["extracted_entities"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["tasks"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["knowledge_nodes"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["knowledge_edges"]["Row"]>().toBeObject();
+    expectTypeOf<Database["public"]["Tables"]["document_embeddings"]["Row"]>().toBeObject();
   });
 
   it("documents table has error_message column", () => {
