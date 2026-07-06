@@ -1,23 +1,33 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { EmptyState } from "@/components/ordilo/empty-state";
-import { formatGermanDate } from "@/lib/format";
+import { ProfileClient } from "./profile-client";
 import type { Database } from "@/types/database";
+import type {
+  ProfileDocument,
+  ProfileTask,
+  ProfileDateEntity,
+} from "@/lib/profile-utils";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
+type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
+type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
+type EntityRow = Database["public"]["Tables"]["extracted_entities"]["Row"];
 
 /**
- * Person profile placeholder page (`/familie/[id]`).
+ * Person profile page (`/familie/[id]`).
  *
- * Shows the member's avatar, name, role, and birthdate. The full person
- * profile (documents per person, timeline, open tasks) is built in M5.
- * For now, this serves as a navigation target from the family management
- * page's person cards.
+ * Server component that fetches all data for a person's profile:
+ * - The family member (RLS-scoped)
+ * - Documents linked to this person via confirmed `extracted_entities`
+ *   (entity_type='person', linked_object_id=member.id, confirmed=true)
+ * - Open tasks linked to this person via their source documents
+ * - Date entities from linked documents (for the timeline)
  *
- * The member is fetched RLS-scoped — only the authenticated user's family
- * members are accessible.
+ * The data is passed to the `ProfileClient` component for rendering with
+ * interactivity (navigation, empty states, timeline).
+ *
+ * If the member doesn't exist or doesn't belong to the user's family,
+ * returns 404 (RLS-scoped query returns no row).
  */
 export default async function PersonProfilePage({
   params,
@@ -27,69 +37,149 @@ export default async function PersonProfilePage({
   const { id } = await params;
   const supabase = await createClient();
 
-  // Fetch the member by ID (RLS-scoped to the user's family).
+  // 1. Fetch the member by ID (RLS-scoped to the user's family).
   const { data: member } = await supabase
     .from("family_members")
     .select("*")
     .eq("id", id)
     .maybeSingle();
 
-  // If the member doesn't exist or doesn't belong to the user's family,
-  // return 404.
   if (!member) {
     notFound();
   }
 
   const typedMember = member as MemberRow;
-  const formattedBirthdate = formatGermanDate(typedMember.birthdate);
+
+  // 2. Fetch confirmed person entities linked to this member.
+  // These give us the document IDs of documents assigned to this person.
+  const { data: personEntities } = await supabase
+    .from("extracted_entities")
+    .select("document_id")
+    .eq("entity_type", "person")
+    .eq("linked_object_id", typedMember.id)
+    .eq("confirmed", true);
+
+  // Extract unique document IDs linked to this person.
+  const documentIds = [
+    ...new Set((personEntities ?? []).map((e) => e.document_id)),
+  ];
+
+  // If no documents are linked, pass empty data to the client component
+  // (which will render empty states for each section).
+  if (documentIds.length === 0) {
+    return (
+      <ProfileClient
+        member={typedMember}
+        documents={[]}
+        tasks={[]}
+        dateEntities={[]}
+      />
+    );
+  }
+
+  // 3. Fetch the documents linked to this person.
+  const { data: docData } = await supabase
+    .from("documents")
+    .select(
+      "id, title, document_type, status, created_at, confirmed_at, original_filename",
+    )
+    .in("id", documentIds)
+    .order("created_at", { ascending: false });
+
+  const documents: ProfileDocument[] = (docData ?? []).map((d) => {
+    const doc = d as Pick<
+      DocumentRow,
+      | "id"
+      | "title"
+      | "document_type"
+      | "status"
+      | "created_at"
+      | "confirmed_at"
+      | "original_filename"
+    >;
+    return {
+      id: doc.id,
+      title: doc.title,
+      document_type: doc.document_type,
+      status: doc.status,
+      created_at: doc.created_at,
+      confirmed_at: doc.confirmed_at,
+      original_filename: doc.original_filename,
+    };
+  });
+
+  // 4. Fetch open, confirmed tasks linked to this person via their documents.
+  const { data: taskData } = await supabase
+    .from("tasks")
+    .select("id, title, due_date, priority, status, document_id")
+    .in("document_id", documentIds)
+    .eq("confirmed", true)
+    .eq("status", "open")
+    .order("due_date", { ascending: true, nullsFirst: false });
+
+  // Fetch document titles for the task cards' source-document links.
+  const taskDocIds = [
+    ...new Set((taskData ?? []).map((t) => t.document_id)),
+  ];
+  const taskDocIdsToFetch = taskDocIds.filter(
+    (docId) => !documentIds.includes(docId),
+  );
+  const allDocIdsToFetch = [...documentIds, ...taskDocIdsToFetch];
+
+  const { data: taskDocData } = await supabase
+    .from("documents")
+    .select("id, title, original_filename")
+    .in("id", allDocIdsToFetch);
+
+  // Build a lookup map for document titles.
+  const docTitleMap = new Map<string, string | null>();
+  for (const d of taskDocData ?? []) {
+    const doc = d as Pick<DocumentRow, "id" | "title" | "original_filename">;
+    docTitleMap.set(doc.id, doc.title);
+  }
+
+  const tasks: ProfileTask[] = (taskData ?? []).map((t) => {
+    const task = t as Pick<
+      TaskRow,
+      "id" | "title" | "due_date" | "priority" | "status" | "document_id"
+    >;
+    return {
+      id: task.id,
+      title: task.title,
+      due_date: task.due_date,
+      priority: task.priority,
+      status: task.status,
+      document_id: task.document_id,
+    };
+  });
+
+  // 5. Fetch date entities from documents linked to this person (for timeline).
+  const { data: dateEntityData } = await supabase
+    .from("extracted_entities")
+    .select("id, entity_value, document_id")
+    .eq("entity_type", "date")
+    .eq("confirmed", true)
+    .in("document_id", documentIds);
+
+  const dateEntities: ProfileDateEntity[] = (dateEntityData ?? []).map((e) => {
+    const entity = e as Pick<
+      EntityRow,
+      "id" | "entity_value" | "document_id"
+    >;
+    return {
+      id: entity.id,
+      entity_value: entity.entity_value,
+      document_id: entity.document_id,
+    };
+  });
 
   return (
-    <div className="space-y-6">
-      {/* Back link */}
-      <Link
-        href="/familie"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Zurück zur Familie
-      </Link>
-
-      {/* Member header — avatar + name + role + birthdate */}
-      <div className="flex flex-col items-center gap-3 py-6">
-        <div
-          className="flex size-20 items-center justify-center rounded-full text-3xl font-semibold text-white"
-          style={{
-            backgroundColor: typedMember.avatar_color ?? "#305460",
-          }}
-          aria-hidden="true"
-        >
-          {typedMember.name.charAt(0).toUpperCase() || "?"}
-        </div>
-        <div className="text-center">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {typedMember.name}
-          </h1>
-          {typedMember.role && typedMember.role.trim() !== "" && (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {typedMember.role}
-            </p>
-          )}
-          {formattedBirthdate && (
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {formattedBirthdate}
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Placeholder for the full profile (M5) */}
-      <div className="rounded-ordilo-lg border border-border bg-card p-6 shadow-card">
-        <EmptyState
-          icon={FileText}
-          title="Demnächst verfügbar"
-          description="Das vollständige Profil mit Dokumenten, Verlauf und Aufgaben wird in einem kommenden Update verfügbar sein."
-        />
-      </div>
-    </div>
+    <ProfileClient
+      member={typedMember}
+      documents={documents}
+      tasks={tasks}
+      dateEntities={dateEntities}
+      documentTitles={docTitleMap}
+    />
   );
 }
