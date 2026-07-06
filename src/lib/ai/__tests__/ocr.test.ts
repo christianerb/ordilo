@@ -550,6 +550,36 @@ describe("buildPages", () => {
     }
   });
 
+  it("fails explicitly when JSON page layouts exceed reported page_count", () => {
+    // Impossible response: Datalab reports page_count=2 but the JSON layout
+    // contains 5 page blocks. The page_count is the authoritative page count
+    // from Datalab; JSON layouts exceeding it indicate an inconsistent
+    // upstream response. Reject rather than silently storing more pages
+    // than reported.
+    const markdown = "Page 1{PAGE_BREAK}Page 2";
+    const json = buildJsonOutput(5); // 5 page blocks in JSON
+
+    try {
+      buildPages(markdown, json, 2); // But only 2 pages reported
+      expect.fail("Should have thrown PAGE_COUNT_MISMATCH");
+    } catch (err) {
+      expect(err).toBeInstanceOf(DatalabOcrError);
+      expect((err as DatalabOcrError).code).toBe("PAGE_COUNT_MISMATCH");
+    }
+  });
+
+  it("accepts when JSON page count exactly matches reported page_count", () => {
+    // Exact match is the normal happy path: JSON layouts == page_count.
+    const markdown = "Page 1{PAGE_BREAK}Page 2{PAGE_BREAK}Page 3";
+    const json = buildJsonOutput(3);
+
+    const pages = buildPages(markdown, json, 3);
+
+    expect(pages).toHaveLength(3);
+    expect(pages[0].page_number).toBe(1);
+    expect(pages[2].page_number).toBe(3);
+  });
+
   it("returns empty array for empty markdown", () => {
     const pages = buildPages("", null, 1);
     expect(pages).toHaveLength(0);

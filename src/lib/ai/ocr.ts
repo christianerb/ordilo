@@ -505,11 +505,21 @@ export function buildPages(
   // --- Case 1: Per-page layout data available from JSON ---
   // This is the preferred path: we have page-specific block data from the
   // Marker JSON output, which gives us accurate per-page layout_json.
+  //
+  // The Datalab `page_count` field is the authoritative page count reported
+  // by the upstream OCR service. The JSON page layouts (Marker block tree)
+  // must match this count exactly. If the JSON has fewer OR more page
+  // blocks than `page_count`, the response is inconsistent/impossible and
+  // we reject it with PAGE_COUNT_MISMATCH rather than silently storing
+  // a wrong number of pages.
   if (pageLayouts && pageLayouts.length > 0) {
     const numPages = pageLayouts.length;
 
-    // If the JSON has fewer pages than reported, we can't safely map.
-    if (numPages < pageCount) {
+    // Reject if JSON page layouts don't match the reported page_count.
+    // Both fewer (undercounting) and more (overcounting) are impossible
+    // responses unless the upstream contract is explicitly documented
+    // otherwise.
+    if (numPages !== pageCount) {
       throw new DatalabOcrError(
         "OCR-Ergebnisse konnten nicht sicher auf alle gemeldeten Seiten abgebildet werden.",
         "PAGE_COUNT_MISMATCH",

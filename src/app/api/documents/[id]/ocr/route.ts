@@ -173,6 +173,14 @@ export async function POST(
     );
 
     // 6. Store results immediately (1-hour eviction window) ---------------
+    // Delete any existing document_pages rows for this document FIRST.
+    // This ensures that retries (failed → ocr_processing → ocr_done) do
+    // not leave duplicate rows from a previous OCR attempt.
+    await serverClient
+      .from("document_pages")
+      .delete()
+      .eq("document_id", documentId);
+
     // Insert one document_pages row per page.
     if (ocrResult.pages.length > 0) {
       const pageInserts = ocrResult.pages.map((page) => ({
@@ -206,6 +214,15 @@ export async function POST(
       .eq("id", documentId);
 
     if (updateError) {
+      // Clean up orphaned document_pages rows — the document status update
+      // failed, so the pages would be orphaned (the document will be marked
+      // failed by the catch block, but the page rows would remain without
+      // a corresponding ocr_done document). Delete them to prevent
+      // orphaned rows from a failed persistence attempt.
+      await serverClient
+        .from("document_pages")
+        .delete()
+        .eq("document_id", documentId);
       throw new DatalabOcrError(
         "Dokument-Status konnte nicht aktualisiert werden.",
         "DB_UPDATE_FAILED",

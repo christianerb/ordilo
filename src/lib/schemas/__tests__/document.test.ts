@@ -13,6 +13,9 @@ import {
   getStatusLabel,
   getStatusBadgeClasses,
   validateFile,
+  validateFileWithSignature,
+  detectMimeTypeFromBytes,
+  validateFileSignature,
   isImageMimeType,
   isPdfMimeType,
   uploadFamilyIdSchema,
@@ -417,5 +420,189 @@ describe("OCR_ALLOWED_SOURCE_STATUSES", () => {
 
   it("does not include analyzed", () => {
     expect(OCR_ALLOWED_SOURCE_STATUSES.has("analyzed")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Magic-byte / file-signature validation
+// ---------------------------------------------------------------------------
+
+/** Build a Uint8Array from a list of byte values. */
+function bytes(...vals: number[]): Uint8Array {
+  return new Uint8Array(vals);
+}
+
+describe("detectMimeTypeFromBytes", () => {
+  it("detects PDF from %PDF header", () => {
+    const result = detectMimeTypeFromBytes(bytes(0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34));
+    expect(result).toBe("application/pdf");
+  });
+
+  it("detects JPEG from FF D8 FF header", () => {
+    const result = detectMimeTypeFromBytes(bytes(0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10));
+    expect(result).toBe("image/jpeg");
+  });
+
+  it("detects PNG from 89 50 4E 47 header", () => {
+    const result = detectMimeTypeFromBytes(bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00));
+    expect(result).toBe("image/png");
+  });
+
+  it("detects GIF from GIF8 header", () => {
+    const result = detectMimeTypeFromBytes(bytes(0x47, 0x49, 0x46, 0x38, 0x39, 0x61));
+    expect(result).toBe("image/gif");
+  });
+
+  it("detects WebP from RIFF????WEBP header", () => {
+    // RIFF + 4 size bytes (any) + WEBP
+    const result = detectMimeTypeFromBytes(bytes(0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x10, 0x00, 0x57, 0x45, 0x42, 0x50));
+    expect(result).toBe("image/webp");
+  });
+
+  it("returns null for unknown file content (text)", () => {
+    const result = detectMimeTypeFromBytes(bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f)); // "hello"
+    expect(result).toBeNull();
+  });
+
+  it("returns null for empty bytes", () => {
+    expect(detectMimeTypeFromBytes(new Uint8Array(0))).toBeNull();
+  });
+
+  it("returns null for too-short bytes", () => {
+    // Only 2 bytes — not enough for any signature
+    expect(detectMimeTypeFromBytes(bytes(0x25, 0x50))).toBeNull();
+  });
+
+  it("returns null for executable content", () => {
+    // MZ header (Windows executable)
+    expect(detectMimeTypeFromBytes(bytes(0x4d, 0x5a, 0x90, 0x00))).toBeNull();
+  });
+});
+
+describe("validateFileSignature", () => {
+  it("returns true when PDF bytes match PDF MIME type", () => {
+    expect(validateFileSignature("application/pdf", bytes(0x25, 0x50, 0x44, 0x46))).toBe(true);
+  });
+
+  it("returns true when JPEG bytes match JPEG MIME type", () => {
+    expect(validateFileSignature("image/jpeg", bytes(0xff, 0xd8, 0xff, 0xe0))).toBe(true);
+  });
+
+  it("returns true when PNG bytes match PNG MIME type", () => {
+    expect(validateFileSignature("image/png", bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a))).toBe(true);
+  });
+
+  it("returns true when WebP bytes match WebP MIME type (wildcards ignored)", () => {
+    expect(validateFileSignature("image/webp", bytes(0x52, 0x49, 0x46, 0x46, 0xaa, 0xbb, 0xcc, 0xdd, 0x57, 0x45, 0x42, 0x50))).toBe(true);
+  });
+
+  it("returns false when text content is claimed as PDF", () => {
+    expect(validateFileSignature("application/pdf", bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f))).toBe(false);
+  });
+
+  it("returns false when JPEG content is claimed as PDF", () => {
+    expect(validateFileSignature("application/pdf", bytes(0xff, 0xd8, 0xff))).toBe(false);
+  });
+
+  it("returns false when PDF content is claimed as JPEG", () => {
+    expect(validateFileSignature("image/jpeg", bytes(0x25, 0x50, 0x44, 0x46))).toBe(false);
+  });
+
+  it("returns false for unsupported MIME type", () => {
+    expect(validateFileSignature("text/plain", bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f))).toBe(false);
+  });
+
+  it("returns false for empty bytes", () => {
+    expect(validateFileSignature("application/pdf", new Uint8Array(0))).toBe(false);
+  });
+});
+
+describe("validateFileWithSignature", () => {
+  it("accepts a valid PDF with correct magic bytes", () => {
+    const result = validateFileWithSignature("application/pdf", 1024, bytes(0x25, 0x50, 0x44, 0x46));
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts a valid JPEG with correct magic bytes", () => {
+    const result = validateFileWithSignature("image/jpeg", 1024, bytes(0xff, 0xd8, 0xff, 0xe0));
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts a valid PNG with correct magic bytes", () => {
+    const result = validateFileWithSignature("image/png", 1024, bytes(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a));
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts a valid WebP with correct magic bytes", () => {
+    const result = validateFileWithSignature(
+      "image/webp",
+      1024,
+      bytes(0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x10, 0x00, 0x57, 0x45, 0x42, 0x50),
+    );
+    expect(result.valid).toBe(true);
+  });
+
+  it("accepts a valid GIF with correct magic bytes", () => {
+    const result = validateFileWithSignature("image/gif", 1024, bytes(0x47, 0x49, 0x46, 0x38, 0x39, 0x61));
+    expect(result.valid).toBe(true);
+  });
+
+  // --- Signature mismatch ---
+
+  it("rejects text content claimed as PDF with FILE_SIGNATURE_MISMATCH", () => {
+    const result = validateFileWithSignature("application/pdf", 1024, bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe("FILE_SIGNATURE_MISMATCH");
+      expect(result.error).toContain("Dateiinhalt");
+      expect(result.error).toContain("überein");
+    }
+  });
+
+  it("rejects JPEG content claimed as PDF", () => {
+    const result = validateFileWithSignature("application/pdf", 1024, bytes(0xff, 0xd8, 0xff));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe("FILE_SIGNATURE_MISMATCH");
+    }
+  });
+
+  it("rejects PDF content claimed as JPEG", () => {
+    const result = validateFileWithSignature("image/jpeg", 1024, bytes(0x25, 0x50, 0x44, 0x46));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe("FILE_SIGNATURE_MISMATCH");
+    }
+  });
+
+  // --- MIME type check still applies first ---
+
+  it("rejects unsupported MIME type before checking signature", () => {
+    const result = validateFileWithSignature("text/plain", 1024, bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe("UNSUPPORTED_FILE_TYPE");
+    }
+  });
+
+  // --- Size check still applies ---
+
+  it("rejects oversized file with FILE_TOO_LARGE", () => {
+    const result = validateFileWithSignature("application/pdf", MAX_FILE_SIZE + 1, bytes(0x25, 0x50, 0x44, 0x46));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(result.code).toBe("FILE_TOO_LARGE");
+    }
+  });
+
+  // --- Error response shape ---
+
+  it("error responses include both error and code fields", () => {
+    const result = validateFileWithSignature("application/pdf", 1024, bytes(0x68, 0x65, 0x6c, 0x6c, 0x6f));
+    expect(result.valid).toBe(false);
+    if (!result.valid) {
+      expect(typeof result.error).toBe("string");
+      expect(typeof result.code).toBe("string");
+    }
   });
 });

@@ -2,7 +2,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import {
-  validateFile,
+  validateFileWithSignature,
   uploadFamilyIdSchema,
   type UploadSuccessResponse,
   type UploadErrorResponse,
@@ -82,10 +82,36 @@ export async function POST(request: Request): Promise<Response> {
   }
   const familyId = familyIdParsed.data.family_id;
 
-  // 3. Validate file type and size ----------------------------------------
-  const validation = validateFile(file.type, file.size);
+  // 3. Validate file type, size, and magic-byte signature ---------------
+  // Read the file's leading bytes for magic-byte validation.
+  // This is a lightweight file-signature check that complements the MIME
+  // type validation: instead of trusting File.type alone (which is set by
+  // the browser and can be spoofed or incorrect), we verify the file's
+  // leading bytes match the expected signature for the claimed format.
+  //
+  // We read the full file into memory (it's already buffered for the
+  // Storage upload) and take the first 16 bytes. This is safe for the
+  // 25 MB max file size and avoids platform-specific Blob.slice() issues.
+  let headerBytes: Uint8Array;
+  try {
+    const fullBuffer = await file.arrayBuffer();
+    headerBytes = new Uint8Array(fullBuffer, 0, Math.min(16, fullBuffer.byteLength));
+  } catch {
+    const body: UploadErrorResponse = {
+      error: "Datei konnte nicht gelesen werden. Bitte erneut versuchen.",
+      code: "FILE_READ_ERROR",
+    };
+    return Response.json(body, { status: 400 });
+  }
+
+  const validation = validateFileWithSignature(
+    file.type,
+    file.size,
+    headerBytes,
+  );
   if (!validation.valid) {
-    const statusCode = validation.code === "FILE_TOO_LARGE" ? 413 : 400;
+    const statusCode =
+      validation.code === "FILE_TOO_LARGE" ? 413 : 400;
     const body: UploadErrorResponse = {
       error: validation.error,
       code: validation.code,

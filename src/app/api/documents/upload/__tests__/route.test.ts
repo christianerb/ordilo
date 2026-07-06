@@ -88,17 +88,41 @@ function mockAdminClient(options: {
 }
 
 /**
- * Create a mock File for form data.
+ * Magic bytes for each accepted file type, used to create mock files with
+ * valid file signatures for the upload route's magic-byte validation.
+ */
+const MAGIC_BYTES: Record<string, number[]> = {
+  "application/pdf": [0x25, 0x50, 0x44, 0x46], // %PDF
+  "image/jpeg": [0xff, 0xd8, 0xff],
+  "image/png": [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  "image/webp": [0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x10, 0x00, 0x57, 0x45, 0x42, 0x50],
+  "image/gif": [0x47, 0x49, 0x46, 0x38],
+};
+
+/**
+ * Create a mock File for form data with valid magic bytes for the given type.
  */
 function createMockFile(
   name: string,
   type: string,
   size: number = 1024,
 ): File {
-  // Create a minimal blob with the right content type and size.
-  const content = new Array(size).fill(0).join("");
-  const file = new File([content], name, { type });
-  return file;
+  const magic = MAGIC_BYTES[type] ?? [];
+  const content = new Uint8Array(Math.max(size, magic.length));
+  content.set(magic);
+  return new File([content], name, { type });
+}
+
+/**
+ * Create a mock File with arbitrary content (for testing signature mismatch).
+ * The file's MIME type is set to `type` but the content does not match.
+ */
+function createMockFileWithContent(
+  name: string,
+  type: string,
+  content: string,
+): File {
+  return new File([content], name, { type });
 }
 
 /**
@@ -245,6 +269,78 @@ describe("POST /api/documents/upload", () => {
 
     expect(response.status).toBe(400);
     expect(body.code).toBe("UNSUPPORTED_FILE_TYPE");
+  });
+
+  // --- Magic-byte / file-signature validation ---
+
+  it("returns 400 for file with PDF MIME type but text content (signature mismatch)", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockAdminClient({}),
+    );
+
+    // File claims to be PDF but content is plain text
+    const file = createMockFileWithContent("fake.pdf", "application/pdf", "This is not a PDF file");
+    const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("FILE_SIGNATURE_MISMATCH");
+    expect(body.error).toContain("Dateiinhalt");
+  });
+
+  it("returns 400 for file with JPEG MIME type but PDF content", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockAdminClient({}),
+    );
+
+    // File claims to be JPEG but content has PDF magic bytes
+    const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34]);
+    const file = new File([pdfBytes], "fake.jpg", { type: "image/jpeg" });
+    const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("FILE_SIGNATURE_MISMATCH");
+  });
+
+  it("returns 400 for file with PNG MIME type but text content", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockAdminClient({}),
+    );
+
+    const file = createMockFileWithContent("fake.png", "image/png", "not an image");
+    const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("FILE_SIGNATURE_MISMATCH");
+  });
+
+  it("rejects signature mismatch before creating any Storage object or DB row", async () => {
+    const serverClient = mockServerClient({});
+    const adminClient = mockAdminClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(adminClient);
+
+    const file = createMockFileWithContent("fake.pdf", "application/pdf", "text content");
+    const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("FILE_SIGNATURE_MISMATCH");
+    // No Storage upload should have been attempted
+    expect(adminClient.storage.from).not.toHaveBeenCalled();
+    // No documents insert should have been attempted
+    expect(serverClient.from).not.toHaveBeenCalledWith("documents");
   });
 
   // --- File size validation ---

@@ -199,6 +199,140 @@ export function validateFile(
   return { valid: true, mimeType, fileSize };
 }
 
+// ---------------------------------------------------------------------------
+// Magic-byte (file-signature) validation
+// ---------------------------------------------------------------------------
+
+/**
+ * A file-signature definition: expected byte values at offset 0.
+ * A value of -1 means "wildcard" (any byte matches at that position).
+ */
+interface FileSignature {
+  bytes: number[];
+}
+
+/**
+ * Magic-byte signatures for each accepted file type.
+ *
+ * These are lightweight file-signature checks that complement the MIME
+ * type validation. Instead of trusting `File.type` alone (which is set
+ * by the browser and can be spoofed or incorrect), we read the first few
+ * bytes of the file and verify they match the expected magic bytes for
+ * the claimed format.
+ *
+ * Signatures:
+ * - PDF:  `%PDF` (0x25 0x50 0x44 0x46)
+ * - JPEG: `FF D8 FF`
+ * - PNG:  `89 50 4E 47 0D 0A 1A 0A`
+ * - GIF:  `GIF8` (0x47 0x49 0x46 0x38)
+ * - WebP: `RIFF` + 4 size bytes (wildcard) + `WEBP`
+ */
+const FILE_SIGNATURES: Record<AcceptedMimeType, FileSignature> = {
+  "application/pdf": { bytes: [0x25, 0x50, 0x44, 0x46] },
+  "image/jpeg": { bytes: [0xff, 0xd8, 0xff] },
+  "image/png": { bytes: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] },
+  "image/gif": { bytes: [0x47, 0x49, 0x46, 0x38] },
+  "image/webp": {
+    bytes: [0x52, 0x49, 0x46, 0x46, -1, -1, -1, -1, 0x57, 0x45, 0x42, 0x50],
+  },
+};
+
+/**
+ * Check if a byte array matches a file signature.
+ *
+ * Wildcard bytes (-1 in the signature) match any value.
+ *
+ * @param bytes - The file's leading bytes.
+ * @param sig - The file signature to check against.
+ * @returns true if the bytes match the signature.
+ */
+function matchesSignature(bytes: Uint8Array, sig: FileSignature): boolean {
+  if (bytes.length < sig.bytes.length) return false;
+  for (let i = 0; i < sig.bytes.length; i++) {
+    if (sig.bytes[i] !== -1 && bytes[i] !== sig.bytes[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Detect the MIME type of a file from its leading bytes (magic bytes).
+ *
+ * Checks the file's first bytes against known signatures for PDF, JPEG,
+ * PNG, GIF, and WebP. Returns the detected MIME type or null if no
+ * known signature matches.
+ *
+ * @param bytes - The file's leading bytes (at least 12 bytes recommended).
+ * @returns The detected MIME type, or null if no signature matches.
+ */
+export function detectMimeTypeFromBytes(
+  bytes: Uint8Array,
+): AcceptedMimeType | null {
+  for (const mimeType of ACCEPTED_MIME_TYPES) {
+    const sig = FILE_SIGNATURES[mimeType];
+    if (matchesSignature(bytes, sig)) {
+      return mimeType;
+    }
+  }
+  return null;
+}
+
+/**
+ * Validate that a file's leading bytes match the expected magic bytes
+ * for the claimed MIME type.
+ *
+ * @param mimeType - The claimed MIME type (e.g. from `File.type`).
+ * @param bytes - The file's leading bytes.
+ * @returns true if the bytes match the signature for the MIME type.
+ */
+export function validateFileSignature(
+  mimeType: string,
+  bytes: Uint8Array,
+): boolean {
+  const sig = FILE_SIGNATURES[mimeType as AcceptedMimeType];
+  if (!sig) return false;
+  return matchesSignature(bytes, sig);
+}
+
+/**
+ * Validate a file's type, size, AND magic-byte signature.
+ *
+ * This is the comprehensive validation function for file uploads. It
+ * performs three checks in order:
+ *   1. MIME type is in the accepted list (images + PDF)
+ *   2. File size is within the maximum limit
+ *   3. The file's leading bytes match the expected magic bytes for the
+ *      claimed MIME type (prevents content-type spoofing)
+ *
+ * Returns a German error message and code when invalid, so the result can
+ * be surfaced directly in the UI.
+ *
+ * @param mimeType - The file's MIME type (e.g. from `File.type`).
+ * @param fileSize - The file's size in bytes.
+ * @param bytes - The file's leading bytes (for magic-byte validation).
+ */
+export function validateFileWithSignature(
+  mimeType: string,
+  fileSize: number,
+  bytes: Uint8Array,
+): FileValidationResult {
+  // 1. Check MIME type and size (existing logic).
+  const baseResult = validateFile(mimeType, fileSize);
+  if (!baseResult.valid) return baseResult;
+
+  // 2. Check magic-byte signature.
+  if (!validateFileSignature(mimeType, bytes)) {
+    return {
+      valid: false,
+      error: "Der Dateiinhalt stimmt nicht mit dem angegebenen Dateityp überein.",
+      code: "FILE_SIGNATURE_MISMATCH",
+    };
+  }
+
+  return { valid: true, mimeType, fileSize };
+}
+
 /**
  * Check if a MIME type is an accepted image type.
  */

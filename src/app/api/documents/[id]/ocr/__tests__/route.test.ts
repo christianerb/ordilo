@@ -98,6 +98,8 @@ function mockServerClient(options: {
   finalUpdateError?: unknown;
   /** Error for document_pages insert. */
   pagesInsertError?: unknown;
+  /** Error for document_pages delete. */
+  pagesDeleteError?: unknown;
 } = {}) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
@@ -107,6 +109,7 @@ function mockServerClient(options: {
     followUpError = null,
     finalUpdateError = null,
     pagesInsertError = null,
+    pagesDeleteError = null,
   } = options;
 
   // document_pages insert — the route does `await .insert(pageInserts)`
@@ -114,6 +117,17 @@ function mockServerClient(options: {
   const pagesInsertMock = vi.fn().mockResolvedValue({
     data: null,
     error: pagesInsertError,
+  });
+
+  // document_pages delete — the route does
+  // `await .delete().eq("document_id", documentId)` so delete returns
+  // a chain with .eq() that resolves to { data, error }.
+  const pagesDeleteEqMock = vi.fn().mockResolvedValue({
+    data: null,
+    error: pagesDeleteError,
+  });
+  const pagesDeleteMock = vi.fn().mockReturnValue({
+    eq: pagesDeleteEqMock,
   });
 
   // Build the documents table builder.
@@ -164,14 +178,18 @@ function mockServerClient(options: {
     },
     from: vi.fn((table: string) => {
       if (table === "documents") return documentsBuilder;
-      if (table === "document_pages") return { insert: pagesInsertMock };
+      if (table === "document_pages") return { insert: pagesInsertMock, delete: pagesDeleteMock };
       throw new Error(`Unexpected table: ${table}`);
     }),
-    // Expose the pages insert mock for test assertions.
+    // Expose the pages insert/delete mocks for test assertions.
     _pagesInsertMock: pagesInsertMock,
+    _pagesDeleteMock: pagesDeleteMock,
+    _pagesDeleteEqMock: pagesDeleteEqMock,
     _documentsBuilder: documentsBuilder,
   } as unknown as Awaited<ReturnType<typeof createServerClient>> & {
     _pagesInsertMock: typeof pagesInsertMock;
+    _pagesDeleteMock: typeof pagesDeleteMock;
+    _pagesDeleteEqMock: typeof pagesDeleteEqMock;
     _documentsBuilder: typeof documentsBuilder;
   };
 }
@@ -530,6 +548,103 @@ describe("POST /api/documents/[id]/ocr", () => {
 
     expect(response.status).toBe(502);
     expect(body.code).toBe("DB_INSERT_FAILED");
+  });
+
+  // --- Persistence hardening: delete-before-insert + cleanup ---
+
+  it("deletes existing document_pages before inserting new ones (retry idempotency)", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(mockOcrResult(3));
+
+    await POST(new Request("http://localhost"), createParams());
+
+    // The delete mock should have been called (to clear prior pages)
+    expect(serverClient._pagesDeleteMock).toHaveBeenCalled();
+    // The delete should filter by document_id
+    expect(serverClient._pagesDeleteEqMock).toHaveBeenCalledWith(
+      "document_id",
+      VALID_DOC_ID,
+    );
+    // The insert should also have been called
+    expect(serverClient._pagesInsertMock).toHaveBeenCalled();
+  });
+
+  it("deletes document_pages even when OCR result has zero pages", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    // Empty OCR result (e.g. blank document)
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue({
+      pages: [],
+      page_count: 0,
+      full_markdown: "",
+      metadata: null,
+    });
+
+    await POST(new Request("http://localhost"), createParams());
+
+    // Delete should still be called to clear any prior pages from a
+    // previous OCR attempt (retry scenario).
+    expect(serverClient._pagesDeleteMock).toHaveBeenCalled();
+    // Insert should NOT be called (no pages to insert)
+    expect(serverClient._pagesInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("cleans up document_pages when document status update fails (no orphaned rows)", async () => {
+    const serverClient = mockServerClient({
+      finalUpdateError: new Error("DB update error"),
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(mockOcrResult(2));
+
+    const response = await POST(new Request("http://localhost"), createParams());
+    const body = await response.json();
+
+    expect(response.status).toBe(502);
+    expect(body.code).toBe("DB_UPDATE_FAILED");
+
+    // The delete should have been called TWICE:
+    // 1. Before insert (clear prior pages)
+    // 2. After update failure (cleanup orphaned pages)
+    expect(serverClient._pagesDeleteMock).toHaveBeenCalledTimes(2);
+    // Both deletes should filter by document_id
+    expect(serverClient._pagesDeleteEqMock).toHaveBeenCalledTimes(2);
+    expect(serverClient._pagesDeleteEqMock).toHaveBeenNthCalledWith(
+      1,
+      "document_id",
+      VALID_DOC_ID,
+    );
+    expect(serverClient._pagesDeleteEqMock).toHaveBeenNthCalledWith(
+      2,
+      "document_id",
+      VALID_DOC_ID,
+    );
+  });
+
+  it("does not leave duplicate document_pages on retry (delete runs before insert)", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+    (runOcr as ReturnType<typeof vi.fn>).mockResolvedValue(mockOcrResult(2));
+
+    await POST(new Request("http://localhost"), createParams());
+
+    // Verify the order: delete was called before insert
+    // The route calls .delete() first (to clear prior pages), then .insert()
+    expect(serverClient._pagesDeleteMock).toHaveBeenCalledBefore(
+      serverClient._pagesInsertMock,
+    );
   });
 
   // --- Success ---
