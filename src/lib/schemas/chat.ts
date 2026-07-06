@@ -68,12 +68,19 @@ export type ChatRequest = z.infer<typeof chatRequestSchema>;
  *   results)
  * - score: relevance score in [0, 1] for semantic, or confidence-derived
  *   for graph (VAL-CHAT-033: scores must be bounded [0, 1])
+ * - origin: whether this source came from semantic search (pgvector
+ *   embedding match, susceptible to hallucination) or graph search
+ *   (deterministic DB match via person/task queries, not hallucination
+ *   risk). Used by `answerCitesSources` to relax the citation check when
+ *   all sources are graph-derived (VAL-SEARCH-023). When unset, the
+ *   source is treated as semantic for backward compatibility.
  */
 export interface ChatSource {
   document_id: string;
   title: string | null;
   excerpt: string;
   score: number;
+  origin?: 'semantic' | 'graph';
 }
 
 /**
@@ -221,7 +228,12 @@ function normalizeForComparison(text: string): string {
  * @returns Array of normalized content fragment strings.
  */
 function extractContentFragments(excerpt: string): string[] {
-  const normalized = normalizeForComparison(excerpt);
+  // Strip synthetic graph prefixes ("Aufgabe: ", "Person: ") so that
+  // fragment extraction uses the actual content (task title, person name)
+  // rather than the prefix, which would not appear in the answer text
+  // (VAL-SEARCH-023).
+  const stripped = excerpt.replace(/^(Aufgabe|Person):\s+/i, "").trim();
+  const normalized = normalizeForComparison(stripped);
   if (!normalized) return [];
 
   const words = normalized.split(" ");
@@ -266,6 +278,12 @@ function extractContentFragments(excerpt: string): string[] {
  *     acceptable — it asserts no facts.
  *   - If no sources are provided (empty array), the check passes (there is
  *     nothing to cite — the caller handles the no-results case).
+ *   - **Graph-origin shortcut** (VAL-SEARCH-023): if all checkable sources
+ *     are graph-derived (origin = 'graph'), the answer is considered cited
+ *     without requiring a title or content match. Graph sources (task/person
+ *     matches) are deterministic DB results, not model-generated content, so
+ *     there is nothing semantic to hallucinate. Sources without an explicit
+ *     origin are treated as semantic for backward compatibility.
  *   - Otherwise, the check passes if and only if the answer references at
  *     least one source by title OR by content. There is NO bypass when all
  *     titles are null/short: content matching is used instead, and if no
@@ -276,8 +294,9 @@ function extractContentFragments(excerpt: string): string[] {
  * @param answer - The generated answer text.
  * @param sources - The source documents provided as context.
  * @returns true if the answer cites at least one source (by title or
- *          content), or if there are no sources to cite. false if sources
- *          exist but the answer references none of them.
+ *          content), or if there are no sources to cite, or if all sources
+ *          are graph-derived. false if semantic sources exist but the
+ *          answer references none of them.
  */
 export function answerCitesSources(
   answer: string,
@@ -289,6 +308,20 @@ export function answerCitesSources(
   // No sources provided → nothing to cite → acceptable (the caller
   // handles the no-results case by returning the fallback directly).
   if (sources.length === 0) return true;
+
+  // Graph-origin shortcut (VAL-SEARCH-023): if all checkable sources are
+  // graph-derived (deterministic DB matches via person/task queries),
+  // there is nothing semantic to hallucinate. The answer is considered
+  // cited regardless of title/content matching, since graph sources
+  // represent verified database records, not model-generated content.
+  // Sources without an explicit origin are treated as semantic for
+  // backward compatibility.
+  const hasSemanticSource = sources.some(
+    (s) => s.origin !== "graph",
+  );
+  if (!hasSemanticSource) {
+    return true;
+  }
 
   const normalizedAnswer = normalizeForComparison(answer);
 

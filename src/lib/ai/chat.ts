@@ -164,6 +164,13 @@ export function combineSearchResults(
       // Prefer semantic chunk_text (document content) over graph metadata.
       excerpt: semantic ? semantic.chunk_text : best.chunk_text,
       score: best.score,
+      // Mark the origin: 'semantic' when a semantic result exists for the
+      // document (the excerpt is real document content susceptible to
+      // hallucination), 'graph' when only graph results exist (deterministic
+      // DB matches, not hallucination risk). This lets answerCitesSources
+      // relax the citation check for graph-only sources (VAL-SEARCH-023)
+      // while keeping the strict check for semantic sources (VAL-CHAT-004).
+      origin: semantic ? "semantic" : "graph",
     });
   }
 

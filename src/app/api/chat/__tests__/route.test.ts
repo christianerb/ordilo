@@ -60,6 +60,18 @@ function createRequest(body: unknown): Request {
   });
 }
 
+/** Create a JSON Request with the given body and additional headers. */
+function createRequestWithHeaders(
+  body: unknown,
+  extraHeaders: Record<string, string>,
+): Request {
+  return new Request("http://localhost/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...extraHeaders },
+    body: JSON.stringify(body),
+  });
+}
+
 /** A valid chat request body. */
 function validBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -599,6 +611,115 @@ describe("POST /api/chat", () => {
     expect(bodyStr).not.toContain("OPENAI_API_KEY");
     expect(bodyStr).not.toContain("api_key");
     expect(bodyStr).not.toContain("sk-");
+  });
+
+  // --- Dev-only fault injection (VAL-CHAT-011) ---
+
+  it("returns 500 with structured error when dev fault-injection header is present (non-production)", async () => {
+    // NODE_ENV in the test environment is 'test' (not 'production'),
+    // so the fault injection hook should be active.
+    vi.stubEnv("NODE_ENV", "test");
+
+    try {
+      const response = await POST(
+        createRequestWithHeaders(validBody(), {
+          "x-dev-simulate-failure": "chat",
+        }),
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(body.error).toBeDefined();
+      expect(body.code).toBe("OPENAI_API_ERROR");
+      // The search and chat functions should NOT have been called —
+      // the fault injection short-circuits before them.
+      expect(semanticSearch).not.toHaveBeenCalled();
+      expect(graphSearch).not.toHaveBeenCalled();
+      expect(generateChatAnswer).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("ignores the fault-injection header in production (no-op)", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    try {
+      // In production, the header must be ignored. The route proceeds
+      // normally (search + chat). With empty search results, the fallback
+      // is returned.
+      (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      const response = await POST(
+        createRequestWithHeaders(validBody(), {
+          "x-dev-simulate-failure": "chat",
+        }),
+      );
+      const body = await response.json();
+
+      // Should NOT be a 500 — the header is ignored in production.
+      expect(response.status).toBe(200);
+      expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+      expect(body.sources).toEqual([]);
+      // Search functions SHOULD have been called (fault injection was
+      // a no-op in production).
+      expect(semanticSearch).toHaveBeenCalledTimes(1);
+      expect(graphSearch).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not trigger fault injection without the header (non-production)", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+
+    try {
+      (semanticSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      (graphSearch as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+      const response = await POST(createRequest(validBody()));
+      const body = await response.json();
+
+      // No header → normal flow (fallback for empty results).
+      expect(response.status).toBe(200);
+      expect(body.answer).toBe(NO_RESULTS_FALLBACK);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("does not trigger fault injection before Zod validation (unauthenticated requests still get 401)", async () => {
+    // The fault injection hook is placed AFTER auth and Zod validation.
+    // An unauthenticated request with the fault-injection header should
+    // still get 401, not 500.
+    mockServerClient(null);
+
+    const response = await POST(
+      createRequestWithHeaders(validBody(), {
+        "x-dev-simulate-failure": "chat",
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("does not trigger fault injection for invalid input (Zod validation still returns 400)", async () => {
+    // The fault injection hook is placed AFTER Zod validation.
+    // An invalid request with the fault-injection header should still
+    // get 400, not 500.
+    const response = await POST(
+      createRequestWithHeaders(
+        { message: "", family_id: FAMILY_ID },
+        { "x-dev-simulate-failure": "chat" },
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
   });
 
   // --- Method not allowed ---

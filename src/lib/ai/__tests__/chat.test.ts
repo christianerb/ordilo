@@ -312,6 +312,76 @@ describe("combineSearchResults", () => {
     expect(result[0].document_id).toBe("doc-1");
     expect(result[1].document_id).toBe("doc-2");
   });
+
+  // --- Origin marker population (VAL-SEARCH-023) ---
+
+  it("populates origin 'semantic' for semantic-only results", () => {
+    const semantic = [
+      makeSemanticResult("doc-1", "Brief", "Inhalt", 0.85),
+    ];
+    const result = combineSearchResults(semantic, []);
+    expect(result).toHaveLength(1);
+    expect(result[0].origin).toBe("semantic");
+  });
+
+  it("populates origin 'graph' for graph:person results", () => {
+    const graph = [
+      makeGraphPersonResult("doc-1", "Brief", "Emma", 0.9),
+    ];
+    const result = combineSearchResults([], graph);
+    expect(result).toHaveLength(1);
+    expect(result[0].origin).toBe("graph");
+  });
+
+  it("populates origin 'graph' for graph:task results", () => {
+    const graph = [
+      makeGraphTaskResult("doc-1", "Aufgabenliste", "Frist abgeben", 0.85),
+    ];
+    const result = combineSearchResults([], graph);
+    expect(result).toHaveLength(1);
+    expect(result[0].origin).toBe("graph");
+  });
+
+  it("populates origin 'semantic' when a document has both semantic and graph results (semantic excerpt preferred)", () => {
+    // When a document appears in both semantic and graph results, the
+    // semantic excerpt is preferred. The origin should reflect the
+    // semantic source (since the excerpt comes from semantic search).
+    const semantic = [
+      makeSemanticResult("doc-1", "Kita-Brief", "Einschulung Emma", 0.85),
+    ];
+    const graph = [
+      makeGraphPersonResult("doc-1", "Kita-Brief", "Emma", 0.95),
+    ];
+    const result = combineSearchResults(semantic, graph);
+    expect(result).toHaveLength(1);
+    expect(result[0].origin).toBe("semantic");
+  });
+
+  it("populates origin 'graph' when a document has only graph results", () => {
+    const graph = [
+      makeGraphPersonResult("doc-1", "Brief", "Hanna", 0.85),
+      makeGraphTaskResult("doc-1", "Brief", "Schulranzen kaufen", 0.9),
+    ];
+    const result = combineSearchResults([], graph);
+    expect(result).toHaveLength(1);
+    expect(result[0].origin).toBe("graph");
+  });
+
+  it("populates origin correctly for mixed semantic and graph documents", () => {
+    const semantic = [
+      makeSemanticResult("doc-1", "Stromrechnung", "Betrag: 45 EUR", 0.8),
+    ];
+    const graph = [
+      makeGraphTaskResult("doc-2", "Aufgabenliste", "Frist abgeben", 0.85),
+    ];
+    const result = combineSearchResults(semantic, graph);
+    expect(result).toHaveLength(2);
+
+    const doc1 = result.find((s) => s.document_id === "doc-1");
+    const doc2 = result.find((s) => s.document_id === "doc-2");
+    expect(doc1?.origin).toBe("semantic");
+    expect(doc2?.origin).toBe("graph");
+  });
 });
 
 // ---------------------------------------------------------------------------

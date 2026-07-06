@@ -89,6 +89,22 @@ export async function POST(
 
   const serverClient = await createServerClient();
 
+  // Dev-only fault injection for testing the chat provider-failure path
+  // (VAL-CHAT-011). In production, this header is always ignored (no-op).
+  // When triggered, the route returns the same structured error shape a
+  // real OpenAI failure produces, so validators can exercise the client
+  // error-rendering path end-to-end without touching real credentials.
+  if (
+    process.env.NODE_ENV !== "production" &&
+    request.headers.get("x-dev-simulate-failure") === "chat"
+  ) {
+    const body: ChatErrorResponse = {
+      error: "OpenAI: API-Fehler (Simulierter Ausfall).",
+      code: "OPENAI_API_ERROR",
+    };
+    return Response.json(body, { status: 500 });
+  }
+
   // 3. Run both semantic AND graph search ----------------------------------
   // VAL-CHAT-007: the chat always combines both search types.
   let semanticResults, graphResults;
