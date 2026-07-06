@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ListTodo, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
@@ -47,6 +48,7 @@ type DocumentDBRow = Database["public"]["Tables"]["documents"]["Row"];
  */
 export default function AufgabenPage() {
   const supabase = createClient();
+  const router = useRouter();
 
   const [tasks, setTasks] = useState<TaskCardData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -304,6 +306,8 @@ export default function AufgabenPage() {
           title="Noch keine Aufgaben"
           description="Scanne ein Dokument, damit Ordilo automatisch Aufgaben und Fristen für dich erkennt."
           icon={ListTodo}
+          actionLabel="Dokument scannen"
+          onAction={() => router.push("/scan")}
         />
       )}
 

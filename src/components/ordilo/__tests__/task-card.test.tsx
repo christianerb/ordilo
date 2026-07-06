@@ -221,4 +221,32 @@ describe("TaskCard", () => {
       screen.getByTestId("task-card").getAttribute("data-priority"),
     ).toBe("high");
   });
+
+  // ---------------------------------------------------------------------------
+  // Confidence badge (VAL-DESIGN-008)
+  // ---------------------------------------------------------------------------
+
+  it("renders a confidence badge when confidence > 0", () => {
+    render(<TaskCard task={makeTask({ confidence: 0.92 })} />);
+    const badge = screen.getByTestId("task-confidence-badge");
+    expect(badge).toBeDefined();
+    expect(badge.textContent).toContain("92%");
+  });
+
+  it("does not render a confidence badge when confidence is 0", () => {
+    render(<TaskCard task={makeTask({ confidence: 0 })} />);
+    expect(screen.queryByTestId("task-confidence-badge")).toBeNull();
+  });
+
+  it("renders confidence badge with color coding (high confidence)", () => {
+    render(<TaskCard task={makeTask({ confidence: 0.95 })} />);
+    const badge = screen.getByTestId("task-confidence-badge");
+    expect(badge.getAttribute("data-confidence-level")).toBe("high");
+  });
+
+  it("renders confidence badge with color coding (low confidence)", () => {
+    render(<TaskCard task={makeTask({ confidence: 0.5 })} />);
+    const badge = screen.getByTestId("task-confidence-badge");
+    expect(badge.getAttribute("data-confidence-level")).toBe("low");
+  });
 });

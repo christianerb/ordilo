@@ -9,6 +9,7 @@ import {
   getPriorityBadgeStyle,
 } from "@/lib/task-utils";
 import { formatGermanDate } from "@/lib/format";
+import { ConfidenceBadge } from "@/components/ordilo/confidence-badge";
 import type { TaskRow } from "@/lib/task-utils";
 
 // ---------------------------------------------------------------------------
@@ -165,6 +166,14 @@ export function TaskCard({
           >
             {getPriorityLabel(task.priority)}
           </span>
+
+          {/* Confidence badge — shown when confidence > 0 (VAL-DESIGN-008) */}
+          {task.confidence > 0 && (
+            <ConfidenceBadge
+              confidence={task.confidence}
+              data-testid="task-confidence-badge"
+            />
+          )}
         </div>
 
         {/* Source document link */}

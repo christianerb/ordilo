@@ -98,7 +98,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {/* Page content */}
         <main
           className={cn(
-            "flex-1 px-4",
+            "flex-1 px-4 animate-page-fade-in",
             showNav ? "pb-28" : "pb-8",
           )}
         >

@@ -55,6 +55,18 @@
     from { height: var(--radix-accordion-content-height); }
     to { height: 0; }
   }
+
+  /* Page fade-in animation for smooth tab transitions (VAL-DESIGN-010) */
+  @keyframes page-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -178,5 +190,8 @@
   }
   .shadow-card-hover {
     box-shadow: var(--shadow-card-hover);
+  }
+  .animate-page-fade-in {
+    animation: page-fade-in 0.25s ease-out;
   }
 }

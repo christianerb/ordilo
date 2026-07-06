@@ -67,6 +67,8 @@ export interface ConfidenceBadgeProps {
   confidence: number;
   /** Optional additional className. */
   className?: string;
+  /** Optional data-testid override (defaults to "confidence-badge"). */
+  "data-testid"?: string;
 }
 
 /**
@@ -92,6 +94,7 @@ export interface ConfidenceBadgeProps {
 export function ConfidenceBadge({
   confidence,
   className,
+  "data-testid": dataTestId = "confidence-badge",
 }: ConfidenceBadgeProps) {
   // Clamp confidence to [0, 1] and convert to percentage.
   const clamped = Math.max(0, Math.min(1, confidence));
@@ -101,7 +104,7 @@ export function ConfidenceBadge({
 
   return (
     <span
-      data-testid="confidence-badge"
+      data-testid={dataTestId}
       data-confidence-level={level}
       data-confidence-value={clamped}
       className={cn(
