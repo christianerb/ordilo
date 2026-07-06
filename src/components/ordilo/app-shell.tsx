@@ -95,14 +95,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </form>
         </header>
 
-        {/* Page content */}
+        {/* Page content — the inner wrapper is keyed by pathname so React
+            remounts it on every route change, replaying the page-fade-in
+            animation (VAL-DESIGN-010). The outer <main> stays persistent
+            to avoid layout shift. */}
         <main
           className={cn(
-            "flex-1 px-4 animate-page-fade-in",
+            "flex-1 px-4",
             showNav ? "pb-28" : "pb-8",
           )}
         >
-          {children}
+          <div key={pathname} className="animate-page-fade-in">
+            {children}
+          </div>
         </main>
       </div>
 

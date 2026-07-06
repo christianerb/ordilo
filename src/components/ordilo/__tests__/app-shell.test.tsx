@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { useEffect } from "react";
 import { render, screen, within } from "@testing-library/react";
 
 // --- Mocks -----------------------------------------------------------------
@@ -181,5 +182,54 @@ describe("AppShell", () => {
     renderShell("/onboarding");
     expect(screen.getByRole("button", { name: /abmelden/i })).toBeDefined();
     expect(screen.queryByRole("navigation")).toBeNull();
+  });
+
+  // --- Page-fade animation retrigger (VAL-DESIGN-010) ---------------------
+
+  it("applies the page-fade-in animation class to the content wrapper", () => {
+    renderShell("/home");
+    const main = screen.getByRole("main");
+    const animatedWrapper = main.querySelector(".animate-page-fade-in");
+    expect(animatedWrapper).not.toBeNull();
+  });
+
+  it("remounts the content wrapper when the pathname changes (pathname key)", () => {
+    // A child that records how many times it has mounted. If the content
+    // wrapper is keyed by pathname, changing the route unmounts and
+    // remounts the subtree — incrementing the mount counter — which is
+    // what causes the page-fade animation to replay on every tab switch.
+    const mountCounter: { current: number } = { current: 0 };
+    function MountTracker() {
+      useEffect(() => {
+        mountCounter.current += 1;
+      }, []);
+      return <div data-testid="mount-tracker">tracked</div>;
+    }
+
+    mockUsePathname.mockReturnValue("/home");
+    const { rerender } = render(
+      <AppShell>
+        <MountTracker />
+      </AppShell>,
+    );
+    expect(mountCounter.current).toBe(1);
+
+    // Navigate to a different tab — the keyed wrapper must remount.
+    mockUsePathname.mockReturnValue("/scan");
+    rerender(
+      <AppShell>
+        <MountTracker />
+      </AppShell>,
+    );
+    expect(mountCounter.current).toBe(2);
+
+    // A third tab switch remounts again.
+    mockUsePathname.mockReturnValue("/aufgaben");
+    rerender(
+      <AppShell>
+        <MountTracker />
+      </AppShell>,
+    );
+    expect(mountCounter.current).toBe(3);
   });
 });
