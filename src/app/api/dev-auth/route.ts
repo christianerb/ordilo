@@ -15,6 +15,15 @@ import type { Database } from "@/types/database";
  * extract access/refresh tokens, then calls setSession() to write the
  * auth cookies directly on the redirect response.
  *
+ * **Production gate:** This route is HARD-DISABLED outside of local
+ * development and test environments. If `NODE_ENV` is not explicitly
+ * `'development'` or `'test'`, the route immediately returns 404 and
+ * never mints a session. This prevents the route from being an
+ * auth bypass if accidentally deployed. Mission validators run with
+ * `NODE_ENV !== 'production'` (typically `'development'` via the dev
+ * server or `'test'` via vitest), so the route remains usable for
+ * validation.
+ *
  * Two fixtures are supported via the `?fixture=` query parameter:
  *
  * - `?fixture=empty` (default for empty-state validation):
@@ -32,6 +41,21 @@ import type { Database } from "@/types/database";
  * This route should never be deployed. It exists solely to make
  * browser-based validation reliable in the local dev environment.
  */
+
+/**
+ * The set of NODE_ENV values that are permitted to use this route.
+ * Any other value (including `'production'`, `'staging'`, or unset)
+ * causes the route to return 404 immediately.
+ */
+const ALLOWED_DEV_ENVS = new Set(["development", "test"]);
+
+/**
+ * Returns true if the current environment is permitted to use the
+ * dev-auth route. Only explicitly dev/test environments are allowed.
+ */
+function isDevEnvironment(): boolean {
+  return ALLOWED_DEV_ENVS.has(process.env.NODE_ENV ?? "");
+}
 
 /** Shared test user (has a family + members). */
 const TEST_EMAIL = "ordilo.auth.test@gmail.com";
@@ -178,6 +202,14 @@ async function establishSession(options: {
 }
 
 export async function GET(request: Request) {
+  // Production gate: hard-disable this route outside of local dev/test.
+  // This prevents an auth bypass if the route is accidentally deployed.
+  // Only explicitly known dev/test environments are allowed; everything
+  // else (production, staging, unset) returns 404 immediately.
+  if (!isDevEnvironment()) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const url = new URL(request.url);
   const fixture = url.searchParams.get("fixture");
 

@@ -231,4 +231,121 @@ describe("GET /api/dev-auth", () => {
     const response = await GET(buildRequest("empty"));
     expect(response.status).toBe(500);
   });
+
+  // --- Production gate (security: m6 scrutiny blocker) ---
+
+  it("returns 404 and mints NO session when NODE_ENV is 'production'", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      // Wire up mocks so we can assert they are NEVER called.
+      const admin = mockAdminClient({});
+      (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(admin);
+      (ensureEmptyDocumentsFixture as ReturnType<typeof vi.fn>).mockResolvedValue({
+        familyId: "fam-1",
+      });
+      (createServerClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+        mockServerClient(),
+      );
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      const response = await GET(buildRequest("empty"));
+
+      // The route must return 404 (or 403) — NOT a redirect, NOT 500.
+      expect(response.status).toBe(404);
+      // No session minting should have occurred.
+      expect(admin.auth.admin.generateLink).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(ensureEmptyDocumentsFixture).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("returns 404 for the default (shared) path too when NODE_ENV is 'production'", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    try {
+      const admin = mockAdminClient({});
+      (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(admin);
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      const response = await GET(buildRequest());
+
+      expect(response.status).toBe(404);
+      expect(admin.auth.admin.generateLink).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("returns 404 when NODE_ENV is an unexpected value (not dev/test)", async () => {
+    vi.stubEnv("NODE_ENV", "staging");
+    try {
+      const admin = mockAdminClient({});
+      (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(admin);
+      const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+      const response = await GET(buildRequest("empty"));
+
+      expect(response.status).toBe(404);
+      expect(admin.auth.admin.generateLink).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("still functions (redirects + mints session) when NODE_ENV is 'development'", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      const admin = mockAdminClient({ linkUserId: SHARED_USER_ID });
+      (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(admin);
+      const serverClient = mockServerClient();
+      (createServerClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+        serverClient,
+      );
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValue(mockFetchResponse(REDIRECT_LOCATION));
+
+      const response = await GET(buildRequest());
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get("location")).toContain("/home");
+      expect(serverClient.auth.setSession).toHaveBeenCalledWith({
+        access_token: ACCESS_TOKEN,
+        refresh_token: REFRESH_TOKEN,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("still functions (redirects + mints session) when NODE_ENV is 'test'", async () => {
+    vi.stubEnv("NODE_ENV", "test");
+    try {
+      const admin = mockAdminClient({ linkUserId: FIXTURE_USER_ID });
+      (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(admin);
+      (ensureEmptyDocumentsFixture as ReturnType<typeof vi.fn>).mockResolvedValue({
+        familyId: "fam-1",
+        familyName: "Leere Testfamilie",
+      });
+      const serverClient = mockServerClient();
+      (createServerClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
+        serverClient,
+      );
+      vi.spyOn(globalThis, "fetch")
+        .mockResolvedValue(mockFetchResponse(REDIRECT_LOCATION));
+
+      const response = await GET(buildRequest("empty"));
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get("location")).toContain("/scan");
+      expect(serverClient.auth.setSession).toHaveBeenCalledWith({
+        access_token: ACCESS_TOKEN,
+        refresh_token: REFRESH_TOKEN,
+      });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

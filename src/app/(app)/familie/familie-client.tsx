@@ -2,7 +2,13 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { UserPlus, AlertTriangle, Loader2 } from "lucide-react";
+import {
+  UserPlus,
+  AlertTriangle,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+} from "lucide-react";
 import type { Database } from "@/types/database";
 import { PersonCard } from "@/components/ordilo/person-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
@@ -40,6 +46,13 @@ export interface FamilieClientProps {
   familyName: string;
   /** The initial list of family members (fetched server-side). */
   members: MemberRow[];
+  /**
+   * When true, the server-side family/member queries failed. Renders a
+   * distinct German error state with a retry button instead of the
+   * normal content. This is separate from the legitimate empty state
+   * (family exists, zero members) and the onboarding redirect (no family).
+   */
+  fetchError?: boolean;
 }
 
 /**
@@ -57,7 +70,11 @@ export interface FamilieClientProps {
  *
  * All text in German.
  */
-export function FamilieClient({ familyName, members }: FamilieClientProps) {
+export function FamilieClient({
+  familyName,
+  members,
+  fetchError = false,
+}: FamilieClientProps) {
   const router = useRouter();
 
   // Local member list — synced with server after each mutation.
@@ -218,6 +235,45 @@ export function FamilieClient({ familyName, members }: FamilieClientProps) {
   // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
+
+  // Fetch error state — distinct from the empty state and onboarding redirect.
+  // Shown when the server-side family/member queries failed (transient
+  // backend/auth issues), so the user is not misled into thinking they
+  // have no family or no members.
+  if (fetchError) {
+    return (
+      <div
+        data-testid="familie-fetch-error"
+        className="flex flex-col items-center justify-center px-6 py-12 text-center"
+      >
+        <div
+          className="mb-5 flex size-20 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--destructive)" }}
+          aria-hidden="true"
+        >
+          <AlertCircle
+            className="size-9 text-white"
+            strokeWidth={1.5}
+          />
+        </div>
+        <h3 className="text-lg font-semibold text-foreground">
+          Daten konnten nicht geladen werden
+        </h3>
+        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted-foreground">
+          Es ist ein Fehler aufgetreten. Bitte versuche es erneut.
+        </p>
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => router.refresh()}
+          className="mt-6 h-12 rounded-ordilo-md px-6"
+        >
+          <RefreshCw className="h-5 w-5" />
+          Erneut versuchen
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
