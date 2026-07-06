@@ -128,7 +128,7 @@ describe("SucheClient — Empty State", () => {
 });
 
 describe("SucheClient — Chat Interaction", () => {
-  it("populates the search bar with an example query without submitting it", () => {
+  it("populates the search bar and submits the example query (VAL-SEARCH-021)", async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       mockChatResponse("Ich finde dazu kein Dokument.", []),
     );
@@ -136,19 +136,36 @@ describe("SucheClient — Chat Interaction", () => {
 
     render(<SucheClient {...defaultProps} />);
 
-    // Click the first example query (VAL-SEARCH-032 non-blocking: example
-    // queries should populate the shared search bar so the query is visible
-    // and editable before running, rather than submitting directly).
+    // Click the first example query (VAL-SEARCH-021: clicking an example
+    // populates the search bar AND submits it, rendering the user message
+    // bubble and an AI answer).
     fireEvent.click(screen.getByText("Zeig mir alle Dokumente von Emma"));
 
-    // The shared search bar input should now hold the example query.
+    // The search bar should be populated with the example query.
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(input.value).toBe("Zeig mir alle Dokumente von Emma");
 
-    // No chat submission should have occurred: no fetch, no user message,
-    // and the empty state is still shown (the query is pending review).
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(screen.getByTestId("suche-empty-state")).toBeDefined();
+    // A chat submission should have occurred: fetch was called with the
+    // example query as the message body.
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/chat",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          message: "Zeig mir alle Dokumente von Emma",
+          family_id: familyId,
+        }),
+      }),
+    );
+
+    // The user message bubble should be rendered.
+    await waitFor(() => {
+      expect(screen.getByText("Ich finde dazu kein Dokument.")).toBeDefined();
+    });
+
+    // The empty state should no longer be shown — the chat conversation
+    // has replaced it.
+    expect(screen.queryByTestId("suche-empty-state")).toBeNull();
   });
 
   it("shows AI answer bubble after response", async () => {

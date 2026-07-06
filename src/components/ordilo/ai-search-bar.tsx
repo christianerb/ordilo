@@ -15,8 +15,9 @@ export interface AISearchBarProps {
   /**
    * Optional controlled value. When provided, the input is controlled by
    * the parent (the parent owns the value and is notified via
-   * `onValueChange`). Used on the /suche page so example/suggested queries
-   * can populate the bar without submitting (VAL-SEARCH-032 non-blocking).
+   * `onValueChange`). Used on the /suche page so the parent can control
+   * the bar value (e.g. populating it with an example query before
+   * submission).
    */
   value?: string;
   /**

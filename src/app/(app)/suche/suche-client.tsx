@@ -64,8 +64,8 @@ interface ChatMessage {
 
 /**
  * The four example queries shown in the empty state (VAL-SEARCH-021).
- * Clicking an example populates the shared search bar so the user can
- * review/edit the query before submitting (VAL-SEARCH-032 non-blocking).
+ * Clicking an example populates the search bar and submits it,
+ * rendering the user message bubble and an AI answer.
  */
 const EXAMPLE_QUERIES = [
   "Zeig mir alle Dokumente von Emma",
@@ -129,9 +129,8 @@ export function SucheClient({
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
   // --- Search bar value (controlled) ---
-  // Owned by SucheClient so that example/suggested queries can populate the
-  // shared search bar for review/edit before submission, rather than
-  // submitting directly (VAL-SEARCH-032 non-blocking).
+  // Owned by SucheClient so that example queries can populate the search
+  // bar before submission (the query is briefly visible before it runs).
   const [searchBarValue, setSearchBarValue] = useState("");
 
   // --- Auto-scroll ref ---
@@ -416,23 +415,24 @@ export function SucheClient({
   );
 
   // -------------------------------------------------------------------------
-  // Example query click handler (VAL-SEARCH-021, VAL-SEARCH-032 non-blocking)
+  // Example query click handler (VAL-SEARCH-021)
   // -------------------------------------------------------------------------
 
   /**
-   * Populate the shared search bar with an example/suggested query so the
-   * user can review and edit it before submitting, rather than submitting
-   * directly. The query is visible and editable; the user presses Enter or
-   * the send button to run it.
+   * Populate the search bar with the example query (so it is briefly
+   * visible to the user) and then submit it via the same path as
+   * Enter/Senden — calling handleSubmit renders the user message bubble
+   * and fetches the AI answer.
    */
-  const handleExampleClick = useCallback((query: string) => {
-    setSearchBarValue(query);
-    // Focus the search bar so the user can immediately edit/submit.
-    const textarea = document.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Such- und Chat-Eingabe"]',
-    );
-    textarea?.focus();
-  }, []);
+  const handleExampleClick = useCallback(
+    (query: string) => {
+      // Set the search bar value first so the query is briefly visible,
+      // then submit via the same path as Enter/Senden (VAL-SEARCH-021).
+      setSearchBarValue(query);
+      handleSubmit(query);
+    },
+    [handleSubmit],
+  );
 
   // -------------------------------------------------------------------------
   // Derived state
@@ -518,8 +518,8 @@ export function SucheClient({
       </div>
 
       {/* AI search bar — fixed at the bottom of the content area.
-          Controlled by SucheClient so example/suggested queries can populate
-          the bar without submitting (VAL-SEARCH-032 non-blocking). */}
+          Controlled by SucheClient so example queries can populate the
+          bar before submission (VAL-SEARCH-021). */}
       <div className="sticky bottom-0 bg-background/95 pt-3 backdrop-blur-sm">
         <AISearchBar
           value={searchBarValue}
@@ -541,9 +541,8 @@ export function SucheClient({
  * Empty state for the search page (VAL-SEARCH-021, VAL-DESIGN-002).
  *
  * Shows a warm welcome message and four clickable example queries.
- * Clicking an example populates the shared search bar (so the query is
- * visible and editable before running) rather than submitting directly
- * (VAL-SEARCH-032 non-blocking).
+ * Clicking an example populates the search bar and submits it,
+ * rendering the user message bubble and an AI answer (VAL-SEARCH-021).
  */
 function EmptyState({
   onExampleClick,

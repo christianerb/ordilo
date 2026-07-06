@@ -168,7 +168,7 @@ describe("AISearchBar — Controlled mode", () => {
     expect(onValueChange).toHaveBeenCalledWith("");
   });
 
-  it("allows the parent to pre-fill the bar without submitting (example-query population)", () => {
+  it("renders a controlled value without auto-submitting (parent controls submission)", () => {
     const onSubmit = vi.fn();
     const onValueChange = vi.fn();
     render(
@@ -179,7 +179,9 @@ describe("AISearchBar — Controlled mode", () => {
       />,
     );
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    // The query is visible and editable, but not auto-submitted.
+    // The AISearchBar renders the controlled value but does not auto-submit
+    // on value change — submission happens via Enter/Send button or by the
+    // parent calling onSubmit directly (e.g. example-click autosubmit).
     expect(input.value).toBe("Zeig mir alle Dokumente von Emma");
     expect(onSubmit).not.toHaveBeenCalled();
   });
