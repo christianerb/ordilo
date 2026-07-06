@@ -73,26 +73,42 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // redirecting a server action response breaks the action contract and
   // causes "unexpected response" errors on the client.
   if (user && request.method === "GET" && (isAppRoute || isOnboarding)) {
-    // Onboarding is "complete" when at least one family member exists.
-    // A single query is sufficient: if family_members returns a row, the
-    // user has both a family and a member. RLS ensures only the user's
-    // own data is visible.
-    const { data: member } = await supabase
-      .from("family_members")
-      .select("id")
+    // Onboarding status is determined by a DURABLE marker
+    // (families.onboarding_completed_at) rather than raw member count.
+    // This distinguishes "onboarding completed" from "has members":
+    //   - A user who completed onboarding but later removed ALL members
+    //     still has onboarding_completed_at set → allowed to access /familie
+    //     (shows the zero-member empty state, VAL-ONBOARD-026/VAL-FAMILY-004).
+    //   - A user who created a family but never completed onboarding has
+    //     onboarding_completed_at NULL → kept in /onboarding (mid-onboarding
+    //     bypass stays closed).
+    //   - A user with no family at all → redirected to /onboarding to start.
+    //
+    // RLS ensures only the user's own family is visible.
+    const { data: family, error: familyError } = await supabase
+      .from("families")
+      .select("id, onboarding_completed_at")
       .limit(1)
       .maybeSingle();
 
-    const onboardingComplete = !!member;
+    // On query error: fail safe — let the request pass through so the page
+    // can surface a German error state. Redirecting to /onboarding on a
+    // transient failure would misroute the user (e.g. an onboarded user
+    // bounced back to onboarding because the DB was briefly unreachable).
+    if (familyError) {
+      return supabaseResponse;
+    }
+
+    // onboarding_complete = family exists AND onboarding_completed_at is set.
+    // No family (null) → not complete (user needs to start onboarding).
+    // Family with completed_at NULL → not complete (mid-onboarding).
+    const onboardingComplete = !!(family && family.onboarding_completed_at);
 
     if (!onboardingComplete && isAppRoute) {
-      // Mid-onboarding: block access to ALL app routes (including /familie)
-      // → redirect to /onboarding. A user with a family but zero members
-      // must not bypass the onboarding guard by visiting /familie. The
-      // onboarding page detects an existing family and resumes at the
-      // add-member step, so the user can add members and then access /familie
-      // normally. A user who removed all members after completing onboarding
-      // is also routed back to /onboarding to re-add at least one member.
+      // Not onboarded: redirect ALL app routes → /onboarding. This covers
+      // both "no family" (user hasn't started) and "family exists but
+      // completed_at is NULL" (mid-onboarding). The onboarding page
+      // detects the state and resumes at the appropriate step.
       const url = request.nextUrl.clone();
       url.pathname = "/onboarding";
       url.search = "";
@@ -116,12 +132,21 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
  * from the supabase response. This ensures the session cookies are
  * propagated even when we redirect instead of returning supabaseResponse
  * directly.
+ *
+ * IMPORTANT: All cookie attributes (httpOnly, secure, sameSite, path,
+ * expiry/max-age) are preserved from the original response cookies.
+ * Copying only { name, value } would drop security-critical attributes
+ * (e.g. httpOnly, secure) and break session persistence across redirects.
  */
 function redirectWithCookies(url: URL, supabaseResponse: NextResponse): NextResponse {
   const redirectResponse = NextResponse.redirect(url);
-  // Copy all cookies (including refreshed auth tokens) to the redirect.
-  supabaseResponse.cookies.getAll().forEach(({ name, value }) => {
-    redirectResponse.cookies.set(name, value);
+  // Copy all cookies with their FULL attributes — not just name/value.
+  // Destructuring separates name/value from the rest of the cookie options
+  // (path, domain, sameSite, secure, httpOnly, expires, maxAge) so they
+  // are passed through to the redirect response intact.
+  supabaseResponse.cookies.getAll().forEach((cookie) => {
+    const { name, value, ...options } = cookie;
+    redirectResponse.cookies.set(name, value, options);
   });
   return redirectResponse;
 }

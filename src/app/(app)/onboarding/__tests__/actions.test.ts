@@ -5,7 +5,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
 
-import { createFamily, addMember } from "@/app/(app)/onboarding/actions";
+import { createFamily, addMember, completeOnboarding } from "@/app/(app)/onboarding/actions";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -20,10 +20,12 @@ import { createClient } from "@/lib/supabase/server";
 function mockSupabase(options: {
   user?: { id: string; email: string } | null;
   families?: {
-    existing?: { id: string; name: string } | null;
+    existing?: { id: string; name: string; onboarding_completed_at?: string | null } | null;
     insertError?: unknown;
     inserted?: { id: string; name: string };
-    selectResults?: Array<{ data: { id: string; name: string } | null; error: unknown | null }>;
+    selectResults?: Array<{ data: { id: string; name: string; onboarding_completed_at?: string | null } | null; error: unknown | null }>;
+    updateError?: unknown;
+    updated?: { id: string; name: string; onboarding_completed_at: string };
   };
   members?: {
     insertError?: unknown;
@@ -61,6 +63,17 @@ function mockSupabase(options: {
     }),
   };
 
+  // families update chain — for completeOnboarding which updates
+  // onboarding_completed_at on the user's family. The .eq() method
+  // returns a Promise (like the real Supabase client) so the action
+  // can await the result.
+  const familiesUpdateChain = {
+    eq: vi.fn().mockResolvedValue({
+      data: options.families?.updated ?? null,
+      error: options.families?.updateError ?? null,
+    }),
+  };
+
   // members chain
   const membersInsertChain = {
     select: vi.fn().mockReturnThis(),
@@ -75,6 +88,7 @@ function mockSupabase(options: {
       return {
         select: vi.fn(() => familiesSelectChain),
         insert: vi.fn(() => familiesInsertChain),
+        update: vi.fn(() => familiesUpdateChain),
       };
     }
     if (table === "family_members") {
@@ -325,6 +339,99 @@ describe("addMember", () => {
     );
 
     const result = await addMember("fam-1", { name: "Emma" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      );
+    }
+  });
+});
+
+describe("completeOnboarding", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("sets onboarding_completed_at on the user's family", async () => {
+    const existing = { id: "fam-1", name: "Familie Müller", onboarding_completed_at: null };
+    const updated = {
+      id: "fam-1",
+      name: "Familie Müller",
+      onboarding_completed_at: "2026-07-06T10:00:00Z",
+    };
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        families: { existing, updated },
+      }),
+    );
+
+    const result = await completeOnboarding("fam-1");
+    expect(result.success).toBe(true);
+  });
+
+  it("returns friendly German error when the family does not exist", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        families: { existing: null },
+      }),
+    );
+
+    const result = await completeOnboarding("fam-nonexistent");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      );
+    }
+  });
+
+  it("returns friendly German error on update failure", async () => {
+    const existing = { id: "fam-1", name: "Familie Müller", onboarding_completed_at: null };
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        families: {
+          existing,
+          updateError: new Error("Connection refused"),
+        },
+      }),
+    );
+
+    const result = await completeOnboarding("fam-1");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      );
+    }
+  });
+
+  it("returns friendly German error when unauthenticated", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({ user: null }),
+    );
+
+    const result = await completeOnboarding("fam-1");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      );
+    }
+  });
+
+  it("returns friendly German error when family lookup fails", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        families: {
+          selectResults: [
+            { data: null, error: new Error("Connection refused") },
+          ],
+        },
+      }),
+    );
+
+    const result = await completeOnboarding("fam-1");
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error).toBe(

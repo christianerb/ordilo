@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PersonCard } from "@/components/ordilo/person-card";
-import { createFamily, addMember } from "./actions";
+import { createFamily, addMember, completeOnboarding } from "./actions";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
 import { cn } from "@/lib/utils";
 
@@ -226,9 +226,29 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
     setStep("add-member");
   }, []);
 
-  const handleFinish = useCallback(() => {
+  const handleFinish = useCallback(async () => {
+    setServerError(null);
+
+    if (!familyId) {
+      setServerError("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
+      return;
+    }
+
+    // Mark onboarding as completed before leaving. This sets the durable
+    // onboarding_completed_at marker so the middleware allows the user to
+    // access app routes (including /familie) even if they later remove
+    // all members.
+    setIsSubmitting(true);
+    const result = await completeOnboarding(familyId);
+    setIsSubmitting(false);
+
+    if (!result.success) {
+      setServerError(result.error);
+      return;
+    }
+
     router.push("/home");
-  }, [router]);
+  }, [router, familyId]);
 
   // ---------------------------------------------------------------------------
   // Render
@@ -466,19 +486,31 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                     size="lg"
                     variant="outline"
                     onClick={handleAddAnother}
+                    disabled={isSubmitting}
                     className="h-12 w-full rounded-ordilo-md text-base"
                   >
                     <Plus className="h-4 w-4" />
                     Weitere Person hinzufügen
                   </Button>
+                  {serverError && <ErrorBanner message={serverError} />}
                   <Button
                     type="button"
                     size="lg"
                     onClick={handleFinish}
+                    disabled={isSubmitting}
                     className="h-12 w-full rounded-ordilo-md text-base"
                   >
-                    <Check className="h-4 w-4" />
-                    Fertig
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Wird abgeschlossen…
+                      </>
+                    ) : (
+                      <>
+                        <Check className="h-4 w-4" />
+                        Fertig
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

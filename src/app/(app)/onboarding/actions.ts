@@ -168,3 +168,53 @@ export async function addMember(
 
   return { success: true, data: member };
 }
+
+/**
+ * Mark onboarding as completed for the authenticated user's family.
+ *
+ * Sets `families.onboarding_completed_at = now()` so the auth middleware
+ * allows the user to access app routes (including /familie) even if they
+ * later remove all family members. This is the durable marker that
+ * distinguishes "onboarding completed" from "has members".
+ *
+ * Called when the user finishes the onboarding flow (clicks "Fertig").
+ *
+ * @param familyId - The UUID of the family to mark as onboarded.
+ * @returns `{ success: true, data: null }` on success, or a German error.
+ */
+export async function completeOnboarding(
+  familyId: string,
+): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+
+  // Require an authenticated session.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  // Verify the family exists and belongs to the authenticated user (RLS).
+  const { data: family, error: fetchError } = await supabase
+    .from("families")
+    .select("id")
+    .limit(1)
+    .maybeSingle();
+
+  if (fetchError || !family) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  // Set onboarding_completed_at to now().
+  const { error: updateError } = await supabase
+    .from("families")
+    .update({ onboarding_completed_at: new Date().toISOString() })
+    .eq("id", familyId);
+
+  if (updateError) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: null };
+}

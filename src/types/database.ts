@@ -82,18 +82,28 @@ export type Database = {
           name: string;
           created_by: string;
           created_at: string;
+          /**
+           * Durable marker set when the user completes the onboarding flow.
+           * NULL means onboarding has not been completed yet (mid-onboarding
+           * or no family). Once set, the user can access /familie and other
+           * app routes even with zero family members (VAL-ONBOARD-026,
+           * VAL-FAMILY-004). See migration 0011.
+           */
+          onboarding_completed_at: string | null;
         };
         Insert: {
           id?: string;
           name: string;
           created_by: string;
           created_at?: string;
+          onboarding_completed_at?: string | null;
         };
         Update: {
           id?: string;
           name?: string;
           created_by?: string;
           created_at?: string;
+          onboarding_completed_at?: string | null;
         };
         Relationships: [];
       };

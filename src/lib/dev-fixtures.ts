@@ -31,9 +31,10 @@ export const EMPTY_FIXTURE_FAMILY_NAME = "Leere Testfamilie";
 /**
  * Name of the placeholder family member created for the fixture.
  *
- * The app middleware treats onboarding as "complete" only when at least
- * one `family_members` row exists, so the fixture needs a single member
- * to access `/scan` — while still having zero documents.
+ * The fixture needs a single member so the /familie page shows a member
+ * card (not the empty state). The middleware checks the durable
+ * `onboarding_completed_at` marker (not member count) to determine
+ * onboarding completion, so the fixture also sets that marker.
  */
 export const EMPTY_FIXTURE_MEMBER_NAME = "Test";
 
@@ -69,12 +70,13 @@ export async function ensureEmptyDocumentsFixture(
   const admin = createAdminClient();
 
   // 1. Find the user's family (there should be exactly one).
+  //    Select onboarding_completed_at so we can set it if missing.
   const {
     data: families,
     error: familiesError,
   } = await admin
     .from("families")
-    .select("id, name")
+    .select("id, name, onboarding_completed_at")
     .eq("created_by", userId)
     .order("created_at", { ascending: true })
     .limit(1);
@@ -92,13 +94,32 @@ export async function ensureEmptyDocumentsFixture(
     // Reuse the existing family.
     familyId = families[0].id;
     familyName = families[0].name;
+
+    // Ensure the onboarding completion marker is set so the middleware
+    // allows access to app routes. If the family was created before the
+    // onboarding_completed_at column existed (or by code that didn't set
+    // it), backfill it now.
+    if (!families[0].onboarding_completed_at) {
+      const { error: updateError } = await admin
+        .from("families")
+        .update({ onboarding_completed_at: new Date().toISOString() })
+        .eq("id", familyId);
+
+      if (updateError) {
+        throw new Error(
+          `Failed to set fixture onboarding_completed_at: ${updateError.message ?? updateError}`,
+        );
+      }
+    }
   } else {
-    // No family yet — create one for the fixture user.
+    // No family yet — create one for the fixture user with the onboarding
+    // completion marker already set so the middleware allows access.
     const { data: newFamily, error: insertError } = await admin
       .from("families")
       .insert({
         name: EMPTY_FIXTURE_FAMILY_NAME,
         created_by: userId,
+        onboarding_completed_at: new Date().toISOString(),
       })
       .select("id, name")
       .single();
@@ -113,10 +134,10 @@ export async function ensureEmptyDocumentsFixture(
     familyName = newFamily.name;
   }
 
-  // 2. Ensure at least one family member exists so the app middleware
-  //    treats onboarding as "complete" and allows access to /scan. The
-  //    member is a harmless placeholder — the fixture still has zero
-  //    documents, which is what the empty-state validation relies on.
+  // 2. Ensure at least one family member exists so the /familie page
+  //    shows a member card (not the empty state). The member is a
+  //    harmless placeholder — the fixture still has zero documents,
+  //    which is what the empty-state validation relies on.
   const { data: members, error: membersError } = await admin
     .from("family_members")
     .select("id")
