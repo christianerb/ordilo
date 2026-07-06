@@ -207,6 +207,7 @@ export function ProfileClient({
                 mimeType={null}
                 status={doc.status}
                 createdAt={doc.created_at}
+                documentType={doc.document_type}
                 onClick={() => navigateToDocument(doc.id)}
               />
             ))}

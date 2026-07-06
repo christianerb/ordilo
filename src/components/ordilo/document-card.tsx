@@ -19,6 +19,10 @@ import {
   isPdfMimeType,
   FAILED_CARD_COPY,
 } from "@/lib/schemas/document";
+import {
+  DOCUMENT_TYPE_LABELS,
+  type DocumentType,
+} from "@/lib/schemas/extraction";
 
 /**
  * Props for the DocumentCard component.
@@ -40,6 +44,8 @@ export interface DocumentCardProps {
   onClick?: () => void;
   /** Retry handler — shown when status is "failed". Re-triggers the failed pipeline step. */
   onRetry?: () => void;
+  /** Optional document type (enum value, e.g. "invoice"). When provided, the German label is rendered alongside the title. Unknown/null values render nothing. */
+  documentType?: string | null;
   /** Optional additional className. */
   className?: string;
 }
@@ -51,6 +57,23 @@ function getFileIcon(mimeType: string | null | undefined): LucideIcon {
   if (mimeType && isImageMimeType(mimeType)) return ImageIcon;
   if (mimeType && isPdfMimeType(mimeType)) return FileText;
   return FileText;
+}
+
+/**
+ * Resolve the German document-type label for a given type value.
+ *
+ * Returns the German label (e.g. "Rechnung" for "invoice") when the value
+ * is a known document type, or null when the value is null/undefined/unknown
+ * so that no type badge is rendered.
+ *
+ * @param documentType - A document_type enum value, or null/undefined.
+ * @returns The German label, or null.
+ */
+function getDocumentTypeLabel(
+  documentType: string | null | undefined,
+): string | null {
+  if (!documentType) return null;
+  return DOCUMENT_TYPE_LABELS[documentType as DocumentType] ?? null;
 }
 
 /**
@@ -125,6 +148,7 @@ export function DocumentCard({
   createdAt,
   onClick,
   onRetry,
+  documentType,
   className,
 }: DocumentCardProps) {
   const isProcessing = isProcessingStatus(status);
@@ -133,6 +157,7 @@ export function DocumentCard({
   const FileIcon = getFileIcon(mimeType);
   const displayTitle = title?.trim() || originalFilename || "Dokument";
   const relativeTime = formatRelativeTime(createdAt);
+  const typeLabel = getDocumentTypeLabel(documentType);
 
   const content = (
     <>
@@ -149,9 +174,19 @@ export function DocumentCard({
         />
       </div>
 
-      {/* Title + timestamp */}
+      {/* Title + document type + timestamp */}
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-foreground">{displayTitle}</p>
+        <div className="flex items-center gap-2">
+          <p className="truncate font-medium text-foreground">{displayTitle}</p>
+          {typeLabel && (
+            <span
+              data-testid="document-type-badge"
+              className="inline-flex shrink-0 items-center rounded-ordilo-pill border border-[var(--petrol)]/20 bg-[var(--petrol)]/10 px-2 py-0.5 text-xs font-medium text-[var(--petrol)]"
+            >
+              {typeLabel}
+            </span>
+          )}
+        </div>
         {relativeTime && (
           <p className="truncate text-sm text-muted-foreground">{relativeTime}</p>
         )}

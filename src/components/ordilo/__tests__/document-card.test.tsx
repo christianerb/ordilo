@@ -3,6 +3,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { DOCUMENT_STATUS_LABELS } from "@/lib/schemas/document";
+import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 
 describe("DocumentCard", () => {
   // ---------------------------------------------------------------------------
@@ -336,5 +337,92 @@ describe("DocumentCard", () => {
 
     render(<DocumentCard status="uploaded" createdAt={tenDaysAgo.toISOString()} />);
     expect(screen.getByText(expected)).toBeDefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Document type display (VAL-PROFILE-002)
+  // ---------------------------------------------------------------------------
+
+  it("renders the German document type label when documentType is provided", () => {
+    render(
+      <DocumentCard
+        title="Stromrechnung Juli"
+        status="confirmed"
+        documentType="invoice"
+      />,
+    );
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.invoice)).toBeDefined();
+  });
+
+  it("renders the type label with a data-testid for reliable selection", () => {
+    render(
+      <DocumentCard
+        title="Kita-Brief"
+        status="confirmed"
+        documentType="school"
+      />,
+    );
+    const badge = screen.getByTestId("document-type-badge");
+    expect(badge).toBeDefined();
+    expect(badge.textContent).toBe(DOCUMENT_TYPE_LABELS.school);
+  });
+
+  it("renders the title and the type label alongside each other", () => {
+    render(
+      <DocumentCard
+        title="Krankenhaus-Bericht"
+        status="confirmed"
+        documentType="medical"
+      />,
+    );
+    // Both the title and the German type label are present.
+    expect(screen.getByText("Krankenhaus-Bericht")).toBeDefined();
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.medical)).toBeDefined();
+  });
+
+  it("does not render a type badge when documentType is null", () => {
+    render(
+      <DocumentCard
+        title="Ohne Typ"
+        status="uploaded"
+        documentType={null}
+      />,
+    );
+    expect(screen.queryByTestId("document-type-badge")).toBeNull();
+  });
+
+  it("does not render a type badge when documentType is not provided", () => {
+    render(<DocumentCard title="Ohne Typ" status="uploaded" />);
+    expect(screen.queryByTestId("document-type-badge")).toBeNull();
+  });
+
+  it("does not render a type badge when documentType is an unknown value", () => {
+    render(
+      <DocumentCard
+        title="Unbekannt"
+        status="uploaded"
+        documentType="not-a-real-type"
+      />,
+    );
+    expect(screen.queryByTestId("document-type-badge")).toBeNull();
+  });
+
+  it("renders the type badge for every known document type", () => {
+    const { rerender } = render(
+      <DocumentCard status="confirmed" documentType="letter" />,
+    );
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.letter)).toBeDefined();
+
+    rerender(<DocumentCard status="confirmed" documentType="contract" />);
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.contract)).toBeDefined();
+
+    rerender(<DocumentCard status="confirmed" documentType="insurance" />);
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.insurance)).toBeDefined();
+
+    rerender(<DocumentCard status="confirmed" documentType="tax" />);
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.tax)).toBeDefined();
+
+    rerender(<DocumentCard status="confirmed" documentType="other" />);
+    expect(screen.getByText(DOCUMENT_TYPE_LABELS.other)).toBeDefined();
   });
 });
