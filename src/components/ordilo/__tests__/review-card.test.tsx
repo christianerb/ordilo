@@ -117,17 +117,24 @@ describe("ReviewCard", () => {
   // Analyzing / loading state (skeleton)
   // ---------------------------------------------------------------------------
 
-  it("renders a skeleton when status is 'analyzing'", () => {
+  it("renders a skeleton when status is 'analyzing'", async () => {
     render(
       <ReviewCard documentId="doc-1" status="analyzing" />,
     );
-    expect(screen.getByTestId("review-card-skeleton")).toBeDefined();
+    // findByTestId is async and wraps the lookup in act(...), which flushes
+    // the mount effect's async state updates (fetchFamilyMembers /
+    // fetchExistingCategories) so no act() warning is emitted.
+    expect(
+      await screen.findByTestId("review-card-skeleton"),
+    ).toBeDefined();
   });
 
-  it("does not render the confirm button during analyzing", () => {
+  it("does not render the confirm button during analyzing", async () => {
     render(
       <ReviewCard documentId="doc-1" status="analyzing" />,
     );
+    // Flush the mount effect's async state updates within act(...) first.
+    await screen.findByTestId("review-card-skeleton");
     expect(screen.queryByTestId("confirm-button")).toBeNull();
   });
 
@@ -135,7 +142,7 @@ describe("ReviewCard", () => {
   // Failed state
   // ---------------------------------------------------------------------------
 
-  it("renders an error state when status is 'failed'", () => {
+  it("renders an error state when status is 'failed'", async () => {
     render(
       <ReviewCard
         documentId="doc-1"
@@ -143,10 +150,12 @@ describe("ReviewCard", () => {
         errorMessage="OpenAI: API-Fehler"
       />,
     );
-    expect(screen.getByTestId("review-card-error")).toBeDefined();
+    expect(
+      await screen.findByTestId("review-card-error"),
+    ).toBeDefined();
   });
 
-  it("shows friendly German copy in the failed state, never raw provider text", () => {
+  it("shows friendly German copy in the failed state, never raw provider text", async () => {
     render(
       <ReviewCard
         documentId="doc-1"
@@ -154,16 +163,17 @@ describe("ReviewCard", () => {
         errorMessage="OpenAI: API-Fehler"
       />,
     );
-    // Friendly copy is shown.
+    // Friendly copy is shown. findByText flushes the mount effect's async
+    // state updates within act(...) so no act() warning is emitted.
     expect(
-      screen.getByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+      await screen.findByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
     ).toBeDefined();
     // Raw provider/backend error text must NOT leak into the UI.
     expect(screen.queryByText("OpenAI: API-Fehler")).toBeNull();
     expect(screen.queryByText(/OpenAI/)).toBeNull();
   });
 
-  it("does not leak other raw provider strings (e.g. 'Could not parse PDF')", () => {
+  it("does not leak other raw provider strings (e.g. 'Could not parse PDF')", async () => {
     render(
       <ReviewCard
         documentId="doc-1"
@@ -171,35 +181,41 @@ describe("ReviewCard", () => {
         errorMessage="Could not parse PDF"
       />,
     );
+    // Flush the mount effect's async state updates within act(...) first.
+    expect(
+      await screen.findByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+    ).toBeDefined();
     expect(screen.queryByText("Could not parse PDF")).toBeNull();
     expect(screen.queryByText(/parse PDF/i)).toBeNull();
-    expect(
-      screen.getByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
-    ).toBeDefined();
   });
 
-  it("shows a retry button in the error state", () => {
+  it("shows a retry button in the error state", async () => {
     render(
       <ReviewCard documentId="doc-1" status="failed" />,
     );
-    expect(screen.getByTestId("review-retry-button")).toBeDefined();
+    expect(
+      await screen.findByTestId("review-retry-button"),
+    ).toBeDefined();
   });
 
-  it("calls onRetry when the retry button is clicked", () => {
+  it("calls onRetry when the retry button is clicked", async () => {
     const onRetry = vi.fn();
     render(
       <ReviewCard documentId="doc-1" status="failed" onRetry={onRetry} />,
     );
-    fireEvent.click(screen.getByTestId("review-retry-button"));
+    // Wait for the retry button to appear so the mount effect's async
+    // state updates are flushed within act(...) before the interaction.
+    const retryButton = await screen.findByTestId("review-retry-button");
+    fireEvent.click(retryButton);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a default error message when errorMessage is null", () => {
+  it("shows a default error message when errorMessage is null", async () => {
     render(
       <ReviewCard documentId="doc-1" status="failed" errorMessage={null} />,
     );
     expect(
-      screen.getByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+      await screen.findByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
     ).toBeDefined();
   });
 
@@ -207,22 +223,30 @@ describe("ReviewCard", () => {
   // Confirmed state
   // ---------------------------------------------------------------------------
 
-  it("renders a confirmed state when status is 'confirmed'", () => {
+  it("renders a confirmed state when status is 'confirmed'", async () => {
     render(
       <ReviewCard documentId="doc-1" status="confirmed" />,
     );
-    expect(screen.getByTestId("review-card-confirmed")).toBeDefined();
+    expect(
+      await screen.findByTestId("review-card-confirmed"),
+    ).toBeDefined();
     expect(screen.queryByTestId("confirm-button")).toBeNull();
   });
 
-  it("shows 'Neu analysieren' button in confirmed state (VAL-EXTRACT-012)", () => {
+  it("shows 'Neu analysieren' button in confirmed state (VAL-EXTRACT-012)", async () => {
     render(
       <ReviewCard documentId="doc-1" status="confirmed" />,
     );
-    expect(screen.getByTestId("review-card-confirmed")).toBeDefined();
+    // findByTestId flushes the mount effect's async state updates within
+    // act(...) so no act() warning is emitted.
+    expect(
+      await screen.findByTestId("review-card-confirmed"),
+    ).toBeDefined();
     // The confirmed state must expose a re-analyze affordance so the user
     // can trigger the confirmed→analyzed re-analyze flow from the UI.
-    expect(screen.getByTestId("confirmed-reanalyze-button")).toBeDefined();
+    expect(
+      screen.getByTestId("confirmed-reanalyze-button"),
+    ).toBeDefined();
   });
 
   it("calls the analyze API when 'Neu analysieren' is clicked in confirmed state (VAL-EXTRACT-012)", async () => {
