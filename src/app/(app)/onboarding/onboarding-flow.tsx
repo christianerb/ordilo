@@ -57,6 +57,14 @@ function nextMessageId(): string {
 }
 
 /**
+ * Friendly German error surfaced when a server action *throws* (network
+ * failure, server action invocation error) rather than returning a
+ * `{ success: false }` result. Kept consistent with the FRIENDLY_ERROR in
+ * actions.ts so handled and unhandled failures look identical to the user.
+ */
+const NETWORK_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
+
+/**
  * Conversational onboarding flow.
  *
  * Guides the user through family creation and member creation in a
@@ -128,27 +136,36 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
       }
 
       setIsSubmitting(true);
-      const result = await createFamily(familyNameInput);
-      setIsSubmitting(false);
+      try {
+        const result = await createFamily(familyNameInput);
+        if (!result.success) {
+          setServerError(result.error);
+          return;
+        }
 
-      if (!result.success) {
-        setServerError(result.error);
-        return;
+        // Success — update state and advance to member creation.
+        setFamilyId(result.data.id);
+        setConversation((prev) => [
+          ...prev,
+          { id: nextMessageId(), type: "user", content: result.data.name },
+          {
+            id: nextMessageId(),
+            type: "ai",
+            content: `Schön, ${result.data.name}! Lass uns jetzt die erste Person anlegen. Wie heißt sie?`,
+          },
+        ]);
+        setFamilyNameInput("");
+        setStep("add-member");
+      } catch {
+        // Network/server-action invocation failure — surface a friendly,
+        // recoverable German error. The input is preserved so the user can
+        // retry in place without reloading the page.
+        setServerError(NETWORK_ERROR);
+      } finally {
+        // Always clear the saving flag so the button is never stuck on
+        // "Wird gespeichert…" — even when the action throws.
+        setIsSubmitting(false);
       }
-
-      // Success — update state and advance to member creation.
-      setFamilyId(result.data.id);
-      setConversation((prev) => [
-        ...prev,
-        { id: nextMessageId(), type: "user", content: result.data.name },
-        {
-          id: nextMessageId(),
-          type: "ai",
-          content: `Schön, ${result.data.name}! Lass uns jetzt die erste Person anlegen. Wie heißt sie?`,
-        },
-      ]);
-      setFamilyNameInput("");
-      setStep("add-member");
     },
     [familyNameInput],
   );
@@ -170,45 +187,54 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
       }
 
       setIsSubmitting(true);
-      const result = await addMember(familyId, {
-        name: memberName,
-        role: memberRole || undefined,
-        birthdate: memberBirthdate || undefined,
-        avatar_color: memberAvatarColor || undefined,
-      });
-      setIsSubmitting(false);
+      try {
+        const result = await addMember(familyId, {
+          name: memberName,
+          role: memberRole || undefined,
+          birthdate: memberBirthdate || undefined,
+          avatar_color: memberAvatarColor || undefined,
+        });
+        if (!result.success) {
+          setServerError(result.error);
+          return;
+        }
 
-      if (!result.success) {
-        setServerError(result.error);
-        return;
+        // Success — add to running list and advance.
+        const newMember: OnboardingMember = {
+          id: result.data.id,
+          name: result.data.name,
+          role: result.data.role,
+          birthdate: result.data.birthdate,
+          avatar_color: result.data.avatar_color,
+        };
+        setMembers((prev) => [...prev, newMember]);
+        setConversation((prev) => [
+          ...prev,
+          { id: nextMessageId(), type: "user", content: memberName.trim() },
+          {
+            id: nextMessageId(),
+            type: "ai",
+            content: `${memberName.trim()} wurde hinzugefügt.`,
+          },
+        ]);
+
+        // Reset member form
+        setMemberName("");
+        setMemberRole("");
+        setMemberBirthdate("");
+        setMemberAvatarColor("");
+        setShowOptional(false);
+        setStep("choose-next");
+      } catch {
+        // Network/server-action invocation failure — surface a friendly,
+        // recoverable German error. The entered name (and optional fields)
+        // are preserved so the user can retry in place without reloading.
+        setServerError(NETWORK_ERROR);
+      } finally {
+        // Always clear the saving flag so the button is never stuck on
+        // "Wird gespeichert…" — even when the action throws.
+        setIsSubmitting(false);
       }
-
-      // Success — add to running list and advance.
-      const newMember: OnboardingMember = {
-        id: result.data.id,
-        name: result.data.name,
-        role: result.data.role,
-        birthdate: result.data.birthdate,
-        avatar_color: result.data.avatar_color,
-      };
-      setMembers((prev) => [...prev, newMember]);
-      setConversation((prev) => [
-        ...prev,
-        { id: nextMessageId(), type: "user", content: memberName.trim() },
-        {
-          id: nextMessageId(),
-          type: "ai",
-          content: `${memberName.trim()} wurde hinzugefügt.`,
-        },
-      ]);
-
-      // Reset member form
-      setMemberName("");
-      setMemberRole("");
-      setMemberBirthdate("");
-      setMemberAvatarColor("");
-      setShowOptional(false);
-      setStep("choose-next");
     },
     [familyId, memberName, memberRole, memberBirthdate, memberAvatarColor],
   );
@@ -239,15 +265,24 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
     // access app routes (including /familie) even if they later remove
     // all members.
     setIsSubmitting(true);
-    const result = await completeOnboarding(familyId);
-    setIsSubmitting(false);
+    try {
+      const result = await completeOnboarding(familyId);
+      if (!result.success) {
+        setServerError(result.error);
+        return;
+      }
 
-    if (!result.success) {
-      setServerError(result.error);
-      return;
+      router.push("/home");
+    } catch {
+      // Network/server-action invocation failure — surface a friendly,
+      // recoverable German error so the user can retry the finish action
+      // in place without reloading the page.
+      setServerError(NETWORK_ERROR);
+    } finally {
+      // Always clear the saving flag so the "Fertig" button is never
+      // stuck on "Wird abgeschlossen…".
+      setIsSubmitting(false);
     }
-
-    router.push("/home");
   }, [router, familyId]);
 
   // ---------------------------------------------------------------------------
