@@ -24,6 +24,16 @@ export interface HomeTask {
   document_title?: string | null;
 }
 
+/** A document row with the fields needed by the home dashboard. */
+export interface HomeDocument {
+  id: string;
+  title: string | null;
+  original_filename: string | null;
+  mime_type: string | null;
+  status: string;
+  created_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // Date helpers
 // ---------------------------------------------------------------------------
@@ -123,6 +133,25 @@ export function filterFristen(
     )
     .sort((a, b) => (a.due_date! < b.due_date! ? -1 : a.due_date! > b.due_date! ? 1 : 0))
     .slice(0, FRISTEN_LIMIT);
+}
+
+/**
+ * Filter recent documents for the "Zuletzt gescannt" section.
+ *
+ * Excludes documents with status='failed' (VAL-CROSS-013: failed documents
+ * must remain visible only on /scan and must NOT surface downstream on /home).
+ * Preserves the input order (the DB query already sorts by created_at desc).
+ * Limited to RECENT_DOCS_LIMIT items.
+ *
+ * @param documents - Recent documents fetched from the DB (any status).
+ * @returns Filtered documents with failed ones excluded, limited to RECENT_DOCS_LIMIT.
+ */
+export function filterRecentDocuments(
+  documents: HomeDocument[],
+): HomeDocument[] {
+  return documents
+    .filter((d) => d.status !== "failed")
+    .slice(0, RECENT_DOCS_LIMIT);
 }
 
 /**

@@ -384,6 +384,46 @@ describe("HomeClient — Zuletzt gescannt", () => {
       within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
     ).toBeDefined();
   });
+
+  it("does not show failed documents in 'Zuletzt gescannt' (VAL-CROSS-013)", () => {
+    // The server query already excludes failed docs, but the client must
+    // also not render them if any slip through.
+    render(
+      <HomeClient
+        {...defaultProps}
+        recentDocuments={[
+          {
+            id: "doc-ok",
+            title: "Arztbrief",
+            original_filename: "arzt.pdf",
+            mime_type: "application/pdf",
+            status: "confirmed",
+            created_at: "2026-07-06T14:30:00Z",
+          },
+          {
+            id: "doc-fail",
+            title: "Fehlgeschlagenes Dokument",
+            original_filename: "fail.pdf",
+            mime_type: "application/pdf",
+            status: "failed",
+            created_at: "2026-07-06T15:00:00Z",
+          },
+        ]}
+      />,
+    );
+    const section = screen
+      .getByText("Zuletzt gescannt")
+      .closest("[data-testid='home-section-recent-docs']");
+    expect(section).not.toBeNull();
+    // Non-failed document still appears
+    expect(
+      within(section as HTMLElement).getByText("Arztbrief"),
+    ).toBeDefined();
+    // Failed document must NOT appear
+    expect(
+      within(section as HTMLElement).queryByText("Fehlgeschlagenes Dokument"),
+    ).toBeNull();
+  });
 });
 
 describe("HomeClient — Layout", () => {

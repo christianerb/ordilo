@@ -20,23 +20,15 @@ import { createClient } from "@/lib/supabase/client";
 import {
   filterHeuteWichtig,
   filterFristen,
+  filterRecentDocuments,
   formatGermanTimestamp,
   type HomeTask,
+  type HomeDocument,
 } from "@/lib/home-utils";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-/** A document row with the fields needed by the home dashboard. */
-export interface HomeDocument {
-  id: string;
-  title: string | null;
-  original_filename: string | null;
-  mime_type: string | null;
-  status: string;
-  created_at: string;
-}
 
 /** A family member row for the greeting area. */
 export interface HomeMember {
@@ -152,6 +144,8 @@ export function HomeClient({
 
   const heuteWichtig = filterHeuteWichtig(localTasks);
   const fristen = filterFristen(localTasks);
+  // Exclude failed documents from "Zuletzt gescannt" (VAL-CROSS-013).
+  const visibleRecentDocs = filterRecentDocuments(recentDocuments);
 
   // Convert HomeTask to TaskCardData for TaskCard rendering.
   const toTaskCardData = (t: HomeTask): TaskCardData => ({
@@ -333,9 +327,9 @@ export function HomeClient({
         icon={Clock}
         title="Zuletzt gescannt"
       >
-        {recentDocuments.length > 0 ? (
+        {visibleRecentDocs.length > 0 ? (
           <div className="space-y-3">
-            {recentDocuments.map((doc) => (
+            {visibleRecentDocs.map((doc) => (
               <RecentDocCard key={doc.id} doc={doc} />
             ))}
           </div>

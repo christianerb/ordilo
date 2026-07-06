@@ -2,8 +2,10 @@ import { describe, it, expect } from "vitest";
 import {
   filterHeuteWichtig,
   filterFristen,
+  filterRecentDocuments,
   formatGermanTimestamp,
   type HomeTask,
+  type HomeDocument,
 } from "@/lib/home-utils";
 
 // ---------------------------------------------------------------------------
@@ -172,6 +174,81 @@ describe("filterFristen", () => {
     ];
     const result = filterFristen(tasks, TODAY);
     expect(result.map((t) => t.id)).toEqual(["t1", "t2", "t3"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterRecentDocuments
+// ---------------------------------------------------------------------------
+
+function makeDoc(overrides: Partial<HomeDocument> = {}): HomeDocument {
+  return {
+    id: "doc-1",
+    title: "Arztbrief",
+    original_filename: "arzt.pdf",
+    mime_type: "application/pdf",
+    status: "confirmed",
+    created_at: "2026-07-06T14:30:00Z",
+    ...overrides,
+  };
+}
+
+describe("filterRecentDocuments", () => {
+  it("excludes documents with status='failed'", () => {
+    const docs = [
+      makeDoc({ id: "d1", status: "confirmed", created_at: "2026-07-06T14:30:00Z" }),
+      makeDoc({ id: "d2", status: "failed", created_at: "2026-07-06T15:00:00Z" }),
+      makeDoc({ id: "d3", status: "analyzed", created_at: "2026-07-05T10:00:00Z" }),
+    ];
+    const result = filterRecentDocuments(docs);
+    expect(result.map((d) => d.id)).toEqual(["d1", "d3"]);
+    expect(result.find((d) => d.status === "failed")).toBeUndefined();
+  });
+
+  it("keeps non-failed documents of all other statuses", () => {
+    const statuses = ["uploaded", "ocr_processing", "ocr_done", "analyzed", "confirmed"];
+    const docs = statuses.map((status, i) =>
+      makeDoc({ id: `d${i}`, status, created_at: `2026-07-0${i + 1}T10:00:00Z` }),
+    );
+    const result = filterRecentDocuments(docs);
+    expect(result).toHaveLength(statuses.length);
+  });
+
+  it("returns all documents when none are failed", () => {
+    const docs = [
+      makeDoc({ id: "d1", status: "confirmed" }),
+      makeDoc({ id: "d2", status: "analyzed" }),
+    ];
+    const result = filterRecentDocuments(docs);
+    expect(result).toHaveLength(2);
+  });
+
+  it("returns empty array when all documents are failed", () => {
+    const docs = [
+      makeDoc({ id: "d1", status: "failed" }),
+      makeDoc({ id: "d2", status: "failed" }),
+    ];
+    const result = filterRecentDocuments(docs);
+    expect(result).toHaveLength(0);
+  });
+
+  it("respects the limit (RECENT_DOCS_LIMIT)", () => {
+    const docs = Array.from({ length: 10 }, (_, i) =>
+      makeDoc({ id: `d${i}`, status: "confirmed", created_at: `2026-07-0${i}T10:00:00Z` }),
+    );
+    const result = filterRecentDocuments(docs);
+    expect(result.length).toBeLessThanOrEqual(5);
+  });
+
+  it("preserves the input order (created_at desc from DB)", () => {
+    const docs = [
+      makeDoc({ id: "d1", status: "confirmed", created_at: "2026-07-06T14:30:00Z" }),
+      makeDoc({ id: "d2", status: "failed", created_at: "2026-07-06T15:00:00Z" }),
+      makeDoc({ id: "d3", status: "analyzed", created_at: "2026-07-05T10:00:00Z" }),
+      makeDoc({ id: "d4", status: "confirmed", created_at: "2026-07-04T09:00:00Z" }),
+    ];
+    const result = filterRecentDocuments(docs);
+    expect(result.map((d) => d.id)).toEqual(["d1", "d3", "d4"]);
   });
 });
 

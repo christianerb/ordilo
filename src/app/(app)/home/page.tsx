@@ -1,7 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { HomeClient, type HomeDocument, type HomeMember } from "./home-client";
-import type { HomeTask } from "@/lib/home-utils";
+import { HomeClient, type HomeMember } from "./home-client";
+import {
+  filterRecentDocuments,
+  type HomeTask,
+  type HomeDocument,
+} from "@/lib/home-utils";
 
 /**
  * Home dashboard (server component).
@@ -113,22 +117,28 @@ export default async function HomePage() {
     document_title: t.document_id ? docTitleMap.get(t.document_id) ?? null : null,
   }));
 
-  // 6. Fetch recent documents (by created_at desc, any status).
+  // 6. Fetch recent documents (by created_at desc, excluding failed).
+  //    VAL-CROSS-013: failed documents must NOT surface on /home — they
+  //    remain visible only on /scan. The DB query excludes them here, and
+  //    filterRecentDocuments provides a second layer of defense.
   const { data: recentRows } = await supabase
     .from("documents")
     .select("id, title, original_filename, mime_type, status, created_at")
     .eq("family_id", family.id)
+    .neq("status", "failed")
     .order("created_at", { ascending: false })
     .limit(5);
 
-  const recentDocuments: HomeDocument[] = (recentRows ?? []).map((d) => ({
-    id: d.id,
-    title: d.title,
-    original_filename: d.original_filename,
-    mime_type: d.mime_type,
-    status: d.status,
-    created_at: d.created_at,
-  }));
+  const recentDocuments: HomeDocument[] = filterRecentDocuments(
+    (recentRows ?? []).map((d) => ({
+      id: d.id,
+      title: d.title,
+      original_filename: d.original_filename,
+      mime_type: d.mime_type,
+      status: d.status,
+      created_at: d.created_at,
+    })),
+  );
 
   return (
     <HomeClient
