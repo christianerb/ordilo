@@ -32,6 +32,13 @@ const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
  * returned instead of creating a duplicate. This prevents orphaned families
  * when the user reloads mid-onboarding.
  *
+ * A unique index on families.created_by (migration 0010) provides a
+ * database-level guarantee that exactly one family per user exists. If a
+ * concurrent request inserts a family between the pre-check and the insert
+ * (race condition), the insert fails with Postgres error code 23505
+ * (unique_violation). In that case, the action re-reads and returns the
+ * existing family gracefully.
+ *
  * @param name - The family name (required, validated with Zod)
  * @returns The family row ({ id, name }) on success, or a German error.
  */
@@ -79,6 +86,26 @@ export async function createFamily(name: string): Promise<ActionResult<Pick<Fami
     .single();
 
   if (insertError || !family) {
+    // If the insert failed due to a unique constraint violation on
+    // created_by (Postgres code 23505), a concurrent request created the
+    // family between our pre-check and insert. Re-read and return the
+    // existing family instead of surfacing an error.
+    if (insertError?.code === "23505") {
+      const { data: existingFamily, error: refetchError } = await supabase
+        .from("families")
+        .select("id, name")
+        .limit(1)
+        .maybeSingle();
+
+      if (refetchError || !existingFamily) {
+        return { success: false, error: FRIENDLY_ERROR };
+      }
+
+      return {
+        success: true,
+        data: { id: existingFamily.id, name: existingFamily.name },
+      };
+    }
     return { success: false, error: FRIENDLY_ERROR };
   }
 

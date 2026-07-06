@@ -12,6 +12,10 @@ import { createClient } from "@/lib/supabase/server";
  * Build a mock Supabase client with a configurable auth user and a set of
  * table chain mocks. Each table mock supports the select/insert/limit/
  * maybeSingle/single chain used by the actions.
+ *
+ * `selectResults` allows sequencing multiple select.maybeSingle() results
+ * (e.g. first call returns null for the pre-check, second call returns the
+ * existing family after a constraint-violation re-read).
  */
 function mockSupabase(options: {
   user?: { id: string; email: string } | null;
@@ -19,6 +23,7 @@ function mockSupabase(options: {
     existing?: { id: string; name: string } | null;
     insertError?: unknown;
     inserted?: { id: string; name: string };
+    selectResults?: Array<{ data: { id: string; name: string } | null; error: unknown | null }>;
   };
   members?: {
     insertError?: unknown;
@@ -27,12 +32,25 @@ function mockSupabase(options: {
 }) {
   const { user = { id: "user-1", email: "test@ordilo.test" } } = options;
 
-  // families chain
+  // families select chain — supports sequential results for the
+  // pre-check and the constraint-violation re-read.
+  let selectCallIndex = 0;
+  const selectResults = options.families?.selectResults;
   const familiesSelectChain = {
     limit: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({
-      data: options.families?.existing ?? null,
-      error: null,
+    maybeSingle: vi.fn().mockImplementation(() => {
+      if (selectResults) {
+        const result = selectResults[selectCallIndex] ?? {
+          data: null,
+          error: null,
+        };
+        selectCallIndex++;
+        return Promise.resolve(result);
+      }
+      return Promise.resolve({
+        data: options.families?.existing ?? null,
+        error: null,
+      });
     }),
   };
   const familiesInsertChain = {
@@ -130,6 +148,63 @@ describe("createFamily", () => {
         families: {
           existing: null,
           insertError: new Error("DB constraint violation"),
+        },
+      }),
+    );
+
+    const result = await createFamily("Familie Test");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      );
+    }
+  });
+
+  it("handles unique constraint violation (23505) by returning the existing family", async () => {
+    // Race condition: pre-check sees no family, but a concurrent request
+    // inserts one before our insert. The insert fails with code 23505
+    // (unique_violation). The action should re-read and return the
+    // existing family gracefully.
+    const existingFamily = { id: "fam-race", name: "Familie Race" };
+    const uniqueViolation = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+    });
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        families: {
+          // First select (pre-check): no family exists.
+          // Second select (re-read after constraint violation): family exists.
+          selectResults: [
+            { data: null, error: null },
+            { data: existingFamily, error: null },
+          ],
+          insertError: uniqueViolation,
+        },
+      }),
+    );
+
+    const result = await createFamily("Familie Test");
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.id).toBe("fam-race");
+      expect(result.data.name).toBe("Familie Race");
+    }
+  });
+
+  it("returns friendly German error when constraint violation re-read also fails", async () => {
+    const uniqueViolation = Object.assign(new Error("duplicate key"), {
+      code: "23505",
+    });
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        families: {
+          // Pre-check: no family. Re-read: also returns null (e.g. RLS issue).
+          selectResults: [
+            { data: null, error: null },
+            { data: null, error: null },
+          ],
+          insertError: uniqueViolation,
         },
       }),
     );

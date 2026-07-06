@@ -58,8 +58,6 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   const isAppRoute = appPaths.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
-  const isFamilieRoute =
-    pathname === "/familie" || pathname.startsWith("/familie/");
   const isOnboarding = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
 
   // Unauthenticated → redirect to /login
@@ -87,12 +85,14 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
     const onboardingComplete = !!member;
 
-    if (!onboardingComplete && isAppRoute && !isFamilieRoute) {
-      // Mid-onboarding: block access to app routes → redirect to /onboarding.
-      // /familie is exempted so users who removed all members can still
-      // access the family page (which shows an empty state and lets them
-      // add new members). The /familie page itself redirects to /onboarding
-      // if the user has no family at all.
+    if (!onboardingComplete && isAppRoute) {
+      // Mid-onboarding: block access to ALL app routes (including /familie)
+      // → redirect to /onboarding. A user with a family but zero members
+      // must not bypass the onboarding guard by visiting /familie. The
+      // onboarding page detects an existing family and resumes at the
+      // add-member step, so the user can add members and then access /familie
+      // normally. A user who removed all members after completing onboarding
+      // is also routed back to /onboarding to re-add at least one member.
       const url = request.nextUrl.clone();
       url.pathname = "/onboarding";
       url.search = "";
