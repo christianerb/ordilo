@@ -39,9 +39,11 @@ import {
   combineSearchResults,
   buildChatSystemPrompt,
   buildChatUserMessage,
+  buildAgenticSystemPrompt,
   generateChatAnswer,
   filterByRelevanceThreshold,
   reconcileFallbackSources,
+  streamAgenticAnswer,
   ChatError,
 } from "@/lib/ai/chat";
 import {
@@ -53,6 +55,7 @@ import {
 } from "@/lib/schemas/chat";
 import { RELEVANCE_THRESHOLD } from "@/lib/ai/search";
 import type { SearchResult } from "@/lib/schemas/search";
+import type { ToolContext } from "@/lib/ai/tools";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -116,6 +119,98 @@ function mockChatResponse(content: string): {
 } {
   return {
     choices: [{ message: { content } }],
+  };
+}
+
+// --- Fake OpenAI streaming responses (for streamAgenticAnswer tests) -----
+
+type FakeStreamChunk =
+  | { content: string }
+  | {
+      toolCall: {
+        index: number;
+        id?: string;
+        name?: string;
+        argumentsChunk?: string;
+      };
+    };
+
+/**
+ * Build a fake async-iterable OpenAI streaming response from a simple
+ * chunk description, matching the `chunk.choices[0].delta` shape that
+ * `streamAgenticAnswer` reads.
+ */
+function fakeOpenAIStream(chunks: FakeStreamChunk[]) {
+  async function* generator() {
+    for (const chunk of chunks) {
+      if ("content" in chunk) {
+        yield { choices: [{ delta: { content: chunk.content } }] };
+      } else {
+        const { index, id, name, argumentsChunk } = chunk.toolCall;
+        yield {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index,
+                    id,
+                    function: {
+                      name,
+                      arguments: argumentsChunk,
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      }
+    }
+  }
+  return generator();
+}
+
+/** Consume a ReadableStream<Uint8Array> of NDJSON lines into parsed objects. */
+async function readNdjsonStream(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Record<string, unknown>[]> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const lines: Record<string, unknown>[] = [];
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+  }
+
+  for (const line of buffer.split("\n")) {
+    if (line.trim()) lines.push(JSON.parse(line));
+  }
+  return lines;
+}
+
+function makeToolContext(sources: ChatSource[] = []): ToolContext {
+  // Minimal mock that supports loadFamilyContext queries.
+  // Each .from() call returns a chainable builder that resolves to empty data.
+  const chainable = {
+    select: () => chainable,
+    eq: () => chainable,
+    order: () => chainable,
+    limit: () => chainable,
+    in: () => chainable,
+    then: (resolve: (v: { data: unknown[]; error: null; count: number }) => void) =>
+      Promise.resolve({ data: [], error: null, count: 0 }).then(resolve),
+  };
+  return {
+    client: {
+      from: () => chainable,
+    } as unknown as ToolContext["client"],
+    familyId: "660e8400-e29b-41d4-a716-446655440001",
+    sources,
+    speakerName: null,
   };
 }
 
@@ -493,6 +588,31 @@ describe("buildChatSystemPrompt", () => {
 });
 
 // ---------------------------------------------------------------------------
+// buildAgenticSystemPrompt
+// ---------------------------------------------------------------------------
+
+describe("buildAgenticSystemPrompt", () => {
+  const prompt = buildAgenticSystemPrompt();
+
+  it("instructs to answer in German", () => {
+    expect(prompt).toContain("Deutsch");
+  });
+
+  it("instructs Markdown formatting for emphasis", () => {
+    expect(prompt).toContain("Markdown");
+    expect(prompt).toContain("**fett**");
+  });
+
+  it("instructs to use Markdown tables for multi-item, multi-field listings", () => {
+    expect(prompt.toLowerCase()).toContain("markdown-tabelle");
+  });
+
+  it("instructs to avoid mentioning the same document twice", () => {
+    expect(prompt.toLowerCase()).toContain("nur einmal");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // buildChatUserMessage
 // ---------------------------------------------------------------------------
 
@@ -622,7 +742,7 @@ describe("generateChatAnswer", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
-  it("uses gpt-4.1-mini model", async () => {
+  it("uses gpt-5.4-mini model", async () => {
     mockCreate.mockResolvedValue(
       mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
     );
@@ -636,7 +756,7 @@ describe("generateChatAnswer", () => {
       model: string;
       messages: { role: string; content: string }[];
     };
-    expect(callArgs.model).toBe("gpt-4.1-mini");
+    expect(callArgs.model).toBe("gpt-5.4-mini");
   });
 
   it("sends system and user messages", async () => {
@@ -1100,6 +1220,181 @@ describe("generateChatAnswer", () => {
 
     // Hedging takes priority for the fail-closed message.
     expect(answer).toBe(FAIL_CLOSED_HEDGING);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// streamAgenticAnswer — present_answer_card (structured answer cards)
+// ---------------------------------------------------------------------------
+
+describe("streamAgenticAnswer — present_answer_card", () => {
+  beforeEach(() => {
+    setApiKey();
+    mockCreate.mockReset();
+  });
+
+  it("sends a card event and skips text/sources round when the card is valid", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "termin",
+              title: "Zahnarzttermin",
+              subtitle: "Emma",
+              fields: [{ label: "Datum", value: "12.08.2026" }],
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext();
+    const stream = await streamAgenticAnswer(
+      "Wann ist der Zahnarzttermin?",
+      [],
+      toolContext,
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toMatchObject({
+      type: "card",
+      card: { type: "termin", title: "Zahnarzttermin" },
+    });
+    expect(lines[1]).toMatchObject({ type: "sources", sources: [] });
+    expect(lines[2]).toEqual({ type: "done" });
+    // The card is a terminal action — only one round of the model is used.
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps actionDocumentId when it matches an accumulated source", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "dokument",
+              title: "Stromrechnung",
+              fields: [{ label: "Betrag", value: "45 EUR" }],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
+    ]);
+    const stream = await streamAgenticAnswer("Wie hoch ist die Stromrechnung?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines[0]).toMatchObject({
+      type: "card",
+      card: { actionDocumentId: "doc-1" },
+    });
+  });
+
+  it("nulls out actionDocumentId when it does not match any accumulated source", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "dokument",
+              title: "Stromrechnung",
+              fields: [{ label: "Betrag", value: "45 EUR" }],
+              source_document_id: "doc-does-not-exist",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
+    ]);
+    const stream = await streamAgenticAnswer("Wie hoch ist die Stromrechnung?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines[0]).toMatchObject({
+      type: "card",
+      card: { actionDocumentId: null },
+    });
+  });
+
+  it("falls back to a text answer when the card arguments are invalid", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "present_answer_card",
+              // Missing required "fields" → fails schema validation.
+              argumentsChunk: JSON.stringify({
+                card_type: "termin",
+                title: "Zahnarzttermin",
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Der Termin ist am 12.08.2026." }]),
+      );
+
+    const toolContext = makeToolContext();
+    const stream = await streamAgenticAnswer("Wann?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((l) => l.type === "card")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "text",
+      content: "Der Termin ist am 12.08.2026.",
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects a card whose text contains hedging language and asks for plain text instead", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "present_answer_card",
+              argumentsChunk: JSON.stringify({
+                card_type: "termin",
+                title: "Vermutlich ein Termin",
+                fields: [{ label: "Datum", value: "12.08.2026" }],
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Der Termin ist am 12.08.2026." }]),
+      );
+
+    const toolContext = makeToolContext();
+    const stream = await streamAgenticAnswer("Wann?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((l) => l.type === "card")).toBe(false);
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 });

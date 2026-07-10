@@ -39,7 +39,7 @@ const addMemberState: OnboardingState = {
 };
 
 /** Friendly German error the UI must surface on a thrown mutation. */
-const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
+const FRIENDLY_ERROR = "Das hat nicht geklappt. Bitte versuch's nochmal.";
 
 describe("OnboardingFlow — add-member error recovery (VAL-ONBOARD-013)", () => {
   beforeEach(() => {
@@ -131,7 +131,7 @@ describe("OnboardingFlow — add-member error recovery (VAL-ONBOARD-013)", () =>
     // retry actually completed the mutation and the UI recovered.
     await waitFor(() => {
       expect(
-        screen.getByText("Möchtest du noch jemanden anlegen?"),
+        screen.getByText("Noch jemand, der dazugehört?"),
       ).toBeInTheDocument();
     });
   });

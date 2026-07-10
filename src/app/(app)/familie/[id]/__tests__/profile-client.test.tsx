@@ -10,6 +10,11 @@ vi.mock("next/navigation", () => ({
     refresh: vi.fn(),
   }),
 }));
+vi.mock("@/lib/scan/scan-context", () => ({
+  useDocumentViewer: () => ({
+    openDocument: vi.fn(),
+  }),
+}));
 
 import { ProfileClient } from "@/app/(app)/familie/[id]/profile-client";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
@@ -35,6 +40,10 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     birthdate: null,
     avatar_color: "#E46018",
     created_at: "2026-06-01T00:00:00Z",
+    linked_user_id: null,
+    photo_url: null,
+    related_member_id: null,
+    relationship_label: null,
     ...overrides,
   };
 }
@@ -150,6 +159,6 @@ describe("ProfileClient — Dokumente section (VAL-PROFILE-002)", () => {
     );
 
     const documentsSection = screen.getByTestId("profile-documents");
-    expect(within(documentsSection).getByText("Keine Dokumente")).toBeDefined();
+    expect(within(documentsSection).getByText(/Noch keine Dokumente/)).toBeDefined();
   });
 });

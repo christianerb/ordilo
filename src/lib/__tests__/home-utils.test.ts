@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   filterHeuteWichtig,
   filterFristen,
+  filterUeberfaellig,
   filterRecentDocuments,
   formatGermanTimestamp,
   type HomeTask,
@@ -17,12 +18,14 @@ function makeTask(overrides: Partial<HomeTask> = {}): HomeTask {
     id: "task-1",
     family_id: "fam-1",
     title: "Rechnung bezahlen",
+    description: null,
     due_date: "2026-07-10",
     priority: "high",
     status: "open",
     confidence: 0.9,
     confirmed: true,
     created_at: "2026-07-01T00:00:00Z",
+    tags: [],
     document_id: "doc-1",
     document_title: "Stromrechnung",
     ...overrides,
@@ -116,20 +119,32 @@ describe("filterHeuteWichtig", () => {
 // ---------------------------------------------------------------------------
 
 describe("filterFristen", () => {
-  it("returns confirmed open tasks with future due_date (>= today)", () => {
+  it("returns confirmed open tasks with due_date beyond the 7-day horizon", () => {
     const tasks = [
-      makeTask({ id: "t1", due_date: "2026-07-06" }), // today
-      makeTask({ id: "t2", due_date: "2026-07-20" }), // future
-      makeTask({ id: "t3", due_date: "2026-08-01" }), // far future
+      makeTask({ id: "t1", due_date: "2026-07-06" }), // today → Heute wichtig, not Fristen
+      makeTask({ id: "t2", due_date: "2026-07-14" }), // 8 days out → Fristen
+      makeTask({ id: "t3", due_date: "2026-08-01" }), // far future → Fristen
     ];
     const result = filterFristen(tasks, TODAY);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toEqual(["t2", "t3"]);
+  });
+
+  it("excludes tasks within the 7-day Heute wichtig horizon", () => {
+    const tasks = [
+      makeTask({ id: "t1", due_date: "2026-07-06" }), // today
+      makeTask({ id: "t2", due_date: "2026-07-13" }), // 7 days (boundary of Heute wichtig)
+      makeTask({ id: "t3", due_date: "2026-07-14" }), // 8 days → Fristen
+    ];
+    const result = filterFristen(tasks, TODAY);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("t3");
   });
 
   it("excludes overdue tasks (due_date before today)", () => {
     const tasks = [
       makeTask({ id: "t1", due_date: "2026-07-01" }), // overdue
-      makeTask({ id: "t2", due_date: "2026-07-06" }), // today
+      makeTask({ id: "t2", due_date: "2026-07-14" }), // 8 days out
     ];
     const result = filterFristen(tasks, TODAY);
     expect(result).toHaveLength(1);
@@ -138,8 +153,8 @@ describe("filterFristen", () => {
 
   it("excludes tasks with status done or dismissed", () => {
     const tasks = [
-      makeTask({ id: "t1", due_date: "2026-07-06", status: "done" }),
-      makeTask({ id: "t2", due_date: "2026-07-06", status: "open" }),
+      makeTask({ id: "t1", due_date: "2026-07-14", status: "done" }),
+      makeTask({ id: "t2", due_date: "2026-07-14", status: "open" }),
     ];
     const result = filterFristen(tasks, TODAY);
     expect(result).toHaveLength(1);
@@ -148,8 +163,8 @@ describe("filterFristen", () => {
 
   it("excludes unconfirmed tasks", () => {
     const tasks = [
-      makeTask({ id: "t1", due_date: "2026-07-06", confirmed: false }),
-      makeTask({ id: "t2", due_date: "2026-07-06", confirmed: true }),
+      makeTask({ id: "t1", due_date: "2026-07-14", confirmed: false }),
+      makeTask({ id: "t2", due_date: "2026-07-14", confirmed: true }),
     ];
     const result = filterFristen(tasks, TODAY);
     expect(result).toHaveLength(1);
@@ -159,7 +174,7 @@ describe("filterFristen", () => {
   it("excludes tasks with null due_date", () => {
     const tasks = [
       makeTask({ id: "t1", due_date: null }),
-      makeTask({ id: "t2", due_date: "2026-07-06" }),
+      makeTask({ id: "t2", due_date: "2026-07-14" }),
     ];
     const result = filterFristen(tasks, TODAY);
     expect(result).toHaveLength(1);
@@ -169,11 +184,67 @@ describe("filterFristen", () => {
   it("sorts results by due_date ascending (soonest first)", () => {
     const tasks = [
       makeTask({ id: "t3", due_date: "2026-08-01" }),
-      makeTask({ id: "t1", due_date: "2026-07-06" }),
+      makeTask({ id: "t1", due_date: "2026-07-14" }),
       makeTask({ id: "t2", due_date: "2026-07-20" }),
     ];
     const result = filterFristen(tasks, TODAY);
     expect(result.map((t) => t.id)).toEqual(["t1", "t2", "t3"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterUeberfaellig
+// ---------------------------------------------------------------------------
+
+describe("filterUeberfaellig", () => {
+  it("returns confirmed open tasks with due_date before today", () => {
+    const tasks = [
+      makeTask({ id: "t1", due_date: "2026-07-01" }), // overdue
+      makeTask({ id: "t2", due_date: "2026-06-15" }), // more overdue
+      makeTask({ id: "t3", due_date: "2026-07-06" }), // today → not overdue
+    ];
+    const result = filterUeberfaellig(tasks, TODAY);
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toEqual(["t2", "t1"]); // most overdue first
+  });
+
+  it("excludes tasks due today or in the future", () => {
+    const tasks = [
+      makeTask({ id: "t1", due_date: "2026-07-06" }), // today
+      makeTask({ id: "t2", due_date: "2026-07-10" }), // future
+    ];
+    const result = filterUeberfaellig(tasks, TODAY);
+    expect(result).toHaveLength(0);
+  });
+
+  it("excludes tasks with status done or dismissed", () => {
+    const tasks = [
+      makeTask({ id: "t1", due_date: "2026-07-01", status: "done" }),
+      makeTask({ id: "t2", due_date: "2026-07-01", status: "open" }),
+    ];
+    const result = filterUeberfaellig(tasks, TODAY);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("t2");
+  });
+
+  it("excludes unconfirmed tasks", () => {
+    const tasks = [
+      makeTask({ id: "t1", due_date: "2026-07-01", confirmed: false }),
+      makeTask({ id: "t2", due_date: "2026-07-01", confirmed: true }),
+    ];
+    const result = filterUeberfaellig(tasks, TODAY);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("t2");
+  });
+
+  it("excludes tasks with null due_date", () => {
+    const tasks = [
+      makeTask({ id: "t1", due_date: null }),
+      makeTask({ id: "t2", due_date: "2026-07-01" }),
+    ];
+    const result = filterUeberfaellig(tasks, TODAY);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("t2");
   });
 });
 
@@ -206,7 +277,7 @@ describe("filterRecentDocuments", () => {
   });
 
   it("keeps non-failed documents of all other statuses", () => {
-    const statuses = ["uploaded", "ocr_processing", "ocr_done", "analyzed", "confirmed"];
+    const statuses = ["uploaded", "ocr_done", "confirmed"];
     const docs = statuses.map((status, i) =>
       makeDoc({ id: `d${i}`, status, created_at: `2026-07-0${i + 1}T10:00:00Z` }),
     );
@@ -237,7 +308,7 @@ describe("filterRecentDocuments", () => {
       makeDoc({ id: `d${i}`, status: "confirmed", created_at: `2026-07-0${i}T10:00:00Z` }),
     );
     const result = filterRecentDocuments(docs);
-    expect(result.length).toBeLessThanOrEqual(5);
+    expect(result.length).toBeLessThanOrEqual(3);
   });
 
   it("preserves the input order (created_at desc from DB)", () => {

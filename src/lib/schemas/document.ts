@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { FileText, ImageIcon, type LucideIcon } from "lucide-react";
 
 /**
  * Document-related schemas, constants, and helpers.
@@ -83,13 +84,13 @@ export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
  * Used in status badges on document cards.
  */
 export const DOCUMENT_STATUS_LABELS: Record<DocumentStatus, string> = {
-  uploaded: "Hochgeladen",
-  ocr_processing: "OCR läuft",
-  ocr_done: "OCR fertig",
-  analyzing: "Analyse läuft",
-  analyzed: "Analysiert",
-  confirmed: "Bestätigt",
-  failed: "Fehlgeschlagen",
+  uploaded: "Eingegangen",
+  ocr_processing: "Wird gelesen",
+  ocr_done: "Gelesen",
+  analyzing: "Wird verstanden",
+  analyzed: "Bereit zum Durchsehen",
+  confirmed: "Im Familienbuch",
+  failed: "Hat nicht geklappt",
 };
 
 /**
@@ -135,6 +136,39 @@ export const PROCESSING_STATUSES: ReadonlySet<DocumentStatus> = new Set([
  */
 export function isProcessingStatus(status: string): boolean {
   return PROCESSING_STATUSES.has(status as DocumentStatus);
+}
+
+/**
+ * The three user-facing pipeline stages shown while a document is
+ * captured, read, and understood — shared between the full-screen scan
+ * wizard and the compact ReviewCard processing state so both narrate the
+ * same real progress with the same German labels.
+ */
+export const PIPELINE_STEPS = [
+  { key: "upload", label: "Foto wird hochgeladen" },
+  { key: "ocr", label: "Text wird erkannt" },
+  { key: "analysis", label: "Inhalt wird verstanden" },
+] as const;
+
+/**
+ * How many of the three pipeline steps are complete for a given document
+ * status — never a fabricated/decorative progress value, always derived
+ * from the real, persisted status.
+ */
+export function getPipelineStepsCompleted(status: string): number {
+  switch (status as DocumentStatus) {
+    case "uploaded":
+    case "ocr_processing":
+      return 1;
+    case "ocr_done":
+    case "analyzing":
+      return 2;
+    case "analyzed":
+    case "confirmed":
+      return 3;
+    default:
+      return 0;
+  }
 }
 
 /**
@@ -347,6 +381,21 @@ export function isPdfMimeType(mimeType: string): boolean {
   return mimeType === "application/pdf";
 }
 
+/**
+ * Get the appropriate file icon component for a given MIME type.
+ *
+ * Returns the Lucide icon component to render for a document based on its
+ * MIME type: `ImageIcon` for image types, `FileText` for everything else
+ * (including PDF).
+ *
+ * @param mimeType - A MIME type string, or null/undefined.
+ * @returns A Lucide icon component.
+ */
+export function getFileIcon(mimeType: string | null | undefined): LucideIcon {
+  if (mimeType && isImageMimeType(mimeType)) return ImageIcon;
+  return FileText;
+}
+
 // ---------------------------------------------------------------------------
 // Upload API response types
 // ---------------------------------------------------------------------------
@@ -443,7 +492,7 @@ export function getFailedStage(doc: {
  * collapsed document row as on the expanded ReviewCard
  * (VAL-REVIEW-014).
  */
-export const FAILED_CARD_COPY = "Analyse fehlgeschlagen";
+export const FAILED_CARD_COPY = "Das hat nicht geklappt";
 
 // ---------------------------------------------------------------------------
 // State machine — valid transitions

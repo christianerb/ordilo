@@ -33,7 +33,7 @@ export function OnboardingError() {
           strokeWidth={1.5}
         />
       </div>
-      <h3 className="text-lg font-semibold text-foreground">
+      <h3 className="text-base font-semibold text-foreground">
         Daten konnten nicht geladen werden
       </h3>
       <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted-foreground">

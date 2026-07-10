@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
+const mockOpenDocument = vi.fn();
+vi.mock("@/lib/scan/scan-context", () => ({
+  useDocumentViewer: () => ({
+    openDocument: mockOpenDocument,
+  }),
+}));
+
 import { TaskCard } from "@/components/ordilo/task-card";
 import type { TaskCardData } from "@/components/ordilo/task-card";
 
@@ -14,12 +21,14 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     family_id: "fam-1",
     document_id: "doc-1",
     title: "Rechnung bezahlen",
+    description: null,
     due_date: "2026-07-15",
     priority: "high",
     status: "open",
     confidence: 0.9,
     confirmed: true,
     created_at: "2026-07-01T00:00:00Z",
+    tags: [],
     document_title: "Stromrechnung Juli",
     ...overrides,
   };
@@ -49,31 +58,29 @@ describe("TaskCard", () => {
     expect(screen.queryByText(/Fällig/)).toBeNull();
   });
 
-  it("renders a priority badge with German label", () => {
+  it("renders priority as a colored dot (no text label in compact mode)", () => {
     render(<TaskCard task={makeTask({ priority: "high" })} />);
-    expect(screen.getByText("Hoch")).toBeDefined();
+    // Priority is shown as a dot, not a text label
+    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("high");
+    expect(screen.queryByText("Hoch")).toBeNull();
   });
 
-  it("renders 'Mittel' for medium priority", () => {
+  it("renders data-priority for medium priority", () => {
     render(<TaskCard task={makeTask({ priority: "medium" })} />);
-    expect(screen.getByText("Mittel")).toBeDefined();
+    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("medium");
   });
 
-  it("renders 'Niedrig' for low priority", () => {
+  it("renders data-priority for low priority", () => {
     render(<TaskCard task={makeTask({ priority: "low" })} />);
-    expect(screen.getByText("Niedrig")).toBeDefined();
+    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("low");
   });
 
-  it("applies different visual classes for high vs low priority", () => {
+  it("applies different priority dot colors for high vs low priority", () => {
     const { rerender } = render(<TaskCard task={makeTask({ priority: "high" })} />);
-    const highBadge = screen.getByTestId("priority-badge");
-    const highClasses = highBadge.className;
+    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("high");
 
     rerender(<TaskCard task={makeTask({ priority: "low" })} />);
-    const lowBadge = screen.getByTestId("priority-badge");
-    const lowClasses = lowBadge.className;
-
-    expect(highClasses).not.toBe(lowClasses);
+    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("low");
   });
 
   // ---------------------------------------------------------------------------
@@ -115,21 +122,23 @@ describe("TaskCard", () => {
   // Dismiss action
   // ---------------------------------------------------------------------------
 
-  it("renders a dismiss button for open tasks", () => {
+  it("renders an actions menu for open tasks", () => {
     render(<TaskCard task={makeTask({ status: "open" })} onDismiss={vi.fn()} />);
-    expect(screen.getByLabelText(/verwerfen/i)).toBeDefined();
+    expect(screen.getByTestId("task-card-actions")).toBeDefined();
   });
 
-  it("calls onDismiss when the dismiss button is clicked", () => {
+  it("calls onDismiss when the delete menu item is clicked", async () => {
     const onDismiss = vi.fn();
     render(<TaskCard task={makeTask()} onDismiss={onDismiss} />);
-    fireEvent.click(screen.getByLabelText(/verwerfen/i));
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    const deleteItem = await screen.findByTestId("card-action-delete");
+    fireEvent.click(deleteItem);
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("does not render a dismiss button when onDismiss is not provided", () => {
+  it("does not render an actions menu when onDismiss is not provided", () => {
     render(<TaskCard task={makeTask()} />);
-    expect(screen.queryByLabelText(/verwerfen/i)).toBeNull();
+    expect(screen.queryByTestId("task-card-actions")).toBeNull();
   });
 
   // ---------------------------------------------------------------------------
@@ -143,8 +152,14 @@ describe("TaskCard", () => {
       />,
     );
     const link = screen.getByRole("link");
-    expect(link.getAttribute("href")).toContain("/scan");
+    expect(link.getAttribute("href")).toContain("/dokumente");
     expect(link.getAttribute("href")).toContain("doc-1");
+  });
+
+  it("opens the shared document sheet instead of navigating away", () => {
+    render(<TaskCard task={makeTask({ document_id: "doc-7" })} />);
+    fireEvent.click(screen.getByTestId("task-document-link"));
+    expect(mockOpenDocument).toHaveBeenCalledWith("doc-7");
   });
 
   it("does not render a document link when document_id is null", () => {
@@ -152,13 +167,15 @@ describe("TaskCard", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("shows the document title in the link when available", () => {
+  it("shows the document title in the meta row when available", () => {
     render(
       <TaskCard
         task={makeTask({ document_title: "Stromrechnung Juli" })}
       />,
     );
-    expect(screen.getByText(/Stromrechnung Juli/)).toBeDefined();
+    // Document title appears in both meta row and sr-only link
+    const matches = screen.getAllByText(/Stromrechnung Juli/);
+    expect(matches.length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows a fallback label when document title is null", () => {
@@ -223,30 +240,11 @@ describe("TaskCard", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Confidence badge (VAL-DESIGN-008)
+  // Confidence badge (removed from compact card — shown in detail sheet only)
   // ---------------------------------------------------------------------------
 
-  it("renders a confidence badge when confidence > 0", () => {
+  it("does not render a confidence badge in the compact card", () => {
     render(<TaskCard task={makeTask({ confidence: 0.92 })} />);
-    const badge = screen.getByTestId("task-confidence-badge");
-    expect(badge).toBeDefined();
-    expect(badge.textContent).toContain("92%");
-  });
-
-  it("does not render a confidence badge when confidence is 0", () => {
-    render(<TaskCard task={makeTask({ confidence: 0 })} />);
     expect(screen.queryByTestId("task-confidence-badge")).toBeNull();
-  });
-
-  it("renders confidence badge with color coding (high confidence)", () => {
-    render(<TaskCard task={makeTask({ confidence: 0.95 })} />);
-    const badge = screen.getByTestId("task-confidence-badge");
-    expect(badge.getAttribute("data-confidence-level")).toBe("high");
-  });
-
-  it("renders confidence badge with color coding (low confidence)", () => {
-    render(<TaskCard task={makeTask({ confidence: 0.5 })} />);
-    const badge = screen.getByTestId("task-confidence-badge");
-    expect(badge.getAttribute("data-confidence-level")).toBe("low");
   });
 });

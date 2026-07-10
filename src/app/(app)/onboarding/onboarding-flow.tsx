@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Plus, Check, ChevronDown, ChevronUp, Loader2, UserPlus } from "lucide-react";
+import { Plus, Check, ChevronDown, ChevronUp, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PersonCard } from "@/components/ordilo/person-card";
+import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { createFamily, addMember, completeOnboarding } from "./actions";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
 import { cn } from "@/lib/utils";
@@ -62,7 +64,7 @@ function nextMessageId(): string {
  * `{ success: false }` result. Kept consistent with the FRIENDLY_ERROR in
  * actions.ts so handled and unhandled failures look identical to the user.
  */
-const NETWORK_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
+const NETWORK_ERROR = "Das hat nicht geklappt. Bitte versuch's nochmal.";
 
 /**
  * Conversational onboarding flow.
@@ -94,31 +96,26 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
   const [memberRole, setMemberRole] = useState("");
   const [memberBirthdate, setMemberBirthdate] = useState("");
   const [memberAvatarColor, setMemberAvatarColor] = useState<string>("");
+  const [memberIsSelf, setMemberIsSelf] = useState(false);
   const [showOptional, setShowOptional] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Refs for scroll and focus management
+  // Refs for scroll management
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to the bottom when conversation or step changes.
-  useEffect(() => {
+  // Auto-scroll to the bottom when content changes (Rule 4: DOM integration
+  // via ResizeObserver, replaces useEffect on [conversation, step, members.length])
+  useMountEffect(() => {
     const container = scrollRef.current;
-    if (container) {
-      requestAnimationFrame(() => {
-        container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
-      });
-    }
-  }, [conversation, step, members.length]);
-
-  // Focus the primary input when the step changes.
-  useEffect(() => {
-    if (step === "family-name" || step === "add-member") {
-      requestAnimationFrame(() => inputRef.current?.focus());
-    }
-  }, [step]);
+    if (!container) return;
+    const observer = new ResizeObserver(() => {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  });
 
   // ---------------------------------------------------------------------------
   // Step transitions
@@ -151,7 +148,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           {
             id: nextMessageId(),
             type: "ai",
-            content: `Schön, ${result.data.name}! Lass uns jetzt die erste Person anlegen. Wie heißt sie?`,
+            content: `Schön, ${result.data.name}! Wen möchtest du als Erstes anlegen?`,
           },
         ]);
         setFamilyNameInput("");
@@ -193,6 +190,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           role: memberRole || undefined,
           birthdate: memberBirthdate || undefined,
           avatar_color: memberAvatarColor || undefined,
+          is_self: memberIsSelf,
         });
         if (!result.success) {
           setServerError(result.error);
@@ -214,7 +212,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           {
             id: nextMessageId(),
             type: "ai",
-            content: `${memberName.trim()} wurde hinzugefügt.`,
+            content: `${memberName.trim()} ist dabei — schön.`,
           },
         ]);
 
@@ -223,6 +221,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
         setMemberRole("");
         setMemberBirthdate("");
         setMemberAvatarColor("");
+        setMemberIsSelf(false);
         setShowOptional(false);
         setStep("choose-next");
       } catch {
@@ -236,7 +235,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
         setIsSubmitting(false);
       }
     },
-    [familyId, memberName, memberRole, memberBirthdate, memberAvatarColor],
+    [familyId, memberName, memberRole, memberBirthdate, memberAvatarColor, memberIsSelf],
   );
 
   const handleAddAnother = useCallback(() => {
@@ -246,7 +245,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
       {
         id: nextMessageId(),
         type: "ai",
-        content: "Wen möchtest du noch anlegen?",
+        content: "Wen möchtest du noch hinzufügen?",
       },
     ]);
     setStep("add-member");
@@ -323,12 +322,12 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
 
           {/* Current step: family name input */}
           {step === "family-name" && (
-            <div className="space-y-3 rounded-ordilo-lg border border-border bg-card p-4 shadow-card">
+            <div className="space-y-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
               <form onSubmit={handleFamilyNameSubmit} className="space-y-3" noValidate>
                 <div className="space-y-2">
                   <Label htmlFor="family-name">Familienname</Label>
                   <Input
-                    ref={inputRef}
+                    autoFocus
                     id="family-name"
                     type="text"
                     autoComplete="off"
@@ -373,7 +372,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
 
           {/* Current step: add member */}
           {step === "add-member" && (
-            <div className="space-y-3 rounded-ordilo-lg border border-border bg-card p-4 shadow-card">
+            <div className="space-y-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
               {/* Running list above the form (if there are already members) */}
               {members.length > 0 && (
                 <div className="space-y-2">
@@ -392,7 +391,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                 <div className="space-y-2">
                   <Label htmlFor="member-name">Name</Label>
                   <Input
-                    ref={inputRef}
+                    autoFocus
                     id="member-name"
                     type="text"
                     autoComplete="off"
@@ -413,6 +412,18 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                     </p>
                   )}
                 </div>
+
+                {/* "Das bin ich" toggle — links this member to the account owner */}
+                <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={memberIsSelf}
+                    onChange={(e) => setMemberIsSelf(e.target.checked)}
+                    disabled={isSubmitting}
+                    className="size-4 rounded border-border accent-[var(--petrol)]"
+                  />
+                  Das bin ich
+                </label>
 
                 {/* Optional fields toggle */}
                 <button
@@ -511,9 +522,9 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           {/* Current step: choose next (add another or finish) */}
           {step === "choose-next" && (
             <div className="space-y-3">
-              <div className="rounded-ordilo-lg border border-border bg-card p-4 shadow-card">
+              <div className="rounded-ordilo-md border border-border bg-card p-4 shadow-card">
                 <p className="mb-4 font-medium text-foreground">
-                  Möchtest du noch jemanden anlegen?
+                  Noch jemand, der dazugehört?
                 </p>
                 <div className="space-y-2">
                   <Button
@@ -569,10 +580,10 @@ function ConversationBubble({ message }: { message: ConversationMessage }) {
     return (
       <div className="flex gap-3">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-          <Sparkles className="h-5 w-5" />
+          <OrdiloMascot size={22} mood="idle" />
         </div>
         <div className="flex-1 pt-1">
-          <p className="text-[15px] leading-relaxed text-foreground">
+          <p className="text-sm leading-relaxed text-foreground">
             {message.content}
           </p>
         </div>
@@ -620,7 +631,7 @@ function buildInitialConversation(state: OnboardingState): ConversationMessage[]
       id: nextMessageId(),
       type: "ai",
       content:
-        "Willkommen. Ich helfe dir, euren Familienordner automatisch zu organisieren. Wen soll ich anlegen?",
+        "Hallo! Schön, dass du da bist. Ich bin Ordilo und sorge mich um eure Familienunterlagen — damit nichts verloren geht und Fristen nicht untergehen. Wie heißt eure Familie?",
     },
     {
       id: nextMessageId(),
@@ -636,7 +647,7 @@ function buildInitialConversation(state: OnboardingState): ConversationMessage[]
       {
         id: nextMessageId(),
         type: "ai",
-        content: `Schön, ${state.familyName}! Lass uns jetzt die erste Person anlegen. Wie heißt sie?`,
+      content: `Schön, ${state.familyName}! Wen möchtest du als Erstes anlegen?`,
       },
     );
   }

@@ -39,6 +39,13 @@ describe("EmptyState", () => {
     expect(screen.getByTestId("empty-state-illustration")).toBeDefined();
   });
 
+  it("renders the Ordilo mascot instead of the icon when mascotMood is set", () => {
+    render(<EmptyState title="Willkommen" mascotMood="greeting" icon={Users} />);
+    const illustration = screen.getByTestId("empty-state-illustration");
+    // The mascot renders as an svg with role="img" (decorative, aria-hidden).
+    expect(illustration.querySelector('svg[role="img"]')).not.toBeNull();
+  });
+
   it("renders a CTA button when actionLabel and onAction are provided", () => {
     const onAction = vi.fn();
     render(

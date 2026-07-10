@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { UserPlus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { OrdiloMascot, type OrdiloMascotMood } from "@/components/ordilo/mascot";
 
 /**
  * Props for the EmptyState component.
@@ -13,6 +14,12 @@ export interface EmptyStateProps {
   description?: string;
   /** Icon shown in the warm illustration circle. Defaults to UserPlus. */
   icon?: LucideIcon;
+  /**
+   * When set, shows the Ordilo mascot (instead of `icon`) in the
+   * illustration circle, expressing this mood. Use for warm, higher-touch
+   * moments (welcome, first-run, celebratory "all done" states).
+   */
+  mascotMood?: OrdiloMascotMood;
   /** Label for the optional call-to-action button (German). */
   actionLabel?: string;
   /** Click handler for the CTA button. Must be paired with actionLabel. */
@@ -45,6 +52,7 @@ export function EmptyState({
   title,
   description,
   icon: Icon = UserPlus,
+  mascotMood,
   actionLabel,
   onAction,
   className,
@@ -64,15 +72,23 @@ export function EmptyState({
         style={{ backgroundColor: "var(--secondary)" }}
         aria-hidden="true"
       >
-        <Icon
-          className="size-9"
-          style={{ color: "var(--mist)" }}
-          strokeWidth={1.5}
-        />
+        {mascotMood ? (
+          <OrdiloMascot
+            size={44}
+            mood={mascotMood}
+            style={{ color: "var(--petrol)" }}
+          />
+        ) : (
+          <Icon
+            className="size-9"
+            style={{ color: "var(--mist)" }}
+            strokeWidth={1.5}
+          />
+        )}
       </div>
 
       {/* Heading */}
-      <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+      <h3 className="text-base font-semibold text-foreground">{title}</h3>
 
       {/* Description */}
       {description && (

@@ -49,6 +49,15 @@ export const chatRequestSchema = z.object({
     .trim()
     .min(1, "family_id ist erforderlich.")
     .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
+  history: z
+    .array(
+      z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      }),
+    )
+    .optional()
+    .default([]),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
@@ -355,4 +364,115 @@ export function answerCitesSources(
 
   // No source was referenced by title or content → uncited.
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// Structured answer cards
+// ---------------------------------------------------------------------------
+
+/**
+ * The kinds of structured answer cards the assistant can present instead
+ * of a plain-text answer, when the answer describes exactly one concrete
+ * result (e.g. an appointment, a task, a document fact).
+ */
+export const ANSWER_CARD_TYPES = [
+  "termin",
+  "aufgabe",
+  "dokument",
+  "allgemein",
+] as const;
+
+export type AnswerCardType = (typeof ANSWER_CARD_TYPES)[number];
+
+/** A single label/value detail row shown in an answer card. */
+export interface AnswerCardField {
+  label: string;
+  value: string;
+}
+
+/**
+ * A structured answer card: a single concrete result rendered as a card
+ * (title, subtitle, detail fields, optional link to the source document)
+ * instead of free-flowing Markdown text.
+ *
+ * Emitted by the assistant via the `present_answer_card` tool (see
+ * `src/lib/ai/tools.ts`) when the answer is about exactly one entity —
+ * matches the "Ergebnisse & Quellen" card style from the Ordilo design.
+ */
+export interface AnswerCard {
+  type: AnswerCardType;
+  title: string;
+  subtitle: string | null;
+  fields: AnswerCardField[];
+  /** UUID of the source document to link to, or null if not verifiable. */
+  actionDocumentId: string | null;
+}
+
+/** Maximum number of detail fields shown on an answer card. */
+const MAX_ANSWER_CARD_FIELDS = 6;
+
+/**
+ * Zod schema validating the raw JSON arguments of a `present_answer_card`
+ * tool call, as returned by the model. Field/title/subtitle lengths are
+ * capped to keep the card compact and to bound worst-case hallucinated
+ * output.
+ */
+export const answerCardArgsSchema = z.object({
+  card_type: z.enum(ANSWER_CARD_TYPES),
+  title: z.string().trim().min(1).max(80),
+  subtitle: z.string().trim().max(120).optional(),
+  fields: z
+    .array(
+      z.object({
+        label: z.string().trim().min(1).max(40),
+        value: z.string().trim().min(1).max(200),
+      }),
+    )
+    .min(1)
+    .max(MAX_ANSWER_CARD_FIELDS),
+  source_document_id: z.string().trim().min(1).optional(),
+});
+
+export type AnswerCardArgs = z.infer<typeof answerCardArgsSchema>;
+
+/**
+ * Parse and validate the raw arguments of a `present_answer_card` tool
+ * call into an `AnswerCard`, or return `null` if the arguments are
+ * malformed or contain forbidden hedging language.
+ *
+ * This is the single gate between model-generated tool arguments and the
+ * rendered UI: shape validation (via `answerCardArgsSchema`) rejects
+ * missing/oversized fields, and a hedging-language check (reusing the same
+ * guardrail as free-text answers, VAL-CHAT-006) rejects cards whose text
+ * hedges on the facts it presents. `source_document_id` is intentionally
+ * NOT verified here (the caller cross-checks it against the accumulated
+ * tool-context sources, since only the caller knows which document IDs
+ * were actually returned by search_documents).
+ *
+ * @param rawArgs - The raw (already JSON.parsed) tool-call arguments.
+ * @returns The validated `AnswerCard` (with `actionDocumentId` set from
+ *          `source_document_id` verbatim — the caller must still verify
+ *          it against known sources), or `null` if invalid.
+ */
+export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
+  const result = answerCardArgsSchema.safeParse(rawArgs);
+  if (!result.success) return null;
+
+  const { card_type, title, subtitle, fields, source_document_id } =
+    result.data;
+
+  const allText = [
+    title,
+    subtitle ?? "",
+    ...fields.flatMap((f) => [f.label, f.value]),
+  ].join(" ");
+  if (containsHedgingLanguage(allText)) return null;
+
+  return {
+    type: card_type,
+    title,
+    subtitle: subtitle ?? null,
+    fields,
+    actionDocumentId: source_document_id ?? null,
+  };
 }

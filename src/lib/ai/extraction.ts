@@ -5,9 +5,10 @@ import {
   type DocumentAnalysis,
   type FamilyContext,
 } from "@/lib/schemas/extraction";
+import { EXTRACTION_MODEL } from "@/lib/ai/models";
 
 /**
- * OpenAI GPT-4.1 Mini structured output extraction client.
+ * OpenAI structured output extraction client.
  *
  * Calls OpenAI with `response_format: { type: "json_schema", strict: true }`
  * using the `document_analysis` schema. The response is validated against
@@ -16,13 +17,6 @@ import {
  * The OPENAI_API_KEY is read from server-only env and is never exposed
  * to the client.
  */
-
-// ---------------------------------------------------------------------------
-// Configuration
-// ---------------------------------------------------------------------------
-
-/** The OpenAI model used for extraction. */
-const EXTRACTION_MODEL = "gpt-4.1-mini";
 
 // ---------------------------------------------------------------------------
 // Error types

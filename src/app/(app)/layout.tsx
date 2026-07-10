@@ -3,10 +3,10 @@ import { AppShell } from "@/components/ordilo/app-shell";
 /**
  * Layout for authenticated app pages.
  *
- * Wraps all `(app)` routes in the Ordilo app shell, which provides a minimal
- * top bar with a logout affordance, a centered mobile-first content column,
- * and a fixed bottom tab navigation (Home, Scan, Suche, Familie, Aufgaben)
- * with a dark petrol background. The bottom nav is hidden on `/onboarding`.
+ * Wraps all `(app)` routes in the Ordilo app shell. Collections, profile,
+ * and other sidebar data are fetched client-side by AppShell itself (once
+ * on mount), so this layout is a static pass-through that does NOT re-fetch
+ * on every navigation — making route transitions fast.
  */
 export default function AppLayout({
   children,

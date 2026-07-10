@@ -1,6 +1,10 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import {
+  resolveDocumentWithOwnership,
+  markDocumentFailed,
+} from "@/lib/supabase/document-helpers";
 import { runExtraction, ExtractionError } from "@/lib/ai/extraction";
 import { ANALYZE_ALLOWED_SOURCE_STATUSES } from "@/lib/schemas/document";
 import {
@@ -67,62 +71,23 @@ export async function POST(
   // 2. Parse document ID from the route params -----------------------------
   const { id: documentId } = await params;
 
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(documentId)) {
-    const body: AnalyzeErrorResponse = {
-      error: "Ungültige Dokument-ID.",
-      code: "INVALID_DOCUMENT_ID",
-    };
-    return Response.json(body, { status: 400 });
-  }
-
   const serverClient = await createServerClient();
 
-  // 3. Read the document (RLS-scoped) to check status and family_id --------
-  const { data: document, error: readError } = await serverClient
-    .from("documents")
-    .select("id, family_id, status, ocr_text")
-    .eq("id", documentId)
-    .maybeSingle();
+  // 3-4. Validate UUID, read document (RLS-scoped), distinguish 403 vs 404 --
+  // resolveDocumentWithOwnership handles UUID validation (400), RLS-scoped
+  // read (500 on error), and the admin-client existence check to
+  // distinguish 403 (exists but not owned) from 404 (truly does not exist)
+  // — VAL-EXTRACT-007.
+  const adminClient = createAdminClient();
+  const { document, error: resolveError } = await resolveDocumentWithOwnership(
+    serverClient,
+    adminClient,
+    documentId,
+  );
 
-  if (readError) {
-    const body: AnalyzeErrorResponse = {
-      error: "Dokument konnte nicht geladen werden.",
-      code: "DB_READ_FAILED",
-    };
-    return Response.json(body, { status: 500 });
-  }
-
-  // 4. Not found (or RLS blocked) → distinguish 403 vs 404 -----------------
-  // The RLS-scoped read returns no row for both non-existent AND non-owned
-  // documents. Use the admin (service-role) client to check whether the
-  // document exists at all: if it exists but belongs to another family,
-  // return a structured 403; only return 404 when the document truly
-  // does not exist (VAL-EXTRACT-007).
-  if (!document) {
-    const adminClient = createAdminClient();
-    const { data: existingDoc } = await adminClient
-      .from("documents")
-      .select("id")
-      .eq("id", documentId)
-      .maybeSingle();
-
-    if (existingDoc) {
-      // Document exists but belongs to another family → 403
-      const body: AnalyzeErrorResponse = {
-        error: "Kein Zugriff auf dieses Dokument.",
-        code: "FORBIDDEN",
-      };
-      return Response.json(body, { status: 403 });
-    }
-
-    // Document truly does not exist → 404
-    const body: AnalyzeErrorResponse = {
-      error: "Dokument nicht gefunden.",
-      code: "DOCUMENT_NOT_FOUND",
-    };
-    return Response.json(body, { status: 404 });
+  if (resolveError) {
+    const body: AnalyzeErrorResponse = resolveError.body;
+    return Response.json(body, { status: resolveError.status });
   }
 
   // 5. Check status — must be in allowed source set -----------------------
@@ -229,7 +194,7 @@ export async function POST(
         ? "ANALYSIS_FAILED"
         : "EXTRACTION_FAILED";
 
-    await markFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message);
 
     const statusCode =
       isExtractionError && err instanceof ExtractionError
@@ -264,7 +229,7 @@ export async function POST(
         : "Ergebnisse konnten nicht gespeichert werden.";
     const code = err instanceof Error ? "DB_STORE_FAILED" : "EXTRACTION_FAILED";
 
-    await markFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message);
 
     const body: AnalyzeErrorResponse = { error: message, code };
     return Response.json(body, { status: 500 });
@@ -284,7 +249,7 @@ export async function POST(
     .eq("id", documentId);
 
   if (updateError) {
-    await markFailed(serverClient, documentId, "Dokument-Status konnte nicht aktualisiert werden.");
+    await markDocumentFailed(serverClient, documentId, "Dokument-Status konnte nicht aktualisiert werden.");
 
     const body: AnalyzeErrorResponse = {
       error: "Dokument-Status konnte nicht aktualisiert werden.",
@@ -542,30 +507,6 @@ async function storeExtractionResults(
     if (tasksInsertError) {
       throw new Error("Aufgaben konnten nicht gespeichert werden.");
     }
-  }
-}
-
-/**
- * Mark a document as failed with an error message.
- *
- * Best-effort: errors are silently ignored so we don't mask the primary
- * error with a secondary DB error.
- */
-async function markFailed(
-  client: Awaited<ReturnType<typeof createServerClient>>,
-  documentId: string,
-  errorMessage: string,
-): Promise<void> {
-  try {
-    await client
-      .from("documents")
-      .update({
-        status: "failed",
-        error_message: errorMessage,
-      })
-      .eq("id", documentId);
-  } catch {
-    // Best-effort.
   }
 }
 

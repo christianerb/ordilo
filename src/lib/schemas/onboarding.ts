@@ -70,6 +70,18 @@ export const memberSchema = z.object({
     .string()
     .optional()
     .or(z.literal("")),
+  related_member_id: z
+    .string()
+    .trim()
+    .uuid("Ungültige Auswahl")
+    .optional()
+    .or(z.literal("")),
+  relationship_label: z
+    .string()
+    .trim()
+    .max(50, "Die Beziehung ist zu lang (maximal 50 Zeichen)")
+    .optional()
+    .or(z.literal("")),
 });
 
 export type MemberInput = z.infer<typeof memberSchema>;
@@ -83,6 +95,8 @@ export type NormalizedMemberInput = {
   role: string | null;
   birthdate: string | null;
   avatar_color: string | null;
+  related_member_id: string | null;
+  relationship_label: string | null;
 };
 
 /**
@@ -133,6 +147,14 @@ export function validateMember(
       avatar_color:
         data.avatar_color && data.avatar_color.trim() !== ""
           ? data.avatar_color.trim()
+          : null,
+      related_member_id:
+        data.related_member_id && data.related_member_id.trim() !== ""
+          ? data.related_member_id.trim()
+          : null,
+      relationship_label:
+        data.relationship_label && data.relationship_label.trim() !== ""
+          ? data.relationship_label.trim()
           : null,
     },
   };

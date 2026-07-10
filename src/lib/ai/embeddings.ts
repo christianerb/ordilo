@@ -1,4 +1,8 @@
 import OpenAI from "openai";
+import {
+  EMBEDDINGS_MODEL,
+  EMBEDDING_DIMENSIONS,
+} from "@/lib/ai/models";
 
 /**
  * OpenAI text-embedding-3-small embeddings client.
@@ -15,11 +19,7 @@ import OpenAI from "openai";
 // Configuration
 // ---------------------------------------------------------------------------
 
-/** The OpenAI model used for embeddings. */
-const EMBEDDINGS_MODEL = "text-embedding-3-small";
-
-/** Dimensionality of text-embedding-3-small vectors. */
-export const EMBEDDING_DIMENSIONS = 1536;
+export { EMBEDDING_DIMENSIONS };
 
 /**
  * Approximate characters per token.
@@ -323,6 +323,193 @@ export async function generateEmbeddings(
 
   return results;
 }
+
+// ---------------------------------------------------------------------------
+// Semantic deduplication
+// ---------------------------------------------------------------------------
+
+/**
+ * Cosine similarity between two vectors.
+ * Returns a value in [-1, 1], where 1 = identical direction.
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Default similarity threshold for considering two chunks as duplicates. */
+export const DEDUP_SIMILARITY_THRESHOLD = 0.85;
+
+/**
+ * Result of semantic deduplication: the surviving chunks/embeddings and
+ * the indices that were removed as near-duplicates.
+ */
+export interface DedupResult<T> {
+  /** Surviving items (deduplicates removed). */
+  kept: T[];
+  /** Indices from the original array that were removed. */
+  removedIndices: number[];
+}
+
+/**
+ * Semantically deduplicate embeddings by cosine similarity.
+ *
+ * If two embeddings have cosine similarity >= threshold, the second one
+ * is considered a near-duplicate and removed. This prevents near-identical
+ * chunks from competing in vector search, which degrades retrieval quality.
+ *
+ * Inspired by the Blockify "semantic distillation" approach: redundant
+ * vectors in the same region of embedding space distribute probability
+ * mass across all of them, pulling the match score down for the canonical
+ * version. Collapse them and the signal sharpens.
+ *
+ * @param embeddings - The embedding vectors to deduplicate.
+ * @param threshold - Cosine similarity above which two embeddings are
+ *                    considered duplicates (default: 0.85).
+ * @returns Indices of kept embeddings (in original order).
+ */
+export function deduplicateEmbeddingIndices(
+  embeddings: number[][],
+  threshold: number = DEDUP_SIMILARITY_THRESHOLD,
+): number[] {
+  if (embeddings.length <= 1) return embeddings.map((_, i) => i);
+
+  const kept: number[] = [];
+  const removed = new Set<number>();
+
+  for (let i = 0; i < embeddings.length; i++) {
+    if (removed.has(i)) continue;
+    kept.push(i);
+
+    // Check all subsequent embeddings against this one
+    for (let j = i + 1; j < embeddings.length; j++) {
+      if (removed.has(j)) continue;
+      const sim = cosineSimilarity(embeddings[i], embeddings[j]);
+      if (sim >= threshold) {
+        removed.add(j);
+      }
+    }
+  }
+
+  return kept;
+}
+
+/**
+ * Deduplicate text chunks by their embedding similarity.
+ *
+ * Returns the surviving chunks (near-duplicates removed) and the indices
+ * that were removed.
+ *
+ * @param chunks - The text chunks to deduplicate.
+ * @param embeddings - The corresponding embedding vectors (same length).
+ * @param threshold - Cosine similarity threshold (default: 0.85).
+ */
+export function deduplicateChunks<T>(
+  chunks: T[],
+  embeddings: number[][],
+  threshold: number = DEDUP_SIMILARITY_THRESHOLD,
+): DedupResult<T> {
+  if (chunks.length <= 1) {
+    return { kept: chunks, removedIndices: [] };
+  }
+
+  const keptIndices = deduplicateEmbeddingIndices(embeddings, threshold);
+  const keptSet = new Set(keptIndices);
+  const removedIndices: number[] = [];
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (!keptSet.has(i)) removedIndices.push(i);
+  }
+
+  return {
+    kept: keptIndices.map((i) => chunks[i]),
+    removedIndices,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Query-shaped embeddings (synthetic questions)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate synthetic questions for a document from its extracted metadata.
+ *
+ * Instead of embedding only the raw chunk text, we also embed question-shaped
+ * representations of the document's key facts. This improves retrieval because:
+ *   - User queries are questions → matching against question-embeddings is
+ *     structurally aligned (query-to-question similarity > query-to-prose similarity)
+ *   - Each question captures one atomic claim, not a chunk of narrative
+ *
+ * Inspired by the "IdeaBlock" concept: embed claims, not chunks.
+ *
+ * @param title - The document title (e.g. "Stromrechnung Juli 2024").
+ * @param summary - The document summary (1-3 sentences).
+ * @param documentType - The document type (invoice, letter, medical, etc.).
+ * @param persons - Person names mentioned in the document.
+ * @param organization - Organization name (if any).
+ * @returns An array of synthetic question strings to embed alongside chunks.
+ */
+export function generateSyntheticQuestions(params: {
+  title: string | null;
+  summary: string | null;
+  documentType: string | null;
+  persons: string[];
+  organization: string | null;
+}): string[] {
+  const questions: string[] = [];
+  const { title, summary, documentType, persons, organization } = params;
+
+  // Question from title + type
+  if (title) {
+    const typeLabel = documentType
+      ? DOCUMENT_TYPE_QUESTION_LABELS[documentType] ?? "Dokument"
+      : "Dokument";
+    questions.push(`Was steht in ${title} (${typeLabel})?`);
+  }
+
+  // Question from summary
+  if (summary && summary.trim()) {
+    questions.push(`Welche Informationen enthält ${title ?? "das Dokument"}? ${summary.trim()}`);
+  }
+
+  // Question from person association
+  for (const person of persons) {
+    if (person.trim()) {
+      questions.push(
+        `Welche Dokumente betreffen ${person.trim()}?`,
+      );
+    }
+  }
+
+  // Question from organization
+  if (organization && organization.trim()) {
+    questions.push(
+      `Welche Dokumente gibt es von ${organization.trim()}?`,
+    );
+  }
+
+  return questions;
+}
+
+/** Human-readable German labels for document types in question form. */
+const DOCUMENT_TYPE_QUESTION_LABELS: Record<string, string> = {
+  invoice: "Rechnung",
+  letter: "Brief",
+  contract: "Vertrag",
+  medical: "Arztbrief",
+  school: "Schulbrief",
+  insurance: "Versicherungsdokument",
+  tax: "Steuerunterlage",
+  other: "Dokument",
+};
 
 // ---------------------------------------------------------------------------
 // Query embedding (for semantic search)

@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  FileText,
-  ImageIcon,
   Loader2,
   RefreshCw,
   AlertCircle,
@@ -11,18 +9,19 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/format";
 import {
   getStatusLabel,
   getStatusBadgeClasses,
   isProcessingStatus,
-  isImageMimeType,
-  isPdfMimeType,
+  getFileIcon,
   FAILED_CARD_COPY,
 } from "@/lib/schemas/document";
 import {
   DOCUMENT_TYPE_LABELS,
   type DocumentType,
 } from "@/lib/schemas/extraction";
+import { CardActions } from "@/components/ordilo/card-actions";
 
 /**
  * Props for the DocumentCard component.
@@ -44,19 +43,14 @@ export interface DocumentCardProps {
   onClick?: () => void;
   /** Retry handler — shown when status is "failed". Re-triggers the failed pipeline step. */
   onRetry?: () => void;
+  /** Edit handler — opens the edit sheet when provided. */
+  onEdit?: () => void;
+  /** Delete handler — opens the delete confirmation when provided. */
+  onDelete?: () => void;
   /** Optional document type (enum value, e.g. "invoice"). When provided, the German label is rendered alongside the title. Unknown/null values render nothing. */
   documentType?: string | null;
   /** Optional additional className. */
   className?: string;
-}
-
-/**
- * Get the appropriate file icon based on MIME type.
- */
-function getFileIcon(mimeType: string | null | undefined): LucideIcon {
-  if (mimeType && isImageMimeType(mimeType)) return ImageIcon;
-  if (mimeType && isPdfMimeType(mimeType)) return FileText;
-  return FileText;
 }
 
 /**
@@ -77,35 +71,6 @@ function getDocumentTypeLabel(
 }
 
 /**
- * Get a human-readable relative time in German.
- * e.g. "vor 2 Stunden", "vor 3 Tagen", "gerade eben".
- */
-function formatRelativeTime(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-
-  const date = new Date(iso);
-  if (isNaN(date.getTime())) return null;
-
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffSeconds = Math.floor(diffMs / 1000);
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  const diffHours = Math.floor(diffMinutes / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffSeconds < 60) return "gerade eben";
-  if (diffMinutes < 60) return `vor ${diffMinutes} Minute${diffMinutes === 1 ? "" : "n"}`;
-  if (diffHours < 24) return `vor ${diffHours} Stunde${diffHours === 1 ? "" : "n"}`;
-  if (diffDays < 7) return `vor ${diffDays} Tag${diffDays === 1 ? "" : "en"}`;
-
-  // For older dates, show DD.MM.YYYY
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const year = date.getFullYear();
-  return `${day}.${month}.${year}`;
-}
-
-/**
  * Status icon shown next to the badge for quick visual scanning.
  */
 function getStatusIcon(status: string): LucideIcon | null {
@@ -123,8 +88,8 @@ function getStatusIcon(status: string): LucideIcon | null {
  * animation, error display, and retry affordance.
  *
  * Visual design:
- * - Warm card surface (sand) with 20px radius and soft shadow
- * - File-type icon (image or PDF) on the left
+ * - Warm card surface (sand) with 12px radius and soft shadow
+ * - Compact file-type icon (40px sand-light square, 12px radius, mist-dark icon)
  * - Title and relative timestamp in the center
  * - Status badge on the right with German label and color coding
  * - Processing animation (spinning loader) when status is ocr_processing or analyzing
@@ -148,6 +113,8 @@ export function DocumentCard({
   createdAt,
   onClick,
   onRetry,
+  onEdit,
+  onDelete,
   documentType,
   className,
 }: DocumentCardProps) {
@@ -163,12 +130,12 @@ export function DocumentCard({
     <>
       {/* File-type icon */}
       <div
-        className="flex size-12 shrink-0 items-center justify-center rounded-ordilo-sm"
+        className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm"
         style={{ backgroundColor: "var(--secondary)" }}
         aria-hidden="true"
       >
         <FileIcon
-          className="size-6"
+          className="size-4.5"
           style={{ color: "var(--mist-dark)" }}
           strokeWidth={1.5}
         />
@@ -181,18 +148,18 @@ export function DocumentCard({
           {typeLabel && (
             <span
               data-testid="document-type-badge"
-              className="inline-flex shrink-0 items-center rounded-ordilo-pill border border-[var(--petrol)]/20 bg-[var(--petrol)]/10 px-2 py-0.5 text-xs font-medium text-[var(--petrol)]"
+              className="inline-flex shrink-0 items-center rounded-full border border-[var(--petrol)]/20 bg-[var(--petrol)]/10 px-1.5 py-0.5 text-[11px] font-medium text-[var(--petrol)]"
             >
               {typeLabel}
             </span>
           )}
         </div>
         {relativeTime && (
-          <p className="truncate text-sm text-muted-foreground">{relativeTime}</p>
+          <p className="truncate text-xs tabular-nums text-muted-foreground">{relativeTime}</p>
         )}
         {isFailed && (
           <p
-            className="mt-0.5 truncate text-sm text-destructive"
+            className="mt-0.5 truncate text-xs text-destructive"
             data-testid="document-failed-copy"
           >
             {FAILED_CARD_COPY}
@@ -200,23 +167,28 @@ export function DocumentCard({
         )}
       </div>
 
-      {/* Status badge + processing indicator */}
+      {/* Status badge + processing indicator + actions */}
       <div className="flex shrink-0 flex-col items-end gap-1.5">
-        <span
-          data-testid={`status-badge-${status}`}
-          className={cn(
-            "inline-flex items-center gap-1 rounded-ordilo-pill border px-2.5 py-1 text-xs font-medium",
-            getStatusBadgeClasses(status),
-          )}
-        >
-          {StatusIcon && (
-            <StatusIcon
-              className={cn("size-3", isProcessing && "animate-spin")}
-              aria-hidden="true"
-            />
-          )}
-          {getStatusLabel(status)}
-        </span>
+        <div className="flex items-center gap-1.5">
+          <span
+            data-testid={`status-badge-${status}`}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium",
+              getStatusBadgeClasses(status),
+            )}
+          >
+            {StatusIcon && (
+              <StatusIcon
+                className={cn("size-3", isProcessing && "animate-spin")}
+                aria-hidden="true"
+              />
+            )}
+            {getStatusLabel(status)}
+          </span>
+
+          {/* Card actions menu ("..." → edit / delete) */}
+          <CardActions onEdit={onEdit} onDelete={onDelete} />
+        </div>
 
         {/* Retry button for failed documents */}
         {isFailed && onRetry && (
@@ -227,11 +199,11 @@ export function DocumentCard({
               onRetry();
             }}
             className="inline-flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            aria-label="Erneut versuchen"
+            aria-label="Nochmal versuchen"
             data-testid="document-retry-button"
           >
             <RefreshCw className="size-3" aria-hidden="true" />
-            Erneut versuchen
+            Nochmal versuchen
           </button>
         )}
       </div>
@@ -255,7 +227,7 @@ export function DocumentCard({
         data-testid="document-card"
         data-status={status}
         className={cn(
-          "flex items-center gap-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card transition-all hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 cursor-pointer",
+          "flex items-center gap-2 rounded-ordilo-sm bg-card p-2.5 shadow-card card-lift focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 cursor-pointer",
           className,
         )}
       >
@@ -269,7 +241,7 @@ export function DocumentCard({
       data-testid="document-card"
       data-status={status}
       className={cn(
-        "flex items-center gap-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card",
+        "flex items-center gap-2 rounded-ordilo-sm bg-card p-2.5 shadow-card",
         className,
       )}
     >

@@ -4,26 +4,28 @@ import {
   useState,
   useCallback,
   useRef,
-  useEffect,
   useMemo,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, MessageCircle, X, Loader2 } from "lucide-react";
-import { AISearchBar } from "@/components/ordilo/ai-search-bar";
-import { SourceCard } from "@/components/ordilo/source-card";
-import { cn } from "@/lib/utils";
-import type { ChatSource } from "@/lib/schemas/chat";
-import type { DocumentType } from "@/lib/schemas/extraction";
+import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown } from "lucide-react";
+import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { useActiveSearch } from "@/lib/search/active-search-context";
+import { useDocumentViewer } from "@/lib/scan/scan-context";
+import type { ChatSource, AnswerCard as AnswerCardData } from "@/lib/schemas/chat";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { cn } from "@/lib/utils";
+import { MessageBubble, type ChatMessage } from "./message-bubble";
+import {
+  FilterChips,
+  type FilterType,
+  type ActiveFilter,
+} from "./filter-chips";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/**
- * Metadata for a confirmed document, used for filter chips and source card
- * filtering.
- */
 export interface DocumentMetadata {
   id: string;
   title: string | null;
@@ -32,47 +34,36 @@ export interface DocumentMetadata {
   persons: string[];
 }
 
-/**
- * Props for the SucheClient component.
- */
+export interface InitialMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  sources: ChatSource[];
+  card?: AnswerCardData;
+  feedback?: "positive" | "negative" | null;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  updated_at: string;
+}
+
 export interface SucheClientProps {
   familyId: string;
   familyName: string;
   members: Array<{ id: string; name: string }>;
   documents: DocumentMetadata[];
-  /**
-   * Optional initial query (e.g. from the Home dashboard search bar via
-   * /suche?q=…). When provided and non-empty, the query is auto-submitted
-   * on mount (VAL-HOME-002).
-   */
   initialQuery?: string;
-}
-
-/**
- * A single chat message in the conversation.
- */
-interface ChatMessage {
-  /** Unique ID for React keys. */
-  id: string;
-  /** "user" for user messages, "ai" for AI answers. */
-  role: "user" | "ai";
-  /** The message text (user query or AI answer). */
-  content: string;
-  /** Sources cited by the AI (only for AI messages). */
-  sources?: ChatSource[];
-  /** Whether this message had an error (AI error message). */
-  isError?: boolean;
+  conversationId?: string;
+  initialMessages?: InitialMessage[];
+  conversations?: ConversationSummary[];
 }
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/**
- * The four example queries shown in the empty state (VAL-SEARCH-021).
- * Clicking an example populates the search bar and submits it,
- * rendering the user message bubble and an AI answer.
- */
 const EXAMPLE_QUERIES = [
   "Zeig mir alle Dokumente von Emma",
   "Welche Fristen laufen bald ab?",
@@ -80,111 +71,64 @@ const EXAMPLE_QUERIES = [
   "Was muss ich diese Woche erledigen?",
 ] as const;
 
-/**
- * Filter types for the filter chips.
- */
-type FilterType = "person" | "category" | "document_type";
-
-/**
- * An active filter.
- */
-interface ActiveFilter {
-  type: FilterType;
-  value: string;
-  /** German label displayed on the chip. */
-  label: string;
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-/**
- * Search / Chat client component.
- *
- * The /suche page uses the AI search bar as the entry point for both search
- * and chat (VAL-CHAT-028). Submitting a natural-language query triggers the
- * chat flow (combined search + LLM synthesis via /api/chat), and results are
- * presented as a chat answer with source cards.
- *
- * Features:
- * - AI search bar (pill-shaped with sparkle icon) — Enter and button submit
- * - Empty state with 4 example queries (clicking submits them)
- * - Chat interface: user message bubbles + AI answer bubbles
- * - Source cards under AI answers (clickable → navigates to document)
- * - Chat history preserved during session
- * - Auto-scroll to latest message
- * - Loading indicator while awaiting response
- * - Filter chips (by person, category, document type) with clear
- * - German throughout, no internal terminology leaks
- *
- * @see VAL-SEARCH-020..034, VAL-CHAT-020..034, VAL-CROSS-011..012
- */
 export function SucheClient({
   familyId,
   members,
   documents,
   initialQuery = "",
+  initialMessages = [],
+  conversationId: initialConversationId = "",
+  conversations: initialConversations = [],
 }: SucheClientProps) {
   const router = useRouter();
+  const { openDocument } = useDocumentViewer();
 
-  // --- Chat state ---
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // --- Chat state (plain fetch + NDJSON stream, no AI SDK client) ---
+  const [messages, setMessages] = useState<ChatMessage[]>(
+    initialMessages.map((m) => ({
+      id: m.id,
+      role: m.role,
+      content: m.content,
+      sources: m.sources,
+      card: m.card,
+      feedback: m.feedback ?? null,
+    })),
+  );
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(false);
+  const [rateLimitError, setRateLimitError] = useState(false);
+  const [streamingId, setStreamingId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState(initialConversationId);
+  const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
+  const [showChatList, setShowChatList] = useState(false);
 
   // --- Filter state ---
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
 
-  // --- Search bar value (controlled) ---
-  // Owned by SucheClient so that example queries can populate the search
-  // bar before submission (the query is briefly visible before it runs).
-  const [searchBarValue, setSearchBarValue] = useState("");
-
   // --- Auto-scroll ref ---
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // -------------------------------------------------------------------------
-  // Current result set (VAL-SEARCH-032)
+  // Current result set (latest assistant message sources)
   // -------------------------------------------------------------------------
 
-  /**
-   * The document IDs of the current result set — the sources cited by the
-   * most recent AI message. When the latest query returned no sources (e.g.
-   * "Ich finde dazu kein Dokument."), there is no current result set and
-   * filter chips must not render.
-   *
-   * Person chips are derived strictly from these result documents, not the
-   * full family/confirmed-document set, so no unrelated chips appear.
-   */
   const currentResultDocIds = useMemo(() => {
-    const lastAiMessage = [...messages]
+    const lastAi = [...messages]
       .reverse()
-      .find((m) => m.role === "ai");
-    return new Set(lastAiMessage?.sources?.map((s) => s.document_id) ?? []);
+      .find((m) => m.role === "assistant");
+    return new Set(lastAi?.sources?.map((s) => s.document_id) ?? []);
   }, [messages]);
 
   const hasResults = currentResultDocIds.size > 0;
 
   // -------------------------------------------------------------------------
-  // Filter chips computation (VAL-SEARCH-032)
+  // Filter chip computation
   // -------------------------------------------------------------------------
 
-  /**
-   * Compute available filter facets from the CURRENT result set, not the
-   * full family/confirmed-document set.
-   *
-   * - Person chips: family members linked to at least one document in the
-   *   current result set (via the documents[].persons array).
-   * - Category chips: distinct non-null categories from the result
-   *   documents.
-   * - Document type chips: distinct non-null document types from the result
-   *   documents, labeled in German.
-   *
-   * No empty chips are produced (null/blank category and document_type
-   * values are skipped). Chips only render after a result set exists (see
-   * `hasResults` / `hasFacets` in the render section).
-   */
   const facets = useMemo(() => {
     const personsInResults = new Set<string>();
     const categories = new Set<string>();
@@ -195,57 +139,64 @@ export function SucheClient({
       for (const person of doc.persons) {
         if (person.trim()) personsInResults.add(person);
       }
-      if (doc.category?.trim()) {
-        categories.add(doc.category.trim());
-      }
-      if (doc.document_type?.trim()) {
-        docTypes.add(doc.document_type.trim());
-      }
+      if (doc.category?.trim()) categories.add(doc.category.trim());
+      if (doc.document_type?.trim()) docTypes.add(doc.document_type.trim());
     }
 
-    // Person chips: only members that appear in the current result set.
     const personChips = members
       .filter((m) => personsInResults.has(m.name))
       .map((m) => ({ value: m.name, label: m.name }));
 
-    const categoryChips = [...categories]
-      .sort()
-      .map((c) => ({ value: c, label: c }));
+    const categoryChips = [...categories].sort().map((c) => ({
+      value: c,
+      label: c,
+    }));
 
-    const docTypeChips = [...docTypes]
-      .sort()
-      .map((dt) => ({
-        value: dt,
-        label: DOCUMENT_TYPE_LABELS[dt as DocumentType] ?? dt,
-      }));
+    const docTypeChips = [...docTypes].sort().map((dt) => ({
+      value: dt,
+      label: DOCUMENT_TYPE_LABELS[dt as keyof typeof DOCUMENT_TYPE_LABELS] ?? dt,
+    }));
 
     return { personChips, categoryChips, docTypeChips };
   }, [members, documents, currentResultDocIds]);
 
   // -------------------------------------------------------------------------
-  // Source card filtering (VAL-SEARCH-028..031)
+  // Stale filter reconciliation — derived inline (Rule 1: derive state)
+  // -------------------------------------------------------------------------
+  const effectiveFilters = useMemo(() => {
+    if (activeFilters.length === 0) return activeFilters;
+    const validKeys = new Set<string>();
+    for (const chip of facets.personChips) {
+      validKeys.add(`person::${chip.value.toLowerCase()}`);
+    }
+    for (const chip of facets.categoryChips) {
+      validKeys.add(`category::${chip.value.toLowerCase()}`);
+    }
+    for (const chip of facets.docTypeChips) {
+      validKeys.add(`document_type::${chip.value.toLowerCase()}`);
+    }
+    return activeFilters.filter((f) =>
+      validKeys.has(`${f.type}::${f.value.toLowerCase()}`),
+    );
+  }, [activeFilters, facets]);
+
+  // -------------------------------------------------------------------------
+  // Source card filtering
   // -------------------------------------------------------------------------
 
-  /**
-   * Check if a document (by ID) passes all active filters.
-   */
   const passesFilters = useCallback(
     (docId: string): boolean => {
-      if (activeFilters.length === 0) return true;
-
+      if (effectiveFilters.length === 0) return true;
       const doc = documents.find((d) => d.id === docId);
       if (!doc) return false;
-
-      return activeFilters.every((filter) => {
+      return effectiveFilters.every((filter) => {
         if (filter.type === "person") {
           return doc.persons.some(
             (p) => p.toLowerCase() === filter.value.toLowerCase(),
           );
         }
         if (filter.type === "category") {
-          return (
-            doc.category?.toLowerCase() === filter.value.toLowerCase()
-          );
+          return doc.category?.toLowerCase() === filter.value.toLowerCase();
         }
         if (filter.type === "document_type") {
           return (
@@ -255,12 +206,8 @@ export function SucheClient({
         return true;
       });
     },
-    [activeFilters, documents],
+    [effectiveFilters, documents],
   );
-
-  // -------------------------------------------------------------------------
-  // Filter chip toggle
-  // -------------------------------------------------------------------------
 
   const toggleFilter = useCallback(
     (type: FilterType, value: string, label: string) => {
@@ -269,13 +216,8 @@ export function SucheClient({
           (f) => f.type === type && f.value === value,
         );
         if (existing) {
-          // Toggle off → remove the filter (VAL-SEARCH-031).
-          return prev.filter(
-            (f) => !(f.type === type && f.value === value),
-          );
+          return prev.filter((f) => !(f.type === type && f.value === value));
         }
-        // Toggle on → add the filter. Remove any other filter of the same
-        // type (only one filter per type active at a time for clarity).
         return [
           ...prev.filter((f) => f.type !== type),
           { type, value, label },
@@ -290,173 +232,288 @@ export function SucheClient({
   }, []);
 
   // -------------------------------------------------------------------------
-  // Stale filter reconciliation (m4 scrutiny round 2)
+  // Conversation management
   // -------------------------------------------------------------------------
 
-  /**
-   * When a new result set arrives, drop any active filter whose facet value
-   * is no longer present in the current result set. Without this, a filter
-   * activated from a previous answer (e.g. person "Hanna") would persist and
-   * hide source cards in subsequent answers that do not reference that facet,
-   * until the user manually clicks "Zurücksetzen".
-   *
-   * Filters still present in the new result set remain applied. When the
-   * latest query returns no sources, all active filters are cleared (there
-   * are no facets to match against).
-   *
-   * The effect depends on `facets`, which is recomputed (new reference) only
-   * when the result set changes, so toggling a filter does not trigger
-   * reconciliation.
-   */
-  useEffect(() => {
-    setActiveFilters((prev) => {
-      if (prev.length === 0) return prev;
+  const handleNewChat = useCallback(() => {
+    setShowChatList(false);
+    // Reset chat state so the empty state shows immediately
+    setMessages([]);
+    setActiveConversationId("");
+    setError(false);
+    setRateLimitError(false);
+    setStreamingId(null);
+    setActiveFilters([]);
+    // Clear the URL so the server also knows we're on a new chat
+    if (window.location.search.includes("chat=")) {
+      router.push("/suche");
+    }
+  }, [router]);
 
-      const validKeys = new Set<string>();
-      for (const chip of facets.personChips) {
-        validKeys.add(`person::${chip.value.toLowerCase()}`);
-      }
-      for (const chip of facets.categoryChips) {
-        validKeys.add(`category::${chip.value.toLowerCase()}`);
-      }
-      for (const chip of facets.docTypeChips) {
-        validKeys.add(`document_type::${chip.value.toLowerCase()}`);
-      }
+  const handleSelectChat = useCallback((chatId: string) => {
+    setShowChatList(false);
+    router.push(`/suche?chat=${chatId}`);
+  }, [router]);
 
-      const reconciled = prev.filter((f) =>
-        validKeys.has(`${f.type}::${f.value.toLowerCase()}`),
-      );
-
-      // Avoid a state update (and extra render) when nothing changed.
-      if (reconciled.length === prev.length) return prev;
-      return reconciled;
-    });
-  }, [facets]);
+  const handleDeleteChat = useCallback(async (chatId: string) => {
+    try {
+      await fetch(`/api/conversations/${chatId}`, { method: "DELETE" });
+      setConversations((prev) => prev.filter((c) => c.id !== chatId));
+      // If we deleted the active conversation, go to new chat
+      if (chatId === activeConversationId) {
+        router.push("/suche");
+      }
+    } catch {
+      // Silent fail — user can retry
+    }
+  }, [activeConversationId, router]);
 
   // -------------------------------------------------------------------------
-  // Auto-scroll to latest message (VAL-CHAT-022)
+  // Auto-scroll — ResizeObserver on the messages container (Rule 4: DOM
+  // integration). Observes DOM size changes directly instead of syncing
+  // with React state via dependency arrays.
   // -------------------------------------------------------------------------
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (messagesEndRef.current?.scrollIntoView) {
-      messagesEndRef.current.scrollIntoView({
+  // Auto-scroll: observe the messages container for size changes (new
+  // messages, streaming text) and scroll to the bottom. Re-connect when
+  // the container appears (after the first message, when the Empty State
+  // is replaced by the messages list).
+  const scrollObserverRef = useRef<ResizeObserver | null>(null);
+  useMountEffect(() => {
+    const connect = () => {
+      const container = messagesContainerRef.current;
+      if (!container) return;
+
+      // Disconnect any previous observer
+      scrollObserverRef.current?.disconnect();
+
+      const observer = new ResizeObserver(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
+      });
+      observer.observe(container);
+      scrollObserverRef.current = observer;
+
+      // Also scroll immediately when connecting
+      messagesEndRef.current?.scrollIntoView({
         behavior: "smooth",
         block: "end",
       });
-    }
-  }, [messages, isLoading]);
+    };
+
+    // Check periodically for the container to appear (when messages list
+    // replaces the empty state). Once connected, the ResizeObserver handles
+    // subsequent changes.
+    const interval = window.setInterval(() => {
+      if (messagesContainerRef.current) {
+        connect();
+        window.clearInterval(interval);
+      }
+    }, 100);
+
+    return () => {
+      window.clearInterval(interval);
+      scrollObserverRef.current?.disconnect();
+    };
+  });
 
   // -------------------------------------------------------------------------
-  // Submit handler — calls /api/chat and updates the conversation
+  // Submit handler — streaming fetch to /api/chat (NDJSON)
   // -------------------------------------------------------------------------
 
   const handleSubmit = useCallback(
     async (query: string) => {
       if (!query.trim() || isLoading) return;
 
-      // Add the user message immediately.
-      const userMessage: ChatMessage = {
-        id: crypto.randomUUID(),
-        role: "user",
-        content: query,
-      };
-      setMessages((prev) => [...prev, userMessage]);
+      setError(false);
+      setRateLimitError(false);
       setIsLoading(true);
 
+      const userMsg: ChatMessage = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: query,
+        sources: [],
+      };
+
+      const aiMsgId = `ai-${Date.now()}`;
+      const aiMsg: ChatMessage = {
+        id: aiMsgId,
+        role: "assistant",
+        content: "",
+        sources: [],
+      };
+
+      setMessages((prev) => [...prev, userMsg, aiMsg]);
+      setStreamingId(aiMsgId);
+
+      // Build history from messages before this query.
+      // Include source context so the model knows which documents were
+      // found in previous turns — enables follow-up questions like
+      // "Welche davon hat Fristen?" without re-searching.
+      const history = messages.map((m) => {
+        const entry: { role: string; content: string } = {
+          role: m.role,
+          content: m.content,
+        };
+        if (m.role === "assistant" && m.sources && m.sources.length > 0) {
+          entry.content = `${m.content}\n\n[Gefundene Dokumente: ${m.sources.map((s) => s.title ?? s.document_id).join(", ")}]`;
+        }
+        return entry;
+      });
+
       try {
-        const response = await fetch("/api/chat", {
+        const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: query, family_id: familyId }),
+          body: JSON.stringify({
+            message: query,
+            family_id: familyId,
+            history,
+            conversation_id: activeConversationId || undefined,
+          }),
         });
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          // Friendly German error message (VAL-CHAT-011, no stack trace).
-          const aiMessage: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: "ai",
-            content:
-              "Die Suche ist leider fehlgeschlagen. Bitte versuche es erneut.",
-            isError: true,
-          };
-          setMessages((prev) => [...prev, aiMessage]);
+        if (!res.ok) {
+          if (res.status === 429) {
+            setRateLimitError(true);
+          } else {
+            setError(true);
+          }
+          setStreamingId(null);
           return;
         }
 
-        // Add the AI answer with sources.
-        const aiMessage: ChatMessage = {
-          id: crypto.randomUUID(),
-          role: "ai",
-          content: data.answer,
-          sources: data.sources ?? [],
-        };
-        setMessages((prev) => [...prev, aiMessage]);
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let accumulatedText = "";
+
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const data = JSON.parse(line);
+              if (data.type === "text") {
+                accumulatedText += data.content;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === aiMsgId
+                      ? { ...m, content: accumulatedText }
+                      : m,
+                  ),
+                );
+              } else if (data.type === "card") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === aiMsgId ? { ...m, card: data.card } : m,
+                  ),
+                );
+              } else if (data.type === "sources") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === aiMsgId
+                      ? { ...m, sources: data.sources as ChatSource[] }
+                      : m,
+                  ),
+                );
+              } else if (data.type === "confirmation_request") {
+                // A destructive tool (mark_task_done) needs user
+                // confirmation. The model will also ask in its text, but
+                // this event lets the client render a confirmation UI.
+                // For now, we rely on the model's text response to ask
+                // for confirmation. The event is available for future
+                // UI enhancement (e.g. inline confirm buttons).
+              } else if (data.type === "conversation") {
+                // Conversation ID from the server — update URL and state
+                const newId = data.conversation_id as string;
+                if (newId && newId !== activeConversationId) {
+                  setActiveConversationId(newId);
+                  // Update URL without full reload
+                  const url = new URL(window.location.href);
+                  url.searchParams.set("chat", newId);
+                  window.history.replaceState({}, "", url.toString());
+                  // Add to conversation list if new
+                  if (!conversations.find((c) => c.id === newId)) {
+                    setConversations((prev) => [
+                      { id: newId, title: query.substring(0, 50) + (query.length > 50 ? "…" : ""), updated_at: new Date().toISOString() },
+                      ...prev,
+                    ]);
+                  }
+                }
+              } else if (data.type === "error") {
+                setError(true);
+              }
+            } catch {
+              // Ignore partial/unparseable lines.
+            }
+          }
+        }
       } catch {
-        // Network error → friendly German message.
-        const aiMessage: ChatMessage = {
-          id: crypto.randomUUID(),
-          role: "ai",
-          content:
-            "Die Suche ist leider fehlgeschlagen. Bitte versuche es erneut.",
-          isError: true,
-        };
-        setMessages((prev) => [...prev, aiMessage]);
+        setError(true);
       } finally {
+        setStreamingId(null);
         setIsLoading(false);
       }
     },
-    [familyId, isLoading],
+    [familyId, isLoading, messages, activeConversationId, conversations],
   );
 
   // -------------------------------------------------------------------------
-  // Auto-submit initial query from Home dashboard (VAL-HOME-002)
+  // Register the live submit handler with the global topbar (VAL-NAV): a
+  // query typed into the topbar from anywhere lands in THIS conversation
+  // instead of navigating away and losing thread continuity. Plain ref
+  // write during render (Rule 4/5: mirrors handleSubmitRef below), cleared
+  // on unmount so the topbar falls back to redirect-based search.
   // -------------------------------------------------------------------------
+  const { setActiveHandler } = useActiveSearch();
+  setActiveHandler(handleSubmit);
+  useMountEffect(() => () => setActiveHandler(null));
 
-  /**
-   * When the page is navigated to with a `q` param (e.g. from the Home
-   * dashboard's AI search bar), the initialQuery is auto-submitted once
-   * on mount. This populates the search bar and fetches the AI answer
-   * immediately, so the user sees results without an extra step.
-   */
+  // -------------------------------------------------------------------------
+  // Auto-submit initial query (Rule 4: mount-only external sync)
+  // -------------------------------------------------------------------------
   const initialQuerySubmitted = useRef(false);
-  useEffect(() => {
-    if (initialQuery && !initialQuerySubmitted.current && !isLoading) {
+  const handleSubmitRef = useRef(handleSubmit);
+  handleSubmitRef.current = handleSubmit;
+  useMountEffect(() => {
+    if (initialQuery && !initialQuerySubmitted.current) {
       initialQuerySubmitted.current = true;
-      setSearchBarValue(initialQuery);
-      handleSubmit(initialQuery);
+      void handleSubmitRef.current(initialQuery);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQuery]);
+  });
 
   // -------------------------------------------------------------------------
-  // Source card click handler (VAL-SEARCH-027)
+  // Source card click — open the shared document detail sheet in place
   // -------------------------------------------------------------------------
 
   const handleSourceCardClick = useCallback(
     (documentId: string) => {
-      router.push(`/scan?doc=${documentId}`);
+      void openDocument(documentId);
     },
-    [router],
+    [openDocument],
   );
 
   // -------------------------------------------------------------------------
-  // Example query click handler (VAL-SEARCH-021)
+  // Example query click — submits straight away. The search bar itself now
+  // lives outside this component (the global bottom composer, uniform
+  // across every route — VAL-NAV), so there's no local input left to
+  // animate a "typing" preview into.
   // -------------------------------------------------------------------------
 
-  /**
-   * Populate the search bar with the example query (so it is briefly
-   * visible to the user) and then submit it via the same path as
-   * Enter/Senden — calling handleSubmit renders the user message bubble
-   * and fetches the AI answer.
-   */
   const handleExampleClick = useCallback(
     (query: string) => {
-      // Set the search bar value first so the query is briefly visible,
-      // then submit via the same path as Enter/Senden (VAL-SEARCH-021).
-      setSearchBarValue(query);
-      handleSubmit(query);
+      void handleSubmit(query);
     },
     [handleSubmit],
   );
@@ -477,85 +534,243 @@ export function SucheClient({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col" style={{ minHeight: "calc(100dvh - 140px)" }}>
-      {/* Filter chips — only rendered after a result set exists and at
-          least one facet is available (VAL-SEARCH-032). No chips render
-          before any results exist, and chips are derived from the current
-          result set so no empty or unrelated chips appear. */}
-      {hasFacets && (
-        <FilterChips
-          facets={facets}
-          activeFilters={activeFilters}
-          onToggle={toggleFilter}
-          onClearAll={clearAllFilters}
-        />
+    <div className="relative flex h-[calc(100dvh-160px)] flex-col overflow-hidden lg:h-[calc(100dvh-96px)]">
+      {/* Chat header bar — dropdown trigger + new chat */}
+      <div className="flex items-center gap-2 border-b border-border/30 pb-2">
+        <button
+          type="button"
+          onClick={() => setShowChatList(!showChatList)}
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-ordilo-sm px-2.5 py-1.5 text-sm transition-colors hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          aria-label="Chat-Historie öffnen"
+          data-testid="chat-history-toggle"
+        >
+          <MessageSquare
+            className="size-3.5 shrink-0 text-muted-foreground/50"
+            aria-hidden="true"
+          />
+          <span className="truncate text-muted-foreground">
+            {conversations.find((c) => c.id === activeConversationId)?.title || "Neuer Chat"}
+          </span>
+          <ChevronDown
+            className={cn(
+              "size-3.5 shrink-0 text-muted-foreground/40 transition-transform",
+              showChatList && "rotate-180",
+            )}
+            aria-hidden="true"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={handleNewChat}
+          className="flex shrink-0 items-center gap-1.5 rounded-ordilo-sm px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          aria-label="Neuer Chat"
+          data-testid="new-chat-button"
+        >
+          <Plus className="size-3.5" aria-hidden="true" />
+          <span className="hidden sm:inline">Neu</span>
+        </button>
+      </div>
+
+      {/* Chat history dropdown — floating panel */}
+      {showChatList && (
+        <div
+          className="absolute left-2 right-2 top-10 z-50 rounded-ordilo-sm border border-border/60 bg-background shadow-lg animate-in fade-in-0 slide-in-from-top-1"
+          data-testid="chat-list-dropdown"
+        >
+          {/* Click-outside overlay */}
+          <div
+            className="fixed inset-0 -z-10"
+            onClick={() => setShowChatList(false)}
+          />
+          <ChatList
+            conversations={conversations}
+            activeId={activeConversationId}
+            onSelect={handleSelectChat}
+            onDelete={handleDeleteChat}
+          />
+        </div>
       )}
 
-      {/* Chat conversation area */}
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto"
-        aria-live="polite"
-        aria-label="Konversation"
-      >
-        {!hasMessages && !isLoading ? (
-          /* Empty state (VAL-SEARCH-021, VAL-DESIGN-002) */
-          <EmptyState onExampleClick={handleExampleClick} />
-        ) : (
-          <div className="space-y-4 py-2">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                passesFilters={passesFilters}
-                onSourceCardClick={handleSourceCardClick}
-              />
-            ))}
+      {/* Chat area */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        {hasFacets && (
+          <FilterChips
+            facets={facets}
+            activeFilters={activeFilters}
+            onToggle={toggleFilter}
+            onClearAll={clearAllFilters}
+          />
+        )}
 
-            {/* Loading indicator (VAL-CHAT-025) */}
-            {isLoading && (
-              <div
-                data-testid="chat-loading-indicator"
-                className="flex items-start gap-2"
-              >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]">
-                  <Sparkles
-                    className="size-4 text-white"
-                    aria-hidden="true"
-                  />
-                </div>
-                <div className="rounded-ordilo-md rounded-tl-sm bg-card px-4 py-3 shadow-card">
-                  <div className="flex items-center gap-2">
-                    <Loader2
-                      className="size-4 animate-spin text-[var(--petrol)]"
-                      aria-hidden="true"
-                    />
-                    <span className="text-sm text-muted-foreground">
-                      Ordilo denkt nach…
-                    </span>
+        <div
+          className="flex-1 overflow-y-auto"
+          aria-live="polite"
+          aria-label="Konversation"
+        >
+          {!hasMessages && !isLoading ? (
+            <EmptyState onExampleClick={handleExampleClick} />
+          ) : (
+            <div ref={messagesContainerRef} className="space-y-4 py-2">
+              {messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  isStreaming={message.id === streamingId}
+                  passesFilters={passesFilters}
+                  onSourceCardClick={handleSourceCardClick}
+                />
+              ))}
+
+              {error && (
+                <div className="flex flex-col items-start gap-2 animate-message-in">
+                  <div className="flex items-start gap-2">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]">
+                      <Sparkles
+                        className="size-4 text-white"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <div className="max-w-[85%] rounded-ordilo-md rounded-tl-sm border border-destructive/30 bg-card px-4 py-3 shadow-card lg:max-w-full animate-error-shake">
+                      <p className="text-sm leading-relaxed text-destructive">
+                        Da ist was schiefgegangen. Bitte frag nochmal.
+                      </p>
+                    </div>
                   </div>
                 </div>
+              )}
+
+              {rateLimitError && (
+                <div className="flex flex-col items-start gap-2 animate-message-in">
+                  <div className="flex items-start gap-2">
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]">
+                      <Sparkles
+                        className="size-4 text-white"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <div className="max-w-[85%] rounded-ordilo-md rounded-tl-sm border border-border bg-card px-4 py-3 shadow-card lg:max-w-full">
+                      <p className="text-sm leading-relaxed text-muted-foreground">
+                        Du hast heute viele Fragen gestellt. Das Tageslimit ist erreicht — bitte morgen weiter.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ChatList component — grouped, premium sidebar
+// ---------------------------------------------------------------------------
+
+function groupConversationsByDate(
+  conversations: ConversationSummary[],
+): { label: string; items: ConversationSummary[] }[] {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  const weekStart = new Date(todayStart.getTime() - 7 * 86400000);
+
+  const groups: { label: string; items: ConversationSummary[] }[] = [
+    { label: "Heute", items: [] },
+    { label: "Gestern", items: [] },
+    { label: "Diese Woche", items: [] },
+    { label: "Früher", items: [] },
+  ];
+
+  for (const conv of conversations) {
+    const d = new Date(conv.updated_at);
+    if (d >= todayStart) {
+      groups[0].items.push(conv);
+    } else if (d >= yesterdayStart) {
+      groups[1].items.push(conv);
+    } else if (d >= weekStart) {
+      groups[2].items.push(conv);
+    } else {
+      groups[3].items.push(conv);
+    }
+  }
+
+  return groups.filter((g) => g.items.length > 0);
+}
+
+function ChatList({
+  conversations,
+  activeId,
+  onSelect,
+  onDelete,
+}: {
+  conversations: ConversationSummary[];
+  activeId: string;
+  onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
+}) {
+  const groups = groupConversationsByDate(conversations);
+
+  return (
+    <div className="flex max-h-[400px] flex-col overflow-y-auto p-1.5">
+      {groups.length === 0 ? (
+        <p className="px-2.5 py-4 text-xs text-muted-foreground/30">
+          Noch keine Chats.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {groups.map((group) => (
+            <div key={group.label}>
+              <p className="px-2 py-1 text-[10px] font-medium text-muted-foreground/30">
+                {group.label}
+              </p>
+              <div className="flex flex-col">
+                {group.items.map((conv) => {
+                  const isActive = conv.id === activeId;
+                  return (
+                    <div
+                      key={conv.id}
+                      className={cn(
+                        "group flex items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors cursor-pointer",
+                        isActive
+                          ? "bg-secondary/50"
+                          : "hover:bg-secondary/20",
+                      )}
+                      onClick={() => onSelect(conv.id)}
+                      data-testid={`chat-list-item-${conv.id}`}
+                    >
+                      <p
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-sm",
+                          isActive
+                            ? "font-medium text-foreground"
+                            : "text-muted-foreground",
+                        )}
+                      >
+                        {conv.title || "Neuer Chat"}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(conv.id);
+                        }}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground/20 opacity-0 transition-all hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                        aria-label="Chat löschen"
+                      >
+                        <Trash2 className="size-3" aria-hidden="true" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-            )}
-
-            {/* Auto-scroll anchor */}
-            <div ref={messagesEndRef} />
-          </div>
-        )}
-      </div>
-
-      {/* AI search bar — fixed at the bottom of the content area.
-          Controlled by SucheClient so example queries can populate the
-          bar before submission (VAL-SEARCH-021). */}
-      <div className="sticky bottom-0 bg-background/95 pt-3 backdrop-blur-sm">
-        <AISearchBar
-          value={searchBarValue}
-          onValueChange={setSearchBarValue}
-          onSubmit={handleSubmit}
-          isLoading={isLoading}
-          placeholder="Frage Ordilo oder suche nach Dokumenten…"
-        />
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -564,13 +779,6 @@ export function SucheClient({
 // Sub-components
 // ---------------------------------------------------------------------------
 
-/**
- * Empty state for the search page (VAL-SEARCH-021, VAL-DESIGN-002).
- *
- * Shows a warm welcome message and four clickable example queries.
- * Clicking an example populates the search bar and submits it,
- * rendering the user message bubble and an AI answer (VAL-SEARCH-021).
- */
 function EmptyState({
   onExampleClick,
 }: {
@@ -581,36 +789,33 @@ function EmptyState({
       data-testid="suche-empty-state"
       className="flex flex-col items-center px-2 py-8 text-center"
     >
-      {/* Warm illustration area */}
       <div
         className="mb-5 flex size-20 items-center justify-center rounded-full"
         style={{ backgroundColor: "var(--secondary)" }}
         aria-hidden="true"
       >
-        <MessageCircle
-          className="size-9"
+        <OrdiloMascot
+          size={44}
+          mood="searching"
           style={{ color: "var(--petrol)" }}
-          strokeWidth={1.5}
         />
       </div>
 
-      {/* Welcome heading */}
-      <h2 className="text-xl font-semibold text-foreground">
-        Was möchtest du finden?
+      <h2 className="text-lg font-semibold text-foreground">
+        Wie kann ich dir helfen?
       </h2>
       <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
         Frag Ordilo alles über deine Dokumente. Hier sind ein paar Ideen:
       </p>
 
-      {/* Example queries */}
-      <div className="mt-6 w-full space-y-2.5">
+      <div className="mt-6 grid w-full grid-cols-1 gap-2.5 stagger-children lg:grid-cols-2">
         {EXAMPLE_QUERIES.map((query) => (
           <button
             key={query}
             type="button"
             onClick={() => onExampleClick(query)}
             data-testid="example-query"
-            className="flex w-full items-center gap-3 rounded-ordilo-md border border-border bg-card px-4 py-3 text-left shadow-card transition-all hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex w-full items-center gap-3 rounded-ordilo-md border border-border bg-card px-4 py-3 text-left shadow-card card-lift press-scale focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <Sparkles
               className="size-4 shrink-0"
@@ -622,187 +827,5 @@ function EmptyState({
         ))}
       </div>
     </div>
-  );
-}
-
-/**
- * A single message bubble (user or AI) with optional source cards.
- */
-function MessageBubble({
-  message,
-  passesFilters,
-  onSourceCardClick,
-}: {
-  message: ChatMessage;
-  passesFilters: (docId: string) => boolean;
-  onSourceCardClick: (docId: string) => void;
-}) {
-  const isUser = message.role === "user";
-
-  // Filter source cards by active filters (VAL-SEARCH-028..031).
-  const visibleSources = message.sources?.filter((s) =>
-    passesFilters(s.document_id),
-  );
-
-  if (isUser) {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-ordilo-md rounded-tr-sm bg-[var(--petrol)] px-4 py-3 text-white shadow-card">
-          <p className="text-sm leading-relaxed">{message.content}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // AI message
-  return (
-    <div className="flex flex-col items-start gap-2">
-      <div className="flex items-start gap-2">
-        {/* AI avatar */}
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]">
-          <Sparkles className="size-4 text-white" aria-hidden="true" />
-        </div>
-
-        {/* AI answer bubble */}
-        <div
-          className={cn(
-            "max-w-[85%] rounded-ordilo-md rounded-tl-sm bg-card px-4 py-3 shadow-card",
-            message.isError && "border border-destructive/30",
-          )}
-        >
-          <p
-            className={cn(
-              "text-sm leading-relaxed whitespace-pre-wrap",
-              message.isError
-                ? "text-destructive"
-                : "text-foreground",
-            )}
-          >
-            {message.content}
-          </p>
-        </div>
-      </div>
-
-      {/* Source cards under the AI answer (VAL-CHAT-023) */}
-      {visibleSources && visibleSources.length > 0 && (
-        <div className="ml-10 w-[calc(100%-40px)] space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Quellen</p>
-          {visibleSources.map((source) => (
-            <SourceCard
-              key={source.document_id}
-              documentId={source.document_id}
-              title={source.title}
-              excerpt={source.excerpt}
-              score={source.score}
-              onClick={() => onSourceCardClick(source.document_id)}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * Filter chips for person, category, and document type (VAL-SEARCH-028..032).
- */
-function FilterChips({
-  facets,
-  activeFilters,
-  onToggle,
-  onClearAll,
-}: {
-  facets: {
-    personChips: Array<{ value: string; label: string }>;
-    categoryChips: Array<{ value: string; label: string }>;
-    docTypeChips: Array<{ value: string; label: string }>;
-  };
-  activeFilters: ActiveFilter[];
-  onToggle: (type: FilterType, value: string, label: string) => void;
-  onClearAll: () => void;
-}) {
-  const isActive = (type: FilterType, value: string) =>
-    activeFilters.some((f) => f.type === type && f.value === value);
-
-  const hasActiveFilters = activeFilters.length > 0;
-
-  return (
-    <div
-      data-testid="filter-chips"
-      className="flex flex-wrap items-center gap-2 border-b border-border pb-3"
-    >
-      {/* Person chips */}
-      {facets.personChips.map((chip) => (
-        <FilterChip
-          key={`person-${chip.value}`}
-          label={chip.label}
-          active={isActive("person", chip.value)}
-          onClick={() => onToggle("person", chip.value, chip.label)}
-        />
-      ))}
-
-      {/* Category chips */}
-      {facets.categoryChips.map((chip) => (
-        <FilterChip
-          key={`category-${chip.value}`}
-          label={chip.label}
-          active={isActive("category", chip.value)}
-          onClick={() => onToggle("category", chip.value, chip.label)}
-        />
-      ))}
-
-      {/* Document type chips */}
-      {facets.docTypeChips.map((chip) => (
-        <FilterChip
-          key={`doctype-${chip.value}`}
-          label={chip.label}
-          active={isActive("document_type", chip.value)}
-          onClick={() => onToggle("document_type", chip.value, chip.label)}
-        />
-      ))}
-
-      {/* Clear all button */}
-      {hasActiveFilters && (
-        <button
-          type="button"
-          onClick={onClearAll}
-          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          aria-label="Filter zurücksetzen"
-        >
-          <X className="size-3" aria-hidden="true" />
-          Zurücksetzen
-        </button>
-      )}
-    </div>
-  );
-}
-
-/**
- * A single filter chip (toggle button).
- */
-function FilterChip({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        active
-          ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
-          : "border-border bg-card text-muted-foreground hover:bg-accent",
-      )}
-    >
-      {active && <X className="size-3" aria-hidden="true" />}
-      {label}
-    </button>
   );
 }

@@ -155,7 +155,7 @@ function mockServerClient(options: {
     //      (this select is on the update chain, not here)
     select: vi.fn((fields?: string) => {
       // Initial read — fields include "family_id".
-      if (fields && fields.includes("family_id")) {
+      if (fields === "*" || (fields && fields.includes("family_id"))) {
         operations.documentsRead = (operations.documentsRead ?? 0) + 1;
         return {
           eq: vi.fn().mockReturnValue({

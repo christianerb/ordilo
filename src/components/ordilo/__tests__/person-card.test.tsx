@@ -109,55 +109,60 @@ describe("PersonCard", () => {
   // Edit / Remove actions
   // ---------------------------------------------------------------------------
 
-  it("renders an edit button when onEdit is provided", () => {
+  it("renders an actions menu when onEdit is provided", () => {
     const onEdit = vi.fn();
     render(<PersonCard name="Emma" onEdit={onEdit} />);
-    const editButton = screen.getByRole("button", { name: /bearbeiten/i });
-    expect(editButton).toBeDefined();
+    expect(screen.getByTestId("person-card-actions")).toBeDefined();
   });
 
-  it("renders a remove button when onRemove is provided", () => {
+  it("renders an actions menu when onRemove is provided", () => {
     const onRemove = vi.fn();
     render(<PersonCard name="Emma" onRemove={onRemove} />);
-    const removeButton = screen.getByRole("button", { name: /entfernen/i });
-    expect(removeButton).toBeDefined();
+    expect(screen.getByTestId("person-card-actions")).toBeDefined();
   });
 
-  it("calls onEdit when the edit button is clicked", () => {
+  it("calls onEdit when the edit menu item is clicked", async () => {
     const onEdit = vi.fn();
     render(<PersonCard name="Emma" onEdit={onEdit} />);
-    fireEvent.click(screen.getByRole("button", { name: /bearbeiten/i }));
+    fireEvent.keyDown(screen.getByTestId("person-card-actions"), { key: "Enter" });
+    const editItem = await screen.findByTestId("card-action-edit");
+    fireEvent.click(editItem);
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
-  it("calls onRemove when the remove button is clicked", () => {
+  it("calls onRemove when the delete menu item is clicked", async () => {
     const onRemove = vi.fn();
     render(<PersonCard name="Emma" onRemove={onRemove} />);
-    fireEvent.click(screen.getByRole("button", { name: /entfernen/i }));
+    fireEvent.keyDown(screen.getByTestId("person-card-actions"), { key: "Enter" });
+    const deleteItem = await screen.findByTestId("card-action-delete");
+    fireEvent.click(deleteItem);
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it("does not call onClick when the edit button is clicked", () => {
+  it("does not call onClick when the edit menu item is clicked", async () => {
     const onClick = vi.fn();
     const onEdit = vi.fn();
     render(<PersonCard name="Emma" onClick={onClick} onEdit={onEdit} />);
-    fireEvent.click(screen.getByRole("button", { name: /bearbeiten/i }));
+    fireEvent.keyDown(screen.getByTestId("person-card-actions"), { key: "Enter" });
+    const editItem = await screen.findByTestId("card-action-edit");
+    fireEvent.click(editItem);
     expect(onEdit).toHaveBeenCalledTimes(1);
     expect(onClick).not.toHaveBeenCalled();
   });
 
-  it("does not call onClick when the remove button is clicked", () => {
+  it("does not call onClick when the delete menu item is clicked", async () => {
     const onClick = vi.fn();
     const onRemove = vi.fn();
     render(<PersonCard name="Emma" onClick={onClick} onRemove={onRemove} />);
-    fireEvent.click(screen.getByRole("button", { name: /entfernen/i }));
+    fireEvent.keyDown(screen.getByTestId("person-card-actions"), { key: "Enter" });
+    const deleteItem = await screen.findByTestId("card-action-delete");
+    fireEvent.click(deleteItem);
     expect(onRemove).toHaveBeenCalledTimes(1);
     expect(onClick).not.toHaveBeenCalled();
   });
 
-  it("does not render action buttons when onEdit and onRemove are not provided", () => {
+  it("does not render an actions menu when onEdit and onRemove are not provided", () => {
     render(<PersonCard name="Emma" />);
-    expect(screen.queryByRole("button", { name: /bearbeiten/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /entfernen/i })).toBeNull();
+    expect(screen.queryByTestId("person-card-actions")).toBeNull();
   });
 });

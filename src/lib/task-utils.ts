@@ -15,12 +15,14 @@ export interface TaskRow {
   family_id: string;
   document_id: string;
   title: string;
+  description: string | null;
   due_date: string | null;
   priority: string;
   status: string;
   confidence: number;
   confirmed: boolean;
   created_at: string;
+  tags: string[];
 }
 
 /** The three status filter options shown in the Aufgaben tab. */
@@ -58,25 +60,31 @@ export function getPriorityLabel(priority: string): string {
 }
 
 /**
+ * Whether a priority level should render as a solid colored badge.
+ *
+ * Only "high" gets a filled pill (Warm Apricot) — per the DESIGN.md
+ * "Apricot Scarcity Rule", color should mark the exception, not the norm.
+ * Medium/low priority render as quiet text instead, so a list of tasks
+ * doesn't turn into a wall of colored blocks (most tasks are medium/low).
+ *
+ * @param priority - One of "high", "medium", "low" (or any string).
+ */
+export function isHighPriority(priority: string): boolean {
+  return priority === "high";
+}
+
+/**
  * Get the Tailwind className string for a priority badge, color-coded
  * according to the Ordilo design system:
- * - High:   warm apricot (#E46018) background, white text — urgent
- * - Medium: deep petrol (#305460) background, white text — normal
- * - Low:    muted sand background, mist-dark text — low priority
+ * - High:   warm apricot (#E46018) background, white text — the one
+ *   priority worth a visual interrupt
+ * - Medium/Low: no background, mist-dark text — quiet by default
  *
  * @param priority - One of "high", "medium", "low" (or any string).
  * @returns A className string for the badge.
  */
 export function getPriorityBadgeClasses(priority: string): string {
-  switch (priority) {
-    case "high":
-      return "text-white";
-    case "low":
-      return "text-[var(--mist-dark)]";
-    case "medium":
-    default:
-      return "text-white";
-  }
+  return isHighPriority(priority) ? "text-white" : "text-[var(--mist-dark)]";
 }
 
 /**
@@ -84,6 +92,7 @@ export function getPriorityBadgeClasses(priority: string): string {
  *
  * Returns a React style object with the appropriate CSS variable or color.
  * This is used alongside `getPriorityBadgeClasses` for the text color.
+ * Medium/low priorities get no background (quiet text, not a badge).
  *
  * @param priority - One of "high", "medium", "low" (or any string).
  * @returns A React CSSProperties object with the background color.
@@ -91,15 +100,9 @@ export function getPriorityBadgeClasses(priority: string): string {
 export function getPriorityBadgeStyle(
   priority: string,
 ): React.CSSProperties {
-  switch (priority) {
-    case "high":
-      return { backgroundColor: "var(--apricot)" };
-    case "low":
-      return { backgroundColor: "var(--secondary)" };
-    case "medium":
-    default:
-      return { backgroundColor: "var(--petrol)" };
-  }
+  return isHighPriority(priority)
+    ? { backgroundColor: "var(--apricot)" }
+    : {};
 }
 
 // ---------------------------------------------------------------------------

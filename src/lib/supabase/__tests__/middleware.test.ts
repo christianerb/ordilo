@@ -153,10 +153,10 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
     expect(response.status).toBe(200);
   });
 
-  it("allows completed user with zero members to access /scan", async () => {
+  it("allows completed user with zero members to access /dokumente", async () => {
     setupMock({ familyData: COMPLETED_FAMILY });
 
-    const request = createMockRequest("/scan");
+    const request = createMockRequest("/dokumente");
     const response = await updateSession(request);
 
     expect(response.status).toBe(200);
@@ -204,10 +204,10 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
     expect(response.headers.get("location")).toContain("/onboarding");
   });
 
-  it("redirects mid-onboarding user (completed_at NULL) from /scan to /onboarding", async () => {
+  it("redirects mid-onboarding user (completed_at NULL) from /dokumente to /onboarding", async () => {
     setupMock({ familyData: MID_ONBOARDING_FAMILY });
 
-    const request = createMockRequest("/scan");
+    const request = createMockRequest("/dokumente");
     const response = await updateSession(request);
 
     expect(response.status).toBe(307);

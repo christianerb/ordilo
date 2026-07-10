@@ -70,6 +70,7 @@ function chainableQuery(result: { data: unknown; error: unknown }) {
     lte: vi.fn(() => self),
     gte: vi.fn(() => self),
     not: vi.fn(() => self),
+    or: vi.fn(() => self),
     order: vi.fn(() => self),
     limit: vi.fn(() => self),
     maybeSingle: vi.fn(() => Promise.resolve(result)),
@@ -162,6 +163,11 @@ function mockServerClient(options: {
             data: tasksError ? null : tasks,
             error: tasksError ? { message: "DB error" } : null,
           });
+        case "knowledge_nodes":
+        case "knowledge_edges":
+          // Graph traversal tables — return empty by default so
+          // graphTraversalSearch yields no results.
+          return chainableQuery({ data: [], error: null });
         default:
           throw new Error(`Unexpected table: ${table}`);
       }
@@ -641,10 +647,9 @@ describe("POST /api/search", () => {
     expect(response.status).toBe(200);
     expect(body.mode).toBe("graph");
     expect(body.results.length).toBeGreaterThanOrEqual(1);
-    // Should find tasks for Hanna's document
-    const taskResult = body.results.find((r: SearchResult) => r.source.includes("task"));
-    expect(taskResult).toBeDefined();
-    expect(taskResult.document_id).toBe(DOC_ID_1);
+    // Should find Hanna's document (may be merged from person + task sources)
+    const result = body.results.find((r: SearchResult) => r.document_id === DOC_ID_1);
+    expect(result).toBeDefined();
   });
 
   // --- Graph search: empty when no matches (VAL-SEARCH-013) ---

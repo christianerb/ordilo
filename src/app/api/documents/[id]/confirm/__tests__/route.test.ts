@@ -14,6 +14,11 @@ vi.mock("@/lib/ai/embeddings", () => ({
   ),
   generateEmbeddings: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
   embeddingToVectorString: vi.fn((emb: number[]) => `[${emb.join(",")}]`),
+  deduplicateChunks: vi.fn((chunks: unknown[]) => ({
+    kept: chunks,
+    removedIndices: [],
+  })),
+  generateSyntheticQuestions: vi.fn(() => []),
   EmbeddingError: class EmbeddingError extends Error {
     code: string;
     statusCode?: number;
@@ -783,9 +788,9 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     expect(response.status).toBe(200);
     expect(body.status).toBe("confirmed");
-    // generateEmbeddings should NOT have been called (no OCR text).
-    expect(generateEmbeddings).not.toHaveBeenCalled();
-    // The RPC should still be called with an empty embeddings array.
+    // generateEmbeddings may be called for label embeddings (title, person
+    // names) even with no OCR text — that's expected. The chunk embeddings
+    // array should still be empty.
     expect(client._operations.rpc).toBe(1);
     const params = client._rpcCalls[0].params as { p_embeddings: unknown[] };
     expect(params.p_embeddings).toHaveLength(0);

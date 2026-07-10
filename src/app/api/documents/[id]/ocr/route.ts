@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { isValidUuid, markDocumentFailed } from "@/lib/supabase/document-helpers";
 import { runOcr, DatalabOcrError } from "@/lib/ai/ocr";
 import {
   OCR_ALLOWED_SOURCE_STATUSES,
@@ -64,8 +65,7 @@ export async function POST(
 
   // Validate the document ID is a UUID (defensive — Next.js route matching
   // may pass non-UUID segments).
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(documentId)) {
+  if (!isValidUuid(documentId)) {
     const body: OcrErrorResponse = {
       error: "Ungültige Dokument-ID.",
       code: "INVALID_DOCUMENT_ID",
@@ -160,7 +160,7 @@ export async function POST(
     const code =
       err instanceof DatalabOcrError ? err.code : "STORAGE_DOWNLOAD_FAILED";
 
-    await markFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message);
     const body: OcrErrorResponse = { error: message, code };
     return Response.json(body, { status: 500 });
   }
@@ -270,7 +270,7 @@ export async function POST(
       : "OCR ist fehlgeschlagen. Bitte erneut versuchen.";
     const code = isDatalabError ? err.code : "OCR_FAILED";
 
-    await markFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message);
 
     // Determine HTTP status: 502 for upstream (Datalab) errors,
     // 500 for internal errors, 4xx for client/config issues.
@@ -282,37 +282,6 @@ export async function POST(
 
     const body: OcrErrorResponse = { error: message, code };
     return Response.json(body, { status: statusCode });
-  }
-}
-
-/**
- * Mark a document as failed with an error message.
- *
- * Helper that updates the document status to `failed` and stores the
- * error message. Used in all failure paths so the document list reflects
- * the failed state and the UI can show a retry affordance.
- *
- * Errors in this helper are silently ignored (best-effort) — the primary
- * error has already occurred and we don't want to mask it with a
- * secondary DB error.
- */
-async function markFailed(
-  client: Awaited<ReturnType<typeof createServerClient>>,
-  documentId: string,
-  errorMessage: string,
-): Promise<void> {
-  try {
-    await client
-      .from("documents")
-      .update({
-        status: "failed",
-        error_message: errorMessage,
-      })
-      .eq("id", documentId);
-  } catch {
-    // Best-effort: if we can't update the status, the document stays at
-    // ocr_processing. The UI will still show it as processing. This is
-    // a degraded state but preferable to crashing the route handler.
   }
 }
 

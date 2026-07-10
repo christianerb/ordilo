@@ -16,12 +16,12 @@ export default function AuthErrorPage() {
       <CleanUrl />
       <div className="w-full max-w-sm space-y-8 text-center">
         <div className="flex justify-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-lg bg-destructive/10 text-destructive">
+          <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-md bg-destructive/10 text-destructive">
             <AlertCircle className="h-8 w-8" />
           </div>
         </div>
         <div className="space-y-3">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+          <h1 className="text-xl font-semibold tracking-tight text-foreground">
             Anmeldelink ungültig
           </h1>
           <p className="text-sm leading-relaxed text-muted-foreground">

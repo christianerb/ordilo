@@ -6,6 +6,21 @@ import {
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
+import { computeInsights } from "@/lib/ai/insights";
+
+/**
+ * Compute a warm German time-of-day greeting (server-side to avoid
+ * hydration mismatch).
+ * - 5–11: "Guten Morgen"
+ * - 12–17: "Guten Tag"
+ * - 18–4: "Guten Abend"
+ */
+function getGreeting(date = new Date()): string {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 12) return "Guten Morgen";
+  if (hour >= 12 && hour < 18) return "Guten Tag";
+  return "Guten Abend";
+}
 
 /**
  * Home dashboard (server component).
@@ -22,7 +37,7 @@ import {
  *
  * Cross-area state consistency: because this is a server component, data is
  * fresh on every navigation (no stale cache). After a document confirm on
- * /scan, navigating to /home reflects the new state immediately.
+ * /dokumente, navigating to /home reflects the new state immediately.
  */
 export default async function HomePage() {
   const supabase = await createClient();
@@ -38,12 +53,57 @@ export default async function HomePage() {
     redirect("/onboarding");
   }
 
-  // 2. Fetch family members (for greeting area).
-  const { data: memberRows } = await supabase
-    .from("family_members")
-    .select("id, name, role, avatar_color")
-    .eq("family_id", family.id)
-    .order("created_at", { ascending: true });
+  // 2-4 + 6-7 only depend on family.id, not on each other's results, so
+  // they run concurrently instead of as a sequential waterfall — this is
+  // the single biggest lever for server-render latency on this page.
+  const [
+    { data: memberRows },
+    { data: analyzedRows },
+    { data: taskRows },
+    { data: recentRows },
+    insights,
+  ] = await Promise.all([
+    // 2. Fetch family members (for greeting area).
+    supabase
+      .from("family_members")
+      .select("id, name, role, avatar_color")
+      .eq("family_id", family.id)
+      .order("created_at", { ascending: true }),
+    // 3. Fetch analyzed documents (awaiting user confirmation).
+    supabase
+      .from("documents")
+      .select("id, title, original_filename, mime_type, status, created_at")
+      .eq("family_id", family.id)
+      .eq("status", "analyzed")
+      .order("created_at", { ascending: false })
+      .limit(3),
+    // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
+    //    "Fristen"). We fetch all confirmed open tasks and let the client
+    //    component filter them into the two sections.
+    supabase
+      .from("tasks")
+      .select(
+        "id, family_id, title, description, due_date, priority, status, confidence, confirmed, created_at, document_id, tags",
+      )
+      .eq("family_id", family.id)
+      .eq("confirmed", true)
+      .eq("status", "open")
+      .order("created_at", { ascending: false }),
+    // 6. Fetch recent documents (by created_at desc, excluding failed).
+    //    VAL-CROSS-013: failed documents must NOT surface on /home — they
+    //    remain visible only on /dokumente. The DB query excludes them
+    //    here, and filterRecentDocuments provides a second layer of
+    //    defense.
+    supabase
+      .from("documents")
+      .select("id, title, original_filename, mime_type, status, created_at")
+      .eq("family_id", family.id)
+      .neq("status", "failed")
+      .order("created_at", { ascending: false })
+      .limit(3),
+    // 7. Fetch proactive insights from the knowledge graph.
+    computeInsights(supabase, family.id),
+  ]);
 
   const members: HomeMember[] = (memberRows ?? []).map((m) => ({
     id: m.id,
@@ -51,15 +111,6 @@ export default async function HomePage() {
     role: m.role,
     avatar_color: m.avatar_color,
   }));
-
-  // 3. Fetch analyzed documents (awaiting user confirmation).
-  const { data: analyzedRows } = await supabase
-    .from("documents")
-    .select("id, title, original_filename, mime_type, status, created_at")
-    .eq("family_id", family.id)
-    .eq("status", "analyzed")
-    .order("created_at", { ascending: false })
-    .limit(5);
 
   const analyzedDocuments: HomeDocument[] = (analyzedRows ?? []).map((d) => ({
     id: d.id,
@@ -70,20 +121,8 @@ export default async function HomePage() {
     created_at: d.created_at,
   }));
 
-  // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
-  //    "Fristen"). We fetch all confirmed open tasks and let the client
-  //    component filter them into the two sections.
-  const { data: taskRows } = await supabase
-    .from("tasks")
-    .select(
-      "id, family_id, title, due_date, priority, status, confidence, confirmed, created_at, document_id",
-    )
-    .eq("family_id", family.id)
-    .eq("confirmed", true)
-    .eq("status", "open")
-    .order("created_at", { ascending: false });
-
   // 5. Fetch document titles for the tasks (for source-document links).
+  //    Depends on taskRows, so it stays sequential after the batch above.
   const taskDocIds = [
     ...new Set(
       (taskRows ?? [])
@@ -107,27 +146,17 @@ export default async function HomePage() {
     id: t.id,
     family_id: t.family_id,
     title: t.title,
+    description: t.description,
     due_date: t.due_date,
     priority: t.priority,
     status: t.status,
     confidence: t.confidence,
     confirmed: t.confirmed,
     created_at: t.created_at,
+    tags: t.tags,
     document_id: t.document_id,
     document_title: t.document_id ? docTitleMap.get(t.document_id) ?? null : null,
   }));
-
-  // 6. Fetch recent documents (by created_at desc, excluding failed).
-  //    VAL-CROSS-013: failed documents must NOT surface on /home — they
-  //    remain visible only on /scan. The DB query excludes them here, and
-  //    filterRecentDocuments provides a second layer of defense.
-  const { data: recentRows } = await supabase
-    .from("documents")
-    .select("id, title, original_filename, mime_type, status, created_at")
-    .eq("family_id", family.id)
-    .neq("status", "failed")
-    .order("created_at", { ascending: false })
-    .limit(5);
 
   const recentDocuments: HomeDocument[] = filterRecentDocuments(
     (recentRows ?? []).map((d) => ({
@@ -142,11 +171,13 @@ export default async function HomePage() {
 
   return (
     <HomeClient
+      greeting={getGreeting()}
       familyName={family.name}
       members={members}
       analyzedDocuments={analyzedDocuments}
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
+      insights={insights}
     />
   );
 }

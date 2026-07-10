@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /**
  * Cleans sensitive tokens from the URL fragment.
@@ -12,7 +12,7 @@ import { useEffect } from "react";
  * or history.
  */
 export function CleanUrl() {
-  useEffect(() => {
+  useMountEffect(() => {
     if (typeof window !== "undefined" && window.location.hash) {
       const hash = window.location.hash;
       if (
@@ -29,7 +29,7 @@ export function CleanUrl() {
         );
       }
     }
-  }, []);
+  });
 
   return null;
 }

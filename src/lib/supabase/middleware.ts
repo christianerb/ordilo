@@ -49,7 +49,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   } = await supabase.auth.getUser();
 
   // Route classification
-  const appPaths = ["/home", "/scan", "/suche", "/familie", "/aufgaben"];
+  const appPaths = ["/home", "/dokumente", "/suche", "/familie", "/aufgaben", "/sammlungen"];
   const protectedPaths = [...appPaths, "/onboarding"];
   const pathname = request.nextUrl.pathname;
   const isProtected = protectedPaths.some(
@@ -68,11 +68,14 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     return NextResponse.redirect(url);
   }
 
-  // Authenticated → check onboarding status for page navigations (GET only).
-  // POST requests are Next.js server actions and must NOT be redirected —
-  // redirecting a server action response breaks the action contract and
-  // causes "unexpected response" errors on the client.
-  if (user && request.method === "GET" && (isAppRoute || isOnboarding)) {
+  // Authenticated → check onboarding status for full page navigations only.
+  // POST requests are Next.js server actions and must NOT be redirected.
+  // RSC requests (SPA navigations) are also skipped — the onboarding check
+  // only needs to run on initial page loads. SPA navigations within the app
+  // are safe because the user already passed the onboarding gate on the
+  // initial load. This saves a Supabase query on every tab switch.
+  const isRscRequest = request.headers.get("RSC") === "1";
+  if (user && request.method === "GET" && !isRscRequest && (isAppRoute || isOnboarding)) {
     // Onboarding status is determined by a DURABLE marker
     // (families.onboarding_completed_at) rather than raw member count.
     // This distinguishes "onboarding completed" from "has members":

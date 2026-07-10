@@ -7,6 +7,7 @@ import {
   getPriorityLabel,
   getPriorityBadgeClasses,
   getPriorityBadgeStyle,
+  isHighPriority,
   getTaskStatusLabel,
   filterTasksByStatus,
   type TaskStatusFilter,
@@ -59,8 +60,17 @@ describe("task-utils", () => {
   // Priority badge classes
   // ---------------------------------------------------------------------------
 
+  describe("isHighPriority", () => {
+    it("is true only for 'high'", () => {
+      expect(isHighPriority("high")).toBe(true);
+      expect(isHighPriority("medium")).toBe(false);
+      expect(isHighPriority("low")).toBe(false);
+      expect(isHighPriority("unknown")).toBe(false);
+    });
+  });
+
   describe("getPriorityBadgeClasses", () => {
-    it("returns white text for high priority", () => {
+    it("returns white text for high priority (solid apricot pill)", () => {
       const classes = getPriorityBadgeClasses("high");
       expect(classes).toContain("text-white");
     });
@@ -70,20 +80,18 @@ describe("task-utils", () => {
       expect(style.backgroundColor).toBe("var(--apricot)");
     });
 
-    it("returns white text for medium priority", () => {
+    it("returns quiet mist-dark text (no background) for medium priority", () => {
+      // Per the Apricot Scarcity Rule, only "high" gets a colored badge —
+      // medium/low render as plain text so most tasks stay visually quiet.
       const classes = getPriorityBadgeClasses("medium");
-      expect(classes).toContain("text-white");
+      expect(classes).toContain("text-[var(--mist-dark)]");
+      expect(getPriorityBadgeStyle("medium").backgroundColor).toBeUndefined();
     });
 
-    it("returns petrol background style for medium priority", () => {
-      const style = getPriorityBadgeStyle("medium");
-      expect(style.backgroundColor).toBe("var(--petrol)");
-    });
-
-    it("returns muted classes for low priority", () => {
+    it("returns quiet mist-dark text (no background) for low priority", () => {
       const classes = getPriorityBadgeClasses("low");
-      // Low priority should use muted/grey colors (not apricot or petrol)
-      expect(classes).not.toMatch(/apricot|#E46018/i);
+      expect(classes).toContain("text-[var(--mist-dark)]");
+      expect(getPriorityBadgeStyle("low").backgroundColor).toBeUndefined();
     });
 
     it("returns medium-priority classes as fallback for unknown priority", () => {
@@ -142,48 +150,56 @@ describe("task-utils", () => {
         family_id: "fam1",
         document_id: "doc1",
         title: "Rechnung bezahlen",
+        description: null,
         due_date: "2026-07-15",
         priority: "high",
         status: "open",
         confidence: 0.9,
         confirmed: true,
         created_at: "2026-07-01T00:00:00Z",
+        tags: [],
       },
       {
         id: "2",
         family_id: "fam1",
         document_id: "doc2",
         title: "Termin vereinbaren",
+        description: null,
         due_date: null,
         priority: "medium",
         status: "done",
         confidence: 0.8,
         confirmed: true,
         created_at: "2026-07-02T00:00:00Z",
+        tags: [],
       },
       {
         id: "3",
         family_id: "fam1",
         document_id: "doc3",
         title: "Formular abgeben",
+        description: null,
         due_date: "2026-08-01",
         priority: "low",
         status: "dismissed",
         confidence: 0.7,
         confirmed: true,
         created_at: "2026-07-03T00:00:00Z",
+        tags: [],
       },
       {
         id: "4",
         family_id: "fam1",
         document_id: "doc4",
         title: "Anmeldung bestätigen",
+        description: null,
         due_date: "2026-07-20",
         priority: "high",
         status: "open",
         confidence: 0.95,
         confirmed: true,
         created_at: "2026-07-04T00:00:00Z",
+        tags: [],
       },
     ];
 

@@ -4,7 +4,7 @@ import { createClient as createAdminClient } from "@/lib/supabase/admin";
  * Dev-only fixture helpers for browser-testing support.
  *
  * These helpers power the disposable empty-documents fixture used by
- * validators to reliably test the /scan empty state. They use the
+ * validators to reliably test the /dokumente empty state. They use the
  * service-role admin client (server-only) and MUST never be exposed to
  * the browser or shipped to production.
  *
@@ -201,7 +201,7 @@ export async function ensureEmptyDocumentsFixture(
       await admin.storage.from("documents").remove(filePaths);
     } catch {
       // Intentionally swallowed — Storage orphans do not affect the
-      // /scan empty state, which is driven by the documents table.
+      // /dokumente empty state, which is driven by the documents table.
     }
   }
 

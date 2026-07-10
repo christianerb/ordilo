@@ -37,25 +37,31 @@ export function getConfidenceLevel(confidence: number): ConfidenceLevel {
  */
 const CONFIDENCE_STYLES: Record<
   ConfidenceLevel,
-  { bg: string; text: string; border: string; dot: string }
+  { bg: string; text: string; border: string; dot: string; label: string; tone: string }
 > = {
   high: {
-    bg: "bg-[#E8F5E9]",
-    text: "text-[#2E7D32]",
-    border: "border-[#2E7D32]/20",
-    dot: "bg-[#4CAF50]",
+    bg: "bg-[var(--petrol)]/10",
+    text: "text-[var(--petrol)]",
+    border: "border-[var(--petrol)]/20",
+    dot: "bg-[var(--petrol)]",
+    label: "Hohe Zuverlässigkeit",
+    tone: "sicher",
   },
   medium: {
-    bg: "bg-[#FFF3E0]",
-    text: "text-[#E65100]",
-    border: "border-[#E65100]/20",
-    dot: "bg-[#FF9800]",
+    bg: "bg-[var(--sand-light)]",
+    text: "text-[var(--mist-dark)]",
+    border: "border-[var(--apricot)]/20",
+    dot: "bg-[var(--apricot)]",
+    label: "Mittlere Zuverlässigkeit",
+    tone: "noch prüfen",
   },
   low: {
-    bg: "bg-[#FFEBEE]",
-    text: "text-[#C62828]",
-    border: "border-[#C62828]/20",
-    dot: "bg-[#EF5350]",
+    bg: "bg-[var(--sand-light)]",
+    text: "text-[var(--mist-dark)]",
+    border: "border-destructive/20",
+    dot: "bg-destructive",
+    label: "Niedrige Zuverlässigkeit",
+    tone: "unsicher",
   },
 };
 
@@ -72,17 +78,17 @@ export interface ConfidenceBadgeProps {
 }
 
 /**
- * Confidence Badge — a small pill showing the confidence percentage,
- * color-coded by level (green high, amber medium, red low).
+ * Confidence Badge — a quiet metadata chip for uncertain extractions.
  *
  * Used in the Review Card to show the AI's confidence for each extracted
  * entity (person, organization, date, amount, task, category).
  *
  * Visual design:
- * - Small rounded pill with a colored dot and percentage text
- * - Green for high confidence (>= 85%)
- * - Amber for medium confidence (>= 70%)
- * - Red for low confidence (< 70%)
+ * - Soft neutral chip so the percentage reads as supporting context,
+ *   not as the main headline of the row
+ * - A small colored dot still carries the severity
+ * - Low/medium keep their warning color, but only as an accent
+ * - aria-label exposes the confidence level in plain German for screen readers
  *
  * @example
  * <ConfidenceBadge confidence={0.92} />
@@ -107,11 +113,12 @@ export function ConfidenceBadge({
       data-testid={dataTestId}
       data-confidence-level={level}
       data-confidence-value={clamped}
+      aria-label={`${styles.label}: ${percentage}%`}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium",
         styles.bg,
-        styles.text,
         styles.border,
+        styles.text,
         className,
       )}
     >
@@ -119,7 +126,8 @@ export function ConfidenceBadge({
         className={cn("size-1.5 rounded-full", styles.dot)}
         aria-hidden="true"
       />
-      {percentage}%
+      <span className="text-[var(--mist-dark)]/75">{styles.tone}</span>
+      <span>{percentage}%</span>
     </span>
   );
 }

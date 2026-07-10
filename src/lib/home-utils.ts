@@ -14,12 +14,14 @@ export interface HomeTask {
   id: string;
   family_id: string;
   title: string;
+  description: string | null;
   due_date: string | null;
   priority: string;
   status: string;
   confidence: number;
   confirmed: boolean;
   created_at: string;
+  tags: string[];
   document_id: string | null;
   document_title?: string | null;
 }
@@ -56,20 +58,30 @@ function toLocalDateStr(date: Date): string {
 /** Number of days ahead for the "Heute wichtig" horizon (today + this week). */
 export const HEUTE_WICHTIG_DAYS = 7;
 
-/** Maximum items to show in "Heute wichtig". */
-export const HEUTE_WICHTIG_LIMIT = 5;
+/**
+ * Maximum items to show per Aufgaben subgroup on the Home dashboard.
+ *
+ * Home is a curated summary, not the full list — /aufgaben has no limit.
+ * Kept small (3 per subgroup) so the dashboard stays scannable; a "Alle
+ * anzeigen" link appears when more tasks exist than are shown.
+ */
+export const HEUTE_WICHTIG_LIMIT = 3;
 
-/** Maximum items to show in "Fristen". */
-export const FRISTEN_LIMIT = 10;
+/** Maximum items to show in "Später". */
+export const FRISTEN_LIMIT = 3;
+
+/** Maximum items to show in "Überfällig" (overdue tasks). */
+export const UEBERFAELLIG_LIMIT = 3;
 
 /** Maximum items to show in "Neue Dokumente zur Bestätigung". */
-export const REVIEW_DOCS_LIMIT = 5;
+export const REVIEW_DOCS_LIMIT = 3;
 
 /** Maximum items to show in "Zuletzt gescannt". */
-export const RECENT_DOCS_LIMIT = 5;
+export const RECENT_DOCS_LIMIT = 3;
 
 /**
- * Filter tasks for the "Heute wichtig" (Important today) section.
+ * Filter tasks for the "Diese Woche" (This week) subgroup within the
+ * Aufgaben timeline.
  *
  * Returns confirmed, open tasks with a due_date within the near-future
  * horizon (today through ~7 days ahead), EXCLUDING overdue tasks.
@@ -78,7 +90,7 @@ export const RECENT_DOCS_LIMIT = 5;
  *
  * @param tasks - All tasks for the family.
  * @param referenceDate - The reference "today" (defaults to now).
- * @returns Filtered and sorted tasks for the "Heute wichtig" section.
+ * @returns Filtered and sorted tasks for the "Diese Woche" subgroup.
  */
 export function filterHeuteWichtig(
   tasks: HomeTask[],
@@ -107,17 +119,18 @@ export function filterHeuteWichtig(
 }
 
 /**
- * Filter tasks for the "Fristen" (Deadlines) section.
+ * Filter tasks for the "Überfällig" (Overdue) subgroup within the Aufgaben
+ * timeline.
  *
- * Returns confirmed, open tasks with a future due_date (>= today),
- * sorted by due_date ascending (soonest first).
- * Limited to FRISTEN_LIMIT items.
+ * Returns confirmed, open tasks with a due_date in the past (before today),
+ * sorted by due_date ascending (most overdue first).
+ * Limited to UEBERFAELLIG_LIMIT items.
  *
  * @param tasks - All tasks for the family.
  * @param referenceDate - The reference "today" (defaults to now).
- * @returns Filtered and sorted tasks for the "Fristen" section.
+ * @returns Filtered and sorted overdue tasks.
  */
-export function filterFristen(
+export function filterUeberfaellig(
   tasks: HomeTask[],
   referenceDate: Date = new Date(),
 ): HomeTask[] {
@@ -129,7 +142,45 @@ export function filterFristen(
         t.status === "open" &&
         t.confirmed &&
         t.due_date !== null &&
-        t.due_date >= today,
+        t.due_date < today,
+    )
+    .sort((a, b) => (a.due_date! < b.due_date! ? -1 : a.due_date! > b.due_date! ? 1 : 0))
+    .slice(0, UEBERFAELLIG_LIMIT);
+}
+
+/**
+ * Filter tasks for the "Später" (Later) subgroup within the Aufgaben
+ * timeline.
+ *
+ * Returns confirmed, open tasks with a due_date beyond the "Diese Woche"
+ * horizon (> 7 days from today), sorted by due_date ascending (soonest first).
+ * This ensures no overlap with "Diese Woche" — tasks due within 7 days
+ * appear only in "Diese Woche", not in both subgroups.
+ * Limited to FRISTEN_LIMIT items.
+ *
+ * @param tasks - All tasks for the family.
+ * @param referenceDate - The reference "today" (defaults to now).
+ * @returns Filtered and sorted tasks for the "Später" subgroup.
+ */
+export function filterFristen(
+  tasks: HomeTask[],
+  referenceDate: Date = new Date(),
+): HomeTask[] {
+  const horizon = toLocalDateStr(
+    new Date(
+      referenceDate.getFullYear(),
+      referenceDate.getMonth(),
+      referenceDate.getDate() + HEUTE_WICHTIG_DAYS,
+    ),
+  );
+
+  return tasks
+    .filter(
+      (t) =>
+        t.status === "open" &&
+        t.confirmed &&
+        t.due_date !== null &&
+        t.due_date > horizon,
     )
     .sort((a, b) => (a.due_date! < b.due_date! ? -1 : a.due_date! > b.due_date! ? 1 : 0))
     .slice(0, FRISTEN_LIMIT);
@@ -139,7 +190,7 @@ export function filterFristen(
  * Filter recent documents for the "Zuletzt gescannt" section.
  *
  * Excludes documents with status='failed' (VAL-CROSS-013: failed documents
- * must remain visible only on /scan and must NOT surface downstream on /home).
+ * must remain visible only on /dokumente and must NOT surface downstream on /home).
  * Preserves the input order (the DB query already sorts by created_at desc).
  * Limited to RECENT_DOCS_LIMIT items.
  *

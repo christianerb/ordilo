@@ -1,23 +1,23 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  loadConversationMessages,
+  listConversations,
+} from "@/lib/ai/chat-history";
 import { SucheClient } from "./suche-client";
-import type { DocumentMetadata } from "./suche-client";
+import type { DocumentMetadata, InitialMessage } from "./suche-client";
 
 /**
  * Search / Chat page (server component).
  *
  * Fetches the user's family, family members, confirmed documents (with
- * metadata for filter chips), and person-document associations (from
- * extracted_entities). Then renders the interactive chat/search client.
+ * metadata for filter chips), person-document associations (from
+ * extracted_entities), the list of all chat conversations, and the
+ * messages of the selected conversation (via ?chat=<id> param).
  *
- * Accepts an optional `q` search param (e.g. /suche?q=Rechnung) from the
- * Home dashboard's AI search bar. When present, the query is passed to
- * SucheClient as `initialQuery` and auto-submitted on mount.
- *
- * If the user has no family, they are redirected to onboarding.
- *
- * All data is fetched RLS-scoped (server client), so a user only sees their
- * own family's data (VAL-CHAT-030).
+ * If no ?chat= param is present, shows the empty state (no messages
+ * loaded). When the user sends their first message, a new conversation
+ * is created via the /api/chat endpoint.
  */
 export default async function SuchePage({
   searchParams,
@@ -26,10 +26,12 @@ export default async function SuchePage({
 }) {
   const supabase = await createClient();
 
-  // Read the `q` search param (from the Home dashboard search bar).
+  // Read URL params
   const params = await searchParams;
   const initialQuery =
     typeof params.q === "string" ? params.q.trim() : "";
+  const chatId =
+    typeof params.chat === "string" ? params.chat.trim() : "";
 
   // 1. Fetch the user's family (RLS-scoped).
   const { data: family } = await supabase
@@ -42,26 +44,38 @@ export default async function SuchePage({
     redirect("/onboarding");
   }
 
-  // 2. Fetch family members (for person filter chips).
-  const { data: memberData } = await supabase
-    .from("family_members")
-    .select("id, name")
-    .eq("family_id", family.id)
-    .order("created_at", { ascending: true });
+  const [
+    { data: memberData },
+    { data: docData },
+    conversations,
+    { data: selectedConversation },
+  ] = await Promise.all([
+    supabase
+      .from("family_members")
+      .select("id, name")
+      .eq("family_id", family.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("documents")
+      .select("id, title, category, document_type")
+      .eq("family_id", family.id)
+      .eq("status", "confirmed")
+      .order("created_at", { ascending: false }),
+    listConversations(supabase, family.id).catch(() => []),
+    chatId
+      ? supabase
+          .from("chat_conversations")
+          .select("id")
+          .eq("id", chatId)
+          .eq("family_id", family.id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
 
   const members = (memberData ?? []).map((m) => ({
     id: m.id,
     name: m.name,
   }));
-
-  // 3. Fetch confirmed documents (for category/type filter chips and
-  //    document metadata for source card filtering).
-  const { data: docData } = await supabase
-    .from("documents")
-    .select("id, title, category, document_type")
-    .eq("family_id", family.id)
-    .eq("status", "confirmed")
-    .order("created_at", { ascending: false });
 
   const confirmedDocIds = (docData ?? []).map((d) => d.id);
 
@@ -99,13 +113,42 @@ export default async function SuchePage({
     }));
   }
 
+  // 6. Load messages for the selected conversation (if ?chat=<id> is present).
+  let conversationId = "";
+  let initialMessages: InitialMessage[] = [];
+
+  if (selectedConversation) {
+    try {
+      conversationId = selectedConversation.id;
+      const rows = await loadConversationMessages(supabase, conversationId);
+      initialMessages = rows.map((row) => ({
+        id: row.id,
+        role: row.role as "user" | "assistant",
+        content: row.content,
+        sources: row.sources ?? [],
+        card: row.card ?? undefined,
+        feedback: (row.feedback as "positive" | "negative" | null) ?? null,
+      }));
+    } catch {
+      // Persistence not available — start fresh.
+    }
+  }
+
   return (
     <SucheClient
+      key={chatId || "new"}
       familyId={family.id}
       familyName={family.name}
       members={members}
       documents={documents}
       initialQuery={initialQuery}
+      conversationId={conversationId}
+      initialMessages={initialMessages}
+      conversations={conversations.map((c) => ({
+        id: c.id,
+        title: c.title,
+        updated_at: c.updated_at,
+      }))}
     />
   );
 }

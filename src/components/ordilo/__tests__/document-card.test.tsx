@@ -184,7 +184,7 @@ describe("DocumentCard", () => {
     // Raw provider/backend text must NEVER be user-visible.
     expect(screen.queryByText("OpenAI: API-Fehler")).toBeNull();
     // Friendly German copy should be shown instead.
-    expect(screen.getByText("Analyse fehlgeschlagen")).toBeDefined();
+    expect(screen.getByText("Das hat nicht geklappt")).toBeDefined();
   });
 
   it("shows friendly German copy, not raw 'Could not parse PDF' (VAL-REVIEW-014)", () => {
@@ -195,12 +195,12 @@ describe("DocumentCard", () => {
       />,
     );
     expect(screen.queryByText("Could not parse PDF")).toBeNull();
-    expect(screen.getByText("Analyse fehlgeschlagen")).toBeDefined();
+    expect(screen.getByText("Das hat nicht geklappt")).toBeDefined();
   });
 
   it("shows friendly copy even when no errorMessage is provided", () => {
     render(<DocumentCard status="failed" />);
-    expect(screen.getByText("Analyse fehlgeschlagen")).toBeDefined();
+    expect(screen.getByText("Das hat nicht geklappt")).toBeDefined();
   });
 
   it("does not show error copy when status is not failed", () => {
@@ -210,13 +210,13 @@ describe("DocumentCard", () => {
         errorMessage="OCR fehlgeschlagen"
       />,
     );
-    expect(screen.queryByText("Analyse fehlgeschlagen")).toBeNull();
+    expect(screen.queryByText("Das hat nicht geklappt")).toBeNull();
   });
 
   it("shows a retry button when status is failed and onRetry is provided", () => {
     const onRetry = vi.fn();
     render(<DocumentCard status="failed" onRetry={onRetry} />);
-    const retryButton = screen.getByRole("button", { name: /erneut versuchen/i });
+    const retryButton = screen.getByRole("button", { name: /nochmal versuchen/i });
     expect(retryButton).toBeDefined();
   });
 
@@ -234,7 +234,7 @@ describe("DocumentCard", () => {
   it("calls onRetry when the retry button is clicked", () => {
     const onRetry = vi.fn();
     render(<DocumentCard status="failed" onRetry={onRetry} />);
-    const retryButton = screen.getByLabelText("Erneut versuchen");
+    const retryButton = screen.getByLabelText("Nochmal versuchen");
     fireEvent.click(retryButton);
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
@@ -250,7 +250,7 @@ describe("DocumentCard", () => {
       />,
     );
     // Find the retry button by aria-label to distinguish from the card root
-    const retryButton = container.querySelector('[aria-label="Erneut versuchen"]');
+    const retryButton = container.querySelector('[aria-label="Nochmal versuchen"]');
     expect(retryButton).not.toBeNull();
     fireEvent.click(retryButton!);
     expect(onRetry).toHaveBeenCalledTimes(1);

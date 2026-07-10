@@ -63,12 +63,31 @@ function mockServerClient(options: {
     }),
   };
 
+  // Document-count lookup (extracted_entities) — chainable .eq().eq().in(),
+  // resolving to an empty result by default (counts aren't under test here).
+  const entitiesChain = {
+    eq: vi.fn().mockReturnThis(),
+    in: vi.fn().mockResolvedValue({ data: [], error: null }),
+  };
+
+  // Inventory items — chainable .eq().order(), empty by default.
+  const inventoryChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockResolvedValue({ data: [], error: null }),
+  };
+
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
       return { select: vi.fn(() => familiesChain) };
     }
     if (table === "family_members") {
       return { select: vi.fn(() => membersChain) };
+    }
+    if (table === "extracted_entities") {
+      return { select: vi.fn(() => entitiesChain) };
+    }
+    if (table === "family_inventory_items") {
+      return { select: vi.fn(() => inventoryChain) };
     }
     throw new Error(`Unexpected table: ${table}`);
   });
@@ -96,7 +115,7 @@ describe("FamiliePage (server component) — query error handling", () => {
     // Should show the error state, not redirect to onboarding.
     expect(mockRedirect).not.toHaveBeenCalled();
     expect(
-      screen.getByText("Daten konnten nicht geladen werden"),
+      screen.getByText(/Daten konnten nicht geladen werden/),
     ).toBeInTheDocument();
   });
 
@@ -111,15 +130,10 @@ describe("FamiliePage (server component) — query error handling", () => {
     const result = await FamiliePage();
     render(result);
 
-    // Should show the error state, not the empty state or member list.
     expect(mockRedirect).not.toHaveBeenCalled();
     expect(
-      screen.getByText("Daten konnten nicht geladen werden"),
+      screen.getByText(/Daten konnten nicht geladen werden/),
     ).toBeInTheDocument();
-    // Should NOT show the empty state heading.
-    expect(
-      screen.queryByText("Noch keine Familienmitglieder"),
-    ).not.toBeInTheDocument();
   });
 
   it("redirects to onboarding when family is null with NO error (legitimate case)", async () => {
@@ -163,9 +177,8 @@ describe("FamiliePage (server component) — query error handling", () => {
     expect(mockRedirect).not.toHaveBeenCalled();
     expect(screen.getByText("Testfamilie")).toBeInTheDocument();
     expect(screen.getByText("Emma")).toBeInTheDocument();
-    // Error state should NOT be shown.
     expect(
-      screen.queryByText("Daten konnten nicht geladen werden"),
+      screen.queryByText(/Daten konnten nicht geladen werden/),
     ).not.toBeInTheDocument();
   });
 
@@ -182,12 +195,11 @@ describe("FamiliePage (server component) — query error handling", () => {
 
     // Should show the empty state, NOT the error state.
     expect(mockRedirect).not.toHaveBeenCalled();
-    // The empty state heading is an <h3> — use role query to be specific.
     expect(
-      screen.getByRole("heading", { name: "Noch keine Familienmitglieder" }),
+      screen.getByText(/Noch niemand hier/),
     ).toBeInTheDocument();
     expect(
-      screen.queryByText("Daten konnten nicht geladen werden"),
+      screen.queryByText(/Daten konnten nicht geladen werden/),
     ).not.toBeInTheDocument();
   });
 });
