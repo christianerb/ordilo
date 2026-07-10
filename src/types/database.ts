@@ -278,7 +278,7 @@ export type Database = {
           document_type: string | null;
           category: string | null;
           status: string;
-          file_url: string;
+          file_url: string | null;
           original_filename: string | null;
           mime_type: string | null;
           page_count: number | null;
@@ -288,6 +288,7 @@ export type Database = {
           created_at: string;
           confirmed_at: string | null;
           tags: string[];
+          source: string;
         };
         Insert: {
           id?: string;
@@ -297,7 +298,7 @@ export type Database = {
           document_type?: string | null;
           category?: string | null;
           status?: string;
-          file_url: string;
+          file_url?: string | null;
           original_filename?: string | null;
           mime_type?: string | null;
           page_count?: number | null;
@@ -307,6 +308,7 @@ export type Database = {
           created_at?: string;
           confirmed_at?: string | null;
           tags?: string[];
+          source?: string;
         };
         Update: {
           id?: string;
@@ -316,7 +318,7 @@ export type Database = {
           document_type?: string | null;
           category?: string | null;
           status?: string;
-          file_url?: string;
+          file_url?: string | null;
           original_filename?: string | null;
           mime_type?: string | null;
           page_count?: number | null;
@@ -326,6 +328,7 @@ export type Database = {
           created_at?: string;
           confirmed_at?: string | null;
           tags?: string[];
+          source?: string;
         };
         Relationships: [];
       };

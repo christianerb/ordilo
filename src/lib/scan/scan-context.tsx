@@ -53,6 +53,7 @@ export function ScanProvider({ children }: { children: ReactNode }) {
             wizardStep={state.wizardStep}
             wizardUploadError={state.wizardUploadError}
             wizardGalleryInputRef={state.wizardGalleryInputRef}
+            createNoteOpen={state.createNoteOpen}
             closeDocument={state.closeDocument}
             closeWizard={state.closeWizard}
             handleConfirmSuccess={state.handleConfirmSuccess}
@@ -63,6 +64,8 @@ export function ScanProvider({ children }: { children: ReactNode }) {
             handleWizardRetryUpload={state.handleWizardRetryUpload}
             handleWizardGallerySelect={state.handleWizardGallerySelect}
             handleWizardReviewDone={state.handleWizardReviewDone}
+            closeCreateNote={state.closeCreateNote}
+            handleCreateNote={state.handleCreateNote}
           />
         </ScanContext.Provider>
       </DocumentViewerContext.Provider>

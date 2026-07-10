@@ -136,6 +136,12 @@ export async function POST(
 
   let fileData: Blob;
   try {
+    if (!document.file_url) {
+      throw new DatalabOcrError(
+        "Diesem Dokument ist keine Datei zugeordnet.",
+        "NO_FILE",
+      );
+    }
     const { data: downloadData, error: downloadError } =
       await adminClient.storage.from("documents").download(document.file_url);
 

@@ -45,7 +45,7 @@ describe("database schema types", () => {
     type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
     expectTypeOf<DocumentRow>()
       .toHaveProperty("file_url")
-      .toEqualTypeOf<string>();
+      .toEqualTypeOf<string | null>();
   });
 
   it("exposes the user_belongs_to_family helper function", () => {

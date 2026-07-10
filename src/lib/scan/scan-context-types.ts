@@ -13,6 +13,14 @@ export type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 export interface ScanActionsValue {
   openWizard: () => void;
+  openCreateNote: () => void;
+  closeCreateNote: () => void;
+  handleCreateNote: (params: {
+    title: string;
+    content: string;
+    documentType: import("@/lib/schemas/extraction").DocumentType;
+    file: File | null;
+  }) => Promise<void>;
 }
 
 export interface DocumentViewerValue {
@@ -55,6 +63,7 @@ export interface ScanProviderState {
   wizardStep: ScanWizardStep;
   wizardUploadError: string | null;
   wizardGalleryInputRef: RefObject<HTMLInputElement | null>;
+  createNoteOpen: boolean;
   closeDocument: () => void;
   closeWizard: () => void;
   handleConfirmSuccess: () => void;
@@ -65,4 +74,12 @@ export interface ScanProviderState {
   handleWizardRetryUpload: () => void;
   handleWizardGallerySelect: (e: ChangeEvent<HTMLInputElement>) => void;
   handleWizardReviewDone: () => void;
+  openCreateNote: () => void;
+  closeCreateNote: () => void;
+  handleCreateNote: (params: {
+    title: string;
+    content: string;
+    documentType: import("@/lib/schemas/extraction").DocumentType;
+    file: File | null;
+  }) => Promise<void>;
 }
