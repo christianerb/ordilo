@@ -16,7 +16,7 @@ env:
   # Next.js build needs no real secrets for lint/typecheck/test.
   # Provide dummy values so build doesn't fail on missing env vars.
   NEXT_PUBLIC_SUPABASE_URL: "https://placeholder.supabase.co"
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: "placeholder-anon-key"
+  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "placeholder-publishable-key"
   SUPABASE_SERVICE_ROLE_KEY: "placeholder-service-key"
   OPENAI_API_KEY: "placeholder-openai-key"
 
