@@ -45,6 +45,18 @@ export async function GET(
     return Response.json(error.body, { status: error.status });
   }
 
+  // Manual notes may not have a file (text-only). Return a 404 so the
+  // client can gracefully hide the "Original ansehen" link.
+  if (!document.file_url) {
+    return Response.json(
+      {
+        error: "Dieses Dokument hat keine Datei.",
+        code: "NO_FILE",
+      },
+      { status: 404 },
+    );
+  }
+
   const { data: signed, error: signError } = await adminClient.storage
     .from("documents")
     .createSignedUrl(document.file_url, SIGNED_URL_TTL_SECONDS);

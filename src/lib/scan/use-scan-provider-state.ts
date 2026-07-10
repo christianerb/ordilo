@@ -18,6 +18,8 @@ import {
   validateFile,
 } from "@/lib/schemas/document";
 import { uploadFile } from "@/lib/upload";
+import { createNote } from "@/lib/notes";
+import type { DocumentType } from "@/lib/schemas/extraction";
 import type {
   DocumentRow,
   ScanContextValue,
@@ -40,6 +42,7 @@ export function useScanProviderState(): ScanProviderState {
   const [wizardDocId, setWizardDocId] = useState<string | null>(null);
   const [wizardDocument, setWizardDocument] = useState<DocumentRow | null>(null);
   const [wizardUploadError, setWizardUploadError] = useState<string | null>(null);
+  const [createNoteOpen, setCreateNoteOpen] = useState(false);
 
   const triggeredAnalysisRef = useRef<Set<string>>(new Set());
   const seededPreExistingRef = useRef(false);
@@ -659,6 +662,57 @@ export function useScanProviderState(): ScanProviderState {
     }
   }, []);
 
+  const openCreateNote = useCallback(() => {
+    setCreateNoteOpen(true);
+  }, []);
+
+  const closeCreateNote = useCallback(() => {
+    setCreateNoteOpen(false);
+  }, []);
+
+  const handleCreateNote = useCallback(
+    async (params: {
+      title: string;
+      content: string;
+      documentType: DocumentType;
+      file: File | null;
+    }) => {
+      const fid = familyIdRef.current ?? await ensureFamilyId();
+      if (!fid) return;
+
+      const result = await createNote({
+        title: params.title,
+        content: params.content,
+        documentType: params.documentType,
+        familyId: fid,
+        file: params.file,
+      });
+
+      // Refresh the document list so the new note appears.
+      if (documentsLoadedRef.current) {
+        await fetchDocumentsRef.current(fid);
+      }
+
+      // Trigger analysis (same as the scan pipeline does after OCR).
+      // The scan context's polling will pick up the "analyzing" → "analyzed"
+      // transition and the document will appear in the review queue.
+      try {
+        await fetch(`/api/documents/${result.document_id}/analyze`, {
+          method: "POST",
+        });
+      } catch {
+        // Analysis trigger failed — the document is still in "ocr_done"
+        // and the polling loop will retry automatically.
+      }
+
+      // Fetch the updated document to reflect the "analyzing" status.
+      if (documentsLoadedRef.current) {
+        await fetchDocumentsRef.current(fid);
+      }
+    },
+    [ensureFamilyId],
+  );
+
   const handleCameraSelect = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -749,6 +803,9 @@ export function useScanProviderState(): ScanProviderState {
       handleConfirmSuccess,
       handleReanalyzeSuccess,
       openWizard,
+      openCreateNote,
+      closeCreateNote,
+      handleCreateNote,
     }),
     [
       documents,
@@ -772,10 +829,16 @@ export function useScanProviderState(): ScanProviderState {
       handleConfirmSuccess,
       handleReanalyzeSuccess,
       openWizard,
+      openCreateNote,
+      closeCreateNote,
+      handleCreateNote,
     ],
   );
 
-  const scanActionsValue = useMemo(() => ({ openWizard }), [openWizard]);
+  const scanActionsValue = useMemo(
+    () => ({ openWizard, openCreateNote, closeCreateNote, handleCreateNote }),
+    [openWizard, openCreateNote, closeCreateNote, handleCreateNote],
+  );
   const documentViewerValue = useMemo(
     () => ({ openDocument, closeDocument }),
     [closeDocument, openDocument],
@@ -801,5 +864,9 @@ export function useScanProviderState(): ScanProviderState {
     handleWizardRetryUpload,
     handleWizardGallerySelect,
     handleWizardReviewDone,
+    createNoteOpen,
+    openCreateNote,
+    closeCreateNote,
+    handleCreateNote,
   };
 }

@@ -124,12 +124,13 @@ export type Database = {
           document_type: string | null
           error_message: string | null
           family_id: string
-          file_url: string
+          file_url: string | null
           id: string
           mime_type: string | null
           ocr_text: string | null
           original_filename: string | null
           page_count: number | null
+          source: string
           status: string
           summary: string | null
           title: string | null
@@ -142,12 +143,13 @@ export type Database = {
           document_type?: string | null
           error_message?: string | null
           family_id: string
-          file_url: string
+          file_url?: string | null
           id?: string
           mime_type?: string | null
           ocr_text?: string | null
           original_filename?: string | null
           page_count?: number | null
+          source?: string
           status?: string
           summary?: string | null
           title?: string | null
@@ -160,12 +162,13 @@ export type Database = {
           document_type?: string | null
           error_message?: string | null
           family_id?: string
-          file_url?: string
+          file_url?: string | null
           id?: string
           mime_type?: string | null
           ocr_text?: string | null
           original_filename?: string | null
           page_count?: number | null
+          source?: string
           status?: string
           summary?: string | null
           title?: string | null

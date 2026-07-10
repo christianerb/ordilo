@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { UploadProgressCard } from "@/components/ordilo/scan-wizard/upload-progress";
 import { useScan } from "@/lib/scan/scan-context";
+import { useScanActions } from "@/lib/scan/scan-context";
 import { toast } from "sonner";
 import type { Database } from "@/types/database";
 
@@ -261,6 +262,7 @@ export default function DokumentePage() {
     handleDeleteDocument,
     openWizard,
   } = useScan();
+  const { openCreateNote } = useScanActions();
 
   const [view, setView] = useState<"folder" | "table">("folder");
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -497,9 +499,21 @@ export default function DokumentePage() {
                 className="bg-white/80"
               >
                 <UploadCloud className="size-4" aria-hidden="true" />
-                PDF hochladen
+                Hochladen
               </Button>
             )}
+
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={openCreateNote}
+              className="shrink-0 bg-white/80"
+              data-testid="open-create-note-button"
+            >
+              <FileText className="size-4" aria-hidden="true" />
+              Anlegen
+            </Button>
 
             <Button
               type="button"
@@ -744,13 +758,24 @@ export default function DokumentePage() {
           )}
         </div>
       ) : (
-        <EmptyState
-          title="Noch nichts gescannt"
-          description="Halte die Kamera auf ein Dokument — Ordilo erkennt den Text, sortiert es ein und merkt sich, was ansteht."
-          icon={ScanLine}
-          actionLabel="Dokument scannen"
-          onAction={openWizard}
-        />
+        <div className="flex flex-col items-center">
+          <EmptyState
+            title="Noch nichts gescannt"
+            description="Halte die Kamera auf ein Dokument — oder leg gleich eine Notiz an."
+            icon={ScanLine}
+            actionLabel="Dokument scannen"
+            onAction={openWizard}
+          />
+          <button
+            type="button"
+            onClick={openCreateNote}
+            className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol)]/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="empty-state-create-note"
+          >
+            <FileText className="size-4" aria-hidden="true" />
+            Notiz anlegen
+          </button>
+        </div>
       )}
 
       {/* Compact upload link at the bottom */}

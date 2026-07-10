@@ -10,6 +10,9 @@ const ScanWizard = dynamic(() =>
 const DocumentDetailSheet = dynamic(() =>
   import("@/components/ordilo/document-detail-sheet").then((m) => m.DocumentDetailSheet),
 );
+const CreateNoteSheet = dynamic(() =>
+  import("@/components/ordilo/create-note-sheet").then((m) => m.CreateNoteSheet),
+);
 
 export function ScanProviderOverlays({
   expandedDocId,
@@ -19,6 +22,7 @@ export function ScanProviderOverlays({
   wizardStep,
   wizardUploadError,
   wizardGalleryInputRef,
+  createNoteOpen,
   closeDocument,
   closeWizard,
   handleConfirmSuccess,
@@ -29,6 +33,8 @@ export function ScanProviderOverlays({
   handleWizardRetryUpload,
   handleWizardGallerySelect,
   handleWizardReviewDone,
+  closeCreateNote,
+  handleCreateNote,
 }: Pick<
   ScanProviderState,
   | "expandedDocument"
@@ -37,6 +43,7 @@ export function ScanProviderOverlays({
   | "wizardStep"
   | "wizardUploadError"
   | "wizardGalleryInputRef"
+  | "createNoteOpen"
   | "closeDocument"
   | "closeWizard"
   | "handleConfirmSuccess"
@@ -47,6 +54,8 @@ export function ScanProviderOverlays({
   | "handleWizardRetryUpload"
   | "handleWizardGallerySelect"
   | "handleWizardReviewDone"
+  | "closeCreateNote"
+  | "handleCreateNote"
 > & { expandedDocId: string | null }) {
   return (
     <>
@@ -83,6 +92,14 @@ export function ScanProviderOverlays({
           onReviewDone={handleWizardReviewDone}
         />
       )}
+
+      <CreateNoteSheet
+        open={createNoteOpen}
+        onOpenChange={(open) => {
+          if (!open) closeCreateNote();
+        }}
+        onSubmit={handleCreateNote}
+      />
     </>
   );
 }
