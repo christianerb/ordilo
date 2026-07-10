@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { validateFamilyName, validateMember } from "@/lib/schemas/onboarding";
+import { DEFAULT_COLLECTIONS } from "@/lib/schemas/collections";
 import type { Database } from "@/types/database";
 
 /**
@@ -126,6 +127,7 @@ export async function addMember(
     role?: string;
     birthdate?: string;
     avatar_color?: string;
+    is_self?: boolean;
   },
 ): Promise<ActionResult<MemberRow>> {
   // Validate input — German validation messages.
@@ -149,6 +151,22 @@ export async function addMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
+  // If is_self is true, first check that no other member is already linked
+  // to this user (prevents double-linking on re-add).
+  let linkedUserId: string | null = null;
+  if (input.is_self) {
+    const { data: existingLink } = await supabase
+      .from("family_members")
+      .select("id")
+      .eq("family_id", familyId)
+      .eq("linked_user_id", user.id)
+      .maybeSingle();
+
+    if (!existingLink) {
+      linkedUserId = user.id;
+    }
+  }
+
   // Insert the family member.
   const { data: member, error: insertError } = await supabase
     .from("family_members")
@@ -158,6 +176,7 @@ export async function addMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
+      linked_user_id: linkedUserId,
     })
     .select("*")
     .single();
@@ -214,6 +233,27 @@ export async function completeOnboarding(
 
   if (updateError) {
     return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  // Seed the default collections ("Sammlungen") for first-time onboarding.
+  // Best-effort and idempotent: only seeds when the family has no
+  // collections yet, so re-running onboarding (or a retry) never creates
+  // duplicates. Failure here must not block onboarding completion.
+  const { count } = await supabase
+    .from("collections")
+    .select("id", { count: "exact", head: true })
+    .eq("family_id", familyId);
+
+  if (!count) {
+    await supabase.from("collections").insert(
+      DEFAULT_COLLECTIONS.map((c, index) => ({
+        family_id: familyId,
+        name: c.name,
+        icon: c.icon,
+        color: c.color,
+        sort_order: index,
+      })),
+    );
   }
 
   return { success: true, data: null };

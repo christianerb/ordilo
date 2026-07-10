@@ -1,18 +1,26 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import {
+  render as rtlRender,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import type { ReactElement } from "react";
 
 // Mock next/navigation useRouter
 const mockPush = vi.fn();
-const mockRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockPush,
     replace: vi.fn(),
-    refresh: mockRefresh,
+    refresh: vi.fn(),
   }),
 }));
 
-// Mock @/lib/supabase/client
+// Mock @/lib/supabase/client. Also backs useFamilyId's `families` lookup
+// (used by ScanProvider, which HomeClient now reads scan state from) —
+// resolving to no family short-circuits the provider's document fetch.
 const mockUpdate = vi.fn();
 const mockEq = vi.fn();
 vi.mock("@/lib/supabase/client", () => ({
@@ -20,12 +28,35 @@ vi.mock("@/lib/supabase/client", () => ({
     from: vi.fn(() => ({
       update: mockUpdate,
       eq: mockEq,
+      select: vi.fn(() => ({
+        limit: vi.fn(() => ({
+          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+        })),
+      })),
     })),
   }),
 }));
+vi.mock("@/lib/upload", () => ({ uploadFile: vi.fn() }));
+vi.mock("@/lib/ocr", () => ({ triggerOcr: vi.fn() }));
 
+// Mock sonner so we can assert on toast calls without mounting a <Toaster/>.
+vi.mock("sonner", () => ({
+  toast: { success: vi.fn(), error: vi.fn() },
+}));
+
+import { toast } from "sonner";
 import { HomeClient, type HomeClientProps } from "@/app/(app)/home/home-client";
 import type { HomeTask } from "@/lib/home-utils";
+import { ScanProvider } from "@/lib/scan/scan-context";
+
+/**
+ * HomeClient reads shared scan actions from ScanProvider —
+ * wrap every render in it so those hooks resolve without every call site
+ * needing to know about the provider.
+ */
+function render(ui: ReactElement, options?: Parameters<typeof rtlRender>[1]) {
+  return rtlRender(<ScanProvider>{ui}</ScanProvider>, options);
+}
 
 // ---------------------------------------------------------------------------
 // Test data
@@ -61,12 +92,14 @@ const upcomingTasks: HomeTask[] = [
     id: "task-1",
     family_id: "fam-1",
     title: "Rechnung bezahlen",
+    description: null,
     due_date: "2026-07-07",
     priority: "high",
     status: "open",
     confidence: 0.9,
     confirmed: true,
     created_at: "2026-07-01T00:00:00Z",
+    tags: [],
     document_id: "doc-2",
     document_title: "Stromrechnung Juli",
   },
@@ -74,12 +107,14 @@ const upcomingTasks: HomeTask[] = [
     id: "task-2",
     family_id: "fam-1",
     title: "Anmeldung Kita",
+    description: null,
     due_date: "2026-07-15",
     priority: "medium",
     status: "open",
     confidence: 0.85,
     confirmed: true,
     created_at: "2026-07-02T00:00:00Z",
+    tags: [],
     document_id: "doc-1",
     document_title: "Kita-Brief für Emma",
   },
@@ -87,12 +122,14 @@ const upcomingTasks: HomeTask[] = [
     id: "task-3",
     family_id: "fam-1",
     title: "Alter Task",
+    description: null,
     due_date: "2026-06-01",
     priority: "low",
     status: "open",
     confidence: 0.7,
     confirmed: true,
     created_at: "2026-05-01T00:00:00Z",
+    tags: [],
     document_id: null,
     document_title: null,
   },
@@ -118,11 +155,13 @@ const recentDocuments = [
 ];
 
 const defaultProps: HomeClientProps = {
+  greeting: "Guten Abend",
   familyName: "Erb",
   members,
   analyzedDocuments,
   upcomingTasks,
   recentDocuments,
+  insights: [],
 };
 
 // Reference date for test data: 2026-07-06 (matches system date)
@@ -134,11 +173,12 @@ const defaultProps: HomeClientProps = {
 
 beforeEach(() => {
   mockPush.mockClear();
-  mockRefresh.mockClear();
   mockUpdate.mockClear();
   mockEq.mockClear();
   mockUpdate.mockReturnValue({ eq: mockEq });
   mockEq.mockResolvedValue({ error: null });
+  vi.mocked(toast.success).mockClear();
+  vi.mocked(toast.error).mockClear();
   // Mock scrollIntoView (not implemented in jsdom)
   Element.prototype.scrollIntoView = vi.fn();
 });
@@ -151,128 +191,107 @@ afterEach(() => {
 // Tests
 // ---------------------------------------------------------------------------
 
-describe("HomeClient — AI Search Bar", () => {
-  it("renders the AI search bar at the top of the page", () => {
-    render(<HomeClient {...defaultProps} />);
-    expect(screen.getByTestId("ai-search-bar")).toBeDefined();
-  });
-
-  it("navigates to /suche with the query when the search bar is submitted", () => {
-    render(<HomeClient {...defaultProps} />);
-
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    fireEvent.change(input, { target: { value: "Zeig mir Rechnungen" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-
-    expect(mockPush).toHaveBeenCalledWith(
-      expect.stringMatching(/^\/suche\?q=/),
-    );
-    const callArg = mockPush.mock.calls[0][0] as string;
-    const params = new URLSearchParams(callArg.split("?")[1]);
-    expect(params.get("q")).toBe("Zeig mir Rechnungen");
-  });
-
-  it("does not navigate when submitting an empty query", () => {
-    render(<HomeClient {...defaultProps} />);
-
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    fireEvent.change(input, { target: { value: "   " } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-
-    expect(mockPush).not.toHaveBeenCalled();
-  });
-});
-
 describe("HomeClient — Family Display", () => {
   it("shows the family name", () => {
     render(<HomeClient {...defaultProps} />);
     expect(screen.getByText("Erb")).toBeDefined();
   });
 
-  it("shows family member names", () => {
+  it("shows family member avatars with accessible names", () => {
     render(<HomeClient {...defaultProps} />);
-    expect(screen.getByText("Emma")).toBeDefined();
-    expect(screen.getByText("Christian")).toBeDefined();
-    expect(screen.getByText("Hanna")).toBeDefined();
+    const memberList = screen.getByTestId("member-list");
+    expect(memberList.querySelector('[aria-label="Emma"]')).not.toBeNull();
+    expect(memberList.querySelector('[aria-label="Christian"]')).not.toBeNull();
+    expect(memberList.querySelector('[aria-label="Hanna"]')).not.toBeNull();
   });
 });
 
-describe("HomeClient — Heute wichtig", () => {
-  it("renders the 'Heute wichtig' section heading", () => {
-    render(<HomeClient {...defaultProps} />);
-    expect(screen.getByText("Heute wichtig")).toBeDefined();
+describe("HomeClient — Aufgaben timeline", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-06T12:00:00Z"));
   });
 
-  it("shows tasks due within the next 7 days in 'Heute wichtig'", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("renders the 'Aufgaben' section heading", () => {
     render(<HomeClient {...defaultProps} />);
-    const section = screen
-      .getByText("Heute wichtig")
-      .closest("[data-testid='home-section-heute-wichtig']");
-    expect(section).not.toBeNull();
-    // task-1 is due 2026-07-07 (1 day from today 2026-07-06) → should show
+    expect(screen.getByText("Aufgaben")).toBeDefined();
+  });
+
+  it("shows overdue tasks in the 'Überfällig' subgroup", () => {
+    render(<HomeClient {...defaultProps} />);
+    const subgroup = screen.getByTestId("home-tasks-ueberfaellig");
     expect(
-      within(section as HTMLElement).getByText("Rechnung bezahlen"),
+      within(subgroup).getByText("Alter Task"),
     ).toBeDefined();
   });
 
-  it("does not show tasks due beyond 7 days in 'Heute wichtig'", () => {
+  it("shows tasks due within 7 days in the 'Diese Woche' subgroup", () => {
     render(<HomeClient {...defaultProps} />);
-    // task-2 is due 2026-07-15 (9 days from today) → should NOT show in Heute wichtig
-    // But it should show in Fristen
-    const section = screen
-      .getByText("Heute wichtig")
-      .closest("[data-testid='home-section-heute-wichtig']");
-    expect(section).not.toBeNull();
+    const subgroup = screen.getByTestId("home-tasks-diese-woche");
     expect(
-      within(section as HTMLElement).queryByText("Anmeldung Kita"),
+      within(subgroup).getByText("Rechnung bezahlen"),
+    ).toBeDefined();
+  });
+
+  it("does not show tasks due beyond 7 days in 'Diese Woche'", () => {
+    render(<HomeClient {...defaultProps} />);
+    const subgroup = screen.getByTestId("home-tasks-diese-woche");
+    expect(
+      within(subgroup).queryByText("Anmeldung Kita"),
     ).toBeNull();
   });
 
-  it("excludes overdue tasks from 'Heute wichtig'", () => {
+  it("excludes overdue tasks from 'Diese Woche'", () => {
     render(<HomeClient {...defaultProps} />);
-    // task-3 is due 2026-06-01 (overdue, before today 2026-07-06) → should NOT show
-    const section = screen
-      .getByText("Heute wichtig")
-      .closest("[data-testid='home-section-heute-wichtig']");
-    expect(section).not.toBeNull();
+    const subgroup = screen.getByTestId("home-tasks-diese-woche");
     expect(
-      within(section as HTMLElement).queryByText("Alter Task"),
+      within(subgroup).queryByText("Alter Task"),
     ).toBeNull();
   });
 
-  it("shows an empty state with a scan CTA when there are no urgent tasks", () => {
+  it("shows tasks beyond 7 days in the 'Später' subgroup", () => {
+    render(<HomeClient {...defaultProps} />);
+    const subgroup = screen.getByTestId("home-tasks-spaeter");
+    expect(
+      within(subgroup).getByText("Anmeldung Kita"),
+    ).toBeDefined();
+  });
+
+  it("excludes overdue tasks from 'Später'", () => {
+    render(<HomeClient {...defaultProps} />);
+    const subgroup = screen.getByTestId("home-tasks-spaeter");
+    expect(
+      within(subgroup).queryByText("Alter Task"),
+    ).toBeNull();
+  });
+
+  it("does not render the Aufgaben section when there are no tasks", () => {
     render(
       <HomeClient
         {...defaultProps}
         upcomingTasks={[]}
       />,
     );
-    const section = screen
-      .getByText("Heute wichtig")
-      .closest("[data-testid='home-section-heute-wichtig']");
-    expect(section).not.toBeNull();
-    expect(
-      within(section as HTMLElement).getByText("Nichts Dringendes"),
-    ).toBeDefined();
-    // VAL-HOME-007: empty state must include a scan CTA
-    expect(
-      within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
-    ).toBeDefined();
+    expect(screen.queryByTestId("home-section-aufgaben")).toBeNull();
   });
 });
 
-describe("HomeClient — Neue Dokumente zur Bestätigung", () => {
+describe("HomeClient — Zum Durchsehen", () => {
   it("renders the section heading", () => {
     render(<HomeClient {...defaultProps} />);
     expect(
-      screen.getByText("Neue Dokumente zur Bestätigung"),
+      screen.getByText("Zum Durchsehen"),
     ).toBeDefined();
   });
 
   it("shows analyzed documents with a review affordance", () => {
     render(<HomeClient {...defaultProps} />);
     const section = screen
-      .getByText("Neue Dokumente zur Bestätigung")
+      .getByText("Zum Durchsehen")
       .closest("[data-testid='home-section-review-docs']");
     expect(section).not.toBeNull();
     expect(
@@ -291,60 +310,11 @@ describe("HomeClient — Neue Dokumente zur Bestätigung", () => {
       />,
     );
     const section = screen
-      .getByText("Neue Dokumente zur Bestätigung")
+      .getByText("Zum Durchsehen")
       .closest("[data-testid='home-section-review-docs']");
     expect(section).not.toBeNull();
     expect(
-      within(section as HTMLElement).getByText("Keine neuen Dokumente"),
-    ).toBeDefined();
-    // VAL-HOME-007: empty state must include a scan CTA
-    expect(
-      within(section as HTMLElement).getByRole("button", { name: "Dokument scannen" }),
-    ).toBeDefined();
-  });
-});
-
-describe("HomeClient — Fristen", () => {
-  it("renders the 'Fristen' section heading", () => {
-    render(<HomeClient {...defaultProps} />);
-    expect(screen.getByText("Fristen")).toBeDefined();
-  });
-
-  it("shows upcoming deadlines sorted by due date", () => {
-    render(<HomeClient {...defaultProps} />);
-    const section = screen
-      .getByText("Fristen")
-      .closest("[data-testid='home-section-fristen']");
-    expect(section).not.toBeNull();
-    // task-1 (due 07-07) and task-2 (due 07-15) should appear
-    // task-3 (due 06-01, overdue) should NOT appear in Fristen
-    expect(within(section as HTMLElement).getByText("Rechnung bezahlen")).toBeDefined();
-    expect(within(section as HTMLElement).getByText("Anmeldung Kita")).toBeDefined();
-  });
-
-  it("excludes overdue tasks from Fristen", () => {
-    render(<HomeClient {...defaultProps} />);
-    const section = screen
-      .getByText("Fristen")
-      .closest("[data-testid='home-section-fristen']");
-    expect(
-      within(section as HTMLElement).queryByText("Alter Task"),
-    ).toBeNull();
-  });
-
-  it("shows an empty state with a scan CTA when there are no upcoming deadlines", () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-      />,
-    );
-    const section = screen
-      .getByText("Fristen")
-      .closest("[data-testid='home-section-fristen']");
-    expect(section).not.toBeNull();
-    expect(
-      within(section as HTMLElement).getByText("Keine anstehenden Fristen"),
+      within(section as HTMLElement).getByText("Alles durchgesehen — fein"),
     ).toBeDefined();
     // VAL-HOME-007: empty state must include a scan CTA
     expect(
@@ -432,9 +402,8 @@ describe("HomeClient — Layout", () => {
     const sections = screen.getAllByTestId(/^home-section-/);
     const sectionIds = sections.map((s) => s.getAttribute("data-testid"));
     expect(sectionIds).toEqual([
-      "home-section-heute-wichtig",
+      "home-section-aufgaben",
       "home-section-review-docs",
-      "home-section-fristen",
       "home-section-recent-docs",
     ]);
   });
@@ -451,11 +420,73 @@ describe("HomeClient — Task Interaction", () => {
 
     // The update should have been called with status "done"
     expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
+  });
 
-    // The refresh should have been called to sync server data
+  it("shows a success toast immediately when a task is marked done", () => {
+    render(<HomeClient {...defaultProps} />);
+    const checkboxes = screen.getAllByTestId("task-checkbox");
+    fireEvent.click(checkboxes[0]);
+    expect(toast.success).toHaveBeenCalledWith("Erledigt — gut gemacht!");
+  });
+});
+
+describe("HomeClient — Bento stat tiles", () => {
+  it("shows both the Aufgaben stat tile and the Scan tile when there are open tasks", () => {
+    render(<HomeClient {...defaultProps} />);
+    const statTile = screen.getByTestId("home-stat-tasks");
+    expect(within(statTile).getByText("3")).toBeDefined();
+    expect(within(statTile).getByText("Aufgaben offen")).toBeDefined();
+    expect(screen.getByTestId("home-stat-scan")).toBeDefined();
+  });
+
+  it("shows both stat tiles with a calm zero-state when there are no open tasks", () => {
+    render(<HomeClient {...defaultProps} upcomingTasks={[]} />);
+    const statTile = screen.getByTestId("home-stat-tasks");
+    expect(within(statTile).getByText("0")).toBeDefined();
+    expect(within(statTile).getByText("Keine Aufgaben offen")).toBeDefined();
+    expect(screen.getByTestId("home-stat-scan")).toBeDefined();
+  });
+
+  it("Scan tile opens the scan wizard overlay", async () => {
+    render(<HomeClient {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("home-stat-scan"));
     await waitFor(() => {
-      expect(mockRefresh).toHaveBeenCalled();
+      expect(screen.getByTestId("scan-wizard")).toBeDefined();
     });
+  });
+});
+
+describe("HomeClient — Family avatar overflow", () => {
+  it("shows a '+N' overflow pill when there are more than 5 family members", () => {
+    const manyMembers = [
+      ...members,
+      { id: "m4", name: "Anna", role: "Kind", avatar_color: "#606060" },
+      { id: "m5", name: "Ben", role: "Kind", avatar_color: "#606060" },
+      { id: "m6", name: "Clara", role: "Kind", avatar_color: "#606060" },
+    ];
+    render(<HomeClient {...defaultProps} members={manyMembers} />);
+    const memberList = screen.getByTestId("member-list");
+    expect(within(memberList).getByText("+1")).toBeDefined();
+  });
+});
+
+describe("HomeClient — BentoDocTile status", () => {
+  it("does not show a status dot/label in 'Zum Durchsehen' (status is always 'analyzed')", () => {
+    render(<HomeClient {...defaultProps} />);
+    const section = screen
+      .getByText("Zum Durchsehen")
+      .closest("[data-testid='home-section-review-docs']") as HTMLElement;
+    expect(within(section).queryByText("Bereit zum Durchsehen")).toBeNull();
+  });
+
+  it("shows a visible status label alongside the dot in 'Zuletzt gescannt'", () => {
+    render(<HomeClient {...defaultProps} />);
+    const section = screen
+      .getByText("Zuletzt gescannt")
+      .closest("[data-testid='home-section-recent-docs']") as HTMLElement;
+    expect(
+      within(section).getAllByText("Im Familienbuch").length,
+    ).toBeGreaterThan(0);
   });
 });
 
@@ -471,7 +502,7 @@ describe("HomeClient — German UI", () => {
 });
 
 describe("HomeClient — Empty State Scan CTA", () => {
-  it("scan CTA in 'Zuletzt gescannt' empty state navigates to /scan", () => {
+  it("scan CTA in 'Zuletzt gescannt' empty state opens the scan wizard", async () => {
     render(
       <HomeClient
         {...defaultProps}
@@ -485,27 +516,12 @@ describe("HomeClient — Empty State Scan CTA", () => {
       name: "Dokument scannen",
     });
     fireEvent.click(cta);
-    expect(mockPush).toHaveBeenCalledWith("/scan");
-  });
-
-  it("scan CTA in 'Heute wichtig' empty state navigates to /scan", () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-      />,
-    );
-    const section = screen
-      .getByText("Heute wichtig")
-      .closest("[data-testid='home-section-heute-wichtig']");
-    const cta = within(section as HTMLElement).getByRole("button", {
-      name: "Dokument scannen",
+    await waitFor(() => {
+      expect(screen.getByTestId("scan-wizard")).toBeDefined();
     });
-    fireEvent.click(cta);
-    expect(mockPush).toHaveBeenCalledWith("/scan");
   });
 
-  it("scan CTA in 'Neue Dokumente' empty state navigates to /scan", () => {
+  it("scan CTA in 'Zum Durchsehen' empty state opens the scan wizard", async () => {
     render(
       <HomeClient
         {...defaultProps}
@@ -513,30 +529,15 @@ describe("HomeClient — Empty State Scan CTA", () => {
       />,
     );
     const section = screen
-      .getByText("Neue Dokumente zur Bestätigung")
+      .getByText("Zum Durchsehen")
       .closest("[data-testid='home-section-review-docs']");
     const cta = within(section as HTMLElement).getByRole("button", {
       name: "Dokument scannen",
     });
     fireEvent.click(cta);
-    expect(mockPush).toHaveBeenCalledWith("/scan");
-  });
-
-  it("scan CTA in 'Fristen' empty state navigates to /scan", () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-      />,
-    );
-    const section = screen
-      .getByText("Fristen")
-      .closest("[data-testid='home-section-fristen']");
-    const cta = within(section as HTMLElement).getByRole("button", {
-      name: "Dokument scannen",
+    await waitFor(() => {
+      expect(screen.getByTestId("scan-wizard")).toBeDefined();
     });
-    fireEvent.click(cta);
-    expect(mockPush).toHaveBeenCalledWith("/scan");
   });
 });
 

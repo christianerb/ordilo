@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { ListChecks } from "lucide-react";
 
 import { SourceCard } from "@/components/ordilo/source-card";
 
@@ -7,20 +8,12 @@ describe("SourceCard", () => {
   const defaultProps = {
     documentId: "doc-123",
     title: "Stromrechnung Juli 2026",
-    excerpt: "Rechnung über 45,80 € für Juli 2026",
     score: 0.85,
   };
 
   it("renders the document title", () => {
     render(<SourceCard {...defaultProps} />);
     expect(screen.getByText("Stromrechnung Juli 2026")).toBeDefined();
-  });
-
-  it("renders the excerpt text", () => {
-    render(<SourceCard {...defaultProps} />);
-    expect(
-      screen.getByText("Rechnung über 45,80 € für Juli 2026"),
-    ).toBeDefined();
   });
 
   it("renders the relevance score as a bounded percentage", () => {
@@ -85,8 +78,9 @@ describe("SourceCard", () => {
 
   it("displays the relevance label in German", () => {
     render(<SourceCard {...defaultProps} score={0.92} />);
-    // Should show a German relevance label like "Relevanz"
-    expect(screen.getByText(/relevanz/i)).toBeDefined();
+    // The compact chip shows the percentage only; the German "Relevanz"
+    // label is exposed via aria-label for accessibility.
+    expect(screen.getByLabelText(/relevanz/i)).toBeDefined();
   });
 
   it("handles special characters in title safely", () => {
@@ -100,15 +94,19 @@ describe("SourceCard", () => {
     expect(screen.getByText(specialTitle)).toBeDefined();
   });
 
-  it("handles special characters in excerpt safely", () => {
+  it("defaults to the 'Dokumenten-Suche' kind label when no kind is provided", () => {
+    render(<SourceCard {...defaultProps} />);
+    expect(screen.getByText("Dokumenten-Suche")).toBeDefined();
+  });
+
+  it("renders a custom kind label and icon when provided", () => {
     render(
       <SourceCard
         {...defaultProps}
-        excerpt="Betrag: 100€ <script>alert('xss')</script>"
+        kind={{ icon: ListChecks, label: "Aufgaben-Suche" }}
       />,
     );
-    // The text is rendered as text content, not HTML
-    expect(screen.getByText(/Betrag: 100€/)).toBeDefined();
-    expect(screen.queryByText("alert('xss')")).toBeNull();
+    expect(screen.getByText("Aufgaben-Suche")).toBeDefined();
   });
+
 });

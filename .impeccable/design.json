@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-07T11:00:00.000Z",
+  "title": "Design System: Ordilo",
+  "extensions": {
+    "colorMeta": {
+      "warm-white": {
+        "role": "neutral",
+        "displayName": "Warm White",
+        "canonical": "#FCFCFC",
+        "tonalRamp": ["#193232", "#244854", "#305460", "#6080a0", "#a0c0d0", "#d0e0e8", "#f0f4f8", "#FCFCFC"]
+      },
+      "sand": {
+        "role": "neutral",
+        "displayName": "Sand",
+        "canonical": "#FCFCF0",
+        "tonalRamp": ["#2b2824", "#5b4935", "#8c7561", "#a58a75", "#d3c9b5", "#e8e0d0", "#f5f0e8", "#FCFCF0"]
+      },
+      "sand-light": {
+        "role": "neutral",
+        "displayName": "Sand Light",
+        "canonical": "#FCF8F4",
+        "tonalRamp": ["#2b2824", "#5b4935", "#8c7561", "#a58a75", "#cfc8b7", "#e4ddd0", "#f0ebe5", "#FCF8F4"]
+      },
+      "sand-warm": {
+        "role": "neutral",
+        "displayName": "Sand Warm",
+        "canonical": "#FCF0E4",
+        "tonalRamp": ["#2b2824", "#5b4935", "#8c7561", "#a58a75", "#cfb3a7", "#e0ccc0", "#f0e0d5", "#FCF0E4"]
+      },
+      "graphite": {
+        "role": "neutral",
+        "displayName": "Graphite",
+        "canonical": "#242424",
+        "tonalRamp": ["#0a0a0a", "#1a1a1a", "#242424", "#3a3a3a", "#5a5a5a", "#7a7a7a", "#aaaaaa", "#cccccc"]
+      },
+      "mist-dark": {
+        "role": "neutral",
+        "displayName": "Mist Dark",
+        "canonical": "#606060",
+        "tonalRamp": ["#1a1a1a", "#2a2a2a", "#3a3a3a", "#4a4a4a", "#606060", "#808080", "#a0a0a0", "#c0c0c0"]
+      },
+      "mist": {
+        "role": "neutral",
+        "displayName": "Mist",
+        "canonical": "#9C9C9C",
+        "tonalRamp": ["#2a2a2a", "#4a4a4a", "#606060", "#808080", "#9C9C9C", "#b0b0b0", "#c8c8c8", "#e0e0e0"]
+      },
+      "mist-light": {
+        "role": "neutral",
+        "displayName": "Mist Light",
+        "canonical": "#CCCCCC",
+        "tonalRamp": ["#3a3a3a", "#5a5a5a", "#7a7a7a", "#9a9a9a", "#b0b0b0", "#CCCCCC", "#e0e0e0", "#f0f0f0"]
+      },
+      "harbor-blue": {
+        "role": "primary",
+        "displayName": "Harbor Blue",
+        "canonical": "#305460",
+        "tonalRamp": ["#0a1a20", "#142830", "#193232", "#285064", "#305460", "#5080a0", "#80b0c8", "#b0d0e0"]
+      },
+      "harbor-blue-dark": {
+        "role": "primary",
+        "displayName": "Harbor Blue Dark",
+        "canonical": "#285064",
+        "tonalRamp": ["#0a1a20", "#142830", "#193232", "#285064", "#305460", "#5080a0", "#80b0c8", "#b0d0e0"]
+      },
+      "harbor-blue-darker": {
+        "role": "primary",
+        "displayName": "Harbor Blue Darker",
+        "canonical": "#193232",
+        "tonalRamp": ["#0a1a20", "#0e1818", "#193232", "#244854", "#305460", "#5080a0", "#80b0c8", "#b0d0e0"]
+      },
+      "warm-apricot": {
+        "role": "secondary",
+        "displayName": "Warm Apricot",
+        "canonical": "#E46018",
+        "tonalRamp": ["#4a1808", "#8a3010", "#c04818", "#E46018", "#f08040", "#f4a070", "#F0B4A0", "#fce0d0"]
+      },
+      "warm-apricot-light": {
+        "role": "secondary",
+        "displayName": "Warm Apricot Light",
+        "canonical": "#F0B4A0",
+        "tonalRamp": ["#4a1808", "#8a3010", "#c04818", "#E46018", "#f08040", "#F0B4A0", "#fce0d0", "#fff0e8"]
+      },
+      "blue-soft": {
+        "role": "tertiary",
+        "displayName": "Blue Soft",
+        "canonical": "#E4F0FC",
+        "tonalRamp": ["#193232", "#285064", "#305460", "#6080a0", "#a0c0d0", "#c0d8e8", "#E4F0FC", "#f0f8fc"]
+      },
+      "destructive": {
+        "role": "tertiary",
+        "displayName": "Destructive",
+        "canonical": "#C0392B",
+        "tonalRamp": ["#3a0e08", "#6a1a10", "#902820", "#C0392B", "#d05040", "#e07060", "#f0a090", "#fce0d8"]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Section headings and card titles. Small for a display role — product UI density over brand spectacle."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Primary content text, descriptions, helper text. Max 65-75ch on wider surfaces."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Badges, status labels, nav tab labels, form labels. Sentence case, never uppercase."
+      },
+      "timestamp": {
+        "displayName": "Timestamp",
+        "purpose": "Relative timestamps, due dates, secondary metadata. Mist-dark color."
+      }
+    },
+    "shadows": [
+      {
+        "name": "card-rest",
+        "value": "0 2px 8px rgba(36, 36, 36, 0.06)",
+        "purpose": "Default elevation for all card surfaces. Barely visible — the border does most of the separation work."
+      },
+      {
+        "name": "card-hover",
+        "value": "0 4px 16px rgba(36, 36, 36, 0.08)",
+        "purpose": "Hover state for interactive cards. A gentle deepening, not a lift."
+      }
+    ],
+    "motion": [
+      {
+        "name": "page-fade-in",
+        "value": "page-fade-in 0.25s ease-out",
+        "purpose": "Page transition animation on tab change. Opacity 0 + translateY(4px) to opacity 1 + translateY(0)."
+      },
+      {
+        "name": "state-transition",
+        "value": "transition-all 150ms ease-out",
+        "purpose": "Default state transition for interactive elements (hover, focus, active)."
+      },
+      {
+        "name": "spin",
+        "value": "animation: spin 1s linear infinite",
+        "purpose": "Processing indicator for documents undergoing OCR or extraction."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "mobile",
+        "value": "max-width: 448px"
+      },
+      {
+        "name": "content-max",
+        "value": "448px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single primary action color. Harbor Blue background, warm-white text.",
+      "html": "<button class=\"ds-btn-primary\">Dokument scannen</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #305460; color: #FCFCFC; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; border: none; border-radius: 12px; padding: 8px 16px; height: 36px; cursor: pointer; transition: background 0.15s ease-out; } .ds-btn-primary:hover { background: #285064; } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(48, 84, 96, 0.5); } .ds-btn-primary:disabled { opacity: 0.5; pointer-events: none; }"
+    },
+    {
+      "name": "Large Button",
+      "kind": "button",
+      "refersTo": "button-lg",
+      "description": "Large primary button for empty-state CTAs and onboarding. 48px height, 20px radius.",
+      "html": "<button class=\"ds-btn-lg\">Person hinzufügen</button>",
+      "css": ".ds-btn-lg { display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: #305460; color: #FCFCFC; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; border: none; border-radius: 20px; padding: 16px 24px; height: 48px; cursor: pointer; transition: background 0.15s ease-out; } .ds-btn-lg:hover { background: #285064; } .ds-btn-lg:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(48, 84, 96, 0.5); }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Transparent secondary button. Mist-dark text, sand-warm hover.",
+      "html": "<button class=\"ds-btn-ghost\">Abmelden</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: transparent; color: #606060; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 14px; font-weight: 500; border: none; border-radius: 12px; padding: 6px 10px; cursor: pointer; transition: background 0.15s ease-out, color 0.15s ease-out; } .ds-btn-ghost:hover { background: #FCF0E4; color: #242424; } .ds-btn-ghost:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(48, 84, 96, 0.5); }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "The primary surface. Sand background, 20px radius, ambient shadow, 1px mist-light border.",
+      "html": "<div class=\"ds-card\">Card content goes here</div>",
+      "css": ".ds-card { background: #FCFCF0; color: #242424; border: 1px solid #CCCCCC; border-radius: 20px; padding: 16px; box-shadow: 0 2px 8px rgba(36, 36, 36, 0.06); font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-card:hover { box-shadow: 0 4px 16px rgba(36, 36, 36, 0.08); }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Text input with mist-light border, transparent background, harbor-blue focus ring.",
+      "html": "<input class=\"ds-input\" placeholder=\"Dokument durchsuchen...\" />",
+      "css": ".ds-input { width: 100%; height: 36px; background: transparent; color: #242424; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 16px; border: 1px solid #CCCCCC; border-radius: 10px; padding: 4px 12px; outline: none; transition: box-shadow 0.15s ease-out, border-color 0.15s ease-out; } .ds-input::placeholder { color: #606060; } .ds-input:focus-visible { border-color: #305460; box-shadow: 0 0 0 3px rgba(48, 84, 96, 0.5); }"
+    },
+    {
+      "name": "Status Badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Pill-shaped badge for document status, priority, or type. Color-coded by semantic role.",
+      "html": "<span class=\"ds-badge\">Bestatigt</span>",
+      "css": ".ds-badge { display: inline-flex; align-items: center; gap: 4px; background: rgba(48, 84, 96, 0.1); color: #305460; font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 12px; font-weight: 500; border: 1px solid rgba(48, 84, 96, 0.2); border-radius: 9999px; padding: 2px 10px; white-space: nowrap; }"
+    },
+    {
+      "name": "Bottom Navigation",
+      "kind": "nav",
+      "refersTo": "nav-tab",
+      "description": "Fixed bottom tab bar with five tabs. Dark petrol background, apricot active state.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-tab ds-nav-tab-active\">Home</a><a class=\"ds-nav-tab\">Scan</a><a class=\"ds-nav-tab\">Suche</a><a class=\"ds-nav-tab\">Familie</a><a class=\"ds-nav-tab\">Aufgaben</a></nav>",
+      "css": ".ds-nav { display: flex; justify-content: space-around; background: #193232; border-top: 1px solid rgba(255,255,255,0.1); padding: 0; } .ds-nav-tab { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; color: rgba(255,255,255,0.55); font-family: Inter, ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 500; text-decoration: none; flex: 1; transition: color 0.15s ease-out; } .ds-nav-tab:hover { color: rgba(255,255,255,0.8); } .ds-nav-tab-active { color: #E46018; }"
+    },
+    {
+      "name": "Empty State",
+      "kind": "custom",
+      "refersTo": "",
+      "description": "Warm, inviting placeholder with illustration circle, heading, description, and CTA.",
+      "html": "<div class=\"ds-empty\"><div class=\"ds-empty-icon\"></div><h3 class=\"ds-empty-title\">Noch keine Dokumente</h3><p class=\"ds-empty-desc\">Scanne dein erstes Dokument, um zu beginnen.</p><button class=\"ds-empty-cta\">Jetzt scannen</button></div>",
+      "css": ".ds-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 24px; text-align: center; font-family: Inter, ui-sans-serif, system-ui, sans-serif; } .ds-empty-icon { width: 80px; height: 80px; border-radius: 50%; background: #FCF8F4; margin-bottom: 20px; } .ds-empty-title { font-size: 18px; font-weight: 600; color: #242424; margin: 0; } .ds-empty-desc { font-size: 14px; color: #606060; margin: 6px 0 0; max-width: 20rem; line-height: 1.5; } .ds-empty-cta { margin-top: 24px; display: inline-flex; align-items: center; justify-content: center; background: #305460; color: #FCFCFC; font-size: 14px; font-weight: 500; border: none; border-radius: 20px; padding: 16px 24px; height: 48px; cursor: pointer; transition: background 0.15s ease-out; } .ds-empty-cta:hover { background: #285064; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Family Journal",
+    "overview": "Ordilo is a well-kept, warm, personal record — not a filing system. Every surface should feel like opening a family journal: cream paper, gentle forms, quiet confidence. The app does hard work (OCR, LLM extraction, semantic search) but never parades it. Users see the result, not the process. The interface is calm by default, warm in its details, and trustworthy in its structure.\n\nThe system rejects corporate document management aesthetics (SharePoint, SAP), cluttered scanner apps with aggressive upsells, cold clinical fintech dashboards, and generic AI tool UIs with dark-mode chat interfaces and novelty gradients. Ordilo is personal, not institutional. It does one thing beautifully, not fifteen things adequately.\n\nThe palette is earthy and organic: a deep maritime teal for trust and authority, a baked apricot for warmth and attention, cream-toned surfaces for calm, and graphite text for clarity.",
+    "keyCharacteristics": [
+      "Warm, cream-toned surfaces with graphite text — never sterile white, never cold gray",
+      "Harbor Blue (#305460) as the single voice of authority — primary actions, links, focus rings",
+      "Warm Apricot (#E46018) used sparingly for active state and high-priority emphasis",
+      "Generous 20px radius on primary cards — gentle, not bubbly",
+      "Subtle, warm-toned shadows that barely lift surfaces off the background",
+      "Mobile-first, one-thumb, 30-second interaction windows",
+      "Inter throughout — one family, multiple weights, no pairing needed",
+      "German-language UI copy, plain and accessible"
+    ],
+    "rules": [
+      {
+        "name": "The One Voice Rule",
+        "body": "Harbor Blue is the single color for primary actions, links, and focus. If two colors compete for primary on the same screen, one is wrong. Apricot never pairs with Harbor Blue on the same element.",
+        "section": "colors"
+      },
+      {
+        "name": "The Apricot Scarcity Rule",
+        "body": "Warm Apricot appears on <=5% of any screen. It marks the active nav tab and high-priority items only. If apricot decorates more than one element per view, it has stopped being a signal and become noise.",
+        "section": "colors"
+      },
+      {
+        "name": "The Warm Neutral Rule",
+        "body": "Backgrounds are warm. Warm White, Sand, Sand Light, and Sand Warm form a four-step warm-neutral ramp. Never substitute pure white (#FFFFFF) or cool gray for a surface — the warmth is the brand.",
+        "section": "colors"
+      },
+      {
+        "name": "The No-Display-Font Rule",
+        "body": "Inter is the only typeface. No serif display, no geometric pairing, no monospace accents. Hierarchy comes from weight (400 to 600), size (0.75rem to 1.125rem), and color (graphite to mist-dark), never from a different family.",
+        "section": "typography"
+      },
+      {
+        "name": "The No-UpperCase Rule",
+        "body": "Labels and badges use sentence case, never uppercase with letter-spacing. German nouns are already capitalized — adding all-caps reads as bureaucratic, which Ordilo is not.",
+        "section": "typography"
+      },
+      {
+        "name": "The Ambient Shadow Rule",
+        "body": "Shadows never exceed 16px blur. If a shadow is visible enough to notice, it is too strong. The border (mist-light, 1px) is the primary separator; the shadow is ambient warmth.",
+        "section": "elevation"
+      },
+      {
+        "name": "The No-Shadow-Stacking Rule",
+        "body": "Nested cards do not get nested shadows. If a card contains another card, the inner card loses its shadow and relies on background contrast (sand-light vs. sand) for separation.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do use Harbor Blue (#305460) as the single primary action color across every screen.",
+      "Do use Warm Apricot (#E46018) only for the active nav tab and high-priority indicators — never more than one apricot element per view.",
+      "Do use Sand (#FCFCF0) as the card surface and Warm White (#FCFCFC) as the app background.",
+      "Do use 20px radius (rounded-ordilo-md) on primary cards and 12px (rounded-ordilo-sm) on buttons.",
+      "Do keep shadows ambient: 0 2px 8px rgba(36, 36, 36, 0.06) at rest, 0 4px 16px rgba(36, 36, 36, 0.08) on hover.",
+      "Do use Inter throughout, with hierarchy from weight and size, never from a different typeface.",
+      "Do write German UI copy at Hauptschul-niveau — plain, warm, non-bureaucratic.",
+      "Do provide empty states that teach the interface.",
+      "Do respect prefers-reduced-motion.",
+      "Do explore sage greens and warm tans as the system grows."
+    ],
+    "donts": [
+      "Don't use pure white (#FFFFFF) for surfaces. Warm White and Sand are the backgrounds.",
+      "Don't use border-left or border-right greater than 1px as a colored accent stripe.",
+      "Don't pair a 1px border with a wide drop shadow (blur >= 16px) on the same element.",
+      "Don't use gradient text (background-clip: text with a gradient).",
+      "Don't use radii larger than 28px on cards, sections, or inputs.",
+      "Don't use uppercase letter-spacing on labels or badges.",
+      "Don't use Mist (#9C9C9C) for body text. Use Mist Dark (#606060) for muted foreground.",
+      "Don't use display fonts, serif pairings, or monospace accents in the UI.",
+      "Don't use decorative motion that doesn't convey state.",
+      "Don't use corporate/enterprise document management aesthetics.",
+      "Don't use cluttered scanner-app patterns — upsell banners, watermarked free tiers, feature-dense toolbars.",
+      "Don't use dark-mode chat interfaces, terminal typography, or novelty gradient accents."
+    ]
+  }
+}

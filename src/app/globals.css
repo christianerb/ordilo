@@ -27,18 +27,15 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Radius tokens — shadcn uses a single --radius that drives sm/md/lg/xl */
-  --radius-sm: calc(var(--radius) - 8px);
-  --radius-md: calc(var(--radius) - 4px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Radius tokens — unified to 2 values + pill */
+  --radius-sm: 12px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-xl: 20px;
 
-  /* Ordilo-specific radius tokens (design system: 12/20/24/28px) */
+  /* Ordilo-specific radius tokens */
   --radius-ordilo-sm: 12px;
   --radius-ordilo-md: 20px;
-  --radius-ordilo-lg: 24px;
-  --radius-ordilo-xl: 28px;
-  --radius-ordilo-pill: 9999px;
 
   /* Font family */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
@@ -56,8 +53,90 @@
     to { height: 0; }
   }
 
-  /* Page fade-in animation for smooth tab transitions (VAL-DESIGN-010) */
+  /* Page fade-in animation — premium blur-to-sharp transition */
   @keyframes page-fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+      filter: blur(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  /* Chat message entrance — fade + slide up */
+  @keyframes message-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Card list item entrance — fade + slide up, used with stagger delays */
+  @keyframes card-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Checkbox check mark pop — conveys state change (open → done) */
+  @keyframes check-pop {
+    0% {
+      opacity: 0;
+      transform: scale(0.4);
+    }
+    60% {
+      transform: scale(1.15);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Task completion celebration — card scale pulse + background flash */
+  @keyframes task-done-pulse {
+    0% {
+      transform: scale(1);
+      background-color: var(--card);
+    }
+    30% {
+      transform: scale(1.015);
+      background-color: color-mix(in srgb, var(--petrol) 6%, var(--card));
+    }
+    100% {
+      transform: scale(1);
+      background-color: var(--card);
+    }
+  }
+
+  /* Animated strikethrough — draws the line left-to-right */
+  @keyframes strike-through {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+  }
+
+  /* Error shake — horizontal jitter to signal failure */
+  @keyframes error-shake {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-3px); }
+    40%, 80% { transform: translateX(3px); }
+  }
+
+  /* Number count-up — for stat tiles */
+  @keyframes count-up {
     from {
       opacity: 0;
       transform: translateY(4px);
@@ -67,6 +146,102 @@
       transform: translateY(0);
     }
   }
+
+  /* Source card entrance — stagger in chat results */
+  @keyframes source-card-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  /* Nav active indicator — slide-in dot */
+  @keyframes nav-dot-in {
+    from {
+      opacity: 0;
+      transform: scale(0);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Camera shutter flash — brief white pulse on capture */
+  @keyframes camera-flash {
+    from { opacity: 0.9; }
+    to { opacity: 0; }
+  }
+
+  /* Board column entrance — subtle fade */
+  @keyframes column-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* AI search bar — gentle sparkle pulse (see ai-search-bar.tsx) */
+  @keyframes sparkle-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.65; transform: scale(1.1); }
+  }
+
+  /* Ordilo mascot animations — see components/ordilo/mascot.tsx */
+  @keyframes ordilo-mascot-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.035); }
+  }
+  @keyframes ordilo-mascot-blink {
+    0%, 88%, 100% { transform: scaleY(1); }
+    94% { transform: scaleY(0.12); }
+  }
+  @keyframes ordilo-mascot-sway {
+    0%, 100% { transform: rotate(-6deg); }
+    50% { transform: rotate(6deg); }
+  }
+  @keyframes ordilo-mascot-nod {
+    0%, 100% { transform: rotate(-3deg); }
+    50% { transform: rotate(3deg); }
+  }
+  @keyframes ordilo-mascot-greet {
+    0% { transform: rotate(0deg); }
+    20% { transform: rotate(-22deg); }
+    40% { transform: rotate(10deg); }
+    60% { transform: rotate(-14deg); }
+    80% { transform: rotate(4deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes ordilo-mascot-bounce {
+    0%, 100% { transform: translateY(0); }
+    30% { transform: translateY(-4px); }
+    50% { transform: translateY(0); }
+    65% { transform: translateY(-1.5px); }
+  }
+  @keyframes ordilo-mascot-ear-wiggle {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(6deg); }
+  }
+
+  /* Banner ambient glow — barely-visible breathing pulse */
+  @keyframes banner-glow {
+    0%, 100% { opacity: 0.04; transform: scale(1); }
+    50% { opacity: 0.06; transform: scale(1.08); }
+  }
+
+  /* Avatar pop-in — staggered cluster entrance */
+  @keyframes avatar-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.6);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -74,17 +249,19 @@
    --------------------------------------------------------------------------- */
 
 :root {
-  /* Surfaces */
-  --warm-white: #FCFCFC;
-  --sand: #FCFCF0;
-  --sand-light: #FCF8F4;
-  --sand-warm: #FCF0E4;
+  /* Surfaces — warm paper undertone (R ≥ G > B), not the cool blue-gray
+     lean of earlier revisions. Lightness stays high across the ramp for an
+     airy, uncluttered feel; only the hue shifts warm. */
+  --warm-white: #FDFCFA;
+  --sand: #F7F5F1;
+  --sand-light: #F1EEE8;
+  --sand-warm: #EFE8DC;
 
   /* Text */
-  --graphite: #242424;
-  --mist-light: #CCCCCC;
-  --mist: #9C9C9C;
-  --mist-dark: #606060;
+  --graphite: #262421;
+  --mist-light: #D3CEC5;
+  --mist: #9C978C;
+  --mist-dark: #625D54;
 
   /* Accents */
   --petrol: #305460;
@@ -95,14 +272,11 @@
   --blue-soft: #E4F0FC;
 
   /* Radius — Ordilo uses 20-28px on primary cards */
-  --radius: 0.625rem; /* 10px base; shadcn derives sm/md/lg/xl from this */
+  --radius: 20px; /* base for shadcn; sm/md/lg/xl overridden above */
 
-  /* Ordilo-specific radius tokens (used by app components) */
+  /* Ordilo-specific radius tokens */
   --radius-ordilo-sm: 12px;
   --radius-ordilo-md: 20px;
-  --radius-ordilo-lg: 24px;
-  --radius-ordilo-xl: 28px;
-  --radius-ordilo-pill: 9999px;
 
   /* Spacing */
   --space-xs: 4px;
@@ -124,7 +298,7 @@
   --popover: var(--warm-white);
   --popover-foreground: var(--graphite);
   --primary: var(--petrol);
-  --primary-foreground: #FCFCFC;
+  --primary-foreground: var(--warm-white);
   --secondary: var(--sand-light);
   --secondary-foreground: var(--graphite);
   --muted: var(--sand-light);
@@ -132,7 +306,7 @@
   --accent: var(--sand-warm);
   --accent-foreground: var(--graphite);
   --destructive: #C0392B;
-  --destructive-foreground: #FCFCFC;
+  --destructive-foreground: var(--warm-white);
   --border: var(--mist-light);
   --input: var(--mist-light);
   --ring: var(--petrol);
@@ -173,10 +347,29 @@
 
   body {
     background-color: var(--background);
+    /* Barely-visible ambient wash — the same restrained Harbor Blue glow
+       used on the sidebar, extended to the whole app so large empty page
+       areas don't read as flat. Fixed so it doesn't shift on scroll. */
+    background-image:
+      radial-gradient(900px circle at 10% -10%, color-mix(in srgb, var(--petrol) 5%, transparent), transparent 55%),
+      radial-gradient(700px circle at 100% 110%, color-mix(in srgb, var(--petrol) 4%, transparent), transparent 55%);
+    background-attachment: fixed;
     color: var(--foreground);
     font-family: var(--font-sans);
+    font-kerning: normal;
+    font-optical-sizing: auto;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings: balance line lengths for cleaner wrapping */
+  h1, h2, h3 {
+    text-wrap: balance;
+  }
+
+  /* Long prose: reduce orphans on the last line */
+  p {
+    text-wrap: pretty;
   }
 }
 
@@ -185,13 +378,209 @@
    --------------------------------------------------------------------------- */
 
 @layer utilities {
+  /* Easing curves — natural deceleration, no bounce/elastic */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
   .shadow-card {
     box-shadow: var(--shadow-card);
   }
   .shadow-card-hover {
     box-shadow: var(--shadow-card-hover);
   }
+
+  /* Card hover lift — tactile -2px elevate on interactive cards.
+     Guarded with @media (hover: hover) so touch devices don't get
+     stuck hover states after a tap. */
+  .card-lift {
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+                border-color 0.2s ease,
+                background-color 0.2s ease;
+  }
+
+  /* Button press feedback — scale down on active */
+  .press-scale {
+    transition: transform 0.1s var(--ease-out-quart);
+  }
+  .press-scale:active {
+    transform: scale(0.97);
+  }
+
+  /* Tabular numbers — for aligned numeric data (counts, dates, scores) */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
   .animate-page-fade-in {
-    animation: page-fade-in 0.25s ease-out;
+    animation: page-fade-in 0.3s var(--ease-out-quart);
+  }
+  .animate-message-in {
+    animation: message-in 0.25s var(--ease-out-quart);
+  }
+  .animate-card-in {
+    animation: card-in 0.25s var(--ease-out-quart) backwards;
+  }
+  .animate-check-pop {
+    animation: check-pop 0.2s var(--ease-out-quart);
+  }
+
+  /* Task completion celebration */
+  .animate-task-done {
+    animation: task-done-pulse 0.5s var(--ease-out-quart);
+  }
+
+  /* Animated strikethrough */
+  .animate-strike {
+    animation: strike-through 0.3s var(--ease-out-quart) forwards;
+  }
+
+  /* Error shake */
+  .animate-error-shake {
+    animation: error-shake 0.3s var(--ease-out-quart);
+  }
+
+  /* Number count-up entrance */
+  .animate-count-up {
+    animation: count-up 0.4s var(--ease-out-quart) backwards;
+  }
+
+  /* Source card entrance */
+  .animate-source-card-in {
+    animation: source-card-in 0.2s var(--ease-out-quart) backwards;
+  }
+
+  /* Nav active dot pop */
+  .animate-nav-dot {
+    animation: nav-dot-in 0.2s var(--ease-out-quart);
+  }
+
+  /* Camera shutter flash */
+  .animate-camera-flash {
+    animation: camera-flash 180ms var(--ease-out-quart);
+  }
+
+  /* Board column entrance */
+  .animate-column-in {
+    animation: column-in 0.3s var(--ease-out-quart) backwards;
+  }
+
+  /* Stagger children entrance — applies card-in to direct children with
+     increasing delays. Add .stagger-children to a list container. */
+  .stagger-children > * {
+    animation: card-in 0.25s var(--ease-out-quart) backwards;
+  }
+  .stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-children > *:nth-child(2) { animation-delay: 40ms; }
+  .stagger-children > *:nth-child(3) { animation-delay: 80ms; }
+  .stagger-children > *:nth-child(4) { animation-delay: 120ms; }
+  .stagger-children > *:nth-child(5) { animation-delay: 160ms; }
+  .stagger-children > *:nth-child(6) { animation-delay: 200ms; }
+  .stagger-children > *:nth-child(7) { animation-delay: 240ms; }
+  .stagger-children > *:nth-child(8) { animation-delay: 280ms; }
+
+  .animate-sparkle-pulse {
+    animation: sparkle-pulse 2.8s ease-in-out infinite;
+  }
+
+  .ordilo-mascot-breathe {
+    animation: ordilo-mascot-breathe 4s ease-in-out infinite;
+  }
+  .ordilo-mascot-blink {
+    animation: ordilo-mascot-blink 5s ease-in-out infinite;
+  }
+  .ordilo-mascot-sway {
+    animation: ordilo-mascot-sway 2.4s ease-in-out infinite;
+  }
+  .ordilo-mascot-nod {
+    animation: ordilo-mascot-nod 2.6s ease-in-out infinite;
+    transform-origin: 32px 27px;
+  }
+  .ordilo-mascot-greet {
+    animation: ordilo-mascot-greet 1.1s ease-in-out 1;
+  }
+  .ordilo-mascot-bounce {
+    animation: ordilo-mascot-bounce 0.8s var(--ease-out-quart) 1;
+  }
+  .ordilo-mascot-ear-wiggle {
+    animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
+  }
+
+  /* Banner ambient glow breathing */
+  .animate-banner-glow {
+    animation: banner-glow 6s ease-in-out infinite;
+  }
+
+  /* Avatar cluster pop-in */
+  .animate-avatar-pop {
+    animation: avatar-pop 0.3s var(--ease-out-quart) backwards;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Pointer / hover adaptation — separate hover vs touch behavior
+   --------------------------------------------------------------------------- */
+
+/* Fine pointer + hover support (mouse, trackpad): full hover effects */
+@media (hover: hover) and (pointer: fine) {
+  .card-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-card-hover);
+  }
+}
+
+/* Coarse pointer (touch): no hover lift, use active scale for feedback */
+@media (hover: none) and (pointer: coarse) {
+  .card-lift:active {
+    transform: scale(0.98);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion — disable non-essential animations
+   --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-fade-in,
+  .animate-message-in,
+  .animate-card-in,
+  .animate-check-pop,
+  .animate-task-done,
+  .animate-strike,
+  .animate-error-shake,
+  .animate-count-up,
+  .animate-source-card-in,
+  .animate-nav-dot,
+  .animate-camera-flash,
+  .animate-column-in,
+  .animate-sparkle-pulse,
+  .stagger-children > *,
+  .ordilo-mascot-breathe,
+  .ordilo-mascot-blink,
+  .ordilo-mascot-sway,
+  .ordilo-mascot-nod,
+  .ordilo-mascot-greet,
+  .ordilo-mascot-bounce,
+  .ordilo-mascot-ear-wiggle,
+  .animate-banner-glow,
+  .animate-avatar-pop {
+    animation: none;
+  }
+
+  .card-lift:hover,
+  .card-lift:active {
+    transform: none;
+  }
+
+  .press-scale:active {
+    transform: none;
+  }
+
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

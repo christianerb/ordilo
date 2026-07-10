@@ -84,13 +84,13 @@ describe("DOCUMENT_STATUS_LABELS", () => {
   });
 
   it("uses the expected German labels", () => {
-    expect(DOCUMENT_STATUS_LABELS.uploaded).toBe("Hochgeladen");
-    expect(DOCUMENT_STATUS_LABELS.ocr_processing).toBe("OCR läuft");
-    expect(DOCUMENT_STATUS_LABELS.ocr_done).toBe("OCR fertig");
-    expect(DOCUMENT_STATUS_LABELS.analyzing).toBe("Analyse läuft");
-    expect(DOCUMENT_STATUS_LABELS.analyzed).toBe("Analysiert");
-    expect(DOCUMENT_STATUS_LABELS.confirmed).toBe("Bestätigt");
-    expect(DOCUMENT_STATUS_LABELS.failed).toBe("Fehlgeschlagen");
+    expect(DOCUMENT_STATUS_LABELS.uploaded).toBe("Eingegangen");
+    expect(DOCUMENT_STATUS_LABELS.ocr_processing).toBe("Wird gelesen");
+    expect(DOCUMENT_STATUS_LABELS.ocr_done).toBe("Gelesen");
+    expect(DOCUMENT_STATUS_LABELS.analyzing).toBe("Wird verstanden");
+    expect(DOCUMENT_STATUS_LABELS.analyzed).toBe("Bereit zum Durchsehen");
+    expect(DOCUMENT_STATUS_LABELS.confirmed).toBe("Im Familienbuch");
+    expect(DOCUMENT_STATUS_LABELS.failed).toBe("Hat nicht geklappt");
   });
 });
 
@@ -150,8 +150,8 @@ describe("isProcessingStatus", () => {
 
 describe("getStatusLabel", () => {
   it("returns the German label for known statuses", () => {
-    expect(getStatusLabel("uploaded")).toBe("Hochgeladen");
-    expect(getStatusLabel("failed")).toBe("Fehlgeschlagen");
+    expect(getStatusLabel("uploaded")).toBe("Eingegangen");
+    expect(getStatusLabel("failed")).toBe("Hat nicht geklappt");
   });
 
   it("returns the raw status for unknown values", () => {

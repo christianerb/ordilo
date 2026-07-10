@@ -31,6 +31,10 @@ function mockSupabase(options: {
     insertError?: unknown;
     inserted?: Record<string, unknown>;
   };
+  collections?: {
+    /** Existing collection count for the family (default 0 — triggers seeding). */
+    count?: number;
+  };
 }) {
   const { user = { id: "user-1", email: "test@ordilo.test" } } = options;
 
@@ -75,6 +79,10 @@ function mockSupabase(options: {
   };
 
   // members chain
+  const membersSelectChain = {
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
   const membersInsertChain = {
     select: vi.fn().mockReturnThis(),
     single: vi.fn().mockResolvedValue({
@@ -82,6 +90,19 @@ function mockSupabase(options: {
       error: options.members?.insertError ?? null,
     }),
   };
+
+  // collections chain — used by completeOnboarding's default-collection
+  // seeding: a head-count select, followed by an insert when count is 0.
+  const collectionsSelectChain = {
+    eq: vi.fn().mockResolvedValue({
+      count: options.collections?.count ?? 0,
+      error: null,
+    }),
+  };
+  const collectionsInsertChain = vi.fn().mockResolvedValue({
+    data: null,
+    error: null,
+  });
 
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
@@ -93,7 +114,14 @@ function mockSupabase(options: {
     }
     if (table === "family_members") {
       return {
+        select: vi.fn(() => membersSelectChain),
         insert: vi.fn(() => membersInsertChain),
+      };
+    }
+    if (table === "collections") {
+      return {
+        select: vi.fn(() => collectionsSelectChain),
+        insert: collectionsInsertChain,
       };
     }
     throw new Error(`Unexpected table: ${table}`);
@@ -344,6 +372,32 @@ describe("addMember", () => {
       expect(result.error).toBe(
         "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
       );
+    }
+  });
+
+  it("links the member to the auth user when is_self is true", async () => {
+    const inserted = {
+      id: "mem-3",
+      family_id: "fam-1",
+      name: "Thomas",
+      role: "Vater",
+      birthdate: null,
+      avatar_color: null,
+      created_at: "2026-07-04T10:00:00Z",
+      linked_user_id: "user-1",
+    };
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({ members: { inserted } }),
+    );
+
+    const result = await addMember("fam-1", {
+      name: "Thomas",
+      role: "Vater",
+      is_self: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.linked_user_id).toBe("user-1");
     }
   });
 });

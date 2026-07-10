@@ -227,7 +227,7 @@ describe("runExtraction", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.model).toBe("gpt-4.1-mini");
+    expect(callArgs.model).toBe("gpt-5.4-mini");
     expect(callArgs.response_format.type).toBe("json_schema");
     expect(callArgs.response_format.json_schema.strict).toBe(true);
     expect(callArgs.response_format.json_schema.name).toBe("document_analysis");

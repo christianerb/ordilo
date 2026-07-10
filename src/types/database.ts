@@ -34,6 +34,15 @@ export type ConfirmRpcEmbedding = {
   page_number: number;
   chunk_index: number;
   chunk_total: number;
+  /** "chunk" for text chunks, "question" for synthetic question embeddings. */
+  chunk_type?: string;
+};
+
+/** A label embedding for a knowledge graph node (document title, person name, org name). */
+export type ConfirmRpcLabelEmbedding = {
+  label: string;
+  /** pgvector text format: "[v1,v2,...,v1536]". */
+  embedding: string;
 };
 
 /** An extracted entity to insert (confirmed = true) during confirm. */
@@ -117,6 +126,14 @@ export type Database = {
           birthdate: string | null;
           avatar_color: string | null;
           created_at: string;
+          /** Links a family member to an auth user (speaker identity). See migration 0014. */
+          linked_user_id: string | null;
+          /** Storage path of the member's uploaded profile photo. See migration 0022. */
+          photo_url: string | null;
+          /** Another family member this person has a relationship to. See migration 0022. */
+          related_member_id: string | null;
+          /** Free-text label describing the relationship to related_member_id, e.g. "Ehepartner". */
+          relationship_label: string | null;
         };
         Insert: {
           id?: string;
@@ -126,6 +143,10 @@ export type Database = {
           birthdate?: string | null;
           avatar_color?: string | null;
           created_at?: string;
+          linked_user_id?: string | null;
+          photo_url?: string | null;
+          related_member_id?: string | null;
+          relationship_label?: string | null;
         };
         Update: {
           id?: string;
@@ -135,10 +156,111 @@ export type Database = {
           birthdate?: string | null;
           avatar_color?: string | null;
           created_at?: string;
+          linked_user_id?: string | null;
+          photo_url?: string | null;
+          related_member_id?: string | null;
+          relationship_label?: string | null;
         };
         Relationships: [
           {
             foreignKeyName: "family_members_family_id_fkey";
+            columns: ["family_id"];
+            isOneToOne: false;
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // family_inventory_items ----------------------------------------------
+      family_inventory_items: {
+        Row: {
+          id: string;
+          family_id: string;
+          name: string;
+          item_type: string;
+          metadata: Record<string, unknown>;
+          tags: string[];
+          linked_member_id: string | null;
+          status: string;
+          source_document_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          name: string;
+          item_type: string;
+          metadata?: Record<string, unknown>;
+          tags?: string[];
+          linked_member_id?: string | null;
+          status?: string;
+          source_document_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          name?: string;
+          item_type?: string;
+          metadata?: Record<string, unknown>;
+          tags?: string[];
+          linked_member_id?: string | null;
+          status?: string;
+          source_document_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_inventory_items_family_id_fkey";
+            columns: ["family_id"];
+            isOneToOne: false;
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "family_inventory_items_linked_member_id_fkey";
+            columns: ["linked_member_id"];
+            isOneToOne: false;
+            referencedRelation: "family_members";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // collections ----------------------------------------------------------
+      collections: {
+        Row: {
+          id: string;
+          family_id: string;
+          name: string;
+          icon: string;
+          color: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          name: string;
+          icon?: string;
+          color?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          name?: string;
+          icon?: string;
+          color?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "collections_family_id_fkey";
             columns: ["family_id"];
             isOneToOne: false;
             referencedRelation: "families";
@@ -165,6 +287,7 @@ export type Database = {
           error_message: string | null;
           created_at: string;
           confirmed_at: string | null;
+          tags: string[];
         };
         Insert: {
           id?: string;
@@ -183,6 +306,7 @@ export type Database = {
           error_message?: string | null;
           created_at?: string;
           confirmed_at?: string | null;
+          tags?: string[];
         };
         Update: {
           id?: string;
@@ -201,6 +325,7 @@ export type Database = {
           error_message?: string | null;
           created_at?: string;
           confirmed_at?: string | null;
+          tags?: string[];
         };
         Relationships: [];
       };
@@ -279,35 +404,66 @@ export type Database = {
           family_id: string;
           document_id: string;
           title: string;
+          description: string | null;
           due_date: string | null;
           priority: string;
           status: string;
           confidence: number;
           confirmed: boolean;
           created_at: string;
+          tags: string[];
         };
         Insert: {
           id?: string;
           family_id: string;
           document_id: string;
           title: string;
+          description?: string | null;
           due_date?: string | null;
           priority?: string;
           status?: string;
           confidence?: number;
           confirmed?: boolean;
           created_at?: string;
+          tags?: string[];
         };
         Update: {
           id?: string;
           family_id?: string;
           document_id?: string;
           title?: string;
+          description?: string | null;
           due_date?: string | null;
           priority?: string;
           status?: string;
           confidence?: number;
           confirmed?: boolean;
+          created_at?: string;
+          tags?: string[];
+        };
+        Relationships: [];
+      };
+      // task_documents ----------------------------------------------
+      task_documents: {
+        Row: {
+          id: string;
+          task_id: string;
+          document_id: string;
+          family_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          task_id: string;
+          document_id: string;
+          family_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          task_id?: string;
+          document_id?: string;
+          family_id?: string;
           created_at?: string;
         };
         Relationships: [];
@@ -405,6 +561,93 @@ export type Database = {
         };
         Relationships: [];
       };
+      // chat_conversations -------------------------------------------------
+      chat_conversations: {
+        Row: {
+          id: string;
+          family_id: string;
+          title: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          title?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          title?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      // chat_messages ------------------------------------------------------
+      chat_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          family_id: string;
+          role: string;
+          content: string;
+          sources: Record<string, unknown>[] | null;
+          card: Record<string, unknown> | null;
+          feedback: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          family_id: string;
+          role: string;
+          content: string;
+          sources?: Record<string, unknown>[] | null;
+          card?: Record<string, unknown> | null;
+          feedback?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          conversation_id?: string;
+          family_id?: string;
+          role?: string;
+          content?: string;
+          sources?: Record<string, unknown>[] | null;
+          card?: Record<string, unknown> | null;
+          feedback?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // chat_usage ---------------------------------------------------------
+      chat_usage: {
+        Row: {
+          id: string;
+          family_id: string;
+          usage_date: string;
+          message_count: number;
+          token_count: number;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          usage_date?: string;
+          message_count?: number;
+          token_count?: number;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          usage_date?: string;
+          message_count?: number;
+          token_count?: number;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -427,6 +670,7 @@ export type Database = {
           p_persons: ConfirmRpcPerson[];
           p_organizations: ConfirmRpcOrganization[];
           p_embeddings: ConfirmRpcEmbedding[];
+          p_label_embeddings: ConfirmRpcLabelEmbedding[];
           p_entities: ConfirmRpcEntity[];
           p_tasks: ConfirmRpcTask[];
         };
@@ -443,6 +687,22 @@ export type Database = {
           p_limit?: number;
         };
         Returns: SemanticSearchRow[];
+      };
+      // semantic_node_search — cosine similarity search on knowledge_nodes.label_embedding
+      // See supabase/migrations/0016_semantic_node_search_rpc.sql
+      semantic_node_search: {
+        Args: {
+          p_query_embedding: string;
+          p_family_id: string;
+          p_limit?: number;
+          p_threshold?: number;
+        };
+        Returns: {
+          id: string;
+          type: string;
+          label: string;
+          score: number;
+        }[];
       };
     };
     Enums: Record<string, never>;

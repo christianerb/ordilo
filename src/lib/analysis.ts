@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { getFamilyId } from "@/lib/supabase/client-helpers";
 import {
   computeNeedsUserReview,
   DOCUMENT_TYPES,
@@ -58,18 +59,13 @@ export async function fetchFamilyMembers(): Promise<FamilyMemberOption[]> {
   const supabase = createClient();
 
   // Get the user's family.
-  const { data: family, error: familyError } = await supabase
-    .from("families")
-    .select("id")
-    .limit(1)
-    .maybeSingle();
-
-  if (familyError || !family) return [];
+  const familyId = await getFamilyId(supabase);
+  if (!familyId) return [];
 
   const { data: members, error: membersError } = await supabase
     .from("family_members")
     .select("id, name, role")
-    .eq("family_id", family.id)
+    .eq("family_id", familyId)
     .order("created_at", { ascending: true });
 
   if (membersError || !members) return [];
@@ -92,18 +88,13 @@ export async function fetchFamilyMembers(): Promise<FamilyMemberOption[]> {
 export async function fetchExistingCategories(): Promise<string[]> {
   const supabase = createClient();
 
-  const { data: family, error: familyError } = await supabase
-    .from("families")
-    .select("id")
-    .limit(1)
-    .maybeSingle();
-
-  if (familyError || !family) return [];
+  const familyId = await getFamilyId(supabase);
+  if (!familyId) return [];
 
   const { data: docs, error: docsError } = await supabase
     .from("documents")
     .select("category")
-    .eq("family_id", family.id)
+    .eq("family_id", familyId)
     .not("category", "is", null);
 
   if (docsError || !docs) return [];

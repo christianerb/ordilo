@@ -1,36 +1,40 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   ScanLine,
   CalendarClock,
-  FileCheck,
-  CalendarDays,
-  Clock,
-  ChevronRight,
+  AlertCircle,
+  Receipt,
+  Building2,
   type LucideIcon,
 } from "lucide-react";
-import { AISearchBar } from "@/components/ordilo/ai-search-bar";
-import { DocumentCard } from "@/components/ordilo/document-card";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
-import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/format";
+import {
+  getFileIcon,
+  getStatusLabel,
+} from "@/lib/schemas/document";
+import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
+import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import {
   filterHeuteWichtig,
   filterFristen,
+  filterUeberfaellig,
   filterRecentDocuments,
-  formatGermanTimestamp,
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
+import type { HomeInsight } from "@/lib/ai/insights";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-/** A family member row for the greeting area. */
 export interface HomeMember {
   id: string;
   name: string;
@@ -38,127 +42,131 @@ export interface HomeMember {
   avatar_color: string | null;
 }
 
-/** Props for the HomeClient component. */
 export interface HomeClientProps {
+  greeting: string;
   familyName: string;
   members: HomeMember[];
   analyzedDocuments: HomeDocument[];
   upcomingTasks: HomeTask[];
   recentDocuments: HomeDocument[];
+  insights: HomeInsight[];
+}
+
+// ---------------------------------------------------------------------------
+// Status dot color mapping for BentoDocTile
+// ---------------------------------------------------------------------------
+
+// "analyzed" intentionally avoids apricot here: the "Zu bestätigen" grid
+// already consists entirely of analyzed documents (the dot would be
+// redundant there — see showStatusDot below), and "Zuletzt gescannt" can
+// mix statuses, where a second apricot source would violate the Apricot
+// Scarcity Rule (apricot is reserved for priority badges and urgent
+// insights elsewhere on this page).
+const STATUS_DOT_COLORS: Record<string, string> = {
+  confirmed: "bg-[var(--petrol)]",
+  analyzed: "bg-[var(--petrol)]/50",
+  uploaded: "bg-[var(--mist)]",
+  failed: "bg-[var(--destructive)]",
+  ocr_processing: "bg-[var(--mist)] animate-pulse",
+  analyzing: "bg-[var(--mist)] animate-pulse",
+  ocr_done: "bg-[var(--petrol)]",
+};
+
+function getStatusDotClass(status: string): string {
+  return STATUS_DOT_COLORS[status] ?? "bg-[var(--mist)]";
+}
+
+function getDocumentIdFromHref(href: string): string | null {
+  if (!href.startsWith("/dokumente")) return null;
+  const params = new URLSearchParams(href.split("?")[1] ?? "");
+  return params.get("doc");
 }
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
-/**
- * Home dashboard client component.
- *
- * Renders the Home dashboard with:
- * - AI search bar at top (navigates to /suche?q=… on submit)
- * - Family greeting with member avatars
- * - "Heute wichtig" section (urgent tasks, due within 7 days)
- * - "Neue Dokumente zur Bestätigung" section (analyzed documents)
- * - "Fristen" section (upcoming deadlines sorted by due date)
- * - "Zuletzt gescannt" section (recent documents with German timestamp)
- * - Warm empty states for each section when no data
- *
- * All UI text is in German. Data is fetched server-side and passed as props.
- * Task toggling uses the browser Supabase client + router.refresh() for
- * cross-area state consistency.
- */
 export function HomeClient({
+  greeting,
   familyName,
   members,
   analyzedDocuments,
   upcomingTasks,
   recentDocuments,
+  insights,
 }: HomeClientProps) {
-  const router = useRouter();
-  const supabase = createClient();
-
-  // Local state for optimistic task updates (so toggling a task is
-  // immediately reflected without waiting for the server refresh).
+  const { openWizard } = useScanActions();
+  const { openDocument } = useDocumentViewer();
   const [localTasks, setLocalTasks] = useState<HomeTask[]>(upcomingTasks);
 
-  // -------------------------------------------------------------------------
-  // Search bar submission — navigate to /suche with the query
-  // -------------------------------------------------------------------------
-
-  const handleSearch = useCallback(
-    (query: string) => {
-      router.push(`/suche?q=${encodeURIComponent(query)}`);
-    },
-    [router],
-  );
-
-  // -------------------------------------------------------------------------
-  // Task toggling — optimistic update + DB update + router.refresh()
-  // -------------------------------------------------------------------------
-
-  const handleToggleDone = useCallback(
-    async (taskId: string, newStatus: string) => {
-      // Optimistic update: immediately reflect the change locally.
+  const { toggleDone, dismiss } = useTaskMutation({
+    onOptimisticToggle: (taskId, newStatus) =>
       setLocalTasks((prev) =>
         prev.map((t) =>
           t.id === taskId ? { ...t, status: newStatus } : t,
         ),
-      );
+      ),
+    onRevertToggle: (taskId, newStatus) =>
+      setLocalTasks((prev) =>
+        prev.map((t) =>
+          t.id === taskId
+            ? { ...t, status: newStatus === "done" ? "open" : "done" }
+            : t,
+        ),
+      ),
+    onOptimisticDismiss: (taskId) =>
+      setLocalTasks((prev) => prev.filter((t) => t.id !== taskId)),
+    onRevertDismiss: (taskId) =>
+      setLocalTasks((prev) => {
+        const task = upcomingTasks.find((t) => t.id === taskId);
+        return task ? [...prev, task] : prev;
+      }),
+    onToggleError: () =>
+      toast.error("Speichern hat nicht geklappt — bitte nochmal versuchen"),
+    onDismissError: () =>
+      toast.error("Hat nicht geklappt — bitte nochmal versuchen"),
+  });
 
-      try {
-        const { error } = await supabase
-          .from("tasks")
-          .update({ status: newStatus })
-          .eq("id", taskId);
-
-        if (error) {
-          // Revert on failure.
-          setLocalTasks((prev) =>
-            prev.map((t) =>
-              t.id === taskId
-                ? { ...t, status: newStatus === "done" ? "open" : "done" }
-                : t,
-            ),
-          );
-        }
-        // Refresh server data so all sections reflect the new state
-        // (VAL-CROSS-010: task leaves "Heute wichtig" when marked done).
-        router.refresh();
-      } catch {
-        // Revert on exception.
-        setLocalTasks((prev) =>
-          prev.map((t) =>
-            t.id === taskId
-              ? { ...t, status: newStatus === "done" ? "open" : "done" }
-              : t,
-          ),
-        );
+  const handleToggleDone = useCallback(
+    (taskId: string, newStatus: string) => {
+      if (newStatus === "done") {
+        toast.success("Erledigt — gut gemacht!");
       }
+      toggleDone(taskId, newStatus);
     },
-    [supabase, router],
+    [toggleDone],
   );
+  const handleDismiss = dismiss;
 
   // -------------------------------------------------------------------------
-  // Derived data — filter tasks for each section
+  // Derived data
   // -------------------------------------------------------------------------
 
   const heuteWichtig = filterHeuteWichtig(localTasks);
   const fristen = filterFristen(localTasks);
-  // Exclude failed documents from "Zuletzt gescannt" (VAL-CROSS-013).
+  const ueberfaellig = filterUeberfaellig(localTasks);
   const visibleRecentDocs = filterRecentDocuments(recentDocuments);
+  const totalTasks = ueberfaellig.length + heuteWichtig.length + fristen.length;
+  const hasTasks = totalTasks > 0;
 
-  // Convert HomeTask to TaskCardData for TaskCard rendering.
+  const isFirstVisit =
+    !hasTasks &&
+    analyzedDocuments.length === 0 &&
+    visibleRecentDocs.length === 0;
+
   const toTaskCardData = (t: HomeTask): TaskCardData => ({
     id: t.id,
     family_id: t.family_id,
     document_id: t.document_id,
     title: t.title,
+    description: t.description,
     due_date: t.due_date,
     priority: t.priority,
     status: t.status,
     confidence: t.confidence,
     confirmed: t.confirmed,
     created_at: t.created_at,
+    tags: t.tags,
     document_title: t.document_title ?? null,
   });
 
@@ -167,182 +175,250 @@ export function HomeClient({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="space-y-6">
-      {/* AI Search Bar — prominent at top */}
-      <AISearchBar
-        onSubmit={handleSearch}
-        placeholder="Frage Ordilo oder suche nach Dokumenten…"
-      />
-
-      {/* Family greeting */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {familyName}
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {members.length}{" "}
-            {members.length === 1
-              ? "Familienmitglied"
-              : "Familienmitglieder"}
-          </p>
-        </div>
-        {/* Member avatars */}
-        {members.length > 0 && (
-          <div className="flex -space-x-2">
-            {members.slice(0, 5).map((m) => (
-              <div
-                key={m.id}
-                className="flex size-9 items-center justify-center rounded-full border-2 border-background text-xs font-semibold text-white"
-                style={{
-                  backgroundColor: m.avatar_color ?? "var(--petrol)",
-                }}
-                title={m.name}
-                aria-label={m.name}
-              >
-                {m.name.charAt(0).toUpperCase()}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Member names (visible text for VAL-CROSS-001) */}
-      {members.length > 0 && (
-        <div className="flex flex-wrap gap-2" data-testid="member-list">
-          {members.map((m) => (
-            <span
-              key={m.id}
-              className="inline-flex items-center gap-1.5 rounded-ordilo-pill bg-card px-3 py-1 text-sm text-foreground shadow-card"
+    <div className="space-y-4">
+      {isFirstVisit ? (
+        <EmptyState
+          title="Schön, dass du da bist"
+          description="Scanne dein erstes Dokument und Ordilo bringt Ordnung in deine Papierkram — ganz ohne Aktenordner."
+          mascotMood="greeting"
+          actionLabel="Dokument scannen"
+          onAction={openWizard}
+          className="py-16"
+        />
+      ) : (
+        <>
+          {/* Bento top row: greeting + Aufgaben stat + Scan — always all
+              three tiles, so the grid is fully filled at every breakpoint
+              (2-col mobile: greeting spans both, stat+scan share the second
+              row; 3-col desktop: all three sit side by side). Both stat
+              tiles use petrol, not apricot — apricot is reserved for actual
+              priority/urgency signals elsewhere on the page. */}
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+            {/* Greeting tile — warm sand-warm background */}
+            <div
+              className="col-span-2 lg:col-span-1 flex items-center justify-between rounded-ordilo-md bg-[var(--sand-warm)] p-4"
             >
-              <span
-                className="size-2.5 rounded-full"
-                style={{
-                  backgroundColor: m.avatar_color ?? "var(--petrol)",
-                }}
+              <div>
+                <h1 className="text-lg font-semibold text-foreground">
+                  {greeting}
+                </h1>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {familyName}
+                </p>
+              </div>
+              {members.length > 0 && (
+                <Link
+                  href="/familie"
+                  className="flex -space-x-2 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-full"
+                  data-testid="member-list"
+                  aria-label="Familie"
+                >
+                  {members.slice(0, 5).map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--sand-warm)] text-xs font-semibold text-white"
+                      style={{
+                        backgroundColor: m.avatar_color ?? "var(--petrol)",
+                      }}
+                      title={m.name}
+                      aria-label={m.name}
+                    >
+                      {m.name.charAt(0).toUpperCase()}
+                    </div>
+                  ))}
+                  {members.length > 5 && (
+                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--sand-warm)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
+                      +{members.length - 5}
+                    </div>
+                  )}
+                </Link>
+              )}
+            </div>
+
+            {/* Aufgaben stat tile — always shown, even at zero, so the
+                dashboard never omits the task count. */}
+            <Link
+              href="/aufgaben"
+              data-testid="home-stat-tasks"
+              className="col-span-1 flex flex-col justify-center gap-1 rounded-ordilo-md border border-[var(--petrol)]/15 bg-[var(--petrol)]/[0.06] p-4 card-lift press-scale hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <CalendarClock
+                className="size-4 text-[var(--petrol)]"
+                strokeWidth={2}
                 aria-hidden="true"
               />
-              {m.name}
-            </span>
-          ))}
-        </div>
+              <span className="text-2xl font-semibold tabular-nums text-foreground animate-count-up">
+                {totalTasks}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {totalTasks === 0
+                  ? "Keine Aufgaben offen"
+                  : totalTasks === 1
+                    ? "Aufgabe offen"
+                    : "Aufgaben offen"}
+              </span>
+            </Link>
+
+            {/* Scan tile — always shown as a permanent capture shortcut,
+                independent of task state. Opens the scan wizard overlay
+                directly rather than navigating, since scanning has no
+                dedicated route. */}
+            <button
+              type="button"
+              onClick={openWizard}
+              data-testid="home-stat-scan"
+              className="col-span-1 flex flex-col justify-center gap-1 rounded-ordilo-md border border-[var(--petrol)]/15 bg-[var(--petrol)]/[0.06] p-4 card-lift press-scale hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-left"
+            >
+              <ScanLine
+                className="size-4 text-[var(--petrol)]"
+                strokeWidth={2}
+                aria-hidden="true"
+              />
+              <span className="text-sm font-semibold text-foreground">
+                Scannen
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Neues Dokument
+              </span>
+            </button>
+          </div>
+
+          {/* Proactive insights from the knowledge graph */}
+          {insights.length > 0 && (
+            <section data-testid="home-section-insights" className="space-y-2">
+              <h2 className="text-base font-semibold text-foreground">Hinweise</h2>
+              <div className="space-y-2 stagger-children">
+                {insights.map((insight) => (
+                  <InsightTile
+                    key={insight.id}
+                    insight={insight}
+                    onOpenDocument={openDocument}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Aufgaben — full width, task cards keep their anatomy */}
+          {hasTasks && (
+            <section data-testid="home-section-aufgaben" className="space-y-3">
+              <h2 className="text-base font-semibold text-foreground">Aufgaben</h2>
+              <div className="space-y-3">
+                {ueberfaellig.length > 0 && (
+                  <TaskSubGroup
+                    label="Überfällig"
+                    subtitle="Ordilo hat ein paar Fristen für dich im Blick — hier kannst du sie jetzt erledigen."
+                    testId="home-tasks-ueberfaellig"
+                  >
+                    <div className="space-y-2 stagger-children">
+                      {ueberfaellig.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={toTaskCardData(task)}
+                          onToggleDone={(newStatus) =>
+                            handleToggleDone(task.id, newStatus)
+                          }
+                          onDismiss={() => handleDismiss(task.id)}
+                          showConfidence={false}
+                        />
+                      ))}
+                    </div>
+                  </TaskSubGroup>
+                )}
+                {heuteWichtig.length > 0 && (
+                  <TaskSubGroup label="Diese Woche" testId="home-tasks-diese-woche">
+                    <div className="space-y-2 stagger-children">
+                      {heuteWichtig.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={toTaskCardData(task)}
+                          onToggleDone={(newStatus) =>
+                            handleToggleDone(task.id, newStatus)
+                          }
+                          onDismiss={() => handleDismiss(task.id)}
+                          showConfidence={false}
+                        />
+                      ))}
+                    </div>
+                  </TaskSubGroup>
+                )}
+                {fristen.length > 0 && (
+                  <TaskSubGroup label="Später" testId="home-tasks-spaeter">
+                    <div className="space-y-2 stagger-children">
+                      {fristen.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={toTaskCardData(task)}
+                          onToggleDone={(newStatus) =>
+                            handleToggleDone(task.id, newStatus)
+                          }
+                          onDismiss={() => handleDismiss(task.id)}
+                          showConfidence={false}
+                        />
+                      ))}
+                    </div>
+                  </TaskSubGroup>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Zu bestätigen — bento grid of compact document tiles */}
+          <section data-testid="home-section-review-docs" className="space-y-3">
+            <h2 className="text-base font-semibold text-foreground">Zum Durchsehen</h2>
+            {analyzedDocuments.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+                {analyzedDocuments.map((doc) => (
+                  <BentoDocTile
+                    key={doc.id}
+                    doc={doc}
+                    showStatusDot={false}
+                    onOpenDocument={openDocument}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-1">
+                <p className="text-sm text-muted-foreground">Alles durchgesehen — fein</p>
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  Dokument scannen
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Zuletzt gescannt — bento grid of compact document tiles */}
+          <section data-testid="home-section-recent-docs" className="space-y-3">
+            <h2 className="text-base font-semibold text-foreground">Zuletzt gescannt</h2>
+            {visibleRecentDocs.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+                {visibleRecentDocs.map((doc) => (
+                  <BentoDocTile
+                    key={doc.id}
+                    doc={doc}
+                    onOpenDocument={openDocument}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-1">
+                <p className="text-sm text-muted-foreground">Noch keine Dokumente</p>
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  Dokument scannen
+                </button>
+              </div>
+            )}
+          </section>
+        </>
       )}
-
-      {/* Heute wichtig section */}
-      <HomeSection
-        testId="home-section-heute-wichtig"
-        icon={CalendarClock}
-        title="Heute wichtig"
-      >
-        {heuteWichtig.length > 0 ? (
-          <div className="space-y-3">
-            {heuteWichtig.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={toTaskCardData(task)}
-                onToggleDone={(newStatus) =>
-                  handleToggleDone(task.id, newStatus)
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="Nichts Dringendes"
-            description="Du hast aktuell keine dringenden Aufgaben. Scanne ein Dokument, um Fristen zu erkennen."
-            icon={CalendarClock}
-            actionLabel="Dokument scannen"
-            onAction={() => router.push("/scan")}
-          />
-        )}
-      </HomeSection>
-
-      {/* Neue Dokumente zur Bestätigung section */}
-      <HomeSection
-        testId="home-section-review-docs"
-        icon={FileCheck}
-        title="Neue Dokumente zur Bestätigung"
-      >
-        {analyzedDocuments.length > 0 ? (
-          <div className="space-y-3">
-            {analyzedDocuments.map((doc) => (
-              <Link
-                key={doc.id}
-                href={`/scan?doc=${doc.id}`}
-                className="block"
-              >
-                <DocumentCard
-                  title={doc.title}
-                  originalFilename={doc.original_filename}
-                  mimeType={doc.mime_type}
-                  status={doc.status}
-                  createdAt={doc.created_at}
-                />
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="Keine neuen Dokumente"
-            description="Alle Dokumente sind bestätigt. Scanne ein neues Dokument, um es zu überprüfen."
-            icon={FileCheck}
-            actionLabel="Dokument scannen"
-            onAction={() => router.push("/scan")}
-          />
-        )}
-      </HomeSection>
-
-      {/* Fristen section */}
-      <HomeSection
-        testId="home-section-fristen"
-        icon={CalendarDays}
-        title="Fristen"
-      >
-        {fristen.length > 0 ? (
-          <div className="space-y-3">
-            {fristen.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={toTaskCardData(task)}
-                onToggleDone={(newStatus) =>
-                  handleToggleDone(task.id, newStatus)
-                }
-              />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="Keine anstehenden Fristen"
-            description="Es sind keine offenen Fristen vorhanden. Scanne ein Dokument, um Fristen zu erkennen."
-            icon={CalendarDays}
-            actionLabel="Dokument scannen"
-            onAction={() => router.push("/scan")}
-          />
-        )}
-      </HomeSection>
-
-      {/* Zuletzt gescannt section */}
-      <HomeSection
-        testId="home-section-recent-docs"
-        icon={Clock}
-        title="Zuletzt gescannt"
-      >
-        {visibleRecentDocs.length > 0 ? (
-          <div className="space-y-3">
-            {visibleRecentDocs.map((doc) => (
-              <RecentDocCard key={doc.id} doc={doc} />
-            ))}
-          </div>
-        ) : (
-          <EmptyState
-            title="Noch keine Dokumente"
-            description="Scanne dein erstes Dokument — Ordilo hilft dir beim Sortieren und Finden."
-            icon={ScanLine}
-            actionLabel="Dokument scannen"
-            onAction={() => router.push("/scan")}
-          />
-        )}
-      </HomeSection>
     </div>
   );
 }
@@ -352,76 +428,159 @@ export function HomeClient({
 // ---------------------------------------------------------------------------
 
 /**
- * A dashboard section with a heading, icon, and content area.
+ * Compact vertical document tile for the bento grid.
+ * Shows file icon, status dot + label (2 lines), and relative time.
+ *
+ * `showStatusDot` defaults to true but is set to false by the "Zu
+ * bestätigen" grid, where every tile has status "analyzed" — the dot
+ * would carry no information there.
  */
-function HomeSection({
-  testId,
-  icon: Icon,
-  title,
-  children,
+function BentoDocTile({
+  doc,
+  showStatusDot = true,
+  onOpenDocument,
 }: {
-  testId: string;
-  icon: LucideIcon;
-  title: string;
-  children: React.ReactNode;
+  doc: HomeDocument;
+  showStatusDot?: boolean;
+  onOpenDocument: (documentId: string) => Promise<void>;
 }) {
-  return (
-    <section data-testid={testId} className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Icon
-          className="size-5"
-          style={{ color: "var(--petrol)" }}
-          strokeWidth={2}
-          aria-hidden="true"
-        />
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-      </div>
-      {children}
-    </section>
-  );
-}
-
-/**
- * A recent document card with title and German timestamp.
- * Navigates to the document detail on click.
- */
-function RecentDocCard({ doc }: { doc: HomeDocument }) {
-  const timestamp = formatGermanTimestamp(doc.created_at);
+  const FileIcon = getFileIcon(doc.mime_type);
   const displayTitle = doc.title?.trim() || doc.original_filename || "Dokument";
+  const relativeTime = formatRelativeTime(doc.created_at, true);
+  const statusLabel = getStatusLabel(doc.status);
 
   return (
     <Link
-      href={`/scan?doc=${doc.id}`}
-      className="block"
-      data-testid="recent-doc-card"
+      href={`/dokumente?doc=${doc.id}`}
+      onClick={(e) => {
+        e.preventDefault();
+        void onOpenDocument(doc.id);
+      }}
+      className="flex flex-col gap-2 rounded-ordilo-sm border border-border bg-card p-3 shadow-card card-lift cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
-      <div className="flex items-center gap-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card transition-all hover:shadow-card-hover">
-        {/* File icon */}
+      <div className="flex items-center justify-between">
         <div
-          className="flex size-12 shrink-0 items-center justify-center rounded-ordilo-sm"
+          className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm"
           style={{ backgroundColor: "var(--secondary)" }}
           aria-hidden="true"
         >
-          <FileCheck
-            className="size-6"
+          <FileIcon
+            className="size-4"
             style={{ color: "var(--mist-dark)" }}
             strokeWidth={1.5}
           />
         </div>
+        {showStatusDot && (
+          <span className="flex items-center gap-1">
+            <span
+              className={cn("size-2 rounded-full", getStatusDotClass(doc.status))}
+              aria-hidden="true"
+            />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {statusLabel}
+            </span>
+          </span>
+        )}
+      </div>
+      <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+        {displayTitle}
+      </p>
+      {relativeTime && (
+        <p className="text-xs tabular-nums text-muted-foreground">{relativeTime}</p>
+      )}
+    </Link>
+  );
+}
 
-        {/* Title + timestamp */}
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-foreground">{displayTitle}</p>
-          {timestamp && (
-            <p className="truncate text-sm text-muted-foreground">{timestamp}</p>
+/**
+ * A labeled subgroup within the Aufgaben timeline.
+ */
+function TaskSubGroup({
+  label,
+  subtitle,
+  testId,
+  children,
+}: {
+  label: string;
+  subtitle?: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div data-testid={testId} className="space-y-2">
+      <div>
+        <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
+        {subtitle && (
+          <p className="text-xs text-muted-foreground/80">{subtitle}</p>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Insight tile — proactive intelligence from the knowledge graph
+// ---------------------------------------------------------------------------
+
+const INSIGHT_ICONS: Record<HomeInsight["icon"], LucideIcon> = {
+  alert: AlertCircle,
+  receipt: Receipt,
+  building: Building2,
+  calendar: CalendarClock,
+};
+
+function InsightTile({
+  insight,
+  onOpenDocument,
+}: {
+  insight: HomeInsight;
+  onOpenDocument: (documentId: string) => Promise<void>;
+}) {
+  const Icon = INSIGHT_ICONS[insight.icon] ?? AlertCircle;
+  const isUrgent = insight.tone === "urgent";
+  const documentId = getDocumentIdFromHref(insight.href);
+
+  return (
+    <Link
+      href={insight.href}
+      onClick={(e) => {
+        if (!documentId) return;
+        e.preventDefault();
+        void onOpenDocument(documentId);
+      }}
+      data-testid="insight-tile"
+      className={cn(
+        "flex items-center gap-3 rounded-ordilo-sm border bg-card p-3 shadow-card card-lift cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        isUrgent
+          ? "border-[var(--apricot)]/30"
+          : "border-[var(--petrol)]/15",
+      )}
+    >
+      <div
+        className={cn(
+          "flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm",
+          isUrgent
+            ? "bg-[var(--apricot)]/10"
+            : "bg-[var(--petrol)]/[0.06]",
+        )}
+        aria-hidden="true"
+      >
+        <Icon
+          className={cn(
+            "size-4",
+            isUrgent ? "text-[var(--apricot)]" : "text-[var(--petrol)]",
           )}
-        </div>
-
-        {/* Chevron */}
-        <ChevronRight
-          className="size-5 shrink-0 text-muted-foreground"
-          aria-hidden="true"
+          strokeWidth={2}
         />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-foreground">{insight.title}</p>
+        {insight.detail && (
+          <p className="truncate text-xs text-muted-foreground">
+            {insight.detail}
+          </p>
+        )}
       </div>
     </Link>
   );

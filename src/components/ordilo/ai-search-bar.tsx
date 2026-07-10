@@ -122,14 +122,13 @@ export function AISearchBar({
     <div
       data-testid="ai-search-bar"
       className={cn(
-        "flex items-end gap-2 rounded-ordilo-pill border bg-card px-3 py-2 shadow-card transition-shadow focus-within:shadow-card-hover",
+        "flex items-end gap-2 rounded-full border bg-card py-2 pr-1.5 pl-3 shadow-card transition-shadow focus-within:shadow-card-hover",
         isLoading ? "border-transparent opacity-70" : "border-border",
         className,
       )}
     >
-      {/* AI sparkle icon */}
       <Sparkles
-        className="mb-1.5 size-5 shrink-0"
+        className="mb-1.5 size-5 shrink-0 animate-sparkle-pulse"
         style={{ color: "var(--petrol)" }}
         aria-hidden="true"
       />

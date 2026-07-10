@@ -2,11 +2,18 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import {
+  resolveDocumentWithOwnership,
+  markDocumentFailed,
+} from "@/lib/supabase/document-helpers";
+import {
   chunkPages,
   generateEmbeddings,
   embeddingToVectorString,
+  deduplicateChunks,
+  generateSyntheticQuestions,
   EmbeddingError,
   type PageContent,
+  type PageTextChunk,
 } from "@/lib/ai/embeddings";
 import {
   confirmPayloadSchema,
@@ -19,6 +26,7 @@ import type {
   ConfirmRpcPerson,
   ConfirmRpcOrganization,
   ConfirmRpcEmbedding,
+  ConfirmRpcLabelEmbedding,
   ConfirmRpcEntity,
   ConfirmRpcTask,
   ConfirmRpcResult,
@@ -112,16 +120,6 @@ export async function POST(
   // 2. Parse document ID from the route params -----------------------------
   const { id: documentId } = await params;
 
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(documentId)) {
-    const body: ConfirmErrorResponse = {
-      error: "Ungültige Dokument-ID.",
-      code: "INVALID_DOCUMENT_ID",
-    };
-    return Response.json(body, { status: 400 });
-  }
-
   // 3. Parse & validate the request body -----------------------------------
   let payload: ConfirmPayload;
   try {
@@ -149,51 +147,21 @@ export async function POST(
 
   const serverClient = await createServerClient();
 
-  // 4. Read the document (RLS-scoped) --------------------------------------
-  const { data: document, error: readError } = await serverClient
-    .from("documents")
-    .select("id, family_id, status, ocr_text, title")
-    .eq("id", documentId)
-    .maybeSingle();
+  // 4-5. Validate UUID, read document (RLS-scoped), distinguish 403 vs 404 --
+  // resolveDocumentWithOwnership handles UUID validation (400), RLS-scoped
+  // read (500 on error), and the admin-client existence check to
+  // distinguish 403 (exists but not owned) from 404 (truly does not exist)
+  // — VAL-CONFIRM-009. No mutations are performed in either case.
+  const adminClient = createAdminClient();
+  const { document, error: resolveError } = await resolveDocumentWithOwnership(
+    serverClient,
+    adminClient,
+    documentId,
+  );
 
-  if (readError) {
-    const body: ConfirmErrorResponse = {
-      error: "Dokument konnte nicht geladen werden.",
-      code: "DB_READ_FAILED",
-    };
-    return Response.json(body, { status: 500 });
-  }
-
-  // 5. Not found (or RLS blocked) → distinguish 403 vs 404 -----------------
-  // The RLS-scoped read returns no row for both non-existent AND non-owned
-  // documents. Use the admin (service-role) client to check whether the
-  // document exists at all: if it exists but belongs to another family,
-  // return a structured 403; only return 404 when the document truly
-  // does not exist (VAL-CONFIRM-009). No mutations are performed in
-  // either case.
-  if (!document) {
-    const adminClient = createAdminClient();
-    const { data: existingDoc } = await adminClient
-      .from("documents")
-      .select("id")
-      .eq("id", documentId)
-      .maybeSingle();
-
-    if (existingDoc) {
-      // Document exists but belongs to another family → 403
-      const body: ConfirmErrorResponse = {
-        error: "Kein Zugriff auf dieses Dokument.",
-        code: "FORBIDDEN",
-      };
-      return Response.json(body, { status: 403 });
-    }
-
-    // Document truly does not exist → 404
-    const body: ConfirmErrorResponse = {
-      error: "Dokument nicht gefunden.",
-      code: "DOCUMENT_NOT_FOUND",
-    };
-    return Response.json(body, { status: 404 });
+  if (resolveError) {
+    const body: ConfirmErrorResponse = resolveError.body;
+    return Response.json(body, { status: resolveError.status });
   }
 
   // 6. Check status — must be "analyzed" -----------------------------------
@@ -272,10 +240,53 @@ export async function POST(
           ? err.statusCode
           : 502;
 
-      await markFailed(serverClient, documentId, message);
+      await markDocumentFailed(serverClient, documentId, message, true);
 
       const body: ConfirmErrorResponse = { error: message, code };
       return Response.json(body, { status: statusCode });
+    }
+  }
+
+  // 8b. Semantic deduplication — remove near-duplicate chunks before storage.
+  //     Two chunks with >=85% cosine similarity are redundant: they compete
+  //     in vector search and degrade retrieval quality.
+  let finalChunks: PageTextChunk[] = chunks;
+  let finalEmbeddings: number[][] = embeddings;
+
+  if (chunks.length > 1 && embeddings.length > 1) {
+    const dedup = deduplicateChunks(chunks, embeddings);
+    finalChunks = dedup.kept as PageTextChunk[];
+    // Map kept chunks back to their original embeddings
+    const keptSet = new Set(
+      dedup.removedIndices,
+    );
+    finalEmbeddings = embeddings.filter((_, i) => !keptSet.has(i));
+  }
+
+  // 8c. Query-shaped embeddings — generate synthetic questions from the
+  //     extracted metadata and embed them alongside the chunk text.
+  //     This improves retrieval because user queries are questions, and
+  //     matching question-to-question is structurally aligned.
+  const syntheticQuestions = generateSyntheticQuestions({
+    title: payload.title,
+    summary: payload.summary,
+    documentType: payload.document_type,
+    persons: payload.family_members.map((m) => m.name).filter(Boolean),
+    organization: payload.organizations[0]?.name ?? null,
+  });
+
+  let questionEmbeddings: number[][] = [];
+  if (syntheticQuestions.length > 0) {
+    try {
+      const questionChunks = syntheticQuestions.map((q, i) => ({
+        text: q,
+        index: i,
+      }));
+      questionEmbeddings = await generateEmbeddings(questionChunks);
+    } catch {
+      // Question embeddings are a bonus — if they fail, continue with
+      // chunk-only embeddings.
+      questionEmbeddings = [];
     }
   }
 
@@ -295,13 +306,60 @@ export async function POST(
       confidence: org.confidence,
     }));
 
-  const embeddingsParam: ConfirmRpcEmbedding[] = chunks.map((chunk, i) => ({
-    chunk_text: chunk.text,
-    embedding: embeddingToVectorString(embeddings[i]),
-    page_number: chunk.page_number,
-    chunk_index: chunk.index,
-    chunk_total: chunks.length,
-  }));
+  // Build embeddings params: chunk embeddings + question embeddings
+  const chunkEmbeddingsParam: ConfirmRpcEmbedding[] = finalChunks.map(
+    (chunk, i) => ({
+      chunk_text: chunk.text,
+      embedding: embeddingToVectorString(finalEmbeddings[i]),
+      page_number: chunk.page_number,
+      chunk_index: chunk.index,
+      chunk_total: finalChunks.length,
+      chunk_type: "chunk",
+    }),
+  );
+
+  const questionEmbeddingsParam: ConfirmRpcEmbedding[] =
+    questionEmbeddings.map((emb, i) => ({
+      chunk_text: syntheticQuestions[i],
+      embedding: embeddingToVectorString(emb),
+      page_number: 1,
+      chunk_index: i,
+      chunk_total: questionEmbeddings.length,
+      chunk_type: "question",
+    }));
+
+  const embeddingsParam = [
+    ...chunkEmbeddingsParam,
+    ...questionEmbeddingsParam,
+  ];
+
+  // 9b. Generate label embeddings for knowledge graph nodes ---------------
+  //     Embed the document title, person names, and organization names so
+  //     the graph can do semantic matching (e.g. "Kita" → "Kindergarten").
+  const labelEmbeddingsParam: ConfirmRpcLabelEmbedding[] = [];
+  try {
+    const labelsToEmbed: string[] = [
+      payload.title || "Dokument",
+      ...payload.family_members.map((m) => m.name).filter(Boolean),
+      ...payload.organizations.map((o) => o.name).filter(Boolean),
+    ];
+
+    if (labelsToEmbed.length > 0) {
+      const labelChunks = labelsToEmbed.map((label, i) => ({
+        text: label,
+        index: i,
+      }));
+      const labelEmbs = await generateEmbeddings(labelChunks);
+      for (let i = 0; i < labelsToEmbed.length; i++) {
+        labelEmbeddingsParam.push({
+          label: labelsToEmbed[i],
+          embedding: embeddingToVectorString(labelEmbs[i]),
+        });
+      }
+    }
+  } catch {
+    // Label embeddings are a bonus — if they fail, continue without them
+  }
 
   const entitiesParam: ConfirmRpcEntity[] = buildEntityRows(payload);
   const tasksParam: ConfirmRpcTask[] = buildTaskRows(payload);
@@ -319,6 +377,7 @@ export async function POST(
       p_persons: personsParam,
       p_organizations: organizationsParam,
       p_embeddings: embeddingsParam,
+      p_label_embeddings: labelEmbeddingsParam,
       p_entities: entitiesParam,
       p_tasks: tasksParam,
     },
@@ -330,7 +389,7 @@ export async function POST(
     // graph/embedding/entity/task state persists. Mark the document failed
     // so the user can retry (VAL-CONFIRM-011).
     const message = "Bestätigung fehlgeschlagen. Bitte erneut versuchen.";
-    await markFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message, true);
     const body: ConfirmErrorResponse = {
       error: message,
       code: "CONFIRM_RPC_FAILED",
@@ -355,7 +414,7 @@ export async function POST(
   if (!result || result.status !== "confirmed") {
     // Unexpected RPC response shape — treat as a failure.
     const message = "Unerwartete Antwort der Bestätigungs-Funktion.";
-    await markFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message, true);
     const body: ConfirmErrorResponse = {
       error: message,
       code: "CONFIRM_UNEXPECTED_RESULT",
@@ -364,6 +423,17 @@ export async function POST(
   }
 
   // Success ---------------------------------------------------------------
+
+  // Auto-detect inventory items: check if extracted text mentions any
+  // existing inventory item by name. If so, create an extracted_entity
+  // link. Also check for potential new items (organizations, specific
+  // patterns) that could be suggested.
+  try {
+    await autoDetectInventoryItems(serverClient, documentId, payload, familyId);
+  } catch {
+    // Non-critical — confirmation already succeeded.
+  }
+
   const body: ConfirmSuccessResponse = {
     status: "confirmed",
     document_id: documentId,
@@ -473,35 +543,6 @@ function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
 }
 
 /**
- * Mark a document as failed with an error message.
- *
- * Also clears confirmed_at so that a failed confirm (which the RPC may have
- * set during the conditional transition before rolling back) does not leave
- * a stale confirmed_at value on a failed document.
- *
- * Best-effort: errors are silently ignored so we don't mask the primary
- * error with a secondary DB error.
- */
-async function markFailed(
-  client: Awaited<ReturnType<typeof createServerClient>>,
-  documentId: string,
-  errorMessage: string,
-): Promise<void> {
-  try {
-    await client
-      .from("documents")
-      .update({
-        status: "failed",
-        error_message: errorMessage,
-        confirmed_at: null,
-      })
-      .eq("id", documentId);
-  } catch {
-    // Best-effort.
-  }
-}
-
-/**
  * GET /api/documents/[id]/confirm — method not allowed.
  */
 export async function GET(): Promise<Response> {
@@ -510,4 +551,75 @@ export async function GET(): Promise<Response> {
     code: "METHOD_NOT_ALLOWED",
   };
   return Response.json(body, { status: 405 });
+}
+
+// ---------------------------------------------------------------------------
+// Auto-detect inventory items from confirmed document content
+// ---------------------------------------------------------------------------
+
+/**
+ * After a document is confirmed, check if its content mentions any existing
+ * family inventory items by name. If so, create an extracted_entity link
+ * (entity_type = 'inventory_item') so the document shows up on the item's
+ * profile.
+ *
+ * Also checks extracted organizations — if an org name matches an inventory
+ * item name, link them.
+ *
+ * Non-critical: errors are swallowed by the caller.
+ */
+async function autoDetectInventoryItems(
+  serverClient: Awaited<ReturnType<typeof createServerClient>>,
+  documentId: string,
+  payload: ConfirmPayload,
+  familyId: string,
+): Promise<void> {
+  // Fetch all confirmed inventory items for this family.
+  const { data: items } = await serverClient
+    .from("family_inventory_items")
+    .select("id, name, item_type, status")
+    .eq("family_id", familyId);
+
+  if (!items || items.length === 0) return;
+
+  // Build a lookup: lowercase name → item
+  const itemMap = new Map<string, { id: string; name: string }>();
+  for (const item of items) {
+    itemMap.set(item.name.toLowerCase().trim(), { id: item.id, name: item.name });
+  }
+
+  // Collect all text to search: title, category, org names, tags
+  const searchTexts: string[] = [
+    payload.title ?? "",
+    payload.suggested_category ?? "",
+    ...payload.organizations.map((o) => o.name),
+    ...payload.tags,
+  ];
+  const fullText = searchTexts.join(" ").toLowerCase();
+
+  // Find matching items
+  const matchedItems: { id: string; name: string }[] = [];
+  for (const [lowerName, item] of itemMap) {
+    if (fullText.includes(lowerName)) {
+      matchedItems.push(item);
+    }
+  }
+
+  if (matchedItems.length === 0) return;
+
+  // Create extracted_entity links for each matched item
+  const entityRows = matchedItems.map((item) => ({
+    document_id: documentId,
+    family_id: familyId,
+    entity_type: "inventory_item",
+    entity_value: item.name,
+    normalized_value: item.name.toLowerCase().trim(),
+    confidence: 1.0,
+    confirmed: true,
+    linked_object_id: item.id,
+  }));
+
+  await serverClient
+    .from("extracted_entities")
+    .insert(entityRows);
 }

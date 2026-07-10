@@ -50,7 +50,7 @@ export function LoginForm() {
     if (error) {
       // Friendly German error — never surface the raw Supabase error JSON.
       setErrorMessage(
-        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+        "Das hat nicht geklappt. Bitte versuch's nochmal.",
       );
       setFormState("error");
       return;
@@ -76,21 +76,20 @@ export function LoginForm() {
       <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
         <div className="w-full max-w-sm space-y-8 text-center">
           <div className="flex justify-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-lg bg-primary text-primary-foreground shadow-card">
+            <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-md bg-primary text-primary-foreground shadow-card">
               <Mail className="h-8 w-8" />
             </div>
           </div>
           <div className="space-y-3">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Magischer Link verschickt
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Wir haben dir eine E-Mail geschickt
             </h1>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Wir haben dir einen Magischen Link geschickt. Bitte überprüfe
-              dein Postfach.
+              Schau in dein Postfach — da liegt ein Link von uns.
             </p>
           </div>
           <p className="text-xs text-muted-foreground">
-            Klicke auf den Link in der E-Mail, um dich anzumelden.
+            Klick auf den Link in der E-Mail und du bist drin. Einfach so.
           </p>
         </div>
       </main>
@@ -103,17 +102,16 @@ export function LoginForm() {
       <div className="w-full max-w-sm space-y-8">
         <div className="space-y-6 text-center">
           <div className="flex justify-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-lg bg-primary text-primary-foreground shadow-card">
+            <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-md bg-primary text-primary-foreground shadow-card">
               <Sparkles className="h-8 w-8" />
             </div>
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Anmelden
+            <h1 className="text-xl font-semibold tracking-tight text-foreground">
+              Willkommen
             </h1>
             <p className="text-sm text-muted-foreground">
-              Gib deine E-Mail-Adresse ein. Wir senden dir einen Magischen
-              Link zur Anmeldung.
+              Gib deine E-Mail-Adresse ein und wir schicken dir einen Link. Kein Passwort — das hat man schnell vergessen.
             </p>
           </div>
         </div>
@@ -164,11 +162,11 @@ export function LoginForm() {
             {formState === "submitting" ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Wird gesendet…
+                Wird verschickt…
               </>
             ) : (
               <>
-                Magischen Link senden
+                Link senden
                 <ArrowRight className="h-4 w-4" />
               </>
             )}

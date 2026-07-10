@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { validateMember } from "@/lib/schemas/onboarding";
+import { validateMember, validateFamilyName } from "@/lib/schemas/onboarding";
 import type { Database } from "@/types/database";
 
 /**
@@ -33,6 +33,26 @@ export interface MemberInput {
   role?: string;
   birthdate?: string;
   avatar_color?: string;
+  related_member_id?: string;
+  relationship_label?: string;
+}
+
+/**
+ * Verify that `relatedMemberId` refers to an existing member of `familyId`.
+ * Prevents cross-family references (a user could otherwise reference any
+ * UUID, including members of other families).
+ */
+async function verifyRelatedMember(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  relatedMemberId: string,
+  familyId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("family_members")
+    .select("id, family_id")
+    .eq("id", relatedMemberId)
+    .maybeSingle();
+  return !error && !!data && data.family_id === familyId;
 }
 
 /**
@@ -71,6 +91,8 @@ export async function addFamilyMember(
     role: input.role ?? "",
     birthdate: input.birthdate ?? "",
     avatar_color: input.avatar_color ?? "",
+    related_member_id: input.related_member_id ?? "",
+    relationship_label: input.relationship_label ?? "",
   });
   if (!validation.success) {
     return { success: false, error: validation.error };
@@ -92,6 +114,14 @@ export async function addFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
+  // A related member reference must belong to the same family.
+  if (
+    validation.data.related_member_id &&
+    !(await verifyRelatedMember(supabase, validation.data.related_member_id, family.id))
+  ) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
   // Insert the family member.
   const { data: member, error: insertError } = await supabase
     .from("family_members")
@@ -101,6 +131,8 @@ export async function addFamilyMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
+      related_member_id: validation.data.related_member_id,
+      relationship_label: validation.data.relationship_label,
     })
     .select("*")
     .single();
@@ -133,9 +165,16 @@ export async function updateFamilyMember(
     role: input.role ?? "",
     birthdate: input.birthdate ?? "",
     avatar_color: input.avatar_color ?? "",
+    related_member_id: input.related_member_id ?? "",
+    relationship_label: input.relationship_label ?? "",
   });
   if (!validation.success) {
     return { success: false, error: validation.error };
+  }
+
+  // A member cannot be related to itself.
+  if (validation.data.related_member_id === memberId) {
+    return { success: false, error: FRIENDLY_ERROR };
   }
 
   const supabase = await createClient();
@@ -165,6 +204,14 @@ export async function updateFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
+  // A related member reference must belong to the same family.
+  if (
+    validation.data.related_member_id &&
+    !(await verifyRelatedMember(supabase, validation.data.related_member_id, family.id))
+  ) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
   // Update the member.
   const { data: updated, error: updateError } = await supabase
     .from("family_members")
@@ -173,6 +220,8 @@ export async function updateFamilyMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
+      related_member_id: validation.data.related_member_id,
+      relationship_label: validation.data.relationship_label,
     })
     .eq("id", memberId)
     .select("*")
@@ -183,6 +232,48 @@ export async function updateFamilyMember(
   }
 
   return { success: true, data: updated };
+}
+
+/**
+ * Rename the authenticated user's family.
+ *
+ * @param name - The new family name (required, max 100 chars).
+ * @returns The new name on success, or a German error.
+ */
+export async function updateFamilyName(
+  name: string,
+): Promise<ActionResult<{ name: string }>> {
+  const validation = validateFamilyName(name);
+  if (!validation.success) {
+    return { success: false, error: validation.error };
+  }
+
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  const { data: family, error: familyError } = await getUserFamily(supabase);
+  if (familyError || !family) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("families")
+    .update({ name: validation.data.name })
+    .eq("id", family.id)
+    .select("name")
+    .single();
+
+  if (updateError || !updated) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: { name: updated.name } };
 }
 
 /**
@@ -236,4 +327,107 @@ export async function removeFamilyMember(
   }
 
   return { success: true, data: null };
+}
+
+// ---------------------------------------------------------------------------
+// Inventory items
+// ---------------------------------------------------------------------------
+
+type InventoryItemRow = Database["public"]["Tables"]["family_inventory_items"]["Row"];
+
+export interface InventoryItemInput {
+  name: string;
+  item_type: string;
+  tags?: string[];
+  linked_member_id?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export async function addInventoryItem(
+  input: InventoryItemInput,
+): Promise<ActionResult<InventoryItemRow>> {
+  const supabase = await createClient();
+
+  const { data: family, error: familyError } = await getUserFamily(supabase);
+  if (familyError || !family) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  if (!input.name.trim()) {
+    return { success: false, error: "Bitte einen Namen eingeben." };
+  }
+
+  const validTypes = [
+    "vehicle", "insurance", "bank_account", "property",
+    "contract", "device", "other",
+  ];
+  if (!validTypes.includes(input.item_type)) {
+    return { success: false, error: "Ungültiger Typ." };
+  }
+
+  const { data, error } = await supabase
+    .from("family_inventory_items")
+    .insert({
+      family_id: family.id,
+      name: input.name.trim(),
+      item_type: input.item_type,
+      tags: input.tags ?? [],
+      linked_member_id: input.linked_member_id ?? null,
+      metadata: input.metadata ?? {},
+      status: "confirmed",
+    })
+    .select()
+    .single();
+
+  if (error || !data) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: data as InventoryItemRow };
+}
+
+export async function removeInventoryItem(
+  itemId: string,
+): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+
+  const { data: family, error: familyError } = await getUserFamily(supabase);
+  if (familyError || !family) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  const { error } = await supabase
+    .from("family_inventory_items")
+    .delete()
+    .eq("id", itemId);
+
+  if (error) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: null };
+}
+
+export async function confirmSuggestedInventoryItem(
+  itemId: string,
+): Promise<ActionResult<InventoryItemRow>> {
+  const supabase = await createClient();
+
+  const { data: family, error: familyError } = await getUserFamily(supabase);
+  if (familyError || !family) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  const { data, error } = await supabase
+    .from("family_inventory_items")
+    .update({ status: "confirmed", updated_at: new Date().toISOString() })
+    .eq("id", itemId)
+    .select()
+    .single();
+
+  if (error || !data) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: data as InventoryItemRow };
 }

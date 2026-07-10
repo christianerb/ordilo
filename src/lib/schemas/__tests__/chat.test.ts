@@ -10,6 +10,7 @@ import {
   MIN_CITATION_TITLE_LENGTH,
   MIN_CONTENT_FRAGMENT_WORDS,
   MIN_CONTENT_FRAGMENT_CHARS,
+  parseAnswerCardArgs,
   type ChatSource,
 } from "@/lib/schemas/chat";
 
@@ -674,5 +675,93 @@ describe("answerCitesSources", () => {
         { document_id: "doc-1", title: "Sonstiges Dokument", excerpt, score: 0.9, origin: "semantic" },
       ]),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseAnswerCardArgs
+// ---------------------------------------------------------------------------
+
+describe("parseAnswerCardArgs", () => {
+  const validArgs = {
+    card_type: "termin",
+    title: "Zahnarzttermin",
+    subtitle: "Emma",
+    fields: [
+      { label: "Datum", value: "12.08.2026" },
+      { label: "Arzt", value: "Dr. Meyer" },
+    ],
+    source_document_id: "doc-1",
+  };
+
+  it("parses valid arguments into an AnswerCard", () => {
+    const card = parseAnswerCardArgs(validArgs);
+    expect(card).not.toBeNull();
+    expect(card?.type).toBe("termin");
+    expect(card?.title).toBe("Zahnarzttermin");
+    expect(card?.subtitle).toBe("Emma");
+    expect(card?.fields).toHaveLength(2);
+    expect(card?.actionDocumentId).toBe("doc-1");
+  });
+
+  it("defaults subtitle and actionDocumentId to null when omitted", () => {
+    const { subtitle, source_document_id, ...rest } = validArgs;
+    void subtitle;
+    void source_document_id;
+    const card = parseAnswerCardArgs(rest);
+    expect(card?.subtitle).toBeNull();
+    expect(card?.actionDocumentId).toBeNull();
+  });
+
+  it("rejects an invalid card_type", () => {
+    expect(
+      parseAnswerCardArgs({ ...validArgs, card_type: "unbekannt" }),
+    ).toBeNull();
+  });
+
+  it("rejects a missing title", () => {
+    const { title, ...rest } = validArgs;
+    void title;
+    expect(parseAnswerCardArgs(rest)).toBeNull();
+  });
+
+  it("rejects an empty fields array", () => {
+    expect(parseAnswerCardArgs({ ...validArgs, fields: [] })).toBeNull();
+  });
+
+  it("rejects more than 6 fields", () => {
+    const fields = Array.from({ length: 7 }, (_, i) => ({
+      label: `Feld ${i}`,
+      value: `Wert ${i}`,
+    }));
+    expect(parseAnswerCardArgs({ ...validArgs, fields })).toBeNull();
+  });
+
+  it("rejects a title longer than 80 characters", () => {
+    expect(
+      parseAnswerCardArgs({ ...validArgs, title: "a".repeat(81) }),
+    ).toBeNull();
+  });
+
+  it("rejects hedging language in the title", () => {
+    expect(
+      parseAnswerCardArgs({ ...validArgs, title: "Vermutlich ein Termin" }),
+    ).toBeNull();
+  });
+
+  it("rejects hedging language in a field value", () => {
+    expect(
+      parseAnswerCardArgs({
+        ...validArgs,
+        fields: [{ label: "Datum", value: "Könnte sein, 12.08.2026" }],
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for completely malformed input", () => {
+    expect(parseAnswerCardArgs(null)).toBeNull();
+    expect(parseAnswerCardArgs(undefined)).toBeNull();
+    expect(parseAnswerCardArgs("not an object")).toBeNull();
+    expect(parseAnswerCardArgs({})).toBeNull();
   });
 });

@@ -95,7 +95,7 @@ describe("GET /api/dev-auth", () => {
 
   // --- Empty fixture path (?fixture=empty) ---
 
-  it("ensures the empty fixture and redirects to /scan", async () => {
+  it("ensures the empty fixture and redirects to /dokumente", async () => {
     const admin = mockAdminClient({ linkUserId: FIXTURE_USER_ID });
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(admin);
     (ensureEmptyDocumentsFixture as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -113,7 +113,7 @@ describe("GET /api/dev-auth", () => {
     const response = await GET(buildRequest("empty"));
 
     expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toContain("/scan");
+    expect(response.headers.get("location")).toContain("/dokumente");
     expect(ensureEmptyDocumentsFixture).toHaveBeenCalledWith(FIXTURE_USER_ID);
     expect(fetchSpy).toHaveBeenCalledWith(ACTION_LINK, { redirect: "manual" });
     expect(serverClient.auth.setSession).toHaveBeenCalledWith({
@@ -339,7 +339,7 @@ describe("GET /api/dev-auth", () => {
       const response = await GET(buildRequest("empty"));
 
       expect(response.status).toBe(307);
-      expect(response.headers.get("location")).toContain("/scan");
+      expect(response.headers.get("location")).toContain("/dokumente");
       expect(serverClient.auth.setSession).toHaveBeenCalledWith({
         access_token: ACCESS_TOKEN,
         refresh_token: REFRESH_TOKEN,

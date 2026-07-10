@@ -114,6 +114,64 @@ beforeEach(() => {
 
 describe("ReviewCard", () => {
   // ---------------------------------------------------------------------------
+  // Pre-analysis pipeline states (uploaded / ocr_processing / ocr_done)
+  // ---------------------------------------------------------------------------
+
+  it.each(["uploaded", "ocr_processing", "ocr_done"] as const)(
+    "renders the honest processing checklist for status '%s' instead of a broken empty state",
+    async (status) => {
+      render(<ReviewCard documentId="doc-1" status={status} />);
+      expect(
+        await screen.findByTestId("review-card-processing"),
+      ).toBeDefined();
+      // Never falls through to the "no analysis data" error copy for
+      // these statuses (VAL-SCAN-041) — that copy is reserved for a
+      // genuinely broken analyzed-without-data case.
+      expect(screen.queryByText(/Keine Analysedaten vorhanden/)).toBeNull();
+      expect(screen.queryByTestId("review-card-error")).toBeNull();
+    },
+  );
+
+  it("marks the upload step done and the OCR step active for status 'uploaded'", async () => {
+    render(<ReviewCard documentId="doc-1" status="uploaded" />);
+    await screen.findByTestId("review-card-processing");
+    expect(
+      screen.getByTestId("review-processing-step-upload").dataset.state,
+    ).toBe("done");
+    expect(
+      screen.getByTestId("review-processing-step-ocr").dataset.state,
+    ).toBe("active");
+    expect(
+      screen.getByTestId("review-processing-step-analysis").dataset.state,
+    ).toBe("pending");
+  });
+
+  it("marks the upload step done and OCR step active for status 'ocr_processing'", async () => {
+    render(<ReviewCard documentId="doc-1" status="ocr_processing" />);
+    await screen.findByTestId("review-card-processing");
+    expect(
+      screen.getByTestId("review-processing-step-upload").dataset.state,
+    ).toBe("done");
+    expect(
+      screen.getByTestId("review-processing-step-ocr").dataset.state,
+    ).toBe("active");
+  });
+
+  it("marks upload and OCR steps done and the analysis step active for status 'ocr_done'", async () => {
+    render(<ReviewCard documentId="doc-1" status="ocr_done" />);
+    await screen.findByTestId("review-card-processing");
+    expect(
+      screen.getByTestId("review-processing-step-upload").dataset.state,
+    ).toBe("done");
+    expect(
+      screen.getByTestId("review-processing-step-ocr").dataset.state,
+    ).toBe("done");
+    expect(
+      screen.getByTestId("review-processing-step-analysis").dataset.state,
+    ).toBe("active");
+  });
+
+  // ---------------------------------------------------------------------------
   // Analyzing / loading state (skeleton)
   // ---------------------------------------------------------------------------
 
@@ -166,7 +224,7 @@ describe("ReviewCard", () => {
     // Friendly copy is shown. findByText flushes the mount effect's async
     // state updates within act(...) so no act() warning is emitted.
     expect(
-      await screen.findByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+      await screen.findByText(/Das hat nicht geklappt\. Bitte nochmal versuchen/),
     ).toBeDefined();
     // Raw provider/backend error text must NOT leak into the UI.
     expect(screen.queryByText("OpenAI: API-Fehler")).toBeNull();
@@ -183,7 +241,7 @@ describe("ReviewCard", () => {
     );
     // Flush the mount effect's async state updates within act(...) first.
     expect(
-      await screen.findByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+      await screen.findByText(/Das hat nicht geklappt\. Bitte nochmal versuchen/),
     ).toBeDefined();
     expect(screen.queryByText("Could not parse PDF")).toBeNull();
     expect(screen.queryByText(/parse PDF/i)).toBeNull();
@@ -215,7 +273,7 @@ describe("ReviewCard", () => {
       <ReviewCard documentId="doc-1" status="failed" errorMessage={null} />,
     );
     expect(
-      await screen.findByText(/Analyse fehlgeschlagen\. Bitte erneut versuchen/),
+      await screen.findByText(/Das hat nicht geklappt\. Bitte nochmal versuchen/),
     ).toBeDefined();
   });
 
@@ -233,7 +291,7 @@ describe("ReviewCard", () => {
     expect(screen.queryByTestId("confirm-button")).toBeNull();
   });
 
-  it("shows 'Neu analysieren' button in confirmed state (VAL-EXTRACT-012)", async () => {
+  it("shows 'Nochmal lesen' button in confirmed state (VAL-EXTRACT-012)", async () => {
     render(
       <ReviewCard documentId="doc-1" status="confirmed" />,
     );
@@ -249,7 +307,62 @@ describe("ReviewCard", () => {
     ).toBeDefined();
   });
 
-  it("calls the analyze API when 'Neu analysieren' is clicked in confirmed state (VAL-EXTRACT-012)", async () => {
+  it("shows the document's actual metadata (persons, category, tags) for an already-confirmed document", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    const details = await screen.findByTestId("confirmed-details");
+    expect(
+      within(within(details).getByTestId("confirmed-persons")).getByText("Emma"),
+    ).toBeDefined();
+    expect(
+      within(within(details).getByTestId("confirmed-category")).getByText("Kita"),
+    ).toBeDefined();
+    expect(
+      within(within(details).getByTestId("confirmed-tags")).getByText("Anmeldung"),
+    ).toBeDefined();
+  });
+
+  it("does not render confirmed-details when the analysis has no data", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(null);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    await screen.findByTestId("review-card-confirmed");
+    expect(screen.queryByTestId("confirmed-details")).toBeNull();
+  });
+
+  it("opens the original file in a new tab via the signed-URL endpoint", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ url: "https://storage.example.com/signed" }), {
+        status: 200,
+      }),
+    );
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    const viewFileButton = await screen.findByTestId("view-original-file-button");
+    fireEvent.click(viewFileButton);
+
+    await waitFor(() => {
+      expect(fetchSpy).toHaveBeenCalledWith("/api/documents/doc-1/file");
+    });
+    await waitFor(() => {
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://storage.example.com/signed",
+        "_blank",
+        "noopener,noreferrer",
+      );
+    });
+
+    fetchSpy.mockRestore();
+    openSpy.mockRestore();
+  });
+
+  it("calls the analyze API when 'Nochmal lesen' is clicked in confirmed state (VAL-EXTRACT-012)", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ status: "analyzed" }), { status: 200 }),
     );
@@ -288,10 +401,6 @@ describe("ReviewCard", () => {
       expect(screen.getByTestId("review-card")).toBeDefined();
     });
 
-    // Headline
-    expect(screen.getByTestId("review-headline")).toBeDefined();
-    expect(screen.getByText(/Ich glaube/)).toBeDefined();
-
     // Summary
     expect(screen.getByTestId("review-summary")).toBeDefined();
 
@@ -305,7 +414,7 @@ describe("ReviewCard", () => {
     expect(screen.getByTestId("review-tags")).toBeDefined();
   });
 
-  it("shows the German analysis headline with document type and person", async () => {
+  it("does not show the redundant review intro sentence", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
@@ -313,15 +422,13 @@ describe("ReviewCard", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("review-headline")).toBeDefined();
+      expect(screen.getByTestId("review-card")).toBeDefined();
     });
 
-    // "Ich glaube, das ist ein Schule für Emma"
-    // (document_type is "school" → label "Schule")
-    expect(screen.getByText(/Ich glaube, das ist.*Schule.*Emma/)).toBeDefined();
+    expect(screen.queryByText(/Ich glaube, das ist/i)).toBeNull();
   });
 
-  it("shows 'Alles bestätigen' button enabled when analyzed and no unresolved disambiguation", async () => {
+  it("shows 'Ins Familienbuch übernehmen' button enabled when analyzed and no unresolved disambiguation", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
@@ -342,7 +449,7 @@ describe("ReviewCard", () => {
   // Disambiguation gating (VAL-REVIEW-009)
   // ---------------------------------------------------------------------------
 
-  it("disables 'Alles bestätigen' while an unresolved low-confidence disambiguation remains", async () => {
+  it("disables 'Ins Familienbuch übernehmen' while an unresolved low-confidence disambiguation remains", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
 
     render(
@@ -388,7 +495,7 @@ describe("ReviewCard", () => {
     fetchSpy.mockRestore();
   });
 
-  it("enables 'Alles bestätigen' after the user resolves the disambiguation", async () => {
+  it("enables 'Ins Familienbuch übernehmen' after the user resolves the disambiguation", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
 
     render(
@@ -460,7 +567,7 @@ describe("ReviewCard", () => {
     fetchSpy.mockRestore();
   });
 
-  it("shows 'Neu analysieren' button when analyzed", async () => {
+  it("shows 'Nochmal lesen' button when analyzed", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
@@ -476,20 +583,56 @@ describe("ReviewCard", () => {
   // Confidence badges
   // ---------------------------------------------------------------------------
 
-  it("renders confidence badges for entities", async () => {
+  it("hides the confidence badge for high-confidence fields", async () => {
+    // fullAnalysis: person 0.95, organization 0.9, date 0.88, task 0.91 —
+    // all above the high threshold, so none of them need a badge.
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
       <ReviewCard documentId="doc-1" status="analyzed" />,
     );
 
-    await waitFor(() => {
-      expect(screen.getByTestId("review-card")).toBeDefined();
-    });
+    const persons = await screen.findByTestId("review-persons");
+    expect(within(persons).queryByTestId("confidence-badge")).toBeNull();
+    expect(
+      within(screen.getByTestId("review-organizations")).queryByTestId(
+        "confidence-badge",
+      ),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId("review-dates")).queryByTestId(
+        "confidence-badge",
+      ),
+    ).toBeNull();
+    expect(
+      within(screen.getByTestId("review-tasks")).queryByTestId(
+        "confidence-badge",
+      ),
+    ).toBeNull();
+  });
 
-    const badges = screen.getAllByTestId("confidence-badge");
-    // Should have badges for: person, organization, date, amount, task
-    expect(badges.length).toBeGreaterThanOrEqual(5);
+  it("shows the confidence badge only for medium/low-confidence fields", async () => {
+    // fullAnalysis's amount is 0.82 (medium) — the one field in this
+    // fixture actually worth a second look.
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    const amounts = await screen.findByTestId("review-amounts");
+    expect(within(amounts).getByTestId("confidence-badge")).toBeDefined();
+  });
+
+  it("shows the confidence badge for a low-confidence person needing disambiguation", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    const persons = await screen.findByTestId("review-persons");
+    expect(within(persons).getByTestId("confidence-badge")).toBeDefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -735,7 +878,7 @@ describe("ReviewCard", () => {
 
     // Should still render the card and confirm button.
     expect(screen.getByTestId("confirm-button")).toBeDefined();
-    expect(screen.getByTestId("review-headline")).toBeDefined();
+    expect(screen.queryByTestId("review-headline")).toBeNull();
 
     // Should not render empty field sections.
     expect(screen.queryByTestId("review-persons")).toBeNull();
@@ -761,11 +904,28 @@ describe("ReviewCard", () => {
     expect(screen.queryByTestId("review-summary")).toBeNull();
   });
 
+  it("does not render the summary section for generic uncertain filler copy", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...lowConfidenceAnalysis,
+      summary: "Ein unscharfer Hinweis mit unsicheren Angaben.",
+    });
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("review-summary")).toBeNull();
+  });
+
   // ---------------------------------------------------------------------------
   // Re-analyze
   // ---------------------------------------------------------------------------
 
-  it("calls the analyze API when 'Neu analysieren' is clicked", async () => {
+  it("calls the analyze API when 'Nochmal lesen' is clicked", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -796,7 +956,7 @@ describe("ReviewCard", () => {
   // Confirm
   // ---------------------------------------------------------------------------
 
-  it("calls the confirm API when 'Alles bestätigen' is clicked", async () => {
+  it("calls the confirm API when 'Ins Familienbuch übernehmen' is clicked", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -845,12 +1005,44 @@ describe("ReviewCard", () => {
     });
   });
 
+  it("celebrates with the mascot's success animation right after confirming", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(
+      <ReviewCard documentId="doc-1" status="analyzed" />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confirm-button")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    const confirmedCard = await screen.findByTestId("review-card-confirmed");
+    expect(
+      confirmedCard.querySelector("svg.ordilo-mascot-bounce"),
+    ).not.toBeNull();
+  });
+
+  it("does not replay the celebration when revisiting an already-confirmed document", async () => {
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    const confirmedCard = await screen.findByTestId("review-card-confirmed");
+    expect(
+      confirmedCard.querySelector("svg.ordilo-mascot-bounce"),
+    ).toBeNull();
+  });
+
   it("shows an error message when confirm fails", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
-        JSON.stringify({ error: "Bestätigung fehlgeschlagen." }),
+        JSON.stringify({ error: "Bestätigen hat nicht geklappt." }),
         { status: 500 },
       ),
     );
@@ -866,7 +1058,7 @@ describe("ReviewCard", () => {
     fireEvent.click(screen.getByTestId("confirm-button"));
 
     await waitFor(() => {
-      expect(screen.getByText("Bestätigung fehlgeschlagen.")).toBeDefined();
+      expect(screen.getByText("Bestätigen hat nicht geklappt.")).toBeDefined();
     });
   });
 

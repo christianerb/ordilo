@@ -1,7 +1,11 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { ProfileClient } from "./profile-client";
 import type { Database } from "@/types/database";
+
+/** How long the member photo signed URL stays valid, in seconds. */
+const PHOTO_SIGNED_URL_TTL_SECONDS = 300;
 import type {
   ProfileDocument,
   ProfileTask,
@@ -12,6 +16,15 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type EntityRow = Database["public"]["Tables"]["extracted_entities"]["Row"];
+type InventoryItemRow = Database["public"]["Tables"]["family_inventory_items"]["Row"];
+
+export interface ProfileInventoryItem {
+  id: string;
+  name: string;
+  item_type: string;
+  tags: string[];
+  status: string;
+}
 
 /**
  * Person profile page (`/familie/[id]`).
@@ -50,6 +63,24 @@ export default async function PersonProfilePage({
 
   const typedMember = member as MemberRow;
 
+  // Resolve the member's photo (short-lived signed URL) and the name of
+  // any related member, in parallel with the rest of the page's fetches.
+  const photoUrlPromise = typedMember.photo_url
+    ? createAdminClient()
+        .storage.from("avatars")
+        .createSignedUrl(typedMember.photo_url, PHOTO_SIGNED_URL_TTL_SECONDS)
+        .then((res) => res.data?.signedUrl ?? null)
+    : Promise.resolve(null);
+
+  const relatedMemberPromise = typedMember.related_member_id
+    ? supabase
+        .from("family_members")
+        .select("name")
+        .eq("id", typedMember.related_member_id)
+        .maybeSingle()
+        .then((res) => res.data?.name ?? null)
+    : Promise.resolve(null);
+
   // 2. Fetch confirmed person entities linked to this member.
   // These give us the document IDs of documents assigned to this person.
   const { data: personEntities } = await supabase
@@ -66,6 +97,29 @@ export default async function PersonProfilePage({
 
   // If no documents are linked, pass empty data to the client component
   // (which will render empty states for each section).
+  // Still fetch inventory items linked to this person.
+  const { data: inventoryData } = await supabase
+    .from("family_inventory_items")
+    .select("id, name, item_type, tags, status")
+    .eq("linked_member_id", typedMember.id)
+    .order("created_at", { ascending: false });
+
+  const inventoryItems: ProfileInventoryItem[] = (inventoryData ?? []).map((i) => {
+    const item = i as Pick<InventoryItemRow, "id" | "name" | "item_type" | "tags" | "status">;
+    return {
+      id: item.id,
+      name: item.name,
+      item_type: item.item_type,
+      tags: item.tags ?? [],
+      status: item.status,
+    };
+  });
+
+  const [photoUrl, relatedMemberName] = await Promise.all([
+    photoUrlPromise,
+    relatedMemberPromise,
+  ]);
+
   if (documentIds.length === 0) {
     return (
       <ProfileClient
@@ -73,6 +127,9 @@ export default async function PersonProfilePage({
         documents={[]}
         tasks={[]}
         dateEntities={[]}
+        inventoryItems={inventoryItems}
+        photoUrl={photoUrl}
+        relatedMemberName={relatedMemberName}
       />
     );
   }
@@ -180,6 +237,9 @@ export default async function PersonProfilePage({
       tasks={tasks}
       dateEntities={dateEntities}
       documentTitles={docTitleMap}
+      inventoryItems={inventoryItems}
+      photoUrl={photoUrl}
+      relatedMemberName={relatedMemberName}
     />
   );
 }

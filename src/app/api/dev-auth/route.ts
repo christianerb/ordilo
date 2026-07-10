@@ -31,7 +31,8 @@ import type { Database } from "@/types/database";
  *     (`EMPTY_FIXTURE_EMAIL`) that has exactly one family and zero
  *     documents. The fixture is reset to zero documents on every call
  *     without touching any shared validation family. Redirects to
- *     `/scan` so the validator lands directly on the scan page.
+ *     `/dokumente` so the validator lands directly on the empty document
+ *     list.
  *
  * - no parameter / any other value (shared test user):
  *     Signs in as the shared test user (`TEST_EMAIL`). Redirects to
@@ -60,9 +61,6 @@ function isDevEnvironment(): boolean {
 /** Shared test user (has a family + members). */
 const TEST_EMAIL = "ordilo.auth.test@gmail.com";
 
-/** Base URL for building redirect targets. */
-const BASE_URL = "http://localhost:3100";
-
 /**
  * Establish a Supabase session for the given email by generating a magic
  * link, following it to extract tokens, and writing auth cookies onto a
@@ -75,9 +73,10 @@ const BASE_URL = "http://localhost:3100";
 async function establishSession(options: {
   email: string;
   redirectPath: string;
+  baseUrl: string;
   onUser?: (userId: string) => Promise<void>;
 }): Promise<NextResponse> {
-  const { email, redirectPath, onUser } = options;
+  const { email, redirectPath, baseUrl, onUser } = options;
   const admin = createAdminClient();
 
   // Generate a magic link for the user (creates the user if absent).
@@ -165,7 +164,7 @@ async function establishSession(options: {
   // This ensures the auth cookies are carried by the redirect response
   // to the browser. (Using cookies().set() separately does NOT propagate
   // to a NextResponse.redirect() — they go to different response objects.)
-  const response = NextResponse.redirect(new URL(redirectPath, BASE_URL));
+  const response = NextResponse.redirect(new URL(redirectPath, baseUrl));
 
   // Create a server client that writes cookies directly on the redirect
   // response. The setSession call will populate the auth cookies.
@@ -211,14 +210,16 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
+  const baseUrl = `${url.protocol}//${url.host}`;
   const fixture = url.searchParams.get("fixture");
 
   if (fixture === "empty") {
     // Disposable empty-documents fixture — reset to zero documents and
-    // land on /scan so the validator sees the warm empty state.
+    // land on /dokumente so the validator sees the warm empty state.
     return establishSession({
       email: EMPTY_FIXTURE_EMAIL,
-      redirectPath: "/scan",
+      redirectPath: "/dokumente",
+      baseUrl,
       onUser: async (userId) => {
         await ensureEmptyDocumentsFixture(userId);
       },
@@ -229,5 +230,6 @@ export async function GET(request: Request) {
   return establishSession({
     email: TEST_EMAIL,
     redirectPath: "/home",
+    baseUrl,
   });
 }

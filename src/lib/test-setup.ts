@@ -5,6 +5,25 @@ import "@testing-library/jest-dom/vitest";
 // ---------------------------------------------------------------------------
 
 /**
+ * Polyfill ResizeObserver for jsdom.
+ *
+ * jsdom does not implement ResizeObserver. We provide a minimal mock that
+ * immediately invokes the callback (to simulate a size change) and returns
+ * a no-op observer. This is needed by components that use ResizeObserver
+ * for auto-scroll behavior (via useMountEffect).
+ */
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class ResizeObserver {
+    constructor(private callback: ResizeObserverCallback) {}
+    observe(target: Element) {
+      this.callback([{ target } as ResizeObserverEntry], this);
+    }
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
+/**
  * Polyfill Blob.arrayBuffer() for jsdom.
  *
  * jsdom 26 does not implement Blob.arrayBuffer() (or File.arrayBuffer(),
@@ -25,4 +44,26 @@ if (typeof Blob.prototype.arrayBuffer !== "function") {
       reader.readAsArrayBuffer(this);
     });
   };
+}
+
+/**
+ * Polyfill window.matchMedia for jsdom.
+ *
+ * jsdom does not implement matchMedia. We provide a minimal mock (always
+ * reporting no match) so components that use it for responsive behavior
+ * (via useMountEffect) don't crash in tests. Tests that need a specific
+ * match state should mock window.matchMedia themselves.
+ */
+if (typeof window.matchMedia !== "function") {
+  window.matchMedia = (query: string) =>
+    ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }) as unknown as MediaQueryList;
 }

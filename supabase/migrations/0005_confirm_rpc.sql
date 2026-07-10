@@ -43,6 +43,7 @@ create or replace function public.confirm_document(
   p_persons       jsonb default '[]'::jsonb,
   p_organizations jsonb default '[]'::jsonb,
   p_embeddings    jsonb default '[]'::jsonb,
+  p_label_embeddings jsonb default '[]'::jsonb,
   p_entities      jsonb default '[]'::jsonb,
   p_tasks         jsonb default '[]'::jsonb
 )
@@ -59,7 +60,19 @@ declare
   v_entity           jsonb;
   v_task             jsonb;
   v_transitioned     int;
+  v_label_emb        jsonb;
 begin
+
+  -- Build a temporary map of label → embedding from p_label_embeddings
+  -- so we can set label_embedding on node inserts.
+  -- Format: [{"label": "Emma", "embedding": "[0.1,...]"}, ...]
+  create temp table if not exists tmp_label_embeddings (label text, embedding vector(1536));
+  delete from tmp_label_embeddings;
+  for v_label_emb in select * from jsonb_array_elements(p_label_embeddings)
+  loop
+    insert into tmp_label_embeddings (label, embedding)
+    values (v_label_emb->>'label', (v_label_emb->>'embedding')::vector);
+  end loop;
   -- 1. Conditional atomic transition: analyzed -> confirmed ----------------
   -- Only a document in 'analyzed' state can be transitioned. If a concurrent
   -- request changed the status between the route's read and this call, the
@@ -101,12 +114,13 @@ begin
       and properties_json->>'document_id' = p_document_id::text;
 
   -- 3. Create the document node --------------------------------------------
-  insert into public.knowledge_nodes (family_id, type, label, properties_json)
+  insert into public.knowledge_nodes (family_id, type, label, properties_json, label_embedding)
   values (
     p_family_id,
     'document',
     coalesce(nullif(p_title, ''), 'Dokument'),
-    jsonb_build_object('document_id', p_document_id)
+    jsonb_build_object('document_id', p_document_id),
+    (select embedding from tmp_label_embeddings where label = coalesce(nullif(p_title, ''), 'Dokument') limit 1)
   )
   returning id into v_document_node_id;
 
@@ -117,7 +131,7 @@ begin
   -- the conflicting row). Existing properties_json is preserved.
   for v_person in select * from jsonb_array_elements(p_persons)
   loop
-    insert into public.knowledge_nodes (family_id, type, label, properties_json)
+    insert into public.knowledge_nodes (family_id, type, label, properties_json, label_embedding)
     values (
       p_family_id,
       'person',
@@ -126,11 +140,12 @@ begin
         when (v_person->>'person_id') is not null
           then jsonb_build_object('person_id', v_person->>'person_id')
         else '{}'::jsonb
-      end
+      end,
+      (select embedding from tmp_label_embeddings where label = v_person->>'name' limit 1)
     )
     on conflict (family_id, type, label)
       where type in ('person', 'organization')
-    do update set label = excluded.label
+    do update set label = excluded.label, label_embedding = coalesce(excluded.label_embedding, knowledge_nodes.label_embedding)
     returning id into v_person_node_id;
 
     insert into public.knowledge_edges (
@@ -151,16 +166,17 @@ begin
   -- 5. UPSERT organization nodes + create edges ----------------------------
   for v_org in select * from jsonb_array_elements(p_organizations)
   loop
-    insert into public.knowledge_nodes (family_id, type, label, properties_json)
+    insert into public.knowledge_nodes (family_id, type, label, properties_json, label_embedding)
     values (
       p_family_id,
       'organization',
       v_org->>'name',
-      jsonb_build_object('organization_type', v_org->>'type')
+      jsonb_build_object('organization_type', v_org->>'type'),
+      (select embedding from tmp_label_embeddings where label = v_org->>'name' limit 1)
     )
     on conflict (family_id, type, label)
       where type in ('person', 'organization')
-    do update set label = excluded.label
+    do update set label = excluded.label, label_embedding = coalesce(excluded.label_embedding, knowledge_nodes.label_embedding)
     returning id into v_org_node_id;
 
     insert into public.knowledge_edges (
@@ -196,7 +212,8 @@ begin
         'document_id',  p_document_id,
         'page_number',  coalesce((v_emb->>'page_number')::int, 1),
         'chunk_index',  coalesce((v_emb->>'chunk_index')::int, 0),
-        'chunk_total',  coalesce((v_emb->>'chunk_total')::int, 0)
+        'chunk_total',  coalesce((v_emb->>'chunk_total')::int, 0),
+        'chunk_type',   coalesce(v_emb->>'chunk_type', 'chunk')
       )
     );
   end loop;
