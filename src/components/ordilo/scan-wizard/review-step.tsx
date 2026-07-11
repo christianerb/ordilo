@@ -115,7 +115,7 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
   if (confirmed) {
     return (
       <div className={className} data-testid="review-step-confirmed">
-        <ReviewCardConfirmed celebrate />
+        <ReviewCardConfirmed celebrate askTitle={analysis?.title ?? null} />
         <Button
           type="button"
           size="lg"

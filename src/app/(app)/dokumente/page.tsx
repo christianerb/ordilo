@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import {
   Camera,
+  MoreHorizontal,
   UploadCloud,
   Loader2,
   ScanLine,
@@ -30,6 +31,12 @@ import { DocumentCard } from "@/components/ordilo/document-card";
 import { DocumentsTable } from "@/components/ordilo/documents-table";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
@@ -490,30 +497,38 @@ export default function DokumentePage() {
               </div>
             )}
 
-            {hasDocuments && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => pdfInputRef.current?.click()}
-                className="bg-white/80"
-              >
-                <UploadCloud className="size-4" aria-hidden="true" />
-                Hochladen
-              </Button>
-            )}
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={openCreateNote}
-              className="shrink-0 bg-white/80"
-              data-testid="open-create-note-button"
-            >
-              <FileText className="size-4" aria-hidden="true" />
-              Anlegen
-            </Button>
+            {/* One primary action (Scannen); upload + note live in a
+                quiet overflow menu — power-user paths, visually secondary
+                so the header reads as ONE way to add. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0 bg-white/80 px-2.5"
+                  aria-label="Weitere Optionen"
+                  data-testid="documents-more-menu"
+                >
+                  <MoreHorizontal className="size-4" aria-hidden="true" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={() => pdfInputRef.current?.click()}
+                >
+                  <UploadCloud className="size-4" aria-hidden="true" />
+                  PDF hochladen
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={openCreateNote}
+                  data-testid="open-create-note-button"
+                >
+                  <FileText className="size-4" aria-hidden="true" />
+                  Notiz anlegen
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <Button
               type="button"
