@@ -556,18 +556,16 @@ export function useScanProviderState(): ScanProviderState {
 
   const handleDeleteDocument = useCallback(
     async (documentId: string) => {
-      const document =
-        documentsRef.current.find((doc) => doc.id === documentId) ??
-        (expandedDocumentRef.current?.id === documentId
-          ? expandedDocumentRef.current
-          : null);
-      const { error: dbError } = await supabase
-        .from("documents")
-        .delete()
-        .eq("id", documentId);
-      if (dbError) return;
-      if (document?.file_url) {
-        await supabase.storage.from("documents").remove([document.file_url]).catch(() => {});
+      // Delete via the API route so the Storage file is removed with the
+      // service-role client (the private bucket rejects browser-client
+      // removals, which used to orphan files).
+      try {
+        const response = await fetch(`/api/documents/${documentId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) return;
+      } catch {
+        return;
       }
       if (expandedDocIdRef.current === documentId) {
         closeDocument();
@@ -582,7 +580,7 @@ export function useScanProviderState(): ScanProviderState {
         setDocuments((prev) => prev.filter((current) => current.id !== documentId));
       }
     },
-    [closeDocument, supabase],
+    [closeDocument],
   );
 
   const openWizard = useCallback(() => {
