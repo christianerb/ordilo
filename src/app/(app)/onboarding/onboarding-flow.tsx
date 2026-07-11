@@ -273,7 +273,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                 unter. Zwei kurze Fragen, dann geht&apos;s los.
               </MascotBubble>
 
-              <div className="rounded-ordilo-md border border-border bg-card p-4 shadow-card">
+              <div className="rounded-ordilo-md border border-border bg-card p-4 shadow-card animate-card-in">
                 <form onSubmit={handleFamilySubmit} className="space-y-4" noValidate>
                   <div className="space-y-2">
                     <Label htmlFor="family-name">Wie heißt eure Familie?</Label>
@@ -349,9 +349,9 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                 noch dazu? Du kannst das auch jederzeit später ergänzen.
               </MascotBubble>
 
-              <div className="space-y-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
+              <div className="space-y-3 rounded-ordilo-md border border-border bg-card p-4 shadow-card animate-card-in">
                 {members.length > 0 && (
-                  <div className="space-y-2" data-testid="onboarding-member-list">
+                  <div className="space-y-2 stagger-children" data-testid="onboarding-member-list">
                     {members.map((m) => (
                       <PersonCard
                         key={m.id}
@@ -451,7 +451,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           {/* Step 3: ready springboard — straight into the first scan */}
           {step === "ready" && (
             <>
-              <div className="flex flex-col items-center pt-8 text-center">
+              <div className="flex flex-col items-center pt-8 text-center animate-card-in">
                 <OrdiloMascot
                   size={72}
                   mood="success"
@@ -469,7 +469,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
 
               {serverError && <ErrorBanner message={serverError} />}
 
-              <div className="space-y-2 pt-2">
+              <div className="space-y-2 pt-2 animate-card-in" style={{ animationDelay: "120ms" }}>
                 <Button
                   type="button"
                   size="lg"
@@ -519,7 +519,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
  */
 function MascotBubble({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex gap-3">
+    <div className="flex gap-3 animate-message-in">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
         <OrdiloMascot size={22} mood="idle" />
       </div>

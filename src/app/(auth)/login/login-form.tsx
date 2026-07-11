@@ -157,7 +157,7 @@ export function LoginForm() {
     const webmail = webmailFor(email);
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
-        <div className="w-full max-w-sm space-y-6 text-center">
+        <div className="w-full max-w-sm space-y-6 text-center stagger-children">
           <div className="flex justify-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-md bg-primary text-primary-foreground shadow-card">
               <Mail className="h-8 w-8" aria-hidden="true" />
@@ -226,7 +226,7 @@ export function LoginForm() {
   // Login form — idle, submitting, or error state.
   return (
     <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
-      <div className="w-full max-w-sm space-y-8">
+      <div className="w-full max-w-sm space-y-8 stagger-children">
         <div className="space-y-5 text-center">
           <div className="flex justify-center">
             <OrdiloMascot
