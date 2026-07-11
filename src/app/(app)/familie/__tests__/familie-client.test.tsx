@@ -75,7 +75,7 @@ describe("FamilieClient — member list", () => {
     render(
       <FamilieClient familyName="Testfamilie" members={[makeMember()]} />,
     );
-    expect(screen.queryByText(/Dokumente/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/\d+ Dokumente?/)).not.toBeInTheDocument();
   });
 
   it("renders the family name in the banner", () => {

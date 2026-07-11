@@ -100,6 +100,7 @@ export function ReviewCard({
   const [existingCategories, setExistingCategories] = useState<string[]>([]);
   const [edits, setEdits] = useState<EditState>({
     persons: new Map(),
+    factValues: new Map(),
     category: null,
     dates: new Map(),
     taskDueDates: new Map(),
@@ -210,6 +211,21 @@ export function ReviewCard({
   );
 
   /** Edit task due date. */
+  const handleEditFact = useCallback(
+    (factIndex: number, value: string) => {
+      setEdits((prev) => {
+        const factValues = new Map(prev.factValues);
+        if (value.trim()) {
+          factValues.set(factIndex, value);
+        } else {
+          factValues.delete(factIndex);
+        }
+        return { ...prev, factValues };
+      });
+    },
+    [],
+  );
+
   const handleEditTaskDueDate = useCallback(
     (taskIndex: number, dueDate: string) => {
       setEdits((prev) => {
@@ -340,6 +356,7 @@ export function ReviewCard({
       // Reset edits and reload analysis.
       setEdits({
         persons: new Map(),
+        factValues: new Map(),
         category: null,
         dates: new Map(),
         taskDueDates: new Map(),
@@ -447,6 +464,7 @@ export function ReviewCard({
       onEditCategory={handleEditCategory}
       onEditDate={handleEditDate}
       onEditTaskDueDate={handleEditTaskDueDate}
+      onEditFact={handleEditFact}
       onDeleteTask={handleDeleteTask}
       onResolveDisambiguation={handleResolveDisambiguation}
       onConfirm={handleConfirm}

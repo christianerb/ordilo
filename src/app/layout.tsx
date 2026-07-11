@@ -13,6 +13,15 @@ export const metadata: Metadata = {
   title: "Ordilo",
   description:
     "Dein privater AI-Familienordner. Erfasse, verstehe und durchsuche Dokumente auf natürliche Weise.",
+  applicationName: "Ordilo",
+  appleWebApp: {
+    capable: true,
+    title: "Ordilo",
+    statusBarStyle: "default",
+  },
+  icons: {
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

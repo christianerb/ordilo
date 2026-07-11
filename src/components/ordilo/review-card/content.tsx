@@ -7,6 +7,7 @@ import {
   User,
   Building2,
   Euro,
+  Hash,
   ListTodo,
   Trash2,
   AlertTriangle,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DOCUMENT_TYPE_LABELS,
+  FACT_TYPE_LABELS,
   type DocumentAnalysis,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
@@ -34,6 +36,7 @@ import {
   PersonEditControl,
   CategoryEditControl,
   DateEditControl,
+  FactEditControl,
 } from "./edit-controls";
 
 /**
@@ -54,6 +57,7 @@ export function ReviewCardContent({
   onEditCategory,
   onEditDate,
   onEditTaskDueDate,
+  onEditFact,
   onDeleteTask,
   onResolveDisambiguation,
   onConfirm,
@@ -73,6 +77,7 @@ export function ReviewCardContent({
   onEditCategory: (category: string) => void;
   onEditDate: (entityIndex: number, date: string) => void;
   onEditTaskDueDate: (taskIndex: number, dueDate: string) => void;
+  onEditFact: (factIndex: number, value: string) => void;
   onDeleteTask: (taskIndex: number) => void;
   onResolveDisambiguation: (entityIndex: number, memberId: string) => void;
   onConfirm: () => void;
@@ -253,6 +258,43 @@ export function ReviewCardContent({
                 )}
               </FieldRow>
             ))}
+          </FieldGroup>
+        )}
+
+        {/* Facts — exact identifiers (serial numbers, contract numbers, …).
+            Shown monospaced so single-character OCR errors are easy to
+            spot, with a one-tap correction input. */}
+        {analysis.facts.length > 0 && (
+          <FieldGroup testId="review-facts">
+            {analysis.facts.map((fact, i) => {
+              const edited = edits.factValues.get(i);
+              const isEdited = Boolean(edited);
+              const displayValue = edited ?? fact.value;
+              const typeLabel =
+                FACT_TYPE_LABELS[fact.fact_type] ?? FACT_TYPE_LABELS.other;
+              return (
+                <FieldRow
+                  key={i}
+                  icon={Hash}
+                  label="Nummern & Kennungen"
+                  testId={`review-fact-${i}`}
+                  confidence={fact.confidence}
+                  isEdited={isEdited}
+                  editControl={
+                    <FactEditControl
+                      value={displayValue}
+                      label={fact.label || typeLabel}
+                      onChange={(v) => onEditFact(i, v)}
+                    />
+                  }
+                >
+                  <span className="block truncate font-mono">{displayValue}</span>
+                  <span className="block truncate font-normal text-muted-foreground">
+                    {fact.label || typeLabel}
+                  </span>
+                </FieldRow>
+              );
+            })}
           </FieldGroup>
         )}
 

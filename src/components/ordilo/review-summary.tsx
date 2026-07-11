@@ -9,6 +9,7 @@ import {
   User,
   Building2,
   Calendar,
+  Hash,
   ListTodo,
   Receipt,
   Mail,
@@ -25,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
 import {
   DOCUMENT_TYPE_LABELS,
+  FACT_TYPE_LABELS,
   type DocumentAnalysis,
   type DocumentType,
 } from "@/lib/schemas/extraction";
@@ -87,6 +89,17 @@ function buildHighlights(
       icon: ListTodo,
       value: topTask.title,
       caption: "Wichtiger Inhalt",
+    });
+  }
+
+  // Exact identifiers (serial number, contract number, …) are the values
+  // families come back for — surface the first one in the summary.
+  const topFact = analysis.facts[0];
+  if (topFact) {
+    highlights.push({
+      icon: Hash,
+      value: topFact.value,
+      caption: topFact.label || FACT_TYPE_LABELS[topFact.fact_type],
     });
   }
 

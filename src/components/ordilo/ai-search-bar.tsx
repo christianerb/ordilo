@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, useCallback, useRef, type KeyboardEvent } from "react";
-import { Sparkles, ArrowUp } from "lucide-react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  type KeyboardEvent,
+} from "react";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { Sparkles, ArrowUp, Mic, MicOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -33,9 +39,46 @@ export interface AISearchBarProps {
   className?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Speech recognition (voice search)
+// ---------------------------------------------------------------------------
+
 /**
- * AI Search Bar — a pill-shaped input with an AI sparkle icon and a send
- * button.
+ * Minimal typing for the (webkit-prefixed) Web Speech API — TypeScript's
+ * DOM lib does not ship SpeechRecognition types.
+ */
+interface SpeechRecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+}
+
+interface SpeechRecognitionEventLike {
+  results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+}
+
+type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+
+/** Resolve the SpeechRecognition constructor (Chrome/Safari prefix-aware). */
+function getSpeechRecognition(): SpeechRecognitionConstructor | null {
+  if (typeof window === "undefined") return null;
+  const w = window as unknown as Record<string, unknown>;
+  return (
+    (w.SpeechRecognition as SpeechRecognitionConstructor | undefined) ??
+    (w.webkitSpeechRecognition as SpeechRecognitionConstructor | undefined) ??
+    null
+  );
+}
+
+/**
+ * AI Search Bar — a pill-shaped input with an AI sparkle icon, a voice
+ * input button, and a send button.
  *
  * The primary entry point for both search and chat on the /suche page
  * (VAL-CHAT-028). Submitting a natural-language query triggers the chat
@@ -47,14 +90,13 @@ export interface AISearchBarProps {
  *   - Send button click → submit
  *   - Empty / whitespace-only input → no submit
  *
- * The input is cleared after a successful submit.
+ * Voice input (where the browser supports the Web Speech API):
+ *   - Mic button starts German speech recognition (de-DE)
+ *   - Interim transcripts stream into the input while speaking
+ *   - The final transcript submits automatically — ask out loud, done
+ *   - Unsupported browsers simply do not render the mic button
  *
- * @example
- * <AISearchBar
- *   onSubmit={(q) => handleSearch(q)}
- *   isLoading={isSearching}
- *   placeholder="Frage Ordilo…"
- * />
+ * The input is cleared after a successful submit.
  */
 export function AISearchBar({
   onSubmit,
@@ -74,6 +116,18 @@ export function AISearchBar({
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Voice input state.
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+
+  useMountEffect(() => {
+    setVoiceSupported(getSpeechRecognition() !== null);
+    return () => {
+      recognitionRef.current?.abort();
+    };
+  });
+
   // Notify the parent of a value change (controlled mode) or update the
   // internal state (uncontrolled mode).
   const setValue = useCallback(
@@ -87,18 +141,21 @@ export function AISearchBar({
     [isControlled, onValueChange],
   );
 
-  const handleSubmit = useCallback(() => {
-    const trimmed = currentValue.trim();
-    if (!trimmed || isLoading) return;
-    onSubmit(trimmed);
-    // Clear the bar after a successful submit. In controlled mode this
-    // notifies the parent to reset its value.
-    setValue("");
-    // Reset textarea height after clearing.
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-    }
-  }, [currentValue, isLoading, onSubmit, setValue]);
+  const handleSubmit = useCallback(
+    (overrideValue?: string) => {
+      const trimmed = (overrideValue ?? currentValue).trim();
+      if (!trimmed || isLoading) return;
+      onSubmit(trimmed);
+      // Clear the bar after a successful submit. In controlled mode this
+      // notifies the parent to reset its value.
+      setValue("");
+      // Reset textarea height after clearing.
+      if (inputRef.current) {
+        inputRef.current.style.height = "auto";
+      }
+    },
+    [currentValue, isLoading, onSubmit, setValue],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -117,6 +174,50 @@ export function AISearchBar({
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
   }, []);
+
+  /** Start/stop German voice recognition. */
+  const handleVoiceToggle = useCallback(() => {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const SpeechRecognitionCtor = getSpeechRecognition();
+    if (!SpeechRecognitionCtor) return;
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "de-DE";
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onresult = (event) => {
+      let transcript = "";
+      let isFinal = false;
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+        if (event.results[i].isFinal) isFinal = true;
+      }
+      setValue(transcript);
+      if (isFinal && transcript.trim()) {
+        // Speak → answer: submit the final transcript directly (zero
+        // extra taps). The user can always type to refine afterwards.
+        recognition.stop();
+        handleSubmit(transcript);
+      }
+    };
+    recognition.onerror = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
+    recognition.onend = () => {
+      setListening(false);
+      recognitionRef.current = null;
+    };
+
+    recognitionRef.current = recognition;
+    setListening(true);
+    recognition.start();
+  }, [listening, setValue, handleSubmit]);
 
   return (
     <div
@@ -143,16 +244,40 @@ export function AISearchBar({
         }}
         onKeyDown={handleKeyDown}
         disabled={isLoading}
-        placeholder={placeholder}
+        placeholder={listening ? "Ich höre zu …" : placeholder}
         rows={1}
         aria-label="Such- und Chat-Eingabe"
         className="max-h-[120px] flex-1 resize-none border-0 bg-transparent py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed"
       />
 
+      {/* Voice input button (only when the browser supports it) */}
+      {voiceSupported && (
+        <button
+          type="button"
+          onClick={handleVoiceToggle}
+          disabled={isLoading}
+          aria-label={listening ? "Spracheingabe stoppen" : "Mit Sprache fragen"}
+          aria-pressed={listening}
+          data-testid="voice-search-button"
+          className={cn(
+            "mb-0.5 flex size-9 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            listening
+              ? "bg-[var(--petrol)] text-white animate-pulse"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {listening ? (
+            <MicOff className="size-5" aria-hidden="true" />
+          ) : (
+            <Mic className="size-5" aria-hidden="true" />
+          )}
+        </button>
+      )}
+
       {/* Send button */}
       <button
         type="button"
-        onClick={handleSubmit}
+        onClick={() => handleSubmit()}
         disabled={isLoading || !currentValue.trim()}
         aria-label="Senden"
         className={cn(

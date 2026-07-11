@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPostAuthDestination } from "@/lib/auth/routing";
+import { INVITE_COOKIE } from "@/lib/invite";
 
 /**
  * Magic link callback route.
@@ -10,6 +11,9 @@ import { getPostAuthDestination } from "@/lib/auth/routing";
  * session via @supabase/ssr (setting auth cookies), then redirects to the
  * post-auth destination:
  *
+ * - Invited user (`ordilo_invite` cookie set on /invite/[token]) → the
+ *   invite is accepted right here and they land on `/home`, already part
+ *   of the family — no onboarding, no extra steps.
  * - First-time user (no `families` row) → `/onboarding`
  * - Returning user (has `families` row) → `/home`
  *
@@ -36,14 +40,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(buildErrorUrl(requestUrl));
   }
 
+  // Invite flow: if the sign-in started on /invite/[token], accept the
+  // invite now that the session exists. On success the user goes straight
+  // to /home as a family member. On failure (expired/revoked token, or
+  // the user already belongs to another family) fall through to the
+  // normal destination — the invite page explains the error states.
+  const inviteToken = request.cookies.get(INVITE_COOKIE)?.value;
+  let joinedViaInvite = false;
+  if (inviteToken && /^[a-f0-9]{16,64}$/i.test(inviteToken)) {
+    const { data } = await supabase.rpc("accept_family_invite", {
+      p_token: inviteToken,
+    });
+    joinedViaInvite =
+      (data as { status?: string } | null)?.status === "joined";
+  }
+
   // Session established — determine first-time vs returning user.
-  const { destination } = await getPostAuthDestination(supabase);
+  const { destination } = joinedViaInvite
+    ? { destination: "/home" }
+    : await getPostAuthDestination(supabase);
 
   const destinationUrl = new URL(requestUrl);
   destinationUrl.pathname = destination;
   destinationUrl.search = "";
 
-  return NextResponse.redirect(destinationUrl);
+  const response = NextResponse.redirect(destinationUrl);
+  if (inviteToken) {
+    // One round trip is all the cookie is for — clear it either way.
+    response.cookies.delete(INVITE_COOKIE);
+  }
+  return response;
 }
 
 function buildErrorUrl(requestUrl: URL): URL {
