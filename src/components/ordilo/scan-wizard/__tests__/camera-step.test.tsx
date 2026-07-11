@@ -156,7 +156,7 @@ describe("CameraStep", () => {
       ).toBeDefined();
     });
 
-    it("captures the current video frame and calls onCapture with a JPEG File", async () => {
+    it("captures a page and finishes a single-page scan as a JPEG File", async () => {
       const { track } = mockReadyCamera();
       const onCapture = vi.fn();
 
@@ -171,6 +171,53 @@ describe("CameraStep", () => {
           callback(new Blob(["fake-jpeg"], { type: "image/jpeg" }));
         },
       );
+      stubObjectUrls();
+
+      render(
+        <CameraStep onCapture={onCapture} onUseGallery={vi.fn()} onClose={vi.fn()} />,
+      );
+
+      const video = await screen.findByTestId("camera-video");
+      Object.defineProperty(video, "videoWidth", { value: 1280, configurable: true });
+      Object.defineProperty(video, "videoHeight", { value: 720, configurable: true });
+
+      // Shutter captures the page but keeps the camera running — the
+      // finish button completes the document.
+      fireEvent.click(screen.getByTestId("camera-shutter-button"));
+      await screen.findByTestId("camera-page-count");
+      expect(screen.getByTestId("camera-page-count").textContent).toBe("1");
+      expect(onCapture).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByTestId("camera-finish-button"));
+
+      await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(1));
+      const file = onCapture.mock.calls[0][0] as File;
+      expect(file).toBeInstanceOf(File);
+      expect(file.type).toBe("image/jpeg");
+      expect(track.stop).toHaveBeenCalled();
+    });
+
+    it("combines multiple captured pages into a single PDF", async () => {
+      mockReadyCamera();
+      const onCapture = vi.fn();
+
+      const drawImage = vi.fn();
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+        drawImage,
+      } as unknown as CanvasRenderingContext2D);
+      // A minimal valid JPEG: SOI + SOF0 (16x32 px) + EOI, so the PDF
+      // builder can read real dimensions.
+      const minimalJpeg = new Uint8Array([
+        0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x20,
+        0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xff,
+        0xd9,
+      ]);
+      vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+        (callback: BlobCallback) => {
+          callback(new Blob([minimalJpeg.buffer as ArrayBuffer], { type: "image/jpeg" }));
+        },
+      );
+      stubObjectUrls();
 
       render(
         <CameraStep onCapture={onCapture} onUseGallery={vi.fn()} onClose={vi.fn()} />,
@@ -181,12 +228,67 @@ describe("CameraStep", () => {
       Object.defineProperty(video, "videoHeight", { value: 720, configurable: true });
 
       fireEvent.click(screen.getByTestId("camera-shutter-button"));
+      await screen.findByTestId("camera-page-count");
+      fireEvent.click(screen.getByTestId("camera-shutter-button"));
+      await waitFor(() =>
+        expect(screen.getByTestId("camera-page-count").textContent).toBe("2"),
+      );
+
+      fireEvent.click(screen.getByTestId("camera-finish-button"));
 
       await waitFor(() => expect(onCapture).toHaveBeenCalledTimes(1));
       const file = onCapture.mock.calls[0][0] as File;
-      expect(file).toBeInstanceOf(File);
-      expect(file.type).toBe("image/jpeg");
-      expect(track.stop).toHaveBeenCalled();
+      expect(file.type).toBe("application/pdf");
+      expect(file.name).toMatch(/\.pdf$/);
+    });
+
+    it("discards the last page via the undo button", async () => {
+      mockReadyCamera();
+
+      const drawImage = vi.fn();
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+        drawImage,
+      } as unknown as CanvasRenderingContext2D);
+      vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+        (callback: BlobCallback) => {
+          callback(new Blob(["fake-jpeg"], { type: "image/jpeg" }));
+        },
+      );
+      stubObjectUrls();
+
+      render(
+        <CameraStep onCapture={vi.fn()} onUseGallery={vi.fn()} onClose={vi.fn()} />,
+      );
+
+      const video = await screen.findByTestId("camera-video");
+      Object.defineProperty(video, "videoWidth", { value: 1280, configurable: true });
+      Object.defineProperty(video, "videoHeight", { value: 720, configurable: true });
+
+      fireEvent.click(screen.getByTestId("camera-shutter-button"));
+      await screen.findByTestId("camera-page-count");
+
+      fireEvent.click(screen.getByTestId("camera-remove-page-button"));
+
+      // Back to the initial state: gallery button returns, no page stack.
+      await screen.findByTestId("camera-gallery-button");
+      expect(screen.queryByTestId("camera-page-count")).toBeNull();
     });
   });
 });
+
+/**
+ * jsdom lacks URL.createObjectURL/revokeObjectURL — stub both for the
+ * page-thumbnail preview path.
+ */
+function stubObjectUrls() {
+  if (typeof URL.createObjectURL !== "function") {
+    Object.defineProperty(URL, "createObjectURL", {
+      value: () => "blob:mock",
+      configurable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: () => {},
+      configurable: true,
+    });
+  }
+}

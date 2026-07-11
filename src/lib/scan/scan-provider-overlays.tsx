@@ -33,6 +33,7 @@ export function ScanProviderOverlays({
   handleWizardRetryUpload,
   handleWizardGallerySelect,
   handleWizardReviewDone,
+  handleWizardCreateNote,
   closeCreateNote,
   handleCreateNote,
 }: Pick<
@@ -54,6 +55,7 @@ export function ScanProviderOverlays({
   | "handleWizardRetryUpload"
   | "handleWizardGallerySelect"
   | "handleWizardReviewDone"
+  | "handleWizardCreateNote"
   | "closeCreateNote"
   | "handleCreateNote"
 > & { expandedDocId: string | null }) {
@@ -87,6 +89,7 @@ export function ScanProviderOverlays({
           uploadError={wizardUploadError}
           onCapture={handleWizardCapture}
           onUseGallery={handleWizardUseGallery}
+          onCreateNote={handleWizardCreateNote}
           onRetryUpload={handleWizardRetryUpload}
           onClose={closeWizard}
           onReviewDone={handleWizardReviewDone}

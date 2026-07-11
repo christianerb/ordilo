@@ -20,6 +20,7 @@ export interface ScanWizardProps {
   uploadError?: string | null;
   onCapture: (file: File) => void;
   onUseGallery: () => void;
+  onCreateNote?: () => void;
   onRetryUpload: () => void;
   onClose: () => void;
   onReviewDone: () => void;
@@ -41,6 +42,7 @@ export function ScanWizard({
   uploadError,
   onCapture,
   onUseGallery,
+  onCreateNote,
   onRetryUpload,
   onClose,
   onReviewDone,
@@ -77,7 +79,12 @@ export function ScanWizard({
       data-testid="scan-wizard"
     >
       {step === "camera" && (
-        <CameraStep onCapture={onCapture} onUseGallery={onUseGallery} onClose={onClose} />
+        <CameraStep
+          onCapture={onCapture}
+          onUseGallery={onUseGallery}
+          onCreateNote={onCreateNote}
+          onClose={onClose}
+        />
       )}
 
       {step === "processing" && (
