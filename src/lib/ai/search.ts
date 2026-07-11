@@ -2,6 +2,11 @@ import {
   generateQueryEmbedding,
   embeddingToVectorString,
 } from "@/lib/ai/embeddings";
+import {
+  FACT_TYPE_LABELS,
+  normalizeFactValue,
+  type FactType,
+} from "@/lib/schemas/extraction";
 import { expandQuery } from "@/lib/ai/query-expansion";
 import {
   findMentionedMembers,
@@ -135,6 +140,262 @@ export async function semanticSearch(
     score: row.score,
     source: "semantic",
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Lexical search (German full-text over embedding chunks)
+// ---------------------------------------------------------------------------
+
+/**
+ * Execute a lexical (full-text) search via the `lexical_search` RPC.
+ *
+ * Complements semantic search for exact/rare terms (identifiers, names,
+ * literal phrases) where embedding similarity is unreliable. Failures
+ * degrade gracefully to an empty result — lexical search is an additional
+ * recall path, never the only one.
+ */
+export async function lexicalSearch(
+  serverClient: ServerClient,
+  query: string,
+  familyId: string,
+): Promise<SearchResult[]> {
+  const { data, error } = await serverClient.rpc("lexical_search", {
+    p_query: query,
+    p_family_id: familyId,
+    p_limit: MAX_RESULTS,
+  });
+
+  if (error || !data) return [];
+
+  const rows = data as Array<{
+    document_id: string;
+    title: string | null;
+    chunk_text: string;
+    score: number;
+  }>;
+
+  return rows.map((row) => ({
+    document_id: row.document_id,
+    title: row.title,
+    chunk_text: row.chunk_text,
+    // ts_rank_cd is unbounded-ish but typically << 1; cap into [0, 1] so
+    // downstream score semantics (relevance threshold, UI) hold.
+    score: Math.min(Math.max(row.score, 0), 1),
+    source: "lexical",
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Fact search (typed identifiers: serial numbers, contract numbers, ...)
+// ---------------------------------------------------------------------------
+
+/**
+ * Search `document_facts` for typed identifiers matching the query.
+ *
+ * Two match paths:
+ *   1. Label / fact-type match: query keywords against the fact label
+ *      ("Seriennummer Waschmaschine") and against the German fact-type
+ *      labels ("Seriennummer" → serial_number).
+ *   2. Value match: identifier-like query tokens (containing digits) are
+ *      normalized (lowercase, alphanumeric only) and matched against
+ *      `normalized_value`, so "SN 4823-XK" finds "sn4823xk".
+ *
+ * Only facts of confirmed documents are returned. A fact hit is a precise
+ * answer, so it scores high (0.9+) and ranks above fuzzy chunk matches.
+ */
+export async function factSearch(
+  serverClient: ServerClient,
+  query: string,
+  familyId: string,
+): Promise<SearchResult[]> {
+  const keywords = extractKeywords(query);
+  if (keywords.length === 0) return [];
+
+  // Fact types whose German label appears in the query
+  // ("Wie ist die Seriennummer ...?" → serial_number).
+  const matchedTypes = (
+    Object.entries(FACT_TYPE_LABELS) as Array<[FactType, string]>
+  )
+    .filter(([, label]) => matchesWordBoundary(query, label))
+    .map(([type]) => type);
+
+  // Identifier-like tokens: contain at least one digit and are ≥ 4 chars
+  // after normalization ("4823", "sn4823xk", "de89370400440532013000").
+  const identifierTokens = query
+    .split(/\s+/)
+    .map((t) => normalizeFactValue(t))
+    .filter((t) => t.length >= 4 && /\d/.test(t));
+
+  const orFilters: string[] = [];
+  for (const kw of keywords) {
+    if (!kw.includes(" ")) orFilters.push(`label.ilike.%${kw}%`);
+  }
+  for (const type of matchedTypes) {
+    orFilters.push(`fact_type.eq.${type}`);
+  }
+  for (const token of identifierTokens) {
+    orFilters.push(`normalized_value.ilike.%${token}%`);
+  }
+
+  if (orFilters.length === 0) return [];
+
+  const { data: facts, error } = await serverClient
+    .from("document_facts")
+    .select("document_id, fact_type, label, value, normalized_value, confidence, confirmed")
+    .eq("family_id", familyId)
+    .eq("confirmed", true)
+    .or(orFilters.join(","));
+
+  if (error || !facts || facts.length === 0) return [];
+
+  // Only facts from confirmed documents.
+  const docIds = [...new Set(facts.map((f) => f.document_id))];
+  const confirmedDocs = await fetchConfirmedDocuments(
+    serverClient,
+    familyId,
+    docIds,
+  );
+  const docsById = new Map(confirmedDocs.map((d) => [d.id, d]));
+
+  const results: SearchResult[] = [];
+  for (const fact of facts) {
+    const doc = docsById.get(fact.document_id);
+    if (!doc) continue;
+
+    // Value matches are exact answers → top score. Label/type matches are
+    // strong but slightly below, so an exact identifier hit always wins.
+    const valueMatch = identifierTokens.some(
+      (t) =>
+        fact.normalized_value.includes(t) || t.includes(fact.normalized_value),
+    );
+    const score = valueMatch ? 0.98 : 0.9;
+
+    const typeLabel =
+      FACT_TYPE_LABELS[fact.fact_type as FactType] ?? FACT_TYPE_LABELS.other;
+
+    results.push({
+      document_id: fact.document_id,
+      title: doc.title,
+      chunk_text: `${typeLabel} — ${fact.label}: ${fact.value}`,
+      score,
+      source: "fact",
+    });
+  }
+
+  // Best fact per document.
+  return deduplicateByDocumentId(results);
+}
+
+// ---------------------------------------------------------------------------
+// Hybrid search (facts + semantic + lexical, fused via RRF)
+// ---------------------------------------------------------------------------
+
+/** RRF constant — standard value from the original RRF paper. */
+const RRF_K = 60;
+
+/**
+ * Fuse multiple ranked result lists with Reciprocal Rank Fusion.
+ *
+ * Each list contributes `1 / (k + rank)` per document; documents appearing
+ * in several lists accumulate contributions and rise. RRF is used for
+ * ORDERING only — the returned `score` stays on the original 0–1 relevance
+ * scale (best score across lists, plus a small multi-source boost) so the
+ * downstream relevance threshold and UI semantics are unchanged.
+ */
+export function fuseResultsRrf(
+  lists: SearchResult[][],
+  k: number = RRF_K,
+): SearchResult[] {
+  const byDoc = new Map<
+    string,
+    { best: SearchResult; rrf: number; sources: Set<string> }
+  >();
+
+  for (const list of lists) {
+    for (let rank = 0; rank < list.length; rank++) {
+      const result = list[rank];
+      const contribution = 1 / (k + rank + 1);
+      const existing = byDoc.get(result.document_id);
+      if (!existing) {
+        byDoc.set(result.document_id, {
+          best: result,
+          rrf: contribution,
+          sources: new Set([result.source]),
+        });
+      } else {
+        existing.rrf += contribution;
+        existing.sources.add(result.source);
+        if (result.score > existing.best.score) {
+          existing.best = result;
+        }
+      }
+    }
+  }
+
+  const fused = [...byDoc.values()].map(({ best, rrf, sources }) => ({
+    result: {
+      ...best,
+      score:
+        sources.size > 1
+          ? Math.min(best.score + (sources.size - 1) * 0.05, 1.0)
+          : best.score,
+      source: sources.size > 1 ? "hybrid" : best.source,
+    },
+    rrf,
+  }));
+
+  fused.sort(
+    (a, b) =>
+      b.rrf - a.rrf ||
+      b.result.score - a.result.score ||
+      a.result.document_id.localeCompare(b.result.document_id),
+  );
+
+  return fused.map((f) => f.result);
+}
+
+/**
+ * Execute a hybrid content search: facts + semantic + lexical in parallel,
+ * fused with RRF.
+ *
+ * This is the default content-search path (replacing plain semanticSearch
+ * in the search route and chat tools). Exact identifier questions ("Wie ist
+ * die Seriennummer?") are answered by the fact path; paraphrased questions
+ * by the semantic path; literal/rare terms by the lexical path.
+ *
+ * Degradation: lexical and fact failures are swallowed (recall bonus, not
+ * requirement). If the semantic path fails AND nothing else matched, the
+ * semantic error is rethrown so the caller surfaces the real failure
+ * (e.g. OpenAI down) instead of a silent empty result.
+ */
+export async function hybridSearch(
+  serverClient: ServerClient,
+  query: string,
+  familyId: string,
+): Promise<SearchResult[]> {
+  const [semanticResult, lexicalResult, factResult] = await Promise.allSettled([
+    semanticSearch(serverClient, query, familyId),
+    lexicalSearch(serverClient, query, familyId),
+    factSearch(serverClient, query, familyId),
+  ]);
+
+  const semantic =
+    semanticResult.status === "fulfilled" ? semanticResult.value : [];
+  const lexical =
+    lexicalResult.status === "fulfilled" ? lexicalResult.value : [];
+  const facts = factResult.status === "fulfilled" ? factResult.value : [];
+
+  if (
+    semanticResult.status === "rejected" &&
+    lexical.length === 0 &&
+    facts.length === 0
+  ) {
+    throw semanticResult.reason;
+  }
+
+  // Facts first: an exact identifier answer must never be pushed off the
+  // list by ten fuzzy chunk matches.
+  return fuseResultsRrf([facts, semantic, lexical]).slice(0, MAX_RESULTS);
 }
 
 // ---------------------------------------------------------------------------

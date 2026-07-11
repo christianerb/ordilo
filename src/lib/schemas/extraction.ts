@@ -61,6 +61,52 @@ export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
 export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 
 // ---------------------------------------------------------------------------
+// Fact types
+// ---------------------------------------------------------------------------
+
+/**
+ * Typed identifiers the LLM extracts as document facts.
+ *
+ * Facts are exact key-value pairs (serial numbers, contract numbers, ...)
+ * that must be retrievable verbatim — embeddings are unreliable for them,
+ * so they are stored in `document_facts` and matched lexically.
+ */
+export const FACT_TYPES = [
+  "serial_number",
+  "contract_number",
+  "policy_number",
+  "customer_number",
+  "invoice_number",
+  "iban",
+  "license_plate",
+  "member_id",
+  "other",
+] as const;
+
+export type FactType = (typeof FACT_TYPES)[number];
+
+/** German labels for fact types (Review Card / search result display). */
+export const FACT_TYPE_LABELS: Record<FactType, string> = {
+  serial_number: "Seriennummer",
+  contract_number: "Vertragsnummer",
+  policy_number: "Policennummer",
+  customer_number: "Kundennummer",
+  invoice_number: "Rechnungsnummer",
+  iban: "IBAN",
+  license_plate: "Kennzeichen",
+  member_id: "Mitgliedsnummer",
+  other: "Kennung",
+};
+
+/**
+ * Normalize a fact value for exact lookup: lowercase and strip everything
+ * that is not a letter or digit, so "SN 4823-XK" and "sn4823xk" match.
+ */
+export function normalizeFactValue(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+// ---------------------------------------------------------------------------
 // Confidence threshold
 // ---------------------------------------------------------------------------
 
@@ -128,6 +174,18 @@ const taskSchema = z.object({
 });
 
 /**
+ * Zod schema for a single extracted fact (typed identifier).
+ */
+const factSchema = z.object({
+  fact_type: z.enum(FACT_TYPES),
+  label: z.string().min(1),
+  value: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+});
+
+export type ExtractedFact = z.infer<typeof factSchema>;
+
+/**
  * The full document analysis Zod schema.
  *
  * This validates the OpenAI structured output response. All fields are
@@ -145,6 +203,9 @@ export const documentAnalysisSchema = z.object({
   dates: z.array(dateSchema),
   amounts: z.array(amountSchema),
   tasks: z.array(taskSchema),
+  // `facts` has a default so payloads reconstructed by older clients
+  // (Review Card state persisted before the field existed) still validate.
+  facts: z.array(factSchema).default([]),
   suggested_category: z.string(),
   tags: z.array(z.string()),
   needs_user_review: z.boolean(),
@@ -247,6 +308,23 @@ export const documentAnalysisJsonSchema = {
         additionalProperties: false,
       },
     },
+    facts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          fact_type: {
+            type: "string",
+            enum: [...FACT_TYPES],
+          },
+          label: { type: "string" },
+          value: { type: "string" },
+          confidence: { type: "number" },
+        },
+        required: ["fact_type", "label", "value", "confidence"],
+        additionalProperties: false,
+      },
+    },
     suggested_category: { type: "string" },
     tags: {
       type: "array",
@@ -263,6 +341,7 @@ export const documentAnalysisJsonSchema = {
     "dates",
     "amounts",
     "tasks",
+    "facts",
     "suggested_category",
     "tags",
     "needs_user_review",
@@ -331,6 +410,11 @@ export function computeNeedsUserReview(analysis: DocumentAnalysis): boolean {
   // Check tasks.
   for (const task of analysis.tasks) {
     if (task.confidence < threshold) return true;
+  }
+
+  // Check facts.
+  for (const fact of analysis.facts) {
+    if (fact.confidence < threshold) return true;
   }
 
   return false;

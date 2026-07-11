@@ -115,6 +115,16 @@ function mockServerClient(options: {
     confidence: number;
   }[];
   semanticResults?: SearchResult[];
+  lexicalResults?: SearchResult[];
+  facts?: {
+    document_id: string;
+    fact_type: string;
+    label: string;
+    value: string;
+    normalized_value: string;
+    confidence: number;
+    confirmed: boolean;
+  }[];
   rpcError?: unknown;
   docReadError?: boolean;
   membersError?: boolean;
@@ -128,6 +138,8 @@ function mockServerClient(options: {
     documents = [],
     tasks = [],
     semanticResults = [],
+    lexicalResults = [],
+    facts = [],
     rpcError = null,
     docReadError = false,
     membersError = false,
@@ -168,12 +180,17 @@ function mockServerClient(options: {
           // Graph traversal tables — return empty by default so
           // graphTraversalSearch yields no results.
           return chainableQuery({ data: [], error: null });
+        case "document_facts":
+          return chainableQuery({ data: facts, error: null });
         default:
           throw new Error(`Unexpected table: ${table}`);
       }
     }),
     rpc: vi.fn((fnName: string, params: unknown) => {
       rpcCalls.push({ fnName, params });
+      if (fnName === "lexical_search") {
+        return Promise.resolve({ data: lexicalResults, error: null });
+      }
       return Promise.resolve({
         data: semanticResults,
         error: rpcError,
@@ -395,11 +412,19 @@ describe("POST /api/search", () => {
 
     await POST(createRequest(validBody({ mode: "semantic" })));
 
-    expect(mockClient._rpcCalls).toHaveLength(1);
-    expect(mockClient._rpcCalls[0].fnName).toBe("semantic_search");
-    const params = mockClient._rpcCalls[0].params as Record<string, unknown>;
+    const semanticCalls = mockClient._rpcCalls.filter(
+      (c) => c.fnName === "semantic_search",
+    );
+    expect(semanticCalls).toHaveLength(1);
+    const params = semanticCalls[0].params as Record<string, unknown>;
     expect(params.p_family_id).toBe(FAMILY_ID);
     expect(params.p_query_embedding).toBeTruthy();
+
+    // Hybrid search also runs the lexical full-text path.
+    const lexicalCalls = mockClient._rpcCalls.filter(
+      (c) => c.fnName === "lexical_search",
+    );
+    expect(lexicalCalls).toHaveLength(1);
   });
 
   it("semantic mode returns 502 when query embedding fails", async () => {

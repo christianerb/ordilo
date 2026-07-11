@@ -17,3 +17,19 @@ export const EMBEDDINGS_MODEL = "text-embedding-3-small";
 
 /** Dimensionality of the embedding vectors (must match pgvector column). */
 export const EMBEDDING_DIMENSIONS = 1536;
+
+/**
+ * Current pipeline version.
+ *
+ * Stamped on every embedding row (`document_embeddings.pipeline_version`)
+ * and on analyzed documents (`documents.extraction_version`). Bump this
+ * whenever the embedding model, chunking strategy, or extraction schema/
+ * prompt changes in a way that makes previously processed documents stale.
+ * The reindex job (`job_type = 'reindex'`) re-embeds documents whose
+ * embeddings carry an older version.
+ *
+ * History:
+ *   1 — initial pipeline (pre-versioning)
+ *   2 — typed document facts extraction + versioned embeddings
+ */
+export const PIPELINE_VERSION = 2;

@@ -189,7 +189,21 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 500 });
   }
 
-  // 7. Success ------------------------------------------------------------
+  // 7. Async pipeline: enqueue the OCR job ---------------------------------
+  // With PIPELINE_MODE=async the server-side job worker picks the document
+  // up (OCR → analyze) — durable, retried, and independent of the client
+  // connection. The client's own OCR trigger stays race-safe either way
+  // (conditional status transitions), so this is purely additive.
+  if (process.env.PIPELINE_MODE === "async") {
+    const { enqueueJob } = await import("@/lib/jobs");
+    await enqueueJob(adminClient, {
+      family_id: familyId,
+      document_id: documentId,
+      job_type: "ocr",
+    });
+  }
+
+  // 8. Success ------------------------------------------------------------
   const body: UploadSuccessResponse = {
     document_id: documentId,
     status: "uploaded",

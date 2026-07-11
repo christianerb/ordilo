@@ -29,8 +29,11 @@ import type {
   ConfirmRpcLabelEmbedding,
   ConfirmRpcEntity,
   ConfirmRpcTask,
+  ConfirmRpcFact,
   ConfirmRpcResult,
 } from "@/types/database";
+import { PIPELINE_VERSION } from "@/lib/ai/models";
+import { normalizeFactValue } from "@/lib/schemas/extraction";
 
 /**
  * POST /api/documents/[id]/confirm
@@ -363,6 +366,7 @@ export async function POST(
 
   const entitiesParam: ConfirmRpcEntity[] = buildEntityRows(payload);
   const tasksParam: ConfirmRpcTask[] = buildTaskRows(payload);
+  const factsParam: ConfirmRpcFact[] = buildFactRows(payload);
 
   // 10. Call the confirm_document RPC (single transaction) -----------------
   const { data: rpcResult, error: rpcError } = await serverClient.rpc(
@@ -380,6 +384,8 @@ export async function POST(
       p_label_embeddings: labelEmbeddingsParam,
       p_entities: entitiesParam,
       p_tasks: tasksParam,
+      p_facts: factsParam,
+      p_pipeline_version: PIPELINE_VERSION,
     },
   );
 
@@ -539,6 +545,23 @@ function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
     due_date: task.due_date ?? null,
     priority: task.priority,
     confidence: task.confidence,
+  }));
+}
+
+/**
+ * Build the document_facts rows (as RPC params) from the confirm payload.
+ *
+ * `normalized_value` is computed server-side (lowercase, alphanumeric only)
+ * so exact identifier lookup ("SN 4823-XK" ↔ "sn4823xk") is consistent
+ * regardless of client formatting.
+ */
+function buildFactRows(payload: ConfirmPayload): ConfirmRpcFact[] {
+  return payload.facts.map((fact) => ({
+    fact_type: fact.fact_type,
+    label: fact.label,
+    value: fact.value,
+    normalized_value: normalizeFactValue(fact.value),
+    confidence: fact.confidence,
   }));
 }
 

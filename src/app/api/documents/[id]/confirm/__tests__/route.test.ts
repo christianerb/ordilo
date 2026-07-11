@@ -71,6 +71,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     tasks: [
       { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
     ],
+    facts: [],
     suggested_category: "Kita",
     tags: ["Elternabend", "Kita"],
     needs_user_review: false,
@@ -496,6 +497,7 @@ describe("POST /api/documents/[id]/confirm", () => {
     const editedPayload = validPayload({
       title: "Edited Title",
       summary: "Edited summary",
+      facts: [],
       suggested_category: "Edited Category",
       document_type: "invoice",
     });

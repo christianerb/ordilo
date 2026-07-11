@@ -46,6 +46,8 @@ Do not commit real secret values.
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `OPENAI_API_KEY`
 - `DATALAB_API_KEY`
+- `PIPELINE_MODE` (optional; `async` enables the background job pipeline)
+- `JOBS_RUNNER_SECRET` (optional; Bearer secret for `POST /api/jobs/run`)
 
 ## Setup
 
@@ -109,3 +111,45 @@ project in order (for example via the Supabase SQL editor or the Supabase CLI).
 They define the schema, semantic-search RPCs, the confirm RPC and atomicity
 constraints, and onboarding-related tables and markers. Ensure the pgvector
 extension is enabled so embedding columns and similarity search work.
+
+## Family memberships
+
+Access to family data is membership-based (`family_memberships`, migration
+0024): every RLS policy resolves through `user_belongs_to_family()`, which
+checks memberships. Creating a family automatically creates an `owner`
+membership for the creator (trigger); additional users can be added as
+`adult` or `viewer` members by inserting membership rows (an invite UI is a
+follow-up). Mutations on the family itself (rename, delete, manage members)
+remain owner-only.
+
+## Search
+
+Content search is hybrid (`src/lib/ai/search.ts`): the query runs through
+three parallel retrieval paths — pgvector semantic search, German full-text
+search (`lexical_search` RPC, migration 0027), and typed fact lookup
+(`document_facts`) — fused with reciprocal rank fusion. Facts are exact
+identifiers (serial numbers, contract/policy/customer/invoice numbers,
+IBANs, license plates) extracted by the LLM and matched via normalized
+values, so "Wie ist die Seriennummer der Waschmaschine?" is a precise
+lookup rather than an embedding gamble. Graph search (persons, tasks,
+knowledge-graph traversal) is unchanged and merged at the chat/tool layer.
+
+## Background jobs & re-indexing
+
+The pipeline can run server-side via a durable job queue
+(`processing_jobs`, migration 0025):
+
+- Set `PIPELINE_MODE=async` to enqueue an `ocr` job on upload; the OCR job
+  chains an `analyze` job. Confirmation stays a user action.
+- The worker is `POST /api/jobs/run` (Bearer-authenticated via
+  `JOBS_RUNNER_SECRET` or `CRON_SECRET`). Schedule it with Vercel Cron,
+  pg_cron + pg_net, or any scheduler; concurrent invocations are safe
+  (jobs are claimed with `FOR UPDATE SKIP LOCKED`). Failed jobs retry with
+  exponential backoff up to `max_attempts`, then go `dead` and the document
+  is marked `failed` for manual retry.
+- Embeddings and extractions are stamped with a pipeline version
+  (`PIPELINE_VERSION` in `src/lib/ai/models.ts`, migration 0026). After a
+  pipeline upgrade, `POST /api/documents/reindex` enqueues `reindex` jobs
+  that re-embed the family's confirmed documents transactionally
+  (`replace_document_embeddings` RPC). Pass `{ "force": true }` to reindex
+  regardless of version.
