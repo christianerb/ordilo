@@ -1,6 +1,10 @@
 name: Supabase Migration
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -12,20 +16,18 @@ on:
           - "false"
           - "true"
 
-# Cancel in-progress migration runs for the same ref
+# Don't cancel in-progress migrations — they modify the database
 concurrency:
   group: migrate-${{ github.ref }}
   cancel-in-progress: false
 
 env:
-  # Project ref aus der Supabase URL (vrodyamhdxrspnaxzdtg.supabase.co)
   SUPABASE_PROJECT_REF: "vrodyamhdxrspnaxzdtg"
 
 jobs:
   migrate:
     name: Apply Supabase Migrations
     runs-on: ubuntu-latest
-    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -44,11 +46,9 @@ jobs:
         run: supabase db push --dry-run
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
       - name: Apply migrations
         if: ${{ github.event.inputs.dry_run != 'true' }}
         run: supabase db push
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
