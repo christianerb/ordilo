@@ -31,6 +31,8 @@ export interface EditState {
   taskDueDates: Map<number, string>;
   /** Deleted task indices. */
   deletedTasks: Set<number>;
+  /** Edited fact values (by fact index) — e.g. a corrected serial number. */
+  factValues: Map<number, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -80,12 +82,22 @@ export function buildConfirmPayload(
     })
     .filter((_, i) => !edits.deletedTasks.has(i));
 
+  // Apply fact value edits (e.g. a corrected serial-number digit).
+  const facts = analysis.facts.map((f, i) => {
+    const edited = edits.factValues.get(i);
+    if (edited) {
+      return { ...f, value: edited };
+    }
+    return f;
+  });
+
   return {
     ...analysis,
     family_members: familyMembers,
     suggested_category: suggestedCategory,
     dates,
     tasks,
+    facts,
     deletedTaskIndices: [...edits.deletedTasks],
   };
 }

@@ -15,6 +15,7 @@ import { ReviewSummary } from "@/components/ordilo/review-summary";
 
 const EMPTY_EDITS: EditState = {
   persons: new Map(),
+  factValues: new Map(),
   category: null,
   dates: new Map(),
   taskDueDates: new Map(),

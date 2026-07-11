@@ -431,3 +431,55 @@ export async function confirmSuggestedInventoryItem(
 
   return { success: true, data: data as InventoryItemRow };
 }
+
+// ---------------------------------------------------------------------------
+// Family invites
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a shareable invite link token for the user's family.
+ *
+ * Only the family owner can create invites (enforced by the RLS insert
+ * policy on family_invites). The token is valid for 14 days and can be
+ * used by multiple people (one link for both grandparents).
+ *
+ * @returns The invite token on success (the client builds the full URL
+ *          from window.location.origin), or a German error.
+ */
+export async function createFamilyInvite(): Promise<
+  ActionResult<{ token: string; expires_at: string }>
+> {
+  const supabase = await createClient();
+
+  const { data: family, error: familyError } = await getUserFamily(supabase);
+  if (familyError || !family) {
+    return { success: false, error: familyError ?? FRIENDLY_ERROR };
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: "Bitte melde dich erneut an." };
+  }
+
+  const { data: invite, error: insertError } = await supabase
+    .from("family_invites")
+    .insert({ family_id: family.id, created_by: user.id })
+    .select("token, expires_at")
+    .single();
+
+  if (insertError || !invite) {
+    // RLS rejects non-owners — give a specific message for that case.
+    return {
+      success: false,
+      error:
+        "Einladung konnte nicht erstellt werden. Nur wer die Familie angelegt hat, kann einladen.",
+    };
+  }
+
+  return {
+    success: true,
+    data: { token: invite.token, expires_at: invite.expires_at },
+  };
+}

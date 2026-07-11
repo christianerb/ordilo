@@ -139,6 +139,55 @@ export function CategoryEditControl({
 }
 
 /**
+ * Fact value edit control — pencil toggles a free-text input for correcting
+ * an extracted identifier (serial number, contract number, IBAN, …).
+ * OCR errors are most costly on identifiers, so a one-tap correction path
+ * matters here.
+ */
+export function FactEditControl({
+  value,
+  label,
+  onChange,
+}: {
+  value: string;
+  label: string;
+  onChange: (value: string) => void;
+}) {
+  const reactId = useId();
+  const inputId = `review-fact-${reactId}`;
+  const [isEditing, setIsEditing] = useState(false);
+
+  if (!isEditing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setIsEditing(true)}
+        className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        aria-label={`${label} korrigieren`}
+        data-testid="edit-fact-button"
+      >
+        <Pencil className="size-4" aria-hidden="true" />
+      </button>
+    );
+  }
+
+  return (
+    <input
+      id={inputId}
+      name="review-fact"
+      type="text"
+      defaultValue={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => setIsEditing(false)}
+      autoFocus
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      aria-label={label}
+      data-testid="fact-edit-input"
+    />
+  );
+}
+
+/**
  * Date edit control — a date input field.
  */
 export function DateEditControl({

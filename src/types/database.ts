@@ -223,6 +223,48 @@ export type Database = {
           },
         ];
       };
+      // family_invites -------------------------------------------------------
+      family_invites: {
+        Row: {
+          id: string;
+          family_id: string;
+          token: string;
+          role: string; // 'adult' | 'viewer'
+          created_by: string | null;
+          expires_at: string;
+          revoked_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          token?: string;
+          role?: string;
+          created_by?: string | null;
+          expires_at?: string;
+          revoked_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          token?: string;
+          role?: string;
+          created_by?: string | null;
+          expires_at?: string;
+          revoked_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_invites_family_id_fkey";
+            columns: ["family_id"];
+            isOneToOne: false;
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       // family_inventory_items ----------------------------------------------
       family_inventory_items: {
         Row: {
@@ -832,6 +874,23 @@ export type Database = {
           p_pipeline_version: number;
         };
         Returns: ConfirmRpcResult;
+      };
+      // get_family_invite_info — family name for a valid invite token
+      // (works signed-out; holding the token is the authorization).
+      // See supabase/migrations/0029_family_invites.sql.
+      get_family_invite_info: {
+        Args: { p_token: string };
+        Returns: { status: string; family_name?: string };
+      };
+      // accept_family_invite — join the invite's family as a member.
+      // See supabase/migrations/0029_family_invites.sql.
+      accept_family_invite: {
+        Args: { p_token: string };
+        Returns: {
+          status: string;
+          family_id?: string;
+          family_name?: string;
+        };
       };
       // lexical_search — German full-text search over embedding chunks.
       // See supabase/migrations/0027_fts_and_document_facts.sql.
