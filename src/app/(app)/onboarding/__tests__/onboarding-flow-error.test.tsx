@@ -127,13 +127,14 @@ describe("OnboardingFlow — add-member error recovery (VAL-ONBOARD-013)", () =>
       expect(addMember).toHaveBeenCalledTimes(2);
     });
 
-    // On success the flow advances to the choose-next step — proving the
-    // retry actually completed the mutation and the UI recovered.
+    // On success the member appears in the running list and the input is
+    // cleared for the next person — proving the retry actually completed
+    // the mutation and the UI recovered (the quick-add card stays open;
+    // there is no interstitial step anymore).
     await waitFor(() => {
-      expect(
-        screen.getByText("Noch jemand, der dazugehört?"),
-      ).toBeInTheDocument();
+      expect(screen.getByText("Hanna")).toBeInTheDocument();
     });
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
   });
 
   it("clears the saving state when addMember returns a failure result (handled error)", async () => {

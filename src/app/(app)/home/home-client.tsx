@@ -21,6 +21,7 @@ import {
 } from "@/lib/schemas/document";
 import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
   filterHeuteWichtig,
   filterFristen,
@@ -50,6 +51,8 @@ export interface HomeClientProps {
   upcomingTasks: HomeTask[];
   recentDocuments: HomeDocument[];
   insights: HomeInsight[];
+  /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
+  autoOpenScan?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,9 +97,20 @@ export function HomeClient({
   upcomingTasks,
   recentDocuments,
   insights,
+  autoOpenScan = false,
 }: HomeClientProps) {
   const { openWizard } = useScanActions();
   const { openDocument } = useDocumentViewer();
+
+  // Onboarding springboard: /home?scan=1 opens the scanner immediately —
+  // the user tapped "Erstes Dokument scannen" and should land in the
+  // camera, not on a dashboard. Clean the param so refresh/back does not
+  // reopen the wizard.
+  useMountEffect(() => {
+    if (!autoOpenScan) return;
+    openWizard();
+    window.history.replaceState(null, "", "/home");
+  });
   const [localTasks, setLocalTasks] = useState<HomeTask[]>(upcomingTasks);
 
   const { toggleDone, dismiss } = useTaskMutation({

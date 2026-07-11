@@ -39,7 +39,16 @@ function getGreeting(date = new Date()): string {
  * fresh on every navigation (no stale cache). After a document confirm on
  * /dokumente, navigating to /home reflects the new state immediately.
  */
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = (await searchParams) ?? {};
+  // /home?scan=1 — the onboarding springboard: open the scan wizard
+  // immediately so "Erstes Dokument scannen" lands IN the camera.
+  const autoOpenScan = params.scan === "1";
+
   const supabase = await createClient();
 
   // 1. Fetch the user's family (RLS-scoped).
@@ -178,6 +187,7 @@ export default async function HomePage() {
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
       insights={insights}
+      autoOpenScan={autoOpenScan}
     />
   );
 }
