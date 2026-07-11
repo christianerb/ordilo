@@ -64,6 +64,16 @@ export type ConfirmRpcTask = {
   confidence: number;
 };
 
+/** A typed document fact to insert (confirmed = true) during confirm. */
+export type ConfirmRpcFact = {
+  fact_type: string;
+  label: string;
+  value: string;
+  /** Lowercased, alphanumeric-only version of value (for exact lookup). */
+  normalized_value: string;
+  confidence: number;
+};
+
 /** Result returned by the confirm_document RPC. */
 export type ConfirmRpcResult = {
   /** "confirmed" on success, "status_changed" when not in 'analyzed' state. */
@@ -78,6 +88,15 @@ export type SemanticSearchRow = {
   title: string | null;
   chunk_text: string;
   /** Cosine similarity score: 1 - (embedding <=> query_embedding), in [0, 1]. */
+  score: number;
+};
+
+/** A single row returned by the lexical_search RPC (full-text search). */
+export type LexicalSearchRow = {
+  document_id: string;
+  title: string | null;
+  chunk_text: string;
+  /** ts_rank_cd score (unnormalized; used for ranking only). */
   score: number;
 };
 
@@ -164,6 +183,39 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "family_members_family_id_fkey";
+            columns: ["family_id"];
+            isOneToOne: false;
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // family_memberships ---------------------------------------------------
+      family_memberships: {
+        Row: {
+          id: string;
+          family_id: string;
+          user_id: string;
+          role: string; // 'owner' | 'adult' | 'viewer'
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          user_id: string;
+          role?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          user_id?: string;
+          role?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_memberships_family_id_fkey";
             columns: ["family_id"];
             isOneToOne: false;
             referencedRelation: "families";
@@ -289,6 +341,8 @@ export type Database = {
           confirmed_at: string | null;
           tags: string[];
           source: string;
+          /** Pipeline version that produced the current extraction (see 0026). */
+          extraction_version: number | null;
         };
         Insert: {
           id?: string;
@@ -309,6 +363,7 @@ export type Database = {
           confirmed_at?: string | null;
           tags?: string[];
           source?: string;
+          extraction_version?: number | null;
         };
         Update: {
           id?: string;
@@ -329,6 +384,7 @@ export type Database = {
           confirmed_at?: string | null;
           tags?: string[];
           source?: string;
+          extraction_version?: number | null;
         };
         Relationships: [];
       };
@@ -545,6 +601,8 @@ export type Database = {
           chunk_text: string;
           embedding: string | null; // vector(1536) — represented as string in JS
           metadata_json: Record<string, unknown>;
+          /** Pipeline version that produced this embedding (see 0026). */
+          pipeline_version: number;
         };
         Insert: {
           id?: string;
@@ -553,6 +611,7 @@ export type Database = {
           chunk_text: string;
           embedding?: string | null;
           metadata_json?: Record<string, unknown>;
+          pipeline_version?: number;
         };
         Update: {
           id?: string;
@@ -561,6 +620,99 @@ export type Database = {
           chunk_text?: string;
           embedding?: string | null;
           metadata_json?: Record<string, unknown>;
+          pipeline_version?: number;
+        };
+        Relationships: [];
+      };
+      // document_facts -------------------------------------------------------
+      document_facts: {
+        Row: {
+          id: string;
+          document_id: string;
+          family_id: string;
+          fact_type: string;
+          label: string;
+          value: string;
+          normalized_value: string;
+          confidence: number;
+          confirmed: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          document_id: string;
+          family_id: string;
+          fact_type: string;
+          label: string;
+          value: string;
+          normalized_value: string;
+          confidence?: number;
+          confirmed?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          document_id?: string;
+          family_id?: string;
+          fact_type?: string;
+          label?: string;
+          value?: string;
+          normalized_value?: string;
+          confidence?: number;
+          confirmed?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // processing_jobs ------------------------------------------------------
+      processing_jobs: {
+        Row: {
+          id: string;
+          family_id: string;
+          document_id: string | null;
+          job_type: string; // 'ocr' | 'analyze' | 'reindex'
+          status: string; // 'pending' | 'running' | 'done' | 'failed' | 'dead'
+          attempts: number;
+          max_attempts: number;
+          run_after: string;
+          payload: Record<string, unknown>;
+          last_error: string | null;
+          created_at: string;
+          updated_at: string;
+          started_at: string | null;
+          finished_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          document_id?: string | null;
+          job_type: string;
+          status?: string;
+          attempts?: number;
+          max_attempts?: number;
+          run_after?: string;
+          payload?: Record<string, unknown>;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          started_at?: string | null;
+          finished_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          document_id?: string | null;
+          job_type?: string;
+          status?: string;
+          attempts?: number;
+          max_attempts?: number;
+          run_after?: string;
+          payload?: Record<string, unknown>;
+          last_error?: string | null;
+          created_at?: string;
+          updated_at?: string;
+          started_at?: string | null;
+          finished_at?: string | null;
         };
         Relationships: [];
       };
@@ -676,8 +828,43 @@ export type Database = {
           p_label_embeddings: ConfirmRpcLabelEmbedding[];
           p_entities: ConfirmRpcEntity[];
           p_tasks: ConfirmRpcTask[];
+          p_facts: ConfirmRpcFact[];
+          p_pipeline_version: number;
         };
         Returns: ConfirmRpcResult;
+      };
+      // lexical_search — German full-text search over embedding chunks.
+      // See supabase/migrations/0027_fts_and_document_facts.sql.
+      lexical_search: {
+        Args: {
+          p_query: string;
+          p_family_id: string;
+          p_limit?: number;
+        };
+        Returns: LexicalSearchRow[];
+      };
+      // claim_processing_jobs — atomically claim due pending jobs
+      // (FOR UPDATE SKIP LOCKED). Service-role only.
+      // See supabase/migrations/0025_processing_jobs.sql.
+      claim_processing_jobs: {
+        Args: { p_limit?: number };
+        Returns: Database["public"]["Tables"]["processing_jobs"]["Row"][];
+      };
+      // replace_document_embeddings — transactional embedding replacement
+      // for the reindex job. Service-role only.
+      // See supabase/migrations/0026_pipeline_versions.sql.
+      replace_document_embeddings: {
+        Args: {
+          p_document_id: string;
+          p_family_id: string;
+          p_embeddings: ConfirmRpcEmbedding[];
+          p_pipeline_version: number;
+        };
+        Returns: {
+          status: string;
+          document_id: string;
+          embedding_count: number;
+        };
       };
       // semantic_search — pgvector cosine similarity search RPC.
       // See supabase/migrations/0006_semantic_search_rpc.sql.

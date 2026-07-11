@@ -4,9 +4,11 @@ import {
   computeNeedsUserReview,
   DOCUMENT_TYPES,
   TASK_PRIORITIES,
+  FACT_TYPES,
   type DocumentAnalysis,
   type DocumentType,
   type TaskPriority,
+  type FactType,
 } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
 
@@ -31,6 +33,7 @@ import type { Database } from "@/types/database";
 
 type EntityRow = Database["public"]["Tables"]["extracted_entities"]["Row"];
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
+type FactRow = Database["public"]["Tables"]["document_facts"]["Row"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 /**
@@ -156,7 +159,14 @@ export async function fetchDocumentAnalysis(
 
   if (tasksError || !tasks) return null;
 
-  return reconstructAnalysis(document, entities, tasks);
+  // Fetch typed facts (serial numbers, contract numbers, ...). Errors fall
+  // back to an empty list — facts are additive to the analysis.
+  const { data: facts } = await supabase
+    .from("document_facts")
+    .select("*")
+    .eq("document_id", documentId);
+
+  return reconstructAnalysis(document, entities, tasks, facts ?? []);
 }
 
 // ---------------------------------------------------------------------------
@@ -176,6 +186,7 @@ function reconstructAnalysis(
   >,
   entities: EntityRow[],
   tasks: TaskRow[],
+  facts: FactRow[] = [],
 ): DocumentAnalysis {
   // Group entities by type.
   const persons = entities.filter((e) => e.entity_type === "person");
@@ -236,6 +247,14 @@ function reconstructAnalysis(
   // Reconstruct tags.
   const tags = tagEntities.map((t) => t.entity_value);
 
+  // Reconstruct facts (typed identifiers).
+  const factEntries = facts.map((f) => ({
+    fact_type: isFactType(f.fact_type) ? f.fact_type : "other",
+    label: f.label,
+    value: f.value,
+    confidence: f.confidence ?? 0,
+  }));
+
   // Reconstruct tasks.
   const taskEntries = tasks.map((t) => ({
     title: t.title,
@@ -253,6 +272,7 @@ function reconstructAnalysis(
     dates: dateEntries,
     amounts: amountEntries,
     tasks: taskEntries,
+    facts: factEntries,
     suggested_category: suggestedCategory,
     tags,
     needs_user_review: false, // Computed below
@@ -270,6 +290,14 @@ function reconstructAnalysis(
 function isDocumentType(value: string | null | undefined): value is DocumentType {
   if (!value) return false;
   return (DOCUMENT_TYPES as readonly string[]).includes(value);
+}
+
+/**
+ * Type guard for FactType.
+ */
+function isFactType(value: string | null | undefined): value is FactType {
+  if (!value) return false;
+  return (FACT_TYPES as readonly string[]).includes(value);
 }
 
 /**

@@ -111,9 +111,10 @@ Aufgaben:
 6. Extrahiere alle relevanten Daten (Fristen, Termine, Zahlungsdaten) mit Typ und Label.
 7. Extrahiere Geldbeträge mit Währung und Label.
 8. Identifiziere Aufgaben (To-dos) mit Frist und Priorität (low, medium, high).
-9. Schlage eine Kategorie vor.
-10. Vergibe passende Tags (Schlüsselwörter).
-11. Setze needs_user_review auf true, wenn du dir bei wichtigen Feldern unsicher bist.
+9. Extrahiere eindeutige Identifikatoren als facts: Seriennummern (serial_number), Vertragsnummern (contract_number), Policennummern (policy_number), Kundennummern (customer_number), Rechnungsnummern (invoice_number), IBAN (iban), Kfz-Kennzeichen (license_plate), Mitgliedsnummern (member_id), sonstige Kennungen (other). Übernimm den Wert EXAKT wie im Dokument (inkl. Bindestriche/Leerzeichen). Das Label beschreibt, wozu die Kennung gehört (z.B. "Seriennummer Waschmaschine", "Vertragsnummer Stromvertrag").
+10. Schlage eine Kategorie vor.
+11. Vergibe passende Tags (Schlüsselwörter).
+12. Setze needs_user_review auf true, wenn du dir bei wichtigen Feldern unsicher bist.
 
 Alle Textfelder müssen auf Deutsch sein. Antworte NUR im angegebenen JSON-Format.`);
 

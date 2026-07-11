@@ -2,7 +2,7 @@ import type OpenAI from "openai";
 import type { ChatSource } from "@/lib/schemas/chat";
 import { redactPII } from "@/lib/ai/pii-redact";
 import {
-  semanticSearch,
+  hybridSearch,
   graphSearch,
 } from "@/lib/ai/search";
 import {
@@ -387,21 +387,30 @@ async function executeSearchDocuments(
   const query = String(args.query ?? "").trim();
   if (!query) return JSON.stringify({ error: "Keine Suchanfrage angegeben." });
 
-  const [semantic, graph] = await Promise.all([
-    semanticSearch(ctx.client, query, ctx.familyId),
+  // Hybrid content search (facts + semantic + lexical, RRF-fused) plus
+  // graph search (persons, tasks, knowledge-graph traversal).
+  const [content, graph] = await Promise.all([
+    hybridSearch(ctx.client, query, ctx.familyId),
     graphSearch(ctx.client, query, ctx.familyId),
   ]);
 
-  const relevantSemantic = filterByRelevanceThreshold(semantic);
+  // The relevance threshold is calibrated for cosine-similarity scores, so
+  // apply it only to pure semantic results — fact/lexical/hybrid hits match
+  // lexically and carry their own score semantics.
+  const relevantContent = [
+    ...filterByRelevanceThreshold(content.filter((r) => r.source === "semantic")),
+    ...content.filter((r) => r.source !== "semantic"),
+  ];
 
   // Re-rank combined results using LLM-as-judge for better relevance.
   // This catches cases where vector similarity returns high-score but
   // low-relevance results. Re-rank before combining into ChatSource[].
-  const allResults = [...relevantSemantic, ...graph];
+  const contentSources = new Set(["semantic", "lexical", "fact", "hybrid"]);
+  const allResults = [...relevantContent, ...graph];
   const reranked = await rerankResults(query, allResults);
   const sources = combineSearchResults(
-    reranked.filter((r) => r.source === "semantic"),
-    reranked.filter((r) => r.source !== "semantic"),
+    reranked.filter((r) => contentSources.has(r.source)),
+    reranked.filter((r) => !contentSources.has(r.source)),
   );
 
   // Accumulate sources for the API response.

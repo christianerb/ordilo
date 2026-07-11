@@ -29,6 +29,7 @@ const analysis: DocumentAnalysis = {
   dates: [],
   amounts: [],
   tasks: [],
+  facts: [],
   suggested_category: "Kita",
   tags: [],
   needs_user_review: false,

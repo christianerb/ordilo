@@ -61,6 +61,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     tasks: [
       { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
     ],
+    facts: [],
     suggested_category: "Kita",
     tags: ["Elternabend", "Kita"],
     needs_user_review: false,
@@ -286,6 +287,18 @@ function mockServerClient(options: {
     ),
   };
 
+  // --- document_facts table ---
+  const factsBuilder = {
+    delete: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue(
+        thenable({ data: null, error: storeError ? "delete error" : null }),
+      ),
+    }),
+    insert: vi.fn().mockReturnValue(
+      thenable({ data: null, error: storeError ? "insert error" : null }),
+    ),
+  };
+
   // --- knowledge_edges table ---
   const edgesBuilder = {
     delete: vi.fn().mockReturnValue({
@@ -325,6 +338,8 @@ function mockServerClient(options: {
           return entitiesBuilder;
         case "tasks":
           return tasksBuilder;
+        case "document_facts":
+          return factsBuilder;
         case "knowledge_edges":
           return edgesBuilder;
         case "document_embeddings":
@@ -336,6 +351,7 @@ function mockServerClient(options: {
     _operations: operations,
     _entitiesBuilder: entitiesBuilder,
     _tasksBuilder: tasksBuilder,
+    _factsBuilder: factsBuilder,
     _edgesBuilder: edgesBuilder,
     _embeddingsBuilder: embeddingsBuilder,
     _documentsBuilder: documentsBuilder,
@@ -343,6 +359,7 @@ function mockServerClient(options: {
     _operations: Record<string, number>;
     _entitiesBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
     _tasksBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
+    _factsBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
     _edgesBuilder: { delete: ReturnType<typeof vi.fn> };
     _embeddingsBuilder: { delete: ReturnType<typeof vi.fn> };
     _documentsBuilder: { update: ReturnType<typeof vi.fn> };
@@ -805,6 +822,7 @@ describe("POST /api/documents/[id]/analyze", () => {
       organizations: [{ name: "Kita Sonne", type: "Kita", confidence: 0.85 }],
       dates: [{ date: "2026-07-15", type: "event", label: "Termin", confidence: 0.8 }],
       amounts: [{ amount: "25.00", currency: "EUR", label: "Gebühr", confidence: 0.9 }],
+      facts: [],
       suggested_category: "Kita",
       tags: ["Elternabend", "Kita"],
     });

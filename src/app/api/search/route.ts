@@ -8,7 +8,7 @@ import {
   type SearchErrorResponse,
 } from "@/lib/schemas/search";
 import {
-  semanticSearch,
+  hybridSearch,
   graphSearch,
   resolveAutoMode,
 } from "@/lib/ai/search";
@@ -91,7 +91,9 @@ export async function POST(
   // 3. Execute the search based on mode ------------------------------------
   try {
     if (parsed.mode === "semantic") {
-      const results = await semanticSearch(
+      // "semantic" mode executes the hybrid content search (facts +
+      // semantic + lexical, RRF-fused); the reported mode stays "semantic".
+      const results = await hybridSearch(
         serverClient,
         parsed.query,
         parsed.family_id,
@@ -127,7 +129,7 @@ export async function POST(
       return Response.json(body, { status: 200 });
     }
 
-    const results = await semanticSearch(
+    const results = await hybridSearch(
       serverClient,
       parsed.query,
       parsed.family_id,
