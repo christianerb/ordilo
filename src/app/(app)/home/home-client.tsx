@@ -179,7 +179,7 @@ export function HomeClient({
       {isFirstVisit ? (
         <EmptyState
           title="Schön, dass du da bist"
-          description="Scanne dein erstes Dokument und Ordilo bringt Ordnung in deine Papierkram — ganz ohne Aktenordner."
+          description="Scanne dein erstes Dokument und Ordilo bringt Ordnung in deinen Papierkram — ganz ohne Aktenordner."
           mascotMood="greeting"
           actionLabel="Dokument scannen"
           onAction={openWizard}

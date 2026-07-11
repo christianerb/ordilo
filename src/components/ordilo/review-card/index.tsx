@@ -423,6 +423,10 @@ export function ReviewCard({
         // (status === "confirmed" from the server) shows the same calm,
         // static state instead of replaying the celebration.
         celebrate={confirmed}
+        // The follow-up CTA belongs to the same fresh-confirm moment as the
+        // celebration: right after adding, invite the next natural action —
+        // asking Ordilo about the document.
+        askTitle={confirmed ? (analysis?.title ?? null) : null}
         onReanalyze={handleReanalyze}
         reanalyzing={reanalyzing}
         className={className}

@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
-import { RefreshCw, AlertCircle, Loader2, Check } from "lucide-react";
+import Link from "next/link";
+import { RefreshCw, AlertCircle, Loader2, Check, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
@@ -209,6 +210,7 @@ export function ReviewCardConfirmed({
   analysis = null,
   analysisLoading = false,
   celebrate = false,
+  askTitle = null,
   onReanalyze,
   reanalyzing = false,
   className,
@@ -232,6 +234,13 @@ export function ReviewCardConfirmed({
    * the 100th time?").
    */
   celebrate?: boolean;
+  /**
+   * Document title for the "Frag Ordilo dazu" follow-up CTA — the reward
+   * moment right after confirming. Links to /suche with a prefilled,
+   * auto-submitting question about this document, closing the loop from
+   * "added" to "asked". Null hides the CTA (e.g. when revisiting).
+   */
+  askTitle?: string | null;
   onReanalyze?: () => void;
   reanalyzing?: boolean;
   className?: string;
@@ -284,6 +293,21 @@ export function ReviewCardConfirmed({
         <p className="mt-1 text-sm text-muted-foreground">
           Ist im Familienbuch und kann durchsucht werden.
         </p>
+        {askTitle && (
+          <Button
+            asChild
+            size="lg"
+            className="mt-4 h-11 w-full rounded-ordilo-md sm:w-auto"
+            data-testid="confirmed-ask-button"
+          >
+            <Link
+              href={`/suche?q=${encodeURIComponent(`Was steht in „${askTitle}“?`)}`}
+            >
+              <Sparkles className="size-4" aria-hidden="true" />
+              Frag Ordilo dazu
+            </Link>
+          </Button>
+        )}
         {onReanalyze && (
           <Button
             type="button"
