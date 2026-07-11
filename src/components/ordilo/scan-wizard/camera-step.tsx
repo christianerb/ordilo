@@ -383,7 +383,11 @@ export function CameraStep({
                 <Images className="size-5" aria-hidden="true" />
               </button>
             ) : (
-              <div className="relative" data-testid="camera-page-stack">
+              <div
+                key={pages.length}
+                className="relative animate-check-pop"
+                data-testid="camera-page-stack"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={lastPage.url}

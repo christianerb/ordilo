@@ -57,7 +57,7 @@ export function InviteLanding({
   return (
     <main className="flex min-h-dvh items-center justify-center bg-[var(--warm-white)] px-5 py-10">
       <div
-        className="w-full max-w-sm rounded-ordilo-md border border-border bg-card p-6 shadow-card"
+        className="w-full max-w-sm rounded-ordilo-md border border-border bg-card p-6 shadow-card animate-card-in"
         data-testid="invite-landing"
       >
         <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-[var(--sand)]/80">

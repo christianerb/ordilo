@@ -100,7 +100,7 @@ export function InviteCard({ className }: { className?: string }) {
           )}
 
           {inviteUrl && (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-2 animate-card-in">
               <div className="flex items-center gap-2">
                 <input
                   type="text"
