@@ -664,6 +664,13 @@ export function useScanProviderState(): ScanProviderState {
     setCreateNoteOpen(true);
   }, []);
 
+  // From the camera step: switch to writing a note — close the wizard and
+  // open the note sheet in one tap (the camera is the app's add-hub).
+  const handleWizardCreateNote = useCallback(() => {
+    closeWizard();
+    openCreateNote();
+  }, [closeWizard, openCreateNote]);
+
   const closeCreateNote = useCallback(() => {
     setCreateNoteOpen(false);
   }, []);
@@ -862,6 +869,7 @@ export function useScanProviderState(): ScanProviderState {
     handleWizardRetryUpload,
     handleWizardGallerySelect,
     handleWizardReviewDone,
+      handleWizardCreateNote,
     createNoteOpen,
     openCreateNote,
     closeCreateNote,

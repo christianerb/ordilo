@@ -74,6 +74,7 @@ export interface ScanProviderState {
   handleWizardRetryUpload: () => void;
   handleWizardGallerySelect: (e: ChangeEvent<HTMLInputElement>) => void;
   handleWizardReviewDone: () => void;
+  handleWizardCreateNote: () => void;
   openCreateNote: () => void;
   closeCreateNote: () => void;
   handleCreateNote: (params: {
