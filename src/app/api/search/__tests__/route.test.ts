@@ -211,8 +211,12 @@ function mockServerClient(options: {
 // ---------------------------------------------------------------------------
 
 describe("POST /api/search", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
+    // The embedding cache is module-level (latency dedupe) — reset it so
+    // per-test generateQueryEmbedding mocks (e.g. rejection cases) apply.
+    const { clearQueryEmbeddingCache } = await import("@/lib/ai/search");
+    clearQueryEmbeddingCache();
     // Default: query embedding succeeds.
     (generateQueryEmbedding as ReturnType<typeof vi.fn>).mockResolvedValue(
       Array.from({ length: 1536 }, (_, i) => i * 0.001),
