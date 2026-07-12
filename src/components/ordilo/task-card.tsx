@@ -44,6 +44,13 @@ export function TaskCard({
   const isDone = task.status === "done";
   const isOpen = task.status === "open";
   const dueDate = formatGermanDate(task.due_date);
+  // Overdue = open task whose due date is in the past (local calendar
+  // day). This is the per-card urgency signal — apricot marks it as a
+  // high-priority item wherever the card appears (Heute, /aufgaben).
+  const isOverdue =
+    isOpen &&
+    task.due_date !== null &&
+    task.due_date < new Date().toLocaleDateString("sv-SE");
   const hasDocument = Boolean(task.document_id);
   const prioDot = PRIORITY_DOT[task.priority] ?? PRIORITY_DOT.medium;
   const hasMeta = dueDate || hasDocument;
@@ -119,7 +126,15 @@ export function TaskCard({
               aria-hidden="true"
             />
             {dueDate && (
-              <span className="tabular-nums" data-testid="task-due-date">{dueDate}</span>
+              <span
+                className={cn(
+                  "tabular-nums",
+                  isOverdue && "font-medium text-[var(--apricot)]",
+                )}
+                data-testid="task-due-date"
+              >
+                {isOverdue ? `Überfällig · ${dueDate}` : dueDate}
+              </span>
             )}
             {hasDocument && dueDate && <span className="text-muted-foreground/30">·</span>}
             {hasDocument && (

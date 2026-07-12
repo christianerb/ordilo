@@ -23,9 +23,6 @@ import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
-  filterHeuteWichtig,
-  filterFristen,
-  filterUeberfaellig,
   filterRecentDocuments,
   type HomeTask,
   type HomeDocument,
@@ -54,6 +51,9 @@ export interface HomeClientProps {
   /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
   autoOpenScan?: boolean;
 }
+
+/** Heute shows at most this many tasks — the screen answers "was brennt?" */
+const HOME_TASK_LIMIT = 3;
 
 // ---------------------------------------------------------------------------
 // Status dot color mapping for BentoDocTile
@@ -156,18 +156,19 @@ export function HomeClient({
   // Derived data
   // -------------------------------------------------------------------------
 
-  const heuteWichtig = filterHeuteWichtig(localTasks);
-  const fristen = filterFristen(localTasks);
-  const ueberfaellig = filterUeberfaellig(localTasks);
   const visibleRecentDocs = filterRecentDocuments(recentDocuments);
-  const totalTasks = ueberfaellig.length + heuteWichtig.length + fristen.length;
-  const hasTasks = totalTasks > 0;
 
-  // Priority order: overdue → this week → later. Only the top few show;
-  // the rest are one tap away ("Alle anzeigen").
-  const HOME_TASK_LIMIT = 3;
-  const orderedTasks = [...ueberfaellig, ...heuteWichtig, ...fristen];
-  const nextTasks = orderedTasks.slice(0, HOME_TASK_LIMIT);
+  // ONE priority list: open, confirmed, dated tasks sorted by due date —
+  // overdue lands first by construction. totalTasks counts the WHOLE
+  // list (the server passes all confirmed open tasks unsliced), so
+  // "Alle N Aufgaben anzeigen" never promises a number /aufgaben can't
+  // deliver.
+  const datedOpenTasks = localTasks
+    .filter((t) => t.status === "open" && t.confirmed && t.due_date !== null)
+    .sort((a, b) => a.due_date!.localeCompare(b.due_date!));
+  const totalTasks = datedOpenTasks.length;
+  const hasTasks = totalTasks > 0;
+  const nextTasks = datedOpenTasks.slice(0, HOME_TASK_LIMIT);
   const hiddenTaskCount = totalTasks - nextTasks.length;
 
   const isFirstVisit =

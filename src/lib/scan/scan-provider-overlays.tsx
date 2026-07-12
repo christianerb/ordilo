@@ -33,6 +33,7 @@ export function ScanProviderOverlays({
   handleWizardRetryUpload,
   handleWizardGallerySelect,
   handleWizardReviewDone,
+  handleWizardAutoFlush,
   handleWizardCreateNote,
   closeCreateNote,
   handleCreateNote,
@@ -55,6 +56,7 @@ export function ScanProviderOverlays({
   | "handleWizardRetryUpload"
   | "handleWizardGallerySelect"
   | "handleWizardReviewDone"
+  | "handleWizardAutoFlush"
   | "handleWizardCreateNote"
   | "closeCreateNote"
   | "handleCreateNote"
@@ -93,6 +95,7 @@ export function ScanProviderOverlays({
           onRetryUpload={handleWizardRetryUpload}
           onClose={closeWizard}
           onReviewDone={handleWizardReviewDone}
+          onPendingAutoConfirm={handleWizardAutoFlush}
         />
       )}
 

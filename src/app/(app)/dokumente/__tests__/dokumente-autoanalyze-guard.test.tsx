@@ -25,6 +25,7 @@ vi.mock("@/lib/documents-table", () => ({
 
 import DokumentePage from "@/app/(app)/dokumente/page";
 import { ScanProvider } from "@/lib/scan/scan-context";
+import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFile } from "@/lib/upload";
 import { triggerOcr } from "@/lib/ocr";
@@ -145,7 +146,9 @@ describe("DokumentePage auto-analyze navigation guard", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -202,7 +205,9 @@ describe("DokumentePage auto-analyze navigation guard", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 

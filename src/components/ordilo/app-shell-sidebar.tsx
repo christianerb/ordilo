@@ -13,8 +13,8 @@ import {
 } from "lucide-react";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { logout } from "@/app/(app)/actions";
-import { createCollection } from "@/app/(app)/sammlungen/actions";
 import type { CollectionFormValues } from "@/components/ordilo/collection-form";
+import { useCollections } from "@/lib/collections/collections-context";
 import { OrdiloMascot, type OrdiloMascotMood } from "@/components/ordilo/mascot";
 import {
   DropdownMenu,
@@ -39,7 +39,6 @@ import {
   getTimeOfDay,
   isTabActive,
   NAV_TABS,
-  type SidebarCollection,
   type SidebarProfile,
   type TimeOfDay,
   TIME_REFRESH_INTERVAL_MS,
@@ -257,16 +256,14 @@ function SidebarScenery({
 }
 
 function SidebarCollections({
-  collections,
   activePathname,
   collapsed,
 }: {
-  collections: SidebarCollection[];
   activePathname: string;
   collapsed: boolean;
 }) {
   const router = useRouter();
-  const [list, setList] = useState(collections);
+  const { collections: list, addCollection } = useCollections();
   const [addOpen, setAddOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -274,7 +271,7 @@ function SidebarCollections({
   const handleAddSubmit = async (values: CollectionFormValues) => {
     setServerError(null);
     setIsSubmitting(true);
-    const result = await createCollection(values);
+    const result = await addCollection(values);
     setIsSubmitting(false);
 
     if (!result.success) {
@@ -282,7 +279,6 @@ function SidebarCollections({
       return;
     }
 
-    setList((prev) => [...prev, result.data]);
     setAddOpen(false);
     router.refresh();
   };
@@ -512,13 +508,11 @@ function SidebarFooter({
 
 export function SidebarNav({
   pathname,
-  collections,
   profile,
   collapsed,
   onToggleCollapse,
 }: {
   pathname: string;
-  collections: SidebarCollection[];
   profile?: SidebarProfile;
   collapsed: boolean;
   onToggleCollapse: () => void;
@@ -686,8 +680,6 @@ export function SidebarNav({
         </ul>
 
         <SidebarCollections
-          key={collections.map((collection) => collection.id).join(",")}
-          collections={collections}
           activePathname={pathname}
           collapsed={collapsed}
         />

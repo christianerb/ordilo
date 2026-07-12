@@ -76,8 +76,11 @@ function mockSupabaseData(options: {
       };
     }
     if (table === "collections") {
+      // CollectionsProvider queries select(...).order(...) directly (RLS
+      // scopes to the family — no explicit eq filter).
       return {
         select: vi.fn(() => ({
+          order: vi.fn().mockResolvedValue({ data: collections, error: null }),
           eq: vi.fn(() => ({
             order: vi.fn().mockResolvedValue({ data: collections, error: null }),
           })),

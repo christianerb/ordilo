@@ -48,6 +48,18 @@ function matches(a: string, b: string): boolean {
 }
 
 /**
+ * Whether two category/collection names refer to the same thing, using
+ * the SAME equality the confirm-time canonicalization uses (whitespace
+ * collapse, German plural stemming, umlaut folding). Every surface that
+ * links `documents.category` to a collection name must use this — a
+ * weaker comparison (plain lowercase) would show "Rechnungen" documents
+ * and a "Rechnung" collection as two different folders.
+ */
+export function categoriesMatch(a: string, b: string): boolean {
+  return matches(normalize(a), normalize(b));
+}
+
+/**
  * Snap a suggested category to the family's canonical spelling.
  *
  * Match priority:

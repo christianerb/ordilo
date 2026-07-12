@@ -64,6 +64,7 @@ export function ScanProvider({ children }: { children: ReactNode }) {
             handleWizardRetryUpload={state.handleWizardRetryUpload}
             handleWizardGallerySelect={state.handleWizardGallerySelect}
             handleWizardReviewDone={state.handleWizardReviewDone}
+            handleWizardAutoFlush={state.handleWizardAutoFlush}
             handleWizardCreateNote={state.handleWizardCreateNote}
             closeCreateNote={state.closeCreateNote}
             handleCreateNote={state.handleCreateNote}

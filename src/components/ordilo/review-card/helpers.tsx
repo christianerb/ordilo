@@ -40,6 +40,24 @@ export interface EditState {
 // ---------------------------------------------------------------------------
 
 /**
+ * POST the confirm payload to the confirm endpoint. The single shared
+ * call site for confirming a document — the Review Card, the Review
+ * Summary, the zero-touch auto-file, and the wizard-close flush all go
+ * through here, so the contract (URL, headers, body shape) can never
+ * drift between paths.
+ */
+export function postConfirm(
+  documentId: string,
+  payload: EditedAnalysisPayload,
+): Promise<Response> {
+  return fetch(`/api/documents/${documentId}/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
  * Build the confirm payload from the analysis and edit state.
  */
 export function buildConfirmPayload(

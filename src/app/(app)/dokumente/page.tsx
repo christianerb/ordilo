@@ -24,11 +24,18 @@ import {
   X,
   ArrowUpDown,
   Plus,
+  Settings2,
   type LucideIcon,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
-import { getCollectionIcon } from "@/lib/schemas/collections";
-import { createCollection } from "@/app/(app)/sammlungen/actions";
+import {
+  getCollectionIcon,
+  COLLECTION_ICON_OPTIONS,
+  COLLECTION_COLOR_OPTIONS,
+} from "@/lib/schemas/collections";
+import { categoriesMatch } from "@/lib/categories";
+import { useCollections } from "@/lib/collections/collections-context";
+import Link from "next/link";
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { DocumentsTable } from "@/components/ordilo/documents-table";
 import { EmptyState } from "@/components/ordilo/empty-state";
@@ -44,7 +51,6 @@ import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { UploadProgressCard } from "@/components/ordilo/scan-wizard/upload-progress";
 import { useScan } from "@/lib/scan/scan-context";
-import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Database } from "@/types/database";
 
@@ -81,16 +87,28 @@ const FOLDER_ORDER: string[] = [
 
 type DocRow = Database["public"]["Tables"]["documents"]["Row"];
 
-/** The slice of a collection row the folder list needs. */
-interface CollectionInfo {
-  id: string;
-  name: string;
-  icon: string | null;
-  color: string | null;
-}
 
 /** Fallback group for documents without a category. */
 const UNCATEGORIZED = "Sonstiges";
+
+/**
+ * Partition documents into "needs attention" (review) and confirmed.
+ * The ONE status predicate — header counts and the visible queue must
+ * never disagree because two hand-rolled copies drifted.
+ */
+function splitByStatus(docs: DocRow[]): {
+  reviewDocs: DocRow[];
+  confirmedDocs: DocRow[];
+} {
+  const reviewDocs: DocRow[] = [];
+  const confirmedDocs: DocRow[] = [];
+  for (const doc of docs) {
+    if (doc.status === "confirmed") confirmedDocs.push(doc);
+    // Everything else (processing, analyzed, failed) needs attention.
+    else reviewDocs.push(doc);
+  }
+  return { reviewDocs, confirmedDocs };
+}
 
 /**
  * Group documents by CATEGORY (= Sammlung) — the ONE visible order.
@@ -199,6 +217,7 @@ function FolderSection({
   onRetryFailed,
   onDeleteDocument,
   defaultOpen,
+  manageHref,
 }: {
   label: string;
   icon: LucideIcon;
@@ -209,42 +228,58 @@ function FolderSection({
   onRetryFailed: (id: string) => void;
   onDeleteDocument: (id: string) => void;
   defaultOpen?: boolean;
+  /** Collection detail page (rename, icon, color) — collection folders only.
+   * This is the ONLY mobile path to collection management (the sidebar is
+   * lg+), so it must exist on every collection folder row. */
+  manageHref?: string;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen ?? false);
 
   return (
     <div data-testid={`folder-${label}`}>
-      <button
-        type="button"
-        onClick={() => setIsOpen((v) => !v)}
-        className="flex w-full items-center gap-2.5 rounded-ordilo-sm border border-border bg-card px-3 py-2 text-left shadow-card transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        aria-expanded={isOpen}
-      >
-        <div
-          className="flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm"
-          style={{ backgroundColor: "var(--secondary)" }}
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => setIsOpen((v) => !v)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-ordilo-sm border border-border bg-card px-3 py-2 text-left shadow-card transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          aria-expanded={isOpen}
         >
-          <Icon
-            className="size-4"
-            style={{ color: "var(--petrol)" }}
-            strokeWidth={1.5}
-            aria-hidden="true"
-          />
-        </div>
-        <span className="flex-1 text-sm font-medium text-foreground">
-          {label}
-        </span>
-        <span
-          className="text-xs font-medium text-muted-foreground tabular-nums"
-        >
-          {docs.length}
-        </span>
-        {isOpen ? (
-          <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-        ) : (
-          <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <div
+            className="flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm"
+            style={{ backgroundColor: "var(--secondary)" }}
+          >
+            <Icon
+              className="size-4"
+              style={{ color: "var(--petrol)" }}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </div>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {label}
+          </span>
+          <span
+            className="text-xs font-medium text-muted-foreground tabular-nums"
+          >
+            {docs.length}
+          </span>
+          {isOpen ? (
+            <ChevronUp className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+          )}
+        </button>
+        {manageHref && (
+          <Link
+            href={manageHref}
+            aria-label={`Sammlung „${label}" verwalten`}
+            className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm border border-border bg-card text-muted-foreground shadow-card transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid={`folder-manage-${label}`}
+          >
+            <Settings2 className="size-4" aria-hidden="true" />
+          </Link>
         )}
-      </button>
+      </div>
 
       {isOpen && docs.length === 0 && (
         <p className="mt-1.5 rounded-ordilo-sm border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
@@ -322,7 +357,7 @@ export default function DokumentePage() {
   } = useScan();
 
   const [view, setView] = useState<"folder" | "table">("folder");
-  const [collections, setCollections] = useState<CollectionInfo[]>([]);
+  const { collections, addCollection } = useCollections();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "confirmed">("all");
@@ -341,40 +376,26 @@ export default function DokumentePage() {
     if (docId) {
       void openDocument(docId);
     }
-    // Collections are part of the folder list (empty ones included) —
-    // RLS scopes the query to the user's family.
-    void (async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("collections")
-        .select("id, name, icon, color")
-        .order("sort_order", { ascending: true });
-      if (data) setCollections(data as CollectionInfo[]);
-    })();
   });
 
-  const handleCreateCollection = useCallback(async (name: string) => {
-    const result = await createCollection({
-      name,
-      icon: "file-text",
-      color: "petrol",
-    });
-    if (!result.success) {
-      toast.error(result.error);
-      return false;
-    }
-    setCollections((prev) => [
-      ...prev,
-      {
-        id: result.data.id,
-        name: result.data.name,
-        icon: result.data.icon,
-        color: result.data.color,
-      },
-    ]);
-    toast.success(`Sammlung „${result.data.name}" angelegt`);
-    return true;
-  }, []);
+  const handleCreateCollection = useCallback(
+    async (name: string) => {
+      // Same defaults as the sidebar's CollectionForm — both entry points
+      // derive them from the canonical option lists, so they can't drift.
+      const result = await addCollection({
+        name,
+        icon: COLLECTION_ICON_OPTIONS[0].key,
+        color: COLLECTION_COLOR_OPTIONS[0].key,
+      });
+      if (!result.success) {
+        toast.error(result.error);
+        return false;
+      }
+      toast.success(`Sammlung „${result.data.name}" angelegt`);
+      return true;
+    },
+    [addCollection],
+  );
 
   const hasDocuments = documents.length > 0;
   const hasActiveUploads = uploads.length > 0;
@@ -386,20 +407,11 @@ export default function DokumentePage() {
     [documents],
   );
 
-  // Split documents into review queue, failed, and confirmed (folder) groups.
-  const { reviewDocs, confirmedDocs } = useMemo(() => {
-    const review: DocRow[] = [];
-    const confirmed: DocRow[] = [];
-    for (const doc of documents) {
-      if (doc.status === "confirmed") {
-        confirmed.push(doc);
-      } else {
-        // Everything else (processing, analyzed, failed) needs attention.
-        review.push(doc);
-      }
-    }
-    return { reviewDocs: review, confirmedDocs: confirmed };
-  }, [documents]);
+  // Split documents into review queue and confirmed (folder) groups.
+  const { reviewDocs, confirmedDocs } = useMemo(
+    () => splitByStatus(documents),
+    [documents],
+  );
 
   // --- Search + Filter logic ---
   const filteredDocuments = useMemo(() => {
@@ -439,27 +451,17 @@ export default function DokumentePage() {
     return result;
   }, [documents, searchQuery, statusFilter, typeFilter, sortBy]);
 
-  // Re-derive review/confirmed from filtered set
-  const { reviewDocs: filteredReviewDocs, confirmedDocs: filteredConfirmedDocs } = useMemo(() => {
-    const review: DocRow[] = [];
-    const confirmed: DocRow[] = [];
-    for (const doc of filteredDocuments) {
-      if (doc.status === "confirmed") confirmed.push(doc);
-      else review.push(doc);
-    }
-    return { reviewDocs: review, confirmedDocs: confirmed };
-  }, [filteredDocuments]);
+  // Re-derive review/confirmed from the filtered set (same predicate).
+  const { reviewDocs: filteredReviewDocs, confirmedDocs: filteredConfirmedDocs } = useMemo(
+    () => splitByStatus(filteredDocuments),
+    [filteredDocuments],
+  );
 
   // Group filtered confirmed documents by category (= Sammlung).
   const confirmedGroups = useMemo(
     () => groupByCategory(filteredConfirmedDocs),
     [filteredConfirmedDocs],
   );
-  const categoryOrder = useMemo(
-    () => orderCategories(confirmedGroups),
-    [confirmedGroups],
-  );
-
   // The folder list = document categories ∪ collections. A collection is
   // a first-class folder even while empty, so "+ Neue Sammlung" has an
   // immediate, visible result. Collections contribute their chosen icon;
@@ -467,36 +469,45 @@ export default function DokumentePage() {
   // Empty collections sort before "Sonstiges" and are hidden while a
   // search query is active (they can't contain matches).
   const folderEntries = useMemo(() => {
-    const collectionByName = new Map(
-      collections.map((c) => [c.name.toLowerCase(), c]),
-    );
-    const entries: { label: string; icon: LucideIcon; docs: DocRow[] }[] = [];
-    for (const key of categoryOrder) {
+    // Collection↔category linking uses categoriesMatch — the SAME
+    // equality confirm-time canonicalization uses — so drifted spellings
+    // ("Rechnungen" docs + collection "Rechnung") stay ONE folder.
+    const entries: {
+      label: string;
+      icon: LucideIcon;
+      docs: DocRow[];
+      /** Set when this folder is a collection → manage link target. */
+      collectionId?: string;
+    }[] = [];
+    const matchedCollections = new Set<string>();
+    for (const key of orderCategories(confirmedGroups)) {
       const docs = confirmedGroups.get(key)!;
-      const collection = collectionByName.get(key.toLowerCase());
+      const collection = collections.find((c) => categoriesMatch(c.name, key));
+      if (collection) matchedCollections.add(collection.id);
       entries.push({
         label: key,
         icon: collection
           ? getCollectionIcon(collection.icon)
           : dominantTypeIcon(docs),
         docs,
+        collectionId: collection?.id,
       });
     }
     if (!searchQuery.trim()) {
-      const known = new Set(entries.map((e) => e.label.toLowerCase()));
       const empty = collections
-        .filter((c) => !known.has(c.name.toLowerCase()))
+        .filter((c) => !matchedCollections.has(c.id))
         .map((c) => ({
           label: c.name,
           icon: getCollectionIcon(c.icon),
           docs: [] as DocRow[],
+          collectionId: c.id,
         }));
       const sonstigesIdx = entries.findIndex((e) => e.label === UNCATEGORIZED);
       if (sonstigesIdx === -1) entries.push(...empty);
       else entries.splice(sonstigesIdx, 0, ...empty);
     }
     return entries;
-  }, [categoryOrder, confirmedGroups, collections, searchQuery]);
+  }, [confirmedGroups, collections, searchQuery]);
 
   // Available types for filter chips (from all documents, not filtered)
   const availableTypes = useMemo(() => {
@@ -844,15 +855,20 @@ export default function DokumentePage() {
                 </div>
               )}
 
-              {/* Folder sections — categories and collections, ONE list */}
-              {folderEntries.length > 0 && (
-                <div className="space-y-1.5" data-testid="folder-list">
+              {/* Folder sections — categories and collections, ONE list.
+                  Rendered even with zero folders so "+ Neue Sammlung"
+                  stays reachable (it is the only mobile create path). */}
+              <div className="space-y-1.5" data-testid="folder-list">
                   <h2 className="text-xs font-semibold text-muted-foreground">
                     Im Familienbuch
                   </h2>
                   {folderEntries.map((entry) => (
                     <FolderSection
-                      key={entry.label}
+                      // autoOpenFolder resolves asynchronously (after the
+                      // deep-linked document loads); folding it into the
+                      // key remounts the section so defaultOpen actually
+                      // takes effect instead of being a stale initial value.
+                      key={`${entry.label}-${autoOpenFolder === entry.label}`}
                       label={entry.label}
                       icon={entry.icon}
                       docs={entry.docs}
@@ -862,22 +878,49 @@ export default function DokumentePage() {
                       onRetryFailed={handleRetryFailed}
                       onDeleteDocument={(id) => setDeleteConfirmId(id)}
                       defaultOpen={autoOpenFolder === entry.label ? true : undefined}
+                      manageHref={
+                        entry.collectionId
+                          ? `/sammlungen/${entry.collectionId}`
+                          : undefined
+                      }
                     />
                   ))}
                   <NewCollectionRow onCreate={handleCreateCollection} />
-                </div>
-              )}
+              </div>
             </>
           )}
         </div>
       ) : (
-        <EmptyState
-          title="Noch nichts gescannt"
-          description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
-          icon={ScanLine}
-          actionLabel="Dokument scannen"
-          onAction={openWizard}
-        />
+        <div className="space-y-4">
+          <EmptyState
+            title="Noch nichts gescannt"
+            description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
+            icon={ScanLine}
+            actionLabel="Dokument scannen"
+            onAction={openWizard}
+          />
+          {/* Collections can be prepared before the first scan — and this
+              is the only create path on mobile (sidebar is lg+). */}
+          <div className="mx-auto max-w-xs space-y-1.5">
+            {collections.map((c) => (
+              <div
+                key={c.id}
+                className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-card px-3 py-2 text-sm text-foreground shadow-card"
+              >
+                <Folder className="size-4 shrink-0 text-[var(--petrol)]" aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                <Link
+                  href={`/sammlungen/${c.id}`}
+                  aria-label={`Sammlung „${c.name}" verwalten`}
+                  className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <Settings2 className="size-4" aria-hidden="true" />
+                </Link>
+              </div>
+            ))}
+            <NewCollectionRow onCreate={handleCreateCollection} />
+          </div>
+        </div>
       )}
 
       {/* Compact upload link at the bottom */}
@@ -1001,11 +1044,18 @@ function NewCollectionRow({
     const trimmed = name.trim();
     if (!trimmed || saving) return;
     setSaving(true);
-    const ok = await onCreate(trimmed);
-    setSaving(false);
-    if (ok) {
-      setName("");
-      setOpen(false);
+    try {
+      const ok = await onCreate(trimmed);
+      if (ok) {
+        setName("");
+        setOpen(false);
+      }
+    } catch {
+      toast.error("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
+    } finally {
+      // Always release the button — a rejected promise must never leave
+      // the row stuck on a spinner.
+      setSaving(false);
     }
   };
 
@@ -1042,7 +1092,7 @@ function NewCollectionRow({
         onChange={(e) => setName(e.target.value)}
         placeholder="Name der Sammlung"
         aria-label="Name der Sammlung"
-        maxLength={60}
+        maxLength={50}
         autoFocus
         className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
         data-testid="new-collection-name-input"

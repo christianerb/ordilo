@@ -20,6 +20,7 @@ vi.mock("@/lib/analysis", () => ({
 
 import DokumentePage from "@/app/(app)/dokumente/page";
 import { ScanProvider } from "@/lib/scan/scan-context";
+import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFile } from "@/lib/upload";
 import { triggerOcr } from "@/lib/ocr";
@@ -112,7 +113,9 @@ describe("DokumentePage — scan wizard flow", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -131,7 +134,9 @@ describe("DokumentePage — scan wizard flow", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
     fireEvent.click(await screen.findByTestId("open-scan-wizard-button"));
@@ -163,7 +168,9 @@ describe("DokumentePage — scan wizard flow", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 

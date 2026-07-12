@@ -15,6 +15,7 @@ vi.mock("@/lib/ocr", () => ({
 
 import DokumentePage from "@/app/(app)/dokumente/page";
 import { ScanProvider } from "@/lib/scan/scan-context";
+import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
 
 const FAMILY_ID = "fam-empty-0000-0000-0000-000000000001";
@@ -68,7 +69,9 @@ describe("DokumentePage empty state", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -108,7 +111,9 @@ describe("DokumentePage empty state", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -127,7 +132,9 @@ describe("DokumentePage empty state", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -208,7 +215,9 @@ describe("DokumentePage empty state", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
