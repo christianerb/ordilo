@@ -224,7 +224,20 @@ export function LandingPage() {
       <footer className="border-t border-border">
         <div className="mx-auto flex w-full max-w-5xl flex-col items-center gap-2 px-5 py-6 text-center text-xs text-muted-foreground sm:flex-row sm:justify-between">
           <p>© {new Date().getFullYear()} Ordilo — Dein Familienordner</p>
-          <p>Mit Sorgfalt gebaut für Familien mit vollem Kopf.</p>
+          <nav className="flex items-center gap-4" aria-label="Rechtliches">
+            <Link
+              href="/impressum"
+              className="transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+            >
+              Impressum
+            </Link>
+            <Link
+              href="/datenschutz"
+              className="transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+            >
+              Datenschutz
+            </Link>
+          </nav>
         </div>
       </footer>
     </div>
