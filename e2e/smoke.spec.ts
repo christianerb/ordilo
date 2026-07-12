@@ -52,3 +52,13 @@ test("unauthenticated visit to / shows the landing page", async ({ page }) => {
   await page.getByTestId("landing-cta-hero").click();
   await expect(page).toHaveURL(/\/login/);
 });
+
+test("legal pages render with their placeholder notice", async ({ page }) => {
+  for (const path of ["/impressum", "/datenschutz"]) {
+    await page.goto(path);
+    await expect(
+      page.getByTestId("legal-placeholder-notice"),
+      `placeholder notice on ${path}`,
+    ).toBeVisible();
+  }
+});

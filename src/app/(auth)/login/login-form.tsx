@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import {
   Mail,
@@ -330,6 +331,24 @@ export function LoginForm() {
           nicht, legen wir es einfach an. Mit der Anmeldung stimmst du den
           Nutzungsbedingungen zu.
         </p>
+
+        <nav
+          className="flex items-center justify-center gap-4 text-xs text-muted-foreground"
+          aria-label="Rechtliches"
+        >
+          <Link
+            href="/impressum"
+            className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            Impressum
+          </Link>
+          <Link
+            href="/datenschutz"
+            className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            Datenschutz
+          </Link>
+        </nav>
       </div>
     </main>
   );
