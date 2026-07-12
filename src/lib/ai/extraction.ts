@@ -82,13 +82,19 @@ export function buildSystemPrompt(familyContext: FamilyContext): string {
     parts.push("\nFamilienmitglieder: keine bekannt.");
   }
 
-  // Family context — existing categories.
-  if (familyContext.categories.length > 0) {
+  // Family context — existing collections + categories. Collections come
+  // first: a category that matches a collection name files the document
+  // into that collection automatically.
+  const knownCategories = [
+    ...new Set([
+      ...(familyContext.collections ?? []),
+      ...familyContext.categories,
+    ]),
+  ];
+  if (knownCategories.length > 0) {
+    parts.push(`\nVorhandene Kategorien: ${knownCategories.join(", ")}`);
     parts.push(
-      `\nVorhandene Kategorien: ${familyContext.categories.join(", ")}`,
-    );
-    parts.push(
-      "Versuche, eine dieser Kategorien vorzuschlagen, wenn sie passt. Andernfalls schlage eine neue passende Kategorie vor.",
+      "Verwende bevorzugt EXAKT eine dieser Kategorien (gleiche Schreibweise), wenn sie passt. Nur wenn keine passt, schlage eine neue kurze Kategorie vor.",
     );
   }
 

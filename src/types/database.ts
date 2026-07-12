@@ -820,6 +820,46 @@ export type Database = {
         };
         Relationships: [];
       };
+      // chat_feedback_events -------------------------------------------------
+      chat_feedback_events: {
+        Row: {
+          id: string;
+          family_id: string;
+          message_id: string | null;
+          rating: string;
+          reasons: string[];
+          comment: string | null;
+          query_kind: string;
+          sources_count: number;
+          answer_length: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          message_id?: string | null;
+          rating: string;
+          reasons?: string[];
+          comment?: string | null;
+          query_kind?: string;
+          sources_count?: number;
+          answer_length?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          message_id?: string | null;
+          rating?: string;
+          reasons?: string[];
+          comment?: string | null;
+          query_kind?: string;
+          sources_count?: number;
+          answer_length?: number;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       // chat_usage ---------------------------------------------------------
       chat_usage: {
         Row: {

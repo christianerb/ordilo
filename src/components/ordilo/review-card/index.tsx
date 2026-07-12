@@ -193,6 +193,36 @@ export function ReviewCard({
     [familyMembers],
   );
 
+  /**
+   * Create a NEW family member from an unmatched extracted person and link
+   * the entity to them — the knowledge graph grows from the documents
+   * instead of only matching what already exists.
+   */
+  const handleCreateMember = useCallback(
+    async (entityIndex: number, name: string) => {
+      const { addFamilyMember } = await import("@/app/(app)/familie/actions");
+      const result = await addFamilyMember({ name });
+      if (!result.success) return false;
+
+      const newMember = {
+        id: result.data.id,
+        name: result.data.name,
+        role: result.data.role,
+      };
+      setFamilyMembers((prev) => [...prev, newMember]);
+      setEdits((prev) => {
+        const newPersons = new Map(prev.persons);
+        newPersons.set(entityIndex, {
+          name: newMember.name,
+          personId: newMember.id,
+        });
+        return { ...prev, persons: newPersons };
+      });
+      return true;
+    },
+    [],
+  );
+
   /** Edit category. */
   const handleEditCategory = useCallback((category: string) => {
     setEdits((prev) => ({ ...prev, category }));
@@ -465,6 +495,7 @@ export function ReviewCard({
       confirming={confirming}
       confirmError={confirmError}
       onEditPerson={handleEditPerson}
+      onCreateMember={handleCreateMember}
       onEditCategory={handleEditCategory}
       onEditDate={handleEditDate}
       onEditTaskDueDate={handleEditTaskDueDate}

@@ -362,6 +362,12 @@ export interface FamilyContext {
   members: { id: string; name: string; role: string | null }[];
   /** Existing document categories in the family (distinct documents.category). */
   categories: string[];
+  /**
+   * The family's collection names. Collections are linked to documents via
+   * documents.category === collection.name, so a category suggestion that
+   * matches a collection name files the document into that collection.
+   */
+  collections?: string[];
   /** Existing knowledge nodes (organizations, contracts, etc.). */
   knowledgeNodes: { type: string; label: string }[];
 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Check,
   RefreshCw,
@@ -10,6 +11,7 @@ import {
   Hash,
   ListTodo,
   Trash2,
+  UserPlus,
   AlertTriangle,
   Loader2,
 } from "lucide-react";
@@ -54,6 +56,7 @@ export function ReviewCardContent({
   confirming,
   confirmError,
   onEditPerson,
+  onCreateMember,
   onEditCategory,
   onEditDate,
   onEditTaskDueDate,
@@ -74,6 +77,8 @@ export function ReviewCardContent({
   confirming: boolean;
   confirmError: string | null;
   onEditPerson: (entityIndex: number, memberId: string | null) => void;
+  /** Create a new family member from an unmatched person and link them. */
+  onCreateMember?: (entityIndex: number, name: string) => Promise<boolean>;
   onEditCategory: (category: string) => void;
   onEditDate: (entityIndex: number, date: string) => void;
   onEditTaskDueDate: (taskIndex: number, dueDate: string) => void;
@@ -160,6 +165,8 @@ export function ReviewCardContent({
               const edited = edits.persons.get(i);
               const isEdited = Boolean(edited);
               const displayName = edited?.name ?? member.name;
+              const isUnmatched =
+                !edited && !member.person_id && Boolean(onCreateMember);
               return (
                 <FieldRow
                   key={i}
@@ -176,6 +183,12 @@ export function ReviewCardContent({
                   }
                 >
                   <span className="block truncate">{displayName}</span>
+                  {isUnmatched && (
+                    <CreateMemberButton
+                      name={member.name}
+                      onCreate={() => onCreateMember!(i, member.name)}
+                    />
+                  )}
                 </FieldRow>
               );
             })}
@@ -457,5 +470,66 @@ export function ReviewCardContent({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Inline "create as family member" suggestion for an extracted person who
+ * matched nobody in the family — the graph grows from the documents.
+ */
+function CreateMemberButton({
+  name,
+  onCreate,
+}: {
+  name: string;
+  onCreate: () => Promise<boolean>;
+}) {
+  const [state, setState] = useState<"idle" | "saving" | "done" | "error">(
+    "idle",
+  );
+
+  if (state === "done") {
+    return (
+      <span
+        className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)]"
+        data-testid="create-member-done"
+      >
+        <Check className="size-3" aria-hidden="true" />
+        {name} ist jetzt Teil der Familie
+      </span>
+    );
+  }
+
+  return (
+    <span className="mt-1 block font-normal">
+      <button
+        type="button"
+        disabled={state === "saving"}
+        onClick={async () => {
+          setState("saving");
+          const ok = await onCreate().catch(() => false);
+          setState(ok ? "done" : "error");
+        }}
+        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)] underline-offset-2 hover:underline disabled:opacity-60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+        data-testid="create-member-button"
+      >
+        {state === "saving" ? (
+          <>
+            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+            Wird angelegt …
+          </>
+        ) : (
+          <>
+            <UserPlus className="size-3" aria-hidden="true" />
+            {`„${name}" als Familienmitglied anlegen`}
+          </>
+        )}
+      </button>
+      {state === "error" && (
+        <span className="ml-2 text-xs text-destructive">
+          Das hat nicht geklappt.
+        </span>
+      )}
+    </span>
   );
 }
