@@ -471,6 +471,7 @@ function AnswerFeedback({ message }: { message: ChatMessage }) {
 
 const TOOL_LABELS: Record<string, { icon: typeof Search; label: string }> = {
   search_documents: { icon: Search, label: "Durchsuche Dokumente…" },
+  list_documents: { icon: ListChecks, label: "Dokumente werden aufgelistet…" },
   list_tasks: { icon: ListChecks, label: "Aufgaben werden geladen…" },
   list_family_members: { icon: Users, label: "Familienmitglieder werden geladen…" },
   mark_task_done: { icon: CheckCircle2, label: "Aufgabe wird erledigt…" },

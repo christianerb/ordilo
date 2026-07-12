@@ -9,6 +9,7 @@ import {
   filterByRelevanceThreshold,
   combineSearchResults,
 } from "@/lib/ai/chat";
+import { matchesWordBoundary } from "@/lib/schemas/search";
 import { rerankResults } from "@/lib/ai/reranking";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
 
@@ -90,6 +91,49 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
             type: "number",
             description:
               "Nur Aufgaben mit Frist in den naechsten N Tagen. Optional.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "list_documents",
+      description:
+        "Listet Dokumente der Familie VOLLSTAENDIG und deterministisch auf — " +
+        "gefiltert nach Typ, Kategorie/Sammlung, Person oder Jahr, chronologisch sortiert. " +
+        "Verwende dies fuer Aufzaehlungs-Fragen wie 'Zeig mir alle Rechnungen', " +
+        "'Welche Dokumente haben wir von 2026?' oder 'Alle Dokumente von Emma' — " +
+        "NICHT search_documents (das ist Aehnlichkeitssuche mit Top-10-Limit).",
+      parameters: {
+        type: "object",
+        properties: {
+          document_type: {
+            type: "string",
+            enum: [
+              "invoice", "letter", "contract", "medical",
+              "school", "insurance", "tax", "other",
+            ],
+            description: "Filter nach Dokumenttyp. Optional.",
+          },
+          category: {
+            type: "string",
+            description:
+              "Filter nach Kategorie/Sammlung (z.B. 'Rechnungen'). Optional.",
+          },
+          person_name: {
+            type: "string",
+            description: "Nur Dokumente dieser Person. Optional.",
+          },
+          year: {
+            type: "number",
+            description: "Nur Dokumente aus diesem Jahr. Optional.",
+          },
+          sort: {
+            type: "string",
+            enum: ["newest", "oldest"],
+            description: "Sortierung. Standard: 'newest'.",
           },
         },
       },
@@ -359,6 +403,8 @@ export async function executeTool(
       return executeSearchDocuments(args, ctx);
     case "list_tasks":
       return executeListTasks(args, ctx);
+    case "list_documents":
+      return executeListDocuments(args, ctx);
     case "list_family_members":
       return executeListFamilyMembers(ctx);
     case "mark_task_done":
@@ -471,6 +517,113 @@ async function executeSearchDocuments(
 
 // ---------------------------------------------------------------------------
 // list_tasks
+// ---------------------------------------------------------------------------
+// list_documents
+// ---------------------------------------------------------------------------
+
+/** Cap for complete document listings (a family library, not a data dump). */
+const LIST_DOCUMENTS_MAX = 50;
+
+/**
+ * Deterministic, COMPLETE document listing — the counterpart to
+ * search_documents' similarity-based top-10. "Zeig mir alle Rechnungen"
+ * must return every invoice in order, not the ten most similar chunks.
+ */
+async function executeListDocuments(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const documentType =
+    typeof args.document_type === "string" ? args.document_type : null;
+  const category = typeof args.category === "string" ? args.category.trim() : "";
+  const personName =
+    typeof args.person_name === "string" ? args.person_name.trim() : "";
+  const year = typeof args.year === "number" ? Math.floor(args.year) : null;
+  const ascending = args.sort === "oldest";
+
+  // Person filter resolves to document ids first (via extracted_entities).
+  let personDocIds: string[] | null = null;
+  if (personName) {
+    const { data: entities } = await ctx.client
+      .from("extracted_entities")
+      .select("document_id, normalized_value")
+      .eq("family_id", ctx.familyId)
+      .eq("entity_type", "person")
+      .ilike("normalized_value", `%${personName.toLowerCase()}%`);
+    personDocIds = [
+      ...new Set(
+        (entities ?? [])
+          .filter((e) =>
+            matchesWordBoundary(e.normalized_value ?? "", personName),
+          )
+          .map((e) => e.document_id),
+      ),
+    ];
+    if (personDocIds.length === 0) {
+      return JSON.stringify({
+        results: [],
+        total: 0,
+        message: `Keine Dokumente fuer '${personName}' gefunden.`,
+      });
+    }
+  }
+
+  let query = ctx.client
+    .from("documents")
+    .select("id, title, document_type, category, created_at, confirmed_at")
+    .eq("family_id", ctx.familyId)
+    .eq("status", "confirmed");
+
+  if (documentType) query = query.eq("document_type", documentType);
+  if (category) query = query.ilike("category", `%${category}%`);
+  if (personDocIds) query = query.in("id", personDocIds);
+  if (year !== null && year > 1900 && year < 3000) {
+    query = query
+      .gte("created_at", `${year}-01-01`)
+      .lt("created_at", `${year + 1}-01-01`);
+  }
+
+  const { data: docs, error } = await query
+    .order("created_at", { ascending })
+    .limit(LIST_DOCUMENTS_MAX);
+
+  if (error) {
+    return JSON.stringify({ error: "Dokumente konnten nicht geladen werden." });
+  }
+
+  if (!docs || docs.length === 0) {
+    return JSON.stringify({
+      results: [],
+      total: 0,
+      message: "Keine passenden Dokumente gefunden.",
+    });
+  }
+
+  // Surface the listed documents as tappable sources (best first).
+  for (const doc of docs.slice(0, 10)) {
+    if (!ctx.sources.find((x) => x.document_id === doc.id)) {
+      ctx.sources.push({
+        document_id: doc.id,
+        title: doc.title,
+        excerpt: "",
+        score: 1,
+      });
+    }
+  }
+
+  return JSON.stringify({
+    total: docs.length,
+    truncated: docs.length === LIST_DOCUMENTS_MAX,
+    results: docs.map((d) => ({
+      document_id: d.id,
+      titel: d.title,
+      typ: d.document_type,
+      kategorie: d.category,
+      datum: (d.confirmed_at ?? d.created_at).slice(0, 10),
+    })),
+  });
+}
+
 // ---------------------------------------------------------------------------
 
 async function executeListTasks(

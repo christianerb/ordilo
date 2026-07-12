@@ -6,6 +6,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 vi.mock("@/lib/ai/search", () => ({
   semanticSearch: vi.fn().mockResolvedValue([]),
+  hybridSearch: vi.fn().mockResolvedValue([]),
   graphSearch: vi.fn().mockResolvedValue([]),
 }));
 
@@ -506,5 +507,85 @@ describe("add_document_tags confirmation gate", () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.error).toBe("Schlagworte konnten nicht gespeichert werden.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// list_documents — deterministic, complete listing
+// ---------------------------------------------------------------------------
+
+describe("list_documents", () => {
+  function makeListCtx(
+    docs: Array<{
+      id: string;
+      title: string | null;
+      document_type: string | null;
+      category: string | null;
+      created_at: string;
+      confirmed_at: string | null;
+    }>,
+  ): ToolContext {
+    const thenable = {
+      then: (resolve: (v: unknown) => void) =>
+        Promise.resolve({ data: docs, error: null }).then(resolve),
+    };
+    const chain: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "ilike", "in", "gte", "lt", "order"]) {
+      chain[m] = vi.fn().mockReturnValue(chain);
+    }
+    chain.limit = vi.fn().mockReturnValue(thenable);
+
+    return {
+      client: {
+        from: vi.fn(() => chain),
+      } as unknown as ToolContext["client"],
+      familyId: "fam-1",
+      sources: [] as ChatSource[],
+      speakerName: null,
+    };
+  }
+
+  it("returns a chronological, complete listing and surfaces sources", async () => {
+    const ctx = makeListCtx([
+      {
+        id: "doc-1",
+        title: "Stromrechnung Juli",
+        document_type: "invoice",
+        category: "Rechnungen",
+        created_at: "2026-07-01T10:00:00Z",
+        confirmed_at: "2026-07-02T10:00:00Z",
+      },
+      {
+        id: "doc-2",
+        title: "Stromrechnung Juni",
+        document_type: "invoice",
+        category: "Rechnungen",
+        created_at: "2026-06-01T10:00:00Z",
+        confirmed_at: null,
+      },
+    ]);
+
+    const result = await executeTool(
+      "list_documents",
+      { document_type: "invoice" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.total).toBe(2);
+    expect(parsed.results).toHaveLength(2);
+    expect(parsed.results[0].titel).toBe("Stromrechnung Juli");
+    expect(parsed.results[0].datum).toBe("2026-07-02");
+    expect(parsed.results[1].datum).toBe("2026-06-01");
+    // Listed documents become tappable sources for the answer.
+    expect(ctx.sources.map((s) => s.document_id)).toEqual(["doc-1", "doc-2"]);
+  });
+
+  it("returns an empty result with a German message when nothing matches", async () => {
+    const ctx = makeListCtx([]);
+    const result = await executeTool("list_documents", {}, ctx);
+    const parsed = JSON.parse(result);
+    expect(parsed.total).toBe(0);
+    expect(parsed.message).toContain("Keine passenden Dokumente");
   });
 });
