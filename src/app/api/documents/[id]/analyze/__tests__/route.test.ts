@@ -252,6 +252,15 @@ function mockServerClient(options: {
     }),
   };
 
+  // --- collections table (category canonicalization context) ---
+  const collectionsBuilder = {
+    select: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue(
+        thenable({ data: [], error: null }),
+      ),
+    }),
+  };
+
   // --- knowledge_nodes table ---
   const nodesBuilder = {
     select: vi.fn().mockReturnValue({
@@ -332,6 +341,8 @@ function mockServerClient(options: {
           return pagesBuilder;
         case "family_members":
           return membersBuilder;
+        case "collections":
+          return collectionsBuilder;
         case "knowledge_nodes":
           return nodesBuilder;
         case "extracted_entities":

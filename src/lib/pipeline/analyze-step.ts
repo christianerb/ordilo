@@ -8,6 +8,7 @@ import {
   type DocumentAnalysis,
   type FamilyContext,
 } from "@/lib/schemas/extraction";
+import { canonicalizeCategory } from "@/lib/categories";
 
 /**
  * Shared analyze (LLM extraction) pipeline step.
@@ -131,6 +132,14 @@ export async function fetchFamilyContext(
     throw new Error("Wissensknoten konnten nicht geladen werden.");
   }
 
+  // Collection names — best-effort (collections are an optional recall
+  // boost for category matching, not a hard dependency).
+  const { data: collectionRows } = await client
+    .from("collections")
+    .select("name")
+    .eq("family_id", familyId);
+  const collections = (collectionRows ?? []).map((c) => c.name);
+
   return {
     members: (members ?? []).map((m) => ({
       id: m.id,
@@ -138,6 +147,7 @@ export async function fetchFamilyContext(
       role: m.role,
     })),
     categories,
+    collections,
     knowledgeNodes: (nodes ?? []).map((n) => ({
       type: n.type,
       label: n.label,
@@ -161,6 +171,15 @@ export async function performAnalyzeStep(
 
   const familyContext = await fetchFamilyContext(client, document.family_id);
   const analysis = await runExtraction(fullOcrText, familyContext);
+
+  // Snap the suggested category to the family's canonical spelling —
+  // prevents "Rechnung"/"Rechnungen" drift and keeps the collection link
+  // (documents.category === collection.name) intact.
+  analysis.suggested_category = canonicalizeCategory(
+    analysis.suggested_category,
+    familyContext.categories,
+    familyContext.collections ?? [],
+  );
 
   // Override the LLM's self-assessment with the deterministic threshold.
   analysis.needs_user_review = computeNeedsUserReview(analysis);

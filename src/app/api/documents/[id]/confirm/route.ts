@@ -34,6 +34,7 @@ import type {
 } from "@/types/database";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { normalizeFactValue } from "@/lib/schemas/extraction";
+import { canonicalizeCategory } from "@/lib/categories";
 
 /**
  * POST /api/documents/[id]/confirm
@@ -180,6 +181,38 @@ export async function POST(
   }
 
   const familyId = document.family_id;
+
+  // 6b. Canonicalize the category against the family's existing categories
+  //     and collection names (documents.category === collection.name links
+  //     a document into a collection — a canonical match files it there).
+  //     Best-effort: on a read failure the suggested spelling is kept.
+  try {
+    const [{ data: categoryDocs }, { data: collectionRows }] =
+      await Promise.all([
+        serverClient
+          .from("documents")
+          .select("category")
+          .eq("family_id", familyId)
+          .not("category", "is", null),
+        serverClient
+          .from("collections")
+          .select("name")
+          .eq("family_id", familyId),
+      ]);
+    payload.suggested_category = canonicalizeCategory(
+      payload.suggested_category,
+      [
+        ...new Set(
+          (categoryDocs ?? [])
+            .map((d) => d.category)
+            .filter((c): c is string => Boolean(c)),
+        ),
+      ],
+      (collectionRows ?? []).map((c) => c.name),
+    );
+  } catch {
+    // Keep the payload's spelling — canonicalization is a bonus.
+  }
 
   // 7. Fetch OCR text (with page numbers for provenance) -------------------
   const { data: pages, error: pagesError } = await serverClient

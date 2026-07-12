@@ -273,28 +273,76 @@ function messageToPlainText(message: ChatMessage): string {
   return message.content;
 }
 
+/** Fixed thumbs-down reasons — one tap each, no typing required. */
+const DOWN_REASONS = [
+  { key: "falsche_antwort", label: "Falsche Antwort" },
+  { key: "falsches_dokument", label: "Falsches Dokument" },
+  { key: "unvollstaendig", label: "Unvollständig" },
+] as const;
+
 function AnswerFeedback({ message }: { message: ChatMessage }) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(
     message.feedback === "positive" ? "up" : message.feedback === "negative" ? "down" : null,
   );
   const [copied, setCopied] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedReasons, setSelectedReasons] = useState<Set<string>>(new Set());
+  const [comment, setComment] = useState("");
+  const [thanked, setThanked] = useState(false);
 
-  const handleFeedback = async (value: "up" | "down") => {
+  const persistable = Boolean(message.id && !message.id.startsWith("ai-"));
+
+  const sendFeedback = (
+    payload: "positive" | "negative",
+    extras?: { reasons?: string[]; comment?: string },
+  ) => {
+    if (!persistable) return;
+    void fetch("/api/chat/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message_id: message.id,
+        feedback: payload,
+        ...(extras?.reasons?.length ? { reasons: extras.reasons } : {}),
+        ...(extras?.comment ? { comment: extras.comment } : {}),
+      }),
+    }).catch(() => {});
+  };
+
+  const handleFeedback = (value: "up" | "down") => {
     setFeedback((prev) => {
       const next = prev === value ? null : value;
-      // Persist to the server (best-effort, non-blocking).
-      if (message.id && !message.id.startsWith("ai-")) {
-        const payload = next === "up" ? "positive" : next === "down" ? "negative" : null;
-        if (payload) {
-            void fetch("/api/chat/feedback", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ message_id: message.id, feedback: payload }),
-            }).catch(() => {});
-        }
+      if (next === "up") {
+        setPanelOpen(false);
+        sendFeedback("positive");
+      } else if (next === "down") {
+        // The detail panel is the sender for thumbs-down — reasons and an
+        // optional comment turn a bare signal into something we can act on.
+        setPanelOpen(true);
+      } else {
+        setPanelOpen(false);
       }
       return next;
     });
+  };
+
+  const toggleReason = (key: string) => {
+    setSelectedReasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const handleSubmitDown = () => {
+    sendFeedback("negative", {
+      reasons: [...selectedReasons],
+      comment: comment.trim() || undefined,
+    });
+    setPanelOpen(false);
+    setThanked(true);
+    setTimeout(() => setThanked(false), 2500);
   };
 
   const handleCopy = async () => {
@@ -308,10 +356,8 @@ function AnswerFeedback({ message }: { message: ChatMessage }) {
   };
 
   return (
-    <div
-      className="ml-10 flex items-center gap-1"
-      data-testid="answer-feedback"
-    >
+    <div className="ml-10 space-y-2" data-testid="answer-feedback">
+      <div className="flex items-center gap-1">
       <button
         type="button"
         onClick={() => handleFeedback("up")}
@@ -355,6 +401,66 @@ function AnswerFeedback({ message }: { message: ChatMessage }) {
           <Copy className="size-3.5" aria-hidden="true" />
         )}
       </button>
+        {thanked && (
+          <span
+            className="text-xs text-muted-foreground animate-message-in"
+            data-testid="feedback-thanks"
+          >
+            Danke — das hilft Ordilo besser zu werden.
+          </span>
+        )}
+      </div>
+
+      {/* Thumbs-down detail panel — reasons + optional comment. */}
+      {panelOpen && feedback === "down" && (
+        <div
+          className="max-w-sm space-y-2 rounded-ordilo-sm border border-border bg-card p-3 animate-card-in"
+          data-testid="feedback-down-panel"
+        >
+          <p className="text-xs font-medium text-muted-foreground">
+            Was war nicht gut?
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {DOWN_REASONS.map((reason) => (
+              <button
+                key={reason.key}
+                type="button"
+                onClick={() => toggleReason(reason.key)}
+                aria-pressed={selectedReasons.has(reason.key)}
+                data-testid={`feedback-reason-${reason.key}`}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  selectedReasons.has(reason.key)
+                    ? "bg-[var(--petrol)] text-white"
+                    : "bg-secondary text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {reason.label}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Was hätte Ordilo besser machen können? (optional)"
+            maxLength={500}
+            aria-label="Anmerkung zum Feedback"
+            data-testid="feedback-comment-input"
+            className="w-full rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          />
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleSubmitDown}
+              data-testid="feedback-submit-button"
+              className="rounded-ordilo-sm bg-[var(--petrol)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              Senden
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
