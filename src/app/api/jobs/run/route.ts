@@ -70,11 +70,10 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 /**
- * GET /api/jobs/run — method not allowed.
+ * GET /api/jobs/run — Vercel Cron invokes scheduled paths with GET (and
+ * no body), so GET runs the worker with the default limit. Same auth as
+ * POST.
  */
-export async function GET(): Promise<Response> {
-  return Response.json(
-    { error: "Methode nicht erlaubt. Bitte POST verwenden.", code: "METHOD_NOT_ALLOWED" },
-    { status: 405 },
-  );
+export async function GET(request: Request): Promise<Response> {
+  return POST(request);
 }

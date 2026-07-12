@@ -33,3 +33,7 @@ coverage/
 
 # playwright-mcp test artifacts
 .playwright-mcp/
+
+# Playwright
+/test-results/
+/playwright-report/
