@@ -1,4 +1,5 @@
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { requireSchedulerAuth } from "@/lib/scheduler-auth";
 import {
   buildFamilyDigest,
   digestHtml,
@@ -11,18 +12,22 @@ import {
 /**
  * GET|POST /api/digest/run — the daily reminder digest.
  *
- * For every family with open tasks that are overdue or due within
- * {@link DIGEST_HORIZON_DAYS} days, sends ONE German email per family
- * member (via the Resend REST API — no SDK dependency). Families without
- * due tasks get nothing.
+ * For every family with open, CONFIRMED tasks that are overdue or due
+ * within {@link DIGEST_HORIZON_DAYS} days, sends ONE German email per
+ * family member (via the Resend REST batch API — no SDK dependency).
+ * Unconfirmed auto-extracted tasks are excluded: the digest must only
+ * reference tasks the family actually accepted (the same
+ * `confirmed = true` filter every in-app task surface applies).
+ * Families without due tasks get nothing.
  *
  * Invocation: scheduled via Vercel Cron (see vercel.json) — Vercel sends
  * a GET with `Authorization: Bearer <CRON_SECRET>`. Manual/external
- * schedulers can POST with the same header. Runs are NOT deduplicated:
- * schedule it once per day; invoking twice sends the digest twice.
+ * schedulers can POST with either configured secret (see
+ * {@link requireSchedulerAuth}). Runs are NOT deduplicated: schedule it
+ * once per day; invoking twice sends the digest twice.
  *
  * Configuration (all server-side env vars):
- *   - JOBS_RUNNER_SECRET or CRON_SECRET — required, auth for this endpoint.
+ *   - CRON_SECRET and/or JOBS_RUNNER_SECRET — required (auth).
  *   - RESEND_API_KEY — required, otherwise 503 (endpoint disabled, never open).
  *   - DIGEST_FROM_EMAIL — sender, default "Ordilo <onboarding@resend.dev>"
  *     (Resend's sandbox sender; replace with a verified domain for launch).
@@ -30,27 +35,30 @@ import {
  *     request origin.
  */
 
-const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const RESEND_BATCH_ENDPOINT = "https://api.resend.com/emails/batch";
+
+/** Resend's batch API accepts up to 100 emails per request. */
+const RESEND_BATCH_SIZE = 100;
+
+/**
+ * Upper bound on due tasks per run. Well above any realistic MVP load;
+ * if it is ever hit, the response reports `tasks_truncated: true` so the
+ * limit becomes visible instead of a silent PostgREST row cap.
+ */
+const TASKS_QUERY_LIMIT = 2000;
+
+interface OutgoingEmail {
+  from: string;
+  to: string;
+  subject: string;
+  html: string;
+  text: string;
+}
 
 async function handleDigest(request: Request): Promise<Response> {
   // 1. Authenticate the scheduler ------------------------------------------
-  const secret = process.env.JOBS_RUNNER_SECRET || process.env.CRON_SECRET;
-  if (!secret) {
-    return Response.json(
-      {
-        error: "Digest ist nicht konfiguriert (CRON_SECRET fehlt).",
-        code: "DIGEST_NOT_CONFIGURED",
-      },
-      { status: 503 },
-    );
-  }
-  const authHeader = request.headers.get("authorization") ?? "";
-  if (authHeader !== `Bearer ${secret}`) {
-    return Response.json(
-      { error: "Nicht autorisiert.", code: "UNAUTHORIZED" },
-      { status: 401 },
-    );
-  }
+  const authError = requireSchedulerAuth(request);
+  if (authError) return authError;
 
   const resendKey = process.env.RESEND_API_KEY;
   if (!resendKey) {
@@ -65,10 +73,12 @@ async function handleDigest(request: Request): Promise<Response> {
 
   const fromEmail =
     process.env.DIGEST_FROM_EMAIL || "Ordilo <onboarding@resend.dev>";
-  const appUrl =
-    process.env.APP_BASE_URL || new URL(request.url).origin;
+  const appUrl = process.env.APP_BASE_URL || new URL(request.url).origin;
 
-  // 2. Find due tasks ----------------------------------------------------
+  // 2. Find due tasks ------------------------------------------------------
+  // Note: dates are UTC day boundaries. The cron fires at 06:00 UTC, where
+  // the UTC and Europe/Berlin calendar dates coincide; a manual invocation
+  // between 22:00–24:00 UTC would shift the overdue split by one Berlin day.
   const admin = createAdminClient();
   const today = new Date().toISOString().slice(0, 10);
   const horizon = new Date(
@@ -81,8 +91,10 @@ async function handleDigest(request: Request): Promise<Response> {
     .from("tasks")
     .select("id, family_id, title, due_date, priority")
     .eq("status", "open")
+    .eq("confirmed", true)
     .not("due_date", "is", null)
-    .lte("due_date", horizon);
+    .lte("due_date", horizon)
+    .limit(TASKS_QUERY_LIMIT);
 
   if (tasksError) {
     return Response.json(
@@ -90,6 +102,8 @@ async function handleDigest(request: Request): Promise<Response> {
       { status: 500 },
     );
   }
+
+  const tasksTruncated = (tasks?.length ?? 0) >= TASKS_QUERY_LIMIT;
 
   const byFamily = new Map<string, DigestTask[]>();
   for (const task of tasks ?? []) {
@@ -122,19 +136,26 @@ async function handleDigest(request: Request): Promise<Response> {
     (families ?? []).map((f) => [f.id, f.name] as const),
   );
 
-  // Resolve each distinct user's email once via the auth admin API.
-  const userIds = [...new Set((memberships ?? []).map((m) => m.user_id))];
+  // Resolve emails via paginated listUsers — one request per 1000 users
+  // total, instead of one auth-admin round trip per member.
+  const neededUsers = new Set((memberships ?? []).map((m) => m.user_id));
   const emailByUser = new Map<string, string>();
-  await Promise.all(
-    userIds.map(async (userId) => {
-      const { data } = await admin.auth.admin.getUserById(userId);
-      if (data?.user?.email) emailByUser.set(userId, data.user.email);
-    }),
-  );
+  for (let page = 1; emailByUser.size < neededUsers.size; page++) {
+    const { data, error } = await admin.auth.admin.listUsers({
+      page,
+      perPage: 1000,
+    });
+    if (error || !data || data.users.length === 0) break;
+    for (const user of data.users) {
+      if (neededUsers.has(user.id) && user.email) {
+        emailByUser.set(user.id, user.email);
+      }
+    }
+    if (data.users.length < 1000) break;
+  }
 
-  // 4. Build + send one email per member -----------------------------------
-  let emailsSent = 0;
-  let emailsFailed = 0;
+  // 4. Build all emails, then send in batches ------------------------------
+  const outgoing: OutgoingEmail[] = [];
   let familiesNotified = 0;
 
   for (const [familyId, familyTasks] of byFamily) {
@@ -156,26 +177,32 @@ async function handleDigest(request: Request): Promise<Response> {
     const subject = digestSubject(digest);
     const html = digestHtml(digest, appUrl);
     const text = digestText(digest, appUrl);
-
-    // One request per recipient (not one with many "to"s) so members
+    // One email per recipient (never a shared "to" list) so members
     // never see each other's addresses.
-    const results = await Promise.allSettled(
-      recipients.map((to) =>
-        fetch(RESEND_ENDPOINT, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${resendKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ from: fromEmail, to, subject, html, text }),
-        }).then((res) => {
-          if (!res.ok) throw new Error(`Resend ${res.status}`);
-        }),
-      ),
-    );
-    for (const result of results) {
-      if (result.status === "fulfilled") emailsSent++;
-      else emailsFailed++;
+    for (const to of recipients) {
+      outgoing.push({ from: fromEmail, to, subject, html, text });
+    }
+  }
+
+  // Resend's batch endpoint takes up to 100 emails per request — batches
+  // run sequentially, which also keeps us far below the API rate limit.
+  let emailsSent = 0;
+  let emailsFailed = 0;
+  for (let i = 0; i < outgoing.length; i += RESEND_BATCH_SIZE) {
+    const batch = outgoing.slice(i, i + RESEND_BATCH_SIZE);
+    try {
+      const response = await fetch(RESEND_BATCH_ENDPOINT, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(batch),
+      });
+      if (response.ok) emailsSent += batch.length;
+      else emailsFailed += batch.length;
+    } catch {
+      emailsFailed += batch.length;
     }
   }
 
@@ -184,6 +211,7 @@ async function handleDigest(request: Request): Promise<Response> {
     families: familiesNotified,
     emails_sent: emailsSent,
     emails_failed: emailsFailed,
+    ...(tasksTruncated ? { tasks_truncated: true } : {}),
   });
 }
 

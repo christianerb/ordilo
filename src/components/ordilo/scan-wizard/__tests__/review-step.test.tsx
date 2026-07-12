@@ -203,7 +203,35 @@ describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
     fetchSpy.mockRestore();
   });
 
-  it("flushes the confirm when unmounted mid-countdown (wizard closed)", async () => {
+  it("hands a pending countdown to onPendingAutoConfirm on unmount (owner refreshes the list)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+    const onPendingAutoConfirm = vi.fn();
+
+    const { unmount } = render(
+      <ScanReviewStep
+        documentId="doc-1"
+        onDone={vi.fn()}
+        onPendingAutoConfirm={onPendingAutoConfirm}
+      />,
+    );
+    await screen.findByTestId("review-step-autofile");
+    unmount();
+
+    // The owner callback receives the confirm job; the component itself
+    // must NOT fire its own POST in that case.
+    expect(onPendingAutoConfirm).toHaveBeenCalledWith(
+      "doc-1",
+      expect.objectContaining({ title: cleanAnalysis.title }),
+    );
+    expect(
+      fetchSpy.mock.calls.filter((args) => String(args[0]).includes("/confirm")),
+    ).toHaveLength(0);
+    fetchSpy.mockRestore();
+  });
+
+  it("flushes the confirm directly when unmounted mid-countdown without an owner callback", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));

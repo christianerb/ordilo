@@ -7,6 +7,7 @@ import { CameraStep } from "./camera-step";
 import { ScanProcessingStep } from "./processing-step";
 import { ScanReviewStep } from "./review-step";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import type { EditedAnalysisPayload } from "@/components/ordilo/review-card/helpers";
 
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
@@ -24,6 +25,11 @@ export interface ScanWizardProps {
   onRetryUpload: () => void;
   onClose: () => void;
   onReviewDone: () => void;
+  /** Owner-side flush for a zero-touch confirm pending at wizard close. */
+  onPendingAutoConfirm?: (
+    documentId: string,
+    payload: EditedAnalysisPayload,
+  ) => void;
 }
 
 /**
@@ -46,6 +52,7 @@ export function ScanWizard({
   onRetryUpload,
   onClose,
   onReviewDone,
+  onPendingAutoConfirm,
 }: ScanWizardProps) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -113,7 +120,11 @@ export function ScanWizard({
             </button>
           </div>
           <div className="flex-1 px-5 pb-10">
-            <ScanReviewStep documentId={doc.id} onDone={onReviewDone} />
+            <ScanReviewStep
+              documentId={doc.id}
+              onDone={onReviewDone}
+              onPendingAutoConfirm={onPendingAutoConfirm}
+            />
           </div>
         </div>
       )}

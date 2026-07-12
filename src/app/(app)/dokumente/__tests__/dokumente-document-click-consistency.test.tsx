@@ -23,6 +23,7 @@ vi.mock("@/lib/documents-table", () => ({
 
 import DokumentePage from "@/app/(app)/dokumente/page";
 import { ScanProvider } from "@/lib/scan/scan-context";
+import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
 
 const FAMILY_ID = "fam-click-0000-0000-0000-000000000001";
@@ -110,8 +111,10 @@ describe("DokumentePage — document card click consistency", () => {
 
       render(
         <ScanProvider>
+        <CollectionsProvider>
           <DokumentePage />
-        </ScanProvider>,
+        </CollectionsProvider>
+      </ScanProvider>,
       );
       await screen.findByTestId("document-list");
 
@@ -138,7 +141,9 @@ describe("DokumentePage — document card click consistency", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
     await screen.findByTestId("document-list");
@@ -166,7 +171,9 @@ describe("DokumentePage — document card click consistency", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
     await screen.findByTestId("document-list");

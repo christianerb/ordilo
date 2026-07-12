@@ -257,9 +257,9 @@ describe("HomeClient — Aufgaben timeline", () => {
     expect(within(list).queryByText("Anmeldung Kita")).toBeNull();
     // … and the rest are one tap away.
     const showAll = screen.getByTestId("home-tasks-show-all");
-    // 5, not 6: the underlying buckets are themselves curated
-    // (HEUTE_WICHTIG_LIMIT caps this-week at 3).
-    expect(showAll.textContent).toContain("Alle 5 Aufgaben anzeigen");
+    // The full, uncapped count — home derives it from the whole task
+    // list, not from the capped display slice.
+    expect(showAll.textContent).toContain("Alle 6 Aufgaben anzeigen");
     expect(showAll.getAttribute("href")).toBe("/aufgaben");
   });
 

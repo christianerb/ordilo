@@ -127,7 +127,7 @@ function buildHighlights(
 // Derived auto-action rows ("Ordilo wird Folgendes für dich erledigen")
 // ---------------------------------------------------------------------------
 
-function buildAutoActions(analysis: DocumentAnalysis): string[] {
+export function buildAutoActions(analysis: DocumentAnalysis): string[] {
   const actions: string[] = [];
 
   const topPerson = analysis.family_members[0];

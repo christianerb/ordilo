@@ -98,13 +98,23 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function taskListHtml(tasks: DigestTask[], accent: string): string {
+// Brand palette (mirrors the CSS variables in globals.css — email clients
+// need literal values). Warm neutrals only; see DESIGN.md's Warm Neutral
+// Rule and Apricot Scarcity Rule.
+const EMAIL_COLORS = {
+  warmWhite: "#FDFCFA",
+  graphite: "#262421",
+  mistDark: "#625D54",
+  petrol: "#305460",
+  apricot: "#E46018",
+} as const;
+
+function taskListHtml(tasks: DigestTask[]): string {
   return tasks
     .map(
-      (t) =>
-        `<li style="margin:0 0 8px 0;">` +
-        `<strong>${escapeHtml(t.title)}</strong>` +
-        `<span style="color:${accent};"> — fällig am ${
+      (t) => `<li style="margin:0 0 8px 0;">
+        <strong>${escapeHtml(t.title)}</strong>
+        <span style="color:${EMAIL_COLORS.mistDark};"> — fällig am ${
           formatGermanDate(t.due_date) || t.due_date
         }</span></li>`,
     )
@@ -113,34 +123,28 @@ function taskListHtml(tasks: DigestTask[], accent: string): string {
 
 /**
  * Minimal, inline-styled HTML body (email clients ignore stylesheets).
- * Petrol/warm-white to match the app; overdue gets the apricot accent.
+ * Warm palette matching the app; apricot appears at most ONCE (the
+ * "Überfällig" heading) per the Apricot Scarcity Rule.
  */
 export function digestHtml(digest: FamilyDigest, appUrl: string): string {
   const sections: string[] = [];
   if (digest.overdue.length > 0) {
-    sections.push(
-      `<h2 style="font-size:14px;color:#E46018;margin:20px 0 8px;">Überfällig</h2>` +
-        `<ul style="padding-left:18px;margin:0;">${taskListHtml(digest.overdue, "#E46018")}</ul>`,
-    );
+    sections.push(`
+      <h2 style="font-size:14px;color:${EMAIL_COLORS.apricot};margin:20px 0 8px;">Überfällig</h2>
+      <ul style="padding-left:18px;margin:0;">${taskListHtml(digest.overdue)}</ul>`);
   }
   if (digest.upcoming.length > 0) {
-    sections.push(
-      `<h2 style="font-size:14px;color:#305460;margin:20px 0 8px;">In den nächsten ${DIGEST_HORIZON_DAYS} Tagen</h2>` +
-        `<ul style="padding-left:18px;margin:0;">${taskListHtml(digest.upcoming, "#6B7A80")}</ul>`,
-    );
+    sections.push(`
+      <h2 style="font-size:14px;color:${EMAIL_COLORS.petrol};margin:20px 0 8px;">In den nächsten ${DIGEST_HORIZON_DAYS} Tagen</h2>
+      <ul style="padding-left:18px;margin:0;">${taskListHtml(digest.upcoming)}</ul>`);
   }
 
-  return (
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;` +
-    `background:#FDFCFA;color:#1F2A2E;padding:24px;max-width:520px;margin:0 auto;">` +
-    `<p style="font-size:15px;margin:0 0 4px;">Hallo Familie ${escapeHtml(digest.familyName)},</p>` +
-    `<p style="font-size:13px;color:#6B7A80;margin:0;">Ordilo hat eure Fristen im Blick — das steht an:</p>` +
-    sections.join("") +
-    `<p style="margin:24px 0 0;">` +
-    `<a href="${escapeHtml(appUrl)}/aufgaben" ` +
-    `style="display:inline-block;background:#305460;color:#ffffff;text-decoration:none;` +
-    `padding:10px 18px;border-radius:10px;font-size:14px;">Alle Aufgaben ansehen</a></p>` +
-    `<p style="font-size:12px;color:#9AA6AA;margin:24px 0 0;">Dein Ordilo</p>` +
-    `</div>`
-  );
+  return `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:${EMAIL_COLORS.warmWhite};color:${EMAIL_COLORS.graphite};padding:24px;max-width:520px;margin:0 auto;">
+    <p style="font-size:15px;margin:0 0 4px;">Hallo Familie ${escapeHtml(digest.familyName)},</p>
+    <p style="font-size:13px;color:${EMAIL_COLORS.mistDark};margin:0;">Ordilo hat eure Fristen im Blick — das steht an:</p>
+    ${sections.join("")}
+    <p style="margin:24px 0 0;">
+      <a href="${escapeHtml(appUrl)}/aufgaben" style="display:inline-block;background:${EMAIL_COLORS.petrol};color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:10px;font-size:14px;">Alle Aufgaben ansehen</a></p>
+    <p style="font-size:12px;color:${EMAIL_COLORS.mistDark};margin:24px 0 0;">Dein Ordilo</p>
+  </div>`;
 }

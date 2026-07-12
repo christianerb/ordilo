@@ -9,9 +9,14 @@ import type { FamilyMemberOption } from "@/lib/analysis";
 import { fetchDocumentAnalysis, fetchFamilyMembers } from "@/lib/analysis";
 import { ReviewCard } from "@/components/ordilo/review-card";
 import { ReviewCardSkeleton, ReviewCardConfirmed } from "@/components/ordilo/review-card/states";
-import { buildConfirmPayload, type EditState } from "@/components/ordilo/review-card/helpers";
+import {
+  buildConfirmPayload,
+  postConfirm,
+  type EditState,
+  type EditedAnalysisPayload,
+} from "@/components/ordilo/review-card/helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { ReviewSummary } from "@/components/ordilo/review-summary";
+import { ReviewSummary, buildAutoActions } from "@/components/ordilo/review-summary";
 
 const EMPTY_EDITS: EditState = {
   persons: new Map(),
@@ -35,24 +40,44 @@ export interface ScanReviewStepProps {
    * been shown — the wizard closes and the underlying document list is
    * already up to date. */
   onDone: () => void;
+  /**
+   * Called when the component unmounts while a zero-touch countdown is
+   * still pending (the wizard was closed mid-countdown). The OWNER (scan
+   * provider) performs the confirm and refreshes the document list, so
+   * the UI never shows an already-confirmed document as reviewable.
+   */
+  onPendingAutoConfirm?: (
+    documentId: string,
+    payload: EditedAnalysisPayload,
+  ) => void;
   className?: string;
 }
 
 /**
  * Review Step — zero-touch by default.
  *
- * A CLEAN analysis (nothing flagged uncertain, no ambiguous person match)
- * files itself: an auto-file card announces where the document is going
- * and confirms automatically after {@link AUTO_CONFIRM_DELAY_MS} — the
- * user can intercept with "Bearbeiten" or fast-forward with "Fertig".
- * Closing the wizard during the countdown still confirms (flush on
- * unmount), so the document is never left half-filed by an impatient tap.
+ * A CLEAN analysis files itself: an auto-file card announces where the
+ * document is going, lists exactly what confirming will do (including
+ * tasks about to be created), and confirms automatically after
+ * {@link AUTO_CONFIRM_DELAY_MS} — the user can intercept with
+ * "Bearbeiten" or fast-forward with "Passt so". Closing the wizard
+ * during the countdown still confirms via {@link onPendingAutoConfirm}.
+ *
+ * "Clean" means `needs_user_review === false`. That flag is
+ * deterministic: `computeNeedsUserReview` (applied on every analysis
+ * fetch) folds in EVERY low-confidence entity — persons included — so an
+ * ambiguous person match can never reach the auto-file path.
  *
  * An UNCLEAN analysis lands on the compact {@link ReviewSummary}
  * ("does this look right?") exactly as before; "Bearbeiten" hands off to
  * the full, field-by-field {@link ReviewCard}.
  */
-export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStepProps) {
+export function ScanReviewStep({
+  documentId,
+  onDone,
+  onPendingAutoConfirm,
+  className,
+}: ScanReviewStepProps) {
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,18 +88,22 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
 
   const documentIdRef = useRef(documentId);
   documentIdRef.current = documentId;
+  const onPendingAutoConfirmRef = useRef(onPendingAutoConfirm);
+  onPendingAutoConfirmRef.current = onPendingAutoConfirm;
 
   // Tracks the auto-confirm lifecycle across unmount: "pending" means the
   // countdown is still running and the confirm MUST be flushed if the
   // component disappears; anything else means it's handled.
   const autoConfirmRef = useRef<"idle" | "pending" | "handled">("idle");
-  const analysisRef = useRef<DocumentAnalysis | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   const handleConfirmRef = useRef<() => Promise<void>>(async () => {});
 
   useMountEffect(() => {
     let cancelled = false;
+    // Captured for the unmount flush so it can build the payload without
+    // depending on state that may not have flushed yet.
+    let loadedAnalysis: DocumentAnalysis | null = null;
+
     async function load() {
       const [a, members] = await Promise.all([
         fetchDocumentAnalysis(documentIdRef.current),
@@ -82,16 +111,13 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
       ]);
       if (cancelled) return;
       setAnalysis(a);
-      analysisRef.current = a;
+      loadedAnalysis = a;
       setFamilyMembers(members);
       setLoading(false);
 
-      // Zero-touch decision: a clean analysis files itself.
-      const unresolved =
-        a !== null &&
-        a.family_members.some((m) => m.confidence < LOW_CONFIDENCE_THRESHOLD) &&
-        members.length >= 2;
-      if (a && !a.needs_user_review && !unresolved) {
+      // Zero-touch decision — see the component docstring for why
+      // needs_user_review alone is a sufficient gate.
+      if (a && !a.needs_user_review) {
         setMode("auto");
         autoConfirmRef.current = "pending";
         timerRef.current = setTimeout(() => {
@@ -105,18 +131,18 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
     return () => {
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
-      // Flush: the wizard closed mid-countdown. The document is clean —
-      // file it anyway (fire-and-forget), so closing never loses the
-      // zero-touch promise. Failures are safe: the document simply stays
-      // "analyzed" and reappears under "Zum Durchsehen".
-      if (autoConfirmRef.current === "pending" && analysisRef.current) {
+      // The wizard closed mid-countdown: hand the pending confirm to the
+      // owner, which POSTs it and refreshes the document list. Failures
+      // are safe — the document simply stays "analyzed" and reappears
+      // under "Zum Durchsehen".
+      if (autoConfirmRef.current === "pending" && loadedAnalysis) {
         autoConfirmRef.current = "handled";
-        const payload = buildConfirmPayload(analysisRef.current, EMPTY_EDITS);
-        void fetch(`/api/documents/${documentIdRef.current}/confirm`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }).catch(() => {});
+        const payload = buildConfirmPayload(loadedAnalysis, EMPTY_EDITS);
+        if (onPendingAutoConfirmRef.current) {
+          onPendingAutoConfirmRef.current(documentIdRef.current, payload);
+        } else {
+          void postConfirm(documentIdRef.current, payload).catch(() => {});
+        }
       }
     };
   });
@@ -135,11 +161,7 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
     setConfirmError(null);
     try {
       const payload = buildConfirmPayload(analysis, EMPTY_EDITS);
-      const response = await fetch(`/api/documents/${documentId}/confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const response = await postConfirm(documentId, payload);
       if (!response.ok) {
         let errorBody: { error?: string };
         try {
@@ -207,7 +229,7 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
   }
 
   if (mode === "auto") {
-    const category = analysis.suggested_category?.trim();
+    const autoActions = buildAutoActions(analysis);
     return (
       <div
         className={className}
@@ -227,26 +249,57 @@ export function ScanReviewStep({ documentId, onDone, className }: ScanReviewStep
               Sieht gut aus — Ordilo sortiert das ein
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              <span className="font-medium text-foreground">{analysis.title}</span>
-              {category ? <> · landet in „{category}&ldquo;</> : null}
+              {analysis.title}
             </p>
           </div>
 
+          {/* Full transparency: exactly what confirming will do — the
+              same list ReviewSummary shows, so tasks are never created
+              sight-unseen. */}
+          <ul
+            className="w-full max-w-xs space-y-1.5 text-left"
+            data-testid="autofile-actions"
+          >
+            {autoActions.map((action, i) => (
+              <li
+                key={i}
+                className="flex items-center gap-2.5 text-sm text-foreground"
+              >
+                <span
+                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]/10"
+                  aria-hidden="true"
+                >
+                  <Check
+                    className="size-3"
+                    style={{ color: "var(--petrol)" }}
+                    strokeWidth={2.5}
+                  />
+                </span>
+                {action}
+              </li>
+            ))}
+          </ul>
+
           {/* Countdown — a shrinking petrol bar; when it reaches zero the
-              document confirms itself. Pure state-conveying motion. */}
+              document confirms itself. The animation lives in a class so
+              the prefers-reduced-motion override can actually win (an
+              inline style would beat every stylesheet rule). */}
           <div
             className="h-1 w-40 overflow-hidden rounded-full bg-[var(--sand-light)]"
             aria-hidden="true"
           >
             <div
-              className="h-full rounded-full bg-[var(--petrol)] motion-reduce:animate-none"
-              style={{
-                animation: `autofile-countdown ${AUTO_CONFIRM_DELAY_MS}ms linear forwards`,
-              }}
+              className="autofile-countdown-bar h-full rounded-full bg-[var(--petrol)]"
               data-testid="autofile-countdown"
             />
           </div>
-          <style>{`@keyframes autofile-countdown { from { width: 100%; } to { width: 0%; } }`}</style>
+          <style>{`
+            @keyframes autofile-countdown { from { width: 100%; } to { width: 0%; } }
+            .autofile-countdown-bar { animation: autofile-countdown ${AUTO_CONFIRM_DELAY_MS}ms linear forwards; }
+            @media (prefers-reduced-motion: reduce) {
+              .autofile-countdown-bar { animation: none; width: 100%; }
+            }
+          `}</style>
         </div>
 
         <div className="mt-6 flex flex-col gap-2.5">

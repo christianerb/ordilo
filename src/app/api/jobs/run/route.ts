@@ -1,5 +1,6 @@
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runPendingJobs } from "@/lib/jobs";
+import { requireSchedulerAuth } from "@/lib/scheduler-auth";
 
 /**
  * POST /api/jobs/run — the pipeline job worker.
@@ -24,24 +25,8 @@ import { runPendingJobs } from "@/lib/jobs";
  */
 export async function POST(request: Request): Promise<Response> {
   // 1. Authenticate the scheduler ------------------------------------------
-  const secret = process.env.JOBS_RUNNER_SECRET || process.env.CRON_SECRET;
-  if (!secret) {
-    return Response.json(
-      {
-        error: "Job-Runner ist nicht konfiguriert (JOBS_RUNNER_SECRET fehlt).",
-        code: "JOBS_NOT_CONFIGURED",
-      },
-      { status: 503 },
-    );
-  }
-
-  const authHeader = request.headers.get("authorization") ?? "";
-  if (authHeader !== `Bearer ${secret}`) {
-    return Response.json(
-      { error: "Nicht autorisiert.", code: "UNAUTHORIZED" },
-      { status: 401 },
-    );
-  }
+  const authError = requireSchedulerAuth(request);
+  if (authError) return authError;
 
   // 2. Parse optional limit ---------------------------------------------------
   let limit = 5;
@@ -72,7 +57,10 @@ export async function POST(request: Request): Promise<Response> {
 /**
  * GET /api/jobs/run — Vercel Cron invokes scheduled paths with GET (and
  * no body), so GET runs the worker with the default limit. Same auth as
- * POST.
+ * POST; the endpoint is idempotent, so an authed probe merely claims due
+ * jobs early. NOTE: vercel.json does not schedule this path yet — the
+ * pipeline still runs synchronously; see docs/OPERATIONS.md for how to
+ * activate async mode.
  */
 export async function GET(request: Request): Promise<Response> {
   return POST(request);

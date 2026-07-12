@@ -7,12 +7,12 @@ import { SidebarNav } from "@/components/ordilo/app-shell-sidebar";
 import {
   readCollapsedPreference,
   shouldShowNav,
-  type SidebarCollection,
   type SidebarProfile,
   writeCollapsedPreference,
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ScanProvider, useScanActions } from "@/lib/scan/scan-context";
+import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { ActiveSearchProvider, useActiveSearch } from "@/lib/search/active-search-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,9 @@ export function AppShell({
   return (
     <ActiveSearchProvider>
       <ScanProvider>
-        <AppShellContent>{children}</AppShellContent>
+        <CollectionsProvider>
+          <AppShellContent>{children}</AppShellContent>
+        </CollectionsProvider>
       </ScanProvider>
     </ActiveSearchProvider>
   );
@@ -58,11 +60,10 @@ function AppShellContent({
   const { submitQuery } = useActiveSearch();
   const [collapsed, setCollapsed] = useState(false);
 
-  // Collections + profile are fetched client-side (once on mount) instead
-  // of in the server layout. This makes the layout a static pass-through,
-  // eliminating 3 DB queries per navigation and making route transitions
-  // much faster.
-  const [collections, setCollections] = useState<SidebarCollection[]>([]);
+  // Profile is fetched client-side (once on mount) instead of in the
+  // server layout — the layout stays a static pass-through and route
+  // transitions stay fast. Collections live in CollectionsProvider
+  // (shared with the Familienbuch folder list).
   const [profile, setProfile] = useState<SidebarProfile | undefined>(undefined);
 
   useMountEffect(() => {
@@ -85,14 +86,6 @@ function AppShellContent({
           familyName: family.name,
           email: user?.email ?? null,
         });
-        const { data: collectionRows } = await supabase
-          .from("collections")
-          .select("id, name, icon, color")
-          .eq("family_id", family.id)
-          .order("sort_order", { ascending: true });
-        if (collectionRows) {
-          setCollections(collectionRows as SidebarCollection[]);
-        }
       }
     })();
   });
@@ -119,7 +112,6 @@ function AppShellContent({
       {showNav && (
         <SidebarNav
           pathname={pathname}
-          collections={collections}
           profile={profile}
           collapsed={collapsed}
           onToggleCollapse={toggleCollapsed}

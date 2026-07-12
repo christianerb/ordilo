@@ -29,6 +29,7 @@ vi.mock("@/lib/documents-table", () => ({
 
 import DokumentePage from "@/app/(app)/dokumente/page";
 import { ScanProvider } from "@/lib/scan/scan-context";
+import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
 import { triggerOcr } from "@/lib/ocr";
 
@@ -129,7 +130,9 @@ describe("DokumentePage failed-document retry routing", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -170,7 +173,9 @@ describe("DokumentePage failed-document retry routing", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -209,7 +214,9 @@ describe("DokumentePage failed-document retry routing", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
@@ -253,7 +260,9 @@ describe("DokumentePage failed-document retry routing", () => {
 
     render(
       <ScanProvider>
+        <CollectionsProvider>
         <DokumentePage />
+      </CollectionsProvider>
       </ScanProvider>,
     );
 
