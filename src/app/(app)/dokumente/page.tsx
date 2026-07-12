@@ -1,11 +1,8 @@
 "use client";
 
-import Link from "next/link";
-
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   Camera,
-  MoreHorizontal,
   UploadCloud,
   Loader2,
   ScanLine,
@@ -26,19 +23,16 @@ import {
   Search,
   X,
   ArrowUpDown,
+  Plus,
   type LucideIcon,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
+import { getCollectionIcon } from "@/lib/schemas/collections";
+import { createCollection } from "@/app/(app)/sammlungen/actions";
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { DocumentsTable } from "@/components/ordilo/documents-table";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import {
   Sheet,
   SheetContent,
@@ -50,7 +44,7 @@ import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { UploadProgressCard } from "@/components/ordilo/scan-wizard/upload-progress";
 import { useScan } from "@/lib/scan/scan-context";
-import { useScanActions } from "@/lib/scan/scan-context";
+import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import type { Database } from "@/types/database";
 
@@ -86,6 +80,14 @@ const FOLDER_ORDER: string[] = [
 // ---------------------------------------------------------------------------
 
 type DocRow = Database["public"]["Tables"]["documents"]["Row"];
+
+/** The slice of a collection row the folder list needs. */
+interface CollectionInfo {
+  id: string;
+  name: string;
+  icon: string | null;
+  color: string | null;
+}
 
 /** Fallback group for documents without a category. */
 const UNCATEGORIZED = "Sonstiges";
@@ -244,7 +246,13 @@ function FolderSection({
         )}
       </button>
 
-      {isOpen && (
+      {isOpen && docs.length === 0 && (
+        <p className="mt-1.5 rounded-ordilo-sm border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground">
+          Noch leer — neue Scans mit „{label}&ldquo; landen automatisch hier.
+        </p>
+      )}
+
+      {isOpen && docs.length > 0 && (
         <div className="mt-1.5 grid gap-1.5 pl-0.5 md:grid-cols-2">
           {docs.map((doc) => (
             <DocumentCard
@@ -312,9 +320,9 @@ export default function DokumentePage() {
     handleDeleteDocument,
     openWizard,
   } = useScan();
-  const { openCreateNote } = useScanActions();
 
   const [view, setView] = useState<"folder" | "table">("folder");
+  const [collections, setCollections] = useState<CollectionInfo[]>([]);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "confirmed">("all");
@@ -333,7 +341,40 @@ export default function DokumentePage() {
     if (docId) {
       void openDocument(docId);
     }
+    // Collections are part of the folder list (empty ones included) —
+    // RLS scopes the query to the user's family.
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("collections")
+        .select("id, name, icon, color")
+        .order("sort_order", { ascending: true });
+      if (data) setCollections(data as CollectionInfo[]);
+    })();
   });
+
+  const handleCreateCollection = useCallback(async (name: string) => {
+    const result = await createCollection({
+      name,
+      icon: "file-text",
+      color: "petrol",
+    });
+    if (!result.success) {
+      toast.error(result.error);
+      return false;
+    }
+    setCollections((prev) => [
+      ...prev,
+      {
+        id: result.data.id,
+        name: result.data.name,
+        icon: result.data.icon,
+        color: result.data.color,
+      },
+    ]);
+    toast.success(`Sammlung „${result.data.name}" angelegt`);
+    return true;
+  }, []);
 
   const hasDocuments = documents.length > 0;
   const hasActiveUploads = uploads.length > 0;
@@ -418,6 +459,44 @@ export default function DokumentePage() {
     () => orderCategories(confirmedGroups),
     [confirmedGroups],
   );
+
+  // The folder list = document categories ∪ collections. A collection is
+  // a first-class folder even while empty, so "+ Neue Sammlung" has an
+  // immediate, visible result. Collections contribute their chosen icon;
+  // plain categories fall back to their dominant document-type icon.
+  // Empty collections sort before "Sonstiges" and are hidden while a
+  // search query is active (they can't contain matches).
+  const folderEntries = useMemo(() => {
+    const collectionByName = new Map(
+      collections.map((c) => [c.name.toLowerCase(), c]),
+    );
+    const entries: { label: string; icon: LucideIcon; docs: DocRow[] }[] = [];
+    for (const key of categoryOrder) {
+      const docs = confirmedGroups.get(key)!;
+      const collection = collectionByName.get(key.toLowerCase());
+      entries.push({
+        label: key,
+        icon: collection
+          ? getCollectionIcon(collection.icon)
+          : dominantTypeIcon(docs),
+        docs,
+      });
+    }
+    if (!searchQuery.trim()) {
+      const known = new Set(entries.map((e) => e.label.toLowerCase()));
+      const empty = collections
+        .filter((c) => !known.has(c.name.toLowerCase()))
+        .map((c) => ({
+          label: c.name,
+          icon: getCollectionIcon(c.icon),
+          docs: [] as DocRow[],
+        }));
+      const sonstigesIdx = entries.findIndex((e) => e.label === UNCATEGORIZED);
+      if (sonstigesIdx === -1) entries.push(...empty);
+      else entries.splice(sonstigesIdx, 0, ...empty);
+    }
+    return entries;
+  }, [categoryOrder, confirmedGroups, collections, searchQuery]);
 
   // Available types for filter chips (from all documents, not filtered)
   const availableTypes = useMemo(() => {
@@ -544,53 +623,9 @@ export default function DokumentePage() {
               </div>
             )}
 
-            {/* Sammlungen live under the Familienbuch tab now — quiet
-                link so mobile users (no sidebar) can still reach them. */}
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="shrink-0 text-muted-foreground"
-            >
-              <Link href="/sammlungen">
-                <Folder className="size-4" aria-hidden="true" />
-                Sammlungen
-              </Link>
-            </Button>
-
-            {/* One primary action (Scannen); upload + note live in a
-                quiet overflow menu — power-user paths, visually secondary
-                so the header reads as ONE way to add. */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0 bg-white/80 px-2.5"
-                  aria-label="Weitere Optionen"
-                  data-testid="documents-more-menu"
-                >
-                  <MoreHorizontal className="size-4" aria-hidden="true" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onSelect={() => pdfInputRef.current?.click()}
-                >
-                  <UploadCloud className="size-4" aria-hidden="true" />
-                  PDF hochladen
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={openCreateNote}
-                  data-testid="open-create-note-button"
-                >
-                  <FileText className="size-4" aria-hidden="true" />
-                  Notiz anlegen
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-
+            {/* ONE way to add: the scanner. Upload, gallery and notes all
+                live inside the wizard — the decision happens where it's
+                needed, not before. */}
             <Button
               type="button"
               size="sm"
@@ -809,50 +844,40 @@ export default function DokumentePage() {
                 </div>
               )}
 
-              {/* Folder sections for confirmed documents */}
-              {filteredConfirmedDocs.length > 0 && (
+              {/* Folder sections — categories and collections, ONE list */}
+              {folderEntries.length > 0 && (
                 <div className="space-y-1.5" data-testid="folder-list">
                   <h2 className="text-xs font-semibold text-muted-foreground">
                     Im Familienbuch
                   </h2>
-                  {categoryOrder.map((key) => (
+                  {folderEntries.map((entry) => (
                     <FolderSection
-                      key={key}
-                      label={key}
-                      icon={dominantTypeIcon(confirmedGroups.get(key)!)}
-                      docs={confirmedGroups.get(key)!}
+                      key={entry.label}
+                      label={entry.label}
+                      icon={entry.icon}
+                      docs={entry.docs}
                       expandedDocId={expandedDocId}
                       openDocument={openDocument}
                       closeDocument={closeDocument}
                       onRetryFailed={handleRetryFailed}
                       onDeleteDocument={(id) => setDeleteConfirmId(id)}
-                      defaultOpen={autoOpenFolder === key ? true : undefined}
+                      defaultOpen={autoOpenFolder === entry.label ? true : undefined}
                     />
                   ))}
+                  <NewCollectionRow onCreate={handleCreateCollection} />
                 </div>
               )}
             </>
           )}
         </div>
       ) : (
-        <div className="flex flex-col items-center">
-          <EmptyState
-            title="Noch nichts gescannt"
-            description="Halte die Kamera auf ein Dokument — oder leg gleich eine Notiz an."
-            icon={ScanLine}
-            actionLabel="Dokument scannen"
-            onAction={openWizard}
-          />
-          <button
-            type="button"
-            onClick={openCreateNote}
-            className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol)]/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            data-testid="empty-state-create-note"
-          >
-            <FileText className="size-4" aria-hidden="true" />
-            Notiz anlegen
-          </button>
-        </div>
+        <EmptyState
+          title="Noch nichts gescannt"
+          description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
+          icon={ScanLine}
+          actionLabel="Dokument scannen"
+          onAction={openWizard}
+        />
       )}
 
       {/* Compact upload link at the bottom */}
@@ -950,6 +975,102 @@ function HeaderStatPill({
         </span>
       )}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NewCollectionRow — inline "+ Neue Sammlung" at the end of the folder list
+// ---------------------------------------------------------------------------
+
+/**
+ * Creating a Sammlung happens right where Sammlungen live: a quiet dashed
+ * row at the end of the folder list expands into a single name field.
+ * Icon and color get sensible defaults — anyone who cares can refine them
+ * in the sidebar's full collection form later.
+ */
+function NewCollectionRow({
+  onCreate,
+}: {
+  onCreate: (name: string) => Promise<boolean>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    const ok = await onCreate(trimmed);
+    setSaving(false);
+    if (ok) {
+      setName("");
+      setOpen(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex w-full items-center gap-2.5 rounded-ordilo-sm border border-dashed border-border px-3 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:border-[var(--petrol)]/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        data-testid="new-collection-button"
+      >
+        <Plus className="size-4 shrink-0" aria-hidden="true" />
+        Neue Sammlung
+      </button>
+    );
+  }
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        void handleSubmit();
+      }}
+      className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-card px-3 py-2 shadow-card"
+      data-testid="new-collection-form"
+    >
+      <Folder className="size-4 shrink-0 text-[var(--petrol)]" aria-hidden="true" />
+      {/* autoFocus is intentional: the row only renders after an explicit
+          tap on "Neue Sammlung" — focusing the field is the expected next
+          step, not a surprise. */}
+      <input
+        type="text"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Name der Sammlung"
+        aria-label="Name der Sammlung"
+        maxLength={60}
+        autoFocus
+        className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+        data-testid="new-collection-name-input"
+      />
+      <Button
+        type="submit"
+        size="sm"
+        disabled={!name.trim() || saving}
+        data-testid="new-collection-submit"
+      >
+        {saving ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        ) : (
+          "Anlegen"
+        )}
+      </Button>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          setName("");
+        }}
+        aria-label="Abbrechen"
+        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <X className="size-4" aria-hidden="true" />
+      </button>
+    </form>
   );
 }
 

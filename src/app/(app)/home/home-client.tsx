@@ -163,6 +163,13 @@ export function HomeClient({
   const totalTasks = ueberfaellig.length + heuteWichtig.length + fristen.length;
   const hasTasks = totalTasks > 0;
 
+  // Priority order: overdue → this week → later. Only the top few show;
+  // the rest are one tap away ("Alle anzeigen").
+  const HOME_TASK_LIMIT = 3;
+  const orderedTasks = [...ueberfaellig, ...heuteWichtig, ...fristen];
+  const nextTasks = orderedTasks.slice(0, HOME_TASK_LIMIT);
+  const hiddenTaskCount = totalTasks - nextTasks.length;
+
   const isFirstVisit =
     !hasTasks &&
     analyzedDocuments.length === 0 &&
@@ -313,67 +320,34 @@ export function HomeClient({
             </section>
           )}
 
-          {/* Aufgaben — full width, task cards keep their anatomy */}
+          {/* Aufgaben — the screen answers ONE question: "was brennt?"
+              Only the next few deadlines appear (overdue first); the full
+              list lives one tap away on /aufgaben. */}
           {hasTasks && (
             <section data-testid="home-section-aufgaben" className="space-y-3">
-              <h2 className="text-base font-semibold text-foreground">Aufgaben</h2>
-              <div className="space-y-3">
-                {ueberfaellig.length > 0 && (
-                  <TaskSubGroup
-                    label="Überfällig"
-                    subtitle="Ordilo hat ein paar Fristen für dich im Blick — hier kannst du sie jetzt erledigen."
-                    testId="home-tasks-ueberfaellig"
-                  >
-                    <div className="space-y-2 stagger-children">
-                      {ueberfaellig.map((task) => (
-                        <TaskCard
-                          key={task.id}
-                          task={toTaskCardData(task)}
-                          onToggleDone={(newStatus) =>
-                            handleToggleDone(task.id, newStatus)
-                          }
-                          onDismiss={() => handleDismiss(task.id)}
-                          showConfidence={false}
-                        />
-                      ))}
-                    </div>
-                  </TaskSubGroup>
-                )}
-                {heuteWichtig.length > 0 && (
-                  <TaskSubGroup label="Diese Woche" testId="home-tasks-diese-woche">
-                    <div className="space-y-2 stagger-children">
-                      {heuteWichtig.map((task) => (
-                        <TaskCard
-                          key={task.id}
-                          task={toTaskCardData(task)}
-                          onToggleDone={(newStatus) =>
-                            handleToggleDone(task.id, newStatus)
-                          }
-                          onDismiss={() => handleDismiss(task.id)}
-                          showConfidence={false}
-                        />
-                      ))}
-                    </div>
-                  </TaskSubGroup>
-                )}
-                {fristen.length > 0 && (
-                  <TaskSubGroup label="Später" testId="home-tasks-spaeter">
-                    <div className="space-y-2 stagger-children">
-                      {fristen.map((task) => (
-                        <TaskCard
-                          key={task.id}
-                          task={toTaskCardData(task)}
-                          onToggleDone={(newStatus) =>
-                            handleToggleDone(task.id, newStatus)
-                          }
-                          onDismiss={() => handleDismiss(task.id)}
-                          showConfidence={false}
-                        />
-                      ))}
-                    </div>
-                  </TaskSubGroup>
-                )}
+              <h2 className="text-base font-semibold text-foreground">Als Nächstes</h2>
+              <div className="space-y-2 stagger-children" data-testid="home-tasks-next">
+                {nextTasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={toTaskCardData(task)}
+                    onToggleDone={(newStatus) =>
+                      handleToggleDone(task.id, newStatus)
+                    }
+                    onDismiss={() => handleDismiss(task.id)}
+                    showConfidence={false}
+                  />
+                ))}
               </div>
+              {hiddenTaskCount > 0 && (
+                <Link
+                  href="/aufgaben"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                  data-testid="home-tasks-show-all"
+                >
+                  Alle {totalTasks} Aufgaben anzeigen
+                </Link>
+              )}
             </section>
           )}
 
@@ -503,33 +477,6 @@ function BentoDocTile({
         <p className="text-xs tabular-nums text-muted-foreground">{relativeTime}</p>
       )}
     </Link>
-  );
-}
-
-/**
- * A labeled subgroup within the Aufgaben timeline.
- */
-function TaskSubGroup({
-  label,
-  subtitle,
-  testId,
-  children,
-}: {
-  label: string;
-  subtitle?: string;
-  testId: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div data-testid={testId} className="space-y-2">
-      <div>
-        <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
-        {subtitle && (
-          <p className="text-xs text-muted-foreground/80">{subtitle}</p>
-        )}
-      </div>
-      {children}
-    </div>
   );
 }
 
