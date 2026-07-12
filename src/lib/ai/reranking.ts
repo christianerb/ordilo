@@ -19,6 +19,20 @@ import type { SearchResult } from "@/lib/schemas/search";
 /** Maximum results to send to the LLM for re-ranking. */
 const RERANK_TOP_K = 10;
 
+/**
+ * Skip re-ranking entirely below this result count — with three or fewer
+ * results there is nothing meaningful to reorder, and skipping saves a
+ * full LLM roundtrip on the user's critical path.
+ */
+const RERANK_MIN_RESULTS = 4;
+
+/**
+ * Max user-visible latency the re-rank may add (ms). On timeout the
+ * original retrieval order is used — re-ranking is a quality bonus and
+ * must never be the reason an answer feels slow.
+ */
+const RERANK_BUDGET_MS = 1200;
+
 /** Result of re-ranking: the re-ranked results with LLM scores. */
 export interface RerankedResult {
   result: SearchResult;
@@ -44,7 +58,7 @@ export async function rerankResults(
   query: string,
   results: SearchResult[],
 ): Promise<SearchResult[]> {
-  if (results.length <= 1) return results;
+  if (results.length < RERANK_MIN_RESULTS) return results;
 
   // Truncate to top-K (no point re-ranking 50 results — the bottom ones
   // are unlikely to become relevant).
@@ -78,12 +92,18 @@ Antworte NUR im Format "NR:SCORE" pro Zeile, z.B.:
 
 Keine Erklaerung, nur die Bewertungen.`;
 
-    const response = await client.chat.completions.create({
-      model: CHAT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 200,
-      temperature: 0,
-    });
+    const response = await Promise.race([
+      client.chat.completions.create({
+        model: CHAT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+        temperature: 0,
+      }),
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), RERANK_BUDGET_MS),
+      ),
+    ]);
+    if (!response) return results;
 
     const text = response.choices[0]?.message?.content ?? "";
 

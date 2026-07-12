@@ -59,6 +59,9 @@ export const RELEVANCE_THRESHOLD = 0.3;
 /** How many days ahead to look for upcoming task deadlines. */
 export const TASK_DEADLINE_WINDOW_DAYS = 7;
 
+/** Max user-visible latency the LLM query expansion may add (ms). */
+export const EXPANSION_BUDGET_MS = 700;
+
 // ---------------------------------------------------------------------------
 // Type alias for the server client (avoids importing the concrete factory
 // here, which would couple this module to next/headers).
@@ -67,6 +70,57 @@ export const TASK_DEADLINE_WINDOW_DAYS = 7;
 type ServerClient = Awaited<
   ReturnType<typeof import("@/lib/supabase/server").createClient>
 >;
+
+// ---------------------------------------------------------------------------
+// Query embedding cache
+// ---------------------------------------------------------------------------
+
+/**
+ * Small in-memory TTL cache for query embeddings.
+ *
+ * One user search triggers the SAME query embedding in up to two places
+ * (semantic chunk search + semantic node search in the graph), and chat
+ * follow-ups often repeat the query verbatim. Caching turns those into a
+ * single OpenAI roundtrip. Scope: per server instance, 60s TTL, 100
+ * entries — a latency dedupe, not a persistence layer.
+ */
+const EMBEDDING_CACHE_TTL_MS = 60_000;
+const EMBEDDING_CACHE_MAX = 100;
+const embeddingCache = new Map<
+  string,
+  { promise: Promise<number[]>; expires: number }
+>();
+
+/**
+ * Resolve the query embedding, deduplicating concurrent and repeated
+ * requests for the same query. Failures are evicted immediately so a
+ * transient OpenAI error is not cached.
+ */
+export function getQueryEmbedding(query: string): Promise<number[]> {
+  const key = query.trim().toLowerCase();
+  const now = Date.now();
+  const cached = embeddingCache.get(key);
+  if (cached && cached.expires > now) return cached.promise;
+
+  const promise = generateQueryEmbedding(query);
+  embeddingCache.set(key, { promise, expires: now + EMBEDDING_CACHE_TTL_MS });
+  promise.catch(() => embeddingCache.delete(key));
+
+  // Bounded size: evict the oldest entries.
+  if (embeddingCache.size > EMBEDDING_CACHE_MAX) {
+    for (const k of embeddingCache.keys()) {
+      embeddingCache.delete(k);
+      if (embeddingCache.size <= EMBEDDING_CACHE_MAX) break;
+    }
+  }
+
+  return promise;
+}
+
+/** Test helper: reset the query-embedding cache between test cases. */
+export function clearQueryEmbeddingCache(): void {
+  embeddingCache.clear();
+}
 
 // ---------------------------------------------------------------------------
 // Auto mode resolution
@@ -110,8 +164,8 @@ export async function semanticSearch(
   query: string,
   familyId: string,
 ): Promise<SearchResult[]> {
-  // 1. Embed the query.
-  const queryEmbedding = await generateQueryEmbedding(query);
+  // 1. Embed the query (deduped across semantic + graph paths).
+  const queryEmbedding = await getQueryEmbedding(query);
   const vectorString = embeddingToVectorString(queryEmbedding);
 
   // 2. Call the semantic_search RPC.
@@ -434,10 +488,18 @@ export async function graphSearch(
 
   // 1b. Query expansion — generate synonyms for better graph matching.
   //     "Kita" → ["Kindergarten", "Krippe", "Tagesstaette"] etc.
+  //     Time-boxed: this is an LLM call, and recall bonus must never cost
+  //     more than EXPANSION_BUDGET_MS of user-visible latency. On timeout
+  //     the search simply runs with the original terms.
   let expandedTerms: string[] = [];
   try {
-    const expanded = await expandQuery(query);
-    expandedTerms = expanded.expansions;
+    const expanded = await Promise.race([
+      expandQuery(query),
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), EXPANSION_BUDGET_MS),
+      ),
+    ]);
+    if (expanded) expandedTerms = expanded.expansions;
   } catch {
     // Graceful degradation — search with original query only
   }
@@ -590,7 +652,7 @@ async function graphTraversalSearch(
   // (only if label_embedding column has data)
   let semanticNodes: Array<{ id: string; type: string; label: string }> = [];
   try {
-    const queryEmbedding = await generateQueryEmbedding(query);
+    const queryEmbedding = await getQueryEmbedding(query);
     const vectorStr = embeddingToVectorString(queryEmbedding);
     const { data: semNodes } = await serverClient
       .rpc("semantic_node_search", {
