@@ -153,7 +153,7 @@ function buildAutoActions(analysis: DocumentAnalysis): string[] {
   }
 
   if (analysis.suggested_category && analysis.suggested_category.trim()) {
-    actions.push(`Tag "${analysis.suggested_category}" hinzufügen`);
+    actions.push(`In „${analysis.suggested_category}" einsortieren`);
   }
 
   return actions;

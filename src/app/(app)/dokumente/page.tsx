@@ -87,14 +87,55 @@ const FOLDER_ORDER: string[] = [
 
 type DocRow = Database["public"]["Tables"]["documents"]["Row"];
 
-function groupByType(docs: DocRow[]): Map<string, DocRow[]> {
+/** Fallback group for documents without a category. */
+const UNCATEGORIZED = "Sonstiges";
+
+/**
+ * Group documents by CATEGORY (= Sammlung) — the ONE visible order.
+ * Document type is demoted to an icon/filter: each group's icon derives
+ * from its dominant document type, so folders stay visually scannable
+ * without a second competing taxonomy.
+ */
+function groupByCategory(docs: DocRow[]): Map<string, DocRow[]> {
   const groups = new Map<string, DocRow[]>();
   for (const doc of docs) {
-    const type = doc.document_type ?? "other";
-    if (!groups.has(type)) groups.set(type, []);
-    groups.get(type)!.push(doc);
+    const category = doc.category?.trim() || UNCATEGORIZED;
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category)!.push(doc);
   }
   return groups;
+}
+
+/** The icon of a group's most common document type. */
+function dominantTypeIcon(docs: DocRow[]): LucideIcon {
+  const counts = new Map<string, number>();
+  for (const doc of docs) {
+    const type = doc.document_type ?? "other";
+    counts.set(type, (counts.get(type) ?? 0) + 1);
+  }
+  let best = "other";
+  let bestCount = 0;
+  for (const [type, count] of counts) {
+    if (count > bestCount) {
+      best = type;
+      bestCount = count;
+    }
+  }
+  return (FOLDER_CONFIG[best] ?? FOLDER_CONFIG.other).icon;
+}
+
+/**
+ * Category display order: biggest groups first, "Sonstiges" always last.
+ */
+function orderCategories(groups: Map<string, DocRow[]>): string[] {
+  return [...groups.keys()].sort((a, b) => {
+    if (a === UNCATEGORIZED) return 1;
+    if (b === UNCATEGORIZED) return -1;
+    return (
+      (groups.get(b)?.length ?? 0) - (groups.get(a)?.length ?? 0) ||
+      a.localeCompare(b)
+    );
+  });
 }
 
 function getLibraryMoment({
@@ -147,7 +188,8 @@ function getLibraryMoment({
 // ---------------------------------------------------------------------------
 
 function FolderSection({
-  folderKey,
+  label,
+  icon: Icon,
   docs,
   expandedDocId,
   openDocument,
@@ -156,7 +198,8 @@ function FolderSection({
   onDeleteDocument,
   defaultOpen,
 }: {
-  folderKey: string;
+  label: string;
+  icon: LucideIcon;
   docs: DocRow[];
   expandedDocId: string | null;
   openDocument: (documentId: string) => Promise<void>;
@@ -166,11 +209,9 @@ function FolderSection({
   defaultOpen?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen ?? false);
-  const config = FOLDER_CONFIG[folderKey] ?? FOLDER_CONFIG.other;
-  const Icon = config.icon;
 
   return (
-    <div data-testid={`folder-${folderKey}`}>
+    <div data-testid={`folder-${label}`}>
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
@@ -189,7 +230,7 @@ function FolderSection({
           />
         </div>
         <span className="flex-1 text-sm font-medium text-foreground">
-          {config.label}
+          {label}
         </span>
         <span
           className="text-xs font-medium text-muted-foreground tabular-nums"
@@ -368,10 +409,14 @@ export default function DokumentePage() {
     return { reviewDocs: review, confirmedDocs: confirmed };
   }, [filteredDocuments]);
 
-  // Group filtered confirmed documents by type.
+  // Group filtered confirmed documents by category (= Sammlung).
   const confirmedGroups = useMemo(
-    () => groupByType(filteredConfirmedDocs),
+    () => groupByCategory(filteredConfirmedDocs),
     [filteredConfirmedDocs],
+  );
+  const categoryOrder = useMemo(
+    () => orderCategories(confirmedGroups),
+    [confirmedGroups],
   );
 
   // Available types for filter chips (from all documents, not filtered)
@@ -388,7 +433,7 @@ export default function DokumentePage() {
   const autoOpenFolder = useMemo(() => {
     if (!expandedDocId) return null;
     const doc = documents.find((d) => d.id === expandedDocId);
-    return doc?.document_type ?? "other";
+    return doc?.category?.trim() || UNCATEGORIZED;
   }, [expandedDocId, documents]);
 
   const libraryMoment = useMemo(
@@ -770,10 +815,11 @@ export default function DokumentePage() {
                   <h2 className="text-xs font-semibold text-muted-foreground">
                     Im Familienbuch
                   </h2>
-                  {FOLDER_ORDER.filter((key) => confirmedGroups.has(key)).map((key) => (
+                  {categoryOrder.map((key) => (
                     <FolderSection
                       key={key}
-                      folderKey={key}
+                      label={key}
+                      icon={dominantTypeIcon(confirmedGroups.get(key)!)}
                       docs={confirmedGroups.get(key)!}
                       expandedDocId={expandedDocId}
                       openDocument={openDocument}

@@ -414,7 +414,8 @@ describe("ReviewCard", () => {
     expect(screen.getByTestId("review-amounts")).toBeDefined();
     expect(screen.getByTestId("review-tasks")).toBeDefined();
     expect(screen.getByTestId("review-category")).toBeDefined();
-    expect(screen.getByTestId("review-tags")).toBeDefined();
+    // Tags are invisible search fuel — never rendered in the review card.
+    expect(screen.queryByTestId("review-tags")).toBeNull();
   });
 
   it("does not show the redundant review intro sentence", async () => {
@@ -1069,20 +1070,16 @@ describe("ReviewCard", () => {
   // Tags
   // ---------------------------------------------------------------------------
 
-  it("renders tags as pills", async () => {
-    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
-
-    render(
-      <ReviewCard documentId="doc-1" status="analyzed" />,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("review-tags")).toBeDefined();
+  it("does not render tags (invisible search fuel, not review content)", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...fullAnalysis,
+      tags: ["strom", "2026"],
     });
-
-    const tagsSection = screen.getByTestId("review-tags");
-    expect(within(tagsSection).getByText("Anmeldung")).toBeDefined();
-    expect(within(tagsSection).getByText("Kita")).toBeDefined();
-    expect(within(tagsSection).getByText("Emma")).toBeDefined();
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+    expect(screen.queryByTestId("review-tags")).toBeNull();
+    expect(screen.queryByText("strom")).toBeNull();
   });
 });

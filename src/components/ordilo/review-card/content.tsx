@@ -403,21 +403,9 @@ export function ReviewCardContent({
           </span>
         </FieldRow>
 
-        {/* Tags */}
-        {analysis.tags.length > 0 && (
-          <FieldRow icon={Tag} label="Tags" testId="review-tags">
-            <div className="flex flex-wrap gap-2">
-              {analysis.tags.map((tag, i) => (
-                <span
-                  key={i}
-                  className="rounded-full bg-[var(--sand-light)] px-2.5 py-1 text-xs font-medium text-[var(--mist-dark)]"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </FieldRow>
-        )}
+        {/* Tags are deliberately NOT rendered — they are invisible search
+            fuel (stored + indexed), not something a person needs to review.
+            One visible order: the category (= Sammlung) above. */}
       </div>
 
       {/* Confirm error */}
