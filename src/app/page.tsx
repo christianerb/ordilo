@@ -1,12 +1,14 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPostAuthDestination } from "@/lib/auth/routing";
+import { LandingPage } from "./landing-page";
 
 /**
  * Root page.
  *
- * Redirects authenticated users to their post-auth destination (onboarding
- * or /home) and unauthenticated users to /login.
+ * Authenticated users are redirected to their post-auth destination
+ * (onboarding or /home). Unauthenticated visitors get the landing page —
+ * the public face of the product, with its CTA leading to /login.
  */
 export default async function HomePage() {
   const supabase = await createClient();
@@ -19,5 +21,5 @@ export default async function HomePage() {
     redirect(destination);
   }
 
-  redirect("/login");
+  return <LandingPage />;
 }

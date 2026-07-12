@@ -41,3 +41,14 @@ test("PWA icons referenced by the manifest actually resolve", async ({
     expect(response.ok(), `icon ${icon.src}`).toBeTruthy();
   }
 });
+
+test("unauthenticated visit to / shows the landing page", async ({ page }) => {
+  await page.goto("/");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(
+    page.getByTestId("landing-cta-hero"),
+  ).toBeVisible();
+  // The CTA leads into the login flow.
+  await page.getByTestId("landing-cta-hero").click();
+  await expect(page).toHaveURL(/\/login/);
+});
