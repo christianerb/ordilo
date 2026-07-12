@@ -16,20 +16,20 @@ describe("SourceCard", () => {
     expect(screen.getByText("Stromrechnung Juli 2026")).toBeDefined();
   });
 
-  it("renders the relevance score as a bounded percentage", () => {
+  it("exposes the relevance score accessibly (no visible raw percentage)", () => {
     render(<SourceCard {...defaultProps} score={0.85} />);
-    // 0.85 → 85%
-    expect(screen.getByText(/85%/)).toBeDefined();
+    // 0.85 → 85 — announced to assistive tech, not shown as UI noise.
+    expect(screen.getByText(/Relevanz 85 Prozent/)).toBeDefined();
   });
 
-  it("clamps score above 1 to 100%", () => {
+  it("clamps score above 1 to 100", () => {
     render(<SourceCard {...defaultProps} score={1.5} />);
-    expect(screen.getByText(/100%/)).toBeDefined();
+    expect(screen.getByText(/Relevanz 100 Prozent/)).toBeDefined();
   });
 
-  it("clamps score below 0 to 0%", () => {
+  it("clamps score below 0 to 0", () => {
     render(<SourceCard {...defaultProps} score={-0.3} />);
-    expect(screen.getByText(/0%/)).toBeDefined();
+    expect(screen.getByText(/Relevanz 0 Prozent/)).toBeDefined();
   });
 
   it("renders a document icon", () => {
@@ -76,11 +76,9 @@ describe("SourceCard", () => {
     expect(screen.getByText("Stromrechnung Juli 2026")).toBeDefined();
   });
 
-  it("displays the relevance label in German", () => {
+  it("announces the relevance in German for assistive tech", () => {
     render(<SourceCard {...defaultProps} score={0.92} />);
-    // The compact chip shows the percentage only; the German "Relevanz"
-    // label is exposed via aria-label for accessibility.
-    expect(screen.getByLabelText(/relevanz/i)).toBeDefined();
+    expect(screen.getByText(/Relevanz 92 Prozent/)).toBeDefined();
   });
 
   it("handles special characters in title safely", () => {

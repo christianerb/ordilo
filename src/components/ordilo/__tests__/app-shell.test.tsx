@@ -134,16 +134,15 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly four tabs", () => {
-    expect(NAV_TABS).toHaveLength(4);
+  it("exports exactly three tabs (Heute, Familienbuch, Familie)", () => {
+    expect(NAV_TABS).toHaveLength(3);
   });
 
   it("has tabs in the correct order with correct labels and hrefs", () => {
     const expected = [
-      { label: "Dokumente", href: "/dokumente" },
-      { label: "Fragen", href: "/suche" },
+      { label: "Heute", href: "/home" },
+      { label: "Familienbuch", href: "/dokumente" },
       { label: "Familie", href: "/familie" },
-      { label: "Aufgaben", href: "/aufgaben" },
     ];
     expect(NAV_TABS.map((t) => ({ label: t.label, href: t.href }))).toEqual(
       expected,
@@ -153,7 +152,7 @@ describe("NAV_TABS", () => {
   it("each tab has a distinct icon component", () => {
     const icons = NAV_TABS.map((t) => t.icon);
     const uniqueIcons = new Set(icons);
-    expect(uniqueIcons.size).toBe(4);
+    expect(uniqueIcons.size).toBe(3);
   });
 });
 
@@ -170,12 +169,12 @@ describe("AppShell", () => {
     expect(screen.getByTestId("page-content")).toBeDefined();
   });
 
-  it("renders a nav drawer with exactly four tab links", () => {
+  it("renders a nav drawer with exactly three tab links", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(3);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -193,10 +192,9 @@ describe("AppShell", () => {
     const links = within(nav).getAllByRole("link");
 
     const expected = [
-      { label: "Dokumente", href: "/dokumente" },
-      { label: "Fragen", href: "/suche" },
+      { label: "Heute", href: "/home" },
+      { label: "Familienbuch", href: "/dokumente" },
       { label: "Familie", href: "/familie" },
-      { label: "Aufgaben", href: "/aufgaben" },
     ];
 
     links.forEach((link, i) => {
@@ -205,30 +203,38 @@ describe("AppShell", () => {
     });
   });
 
-  it("does not mark any tab as active when on /home (logo navigates home)", () => {
+  it("marks the Heute tab as active when on /home", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    const activeLinks = nav.querySelectorAll('a[aria-current="page"]');
-    expect(activeLinks.length).toBe(0);
+    const heuteLink = within(nav).getByText("Heute").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
   });
 
-  it("marks the Aufgaben tab as active when on /aufgaben", () => {
+  it("keeps Heute active on /aufgaben (tasks live under Heute now)", () => {
     renderShell("/aufgaben");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    const aufgabenLink = within(nav).getByText("Aufgaben").closest("a");
-    expect(aufgabenLink?.getAttribute("aria-current")).toBe("page");
+    const heuteLink = within(nav).getByText("Heute").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
+  });
+
+  it("keeps Familienbuch active on /sammlungen (collections live under it)", () => {
+    renderShell("/sammlungen/col-1");
+    openMobileMenu();
+    const nav = screen.getByRole("navigation");
+    const buchLink = within(nav).getByText("Familienbuch").closest("a");
+    expect(buchLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("updates the active tab when pathname changes", () => {
     const { rerender } = renderShell("/aufgaben");
     openMobileMenu();
     let nav = screen.getByRole("navigation");
-    let aufgabenLink = within(nav).getByText("Aufgaben").closest("a");
-    let dokumenteLink = within(nav).getByText("Dokumente").closest("a");
-    expect(aufgabenLink?.getAttribute("aria-current")).toBe("page");
-    expect(dokumenteLink?.getAttribute("aria-current")).toBeNull();
+    let heuteLink = within(nav).getByText("Heute").closest("a");
+    let buchLink = within(nav).getByText("Familienbuch").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
+    expect(buchLink?.getAttribute("aria-current")).toBeNull();
 
     mockUsePathname.mockReturnValue("/dokumente");
     rerender(
@@ -237,10 +243,10 @@ describe("AppShell", () => {
       </AppShell>,
     );
     nav = screen.getByRole("navigation");
-    aufgabenLink = within(nav).getByText("Aufgaben").closest("a");
-    dokumenteLink = within(nav).getByText("Dokumente").closest("a");
-    expect(aufgabenLink?.getAttribute("aria-current")).toBeNull();
-    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
+    heuteLink = within(nav).getByText("Heute").closest("a");
+    buchLink = within(nav).getByText("Familienbuch").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBeNull();
+    expect(buchLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("marks a tab active for nested routes (e.g. /familie/123)", () => {
@@ -252,7 +258,7 @@ describe("AppShell", () => {
   });
 
   it("only one tab is active at a time", () => {
-    renderShell("/suche");
+    renderShell("/dokumente");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
     const links = within(nav).getAllByRole("link");
@@ -262,11 +268,19 @@ describe("AppShell", () => {
     expect(activeCount).toBe(1);
   });
 
+  it("marks no tab active on /suche (fullscreen answer mode, not a place)", () => {
+    renderShell("/suche");
+    openMobileMenu();
+    const nav = screen.getByRole("navigation");
+    const activeLinks = nav.querySelectorAll('a[aria-current="page"]');
+    expect(activeLinks.length).toBe(0);
+  });
+
   it("closes the drawer and navigates when a tab link is clicked", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    fireEvent.click(within(nav).getByText("Dokumente"));
+    fireEvent.click(within(nav).getByText("Familienbuch"));
     // Sheet content unmounts once closed (Radix default, no forceMount).
     expect(screen.queryByRole("navigation")).toBeNull();
   });

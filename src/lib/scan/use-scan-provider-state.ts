@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getFamilyId } from "@/lib/supabase/client-helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { triggerOcr } from "@/lib/ocr";
+import { toast } from "sonner";
 import {
   getFailedStage,
   isProcessingStatus,
@@ -556,17 +557,16 @@ export function useScanProviderState(): ScanProviderState {
 
   const handleDeleteDocument = useCallback(
     async (documentId: string) => {
-      // Delete via the API route so the Storage file is removed with the
-      // service-role client (the private bucket rejects browser-client
-      // removals, which used to orphan files).
-      try {
-        const response = await fetch(`/api/documents/${documentId}`, {
-          method: "DELETE",
-        });
-        if (!response.ok) return;
-      } catch {
-        return;
-      }
+      // Optimistic delete: the document disappears immediately (list +
+      // open sheets), the server call runs in the background, and a
+      // failure restores the document with a German toast. No full-list
+      // refetch, no jank.
+      const removed = documentsRef.current.find(
+        (doc) => doc.id === documentId,
+      );
+      setDocuments((prev) =>
+        prev.filter((current) => current.id !== documentId),
+      );
       if (expandedDocIdRef.current === documentId) {
         closeDocument();
       }
@@ -574,10 +574,26 @@ export function useScanProviderState(): ScanProviderState {
         setWizardDocId(null);
         setWizardDocument(null);
       }
-      if (documentsLoadedRef.current) {
-        await fetchDocumentsRef.current();
-      } else {
-        setDocuments((prev) => prev.filter((current) => current.id !== documentId));
+
+      const restore = () => {
+        if (removed) {
+          setDocuments((prev) =>
+            prev.some((d) => d.id === documentId) ? prev : [removed, ...prev],
+          );
+        }
+        toast.error("Löschen hat nicht geklappt. Bitte nochmal versuchen.");
+      };
+
+      // The API route removes the DB row AND the Storage file with the
+      // service-role client (the private bucket rejects browser-client
+      // removals, which used to orphan files).
+      try {
+        const response = await fetch(`/api/documents/${documentId}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) restore();
+      } catch {
+        restore();
       }
     },
     [closeDocument],

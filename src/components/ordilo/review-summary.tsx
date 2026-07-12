@@ -252,7 +252,9 @@ export function ReviewSummary({
           <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist)]">
             Ordilo hat erkannt
           </h3>
-          <div className="space-y-1.5">
+          {/* The reveal moment: each recognized fact cascades in, so the
+              user watches Ordilo's findings appear one by one. */}
+          <div className="space-y-1.5 stagger-children">
             {highlights.map((h, i) => (
               <div
                 key={i}

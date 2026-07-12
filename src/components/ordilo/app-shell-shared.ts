@@ -1,10 +1,9 @@
 "use client";
 
 import {
-  Files,
-  Search,
+  Sun,
+  BookOpen,
   Users,
-  ListTodo,
   type LucideIcon,
 } from "lucide-react";
 
@@ -12,17 +11,39 @@ export interface NavTab {
   label: string;
   href: string;
   icon: LucideIcon;
+  /**
+   * Additional path prefixes that keep this tab highlighted. Sub-pages
+   * (Aufgaben under Heute, Sammlungen under Familienbuch) stay reachable
+   * via in-page links but no longer occupy their own tab.
+   */
+  match?: string[];
 }
 
+/**
+ * The three-tab information architecture.
+ *
+ * The product promise is two verbs — ask (the ever-present search bar)
+ * and add (the Scannen button) — so navigation carries only three
+ * places: what needs me today, the family's library, and the family
+ * itself. Searching is NOT a tab: the bottom bar opens the fullscreen
+ * answer mode (/suche) from anywhere.
+ */
 export const NAV_TABS: NavTab[] = [
-  { label: "Dokumente", href: "/dokumente", icon: Files },
-  { label: "Fragen", href: "/suche", icon: Search },
+  { label: "Heute", href: "/home", icon: Sun, match: ["/aufgaben"] },
+  {
+    label: "Familienbuch",
+    href: "/dokumente",
+    icon: BookOpen,
+    match: ["/sammlungen"],
+  },
   { label: "Familie", href: "/familie", icon: Users },
-  { label: "Aufgaben", href: "/aufgaben", icon: ListTodo },
 ];
 
 export function isTabActive(tab: NavTab, pathname: string): boolean {
-  return pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+  const prefixes = [tab.href, ...(tab.match ?? [])];
+  return prefixes.some(
+    (p) => pathname === p || pathname.startsWith(`${p}/`),
+  );
 }
 
 export function shouldShowNav(pathname: string): boolean {
