@@ -81,7 +81,7 @@ describe("ReviewSummary", () => {
     expect(
       screen.getByText(/aufgabe "anmeldung abschicken" erstellen/i),
     ).toBeDefined();
-    expect(screen.getByText(/tag "kita" hinzufügen/i)).toBeDefined();
+    expect(screen.getByText(/In „Kita" einsortieren/)).toBeDefined();
   });
 
   it("does not fabricate highlights or actions when the analysis is empty", () => {
