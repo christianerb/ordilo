@@ -197,7 +197,7 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
     expect(screen.queryByText(/92\s*%/)).toBeNull();
   });
 
-  it("does not show a 'Weitere mögliche Dokumente' heading when every source is a top match", () => {
+  it("does not show a sources toggle when every source is a top match", () => {
     render(
       <MessageBubble
         message={buildMessage({
@@ -211,10 +211,10 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.queryByText("Weitere mögliche Dokumente")).toBeNull();
+    expect(screen.queryByTestId("show-more-sources")).toBeNull();
   });
 
-  it("moves low-relevance sources into the minimal 'Weitere mögliche Dokumente' list", () => {
+  it("collapses low-relevance sources behind a toggle", () => {
     render(
       <MessageBubble
         message={buildMessage({
@@ -229,11 +229,18 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("Weitere mögliche Dokumente")).toBeDefined();
-    // The top match shows a relevance badge; the minimal rows show a percentage instead.
+    // Low-relevance sources are collapsed behind a quiet toggle by
+    // default (answer-first hierarchy) …
+    const toggle = screen.getByTestId("show-more-sources");
+    expect(toggle.textContent).toContain("2 weitere mögliche Dokumente");
+    expect(screen.queryByText("Duplikat 1")).toBeNull();
+    // … and expand on demand. Raw percentages are announced to assistive
+    // tech only, never shown as visible UI noise.
+    fireEvent.click(toggle);
     expect(screen.getByTestId("source-match-relevance")).toBeDefined();
-    expect(screen.getByText(/40\s*%/)).toBeDefined();
-    expect(screen.getByText(/31\s*%/)).toBeDefined();
+    expect(screen.getByText("Duplikat 1")).toBeDefined();
+    expect(screen.getByText(/Relevanz 40 Prozent/)).toBeDefined();
+    expect(screen.getByText(/Relevanz 31 Prozent/)).toBeDefined();
   });
 
   it("always promotes at least one source to a match card, even if none clear the relevance threshold", () => {
@@ -252,7 +259,7 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
     expect(screen.getByTestId("source-match-relevance").textContent).toBe(
       "Möglich relevant",
     );
-    expect(screen.queryByText("Weitere mögliche Dokumente")).toBeNull();
+    expect(screen.queryByTestId("show-more-sources")).toBeNull();
   });
 });
 

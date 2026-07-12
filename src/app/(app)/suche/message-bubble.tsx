@@ -192,25 +192,66 @@ export function MessageBubble({
             ))}
           </div>
           {restSources.length > 0 && (
-            <div className="space-y-0.5 pt-0.5">
-              <span className="block px-2 text-[11px] font-medium text-muted-foreground/70">
-                Weitere mögliche Dokumente
-              </span>
-              {restSources.map((source, i) => (
-                <SourceCard
-                  key={source.document_id}
-                  documentId={source.document_id}
-                  title={source.title}
-                  score={source.score}
-                  kind={getSourceKind(source)}
-                  onClick={() => onSourceCardClick(source.document_id)}
-                  style={{ animationDelay: `${(topSources.length + i) * 40}ms` }}
-                />
-              ))}
-            </div>
+            <RestSources
+              sources={restSources}
+              getSourceKind={getSourceKind}
+              onSourceCardClick={onSourceCardClick}
+            />
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Collapsed low-relevance sources
+// ---------------------------------------------------------------------------
+
+/**
+ * Low-relevance sources stay collapsed behind a quiet toggle — the answer
+ * and its best matches carry the screen; the long tail is one tap away
+ * instead of padding the conversation (answer-first hierarchy).
+ */
+function RestSources({
+  sources,
+  getSourceKind: kindFor,
+  onSourceCardClick,
+}: {
+  sources: ChatSource[];
+  getSourceKind: (source: ChatSource) => SourceCardKind;
+  onSourceCardClick: (docId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => setExpanded(true)}
+        className="px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+        data-testid="show-more-sources"
+      >
+        {sources.length === 1
+          ? "1 weiteres mögliches Dokument anzeigen"
+          : `${sources.length} weitere mögliche Dokumente anzeigen`}
+      </button>
+    );
+  }
+
+  return (
+    <div className="space-y-0.5 pt-0.5">
+      {sources.map((source, i) => (
+        <SourceCard
+          key={source.document_id}
+          documentId={source.document_id}
+          title={source.title}
+          score={source.score}
+          kind={kindFor(source)}
+          onClick={() => onSourceCardClick(source.document_id)}
+          style={{ animationDelay: `${i * 40}ms` }}
+        />
+      ))}
     </div>
   );
 }

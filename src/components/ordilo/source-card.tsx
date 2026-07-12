@@ -125,13 +125,15 @@ export function SourceCard({
       <p className="min-w-0 flex-1 truncate text-sm text-foreground">
         {displayTitle}
       </p>
+      {/* No visible raw percentage — machine-speak in a consumer answer.
+          The score stays on a data attribute for tests/tooling, and the
+          accessible label still communicates relevance. */}
       <span
-        className="shrink-0 text-xs tabular-nums text-muted-foreground/70"
+        className="sr-only"
         data-testid="source-card-score"
         data-score={clampedScore}
-        aria-label={`Relevanz ${percentage} Prozent`}
       >
-        {percentage}%
+        {`Relevanz ${percentage} Prozent`}
       </span>
     </div>
   );

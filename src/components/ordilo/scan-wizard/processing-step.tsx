@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Check, Loader2, X, AlertCircle, ArrowRight } from "lucide-react";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -12,6 +14,60 @@ import {
 import type { Database } from "@/types/database";
 
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
+
+/**
+ * Rotating micro-narration per pipeline stage. Each set describes what the
+ * CURRENT stage genuinely does (no fake progress, no invented findings) —
+ * it turns the wait into Ordilo visibly working instead of a dead spinner.
+ */
+const STAGE_NARRATION: Record<string, string[]> = {
+  upload: ["Foto ist gleich da …"],
+  ocr: [
+    "Ich lese jede Zeile …",
+    "Auch das Kleingedruckte …",
+    "Handschrift? Kein Problem …",
+  ],
+  analysis: [
+    "Ich suche Fristen und Termine …",
+    "Nummern und Beträge merke ich mir …",
+    "Wem in der Familie gehört das? …",
+    "Gibt es etwas zu erledigen? …",
+  ],
+};
+
+/** How often the narration line rotates (ms). */
+const NARRATION_INTERVAL_MS = 2600;
+
+/**
+ * The narration line for the active stage, rotating through its phrases.
+ * Re-keyed per phrase so the message-in entrance replays on each change.
+ */
+function StageNarration({ stageKey }: { stageKey: string }) {
+  const [tick, setTick] = useState(0);
+
+  useMountEffect(() => {
+    const interval = setInterval(
+      () => setTick((t) => t + 1),
+      NARRATION_INTERVAL_MS,
+    );
+    return () => clearInterval(interval);
+  });
+
+  const phrases = STAGE_NARRATION[stageKey] ?? [];
+  if (phrases.length === 0) return null;
+  const phrase = phrases[tick % phrases.length];
+
+  return (
+    <p
+      key={phrase}
+      className="mt-1 text-sm text-muted-foreground animate-message-in"
+      data-testid="processing-narration"
+      aria-live="polite"
+    >
+      {phrase}
+    </p>
+  );
+}
 
 /**
  * How many of the three steps are complete, based on the real document
@@ -117,6 +173,9 @@ export function ScanProcessingStep({
             <h2 className="mt-4 text-base font-semibold text-foreground">
               Ordilo schaut sich das an …
             </h2>
+            <StageNarration
+              stageKey={STEPS[Math.min(done, STEPS.length - 1)].key}
+            />
 
             <div
               className="mt-6 w-full max-w-xs"

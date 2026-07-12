@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { useState, useMemo } from "react";
 import {
   Camera,
@@ -496,6 +498,20 @@ export default function DokumentePage() {
                 </button>
               </div>
             )}
+
+            {/* Sammlungen live under the Familienbuch tab now — quiet
+                link so mobile users (no sidebar) can still reach them. */}
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className="shrink-0 text-muted-foreground"
+            >
+              <Link href="/sammlungen">
+                <Folder className="size-4" aria-hidden="true" />
+                Sammlungen
+              </Link>
+            </Button>
 
             {/* One primary action (Scannen); upload + note live in a
                 quiet overflow menu — power-user paths, visually secondary
