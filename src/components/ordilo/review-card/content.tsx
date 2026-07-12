@@ -114,10 +114,10 @@ export function ReviewCardContent({
             <h3 className="mt-1 text-lg font-semibold leading-tight text-foreground">
               {detailHeading}
             </h3>
+            {/* ONE visible order: only the category (= Sammlung) gets a
+                pill. The document type already lives in the heading
+                ("Rechnung für Emma") as natural language. */}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-foreground">
-                {typeLabel}
-              </span>
               <span className="inline-flex items-center rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-[var(--mist-dark)]">
                 {analysis.suggested_category}
               </span>

@@ -216,57 +216,56 @@ describe("HomeClient — Aufgaben timeline", () => {
     vi.useRealTimers();
   });
 
-  it("renders the 'Aufgaben' section heading", () => {
+  it("renders the 'Als Nächstes' section heading", () => {
     render(<HomeClient {...defaultProps} />);
-    expect(screen.getByText("Aufgaben")).toBeDefined();
+    expect(screen.getByText("Als Nächstes")).toBeDefined();
   });
 
-  it("shows overdue tasks in the 'Überfällig' subgroup", () => {
+  it("shows the next tasks in priority order: overdue first", () => {
     render(<HomeClient {...defaultProps} />);
-    const subgroup = screen.getByTestId("home-tasks-ueberfaellig");
-    expect(
-      within(subgroup).getByText("Alter Task"),
-    ).toBeDefined();
+    const list = screen.getByTestId("home-tasks-next");
+    const titles = within(list)
+      .getAllByText(/Alter Task|Rechnung bezahlen|Anmeldung Kita/)
+      .map((el) => el.textContent);
+    // Overdue ("Alter Task") sorts before this week ("Rechnung bezahlen")
+    // before later ("Anmeldung Kita").
+    expect(titles).toEqual([
+      "Alter Task",
+      "Rechnung bezahlen",
+      "Anmeldung Kita",
+    ]);
   });
 
-  it("shows tasks due within 7 days in the 'Diese Woche' subgroup", () => {
-    render(<HomeClient {...defaultProps} />);
-    const subgroup = screen.getByTestId("home-tasks-diese-woche");
-    expect(
-      within(subgroup).getByText("Rechnung bezahlen"),
-    ).toBeDefined();
+  it("caps the list at three tasks and links to the full list", () => {
+    // Extra this-week tasks push the "later" task ("Anmeldung Kita")
+    // past the cap.
+    const extra = Array.from({ length: 3 }, (_, i) => ({
+      ...upcomingTasks[0],
+      id: `task-extra-${i}`,
+      title: `Extra-Aufgabe ${i}`,
+      due_date: "2026-07-08",
+    }));
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[...upcomingTasks, ...extra]}
+      />,
+    );
+    const list = screen.getByTestId("home-tasks-next");
+    // Only the top 3 render …
+    expect(within(list).getByText("Alter Task")).toBeDefined();
+    expect(within(list).queryByText("Anmeldung Kita")).toBeNull();
+    // … and the rest are one tap away.
+    const showAll = screen.getByTestId("home-tasks-show-all");
+    // 5, not 6: the underlying buckets are themselves curated
+    // (HEUTE_WICHTIG_LIMIT caps this-week at 3).
+    expect(showAll.textContent).toContain("Alle 5 Aufgaben anzeigen");
+    expect(showAll.getAttribute("href")).toBe("/aufgaben");
   });
 
-  it("does not show tasks due beyond 7 days in 'Diese Woche'", () => {
+  it("hides the show-all link when everything already fits", () => {
     render(<HomeClient {...defaultProps} />);
-    const subgroup = screen.getByTestId("home-tasks-diese-woche");
-    expect(
-      within(subgroup).queryByText("Anmeldung Kita"),
-    ).toBeNull();
-  });
-
-  it("excludes overdue tasks from 'Diese Woche'", () => {
-    render(<HomeClient {...defaultProps} />);
-    const subgroup = screen.getByTestId("home-tasks-diese-woche");
-    expect(
-      within(subgroup).queryByText("Alter Task"),
-    ).toBeNull();
-  });
-
-  it("shows tasks beyond 7 days in the 'Später' subgroup", () => {
-    render(<HomeClient {...defaultProps} />);
-    const subgroup = screen.getByTestId("home-tasks-spaeter");
-    expect(
-      within(subgroup).getByText("Anmeldung Kita"),
-    ).toBeDefined();
-  });
-
-  it("excludes overdue tasks from 'Später'", () => {
-    render(<HomeClient {...defaultProps} />);
-    const subgroup = screen.getByTestId("home-tasks-spaeter");
-    expect(
-      within(subgroup).queryByText("Alter Task"),
-    ).toBeNull();
+    expect(screen.queryByTestId("home-tasks-show-all")).toBeNull();
   });
 
   it("does not render the Aufgaben section when there are no tasks", () => {

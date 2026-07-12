@@ -52,6 +52,13 @@ function mockSupabaseClient(getDocuments: () => unknown[]) {
       if (table === "documents") {
         return { select: vi.fn(() => documentsChain) };
       }
+      if (table === "collections") {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })),
+        };
+      }
       throw new Error(`Unexpected table: ${table}`);
     }),
   } as unknown as ReturnType<typeof createClient>;
@@ -138,7 +145,7 @@ describe("DokumentePage — scan wizard flow", () => {
     });
   });
 
-  it("routes the camera fallback's gallery pick through the wizard's tracked upload, all the way to the review summary", async () => {
+  it("routes the camera fallback's gallery pick through the wizard's tracked upload, all the way to the auto-file card", async () => {
     let callCount = 0;
     const docId = "doc-wizard-1";
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -179,9 +186,10 @@ describe("DokumentePage — scan wizard flow", () => {
     expect(await screen.findByTestId("processing-step")).toBeDefined();
 
     // Once the tracked document reaches "analyzed", the wizard
-    // auto-advances to the review step and shows the compact summary.
+    // auto-advances to the review step. The analysis is clean, so the
+    // zero-touch auto-file card appears (not the manual summary).
     await waitFor(() => {
-      expect(screen.getByTestId("review-summary")).toBeDefined();
+      expect(screen.getByTestId("review-step-autofile")).toBeDefined();
     });
   });
 });

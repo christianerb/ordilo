@@ -91,6 +91,13 @@ function mockSupabaseClient(getDocuments: () => unknown[]) {
       if (table === "documents") {
         return { select: vi.fn(() => documentsChain) };
       }
+      if (table === "collections") {
+        return {
+          select: vi.fn(() => ({
+            order: vi.fn().mockResolvedValue({ data: [], error: null }),
+          })),
+        };
+      }
       throw new Error(`Unexpected table: ${table}`);
     }),
   } as unknown as ReturnType<typeof createClient>;

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 
-import { ScanReviewStep } from "../review-step";
+import { ScanReviewStep, AUTO_CONFIRM_DELAY_MS } from "../review-step";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
 // ---------------------------------------------------------------------------
@@ -20,7 +20,8 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({})),
 }));
 
-const analysis: DocumentAnalysis = {
+/** A clean analysis — nothing flagged, high-confidence person match. */
+const cleanAnalysis: DocumentAnalysis = {
   document_type: "school",
   title: "Kita-Brief für Emma",
   summary: "Ein Brief der Kita.",
@@ -35,16 +36,26 @@ const analysis: DocumentAnalysis = {
   needs_user_review: false,
 };
 
+/** An unclean analysis — the extraction flagged something as uncertain. */
+const uncertainAnalysis: DocumentAnalysis = {
+  ...cleanAnalysis,
+  needs_user_review: true,
+};
+
 const familyMembers = [{ id: "member-1", name: "Emma", role: "Kind" }];
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(fetchDocumentAnalysis).mockResolvedValue(analysis);
+  vi.mocked(fetchDocumentAnalysis).mockResolvedValue(uncertainAnalysis);
   vi.mocked(fetchFamilyMembers).mockResolvedValue(familyMembers);
   vi.mocked(fetchExistingCategories).mockResolvedValue([]);
 });
 
-describe("ScanReviewStep", () => {
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("ScanReviewStep — manual review (uncertain analysis)", () => {
   it("shows a skeleton while loading", async () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     expect(screen.getByTestId("review-card-skeleton")).toBeDefined();
@@ -54,7 +65,7 @@ describe("ScanReviewStep", () => {
     await screen.findByTestId("review-summary");
   });
 
-  it("renders the compact ReviewSummary by default once loaded", async () => {
+  it("renders the compact ReviewSummary once loaded", async () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     expect(await screen.findByTestId("review-summary")).toBeDefined();
   });
@@ -115,5 +126,110 @@ describe("ScanReviewStep", () => {
     );
 
     expect(await screen.findByText("Serverfehler.")).toBeDefined();
+  });
+});
+
+describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
+  beforeEach(() => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(cleanAnalysis);
+  });
+
+  it("shows the auto-file card instead of the summary for a clean analysis", async () => {
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    expect(await screen.findByTestId("review-step-autofile")).toBeDefined();
+    expect(screen.queryByTestId("review-summary")).toBeNull();
+  });
+
+  it("confirms automatically once the countdown elapses", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    // Fake timers BEFORE render so the countdown setTimeout is captured.
+    vi.useFakeTimers();
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    // Let the analysis fetch microtasks settle → auto-file card mounts.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10);
+    });
+    expect(screen.getByTestId("review-step-autofile")).toBeDefined();
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS + 50);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
+    );
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/documents/doc-1/confirm",
+      expect.objectContaining({ method: "POST" }),
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it("'Passt so' confirms immediately without waiting for the countdown", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId("autofile-done-button"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
+    );
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    fetchSpy.mockRestore();
+  });
+
+  it("'Bearbeiten' intercepts the countdown and opens the full Review Card without confirming", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId("autofile-edit-button"));
+    expect(await screen.findByTestId("review-card")).toBeDefined();
+
+    // The countdown was cancelled synchronously on click — no
+    // auto-confirm sneaks through.
+    const confirmCalls = fetchSpy.mock.calls.filter(
+      (args) => String(args[0]).includes("/confirm"),
+    );
+    expect(confirmCalls).toHaveLength(0);
+    fetchSpy.mockRestore();
+  });
+
+  it("flushes the confirm when unmounted mid-countdown (wizard closed)", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    const { unmount } = render(
+      <ScanReviewStep documentId="doc-1" onDone={vi.fn()} />,
+    );
+    await screen.findByTestId("review-step-autofile");
+    unmount();
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/documents/doc-1/confirm",
+      expect.objectContaining({ method: "POST" }),
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it("falls back to the manual summary when the auto-confirm fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: "Serverfehler." }), { status: 500 }),
+    );
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId("autofile-done-button"));
+
+    expect(await screen.findByTestId("review-summary")).toBeDefined();
+    expect(screen.getByText("Serverfehler.")).toBeDefined();
   });
 });
