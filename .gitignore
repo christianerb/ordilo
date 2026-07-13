@@ -37,3 +37,7 @@ coverage/
 # Playwright
 /test-results/
 /playwright-report/
+
+# UI screenshot artifacts (design iteration work, never committed)
+detail-card-*.png
+dokumente-*.png

@@ -430,7 +430,7 @@ describe("POST /api/documents/upload", () => {
     // The count check calls from("documents").select(...) but the insert
     // chain (insert → select → single) should never reach .single().
     expect(
-      (serverClient as { _documentsInsertChain: { single: ReturnType<typeof vi.fn> } })._documentsInsertChain.single,
+      (serverClient as unknown as { _documentsInsertChain: { single: ReturnType<typeof vi.fn> } })._documentsInsertChain.single,
     ).not.toHaveBeenCalled();
   });
 
