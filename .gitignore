@@ -33,3 +33,7 @@ coverage/
 
 # playwright-mcp test artifacts
 .playwright-mcp/
+
+# UI screenshot artifacts (design iteration work, never committed)
+detail-card-*.png
+dokumente-*.png
