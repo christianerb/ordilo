@@ -475,6 +475,9 @@ const TOOL_LABELS: Record<string, { icon: typeof Search; label: string }> = {
   list_tasks: { icon: ListChecks, label: "Aufgaben werden geladen…" },
   list_family_members: { icon: Users, label: "Familienmitglieder werden geladen…" },
   mark_task_done: { icon: CheckCircle2, label: "Aufgabe wird erledigt…" },
+  save_document_fact: { icon: CheckCircle2, label: "Nummer wird gespeichert…" },
+  move_document_to_collection: { icon: ListChecks, label: "Dokument wird einsortiert…" },
+  add_document_tags: { icon: ListChecks, label: "Schlagworte werden ergänzt…" },
 };
 
 function ToolCallStatus({ toolName }: { toolName: string }) {

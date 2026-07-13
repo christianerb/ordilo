@@ -10,6 +10,12 @@ import {
   combineSearchResults,
 } from "@/lib/ai/chat";
 import { matchesWordBoundary } from "@/lib/schemas/search";
+import {
+  FACT_TYPES,
+  FACT_TYPE_LABELS,
+  normalizeFactValue,
+  type FactType,
+} from "@/lib/schemas/extraction";
 import { rerankResults } from "@/lib/ai/reranking";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
 
@@ -380,6 +386,55 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "save_document_fact",
+      description:
+        "Speichert oder korrigiert eine Nummer/Kennung (Seriennummer, " +
+        "Vertragsnummer, IBAN, Kennzeichen, ...) an einem Dokument. " +
+        "Verwende dies, wenn der Nutzer eine Nummer nachtragen will " +
+        "('Merk dir: die Seriennummer der Waschmaschine ist ...') oder " +
+        "eine falsch erkannte Nummer korrigiert ('die Seriennummer ist " +
+        "falsch, richtig ist ...'). Die Dokument-ID muss aus einem " +
+        "vorherigen search_documents-/list_documents-Aufruf stammen — " +
+        "suche das Dokument zuerst, wenn du die ID noch nicht hast. " +
+        "Existiert am Dokument bereits eine Nummer desselben Typs, wird " +
+        "sie korrigiert, sonst neu angelegt. Setze confirmed erst auf " +
+        "true, wenn der Nutzer die Aktion klar bestaetigt hat.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_id: {
+            type: "string",
+            description: "Die ID des Dokuments (aus vorherigen Suchergebnissen).",
+          },
+          fact_type: {
+            type: "string",
+            enum: [...FACT_TYPES],
+            description:
+              "Typ der Nummer, z.B. serial_number, contract_number, iban.",
+          },
+          value: {
+            type: "string",
+            description: "Der exakte Wert, z.B. 'WM-482-B93816'.",
+          },
+          label: {
+            type: "string",
+            description:
+              "Optionale Beschreibung, z.B. 'Seriennummer Waschmaschine'.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur wenn der Nutzer die Aktion eindeutig bestaetigt " +
+              "hat. false (Standard) fordert eine Bestaetigung an.",
+          },
+        },
+        required: ["document_id", "fact_type", "value"],
+      },
+    },
+  }
 ];
 
 // ---------------------------------------------------------------------------
@@ -417,6 +472,8 @@ export async function executeTool(
       return executeMoveDocumentToCollection(args, ctx);
     case "add_document_tags":
       return executeAddDocumentTags(args, ctx);
+    case "save_document_fact":
+      return executeSaveDocumentFact(args, ctx);
     default:
       return JSON.stringify({ error: `Unbekanntes Tool: ${name}` });
   }
@@ -757,6 +814,7 @@ export const CONFIRMATION_TOOLS = new Set([
   "add_family_member",
   "move_document_to_collection",
   "add_document_tags",
+  "save_document_fact",
 ]);
 
 /**
@@ -1245,5 +1303,125 @@ async function executeAddDocumentTags(
     document_title: documentTitle,
     tags: mergedTags,
     message: `Dem Dokument '${documentTitle}' wurden die Schlagworte ${newTags.join(", ")} hinzugefuegt.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// save_document_fact (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Save or correct a typed fact (serial number, contract number, IBAN, …)
+ * on a document — the agentic path for "Merk dir: die Seriennummer der
+ * Waschmaschine ist …". If a fact of the same type already exists on the
+ * document (matching the given label when provided), it is CORRECTED;
+ * otherwise a new fact is added. User-provided facts are stored with
+ * confidence 1.0 and confirmed=true, so the fact search picks them up
+ * immediately — no reindex.
+ */
+async function executeSaveDocumentFact(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const documentId = String(args.document_id ?? "").trim();
+  const value = String(args.value ?? "").trim();
+  const factType = FACT_TYPES.includes(args.fact_type as FactType)
+    ? (args.fact_type as FactType)
+    : null;
+  if (!documentId || !value || !factType) {
+    return JSON.stringify({
+      error: "Dokument-ID, Nummerntyp oder Wert fehlt.",
+    });
+  }
+
+  const { data: doc, error: docError } = await ctx.client
+    .from("documents")
+    .select("id, title")
+    .eq("id", documentId)
+    .eq("family_id", ctx.familyId)
+    .maybeSingle();
+
+  if (docError || !doc) {
+    return JSON.stringify({ error: "Dokument nicht gefunden." });
+  }
+
+  const requestedLabel =
+    typeof args.label === "string" && args.label.trim()
+      ? args.label.trim()
+      : null;
+  const typeLabel = FACT_TYPE_LABELS[factType];
+  const documentTitle = doc.title ?? "Das Dokument";
+
+  // Existing fact of the same type → this is a correction, not an add.
+  const { data: existingFacts } = await ctx.client
+    .from("document_facts")
+    .select("id, label, value")
+    .eq("document_id", doc.id)
+    .eq("family_id", ctx.familyId)
+    .eq("fact_type", factType);
+  const existing =
+    (requestedLabel
+      ? existingFacts?.find(
+          (f) => f.label.toLowerCase() === requestedLabel.toLowerCase(),
+        )
+      : undefined) ?? existingFacts?.[0];
+
+  const confirmed = args.confirmed === true;
+  if (!confirmed) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      document_id: doc.id,
+      document_title: documentTitle,
+      message: existing
+        ? `Bitte bestaetige: Soll die ${typeLabel} von '${documentTitle}' von '${existing.value}' zu '${value}' korrigiert werden?`
+        : `Bitte bestaetige: Soll die ${typeLabel} '${value}' bei '${documentTitle}' hinterlegt werden?`,
+    });
+  }
+
+  if (existing) {
+    const { error: updateError } = await ctx.client
+      .from("document_facts")
+      .update({
+        value,
+        normalized_value: normalizeFactValue(value),
+        confidence: 1.0,
+        confirmed: true,
+        ...(requestedLabel ? { label: requestedLabel } : {}),
+      })
+      .eq("id", existing.id)
+      .eq("family_id", ctx.familyId);
+    if (updateError) {
+      return JSON.stringify({ error: "Die Nummer konnte nicht korrigiert werden." });
+    }
+    return JSON.stringify({
+      success: true,
+      action: "corrected",
+      document_id: doc.id,
+      document_title: documentTitle,
+      message: `Die ${typeLabel} von '${documentTitle}' wurde zu '${value}' korrigiert (vorher: '${existing.value}').`,
+    });
+  }
+
+  const { error: insertError } = await ctx.client
+    .from("document_facts")
+    .insert({
+      document_id: doc.id,
+      family_id: ctx.familyId,
+      fact_type: factType,
+      label: requestedLabel ?? typeLabel,
+      value,
+      normalized_value: normalizeFactValue(value),
+      confidence: 1.0,
+      confirmed: true,
+    });
+  if (insertError) {
+    return JSON.stringify({ error: "Die Nummer konnte nicht gespeichert werden." });
+  }
+  return JSON.stringify({
+    success: true,
+    action: "added",
+    document_id: doc.id,
+    document_title: documentTitle,
+    message: `Die ${typeLabel} '${value}' wurde bei '${documentTitle}' hinterlegt.`,
   });
 }

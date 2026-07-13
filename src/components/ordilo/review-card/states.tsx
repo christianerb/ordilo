@@ -341,6 +341,7 @@ export function ReviewCardConfirmed({
         loading={analysisLoading}
         onViewFile={documentId ? handleViewFile : undefined}
         fileLoading={fileLoading}
+        documentId={documentId ?? undefined}
       />
     </div>
   );
