@@ -589,3 +589,137 @@ describe("list_documents", () => {
     expect(parsed.message).toContain("Keine passenden Dokumente");
   });
 });
+
+// ---------------------------------------------------------------------------
+// save_document_fact
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for save_document_fact: `.from("documents")` resolves the document
+ * lookup, `.from("document_facts")` resolves the existing-facts lookup
+ * and supports `.insert()` / `.update()`.
+ */
+function makeSaveFactCtx({
+  doc,
+  existingFacts = [],
+  insertError = null,
+  updateError = null,
+}: {
+  doc: { id: string; title: string | null } | null;
+  existingFacts?: Array<{ id: string; label: string; value: string }>;
+  insertError?: unknown;
+  updateError?: unknown;
+}): ToolContext & { inserted: unknown[]; updated: unknown[] } {
+  const inserted: unknown[] = [];
+  const updated: unknown[] = [];
+  const from = vi.fn((table: string) => {
+    if (table === "documents") {
+      return makeThenableChain(doc);
+    }
+    if (table === "document_facts") {
+      const chain = makeThenableChain(existingFacts) as Record<string, unknown> & {
+        insert?: ReturnType<typeof vi.fn>;
+        update?: ReturnType<typeof vi.fn>;
+      };
+      chain.insert = vi.fn((row: unknown) => {
+        inserted.push(row);
+        return Promise.resolve({ error: insertError });
+      });
+      chain.update = vi.fn((row: unknown) => {
+        updated.push(row);
+        return makeThenableChain(null, updateError);
+      });
+      return chain;
+    }
+    return makeThenableChain(null);
+  });
+
+  return {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+    inserted,
+    updated,
+  };
+}
+
+describe("save_document_fact", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("is a confirmation-gated tool", () => {
+    expect(CONFIRMATION_TOOLS.has("save_document_fact")).toBe(true);
+  });
+
+  it("returns error when the document is not found", async () => {
+    const ctx = makeSaveFactCtx({ doc: null });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "serial_number", value: "SN-1", confirmed: true },
+      ctx,
+    );
+    expect(JSON.parse(result).error).toBe("Dokument nicht gefunden.");
+  });
+
+  it("requests confirmation before writing anything", async () => {
+    const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(ctx.inserted).toHaveLength(0);
+    expect(ctx.updated).toHaveLength(0);
+  });
+
+  it("adds a new fact when none of the same type exists", async () => {
+    const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482-B93816", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.action).toBe("added");
+    expect(ctx.inserted).toHaveLength(1);
+    expect(ctx.inserted[0]).toMatchObject({
+      fact_type: "serial_number",
+      value: "WM-482-B93816",
+      normalized_value: "wm482b93816",
+      confirmed: true,
+    });
+  });
+
+  it("corrects the existing fact of the same type instead of duplicating", async () => {
+    const ctx = makeSaveFactCtx({
+      doc: { id: "doc-1", title: "Rechnung Waschmaschine" },
+      existingFacts: [{ id: "fact-1", label: "Seriennummer", value: "WM-4B2" }],
+    });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.success).toBe(true);
+    expect(parsed.action).toBe("corrected");
+    expect(parsed.message).toContain("WM-4B2");
+    expect(ctx.updated).toHaveLength(1);
+    expect(ctx.inserted).toHaveLength(0);
+  });
+
+  it("rejects an unknown fact type", async () => {
+    const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Doc" } });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "nonsense", value: "x", confirmed: true },
+      ctx,
+    );
+    expect(JSON.parse(result).error).toBeDefined();
+  });
+});
