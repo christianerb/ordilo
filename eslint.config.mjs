@@ -29,8 +29,13 @@ const eslintConfig = [
     },
   },
   {
-    // Allow useEffect only inside useMountEffect itself
-    files: ["src/lib/hooks/use-mount-effect.ts"],
+    // Allow useEffect only inside useMountEffect and error boundaries
+    // (error boundaries need useEffect with [error] dep to capture to Sentry)
+    files: [
+      "src/lib/hooks/use-mount-effect.ts",
+      "src/app/global-error.tsx",
+      "src/app/(app)/error.tsx",
+    ],
     rules: {
       "no-restricted-syntax": "off",
     },
