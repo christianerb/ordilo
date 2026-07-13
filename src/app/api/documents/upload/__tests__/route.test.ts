@@ -23,6 +23,7 @@ function mockServerClient(options: {
   familyError?: unknown;
   docInsert?: { id: string } | null;
   docInsertError?: unknown;
+  todayUploadCount?: number;
 }) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
@@ -30,6 +31,7 @@ function mockServerClient(options: {
     familyError = null,
     docInsert = { id: "doc-1" },
     docInsertError = null,
+    todayUploadCount = 0,
   } = options;
 
   // families select chain
@@ -44,6 +46,13 @@ function mockServerClient(options: {
     single: vi.fn().mockResolvedValue({ data: docInsert, error: docInsertError }),
   };
 
+  // documents count chain (for daily upload limit check)
+  // .select("id", { count, head }) → .eq() → .gte() → Promise<{ count, data }>
+  const documentsCountChain = {
+    eq: vi.fn().mockReturnThis(),
+    gte: vi.fn().mockResolvedValue({ count: todayUploadCount, data: null }),
+  };
+
   return {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user } }),
@@ -53,10 +62,15 @@ function mockServerClient(options: {
         return { select: vi.fn(() => familiesChain) };
       }
       if (table === "documents") {
-        return { insert: vi.fn(() => documentsInsertChain) };
+        return {
+          insert: vi.fn(() => documentsInsertChain),
+          select: vi.fn(() => documentsCountChain),
+        };
       }
       throw new Error(`Unexpected table: ${table}`);
     }),
+    // Exposed for test assertions (not part of the real client)
+    _documentsInsertChain: documentsInsertChain,
   } as unknown as Awaited<ReturnType<typeof createServerClient>>;
 }
 
@@ -413,7 +427,11 @@ describe("POST /api/documents/upload", () => {
     expect(response.status).toBe(500);
     expect(body.code).toBe("STORAGE_UPLOAD_FAILED");
     // Verify documents insert was NOT called (no orphaned row).
-    expect(serverClient.from).not.toHaveBeenCalledWith("documents");
+    // The count check calls from("documents").select(...) but the insert
+    // chain (insert → select → single) should never reach .single().
+    expect(
+      (serverClient as { _documentsInsertChain: { single: ReturnType<typeof vi.fn> } })._documentsInsertChain.single,
+    ).not.toHaveBeenCalled();
   });
 
   // --- DB insert failure (cleans up Storage) ---
@@ -534,5 +552,39 @@ describe("POST /api/documents/upload", () => {
     expect(body).toHaveProperty("code");
     expect(typeof body.error).toBe("string");
     expect(typeof body.code).toBe("string");
+  });
+
+  // --- Rate limiting (daily upload limit) ---
+
+  it("returns 429 when daily upload limit is exceeded", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ todayUploadCount: 50 }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+
+    const file = createMockFile("test.pdf", "application/pdf");
+    const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
+    const body = await response.json();
+
+    expect(response.status).toBe(429);
+    expect(body.code).toBe("UPLOAD_LIMIT_EXCEEDED");
+  });
+
+  it("allows upload when daily upload limit is not yet reached", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ todayUploadCount: 49 }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockAdminClient({}),
+    );
+
+    const file = createMockFile("test.pdf", "application/pdf");
+    const response = await POST(createUploadRequest(file, "550e8400-e29b-41d4-a716-446655440000"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("uploaded");
   });
 });

@@ -23,6 +23,6 @@ export const config = {
      * Auth callback and API routes are included so the session is refreshed
      * before they run. Static assets are excluded for performance.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

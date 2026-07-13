@@ -9,6 +9,14 @@ import {
 } from "@/lib/schemas/document";
 
 /**
+ * Maximum document uploads per family per day.
+ *
+ * Prevents cost runaway from mass uploads (OCR + LLM extraction per
+ * document). 50/day is generous for a family app while blocking abuse.
+ */
+const DAILY_UPLOAD_LIMIT = 50;
+
+/**
  * POST /api/documents/upload
  *
  * Accepts multipart form data with:
@@ -30,6 +38,7 @@ import {
  *   - Oversized files → 413 with FILE_TOO_LARGE (VAL-CAPTURE-009)
  *   - Unauthenticated → 401 with UNAUTHENTICATED (VAL-CAPTURE-014)
  *   - Family ownership failure → 403 (VAL-CAPTURE-013)
+ *   - Daily upload limit exceeded → 429 (UPLOAD_LIMIT_EXCEEDED)
  *
  * The Storage upload uses the admin (service-role) client, which bypasses
  * RLS. This is safe because we verify family ownership BEFORE uploading.
@@ -134,6 +143,25 @@ export async function POST(request: Request): Promise<Response> {
       code: "FAMILY_NOT_FOUND",
     };
     return Response.json(body, { status: 403 });
+  }
+
+  // 4b. Check daily upload limit ------------------------------------------
+  // Count documents created today for this family to prevent cost runaway
+  // from mass uploads. Each document triggers OCR + LLM extraction.
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const { count: todayCount } = await serverClient
+    .from("documents")
+    .select("id", { count: "exact", head: true })
+    .eq("family_id", familyId)
+    .gte("created_at", todayStart.toISOString());
+
+  if ((todayCount ?? 0) >= DAILY_UPLOAD_LIMIT) {
+    const body: UploadErrorResponse = {
+      error: `Tageslimit erreicht (${DAILY_UPLOAD_LIMIT} Dokumente pro Tag). Bitte morgen erneut versuchen.`,
+      code: "UPLOAD_LIMIT_EXCEEDED",
+    };
+    return Response.json(body, { status: 429 });
   }
 
   // 5. Generate document ID and upload to Storage -------------------------

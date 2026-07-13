@@ -19,6 +19,11 @@ env:
   NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "placeholder-publishable-key"
   SUPABASE_SERVICE_ROLE_KEY: "placeholder-service-key"
   OPENAI_API_KEY: "placeholder-openai-key"
+  # Sentry SDK gracefully no-ops when DSN is empty, but provide dummy
+  # values so withSentryConfig doesn't complain during build.
+  NEXT_PUBLIC_SENTRY_DSN: ""
+  SENTRY_DSN: ""
+  DATALAB_API_KEY: "placeholder-datalab-key"
 
 jobs:
   # ── Quality gate: lint + typecheck + unit tests ──────────────────────
