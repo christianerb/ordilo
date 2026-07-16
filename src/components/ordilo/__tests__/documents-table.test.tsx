@@ -57,7 +57,7 @@ describe("DocumentsTable", () => {
     mockOpenDocument.mockClear();
   });
 
-  it("renders one row per document with its persons, category, and tags", async () => {
+  it("renders one row per document with its type, category, and date", async () => {
     const docs = [
       buildDoc({
         id: "doc-1",
@@ -76,9 +76,8 @@ describe("DocumentsTable", () => {
 
     const row = await screen.findByText("Stromrechnung Juli");
     const rowEl = row.closest("tr")!;
-    expect(within(rowEl).getByText("Emma")).toBeDefined();
+    expect(within(rowEl).getByText("Rechnung")).toBeDefined();
     expect(within(rowEl).getByText("Energie")).toBeDefined();
-    expect(within(rowEl).getByText("Strom")).toBeDefined();
     // Uses the resolved document date (05.01.2026), not created_at.
     expect(within(rowEl).getByText("05.01.2026")).toBeDefined();
   });
@@ -113,29 +112,6 @@ describe("DocumentsTable", () => {
 
     expect(screen.queryByText("Stromrechnung")).toBeNull();
     expect(screen.getByText("Kita-Brief")).toBeDefined();
-  });
-
-  it("filters rows by person", async () => {
-    const docs = [
-      buildDoc({ id: "doc-1", title: "Dokument A" }),
-      buildDoc({ id: "doc-2", title: "Dokument B" }),
-    ];
-    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({
-      "doc-1": { persons: ["Emma"], tags: [], documentDate: null },
-      "doc-2": { persons: ["Papa"], tags: [], documentDate: null },
-    });
-
-    render(
-      <DocumentsTable documents={docs} />,
-    );
-
-    await screen.findByText("Dokument A");
-    fireEvent.change(screen.getByTestId("documents-filter-person"), {
-      target: { value: "Papa" },
-    });
-
-    expect(screen.queryByText("Dokument A")).toBeNull();
-    expect(screen.getByText("Dokument B")).toBeDefined();
   });
 
   it("shows an empty-result message with a reset link when filters match nothing", async () => {
@@ -176,8 +152,8 @@ describe("DocumentsTable", () => {
     expect(within(rows[1]).getByText("Zebra")).toBeDefined();
   });
 
-  it("paginates when there are more than 15 documents", async () => {
-    const docs = Array.from({ length: 18 }, (_, i) =>
+  it("paginates when there are more than 20 documents", async () => {
+    const docs = Array.from({ length: 25 }, (_, i) =>
       buildDoc({ id: `doc-${i}`, title: `Dokument ${String(i).padStart(2, "0")}` }),
     );
     vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
@@ -187,7 +163,7 @@ describe("DocumentsTable", () => {
     );
 
     await screen.findByText("Dokument 00");
-    expect(screen.getAllByTestId("documents-table-row")).toHaveLength(15);
+    expect(screen.getAllByTestId("documents-table-row")).toHaveLength(20);
     expect(screen.getByTestId("documents-table-page-info").textContent).toContain(
       "Seite 1 von 2",
     );
@@ -195,7 +171,7 @@ describe("DocumentsTable", () => {
     fireEvent.click(screen.getByTestId("documents-table-next-page"));
 
     await waitFor(() => {
-      expect(screen.getAllByTestId("documents-table-row")).toHaveLength(3);
+      expect(screen.getAllByTestId("documents-table-row")).toHaveLength(5);
     });
     expect(screen.getByTestId("documents-table-page-info").textContent).toContain(
       "Seite 2 von 2",
@@ -212,5 +188,32 @@ describe("DocumentsTable", () => {
     fireEvent.click(row.closest("tr")!);
 
     expect(mockOpenDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("opens the shared document sheet when a focused row is activated with Enter", async () => {
+    const docs = [buildDoc({ id: "doc-1", title: "Kita-Brief" })];
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    render(<DocumentsTable documents={docs} />);
+
+    const row = await screen.findByTestId("documents-table-row");
+    fireEvent.keyDown(row, { key: "Enter" });
+
+    expect(mockOpenDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("offers deletion without opening the document", async () => {
+    const onDelete = vi.fn();
+    const docs = [buildDoc({ id: "doc-1", title: "Kita-Brief" })];
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    render(<DocumentsTable documents={docs} onDelete={onDelete} />);
+
+    fireEvent.click(
+      await screen.findByTestId("documents-table-delete-doc-1"),
+    );
+
+    expect(onDelete).toHaveBeenCalledWith("doc-1");
+    expect(mockOpenDocument).not.toHaveBeenCalled();
   });
 });

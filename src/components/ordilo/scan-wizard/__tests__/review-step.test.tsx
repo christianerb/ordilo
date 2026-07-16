@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-import { ScanReviewStep, AUTO_CONFIRM_DELAY_MS } from "../review-step";
+import { ScanReviewStep } from "../review-step";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
 // ---------------------------------------------------------------------------
@@ -127,9 +127,39 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
 
     expect(await screen.findByText("Serverfehler.")).toBeDefined();
   });
+
+  it("accepts an inline person correction before confirming", async () => {
+    const lowConfidenceAnalysis = {
+      ...uncertainAnalysis,
+      family_members: [
+        { person_id: "member-1", name: "Emma", confidence: 0.4 },
+      ],
+    };
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+    vi.mocked(fetchFamilyMembers).mockResolvedValue([
+      ...familyMembers,
+      { id: "member-2", name: "Hanna", role: "Kind" },
+    ]);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    fireEvent.change(
+      await screen.findByTestId("review-summary-person-select"),
+      { target: { value: "member-2" } },
+    );
+    fireEvent.click(screen.getByTestId("review-summary-confirm-button"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
+    );
+    fetchSpy.mockRestore();
+  });
 });
 
-describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
+describe("ScanReviewStep — ready to save (clean analysis)", () => {
   beforeEach(() => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(cleanAnalysis);
   });
@@ -138,39 +168,27 @@ describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     expect(await screen.findByTestId("review-step-autofile")).toBeDefined();
     expect(screen.queryByTestId("review-summary")).toBeNull();
+    expect(screen.getByText("Alles vorbereitet")).toBeDefined();
   });
 
-  it("confirms automatically once the countdown elapses", async () => {
+  it("does not save when it is closed without confirmation", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
 
-    // Fake timers BEFORE render so the countdown setTimeout is captured.
-    vi.useFakeTimers();
-    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
-    // Let the analysis fetch microtasks settle → auto-file card mounts.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(10);
-    });
-    expect(screen.getByTestId("review-step-autofile")).toBeDefined();
-    expect(fetchSpy).not.toHaveBeenCalled();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(AUTO_CONFIRM_DELAY_MS + 50);
-    });
-    vi.useRealTimers();
-
-    await waitFor(() =>
-      expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
+    const { unmount } = render(
+      <ScanReviewStep documentId="doc-1" onDone={vi.fn()} />,
     );
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "/api/documents/doc-1/confirm",
-      expect.objectContaining({ method: "POST" }),
-    );
+    await screen.findByTestId("review-step-autofile");
+    unmount();
+
+    expect(
+      fetchSpy.mock.calls.filter((args) => String(args[0]).includes("/confirm")),
+    ).toHaveLength(0);
     fetchSpy.mockRestore();
   });
 
-  it("'Passt so' confirms immediately without waiting for the countdown", async () => {
+  it("'Passt so' saves the document", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
@@ -185,7 +203,7 @@ describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
     fetchSpy.mockRestore();
   });
 
-  it("'Bearbeiten' intercepts the countdown and opens the full Review Card without confirming", async () => {
+  it("'Bearbeiten' opens the full Review Card without confirming", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
@@ -194,8 +212,6 @@ describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
     fireEvent.click(await screen.findByTestId("autofile-edit-button"));
     expect(await screen.findByTestId("review-card")).toBeDefined();
 
-    // The countdown was cancelled synchronously on click — no
-    // auto-confirm sneaks through.
     const confirmCalls = fetchSpy.mock.calls.filter(
       (args) => String(args[0]).includes("/confirm"),
     );
@@ -203,53 +219,25 @@ describe("ScanReviewStep — zero-touch auto-file (clean analysis)", () => {
     fetchSpy.mockRestore();
   });
 
-  it("hands a pending countdown to onPendingAutoConfirm on unmount (owner refreshes the list)", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
-    const onPendingAutoConfirm = vi.fn();
+  it("keeps edits when returning from the full review", async () => {
+    vi.mocked(fetchFamilyMembers).mockResolvedValue([
+      ...familyMembers,
+      { id: "member-2", name: "Hanna", role: "Kind" },
+    ]);
 
-    const { unmount } = render(
-      <ScanReviewStep
-        documentId="doc-1"
-        onDone={vi.fn()}
-        onPendingAutoConfirm={onPendingAutoConfirm}
-      />,
-    );
-    await screen.findByTestId("review-step-autofile");
-    unmount();
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId("autofile-edit-button"));
+    fireEvent.change(await screen.findByTestId("person-edit-select"), {
+      target: { value: "member-2" },
+    });
+    fireEvent.click(screen.getByTestId("review-back-button"));
 
-    // The owner callback receives the confirm job; the component itself
-    // must NOT fire its own POST in that case.
-    expect(onPendingAutoConfirm).toHaveBeenCalledWith(
-      "doc-1",
-      expect.objectContaining({ title: cleanAnalysis.title }),
-    );
     expect(
-      fetchSpy.mock.calls.filter((args) => String(args[0]).includes("/confirm")),
-    ).toHaveLength(0);
-    fetchSpy.mockRestore();
+      await screen.findByTestId("review-summary-person-select"),
+    ).toHaveValue("member-2");
   });
 
-  it("flushes the confirm directly when unmounted mid-countdown without an owner callback", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
-
-    const { unmount } = render(
-      <ScanReviewStep documentId="doc-1" onDone={vi.fn()} />,
-    );
-    await screen.findByTestId("review-step-autofile");
-    unmount();
-
-    expect(fetchSpy).toHaveBeenCalledWith(
-      "/api/documents/doc-1/confirm",
-      expect.objectContaining({ method: "POST" }),
-    );
-    fetchSpy.mockRestore();
-  });
-
-  it("falls back to the manual summary when the auto-confirm fails", async () => {
+  it("falls back to the manual summary when saving fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "Serverfehler." }), { status: 500 }),
     );

@@ -53,6 +53,7 @@ export function ScanProvider({ children }: { children: ReactNode }) {
             wizardStep={state.wizardStep}
             wizardUploadError={state.wizardUploadError}
             wizardGalleryInputRef={state.wizardGalleryInputRef}
+            confirmedCount={state.value.documents.filter((d) => d.status === "confirmed").length}
             createNoteOpen={state.createNoteOpen}
             closeDocument={state.closeDocument}
             closeWizard={state.closeWizard}
@@ -64,7 +65,6 @@ export function ScanProvider({ children }: { children: ReactNode }) {
             handleWizardRetryUpload={state.handleWizardRetryUpload}
             handleWizardGallerySelect={state.handleWizardGallerySelect}
             handleWizardReviewDone={state.handleWizardReviewDone}
-            handleWizardAutoFlush={state.handleWizardAutoFlush}
             handleWizardCreateNote={state.handleWizardCreateNote}
             closeCreateNote={state.closeCreateNote}
             handleCreateNote={state.handleCreateNote}

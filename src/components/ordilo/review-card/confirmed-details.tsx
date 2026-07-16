@@ -40,14 +40,12 @@ import { FieldGroup, FieldRow, getPriorityLabel, getPriorityBadgeClasses } from 
 export function ConfirmedAnalysisDetails({
   analysis,
   loading,
-  onViewFile,
-  fileLoading,
+  onViewOriginal,
   documentId,
 }: {
   analysis: DocumentAnalysis | null;
   loading: boolean;
-  onViewFile?: () => void;
-  fileLoading?: boolean;
+  onViewOriginal?: () => void;
   /** Enables the editable facts section (loads + writes document_facts). */
   documentId?: string;
 }) {
@@ -74,7 +72,7 @@ export function ConfirmedAnalysisDetails({
     analysis.tags.length > 0 ||
     Boolean(analysis.summary?.trim());
 
-  if (!hasAnyFields && !onViewFile) return null;
+  if (!hasAnyFields && !onViewOriginal) return null;
 
   return (
     <div
@@ -118,7 +116,12 @@ export function ConfirmedAnalysisDetails({
         {analysis.dates.length > 0 && (
           <FieldGroup testId="confirmed-dates">
             {analysis.dates.map((date, i) => (
-              <FieldRow key={i} icon={Calendar} label="Datum">
+              <FieldRow
+                key={i}
+                icon={Calendar}
+                label="Datum"
+                onCompareOriginal={onViewOriginal}
+              >
                 <span className="block truncate">
                   {formatGermanDate(date.date) || date.date}
                 </span>
@@ -135,7 +138,12 @@ export function ConfirmedAnalysisDetails({
         {analysis.amounts.length > 0 && (
           <FieldGroup testId="confirmed-amounts">
             {analysis.amounts.map((amount, i) => (
-              <FieldRow key={i} icon={Euro} label="Beträge">
+              <FieldRow
+                key={i}
+                icon={Euro}
+                label="Beträge"
+                onCompareOriginal={onViewOriginal}
+              >
                 <span className="block truncate">
                   {amount.amount} {amount.currency}
                 </span>
@@ -198,20 +206,15 @@ export function ConfirmedAnalysisDetails({
         )}
       </div>
 
-      {onViewFile && (
+      {onViewOriginal && (
         <button
           type="button"
-          onClick={onViewFile}
-          disabled={fileLoading}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm disabled:opacity-50"
+          onClick={onViewOriginal}
+          className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           data-testid="view-original-file-button"
         >
-          {fileLoading ? (
-            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <FileText className="size-4" aria-hidden="true" />
-          )}
-          Original ansehen
+          <FileText className="size-4" aria-hidden="true" />
+          Original vergleichen
         </button>
       )}
     </div>

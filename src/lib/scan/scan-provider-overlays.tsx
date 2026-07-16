@@ -33,10 +33,10 @@ export function ScanProviderOverlays({
   handleWizardRetryUpload,
   handleWizardGallerySelect,
   handleWizardReviewDone,
-  handleWizardAutoFlush,
   handleWizardCreateNote,
   closeCreateNote,
   handleCreateNote,
+  confirmedCount,
 }: Pick<
   ScanProviderState,
   | "expandedDocument"
@@ -56,11 +56,10 @@ export function ScanProviderOverlays({
   | "handleWizardRetryUpload"
   | "handleWizardGallerySelect"
   | "handleWizardReviewDone"
-  | "handleWizardAutoFlush"
   | "handleWizardCreateNote"
   | "closeCreateNote"
   | "handleCreateNote"
-> & { expandedDocId: string | null }) {
+> & { expandedDocId: string | null; confirmedCount: number }) {
   return (
     <>
       <DocumentDetailSheet
@@ -89,13 +88,13 @@ export function ScanProviderOverlays({
           step={wizardStep}
           doc={wizardDocument}
           uploadError={wizardUploadError}
+          confirmedCount={confirmedCount}
           onCapture={handleWizardCapture}
           onUseGallery={handleWizardUseGallery}
           onCreateNote={handleWizardCreateNote}
           onRetryUpload={handleWizardRetryUpload}
           onClose={closeWizard}
           onReviewDone={handleWizardReviewDone}
-          onPendingAutoConfirm={handleWizardAutoFlush}
         />
       )}
 

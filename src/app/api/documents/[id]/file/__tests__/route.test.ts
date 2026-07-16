@@ -32,7 +32,7 @@ function mockServerClient({
   document = null,
 }: {
   user?: { id: string } | null;
-  document?: { file_url: string } | null;
+  document?: { file_url: string; mime_type?: string | null } | null;
 } = {}) {
   return {
     auth: {
@@ -163,7 +163,10 @@ describe("GET /api/documents/[id]/file", () => {
   it("returns a signed URL when the document is owned by the user's family", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockServerClient({
-        document: { file_url: `${FAMILY_ID}/${VALID_DOC_ID}/file.pdf` },
+        document: {
+          file_url: `${FAMILY_ID}/${VALID_DOC_ID}/file.pdf`,
+          mime_type: "application/pdf",
+        },
       }),
     );
     (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
@@ -175,6 +178,7 @@ describe("GET /api/documents/[id]/file", () => {
 
     expect(response.status).toBe(200);
     expect(body.url).toBe("https://storage.example.com/signed-url");
+    expect(body.mimeType).toBe("application/pdf");
   });
 
   it("returns 500 when creating the signed URL fails", async () => {

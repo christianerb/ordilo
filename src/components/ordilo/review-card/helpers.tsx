@@ -1,7 +1,6 @@
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
-import { ConfidenceBadge, getConfidenceLevel } from "@/components/ordilo/confidence-badge";
 import { Check, AlertTriangle } from "lucide-react";
 
 // ---------------------------------------------------------------------------
@@ -42,9 +41,8 @@ export interface EditState {
 /**
  * POST the confirm payload to the confirm endpoint. The single shared
  * call site for confirming a document — the Review Card, the Review
- * Summary, the zero-touch auto-file, and the wizard-close flush all go
- * through here, so the contract (URL, headers, body shape) can never
- * drift between paths.
+ * Summary, and the ready-to-save card all go through here, so the
+ * contract (URL, headers, body shape) can never drift between screens.
  */
 export function postConfirm(
   documentId: string,
@@ -124,28 +122,23 @@ export function buildConfirmPayload(
  * Generate the German analysis headline from the analysis data.
  *
  * Examples:
- * - "Ich glaube, das ist ein Brief für Emma"
- * - "Ich glaube, das ist eine Rechnung: Stromrechnung Juli"
- * - "Ich glaube, das ist ein Dokument"
+ * - "Rechnung für Emma"
+ * - "Brief: Steuerunterlagen 2024"
+ * - "Dokument"
  */
 export function buildHeadline(analysis: DocumentAnalysis): string {
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type] || "Dokument";
 
-  // Use the appropriate article.
-  const article = getArticle(typeLabel);
-
-  // If there's a family member, mention them.
   if (analysis.family_members.length > 0) {
     const member = analysis.family_members[0];
-    return `Ich glaube, das ist ${article} ${typeLabel} für ${member.name}`;
+    return `${typeLabel} für ${member.name}`;
   }
 
-  // If there's a title, mention it.
   if (analysis.title && analysis.title.trim()) {
-    return `Ich glaube, das ist ${article} ${typeLabel}: ${analysis.title}`;
+    return `${typeLabel}: ${analysis.title}`;
   }
 
-  return `Ich glaube, das ist ${article} ${typeLabel}`;
+  return typeLabel;
 }
 
 /**
@@ -163,16 +156,6 @@ export function shouldRenderSummary(summary: string, needsReview: boolean): bool
     return false;
   }
   return true;
-}
-
-/**
- * Get the German article (ein/eine) for a noun.
- * Simple heuristic: feminine nouns get "eine", others get "ein".
- */
-export function getArticle(noun: string): string {
-  const feminine = ["Rechnung", "Versicherung", "Arztbrief", "Schule"];
-  if (feminine.includes(noun)) return "eine";
-  return "ein";
 }
 
 // ---------------------------------------------------------------------------
@@ -267,9 +250,9 @@ export function FieldGroup({
 export function FieldRow({
   icon: Icon,
   label,
-  confidence,
   isEdited = false,
   editControl,
+  onCompareOriginal,
   testId,
   children,
 }: {
@@ -278,6 +261,7 @@ export function FieldRow({
   confidence?: number;
   isEdited?: boolean;
   editControl?: React.ReactNode;
+  onCompareOriginal?: () => void;
   testId?: string;
   children: React.ReactNode;
 }) {
@@ -291,24 +275,25 @@ export function FieldRow({
         <span className="truncate text-sm">{label}</span>
       </div>
 
-      <div className="min-w-0 flex-1 space-y-2">
-        <div className="min-w-0 text-sm font-medium text-foreground">{children}</div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 text-sm font-medium text-foreground">{children}</div>
+          {editControl && <div className="shrink-0">{editControl}</div>}
+        </div>
 
-        {(isEdited ||
-          (confidence !== undefined &&
-            getConfidenceLevel(confidence) !== "high")) && (
-          <div className="flex flex-wrap items-center gap-2">
-            {isEdited && <EditedTag />}
-            {confidence !== undefined && getConfidenceLevel(confidence) !== "high" && (
-              <ConfidenceBadge confidence={confidence} />
-            )}
+        {isEdited && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <EditedTag />
           </div>
         )}
-
-        {editControl && (
-          <div className="w-full sm:max-w-[18rem]">
-            {editControl}
-          </div>
+        {onCompareOriginal && (
+          <button
+            type="button"
+            onClick={onCompareOriginal}
+            className="mt-2 inline-flex items-center rounded-ordilo-sm py-0.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            Im Original vergleichen
+          </button>
         )}
       </div>
     </div>

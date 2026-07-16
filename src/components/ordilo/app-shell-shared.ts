@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Sun,
   BookOpen,
   Users,
   type LucideIcon,
@@ -29,9 +28,8 @@ export interface NavTab {
  * answer mode (/suche) from anywhere.
  */
 export const NAV_TABS: NavTab[] = [
-  { label: "Heute", href: "/home", icon: Sun, match: ["/aufgaben"] },
   {
-    label: "Familienbuch",
+    label: "Dokumente",
     href: "/dokumente",
     icon: BookOpen,
     match: ["/sammlungen"],
@@ -101,7 +99,7 @@ export function getGreeting(date: Date): string {
 export const TIME_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
 export function getProfileDisplayName(profile: SidebarProfile): string {
-  return profile.email?.split("@")[0] || profile.familyName;
+  return profile.familyName || profile.email?.split("@")[0] || "Familie";
 }
 
 export const DESKTOP_SHELL_SURFACE_STYLE = {

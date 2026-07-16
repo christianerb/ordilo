@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
@@ -9,6 +9,7 @@ import {
   fetchFamilyMembers,
   fetchExistingCategories,
 } from "@/lib/analysis";
+import { OriginalDocumentPreview } from "@/components/ordilo/original-document-preview";
 import { ReviewCardContent } from "./content";
 import {
   ReviewCardSkeleton,
@@ -19,6 +20,7 @@ import {
 import { buildConfirmPayload } from "./helpers";
 import type { EditState, EditedAnalysisPayload } from "./helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { cn } from "@/lib/utils";
 
 // Re-export public types so that imports from "@/components/ordilo/review-card"
 // continue to resolve.
@@ -44,6 +46,10 @@ export interface ReviewCardProps {
   onReanalyzeSuccess?: () => void;
   /** Called after a retry to notify the parent to refresh. */
   onRetry?: () => void;
+  /** "Zurück" — returns to the previous view with any review edits. */
+  onBack?: (edits: EditState) => void;
+  /** Notifies a containing detail sheet when comparison opens or closes. */
+  onOriginalPreviewChange?: (open: boolean) => void;
   /** Optional additional className. */
   className?: string;
 }
@@ -91,6 +97,8 @@ export function ReviewCard({
   onConfirmSuccess,
   onReanalyzeSuccess,
   onRetry,
+  onBack,
+  onOriginalPreviewChange,
   className,
 }: ReviewCardProps) {
   // --- State ---
@@ -110,6 +118,7 @@ export function ReviewCard({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
 
   // --- Fetch family members and categories on mount ---
   useMountEffect(() => {
@@ -411,6 +420,37 @@ export function ReviewCard({
     onReanalyzeSuccess,
   ]);
 
+  const handleOriginalPreviewChange = useCallback(
+    (open: boolean) => {
+      setOriginalPreviewOpen(open);
+      onOriginalPreviewChange?.(open);
+    },
+    [onOriginalPreviewChange],
+  );
+
+  const withOriginalPreview = (content: ReactNode) => (
+    <div
+      className={cn(
+        "lg:grid lg:items-start lg:gap-6",
+        originalPreviewOpen &&
+          "lg:grid-cols-[minmax(0,42rem)_minmax(28rem,1fr)]",
+        className,
+      )}
+    >
+      <div className={cn(!originalPreviewOpen && "mx-auto w-full max-w-xl")}>
+        {content}
+      </div>
+      {originalPreviewOpen && (
+        <OriginalDocumentPreview
+          documentId={documentId}
+          title={analysis?.title ?? "Dokument"}
+          open={originalPreviewOpen}
+          onOpenChange={handleOriginalPreviewChange}
+        />
+      )}
+    </div>
+  );
+
   // --- Render: pre-analysis pipeline stages ---
   // Nothing to review yet — show real upload/OCR/analysis progress
   // instead of falling through to the "no analysis data" error state.
@@ -442,7 +482,7 @@ export function ReviewCard({
 
   // --- Render: confirmed ---
   if (confirmed || status === "confirmed") {
-    return (
+    return withOriginalPreview(
       <ReviewCardConfirmed
         documentId={documentId}
         analysis={analysis}
@@ -459,7 +499,7 @@ export function ReviewCard({
         askTitle={confirmed ? (analysis?.title ?? null) : null}
         onReanalyze={handleReanalyze}
         reanalyzing={reanalyzing}
-        className={className}
+        onViewOriginal={() => handleOriginalPreviewChange(true)}
       />
     );
   }
@@ -483,7 +523,7 @@ export function ReviewCard({
   }
 
   // --- Render: full review card ---
-  return (
+  return withOriginalPreview(
     <ReviewCardContent
       analysis={analysis}
       edits={edits}
@@ -504,7 +544,9 @@ export function ReviewCard({
       onResolveDisambiguation={handleResolveDisambiguation}
       onConfirm={handleConfirm}
       onReanalyze={handleReanalyze}
-      className={className}
+      documentId={documentId}
+      onViewOriginal={() => handleOriginalPreviewChange(true)}
+      onBack={onBack ? () => onBack(edits) : undefined}
     />
   );
 }

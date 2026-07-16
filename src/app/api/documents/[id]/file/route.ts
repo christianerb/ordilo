@@ -19,7 +19,8 @@ const SIGNED_URL_TTL_SECONDS = 300;
  *      reusing the same helper as the analyze/confirm/OCR routes.
  *   3. Create a signed URL (via the admin client, since the storage bucket
  *      is not publicly readable) for the document's `file_url` path.
- *   4. Return { url } — the client opens it directly (e.g. in a new tab).
+ *   4. Return { url, mimeType } for an in-app preview without exposing the
+ *      storage bucket publicly.
  */
 export async function GET(
   request: Request,
@@ -71,5 +72,8 @@ export async function GET(
     );
   }
 
-  return Response.json({ url: signed.signedUrl }, { status: 200 });
+  return Response.json(
+    { url: signed.signedUrl, mimeType: document.mime_type },
+    { status: 200 },
+  );
 }

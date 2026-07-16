@@ -336,14 +336,17 @@ describe("ReviewCard", () => {
     expect(screen.queryByTestId("confirmed-details")).toBeNull();
   });
 
-  it("opens the original file in a new tab via the signed-URL endpoint", async () => {
+  it("opens the original file in the in-app comparison view", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ url: "https://storage.example.com/signed" }), {
-        status: 200,
-      }),
+      new Response(
+        JSON.stringify({
+          url: "https://storage.example.com/signed",
+          mimeType: "application/pdf",
+        }),
+        { status: 200 },
+      ),
     );
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 
     render(<ReviewCard documentId="doc-1" status="confirmed" />);
 
@@ -351,18 +354,17 @@ describe("ReviewCard", () => {
     fireEvent.click(viewFileButton);
 
     await waitFor(() => {
-      expect(fetchSpy).toHaveBeenCalledWith("/api/documents/doc-1/file");
-    });
-    await waitFor(() => {
-      expect(openSpy).toHaveBeenCalledWith(
-        "https://storage.example.com/signed",
-        "_blank",
-        "noopener,noreferrer",
+      expect(fetchSpy).toHaveBeenCalledWith(
+        "/api/documents/doc-1/file",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
       );
     });
+    expect(
+      await screen.findByTestId("original-document-preview-mobile"),
+    ).toBeDefined();
+    expect(await screen.findByTitle(`Original von ${fullAnalysis.title}`)).toBeDefined();
 
     fetchSpy.mockRestore();
-    openSpy.mockRestore();
   });
 
   it("calls the analyze API when 'Nochmal lesen' is clicked in confirmed state (VAL-EXTRACT-012)", async () => {
@@ -584,12 +586,10 @@ describe("ReviewCard", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Confidence badges
+  // Confidence badges — removed from UI (internal metadata, not user-facing)
   // ---------------------------------------------------------------------------
 
-  it("hides the confidence badge for high-confidence fields", async () => {
-    // fullAnalysis: person 0.95, organization 0.9, date 0.88, task 0.91 —
-    // all above the high threshold, so none of them need a badge.
+  it("does not render confidence badges for any field", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
@@ -613,30 +613,11 @@ describe("ReviewCard", () => {
         "confidence-badge",
       ),
     ).toBeNull();
-  });
-
-  it("shows the confidence badge only for medium/low-confidence fields", async () => {
-    // fullAnalysis's amount is 0.82 (medium) — the one field in this
-    // fixture actually worth a second look.
-    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
-
-    render(
-      <ReviewCard documentId="doc-1" status="analyzed" />,
-    );
-
-    const amounts = await screen.findByTestId("review-amounts");
-    expect(within(amounts).getByTestId("confidence-badge")).toBeDefined();
-  });
-
-  it("shows the confidence badge for a low-confidence person needing disambiguation", async () => {
-    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
-
-    render(
-      <ReviewCard documentId="doc-1" status="analyzed" />,
-    );
-
-    const persons = await screen.findByTestId("review-persons");
-    expect(within(persons).getByTestId("confidence-badge")).toBeDefined();
+    expect(
+      within(screen.getByTestId("review-amounts")).queryByTestId(
+        "confidence-badge",
+      ),
+    ).toBeNull();
   });
 
   // ---------------------------------------------------------------------------

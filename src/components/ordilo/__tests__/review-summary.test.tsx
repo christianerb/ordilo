@@ -47,11 +47,11 @@ describe("ReviewSummary", () => {
     );
 
     expect(
-      screen.getByText(/ich glaube, das ist eine schule für emma/i),
+      screen.getByText(/Schule für Emma/i),
     ).toBeDefined();
   });
 
-  it("shows highlight rows derived from real extracted data, with the person's role", () => {
+  it("shows highlight rows with the person's role", () => {
     render(
       <ReviewSummary
         analysis={analysis}
@@ -67,24 +67,7 @@ describe("ReviewSummary", () => {
     expect(screen.getByText("Anmeldung abschicken")).toBeDefined();
   });
 
-  it("lists real auto-actions derived from the analysis", () => {
-    render(
-      <ReviewSummary
-        analysis={analysis}
-        familyMembers={familyMembers}
-        onConfirm={vi.fn()}
-        onEdit={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText(/dokument bei emma speichern/i)).toBeDefined();
-    expect(
-      screen.getByText(/aufgabe "anmeldung abschicken" erstellen/i),
-    ).toBeDefined();
-    expect(screen.getByText(/In „Kita" einsortieren/)).toBeDefined();
-  });
-
-  it("does not fabricate highlights or actions when the analysis is empty", () => {
+  it("does not fabricate highlights when the analysis is empty", () => {
     const emptyAnalysis: DocumentAnalysis = {
       document_type: "other",
       title: "Dokument",
@@ -110,9 +93,6 @@ describe("ReviewSummary", () => {
     );
 
     expect(screen.queryByText("Ordilo hat erkannt")).toBeNull();
-    expect(
-      screen.getByText(/dokument im familienbuch speichern/i),
-    ).toBeDefined();
   });
 
   it("shows the uncertainty notice only when needs_user_review is true", () => {

@@ -19,8 +19,11 @@ import {
   Shield,
   Landmark,
   FileText,
+  RefreshCw,
+  ChevronDown,
   type LucideIcon,
 } from "lucide-react";
+import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
@@ -49,13 +52,17 @@ const DOCUMENT_TYPE_ICONS: Record<DocumentType, LucideIcon> = {
 };
 
 // ---------------------------------------------------------------------------
-// Derived highlight rows ("Ordilo hat erkannt")
+// Derived highlight rows
 // ---------------------------------------------------------------------------
 
 interface Highlight {
   icon: LucideIcon;
   value: string;
   caption: string;
+  /** Whether this highlight has an inline person selector. */
+  isPerson?: boolean;
+  /** Whether the value benefits from a quick source check. */
+  isVerifiable?: boolean;
 }
 
 function buildHighlights(
@@ -71,6 +78,7 @@ function buildHighlights(
       icon: User,
       value: topPerson.name,
       caption: role || "Person",
+      isPerson: true,
     });
   }
 
@@ -88,24 +96,20 @@ function buildHighlights(
     highlights.push({
       icon: ListTodo,
       value: topTask.title,
-      caption: "Wichtiger Inhalt",
+      caption: "Aufgabe",
     });
   }
 
-  // Exact identifiers (serial number, contract number, …) are the values
-  // families come back for — surface the first one in the summary.
   const topFact = analysis.facts[0];
   if (topFact) {
     highlights.push({
       icon: Hash,
       value: topFact.value,
       caption: topFact.label || FACT_TYPE_LABELS[topFact.fact_type],
+      isVerifiable: true,
     });
   }
 
-  // Prefer the earliest task due date; fall back to the first extracted
-  // date if no task carries one. Both are real, extracted values — never
-  // fabricated.
   const dueDates = analysis.tasks
     .map((t) => t.due_date)
     .filter((d): d is string => Boolean(d))
@@ -116,7 +120,8 @@ function buildHighlights(
     highlights.push({
       icon: Calendar,
       value: formatted,
-      caption: "Frist erkannt",
+      caption: "Frist",
+      isVerifiable: true,
     });
   }
 
@@ -124,76 +129,34 @@ function buildHighlights(
 }
 
 // ---------------------------------------------------------------------------
-// Derived auto-action rows ("Ordilo wird Folgendes für dich erledigen")
-// ---------------------------------------------------------------------------
-
-export function buildAutoActions(analysis: DocumentAnalysis): string[] {
-  const actions: string[] = [];
-
-  const topPerson = analysis.family_members[0];
-  actions.push(
-    topPerson
-      ? `Dokument bei ${topPerson.name} speichern`
-      : "Dokument im Familienbuch speichern",
-  );
-
-  if (analysis.tasks.length === 1) {
-    actions.push(`Aufgabe "${analysis.tasks[0].title}" erstellen`);
-  } else if (analysis.tasks.length > 1) {
-    actions.push(`${analysis.tasks.length} Aufgaben erstellen`);
-  }
-
-  const dueDates = analysis.tasks
-    .map((t) => t.due_date)
-    .filter((d): d is string => Boolean(d))
-    .sort();
-  if (dueDates[0]) {
-    const formatted = formatGermanDate(dueDates[0]) || dueDates[0];
-    actions.push(`Erinnerung am ${formatted}`);
-  }
-
-  if (analysis.suggested_category && analysis.suggested_category.trim()) {
-    actions.push(`In „${analysis.suggested_category}" einsortieren`);
-  }
-
-  return actions;
-}
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export interface ReviewSummaryProps {
-  /** The loaded document analysis. */
   analysis: DocumentAnalysis;
-  /** Family members, used to resolve the top person's role (if known). */
   familyMembers: FamilyMemberOption[];
-  /** True when a low-confidence person match needs manual disambiguation
-   * (mirrors the full Review Card's VAL-REVIEW-009 guard) — blocks direct
-   * confirm and steers the user to "Bearbeiten" instead. */
   hasUnresolvedDisambiguation?: boolean;
-  /** True while the confirm request is in flight. */
   confirming?: boolean;
-  /** Error message from a failed confirm attempt. */
   confirmError?: string | null;
-  /** "Alles bestätigen" — confirms with no edits. */
   onConfirm: () => void;
-  /** "Bearbeiten" — switches to the full, editable Review Card. */
   onEdit: () => void;
+  onReanalyze?: () => void;
+  documentId?: string;
+  onViewOriginal?: () => void;
+  /** Inline person edit — called when the user picks a different person. */
+  onEditPerson?: (memberId: string | null) => void;
+  /** The currently edited person ID (for the inline select). */
+  editedPersonId?: string | null;
   className?: string;
 }
 
 /**
- * Review Summary — a compact, non-editable preview of a document's
- * analysis: the headline, a handful of extracted highlights, and a plain
- * list of what confirming will actually do. This is the default landing
- * spot after processing finishes in the scan wizard; "Bearbeiten" hands
- * off to the full field-by-field Review Card when someone wants to correct
- * something.
+ * Review Summary — a compact preview of what Ordilo recognized, with
+ * one inline correction path (person) and "Bearbeiten" for everything
+ * else. Answers one question: "does this look right?"
  *
- * Deliberately excludes per-field confidence badges and edit controls —
- * those live in the full Review Card. This view answers one question:
- * "does this look right, yes or no?"
+ * No confidence percentages, no auto-action lists, no "Ich glaube" —
+ * just the facts, clean and confident.
  */
 export function ReviewSummary({
   analysis,
@@ -203,13 +166,20 @@ export function ReviewSummary({
   confirmError,
   onConfirm,
   onEdit,
+  onReanalyze,
+  documentId,
+  onViewOriginal,
+  onEditPerson,
+  editedPersonId,
   className,
 }: ReviewSummaryProps) {
   const headline = buildHeadline(analysis);
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type];
   const TypeIcon = DOCUMENT_TYPE_ICONS[analysis.document_type];
   const highlights = buildHighlights(analysis, familyMembers);
-  const autoActions = buildAutoActions(analysis);
+
+  const personSelectId = useId();
+  const currentPersonId = editedPersonId ?? analysis.family_members[0]?.person_id ?? null;
 
   return (
     <div data-testid="review-summary" className={cn("space-y-5", className)}>
@@ -230,7 +200,7 @@ export function ReviewSummary({
         </div>
       </div>
 
-      {/* needs_user_review notice — the one place apricot appears here */}
+      {/* Uncertainty notice */}
       {analysis.needs_user_review && (
         <div
           data-testid="review-summary-uncertain-notice"
@@ -246,14 +216,12 @@ export function ReviewSummary({
         </div>
       )}
 
-      {/* Highlights: "Ordilo hat erkannt" */}
+      {/* Highlights */}
       {highlights.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist)]">
             Ordilo hat erkannt
           </h3>
-          {/* The reveal moment: each recognized fact cascades in, so the
-              user watches Ordilo's findings appear one by one. */}
           <div className="space-y-1.5 stagger-children">
             {highlights.map((h, i) => (
               <div
@@ -266,9 +234,44 @@ export function ReviewSummary({
                   strokeWidth={1.75}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {h.value}
-                  </p>
+                  {h.isPerson && onEditPerson && familyMembers.length > 0 ? (
+                    <div className="relative">
+                      <select
+                        id={personSelectId}
+                        value={currentPersonId ?? ""}
+                        onChange={(e) => onEditPerson(e.target.value || null)}
+                        className="w-full min-w-0 appearance-none truncate rounded-ordilo-sm border border-border bg-card py-1 pl-2 pr-7 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        aria-label="Person wechseln"
+                        data-testid="review-summary-person-select"
+                      >
+                        <option value="">Person wählen …</option>
+                        {familyMembers.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name}{m.role ? ` (${m.role})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <p className="truncate text-sm font-medium text-foreground">
+                        {h.value}
+                      </p>
+                      {h.isVerifiable && onViewOriginal && (
+                        <button
+                          type="button"
+                          onClick={onViewOriginal}
+                          className="mt-1 rounded-ordilo-sm text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        >
+                          Im Original vergleichen
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {h.caption}
@@ -279,31 +282,23 @@ export function ReviewSummary({
         </div>
       )}
 
-      {/* Auto-actions: "Ordilo wird Folgendes für dich erledigen" */}
-      <div>
-        <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist)]">
-          Ordilo wird Folgendes für dich erledigen
-        </h3>
-        <ul className="space-y-1.5">
-          {autoActions.map((action, i) => (
-            <li key={i} className="flex items-center gap-2.5 text-sm text-foreground">
-              <span
-                className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]/10"
-                aria-hidden="true"
-              >
-                <Check className="size-3" style={{ color: "var(--petrol)" }} strokeWidth={2.5} />
-              </span>
-              {action}
-            </li>
-          ))}
-        </ul>
-      </div>
-
       {/* Confirm error */}
       {confirmError && (
         <div className="rounded-ordilo-sm border border-destructive/20 bg-destructive/5 p-3">
           <p className="text-sm text-destructive">{confirmError}</p>
         </div>
+      )}
+
+      {documentId && onViewOriginal && (
+        <button
+          type="button"
+          onClick={onViewOriginal}
+          className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          data-testid="review-summary-view-original"
+        >
+          <FileText className="size-4" aria-hidden="true" />
+          Original vergleichen
+        </button>
       )}
 
       {/* Actions */}
@@ -329,7 +324,7 @@ export function ReviewSummary({
           ) : (
             <>
               <Check className="size-4" aria-hidden="true" />
-              Alles bestätigen
+              Passt so
             </>
           )}
         </Button>
@@ -346,6 +341,20 @@ export function ReviewSummary({
           Bearbeiten
         </Button>
       </div>
+
+      {/* Nochmal lesen — subtle link, not a primary action */}
+      {onReanalyze && (
+        <button
+          type="button"
+          onClick={onReanalyze}
+          disabled={confirming}
+          className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+          data-testid="review-summary-reanalyze-link"
+        >
+          <RefreshCw className="size-3" aria-hidden="true" />
+          Nochmal lesen
+        </button>
+      )}
     </div>
   );
 }

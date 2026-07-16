@@ -14,6 +14,7 @@ import {
   UserPlus,
   AlertTriangle,
   Loader2,
+  ArrowLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -65,6 +66,9 @@ export function ReviewCardContent({
   onResolveDisambiguation,
   onConfirm,
   onReanalyze,
+  documentId,
+  onViewOriginal,
+  onBack,
   className,
 }: {
   analysis: DocumentAnalysis;
@@ -87,6 +91,11 @@ export function ReviewCardContent({
   onResolveDisambiguation: (entityIndex: number, memberId: string) => void;
   onConfirm: () => void;
   onReanalyze: () => void;
+  /** Document ID — when provided, enables original-file comparison. */
+  documentId?: string;
+  onViewOriginal?: () => void;
+  /** "Zurück" — returns to the summary view (scan wizard only). */
+  onBack?: () => void;
   className?: string;
 }) {
   const activeTasks = analysis.tasks
@@ -108,20 +117,9 @@ export function ReviewCardContent({
       <div className="mb-5 rounded-ordilo-md bg-[var(--sand)]/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-medium text-[var(--mist-dark)]">
-              Ordilo hat erkannt
-            </p>
-            <h3 className="mt-1 text-lg font-semibold leading-tight text-foreground">
+            <h3 className="text-lg font-semibold leading-tight text-foreground">
               {detailHeading}
             </h3>
-            {/* ONE visible order: only the category (= Sammlung) gets a
-                pill. The document type already lives in the heading
-                ("Rechnung für Emma") as natural language. */}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="inline-flex items-center rounded-full bg-white/80 px-2.5 py-1 text-xs font-medium text-[var(--mist-dark)]">
-                {analysis.suggested_category}
-              </span>
-            </div>
           </div>
 
           {needsReview && (
@@ -260,6 +258,7 @@ export function ReviewCardContent({
                 icon={Euro}
                 label="Beträge"
                 confidence={amount.confidence}
+                onCompareOriginal={onViewOriginal}
               >
                 <span className="block truncate">
                   {amount.amount} {amount.currency}
@@ -293,6 +292,7 @@ export function ReviewCardContent({
                   testId={`review-fact-${i}`}
                   confidence={fact.confidence}
                   isEdited={isEdited}
+                  onCompareOriginal={onViewOriginal}
                   editControl={
                     <FactEditControl
                       value={displayValue}
@@ -415,6 +415,19 @@ export function ReviewCardContent({
         </div>
       )}
 
+      {documentId && onViewOriginal && (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onViewOriginal}
+            className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="review-view-original"
+          >
+            Original vergleichen
+          </button>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="sticky bottom-0 z-10 mt-5 -mx-4 bg-[var(--background)]/95 px-4 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--background)]/88">
         <div className="flex flex-col gap-2.5">
@@ -439,28 +452,41 @@ export function ReviewCardContent({
           ) : (
             <>
               <Check className="size-4" aria-hidden="true" />
-              Ins Familienbuch übernehmen
+              Speichern
             </>
           )}
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="lg"
-          onClick={onReanalyze}
-          disabled={confirming}
-          className="h-12 rounded-ordilo-md w-full"
-          data-testid="reanalyze-button"
-        >
-          <RefreshCw className="size-4" aria-hidden="true" />
-          Nochmal lesen
-        </Button>
+        {onBack && (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={onBack}
+            disabled={confirming}
+            className="h-12 rounded-ordilo-md w-full"
+            data-testid="review-back-button"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Zurück
+          </Button>
+        )}
+        {onReanalyze && (
+          <button
+            type="button"
+            onClick={onReanalyze}
+            disabled={confirming}
+            className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+            data-testid="reanalyze-button"
+          >
+            <RefreshCw className="size-3" aria-hidden="true" />
+            Nochmal lesen
+          </button>
+        )}
         </div>
       </div>
     </div>
   );
 }
-
 /**
  * Inline "create as family member" suggestion for an extracted person who
  * matched nobody in the family — the graph grows from the documents.
