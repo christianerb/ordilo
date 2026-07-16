@@ -11,7 +11,8 @@ export const loginEmailSchema = z.object({
     .string()
     .trim()
     .min(1, "Bitte E-Mail-Adresse eingeben")
-    .email("Bitte gültige E-Mail-Adresse eingeben"),
+    .email("Bitte gültige E-Mail-Adresse eingeben")
+    .transform((email) => email.toLowerCase()),
 });
 
 export type LoginEmailInput = z.infer<typeof loginEmailSchema>;
