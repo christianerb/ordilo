@@ -10,6 +10,10 @@ import {
   Sparkles,
   BellRing,
   ExternalLink,
+  Check,
+  ShieldCheck,
+  RefreshCw,
+  Pencil,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { validateLoginEmail } from "@/lib/auth/validation";
@@ -69,12 +73,14 @@ function webmailFor(email: string): { label: string; url: string } | null {
 export function LoginForm() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
+  const [focusedCodeIndex, setFocusedCodeIndex] = useState(0);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resending, setResending] = useState(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   const startCooldown = useCallback(() => {
     setResendCooldown(RESEND_COOLDOWN_SECONDS);
@@ -138,6 +144,38 @@ export function LoginForm() {
     startCooldown();
   }, [email, resendCooldown, resending, sendLoginCode, startCooldown]);
 
+  function handleCodeChange(value: string, index: number) {
+    const digits = value.replace(/\D/g, "").slice(0, 6);
+    if (!digits) {
+      setCode((current) => {
+        const next = current.padEnd(6, " ").split("");
+        next[index] = " ";
+        return next.join("").trimEnd();
+      });
+      return;
+    }
+
+    setCode((current) => {
+      const next = current.padEnd(6, " ").split("");
+      digits.split("").forEach((digit, offset) => {
+        if (index + offset < 6) next[index + offset] = digit;
+      });
+      return next.join("").trimEnd();
+    });
+
+    const nextIndex = Math.min(index + digits.length, 5);
+    codeInputRefs.current[nextIndex]?.focus();
+  }
+
+  function handleCodeKeyDown(
+    event: React.KeyboardEvent<HTMLInputElement>,
+    index: number,
+  ) {
+    if (event.key === "Backspace" && !code[index] && index > 0) {
+      codeInputRefs.current[index - 1]?.focus();
+    }
+  }
+
   async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -186,47 +224,79 @@ export function LoginForm() {
   // Confirmation state — a login code was sent successfully.
   if (formState === "sent" || formState === "verifying") {
     const webmail = webmailFor(email);
+    const codeDigits = Array.from({ length: 6 }, (_, index) => code[index] ?? "");
+
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
-        <div className="w-full max-w-sm space-y-6 text-center stagger-children">
-          <div className="flex justify-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-ordilo-md bg-primary text-primary-foreground shadow-card">
-              <Mail className="h-8 w-8" aria-hidden="true" />
+      <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-8">
+        <div className="w-full max-w-sm space-y-7 text-center">
+          <div className="flex justify-center animate-card-in">
+            <div className="relative flex size-20 items-center justify-center rounded-full border border-border bg-card text-[var(--petrol)] shadow-card">
+              <Mail className="size-9" strokeWidth={1.75} aria-hidden="true" />
+              <span className="absolute -right-1 top-0 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-card">
+                <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
+              </span>
             </div>
           </div>
-          <div className="space-y-3">
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
-              Die E-Mail ist unterwegs
+
+          <div className="space-y-3 animate-card-in [animation-delay:40ms]">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              Fast geschafft!
             </h1>
-            <p className="text-sm leading-relaxed text-muted-foreground">
+            <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
               Wir haben einen 6-stelligen Code an{" "}
-              <span className="font-medium text-foreground" data-testid="sent-email">
+              <span className="font-semibold text-foreground" data-testid="sent-email">
                 {email}
               </span>{" "}
               geschickt. Gib ihn hier ein, dann bist du drin.
             </p>
           </div>
 
-          <form onSubmit={handleVerify} className="space-y-3 text-left">
-            <Label htmlFor="login-code">Anmelde-Code</Label>
-            <Input
-              autoFocus
-              id="login-code"
-              name="code"
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              maxLength={6}
-              placeholder="123456"
-              value={code}
-              onChange={(event) =>
-                setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-              disabled={formState === "verifying"}
-              className="h-12 rounded-ordilo-md text-center text-lg tracking-[0.3em]"
-            />
+          <form
+            onSubmit={handleVerify}
+            className="space-y-5 text-left animate-card-in [animation-delay:80ms]"
+          >
+            <fieldset>
+              <legend className="mb-3 text-sm font-medium text-foreground">
+                Dein 6-stelliger Code
+              </legend>
+              <div className="grid grid-cols-6 gap-2 sm:gap-3">
+                {codeDigits.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(element) => {
+                      codeInputRefs.current[index] = element;
+                    }}
+                    autoFocus={index === 0}
+                    aria-label={`Ziffer ${index + 1} des Anmelde-Codes`}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete={index === 0 ? "one-time-code" : "off"}
+                    maxLength={6}
+                    value={digit}
+                    onChange={(event) => handleCodeChange(event.target.value, index)}
+                    onKeyDown={(event) => handleCodeKeyDown(event, index)}
+                    onFocus={() => setFocusedCodeIndex(index)}
+                    disabled={formState === "verifying"}
+                    className={`h-14 min-w-0 rounded-ordilo-sm border bg-card text-center text-xl font-medium tabular-nums text-foreground outline-none transition-[border-color,box-shadow,transform] duration-200 ${
+                      focusedCodeIndex === index
+                        ? "border-primary ring-[3px] ring-ring/20"
+                        : "border-border"
+                    } disabled:cursor-wait disabled:opacity-60`}
+                  />
+                ))}
+              </div>
+            </fieldset>
+
+            <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+              <ShieldCheck className="size-4 text-[var(--petrol)]" aria-hidden="true" />
+              Sicher und verschlüsselt
+            </div>
+
             {errorMessage && (
-              <p role="alert" className="text-sm font-medium text-destructive">
+              <p
+                role="alert"
+                className="rounded-ordilo-sm bg-destructive/5 px-3 py-2 text-center text-sm font-medium text-destructive"
+              >
                 {errorMessage}
               </p>
             )}
@@ -234,7 +304,7 @@ export function LoginForm() {
               type="submit"
               size="lg"
               disabled={formState === "verifying"}
-              className="h-12 w-full rounded-ordilo-md text-base"
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
             >
               {formState === "verifying" ? (
                 <>
@@ -242,7 +312,10 @@ export function LoginForm() {
                   Wird geprüft…
                 </>
               ) : (
-                "Anmelden"
+                <>
+                  Anmelden
+                  <ArrowRight className="size-5" aria-hidden="true" />
+                </>
               )}
             </Button>
           </form>
@@ -250,8 +323,9 @@ export function LoginForm() {
           {webmail && (
             <Button
               asChild
+              variant="outline"
               size="lg"
-              className="h-12 w-full rounded-ordilo-md text-base"
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
               data-testid="open-webmail-button"
             >
               <a href={webmail.url} target="_blank" rel="noopener noreferrer">
@@ -265,26 +339,32 @@ export function LoginForm() {
             <p className="text-muted-foreground">
               Nichts angekommen? Schau auch im Spam-Ordner nach.
             </p>
-            <div className="flex items-center justify-center gap-4">
+            <div className="flex items-center justify-center gap-3">
               <button
                 type="button"
                 onClick={handleResend}
                 disabled={resendCooldown > 0 || resending || formState === "verifying"}
-                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline disabled:cursor-default disabled:text-muted-foreground disabled:no-underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                className="inline-flex items-center gap-1.5 rounded-ordilo-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] disabled:cursor-default disabled:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="resend-button"
               >
+                <RefreshCw
+                  className={`size-4 ${resending ? "animate-spin" : ""}`}
+                  aria-hidden="true"
+                />
                 {resending
                   ? "Wird gesendet …"
                   : resendCooldown > 0
                     ? `Nochmal senden (${resendCooldown}s)`
                     : "Nochmal senden"}
               </button>
+              <span className="h-4 w-px bg-border" aria-hidden="true" />
               <button
                 type="button"
                 onClick={handleChangeEmail}
-                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                className="inline-flex items-center gap-1.5 rounded-ordilo-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="change-email-button"
               >
+                <Pencil className="size-4" aria-hidden="true" />
                 Adresse ändern
               </button>
             </div>
