@@ -6,9 +6,6 @@ import {
   Mail,
   ArrowRight,
   Loader2,
-  Camera,
-  Sparkles,
-  BellRing,
   ExternalLink,
   Check,
   ShieldCheck,
@@ -20,7 +17,7 @@ import { validateLoginEmail } from "@/lib/auth/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { AuthShell } from "./auth-shell";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
@@ -227,11 +224,11 @@ export function LoginForm() {
     const codeDigits = Array.from({ length: 6 }, (_, index) => code[index] ?? "");
 
     return (
-      <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-8">
-        <div className="w-full max-w-sm space-y-7 text-center">
+      <AuthShell compact>
+        <div className="space-y-6 text-center">
           <div className="flex justify-center animate-card-in">
-            <div className="relative flex size-20 items-center justify-center rounded-full border border-border bg-card text-[var(--petrol)] shadow-card">
-              <Mail className="size-9" strokeWidth={1.75} aria-hidden="true" />
+            <div className="relative flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
+              <Mail className="size-7" strokeWidth={1.75} aria-hidden="true" />
               <span className="absolute -right-1 top-0 flex size-6 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-card">
                 <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
               </span>
@@ -239,7 +236,7 @@ export function LoginForm() {
           </div>
 
           <div className="space-y-3 animate-card-in [animation-delay:40ms]">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
               Fast geschafft!
             </h1>
             <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
@@ -277,7 +274,7 @@ export function LoginForm() {
                     onKeyDown={(event) => handleCodeKeyDown(event, index)}
                     onFocus={() => setFocusedCodeIndex(index)}
                     disabled={formState === "verifying"}
-                    className={`h-14 min-w-0 rounded-ordilo-sm border bg-card text-center text-xl font-medium tabular-nums text-foreground outline-none transition-[border-color,box-shadow,transform] duration-200 ${
+                    className={`h-14 min-w-0 rounded-ordilo-sm border bg-[var(--warm-white)] text-center text-xl font-medium tabular-nums text-foreground outline-none transition-[border-color,box-shadow,transform] duration-200 ${
                       focusedCodeIndex === index
                         ? "border-primary ring-[3px] ring-ring/20"
                         : "border-border"
@@ -370,51 +367,23 @@ export function LoginForm() {
             </div>
           </div>
         </div>
-      </main>
+      </AuthShell>
     );
   }
 
   // Login form — idle, submitting, or error state.
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
-      <div className="w-full max-w-sm space-y-8 stagger-children">
-        <div className="space-y-5 text-center">
-          <div className="flex justify-center">
-            <OrdiloMascot
-              size={64}
-              mood="greeting"
-              style={{ color: "var(--petrol)" }}
-            />
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Frag einfach Ordilo
-            </h1>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Der Ordner, der mitdenkt: Dokumente scannen, alles
-              wiederfinden, keine Frist mehr verpassen.
+    <AuthShell>
+      <div className="space-y-7 stagger-children">
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
+              Schön, dass du da bist
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Melde dich mit deiner E-Mail-Adresse an. Ein Passwort brauchst du
+              nicht.
             </p>
-          </div>
-
-          {/* The product in three verbs — quiet, scannable, no marketing-speak */}
-          <div
-            className="flex items-center justify-center gap-4 text-xs text-muted-foreground"
-            aria-hidden="true"
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <Camera className="size-3.5 text-[var(--petrol)]" />
-              Scannen
-            </span>
-            <span className="text-border">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <Sparkles className="size-3.5 text-[var(--petrol)]" />
-              Fragen
-            </span>
-            <span className="text-border">·</span>
-            <span className="inline-flex items-center gap-1.5">
-              <BellRing className="size-3.5 text-[var(--petrol)]" />
-              Erinnert werden
-            </span>
           </div>
         </div>
 
@@ -433,7 +402,7 @@ export function LoginForm() {
               onChange={handleEmailChange}
               aria-invalid={validationError ? true : undefined}
               disabled={formState === "submitting"}
-              className="h-12 rounded-ordilo-md"
+              className="h-12 rounded-ordilo-sm bg-[var(--warm-white)]"
             />
             {validationError && (
               <p
@@ -460,7 +429,7 @@ export function LoginForm() {
             type="submit"
             size="lg"
             disabled={formState === "submitting"}
-            className="h-12 w-full rounded-ordilo-md text-base"
+            className="h-12 w-full rounded-ordilo-sm text-base press-scale"
           >
             {formState === "submitting" ? (
               <>
@@ -476,11 +445,19 @@ export function LoginForm() {
           </Button>
         </form>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Anmelden und Registrieren sind dasselbe: Gibt es dein Konto noch
-          nicht, legen wir es einfach an. Mit der Anmeldung stimmst du den
-          Nutzungsbedingungen zu.
-        </p>
+        <div className="rounded-ordilo-sm bg-[var(--auth-sage)]/55 px-4 py-3.5">
+          <div className="flex gap-3">
+            <ShieldCheck
+              className="mt-0.5 size-5 shrink-0 text-[var(--petrol)]"
+              aria-hidden="true"
+            />
+            <p className="text-xs leading-relaxed text-[var(--petrol-darker)]">
+              <span className="font-semibold">Anmelden und Registrieren sind dasselbe.</span>{" "}
+              Gibt es dein Konto noch nicht, legen wir es einfach an. Mit der
+              Anmeldung stimmst du den Nutzungsbedingungen zu.
+            </p>
+          </div>
+        </div>
 
         <nav
           className="flex items-center justify-center gap-4 text-xs text-muted-foreground"
@@ -500,6 +477,6 @@ export function LoginForm() {
           </Link>
         </nav>
       </div>
-    </main>
+    </AuthShell>
   );
 }

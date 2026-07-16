@@ -248,6 +248,17 @@ The primary surface of the app. Document cards, task cards, person cards — all
 - **Placeholder:** Muted foreground (mist-dark, #606060) — meets WCAG AA contrast
 - **Error:** Border shifts to Destructive, ring at 20% opacity
 
+### Authentication
+
+Login and email-code confirmation use a boxed, two-part welcome surface. On desktop, the product story and mascot illustration sit beside the form; on mobile, they stack into one continuous card. This makes the first contact feel friendly and substantial without turning authentication into a marketing page.
+
+- **Outer background:** Warm White with large, low-contrast organic fields in diluted Harbor Blue, sage, and apricot. These shapes stay behind the auth card and never compete with the form.
+- **Auth card:** Warm White, 20px radius, a subtle white border, and Card Rest shadow. The card uses a two-column layout on desktop and a single stacked layout on mobile.
+- **Story panel:** Sand-toned surface with wordmark, security badge, short product promise, three feature labels, and the Ordilo mascot composition.
+- **Form panel:** Quiet Warm White surface, max-width 384px, standard controls, and Harbor Blue as the only action color.
+- **Email-code state:** Uses the same outer shell. On mobile, the story illustration collapses so the code inputs remain immediately accessible.
+- **Supporting colors:** Sage and apricot are soft background tints only. They never replace Harbor Blue for buttons, links, focus, or status actions.
+
 ### Badges
 
 - **Style:** Full pill radius (9999px), 2px/10px padding, 0.75rem font-size, medium weight
