@@ -271,6 +271,16 @@
   --apricot-light: #F0B4A0;
   --blue-soft: #E4F0FC;
 
+  /* Auth surfaces — a friendlier, more illustrative use of the core palette */
+  --auth-background: #F8F6F2;
+  --auth-surface: #FFFEFC;
+  --auth-story-surface: #F8F6F1;
+  --auth-illustration: #F4EDE2;
+  --auth-sage: #DDEBE5;
+  --auth-sage-wash: #E6F0EC;
+  --auth-blue-wash: #E5EEF1;
+  --auth-apricot-wash: #F8E7D4;
+
   /* Radius — Ordilo uses 20-28px on primary cards */
   --radius: 20px; /* base for shadcn; sm/md/lg/xl overridden above */
 
