@@ -49,8 +49,8 @@ describe("loginEmailSchema", () => {
 });
 
 describe("validateLoginEmail", () => {
-  it("returns success with trimmed email for valid input", () => {
-    const result = validateLoginEmail("  test@ordilo.test  ");
+  it("returns success with a canonical email for valid input", () => {
+    const result = validateLoginEmail("  Test@Ordilo.Test  ");
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.email).toBe("test@ordilo.test");

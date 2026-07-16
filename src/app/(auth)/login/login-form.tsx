@@ -76,6 +76,7 @@ export function LoginForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resending, setResending] = useState(false);
+  const loginRequestInFlightRef = useRef(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
@@ -94,15 +95,20 @@ export function LoginForm() {
   }, []);
 
   const sendLoginCode = useCallback(async (targetEmail: string) => {
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email: targetEmail,
-    });
-    return !error;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.auth.signInWithOtp({
+        email: targetEmail,
+      });
+      return !error;
+    } catch {
+      return false;
+    }
   }, []);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (loginRequestInFlightRef.current) return;
 
     // Client-side validation — never call signInWithOtp with invalid input.
     const result = validateLoginEmail(email);
@@ -115,9 +121,11 @@ export function LoginForm() {
     setValidationError(null);
     setErrorMessage(null);
     setFormState("submitting");
+    loginRequestInFlightRef.current = true;
 
     const ok = await sendLoginCode(result.data.email);
     if (!ok) {
+      loginRequestInFlightRef.current = false;
       // Friendly German error — never surface the raw Supabase error JSON.
       setErrorMessage("Das hat nicht geklappt. Bitte versuch's nochmal.");
       setFormState("error");
@@ -138,6 +146,9 @@ export function LoginForm() {
       setErrorMessage("Der Code konnte nicht gesendet werden. Bitte versuch's nochmal.");
       return;
     }
+    setCode("");
+    setErrorMessage(null);
+    codeInputRefs.current[0]?.focus();
     startCooldown();
   }, [email, resendCooldown, resending, sendLoginCode, startCooldown]);
 
@@ -202,6 +213,7 @@ export function LoginForm() {
   }
 
   const handleChangeEmail = useCallback(() => {
+    loginRequestInFlightRef.current = false;
     setFormState("idle");
     setCode("");
     setErrorMessage(null);

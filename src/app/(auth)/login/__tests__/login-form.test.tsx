@@ -24,7 +24,7 @@ describe("LoginForm", () => {
     render(<LoginForm />);
 
     fireEvent.change(screen.getByLabelText("E-Mail-Adresse"), {
-      target: { value: "familie@example.com" },
+      target: { value: "  Familie@Example.com  " },
     });
     fireEvent.submit(
       screen.getByRole("button", { name: /loslegen/i }).closest("form")!,
@@ -35,6 +35,23 @@ describe("LoginForm", () => {
     expect(signInWithOtp).toHaveBeenCalledWith({
       email: "familie@example.com",
     });
+    expect(screen.getByTestId("sent-email").textContent).toBe(
+      "familie@example.com",
+    );
+  });
+
+  it("does not generate two codes for duplicate form submissions", async () => {
+    signInWithOtp.mockReturnValue(new Promise(() => {}));
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("E-Mail-Adresse"), {
+      target: { value: "familie@example.com" },
+    });
+    const form = screen.getByRole("button", { name: /loslegen/i }).closest("form")!;
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    expect(signInWithOtp).toHaveBeenCalledTimes(1);
   });
 
   it("verifies the six-digit code for the requested email", async () => {
