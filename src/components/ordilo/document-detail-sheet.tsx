@@ -45,6 +45,7 @@ export function DocumentDetailSheet({
   const displayTitle =
     document?.title?.trim() || document?.original_filename || "Dokument";
   const [desktop, setDesktop] = useState(false);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
 
   useMountEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -60,12 +61,22 @@ export function DocumentDetailSheet({
   });
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setComparisonOpen(false);
+        onOpenChange(nextOpen);
+      }}
+    >
       <SheetContent
         side={desktop ? "right" : "bottom"}
         className={cn(
           "w-full gap-0 p-0",
-          desktop ? "lg:max-w-xl xl:max-w-[42rem]" : "max-h-[90vh] rounded-t-ordilo-xl",
+          desktop
+            ? comparisonOpen
+              ? "lg:max-w-[min(92vw,80rem)]"
+              : "lg:max-w-xl xl:max-w-[42rem]"
+            : "max-h-[90vh] rounded-t-ordilo-xl",
         )}
         data-testid="document-detail-sheet"
       >
@@ -92,6 +103,7 @@ export function DocumentDetailSheet({
               onConfirmSuccess={onConfirmSuccess}
               onReanalyzeSuccess={onReanalyzeSuccess}
               onRetry={onRetry ? () => onRetry(document.id) : undefined}
+              onOriginalPreviewChange={setComparisonOpen}
             />
           </div>
         )}

@@ -1,22 +1,25 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Check, FolderCheck, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { OrdiloMascot } from "@/components/ordilo/mascot";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/schemas/extraction";
+import { formatGermanDate } from "@/lib/format";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import { fetchDocumentAnalysis, fetchFamilyMembers } from "@/lib/analysis";
 import { ReviewCard } from "@/components/ordilo/review-card";
-import { ReviewCardSkeleton, ReviewCardConfirmed } from "@/components/ordilo/review-card/states";
+import { ReviewCardSkeleton } from "@/components/ordilo/review-card/states";
+import { OriginalDocumentPreview } from "@/components/ordilo/original-document-preview";
 import {
   buildConfirmPayload,
   postConfirm,
   type EditState,
-  type EditedAnalysisPayload,
 } from "@/components/ordilo/review-card/helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { ReviewSummary, buildAutoActions } from "@/components/ordilo/review-summary";
+import { ReviewSummary } from "@/components/ordilo/review-summary";
+import { cn } from "@/lib/utils";
 
 const EMPTY_EDITS: EditState = {
   persons: new Map(),
@@ -27,55 +30,55 @@ const EMPTY_EDITS: EditState = {
   deletedTasks: new Set(),
 };
 
-/**
- * How long the auto-file card stays interceptable before the clean
- * document confirms itself. Long enough to read the card and tap
- * "Bearbeiten", short enough that the default path needs zero actions.
- */
-export const AUTO_CONFIRM_DELAY_MS = 4000;
+/** Build the ready-to-save action list inline (was previously imported). */
+function buildAutoActions(analysis: DocumentAnalysis): string[] {
+  const actions: string[] = [];
+  const topPerson = analysis.family_members[0];
+  actions.push(
+    topPerson
+      ? `Dokument bei ${topPerson.name} speichern`
+      : "Dokument im Familienbuch speichern",
+  );
+  if (analysis.tasks.length === 1) {
+    actions.push(`Aufgabe "${analysis.tasks[0].title}" erstellen`);
+  } else if (analysis.tasks.length > 1) {
+    actions.push(`${analysis.tasks.length} Aufgaben erstellen`);
+  }
+  const dueDates = analysis.tasks
+    .map((t) => t.due_date)
+    .filter((d): d is string => Boolean(d))
+    .sort();
+  if (dueDates[0]) {
+    const formatted = formatGermanDate(dueDates[0]) || dueDates[0];
+    actions.push(`Erinnerung am ${formatted}`);
+  }
+  if (analysis.suggested_category && analysis.suggested_category.trim()) {
+    actions.push(`In „${analysis.suggested_category}" einsortieren`);
+  }
+  return actions;
+}
 
 export interface ScanReviewStepProps {
   documentId: string;
-  /** Called once the document has been confirmed and the celebration has
-   * been shown — the wizard closes and the underlying document list is
-   * already up to date. */
   onDone: () => void;
-  /**
-   * Called when the component unmounts while a zero-touch countdown is
-   * still pending (the wizard was closed mid-countdown). The OWNER (scan
-   * provider) performs the confirm and refreshes the document list, so
-   * the UI never shows an already-confirmed document as reviewable.
-   */
-  onPendingAutoConfirm?: (
-    documentId: string,
-    payload: EditedAnalysisPayload,
-  ) => void;
+  /** Number of already-confirmed documents before this one (for milestones). */
+  confirmedCount?: number;
   className?: string;
 }
 
 /**
- * Review Step — zero-touch by default.
+ * Review Step — unhurried confirmation.
  *
- * A CLEAN analysis files itself: an auto-file card announces where the
- * document is going, lists exactly what confirming will do (including
- * tasks about to be created), and confirms automatically after
- * {@link AUTO_CONFIRM_DELAY_MS} — the user can intercept with
- * "Bearbeiten" or fast-forward with "Passt so". Closing the wizard
- * during the countdown still confirms via {@link onPendingAutoConfirm}.
+ * A CLEAN analysis gets a compact ready-to-save card. It stays visible
+ * until the user chooses to save or edit it.
  *
- * "Clean" means `needs_user_review === false`. That flag is
- * deterministic: `computeNeedsUserReview` (applied on every analysis
- * fetch) folds in EVERY low-confidence entity — persons included — so an
- * ambiguous person match can never reach the auto-file path.
- *
- * An UNCLEAN analysis lands on the compact {@link ReviewSummary}
- * ("does this look right?") exactly as before; "Bearbeiten" hands off to
- * the full, field-by-field {@link ReviewCard}.
+ * An UNCLEAN analysis lands on the compact ReviewSummary with inline
+ * person editing and "Bearbeiten" for everything else.
  */
 export function ScanReviewStep({
   documentId,
   onDone,
-  onPendingAutoConfirm,
+  confirmedCount = 0,
   className,
 }: ScanReviewStepProps) {
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null);
@@ -85,82 +88,49 @@ export function ScanReviewStep({
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-
-  const documentIdRef = useRef(documentId);
-  documentIdRef.current = documentId;
-  const onPendingAutoConfirmRef = useRef(onPendingAutoConfirm);
-  onPendingAutoConfirmRef.current = onPendingAutoConfirm;
-
-  // Tracks the auto-confirm lifecycle across unmount: "pending" means the
-  // countdown is still running and the confirm MUST be flushed if the
-  // component disappears; anything else means it's handled.
-  const autoConfirmRef = useRef<"idle" | "pending" | "handled">("idle");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const handleConfirmRef = useRef<() => Promise<void>>(async () => {});
+  const [edits, setEdits] = useState<EditState>(EMPTY_EDITS);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
 
   useMountEffect(() => {
     let cancelled = false;
-    // Captured for the unmount flush so it can build the payload without
-    // depending on state that may not have flushed yet.
-    let loadedAnalysis: DocumentAnalysis | null = null;
 
     async function load() {
       const [a, members] = await Promise.all([
-        fetchDocumentAnalysis(documentIdRef.current),
+        fetchDocumentAnalysis(documentId),
         fetchFamilyMembers(),
       ]);
       if (cancelled) return;
       setAnalysis(a);
-      loadedAnalysis = a;
       setFamilyMembers(members);
       setLoading(false);
 
-      // Zero-touch decision — see the component docstring for why
-      // needs_user_review alone is a sufficient gate.
       if (a && !a.needs_user_review) {
         setMode("auto");
-        autoConfirmRef.current = "pending";
-        timerRef.current = setTimeout(() => {
-          if (autoConfirmRef.current !== "pending") return;
-          autoConfirmRef.current = "handled";
-          void handleConfirmRef.current();
-        }, AUTO_CONFIRM_DELAY_MS);
       }
     }
     load();
     return () => {
       cancelled = true;
-      if (timerRef.current) clearTimeout(timerRef.current);
-      // The wizard closed mid-countdown: hand the pending confirm to the
-      // owner, which POSTs it and refreshes the document list. Failures
-      // are safe — the document simply stays "analyzed" and reappears
-      // under "Zum Durchsehen".
-      if (autoConfirmRef.current === "pending" && loadedAnalysis) {
-        autoConfirmRef.current = "handled";
-        const payload = buildConfirmPayload(loadedAnalysis, EMPTY_EDITS);
-        if (onPendingAutoConfirmRef.current) {
-          onPendingAutoConfirmRef.current(documentIdRef.current, payload);
-        } else {
-          void postConfirm(documentIdRef.current, payload).catch(() => {});
-        }
-      }
     };
   });
 
   const hasUnresolvedDisambiguation = useMemo(() => {
     if (!analysis) return false;
     const lowConfidenceCount = analysis.family_members.filter(
-      (m) => m.confidence < LOW_CONFIDENCE_THRESHOLD,
+      (member, index) =>
+        member.confidence < LOW_CONFIDENCE_THRESHOLD &&
+        !edits.persons.has(index),
     ).length;
     return lowConfidenceCount > 0 && familyMembers.length >= 2;
-  }, [analysis, familyMembers]);
+  }, [analysis, edits.persons, familyMembers]);
 
   const handleConfirm = useCallback(async () => {
     if (!analysis || confirming) return;
     setConfirming(true);
     setConfirmError(null);
     try {
-      const payload = buildConfirmPayload(analysis, EMPTY_EDITS);
+      const payload = buildConfirmPayload(analysis, edits);
       const response = await postConfirm(documentId, payload);
       if (!response.ok) {
         let errorBody: { error?: string };
@@ -178,30 +148,90 @@ export function ScanReviewStep({
       setConfirmError(
         err instanceof Error ? err.message : "Bestätigung fehlgeschlagen. Bitte erneut versuchen.",
       );
-      // Auto-file failed — fall back to the manual summary so the user
-      // sees the error and can retry deliberately.
       setMode("summary");
     } finally {
       setConfirming(false);
     }
-  }, [analysis, confirming, documentId]);
-  handleConfirmRef.current = handleConfirm;
+  }, [analysis, confirming, documentId, edits]);
+  const handleEditPerson = useCallback((memberId: string | null) => {
+    const member = familyMembers.find((m) => m.id === memberId);
+    setEdits((prev) => {
+      const newPersons = new Map(prev.persons);
+      if (member) {
+        newPersons.set(0, { name: member.name, personId: member.id });
+      } else {
+        newPersons.delete(0);
+      }
+      return { ...prev, persons: newPersons };
+    });
+  }, [familyMembers]);
 
-  /** User intercepts the countdown — cancel and hand off. */
-  const cancelAutoConfirm = useCallback(() => {
-    autoConfirmRef.current = "handled";
-    if (timerRef.current) clearTimeout(timerRef.current);
-  }, []);
+  const handleReanalyze = useCallback(async () => {
+    if (reanalyzing) return;
+    setReanalyzing(true);
+    setConfirmError(null);
+    try {
+      const response = await fetch(`/api/documents/${documentId}/analyze`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error();
+      // Reload analysis after re-analysis
+      const result = await fetchDocumentAnalysis(documentId);
+      setAnalysis(result);
+      setEdits(EMPTY_EDITS);
+    } catch {
+      setConfirmError("Nochmal lesen hat nicht geklappt.");
+    } finally {
+      setReanalyzing(false);
+    }
+  }, [documentId, reanalyzing]);
 
+  const editedPersonId = edits.persons.get(0)?.personId ?? null;
+
+  // --- Milestone celebration ---
+  // After this confirm, the total confirmed count becomes confirmedCount + 1.
+  // We celebrate at 1 (first!), 10, 25, 50, and 100 — warm, not flashy.
+  const MILESTONES: Record<number, string> = {
+    1: "Das erste Dokument im Familienbuch — ein guter Anfang.",
+    10: "Zehn Dokumente im Familienbuch. Langsam wird es übersichtlich.",
+    25: "25 Dokumente — euer Familienbuch wächst schön mit.",
+    50: "50 Dokumente im Familienbuch. Halbweg zu einem vollen Archiv.",
+    100: "100 Dokumente! Ordilo kennt eure Akten besser als jeder Aktenordner.",
+  };
+  const afterCount = confirmedCount + 1;
+  const milestoneMessage = MILESTONES[afterCount];
+
+  // --- Simple confirmed state — just success + done ---
   if (confirmed) {
     return (
-      <div className={className} data-testid="review-step-confirmed">
-        <ReviewCardConfirmed celebrate askTitle={analysis?.title ?? null} />
+      <div
+        className={cn("flex flex-col items-center gap-6 pt-10 text-center animate-card-in", className)}
+        data-testid="review-step-confirmed"
+      >
+        <div
+          className="flex size-16 items-center justify-center rounded-full bg-[var(--petrol)]/10"
+          aria-hidden="true"
+        >
+          <OrdiloMascot
+            size={48}
+            mood="success"
+            animate
+            style={{ color: "var(--petrol)" }}
+          />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            Im Familienbuch
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {milestoneMessage ?? analysis?.title ?? "Dokument gespeichert."}
+          </p>
+        </div>
         <Button
           type="button"
           size="lg"
           onClick={onDone}
-          className="mt-4 h-12 w-full rounded-ordilo-md"
+          className="h-12 w-full max-w-xs rounded-ordilo-md"
           data-testid="review-step-done-button"
         >
           <Check className="size-4" aria-hidden="true" />
@@ -220,9 +250,11 @@ export function ScanReviewStep({
       <ReviewCard
         documentId={documentId}
         status="analyzed"
-        // Give the full Review Card's own confirmed celebration a moment
-        // to play before the wizard closes, instead of cutting it off.
         onConfirmSuccess={() => setTimeout(onDone, 1500)}
+        onBack={(reviewEdits) => {
+          setEdits(reviewEdits);
+          setMode("summary");
+        }}
         className={className}
       />
     );
@@ -232,121 +264,129 @@ export function ScanReviewStep({
     const autoActions = buildAutoActions(analysis);
     return (
       <div
-        className={className}
+        className={cn(
+          "lg:grid lg:items-start lg:gap-6",
+          originalPreviewOpen &&
+            "lg:grid-cols-[minmax(0,26rem)_minmax(28rem,1fr)]",
+          className,
+        )}
         data-testid="review-step-autofile"
       >
-        <div className="flex flex-col items-center gap-4 pt-6 text-center animate-card-in">
-          <div className="flex size-14 items-center justify-center rounded-full bg-[var(--petrol)]/10 animate-check-pop">
-            <FolderCheck
-              className="size-7"
-              style={{ color: "var(--petrol)" }}
-              strokeWidth={1.75}
-              aria-hidden="true"
-            />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">
-              Sieht gut aus — Ordilo sortiert das ein
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {analysis.title}
-            </p>
+        <div className={cn(!originalPreviewOpen && "mx-auto w-full max-w-md")}>
+          <div className="flex flex-col items-center gap-4 pt-6 text-center animate-card-in">
+            <div className="flex size-14 items-center justify-center rounded-full bg-[var(--petrol)]/10 animate-check-pop">
+              <FolderCheck
+                className="size-7"
+                style={{ color: "var(--petrol)" }}
+                strokeWidth={1.75}
+                aria-hidden="true"
+              />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">
+                Alles vorbereitet
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {analysis.title}
+              </p>
+            </div>
+
+            <ul className="w-full max-w-xs space-y-1.5 text-left" data-testid="autofile-actions">
+              {autoActions.map((action, i) => (
+                <li key={i} className="flex items-center gap-2.5 text-sm text-foreground">
+                  <span
+                    className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]/10"
+                    aria-hidden="true"
+                  >
+                    <Check className="size-3" style={{ color: "var(--petrol)" }} strokeWidth={2.5} />
+                  </span>
+                  {action}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => setOriginalPreviewOpen(true)}
+              className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              data-testid="autofile-view-original"
+            >
+              Original vergleichen
+            </button>
           </div>
 
-          {/* Full transparency: exactly what confirming will do — the
-              same list ReviewSummary shows, so tasks are never created
-              sight-unseen. */}
-          <ul
-            className="w-full max-w-xs space-y-1.5 text-left"
-            data-testid="autofile-actions"
-          >
-            {autoActions.map((action, i) => (
-              <li
-                key={i}
-                className="flex items-center gap-2.5 text-sm text-foreground"
-              >
-                <span
-                  className="flex size-5 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]/10"
-                  aria-hidden="true"
-                >
-                  <Check
-                    className="size-3"
-                    style={{ color: "var(--petrol)" }}
-                    strokeWidth={2.5}
-                  />
-                </span>
-                {action}
-              </li>
-            ))}
-          </ul>
-
-          {/* Countdown — a shrinking petrol bar; when it reaches zero the
-              document confirms itself. The animation lives in a class so
-              the prefers-reduced-motion override can actually win (an
-              inline style would beat every stylesheet rule). */}
-          <div
-            className="h-1 w-40 overflow-hidden rounded-full bg-[var(--sand-light)]"
-            aria-hidden="true"
-          >
-            <div
-              className="autofile-countdown-bar h-full rounded-full bg-[var(--petrol)]"
-              data-testid="autofile-countdown"
-            />
+          <div className="mt-6 flex flex-col gap-2.5">
+            <Button
+              type="button"
+              size="lg"
+              disabled={confirming}
+              onClick={() => {
+                void handleConfirm();
+              }}
+              className="h-12 w-full rounded-ordilo-md"
+              data-testid="autofile-done-button"
+            >
+              <Check className="size-4" aria-hidden="true" />
+              Passt so
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              disabled={confirming}
+              onClick={() => {
+                setMode("edit");
+              }}
+              className="h-12 w-full rounded-ordilo-md"
+              data-testid="autofile-edit-button"
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+              Bearbeiten
+            </Button>
           </div>
-          <style>{`
-            @keyframes autofile-countdown { from { width: 100%; } to { width: 0%; } }
-            .autofile-countdown-bar { animation: autofile-countdown ${AUTO_CONFIRM_DELAY_MS}ms linear forwards; }
-            @media (prefers-reduced-motion: reduce) {
-              .autofile-countdown-bar { animation: none; width: 100%; }
-            }
-          `}</style>
         </div>
-
-        <div className="mt-6 flex flex-col gap-2.5">
-          <Button
-            type="button"
-            size="lg"
-            disabled={confirming}
-            onClick={() => {
-              cancelAutoConfirm();
-              void handleConfirm();
-            }}
-            className="h-12 w-full rounded-ordilo-md"
-            data-testid="autofile-done-button"
-          >
-            <Check className="size-4" aria-hidden="true" />
-            Passt so
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            disabled={confirming}
-            onClick={() => {
-              cancelAutoConfirm();
-              setMode("edit");
-            }}
-            className="h-12 w-full rounded-ordilo-md"
-            data-testid="autofile-edit-button"
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-            Bearbeiten
-          </Button>
-        </div>
+        {originalPreviewOpen && (
+          <OriginalDocumentPreview
+            documentId={documentId}
+            title={analysis.title}
+            open={originalPreviewOpen}
+            onOpenChange={setOriginalPreviewOpen}
+          />
+        )}
       </div>
     );
   }
 
   return (
-    <ReviewSummary
-      analysis={analysis}
-      familyMembers={familyMembers}
-      hasUnresolvedDisambiguation={hasUnresolvedDisambiguation}
-      confirming={confirming}
-      confirmError={confirmError}
-      onConfirm={handleConfirm}
-      onEdit={() => setMode("edit")}
-      className={className}
-    />
+    <div
+      className={cn(
+        "lg:grid lg:items-start lg:gap-6",
+        originalPreviewOpen &&
+          "lg:grid-cols-[minmax(0,26rem)_minmax(28rem,1fr)]",
+      )}
+    >
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        hasUnresolvedDisambiguation={hasUnresolvedDisambiguation}
+        confirming={confirming}
+        confirmError={confirmError}
+        onConfirm={handleConfirm}
+        onEdit={() => setMode("edit")}
+        onReanalyze={handleReanalyze}
+        onEditPerson={handleEditPerson}
+        editedPersonId={editedPersonId}
+        documentId={documentId}
+        onViewOriginal={() => setOriginalPreviewOpen(true)}
+        className={cn(!originalPreviewOpen && "mx-auto max-w-md", className)}
+      />
+      {originalPreviewOpen && (
+        <OriginalDocumentPreview
+          documentId={documentId}
+          title={analysis.title}
+          open={originalPreviewOpen}
+          onOpenChange={setOriginalPreviewOpen}
+        />
+      )}
+    </div>
   );
 }

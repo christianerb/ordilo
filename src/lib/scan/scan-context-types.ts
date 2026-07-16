@@ -6,7 +6,6 @@ import type {
   RefObject,
 } from "react";
 import type { ScanWizardStep } from "@/components/ordilo/scan-wizard/scan-wizard";
-import type { EditedAnalysisPayload } from "@/components/ordilo/review-card/helpers";
 import type { UploadState } from "@/components/ordilo/scan-wizard/upload-progress";
 import type { Database } from "@/types/database";
 
@@ -75,10 +74,6 @@ export interface ScanProviderState {
   handleWizardRetryUpload: () => void;
   handleWizardGallerySelect: (e: ChangeEvent<HTMLInputElement>) => void;
   handleWizardReviewDone: () => void;
-  handleWizardAutoFlush: (
-    documentId: string,
-    payload: EditedAnalysisPayload,
-  ) => void;
   handleWizardCreateNote: () => void;
   openCreateNote: () => void;
   closeCreateNote: () => void;

@@ -27,10 +27,6 @@ import type {
   ScanProviderState,
 } from "@/lib/scan/scan-context-types";
 import type { ScanWizardStep } from "@/components/ordilo/scan-wizard/scan-wizard";
-import {
-  postConfirm,
-  type EditedAnalysisPayload,
-} from "@/components/ordilo/review-card/helpers";
 import type { UploadState } from "@/components/ordilo/scan-wizard/upload-progress";
 
 export function useScanProviderState(): ScanProviderState {
@@ -671,28 +667,6 @@ export function useScanProviderState(): ScanProviderState {
     }
   }, [handleWizardCapture]);
 
-  // Zero-touch flush: the review step unmounted (wizard closed) while an
-  // auto-file countdown was pending. Confirm server-side, then refresh
-  // the list so the document never lingers under "Zum Durchsehen" in a
-  // state where re-confirming would 409.
-  const handleWizardAutoFlush = useCallback(
-    (documentId: string, payload: EditedAnalysisPayload) => {
-      void (async () => {
-        try {
-          await postConfirm(documentId, payload);
-        } catch {
-          // Confirm failed — the document stays "analyzed" and shows up
-          // for manual review, which is the correct fallback.
-        } finally {
-          if (documentsLoadedRef.current) {
-            void fetchDocumentsRef.current();
-          }
-        }
-      })();
-    },
-    [],
-  );
-
   const handleWizardReviewDone = useCallback(() => {
     setWizardOpen(false);
     setWizardDocId(null);
@@ -911,8 +885,7 @@ export function useScanProviderState(): ScanProviderState {
     handleWizardRetryUpload,
     handleWizardGallerySelect,
     handleWizardReviewDone,
-    handleWizardAutoFlush,
-      handleWizardCreateNote,
+    handleWizardCreateNote,
     createNoteOpen,
     openCreateNote,
     closeCreateNote,

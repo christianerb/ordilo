@@ -7,7 +7,6 @@ import { CameraStep } from "./camera-step";
 import { ScanProcessingStep } from "./processing-step";
 import { ScanReviewStep } from "./review-step";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import type { EditedAnalysisPayload } from "@/components/ordilo/review-card/helpers";
 
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
@@ -19,17 +18,14 @@ export interface ScanWizardProps {
   doc: DocumentRow | null;
   /** Upload-stage error (before a document row exists). */
   uploadError?: string | null;
+  /** Number of already-confirmed documents (for milestone celebration). */
+  confirmedCount?: number;
   onCapture: (file: File) => void;
   onUseGallery: () => void;
   onCreateNote?: () => void;
   onRetryUpload: () => void;
   onClose: () => void;
   onReviewDone: () => void;
-  /** Owner-side flush for a zero-touch confirm pending at wizard close. */
-  onPendingAutoConfirm?: (
-    documentId: string,
-    payload: EditedAnalysisPayload,
-  ) => void;
 }
 
 /**
@@ -46,13 +42,13 @@ export function ScanWizard({
   step,
   doc,
   uploadError,
+  confirmedCount = 0,
   onCapture,
   onUseGallery,
   onCreateNote,
   onRetryUpload,
   onClose,
   onReviewDone,
-  onPendingAutoConfirm,
 }: ScanWizardProps) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -106,7 +102,7 @@ export function ScanWizard({
       {step === "review" && doc && (
         <div className="flex size-full flex-col overflow-y-auto">
           <div
-            className="flex items-center justify-end p-4"
+            className="mx-auto flex w-full max-w-md items-center justify-end p-4"
             style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
           >
             <button
@@ -120,11 +116,13 @@ export function ScanWizard({
             </button>
           </div>
           <div className="flex-1 px-5 pb-10">
-            <ScanReviewStep
-              documentId={doc.id}
-              onDone={onReviewDone}
-              onPendingAutoConfirm={onPendingAutoConfirm}
-            />
+            <div className="mx-auto max-w-md lg:max-w-6xl">
+              <ScanReviewStep
+                documentId={doc.id}
+                onDone={onReviewDone}
+                confirmedCount={confirmedCount}
+              />
+            </div>
           </div>
         </div>
       )}

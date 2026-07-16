@@ -137,14 +137,13 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly three tabs (Heute, Familienbuch, Familie)", () => {
-    expect(NAV_TABS).toHaveLength(3);
+  it("exports exactly two tabs (Dokumente, Familie)", () => {
+    expect(NAV_TABS).toHaveLength(2);
   });
 
   it("has tabs in the correct order with correct labels and hrefs", () => {
     const expected = [
-      { label: "Heute", href: "/home" },
-      { label: "Familienbuch", href: "/dokumente" },
+      { label: "Dokumente", href: "/dokumente" },
       { label: "Familie", href: "/familie" },
     ];
     expect(NAV_TABS.map((t) => ({ label: t.label, href: t.href }))).toEqual(
@@ -155,7 +154,7 @@ describe("NAV_TABS", () => {
   it("each tab has a distinct icon component", () => {
     const icons = NAV_TABS.map((t) => t.icon);
     const uniqueIcons = new Set(icons);
-    expect(uniqueIcons.size).toBe(3);
+    expect(uniqueIcons.size).toBe(2);
   });
 });
 
@@ -172,12 +171,12 @@ describe("AppShell", () => {
     expect(screen.getByTestId("page-content")).toBeDefined();
   });
 
-  it("renders a nav drawer with exactly three tab links", () => {
+  it("renders a nav drawer with exactly two tab links", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(2);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -195,8 +194,7 @@ describe("AppShell", () => {
     const links = within(nav).getAllByRole("link");
 
     const expected = [
-      { label: "Heute", href: "/home" },
-      { label: "Familienbuch", href: "/dokumente" },
+      { label: "Dokumente", href: "/dokumente" },
       { label: "Familie", href: "/familie" },
     ];
 
@@ -206,50 +204,42 @@ describe("AppShell", () => {
     });
   });
 
-  it("marks the Heute tab as active when on /home", () => {
-    renderShell("/home");
+  it("marks the Dokumente tab as active when on /dokumente", () => {
+    renderShell("/dokumente");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    const heuteLink = within(nav).getByText("Heute").closest("a");
-    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
+    const dokumenteLink = within(nav).getByText("Dokumente").closest("a");
+    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
   });
 
-  it("keeps Heute active on /aufgaben (tasks live under Heute now)", () => {
-    renderShell("/aufgaben");
-    openMobileMenu();
-    const nav = screen.getByRole("navigation");
-    const heuteLink = within(nav).getByText("Heute").closest("a");
-    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
-  });
-
-  it("keeps Familienbuch active on /sammlungen (collections live under it)", () => {
+  it("keeps Dokumente active on /sammlungen (collections live under it)", () => {
     renderShell("/sammlungen/col-1");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    const buchLink = within(nav).getByText("Familienbuch").closest("a");
-    expect(buchLink?.getAttribute("aria-current")).toBe("page");
+    const dokumenteLink = within(nav).getByText("Dokumente").closest("a");
+    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("updates the active tab when pathname changes", () => {
-    const { rerender } = renderShell("/aufgaben");
+    const { rerender } = renderShell("/dokumente");
     openMobileMenu();
     let nav = screen.getByRole("navigation");
-    let heuteLink = within(nav).getByText("Heute").closest("a");
-    let buchLink = within(nav).getByText("Familienbuch").closest("a");
-    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
-    expect(buchLink?.getAttribute("aria-current")).toBeNull();
+    let dokumenteLink = within(nav).getByText("Dokumente").closest("a");
+    let familieLink = within(nav).getByText("Familie").closest("a");
+    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
+    expect(familieLink?.getAttribute("aria-current")).toBeNull();
 
-    mockUsePathname.mockReturnValue("/dokumente");
+    mockUsePathname.mockReturnValue("/familie");
     rerender(
       <AppShell>
         <div data-testid="page-content">Seiteninhalt</div>
       </AppShell>,
     );
     nav = screen.getByRole("navigation");
-    heuteLink = within(nav).getByText("Heute").closest("a");
-    buchLink = within(nav).getByText("Familienbuch").closest("a");
-    expect(heuteLink?.getAttribute("aria-current")).toBeNull();
-    expect(buchLink?.getAttribute("aria-current")).toBe("page");
+    dokumenteLink = within(nav).getByText("Dokumente").closest("a");
+    familieLink = within(nav).getByText("Familie").closest("a");
+    expect(dokumenteLink?.getAttribute("aria-current")).toBeNull();
+    expect(familieLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("marks a tab active for nested routes (e.g. /familie/123)", () => {
@@ -271,6 +261,14 @@ describe("AppShell", () => {
     expect(activeCount).toBe(1);
   });
 
+  it("marks no tab active on /home (dashboard, not a nav tab)", () => {
+    renderShell("/home");
+    openMobileMenu();
+    const nav = screen.getByRole("navigation");
+    const activeLinks = nav.querySelectorAll('a[aria-current="page"]');
+    expect(activeLinks.length).toBe(0);
+  });
+
   it("marks no tab active on /suche (fullscreen answer mode, not a place)", () => {
     renderShell("/suche");
     openMobileMenu();
@@ -283,7 +281,7 @@ describe("AppShell", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    fireEvent.click(within(nav).getByText("Familienbuch"));
+    fireEvent.click(within(nav).getByText("Dokumente"));
     // Sheet content unmounts once closed (Radix default, no forceMount).
     expect(screen.queryByRole("navigation")).toBeNull();
   });
@@ -563,7 +561,7 @@ describe("AppShell sidebar profile footer", () => {
     expect(logoutButtons.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("renders the family name and derived display name when a profile is given", async () => {
+  it("renders the family name as display name when a profile is given", async () => {
     mockSupabaseData({
       family: { id: "fam-1", name: "Familie Müller" },
       userEmail: "anna@example.com",
@@ -573,8 +571,9 @@ describe("AppShell sidebar profile footer", () => {
         <div>content</div>
       </AppShell>,
     );
-    expect(await screen.findByText("anna")).toBeDefined();
-    expect(screen.getByText("Familie Müller")).toBeDefined();
+    // The greeting and footer both use the family name, not the email prefix.
+    const familyNameEls = await screen.findAllByText("Familie Müller");
+    expect(familyNameEls.length).toBeGreaterThanOrEqual(1);
   });
 
   it("falls back to the family name as display name when there is no email", async () => {
@@ -600,12 +599,12 @@ describe("AppShell sidebar profile footer", () => {
         <div>content</div>
       </AppShell>,
     );
-    // Wait for profile to load and display name to appear
-    await screen.findByText("anna");
+    // Wait for profile to load — the family name appears in the footer.
+    await screen.findAllByText("Familie Müller");
     // jsdom has no native PointerEvent, so the Radix trigger's pointerdown
     // handler can't be exercised reliably here — use its Enter-key handler
     // instead, which opens the menu the same way for keyboard users.
-    fireEvent.keyDown(screen.getByRole("button", { name: /anna/i }), {
+    fireEvent.keyDown(screen.getByRole("button", { name: /Familie Müller/i }), {
       key: "Enter",
     });
     expect(screen.getByRole("menuitem", { name: /^Familie$/i })).toBeDefined();
@@ -654,11 +653,13 @@ describe("AppShell sidebar personality touches", () => {
         <div>content</div>
       </AppShell>,
     );
-    // Wait for profile to load, then check greeting is visible (opacity-100)
-    await screen.findByText("anna");
+    // Wait for profile to load — the family name appears in the greeting.
+    await screen.findAllByText("Familie Müller");
     const greetingEl = screen.getByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
-    expect(greetingEl.className).toContain("opacity-100");
-    expect(greetingEl.textContent).toContain("anna");
+    // The opacity class lives on the greeting container div, not the span.
+    const greetingContainer = greetingEl.closest("div");
+    expect(greetingContainer?.className).toContain("opacity-100");
+    expect(greetingContainer?.textContent).toContain("Familie Müller");
   });
 
   it("does not render a greeting when no profile is given", () => {
@@ -672,7 +673,7 @@ describe("AppShell sidebar personality touches", () => {
     // jsdom doesn't compute Tailwind styles, so check the class directly.
     const greetingEl = screen.queryByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
     if (greetingEl) {
-      expect(greetingEl.className).toContain("opacity-0");
+      expect(greetingEl.closest("div")?.className).toContain("opacity-0");
     }
   });
 

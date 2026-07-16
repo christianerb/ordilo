@@ -10,6 +10,8 @@ import {
   isPdfMimeType,
 } from "@/lib/schemas/document";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /**
  * Tracks an in-flight upload with its progress state.
@@ -25,6 +27,40 @@ export interface UploadState {
   phase: "uploading" | "processing" | "error";
   /** German error message when phase is "error". */
   error?: string;
+}
+
+/** Rotating messages while Ordilo reads the document — warm, specific, calm. */
+const PROCESSING_MESSAGES = [
+  "Schaut sich die Seiten an …",
+  "Erkennt Namen und Daten …",
+  "Sucht Fristen und Termine …",
+  "Sortiert alles ein …",
+];
+
+const MESSAGE_INTERVAL_MS = 2800;
+
+function RotatingProcessingMessage() {
+  const [tick, setTick] = useState(0);
+
+  useMountEffect(() => {
+    const interval = setInterval(
+      () => setTick((t) => t + 1),
+      MESSAGE_INTERVAL_MS,
+    );
+    return () => clearInterval(interval);
+  });
+
+  const message = PROCESSING_MESSAGES[tick % PROCESSING_MESSAGES.length];
+
+  return (
+    <p
+      key={message}
+      className="mt-1 text-sm text-[var(--petrol)] animate-message-in"
+      aria-live="polite"
+    >
+      {message}
+    </p>
+  );
 }
 
 /**
@@ -106,11 +142,7 @@ export function UploadProgressCard({
           </>
         )}
 
-        {isProcessing && (
-          <p className="mt-1 text-sm text-[var(--petrol)]">
-            Wird gelesen …
-          </p>
-        )}
+        {isProcessing && <RotatingProcessingMessage />}
 
         {isError && (
           <p className="mt-1 truncate text-sm text-destructive">

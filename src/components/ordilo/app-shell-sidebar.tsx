@@ -573,19 +573,22 @@ export function SidebarNav({
 
       <div
         className={cn(
-          "flex items-center py-5",
-          collapsed ? "flex-col gap-3 px-3" : "gap-2.5 px-6",
+          "relative py-5",
+          collapsed ? "flex flex-col items-center gap-3 px-3" : "px-6",
         )}
       >
         <Link
           href="/home"
-          className={cn(
-            "flex items-center rounded-ordilo-sm transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            collapsed ? "flex-col gap-1" : "gap-2.5",
-          )}
+          onMouseEnter={() => setMascotMood("greeting")}
+          onMouseLeave={() => setMascotMood("idle")}
+          className="flex flex-col items-center gap-1 rounded-ordilo-sm transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           aria-label="Ordilo Startseite"
         >
-          <OrdiloMascot size={26} mood={mascotMood} style={{ color: "var(--petrol)" }} />
+          <OrdiloMascot
+            size={collapsed ? 26 : 34}
+            mood={mascotMood}
+            style={{ color: "var(--petrol)" }}
+          />
           {!collapsed && (
             <span className="text-base font-semibold tracking-tight text-foreground">
               Ordilo
@@ -599,7 +602,7 @@ export function SidebarNav({
           aria-pressed={collapsed}
           className={cn(
             "flex size-8 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            !collapsed && "ml-auto",
+            !collapsed && "absolute right-6 top-5",
           )}
         >
           {collapsed ? (
@@ -612,13 +615,15 @@ export function SidebarNav({
 
       <div
         className={cn(
-          "-mt-1 overflow-hidden px-6 text-sm text-muted-foreground transition-[max-height,opacity,padding-bottom] duration-200 ease-out",
+          "-mt-1 overflow-hidden px-6 text-sm leading-tight transition-[max-height,opacity,padding-bottom] duration-200 ease-out",
           collapsed || !greeting || !displayName
             ? "max-h-0 pb-0 opacity-0"
-            : "max-h-8 pb-3 opacity-100",
+            : "max-h-12 pb-3 opacity-100",
         )}
       >
-        {greeting}, <span>{displayName}</span>
+        <span className="text-muted-foreground">{greeting},</span>
+        <br />
+        <span className="font-medium text-foreground">{displayName}</span>
       </div>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pt-2 pb-3">

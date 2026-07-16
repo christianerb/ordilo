@@ -1,4 +1,3 @@
-import { useCallback, useState } from "react";
 import Link from "next/link";
 import { RefreshCw, AlertCircle, Loader2, Check, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -213,9 +212,10 @@ export function ReviewCardConfirmed({
   askTitle = null,
   onReanalyze,
   reanalyzing = false,
+  onViewOriginal,
   className,
 }: {
-  /** The document ID — used to fetch a signed URL for "Original ansehen". */
+  /** The document ID — enables original-file comparison. */
   documentId?: string;
   /**
    * The reconstructed analysis for this (already confirmed) document, so
@@ -243,29 +243,9 @@ export function ReviewCardConfirmed({
   askTitle?: string | null;
   onReanalyze?: () => void;
   reanalyzing?: boolean;
+  onViewOriginal?: () => void;
   className?: string;
 }) {
-  const [fileLoading, setFileLoading] = useState(false);
-  const [fileError, setFileError] = useState<string | null>(null);
-
-  const handleViewFile = useCallback(async () => {
-    if (!documentId || fileLoading) return;
-    setFileLoading(true);
-    setFileError(null);
-    try {
-      const response = await fetch(`/api/documents/${documentId}/file`);
-      if (!response.ok) {
-        throw new Error();
-      }
-      const { url } = (await response.json()) as { url: string };
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      setFileError("Datei konnte nicht geöffnet werden.");
-    } finally {
-      setFileLoading(false);
-    }
-  }, [documentId, fileLoading]);
-
   return (
     <div
       data-testid="review-card-confirmed"
@@ -309,38 +289,27 @@ export function ReviewCardConfirmed({
           </Button>
         )}
         {onReanalyze && (
-          <Button
+          <button
             type="button"
-            variant="outline"
-            size="lg"
             onClick={onReanalyze}
             disabled={reanalyzing}
-            className="mt-4 h-11 rounded-ordilo-md"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
             data-testid="confirmed-reanalyze-button"
           >
             {reanalyzing ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                wird nochmal gelesen …
-              </>
+              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
             ) : (
-              <>
-                <RefreshCw className="size-4" aria-hidden="true" />
-                Nochmal lesen
-              </>
+              <RefreshCw className="size-3" aria-hidden="true" />
             )}
-          </Button>
-        )}
-        {fileError && (
-          <p className="mt-2 text-sm text-destructive">{fileError}</p>
+            Nochmal lesen
+          </button>
         )}
       </div>
 
       <ConfirmedAnalysisDetails
         analysis={analysis}
         loading={analysisLoading}
-        onViewFile={documentId ? handleViewFile : undefined}
-        fileLoading={fileLoading}
+        onViewOriginal={documentId ? onViewOriginal : undefined}
         documentId={documentId ?? undefined}
       />
     </div>
