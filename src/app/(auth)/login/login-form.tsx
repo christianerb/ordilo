@@ -18,9 +18,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 
-type FormState = "idle" | "submitting" | "sent" | "error";
+type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
-/** Seconds before the magic link can be re-sent. */
+/** Seconds before a login code can be re-sent. */
 const RESEND_COOLDOWN_SECONDS = 30;
 
 /**
@@ -59,16 +59,16 @@ function webmailFor(email: string): { label: string; url: string } | null {
 }
 
 /**
- * Magic link login form.
+ * Passwordless email-code login form.
  *
  * One field, one button, zero passwords. The idle state carries the
  * product promise (a new visitor must understand what Ordilo is without
- * leaving the page); the sent state carries the user across the inbox
- * gap: it shows the exact address, deep-links to known webmail providers,
- * offers a re-send after a cooldown, and a way back to fix a typo.
+ * leaving the page); the sent state carries the user across the inbox gap
+ * without relying on a scanner-vulnerable email link.
  */
 export function LoginForm() {
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -90,13 +90,10 @@ export function LoginForm() {
     }, 1000);
   }, []);
 
-  const sendMagicLink = useCallback(async (targetEmail: string) => {
+  const sendLoginCode = useCallback(async (targetEmail: string) => {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email: targetEmail,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
     });
     return !error;
   }, []);
@@ -116,7 +113,7 @@ export function LoginForm() {
     setErrorMessage(null);
     setFormState("submitting");
 
-    const ok = await sendMagicLink(result.data.email);
+    const ok = await sendLoginCode(result.data.email);
     if (!ok) {
       // Friendly German error — never surface the raw Supabase error JSON.
       setErrorMessage("Das hat nicht geklappt. Bitte versuch's nochmal.");
@@ -132,13 +129,46 @@ export function LoginForm() {
   const handleResend = useCallback(async () => {
     if (resendCooldown > 0 || resending) return;
     setResending(true);
-    await sendMagicLink(email);
+    const ok = await sendLoginCode(email);
     setResending(false);
+    if (!ok) {
+      setErrorMessage("Der Code konnte nicht gesendet werden. Bitte versuch's nochmal.");
+      return;
+    }
     startCooldown();
-  }, [email, resendCooldown, resending, sendMagicLink, startCooldown]);
+  }, [email, resendCooldown, resending, sendLoginCode, startCooldown]);
+
+  async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const token = code.trim();
+    if (!/^\d{6}$/.test(token)) {
+      setErrorMessage("Bitte gib den 6-stelligen Code ein.");
+      return;
+    }
+
+    setErrorMessage(null);
+    setFormState("verifying");
+
+    const supabase = createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: "email",
+    });
+
+    if (error) {
+      setErrorMessage("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.");
+      setFormState("sent");
+      return;
+    }
+
+    window.location.assign("/");
+  }
 
   const handleChangeEmail = useCallback(() => {
     setFormState("idle");
+    setCode("");
     setErrorMessage(null);
   }, []);
 
@@ -153,8 +183,8 @@ export function LoginForm() {
     }
   }
 
-  // Confirmation state — magic link sent successfully.
-  if (formState === "sent") {
+  // Confirmation state — a login code was sent successfully.
+  if (formState === "sent" || formState === "verifying") {
     const webmail = webmailFor(email);
     return (
       <main className="flex min-h-dvh flex-col items-center justify-center bg-background px-6 py-12">
@@ -169,13 +199,53 @@ export function LoginForm() {
               Die E-Mail ist unterwegs
             </h1>
             <p className="text-sm leading-relaxed text-muted-foreground">
-              Wir haben einen Anmelde-Link an{" "}
+              Wir haben einen 6-stelligen Code an{" "}
               <span className="font-medium text-foreground" data-testid="sent-email">
                 {email}
               </span>{" "}
-              geschickt. Ein Klick darauf — und du bist drin.
+              geschickt. Gib ihn hier ein, dann bist du drin.
             </p>
           </div>
+
+          <form onSubmit={handleVerify} className="space-y-3 text-left">
+            <Label htmlFor="login-code">Anmelde-Code</Label>
+            <Input
+              autoFocus
+              id="login-code"
+              name="code"
+              type="text"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="123456"
+              value={code}
+              onChange={(event) =>
+                setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+              }
+              disabled={formState === "verifying"}
+              className="h-12 rounded-ordilo-md text-center text-lg tracking-[0.3em]"
+            />
+            {errorMessage && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {errorMessage}
+              </p>
+            )}
+            <Button
+              type="submit"
+              size="lg"
+              disabled={formState === "verifying"}
+              className="h-12 w-full rounded-ordilo-md text-base"
+            >
+              {formState === "verifying" ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Wird geprüft…
+                </>
+              ) : (
+                "Anmelden"
+              )}
+            </Button>
+          </form>
 
           {webmail && (
             <Button
@@ -199,7 +269,7 @@ export function LoginForm() {
               <button
                 type="button"
                 onClick={handleResend}
-                disabled={resendCooldown > 0 || resending}
+                disabled={resendCooldown > 0 || resending || formState === "verifying"}
                 className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline disabled:cursor-default disabled:text-muted-foreground disabled:no-underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
                 data-testid="resend-button"
               >
