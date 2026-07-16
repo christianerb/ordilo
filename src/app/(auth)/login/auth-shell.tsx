@@ -48,16 +48,21 @@ export function AuthShell({ children, compact = false }: AuthShellProps) {
             </span>
           </div>
 
-          <div className={`mt-8 max-w-md sm:mt-10 lg:mt-14 ${compact ? "max-lg:hidden" : ""}`}>
+          <div className={`mt-6 max-w-md sm:mt-10 lg:mt-14 ${compact ? "max-lg:hidden" : ""}`}>
             <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-[1.75rem]">
               Frag einfach Ordilo
             </h1>
             <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground sm:text-base">
-              Der Ordner, der mitdenkt: Dokumente scannen, alles wiederfinden,
-              keine Frist mehr verpassen.
+              <span className="sm:hidden">
+                Wichtige Dokumente einfach im Blick.
+              </span>
+              <span className="hidden sm:inline">
+                Der Ordner, der mitdenkt: Dokumente scannen, alles wiederfinden,
+                keine Frist mehr verpassen.
+              </span>
             </p>
 
-            <div className="mt-5 flex flex-wrap gap-2.5" aria-label="Ordilo Funktionen">
+            <div className="mt-4 flex flex-wrap gap-2.5 sm:mt-5" aria-label="Ordilo Funktionen">
               {FEATURES.map(({ label, icon: Icon }) => (
                 <span
                   key={label}
@@ -71,7 +76,7 @@ export function AuthShell({ children, compact = false }: AuthShellProps) {
           </div>
 
           <div
-            className={`relative mt-7 flex min-h-44 flex-1 items-end justify-center overflow-hidden rounded-ordilo-md bg-[var(--auth-illustration)] sm:min-h-52 lg:mt-9 ${
+            className={`relative mt-5 flex min-h-36 flex-1 items-end justify-center overflow-hidden rounded-ordilo-md bg-[var(--auth-illustration)] sm:mt-7 sm:min-h-52 lg:mt-9 ${
               compact ? "max-lg:hidden" : ""
             }`}
             aria-hidden="true"
@@ -80,7 +85,7 @@ export function AuthShell({ children, compact = false }: AuthShellProps) {
             <div className="absolute -right-8 bottom-2 h-36 w-48 rotate-6 rounded-[28px] bg-[var(--auth-blue-wash)]" />
             <div className="absolute bottom-8 left-[22%] h-24 w-16 -rotate-6 rounded-ordilo-sm border border-[var(--mist-light)] bg-[var(--warm-white)]" />
             <div className="absolute bottom-12 right-[20%] h-20 w-16 rotate-6 rounded-ordilo-sm border border-[var(--mist-light)] bg-[var(--warm-white)]" />
-            <div className="relative mb-8 flex size-32 items-center justify-center rounded-full bg-[var(--warm-white)] text-[var(--petrol)] shadow-card">
+            <div className="relative mb-6 flex size-28 items-center justify-center rounded-full bg-[var(--warm-white)] text-[var(--petrol)] shadow-card sm:mb-8 sm:size-32">
               <OrdiloMascot size={104} mood="greeting" />
             </div>
           </div>
