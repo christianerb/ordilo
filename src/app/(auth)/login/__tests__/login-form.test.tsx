@@ -30,7 +30,7 @@ describe("LoginForm", () => {
       screen.getByRole("button", { name: /loslegen/i }).closest("form")!,
     );
 
-    await screen.findByLabelText("Anmelde-Code");
+    await screen.findByLabelText("Ziffer 1 des Anmelde-Codes");
 
     expect(signInWithOtp).toHaveBeenCalledWith({
       email: "familie@example.com",
@@ -47,9 +47,9 @@ describe("LoginForm", () => {
     fireEvent.submit(
       screen.getByRole("button", { name: /loslegen/i }).closest("form")!,
     );
-    await screen.findByLabelText("Anmelde-Code");
+    await screen.findByLabelText("Ziffer 1 des Anmelde-Codes");
 
-    fireEvent.change(screen.getByLabelText("Anmelde-Code"), {
+    fireEvent.change(screen.getByLabelText("Ziffer 1 des Anmelde-Codes"), {
       target: { value: "123456" },
     });
     fireEvent.submit(
