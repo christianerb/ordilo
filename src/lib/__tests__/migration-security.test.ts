@@ -104,4 +104,18 @@ describe("migration security: auth.flow_state helper", () => {
       );
     }
   });
+
+  it("keeps user_belongs_to_family source tables outside FORCE RLS", () => {
+    const helperTablesMigration = migrations.find(
+      (m) => m.name === "0032_unforce_rls_helper_tables.sql",
+    );
+
+    expect(helperTablesMigration).toBeDefined();
+    expect(helperTablesMigration?.content).toMatch(
+      /alter\s+table\s+public\.family_memberships\s+no\s+force\s+row\s+level\s+security/i,
+    );
+    expect(helperTablesMigration?.content).toMatch(
+      /alter\s+table\s+public\.families\s+no\s+force\s+row\s+level\s+security/i,
+    );
+  });
 });
