@@ -374,8 +374,8 @@ export function LoginForm() {
   // Login form — idle, submitting, or error state.
   return (
     <AuthShell>
-      <div className="space-y-7 stagger-children">
-        <div className="space-y-3">
+      <div className="space-y-5 sm:space-y-7 stagger-children">
+        <div className="hidden space-y-3 sm:block">
           <div>
             <h2 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
               Schön, dass du da bist
