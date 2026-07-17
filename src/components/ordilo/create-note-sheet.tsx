@@ -197,7 +197,7 @@ export function CreateNoteSheet({
       <SheetContent
         side="bottom"
         className={cn(
-          "flex max-h-[92vh] flex-col gap-0 rounded-t-ordilo-xl p-0",
+          "flex max-h-[92dvh] flex-col gap-0 rounded-t-ordilo-xl p-0",
           "lg:max-w-lg lg:mx-auto lg:rounded-t-ordilo-xl",
         )}
         data-testid="create-note-sheet"
