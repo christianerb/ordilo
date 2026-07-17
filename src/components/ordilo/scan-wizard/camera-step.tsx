@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   X,
   Zap,
@@ -159,13 +159,11 @@ export function CameraStep({
         }
 
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {
-            // Autoplay can be rejected in rare cases; the video still
-            // renders once the user interacts with the page.
-          });
-        }
+        // NOTE: the <video> element is only mounted once `permission`
+        // becomes "ready", so it does not exist yet at this point.
+        // Attaching the stream to it happens in the effect below, which
+        // runs after the element is in the DOM — assigning srcObject here
+        // would no-op against a null ref and leave the viewfinder black.
 
         // Feature-detect torch support (best-effort; most laptop/desktop
         // webcams and many mobile browsers don't expose it).
@@ -193,6 +191,27 @@ export function CameraStep({
       pagesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
     };
   });
+
+  // --- Attach the acquired stream once the <video> is mounted. ---
+  // The viewfinder is only rendered in the "ready" state, so the stream
+  // must be wired up here (after the element exists) rather than inside the
+  // acquire routine that runs while still "requesting".
+  useEffect(() => {
+    if (permission !== "ready") return;
+    const video = videoRef.current;
+    const stream = streamRef.current;
+    if (!video || !stream) return;
+    try {
+      if (video.srcObject !== stream) {
+        video.srcObject = stream;
+      }
+    } catch {
+      // Some environments (e.g. jsdom in tests) don't implement srcObject.
+    }
+    void video.play?.().catch(() => {
+      // Autoplay can be rejected; the feed resumes on user interaction.
+    });
+  }, [permission]);
 
   // --- Auto-capture via stillness detection. ---
   // Samples the live video at ~5Hz into a tiny offscreen canvas, measures

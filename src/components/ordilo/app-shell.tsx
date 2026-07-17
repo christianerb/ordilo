@@ -105,7 +105,7 @@ function AppShellContent({
   };
 
   return (
-    <div className="relative isolate min-h-dvh overflow-x-hidden bg-[var(--canvas-warm)]">
+    <div className="relative isolate min-h-dvh overflow-x-clip bg-[var(--canvas-warm)]">
       <div
         className="pointer-events-none fixed -right-24 -top-20 h-72 w-80 rotate-12 rounded-[28px] bg-[var(--wash-sage-soft)]"
         aria-hidden="true"
