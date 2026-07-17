@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import {
   X,
   Zap,
@@ -194,24 +194,26 @@ export function CameraStep({
 
   // --- Attach the acquired stream once the <video> is mounted. ---
   // The viewfinder is only rendered in the "ready" state, so the stream
-  // must be wired up here (after the element exists) rather than inside the
-  // acquire routine that runs while still "requesting".
-  useEffect(() => {
-    if (permission !== "ready") return;
-    const video = videoRef.current;
+  // must be wired up when the element actually appears — a callback ref
+  // fires exactly then (after mount), whereas assigning srcObject inside
+  // the acquire routine runs while still "requesting" (null ref) and would
+  // leave the viewfinder black. A stable useCallback identity keeps React
+  // from detaching/reattaching on every render.
+  const attachVideoRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
     const stream = streamRef.current;
-    if (!video || !stream) return;
+    if (!node || !stream) return;
     try {
-      if (video.srcObject !== stream) {
-        video.srcObject = stream;
+      if (node.srcObject !== stream) {
+        node.srcObject = stream;
       }
     } catch {
       // Some environments (e.g. jsdom in tests) don't implement srcObject.
     }
-    void video.play?.().catch(() => {
+    void node.play?.().catch(() => {
       // Autoplay can be rejected; the feed resumes on user interaction.
     });
-  }, [permission]);
+  }, []);
 
   // --- Auto-capture via stillness detection. ---
   // Samples the live video at ~5Hz into a tiny offscreen canvas, measures
@@ -396,7 +398,7 @@ export function CameraStep({
       {/* Live video feed */}
       {isReady && (
         <video
-          ref={videoRef}
+          ref={attachVideoRef}
           autoPlay
           playsInline
           muted
