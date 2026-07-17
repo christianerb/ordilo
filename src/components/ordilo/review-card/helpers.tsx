@@ -44,15 +44,29 @@ export interface EditState {
  * Summary, and the ready-to-save card all go through here, so the
  * contract (URL, headers, body shape) can never drift between screens.
  */
-export function postConfirm(
+export async function postConfirm(
   documentId: string,
   payload: EditedAnalysisPayload,
 ): Promise<Response> {
-  return fetch(`/api/documents/${documentId}/confirm`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+  try {
+    return await fetch(`/api/documents/${documentId}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      // Without a timeout, a stalled mobile connection leaves the confirm
+      // button in its disabled "Wird bestätigt …" state forever.
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error(
+        "Das Bestätigen dauert gerade zu lange. Bitte erneut versuchen.",
+      );
+    }
+    throw new Error(
+      "Netzwerkfehler. Bitte Verbindung überprüfen und erneut versuchen.",
+    );
+  }
 }
 
 /**

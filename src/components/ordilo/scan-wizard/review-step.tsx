@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { Check, FolderCheck, Pencil, Camera } from "lucide-react";
+import { useCallback, useMemo, useRef, useState } from "react";
+import { Check, FolderCheck, Pencil, Camera, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
@@ -95,26 +95,38 @@ export function ScanReviewStep({
   const [reanalyzing, setReanalyzing] = useState(false);
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
 
-  useMountEffect(() => {
-    let cancelled = false;
+  const cancelledRef = useRef(false);
 
-    async function load() {
+  // Load the analysis + family members. Previously a failed/empty fetch
+  // (network blip, replica lag) left the skeleton on screen forever with
+  // nothing tappable — now it lands in an explicit error state with retry.
+  const loadAnalysis = useCallback(async () => {
+    setLoading(true);
+    try {
       const [a, members] = await Promise.all([
         fetchDocumentAnalysis(documentId),
         fetchFamilyMembers(),
       ]);
-      if (cancelled) return;
+      if (cancelledRef.current) return;
       setAnalysis(a);
       setFamilyMembers(members);
-      setLoading(false);
 
       if (a && !a.needs_user_review) {
         setMode("auto");
       }
+    } catch {
+      if (cancelledRef.current) return;
+      setAnalysis(null);
+    } finally {
+      if (!cancelledRef.current) setLoading(false);
     }
-    load();
+  }, [documentId]);
+
+  useMountEffect(() => {
+    cancelledRef.current = false;
+    void loadAnalysis();
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
     };
   });
 
@@ -258,8 +270,48 @@ export function ScanReviewStep({
     );
   }
 
-  if (loading || !analysis) {
+  if (loading) {
     return <ReviewCardSkeleton className={className} />;
+  }
+
+  if (!analysis) {
+    return (
+      <div
+        className={cn(
+          "flex flex-col items-center gap-3 pt-10 text-center",
+          className,
+        )}
+        data-testid="review-step-load-error"
+      >
+        <div
+          className="flex size-14 items-center justify-center rounded-full"
+          style={{ backgroundColor: "var(--destructive)" }}
+        >
+          <AlertCircle
+            className="size-7 text-white"
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        </div>
+        <h2 className="text-base font-semibold text-foreground">
+          Das Ergebnis konnte nicht geladen werden
+        </h2>
+        <p className="max-w-xs text-sm text-muted-foreground">
+          Bitte Verbindung überprüfen und nochmal versuchen — das Dokument
+          selbst ist sicher gespeichert.
+        </p>
+        <Button
+          type="button"
+          size="lg"
+          onClick={() => void loadAnalysis()}
+          className="mt-2 h-11 rounded-ordilo-md"
+          data-testid="review-step-load-retry-button"
+        >
+          <RefreshCw className="size-4" aria-hidden="true" />
+          Nochmal versuchen
+        </Button>
+      </div>
+    );
   }
 
   if (mode === "edit") {
