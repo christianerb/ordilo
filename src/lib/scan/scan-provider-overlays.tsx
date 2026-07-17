@@ -33,6 +33,8 @@ export function ScanProviderOverlays({
   handleWizardRetryUpload,
   handleWizardGallerySelect,
   handleWizardReviewDone,
+  handleWizardScanNext,
+  handleWizardRetake,
   handleWizardCreateNote,
   closeCreateNote,
   handleCreateNote,
@@ -56,6 +58,8 @@ export function ScanProviderOverlays({
   | "handleWizardRetryUpload"
   | "handleWizardGallerySelect"
   | "handleWizardReviewDone"
+  | "handleWizardScanNext"
+  | "handleWizardRetake"
   | "handleWizardCreateNote"
   | "closeCreateNote"
   | "handleCreateNote"
@@ -77,6 +81,7 @@ export function ScanProviderOverlays({
         ref={wizardGalleryInputRef}
         type="file"
         accept={ACCEPTED_FILE_EXTENSIONS}
+        multiple
         className="hidden"
         onChange={handleWizardGallerySelect}
         aria-label="Foto oder PDF aus der Galerie wählen"
@@ -95,6 +100,8 @@ export function ScanProviderOverlays({
           onRetryUpload={handleWizardRetryUpload}
           onClose={closeWizard}
           onReviewDone={handleWizardReviewDone}
+          onScanNext={handleWizardScanNext}
+          onRetake={handleWizardRetake}
         />
       )}
 

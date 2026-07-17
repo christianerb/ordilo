@@ -164,6 +164,21 @@ describe("AppShell", () => {
     mockUsePathname.mockReturnValue("/home");
     mockPush.mockClear();
     mockSupabaseData();
+    // Pretend prefers-reduced-motion is active so the CameraStep's
+    // auto-capture sampler doesn't call canvas.getContext (not
+    // implemented in jsdom) when the scan wizard opens.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("renders the page content inside the shell", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, FileText, Loader2, RotateCw } from "lucide-react";
 import {
   Dialog,
@@ -83,6 +83,7 @@ export function OriginalDocumentPreview({
     />
   );
 
+  // Desktop: render as an aside beside the review content.
   if (desktop && open) {
     return (
       <aside
@@ -96,23 +97,79 @@ export function OriginalDocumentPreview({
     );
   }
 
+  // Mobile: images get an inline panel that shares the review's scroll
+  // container (true side-by-side with the recognized fields). PDFs need
+  // the full screen to be legible, so they open in a fullscreen dialog
+  // once we know the file is a PDF. While the signed URL is still
+  // loading we render the inline panel (spinner) — for a PDF it swaps to
+  // fullscreen as soon as the type is known.
+  const isImage = file?.mimeType?.startsWith("image/") ?? true;
+
+  if (!desktop && open && !isImage) {
+    return (
+      <Dialog open onOpenChange={onOpenChange}>
+        <DialogContent
+          showCloseButton={false}
+          className="inset-0 z-[70] flex h-dvh max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-[var(--warm-white)] p-0"
+          data-testid="original-document-preview-mobile"
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Originaldokument</DialogTitle>
+            <DialogDescription>
+              Vergleiche die erkannten Angaben mit dem Originaldokument.
+            </DialogDescription>
+          </DialogHeader>
+          <PreviewHeader title={title} onClose={() => onOpenChange(false)} mobile />
+          {content}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  if (!desktop && open) {
+    return <InlineMobilePreview title={title} onClose={() => onOpenChange(false)} content={content} />;
+  }
+
+  // Closed: render nothing, but the mount effects above already fetched
+  // the signed URL so opening is instant when the user taps "vergleichen".
+  return null;
+}
+
+/**
+ * Mobile inline preview for images — sits above the recognized fields in
+ * the review's scroll container and scrolls itself into view on mount so
+ * the user actually sees the comparison instead of staring at the fields
+ * they were already reading.
+ */
+function InlineMobilePreview({
+  title,
+  onClose,
+  content,
+}: {
+  title: string;
+  onClose: () => void;
+  content: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useMountEffect(() => {
+    // Defer one frame so the panel has its height before scrolling.
+    const id = requestAnimationFrame(() => {
+      ref.current?.scrollIntoView({ block: "start", behavior: "auto" });
+    });
+    return () => cancelAnimationFrame(id);
+  });
+
   return (
-    <Dialog open={open && !desktop} onOpenChange={onOpenChange}>
-      <DialogContent
-        showCloseButton={false}
-        className="inset-0 z-[70] flex h-dvh max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-[var(--warm-white)] p-0"
-        data-testid="original-document-preview-mobile"
-      >
-        <DialogHeader className="sr-only">
-          <DialogTitle>Originaldokument</DialogTitle>
-          <DialogDescription>
-            Vergleiche die erkannten Angaben mit dem Originaldokument.
-          </DialogDescription>
-        </DialogHeader>
-        <PreviewHeader title={title} onClose={() => onOpenChange(false)} mobile />
-        {content}
-      </DialogContent>
-    </Dialog>
+    <div
+      ref={ref}
+      className="flex max-h-[60vh] min-h-[24rem] flex-col overflow-hidden rounded-ordilo-md border border-border bg-[var(--sand-light)]"
+      aria-label="Originaldokument"
+      data-testid="original-document-preview-mobile"
+    >
+      <PreviewHeader title={title} onClose={onClose} mobile />
+      {content}
+    </div>
   );
 }
 

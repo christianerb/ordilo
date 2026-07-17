@@ -438,7 +438,7 @@ export function useScanProviderState(): ScanProviderState {
           allowAutoAnalyze: true,
         });
       }
-    }, 3000);
+    }, 1500);
     return () => clearInterval(interval);
   });
 
@@ -647,15 +647,21 @@ export function useScanProviderState(): ScanProviderState {
 
   const handleWizardGallerySelect = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (file) {
-        handleWizardCapture(file);
+      const files = Array.from(event.target.files ?? []);
+      if (files.length === 0) return;
+      const [first, ...rest] = files;
+      // The first file is followed through the wizard's guided flow; any
+      // extras upload in the background and appear as progress cards on
+      // the Dokumente page once the wizard closes.
+      handleWizardCapture(first);
+      for (const extra of rest) {
+        handleFileUpload(extra);
       }
       if (wizardGalleryInputRef.current) {
         wizardGalleryInputRef.current.value = "";
       }
     },
-    [handleWizardCapture],
+    [handleWizardCapture, handleFileUpload],
   );
 
   const handleWizardRetryUpload = useCallback(() => {
@@ -673,6 +679,69 @@ export function useScanProviderState(): ScanProviderState {
     setWizardDocument(null);
     if (documentsLoadedRef.current) {
       void fetchDocumentsRef.current();
+    }
+  }, []);
+
+  // After a confirmed document: reopen the camera fresh so a stack of
+  // letters can be scanned one after another without reopening the
+  // wizard each time. The confirmed document stays in the family book.
+  const handleWizardScanNext = useCallback(() => {
+    wizardStepRef.current = "camera";
+    setWizardStep("camera");
+    wizardDocIdRef.current = null;
+    setWizardDocId(null);
+    setWizardDocument(null);
+    wizardFileRef.current = null;
+    setWizardUploadError(null);
+    setWizardOpen(true);
+    if (documentsLoadedRef.current) {
+      void fetchDocumentsRef.current();
+    }
+  }, []);
+
+  // Discard the current (unconfirmed) document and re-capture: deletes
+  // the server-side row + file so nothing orphaned remains, then reopens
+  // the camera. Used when the scan/photo turned out bad and the user
+  // wants to try again instead of confirming a bad document.
+  //
+  // Mirrors the document-delete pattern: optimistic remove, server DELETE,
+  // and restore-on-failure with a toast so a silent DELETE error never
+  // leaves the user thinking a document is gone when it isn't. The
+  // concurrent OCR/analyze race is handled server-side (the analyze route
+  // 404s on a missing row before writing anything).
+  const handleWizardRetake = useCallback(async () => {
+    const docId = wizardDocIdRef.current;
+    const removed =
+      documentsRef.current.find((doc) => doc.id === docId) ?? null;
+
+    // Optimistic: drop from list + reset wizard to camera immediately.
+    wizardDocIdRef.current = null;
+    setWizardDocId(null);
+    setWizardDocument(null);
+    if (docId && documentsLoadedRef.current) {
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+    }
+    wizardStepRef.current = "camera";
+    setWizardStep("camera");
+    wizardFileRef.current = null;
+    setWizardUploadError(null);
+    setWizardOpen(true);
+
+    if (!docId) return;
+
+    try {
+      const response = await fetch(`/api/documents/${docId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error();
+    } catch {
+      // Restore the document so the user knows it wasn't discarded.
+      if (removed && documentsLoadedRef.current) {
+        setDocuments((prev) =>
+          prev.some((d) => d.id === docId) ? prev : [removed, ...prev],
+        );
+      }
+      toast.error("Verwerfen hat nicht geklappt — das Dokument ist noch da.");
     }
   }, []);
 
@@ -885,6 +954,8 @@ export function useScanProviderState(): ScanProviderState {
     handleWizardRetryUpload,
     handleWizardGallerySelect,
     handleWizardReviewDone,
+    handleWizardScanNext,
+    handleWizardRetake,
     handleWizardCreateNote,
     createNoteOpen,
     openCreateNote,

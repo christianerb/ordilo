@@ -12,8 +12,10 @@ import {
   Loader2,
   NotebookPen,
   Undo2,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { combinePagesToFile } from "@/lib/images-to-pdf";
 
@@ -27,6 +29,30 @@ interface CapturedPage {
   file: File;
   /** Object URL for the thumbnail preview (revoked on removal/unmount). */
   url: string;
+}
+
+// ---------------------------------------------------------------------------
+// Auto-capture preference (opt-in, persisted across scans)
+// ---------------------------------------------------------------------------
+
+const AUTO_CAPTURE_KEY = "ordilo:auto-capture";
+
+function readAutoCapturePref(): boolean {
+  try {
+    if (typeof localStorage === "undefined") return false;
+    return localStorage.getItem(AUTO_CAPTURE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeAutoCapturePref(value: boolean): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(AUTO_CAPTURE_KEY, value ? "1" : "0");
+  } catch {
+    // Private mode / disabled storage — preference stays session-only.
+  }
 }
 
 export interface CameraStepProps {
@@ -77,18 +103,36 @@ export function CameraStep({
 }: CameraStepProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const prevSampleRef = useRef<Uint8ClampedArray | null>(null);
+  const stillnessStartRef = useRef<number | null>(null);
+  const autoCaptureRef = useRef<boolean>(true);
   const [permission, setPermission] = useState<CameraPermissionState>("requesting");
   const [torchSupported, setTorchSupported] = useState(false);
   const [torchOn, setTorchOn] = useState(false);
   const [flash, setFlash] = useState(false);
   const [pages, setPages] = useState<CapturedPage[]>([]);
   const [finishing, setFinishing] = useState(false);
+  const [autoCapture, setAutoCapture] = useState(readAutoCapturePref);
+  const [stillness, setStillness] = useState(0);
   const pagesRef = useRef<CapturedPage[]>([]);
   pagesRef.current = pages;
+  autoCaptureRef.current = autoCapture;
+  const finishingRef = useRef(false);
+  finishingRef.current = finishing;
+  const handleShutterRef = useRef<() => void>(() => {});
 
   // --- Acquire the camera stream on mount, release it on unmount. ---
   useMountEffect(() => {
     let cancelled = false;
+    // Some browsers silently block the prompt or never resolve; fall
+    // back to "denied" after 5s so the user is never stuck on
+    // "Kamera wird gestartet …".
+    const permissionTimer = setTimeout(() => {
+      if (!cancelled && streamRef.current === null) {
+        setPermission("denied");
+      }
+    }, 5000);
 
     async function start() {
       if (
@@ -142,10 +186,98 @@ export function CameraStep({
 
     return () => {
       cancelled = true;
+      clearTimeout(permissionTimer);
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       // Release thumbnail object URLs.
       pagesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
+    };
+  });
+
+  // --- Auto-capture via stillness detection. ---
+  // Samples the live video at ~5Hz into a tiny offscreen canvas, measures
+  // frame-to-frame difference, and fires the shutter once the picture has
+  // been stable for ~1.2s. A subtle readiness ring around the shutter
+  // shows the accumulated stillness so the user understands *why* it
+  // fires. Respects prefers-reduced-motion (disabled entirely) and can be
+  // toggled off manually.
+  useMountEffect(() => {
+    if (typeof window === "undefined") return;
+    const reduceMotion = window.matchMedia?.(
+      "(prefers-reduced-motion: reduce)",
+    )?.matches;
+    if (reduceMotion) {
+      setAutoCapture(false);
+      return;
+    }
+
+    const SAMPLE_MS = 200;
+    const STABLE_THRESHOLD = 6; // mean per-channel delta under this = "still"
+    const STABLE_DURATION_MS = 1200;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 48;
+    sampleCanvasRef.current = canvas;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+    const interval = setInterval(() => {
+      const video = videoRef.current;
+      if (
+        !video ||
+        video.videoWidth === 0 ||
+        finishingRef.current ||
+        !autoCaptureRef.current
+      ) {
+        setStillness(0);
+        stillnessStartRef.current = null;
+        return;
+      }
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const prev = prevSampleRef.current;
+      prevSampleRef.current = data;
+
+      if (!prev) {
+        setStillness(0);
+        stillnessStartRef.current = Date.now();
+        return;
+      }
+
+      // Mean absolute per-channel difference between consecutive frames.
+      let sum = 0;
+      const channels = Math.min(prev.length, data.length);
+      for (let i = 0; i < channels; i += 4) {
+        sum += Math.abs(data[i] - prev[i]);
+        sum += Math.abs(data[i + 1] - prev[i + 1]);
+        sum += Math.abs(data[i + 2] - prev[i + 2]);
+      }
+      const meanDelta = sum / (channels / 4 * 3);
+
+      if (meanDelta < STABLE_THRESHOLD) {
+        const started = stillnessStartRef.current ?? Date.now();
+        stillnessStartRef.current = started;
+        const elapsed = Date.now() - started;
+        const progress = Math.min(1, elapsed / STABLE_DURATION_MS);
+        setStillness(progress);
+        if (progress >= 1) {
+          // Stable long enough — capture and reset.
+          stillnessStartRef.current = Date.now();
+          setStillness(0);
+          handleShutterRef.current();
+        }
+      } else {
+        stillnessStartRef.current = Date.now();
+        setStillness(0);
+      }
+    }, SAMPLE_MS);
+
+    return () => {
+      clearInterval(interval);
+      prevSampleRef.current = null;
+      stillnessStartRef.current = null;
+      setStillness(0);
     };
   });
 
@@ -167,7 +299,16 @@ export function CameraStep({
   // --- Capture a frame from the live video → add it as a page. ---
   const handleShutter = useCallback(() => {
     const video = videoRef.current;
-    if (!video || video.videoWidth === 0 || finishing) return;
+    if (!video || video.videoWidth === 0 || finishingRef.current) return;
+
+    // Taptic feedback on supporting mobile devices.
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      try {
+        navigator.vibrate?.(10);
+      } catch {
+        // Vibration not allowed or unsupported — silently ignore.
+      }
+    }
 
     const canvas = document.createElement("canvas");
     canvas.width = video.videoWidth;
@@ -179,6 +320,10 @@ export function CameraStep({
     // Brief white shutter-flash for tactile feedback.
     setFlash(true);
     setTimeout(() => setFlash(false), 180);
+
+    // Reset stillness so auto-capture doesn't immediately re-fire.
+    stillnessStartRef.current = Date.now();
+    setStillness(0);
 
     canvas.toBlob(
       (blob) => {
@@ -192,15 +337,15 @@ export function CameraStep({
       "image/jpeg",
       0.92,
     );
-  }, [finishing]);
+  }, []);
+  handleShutterRef.current = handleShutter;
 
-  // --- Discard the last captured page (instant retake). ---
-  const handleRemoveLastPage = useCallback(() => {
+  // --- Discard a captured page by index (mid-stack delete). ---
+  const handleRemovePage = useCallback((index: number) => {
     setPages((prev) => {
-      if (prev.length === 0) return prev;
-      const last = prev[prev.length - 1];
-      URL.revokeObjectURL(last.url);
-      return prev.slice(0, -1);
+      if (index < 0 || index >= prev.length) return prev;
+      URL.revokeObjectURL(prev[index].url);
+      return prev.filter((_, i) => i !== index);
     });
   }, []);
 
@@ -215,6 +360,9 @@ export function CameraStep({
     } catch {
       // PDF assembly failed (should not happen for canvas JPEGs) — fall
       // back to uploading the first page so the user's work is not lost.
+      toast.warning(
+        "Die Seiten konnten nicht zusammengefügt werden — nur die erste Seite wurde übernommen.",
+      );
       streamRef.current?.getTracks().forEach((t) => t.stop());
       onCapture(pages[0].file);
     }
@@ -223,7 +371,6 @@ export function CameraStep({
   const isReady = permission === "ready";
   const hasFailed = permission === "denied" || permission === "unavailable";
   const hasPages = pages.length > 0;
-  const lastPage = pages[pages.length - 1];
 
   return (
     <div className="relative flex size-full flex-col bg-black" data-testid="camera-step">
@@ -261,21 +408,50 @@ export function CameraStep({
           <X className="size-5" aria-hidden="true" />
         </button>
 
-        {torchSupported && (
+        <div className="flex items-center gap-2">
+          {/* Auto-capture toggle: when on, the shutter fires automatically
+              once the picture is steady. A subtle ring on the shutter
+              shows the accumulated stillness. */}
           <button
             type="button"
-            onClick={toggleTorch}
-            className="flex size-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
-            aria-label={torchOn ? "Blitz ausschalten" : "Blitz einschalten"}
-            aria-pressed={torchOn}
-          >
-            {torchOn ? (
-              <Zap className="size-5" aria-hidden="true" />
-            ) : (
-              <ZapOff className="size-5" aria-hidden="true" />
+            onClick={() => {
+              setAutoCapture((prev) => {
+                const next = !prev;
+                writeAutoCapturePref(next);
+                stillnessStartRef.current = Date.now();
+                setStillness(0);
+                return next;
+              });
+            }}
+            className={cn(
+              "flex size-10 items-center justify-center rounded-full backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50",
+              autoCapture
+                ? "bg-[var(--petrol)] text-white"
+                : "bg-black/40 text-white hover:bg-black/60",
             )}
+            aria-label={autoCapture ? "Automatisches Auslösen aus" : "Automatisches Auslösen an"}
+            aria-pressed={autoCapture}
+            data-testid="camera-auto-capture-toggle"
+          >
+            <Sparkles className="size-5" aria-hidden="true" />
           </button>
-        )}
+
+          {torchSupported && (
+            <button
+              type="button"
+              onClick={toggleTorch}
+              className="flex size-10 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
+              aria-label={torchOn ? "Blitz ausschalten" : "Blitz einschalten"}
+              aria-pressed={torchOn}
+            >
+              {torchOn ? (
+                <Zap className="size-5" aria-hidden="true" />
+              ) : (
+                <ZapOff className="size-5" aria-hidden="true" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Alignment frame + fallback state */}
@@ -313,7 +489,9 @@ export function CameraStep({
             >
               {hasPages
                 ? `Seite ${pages.length + 1} aufnehmen — oder unten abschließen`
-                : "Dokument im Rahmen ausrichten"}
+                : autoCapture
+                  ? "Dokument still halten — wird automatisch ausgelöst"
+                  : "Dokument im Rahmen ausrichten"}
             </p>
           </>
         )}
@@ -370,58 +548,90 @@ export function CameraStep({
           className="relative z-10 flex flex-col items-center gap-3 pb-6"
           style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
         >
-          <div className="flex w-full items-center justify-center gap-10">
-            {/* Left slot: gallery (no pages yet) or last-page thumbnail */}
-            {!hasPages ? (
-              <button
-                type="button"
-                onClick={onUseGallery}
-                className="flex size-11 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
-                aria-label="Foto oder PDF aus Galerie wählen"
-                data-testid="camera-gallery-button"
-              >
-                <Images className="size-5" aria-hidden="true" />
-              </button>
-            ) : (
-              <div
-                key={pages.length}
-                className="relative animate-check-pop"
-                data-testid="camera-page-stack"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={lastPage.url}
-                  alt={`Seite ${pages.length}`}
-                  className="size-11 rounded-ordilo-sm border-2 border-white/70 object-cover"
-                />
-                <span
-                  className="absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full bg-[var(--apricot)] text-[11px] font-semibold text-white"
-                  data-testid="camera-page-count"
+          {/* Pages tray — every captured page is visible and individually
+              removable, not just the last one. Horizontal scroll keeps the
+              thumb row compact for long multi-page scans. */}
+          {hasPages && (
+            <div
+              className="flex w-full max-w-md gap-2 overflow-x-auto px-4 pb-1"
+              data-testid="camera-pages-tray"
+            >
+              {pages.map((page, i) => (
+                <div
+                  key={page.url}
+                  className="relative shrink-0 animate-check-pop"
+                  data-testid={`camera-page-${i}`}
                 >
-                  {pages.length}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleRemoveLastPage}
-                  className="absolute -bottom-2 -right-2 flex size-6 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
-                  aria-label="Letzte Seite verwerfen"
-                  data-testid="camera-remove-page-button"
-                >
-                  <Undo2 className="size-3.5" aria-hidden="true" />
-                </button>
-              </div>
-            )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={page.url}
+                    alt={`Seite ${i + 1}`}
+                    className="size-12 rounded-ordilo-sm border-2 border-white/70 object-cover"
+                  />
+                  <span
+                    className="absolute -top-1.5 left-1 flex size-4 items-center justify-center rounded-full bg-black/70 text-[10px] font-semibold text-white"
+                    aria-hidden="true"
+                  >
+                    {i + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemovePage(i)}
+                    className="absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full bg-black/70 text-white backdrop-blur-sm transition-colors hover:bg-black focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
+                    aria-label={`Seite ${i + 1} verwerfen`}
+                    data-testid={`camera-remove-page-${i}`}
+                  >
+                    <Undo2 className="size-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
+          <div className="flex w-full items-center justify-center gap-10">
+            {/* Left slot: gallery (always accessible, even mid-scan) */}
             <button
               type="button"
-              onClick={handleShutter}
-              disabled={finishing}
-              className="flex size-[72px] shrink-0 items-center justify-center rounded-full border-4 border-white/30 bg-white transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50 disabled:opacity-60"
-              aria-label={hasPages ? "Weitere Seite aufnehmen" : "Foto aufnehmen"}
-              data-testid="camera-shutter-button"
+              onClick={onUseGallery}
+              className="flex size-11 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-sm transition-colors hover:bg-black/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50"
+              aria-label="Foto oder PDF aus Galerie wählen"
+              data-testid="camera-gallery-button"
             >
-              <span className="size-14 rounded-full bg-white" />
+              <Images className="size-5" aria-hidden="true" />
             </button>
+
+            {/* Shutter with auto-capture readiness ring */}
+            <div className="relative flex size-[72px] shrink-0 items-center justify-center">
+              {autoCapture && stillness > 0 && (
+                <svg
+                  className="pointer-events-none absolute inset-0 size-full -rotate-90"
+                  viewBox="0 0 72 72"
+                  aria-hidden="true"
+                  data-testid="camera-shutter-readiness"
+                >
+                  <circle
+                    cx="36"
+                    cy="36"
+                    r="34"
+                    fill="none"
+                    stroke="var(--apricot)"
+                    strokeWidth="3"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 34 * stillness} ${2 * Math.PI * 34}`}
+                  />
+                </svg>
+              )}
+              <button
+                type="button"
+                onClick={handleShutter}
+                disabled={finishing}
+                className="flex size-[72px] items-center justify-center rounded-full border-4 border-white/30 bg-white transition-transform active:scale-95 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-white/50 disabled:opacity-60"
+                aria-label={hasPages ? "Weitere Seite aufnehmen" : "Foto aufnehmen"}
+                data-testid="camera-shutter-button"
+              >
+                <span className="size-14 rounded-full bg-white" />
+              </button>
+            </div>
 
             {/* Right slot: note shortcut (no pages yet) or finish button */}
             {!hasPages ? (

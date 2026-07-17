@@ -29,6 +29,7 @@ describe("CameraStep", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     Object.defineProperty(navigator, "mediaDevices", {
       value: originalMediaDevices,
       configurable: true,
@@ -107,6 +108,16 @@ describe("CameraStep", () => {
   describe("when the camera is ready", () => {
     beforeEach(() => {
       HTMLVideoElement.prototype.play = vi.fn().mockResolvedValue(undefined);
+      // Pretend prefers-reduced-motion is active so the auto-capture
+      // sampler doesn't start a real interval during these tests.
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn().mockReturnValue({
+          matches: true,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }),
+      );
     });
 
     function mockReadyCamera(capabilities: Record<string, unknown> = {}) {
@@ -184,8 +195,7 @@ describe("CameraStep", () => {
       // Shutter captures the page but keeps the camera running — the
       // finish button completes the document.
       fireEvent.click(screen.getByTestId("camera-shutter-button"));
-      await screen.findByTestId("camera-page-count");
-      expect(screen.getByTestId("camera-page-count").textContent).toBe("1");
+      await screen.findByTestId("camera-page-0");
       expect(onCapture).not.toHaveBeenCalled();
 
       fireEvent.click(screen.getByTestId("camera-finish-button"));
@@ -228,11 +238,9 @@ describe("CameraStep", () => {
       Object.defineProperty(video, "videoHeight", { value: 720, configurable: true });
 
       fireEvent.click(screen.getByTestId("camera-shutter-button"));
-      await screen.findByTestId("camera-page-count");
+      await screen.findByTestId("camera-page-0");
       fireEvent.click(screen.getByTestId("camera-shutter-button"));
-      await waitFor(() =>
-        expect(screen.getByTestId("camera-page-count").textContent).toBe("2"),
-      );
+      await screen.findByTestId("camera-page-1");
 
       fireEvent.click(screen.getByTestId("camera-finish-button"));
 
@@ -265,13 +273,15 @@ describe("CameraStep", () => {
       Object.defineProperty(video, "videoHeight", { value: 720, configurable: true });
 
       fireEvent.click(screen.getByTestId("camera-shutter-button"));
-      await screen.findByTestId("camera-page-count");
+      await screen.findByTestId("camera-page-0");
 
-      fireEvent.click(screen.getByTestId("camera-remove-page-button"));
+      fireEvent.click(screen.getByTestId("camera-remove-page-0"));
 
-      // Back to the initial state: gallery button returns, no page stack.
-      await screen.findByTestId("camera-gallery-button");
-      expect(screen.queryByTestId("camera-page-count")).toBeNull();
+      // Back to the initial state: the pages tray is gone.
+      await waitFor(() =>
+        expect(screen.queryByTestId("camera-page-0")).toBeNull(),
+      );
+      expect(screen.queryByTestId("camera-pages-tray")).toBeNull();
     });
   });
 });

@@ -475,7 +475,7 @@ export function ReviewCardContent({
             type="button"
             onClick={onReanalyze}
             disabled={confirming}
-            className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+            className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
             data-testid="reanalyze-button"
           >
             <RefreshCw className="size-3" aria-hidden="true" />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Check, FolderCheck, Pencil } from "lucide-react";
+import { Check, FolderCheck, Pencil, Camera } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
@@ -61,6 +61,8 @@ function buildAutoActions(analysis: DocumentAnalysis): string[] {
 export interface ScanReviewStepProps {
   documentId: string;
   onDone: () => void;
+  /** After confirm: reopen the camera for the next document (batch flow). */
+  onScanNext?: () => void;
   /** Number of already-confirmed documents before this one (for milestones). */
   confirmedCount?: number;
   className?: string;
@@ -78,6 +80,7 @@ export interface ScanReviewStepProps {
 export function ScanReviewStep({
   documentId,
   onDone,
+  onScanNext,
   confirmedCount = 0,
   className,
 }: ScanReviewStepProps) {
@@ -148,7 +151,6 @@ export function ScanReviewStep({
       setConfirmError(
         err instanceof Error ? err.message : "Bestätigung fehlgeschlagen. Bitte erneut versuchen.",
       );
-      setMode("summary");
     } finally {
       setConfirming(false);
     }
@@ -227,16 +229,31 @@ export function ScanReviewStep({
             {milestoneMessage ?? analysis?.title ?? "Dokument gespeichert."}
           </p>
         </div>
-        <Button
-          type="button"
-          size="lg"
-          onClick={onDone}
-          className="h-12 w-full max-w-xs rounded-ordilo-md"
-          data-testid="review-step-done-button"
-        >
-          <Check className="size-4" aria-hidden="true" />
-          Fertig
-        </Button>
+        <div className="flex flex-col gap-2.5">
+          <Button
+            type="button"
+            size="lg"
+            onClick={onDone}
+            className="h-12 w-full max-w-xs rounded-ordilo-md"
+            data-testid="review-step-done-button"
+          >
+            <Check className="size-4" aria-hidden="true" />
+            Fertig
+          </Button>
+          {onScanNext && (
+            <Button
+              type="button"
+              size="lg"
+              variant="outline"
+              onClick={onScanNext}
+              className="h-12 w-full max-w-xs rounded-ordilo-md"
+              data-testid="review-step-scan-next-button"
+            >
+              <Camera className="size-4" aria-hidden="true" />
+              Nächstes scannen
+            </Button>
+          )}
+        </div>
       </div>
     );
   }
@@ -250,7 +267,7 @@ export function ScanReviewStep({
       <ReviewCard
         documentId={documentId}
         status="analyzed"
-        onConfirmSuccess={() => setTimeout(onDone, 1500)}
+        onConfirmSuccess={() => setConfirmed(true)}
         onBack={(reviewEdits) => {
           setEdits(reviewEdits);
           setMode("summary");
@@ -272,7 +289,19 @@ export function ScanReviewStep({
         )}
         data-testid="review-step-autofile"
       >
-        <div className={cn(!originalPreviewOpen && "mx-auto w-full max-w-md")}>
+        {/* Original preview — mounted eagerly so the signed URL is
+            prefetched; on mobile it stacks above the recognized fields
+            (order-first) for a true side-by-side comparison, on desktop
+            it sits in the second grid column (lg:order-2). */}
+        <div className={cn("order-first lg:order-2", !originalPreviewOpen && "lg:hidden")}>
+          <OriginalDocumentPreview
+            documentId={documentId}
+            title={analysis.title}
+            open={originalPreviewOpen}
+            onOpenChange={setOriginalPreviewOpen}
+          />
+        </div>
+        <div className={cn("lg:order-1", !originalPreviewOpen && "mx-auto w-full max-w-md")}>
           <div className="flex flex-col items-center gap-4 pt-6 text-center animate-card-in">
             <div className="flex size-14 items-center justify-center rounded-full bg-[var(--petrol)]/10 animate-check-pop">
               <FolderCheck
@@ -314,6 +343,12 @@ export function ScanReviewStep({
             </button>
           </div>
 
+          {confirmError && (
+            <div className="mt-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 p-3">
+              <p className="text-sm text-destructive">{confirmError}</p>
+            </div>
+          )}
+
           <div className="mt-6 flex flex-col gap-2.5">
             <Button
               type="button"
@@ -344,14 +379,6 @@ export function ScanReviewStep({
             </Button>
           </div>
         </div>
-        {originalPreviewOpen && (
-          <OriginalDocumentPreview
-            documentId={documentId}
-            title={analysis.title}
-            open={originalPreviewOpen}
-            onOpenChange={setOriginalPreviewOpen}
-          />
-        )}
       </div>
     );
   }
@@ -364,6 +391,14 @@ export function ScanReviewStep({
           "lg:grid-cols-[minmax(0,26rem)_minmax(28rem,1fr)]",
       )}
     >
+      <div className={cn("order-first lg:order-2", !originalPreviewOpen && "lg:hidden")}>
+        <OriginalDocumentPreview
+          documentId={documentId}
+          title={analysis.title}
+          open={originalPreviewOpen}
+          onOpenChange={setOriginalPreviewOpen}
+        />
+      </div>
       <ReviewSummary
         analysis={analysis}
         familyMembers={familyMembers}
@@ -377,16 +412,8 @@ export function ScanReviewStep({
         editedPersonId={editedPersonId}
         documentId={documentId}
         onViewOriginal={() => setOriginalPreviewOpen(true)}
-        className={cn(!originalPreviewOpen && "mx-auto max-w-md", className)}
+        className={cn("lg:order-1", !originalPreviewOpen && "mx-auto max-w-md", className)}
       />
-      {originalPreviewOpen && (
-        <OriginalDocumentPreview
-          documentId={documentId}
-          title={analysis.title}
-          open={originalPreviewOpen}
-          onOpenChange={setOriginalPreviewOpen}
-        />
-      )}
     </div>
   );
 }

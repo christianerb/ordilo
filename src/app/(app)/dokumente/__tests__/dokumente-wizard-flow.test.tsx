@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 // Mock the supabase browser client and the upload/ocr helpers so the
@@ -104,6 +104,21 @@ const analysis: DocumentAnalysis = {
 describe("DokumentePage — scan wizard flow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Pretend prefers-reduced-motion is active so the CameraStep's
+    // auto-capture sampler doesn't call canvas.getContext (not
+    // implemented in jsdom) when the wizard opens.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("opens the wizard from the primary CTA and shows the camera step", async () => {

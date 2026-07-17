@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { X } from "lucide-react";
+import { X, RefreshCw } from "lucide-react";
 import type { Database } from "@/types/database";
 import { CameraStep } from "./camera-step";
 import { ScanProcessingStep } from "./processing-step";
@@ -26,6 +26,10 @@ export interface ScanWizardProps {
   onRetryUpload: () => void;
   onClose: () => void;
   onReviewDone: () => void;
+  /** After confirm: reopen the camera for the next document (batch flow). */
+  onScanNext: () => void;
+  /** Discard the current document and re-capture (bad scan/photo). */
+  onRetake: () => void;
 }
 
 /**
@@ -49,6 +53,8 @@ export function ScanWizard({
   onRetryUpload,
   onClose,
   onReviewDone,
+  onScanNext,
+  onRetake,
 }: ScanWizardProps) {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -102,9 +108,19 @@ export function ScanWizard({
       {step === "review" && doc && (
         <div className="flex size-full flex-col overflow-y-auto">
           <div
-            className="mx-auto flex w-full max-w-md items-center justify-end p-4"
+            className="mx-auto flex w-full max-w-md items-center justify-between p-4"
             style={{ paddingTop: "max(1rem, env(safe-area-inset-top))" }}
           >
+            <button
+              type="button"
+              onClick={onRetake}
+              className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              aria-label="Neu scannen — dieses Dokument verwerfen"
+              data-testid="review-step-retake-button"
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Neu scannen
+            </button>
             <button
               type="button"
               onClick={onClose}
@@ -120,6 +136,7 @@ export function ScanWizard({
               <ScanReviewStep
                 documentId={doc.id}
                 onDone={onReviewDone}
+                onScanNext={onScanNext}
                 confirmedCount={confirmedCount}
               />
             </div>

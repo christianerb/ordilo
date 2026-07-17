@@ -437,17 +437,20 @@ export function ReviewCard({
         className,
       )}
     >
-      <div className={cn(!originalPreviewOpen && "mx-auto w-full max-w-xl")}>
-        {content}
-      </div>
-      {originalPreviewOpen && (
+      {/* Original preview — mounted eagerly for prefetch; on mobile it
+          stacks above the review content (order-first), on desktop it
+          sits in the second grid column (lg:order-2). */}
+      <div className={cn("order-first lg:order-2", !originalPreviewOpen && "lg:hidden")}>
         <OriginalDocumentPreview
           documentId={documentId}
           title={analysis?.title ?? "Dokument"}
           open={originalPreviewOpen}
           onOpenChange={handleOriginalPreviewChange}
         />
-      )}
+      </div>
+      <div className={cn("lg:order-1", !originalPreviewOpen && "mx-auto w-full max-w-xl")}>
+        {content}
+      </div>
     </div>
   );
 
