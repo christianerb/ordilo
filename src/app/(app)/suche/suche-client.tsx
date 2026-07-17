@@ -534,7 +534,7 @@ export function SucheClient({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="relative flex h-[calc(100dvh-184px)] flex-col overflow-hidden rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] p-3 lg:h-[calc(100dvh-152px)] lg:p-4">
+    <div className="relative flex h-[calc(100dvh-160px)] flex-col overflow-hidden">
       {/* Chat header bar — dropdown trigger + new chat */}
       <div className="flex items-center gap-2 border-b border-border pb-3">
         <button
@@ -815,7 +815,7 @@ function EmptyState({
             type="button"
             onClick={() => onExampleClick(query)}
             data-testid="example-query"
-            className="flex w-full items-center gap-3 rounded-ordilo-md border border-border bg-card px-4 py-3 text-left shadow-card card-lift press-scale focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex w-full items-center gap-3 rounded-ordilo-sm bg-[var(--sand)] px-4 py-3 text-left transition-colors hover:bg-[var(--sand-warm)] press-scale focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <Sparkles
               className="size-4 shrink-0"

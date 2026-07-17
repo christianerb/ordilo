@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  House,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -28,6 +29,12 @@ export interface NavTab {
  * answer mode (/suche) from anywhere.
  */
 export const NAV_TABS: NavTab[] = [
+  {
+    label: "Heute",
+    href: "/home",
+    icon: House,
+    match: ["/aufgaben"],
+  },
   {
     label: "Dokumente",
     href: "/dokumente",

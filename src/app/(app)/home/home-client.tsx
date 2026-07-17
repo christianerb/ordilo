@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
-  ScanLine,
   CalendarClock,
   AlertCircle,
   Receipt,
@@ -209,16 +208,9 @@ export function HomeClient({
         />
       ) : (
         <>
-          {/* Bento top row: greeting + Aufgaben stat + Scan — always all
-              three tiles, so the grid is fully filled at every breakpoint
-              (2-col mobile: greeting spans both, stat+scan share the second
-              row; 3-col desktop: all three sit side by side). Both stat
-              tiles use petrol, not apricot — apricot is reserved for actual
-              priority/urgency signals elsewhere on the page. */}
-          <div className="app-section-surface grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
-            {/* Greeting tile — warm sand-warm background */}
+          <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(10rem,1fr)] lg:gap-4">
             <div
-              className="col-span-2 flex items-center justify-between rounded-ordilo-sm bg-[var(--wash-sage)]/70 p-4 lg:col-span-1"
+              className="flex items-center justify-between rounded-ordilo-md bg-[var(--sand-warm)] p-4"
             >
               <div>
                 <h1 className="text-lg font-semibold text-foreground">
@@ -257,12 +249,10 @@ export function HomeClient({
               )}
             </div>
 
-            {/* Aufgaben stat tile — always shown, even at zero, so the
-                dashboard never omits the task count. */}
             <Link
               href="/aufgaben"
               data-testid="home-stat-tasks"
-              className="col-span-1 flex flex-col justify-center gap-1 rounded-ordilo-md border border-[var(--petrol)]/15 bg-[var(--petrol)]/[0.06] p-4 card-lift press-scale hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex flex-col justify-center gap-1 rounded-ordilo-md border border-[var(--petrol)]/15 bg-[var(--petrol)]/[0.06] p-4 card-lift press-scale hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               <CalendarClock
                 className="size-4 text-[var(--petrol)]"
@@ -280,29 +270,6 @@ export function HomeClient({
                     : "Aufgaben offen"}
               </span>
             </Link>
-
-            {/* Scan tile — always shown as a permanent capture shortcut,
-                independent of task state. Opens the scan wizard overlay
-                directly rather than navigating, since scanning has no
-                dedicated route. */}
-            <button
-              type="button"
-              onClick={openWizard}
-              data-testid="home-stat-scan"
-              className="col-span-1 flex flex-col justify-center gap-1 rounded-ordilo-md border border-[var(--petrol)]/15 bg-[var(--petrol)]/[0.06] p-4 card-lift press-scale hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-left"
-            >
-              <ScanLine
-                className="size-4 text-[var(--petrol)]"
-                strokeWidth={2}
-                aria-hidden="true"
-              />
-              <span className="text-sm font-semibold text-foreground">
-                Scannen
-              </span>
-              <span className="text-xs text-muted-foreground">
-                Neues Dokument
-              </span>
-            </button>
           </div>
 
           {/* Proactive insights from the knowledge graph */}

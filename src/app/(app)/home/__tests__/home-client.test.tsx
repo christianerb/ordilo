@@ -442,28 +442,19 @@ describe("HomeClient — Task Interaction", () => {
 });
 
 describe("HomeClient — Bento stat tiles", () => {
-  it("shows both the Aufgaben stat tile and the Scan tile when there are open tasks", () => {
+  it("shows the Aufgaben stat tile without duplicating the global scan action", () => {
     render(<HomeClient {...defaultProps} />);
     const statTile = screen.getByTestId("home-stat-tasks");
     expect(within(statTile).getByText("3")).toBeDefined();
     expect(within(statTile).getByText("Aufgaben offen")).toBeDefined();
-    expect(screen.getByTestId("home-stat-scan")).toBeDefined();
+    expect(screen.queryByTestId("home-stat-scan")).toBeNull();
   });
 
-  it("shows both stat tiles with a calm zero-state when there are no open tasks", () => {
+  it("shows a calm zero-state when there are no open tasks", () => {
     render(<HomeClient {...defaultProps} upcomingTasks={[]} />);
     const statTile = screen.getByTestId("home-stat-tasks");
     expect(within(statTile).getByText("0")).toBeDefined();
     expect(within(statTile).getByText("Keine Aufgaben offen")).toBeDefined();
-    expect(screen.getByTestId("home-stat-scan")).toBeDefined();
-  });
-
-  it("Scan tile opens the scan wizard overlay", async () => {
-    render(<HomeClient {...defaultProps} />);
-    fireEvent.click(screen.getByTestId("home-stat-scan"));
-    await waitFor(() => {
-      expect(screen.getByTestId("scan-wizard")).toBeDefined();
-    });
   });
 });
 
