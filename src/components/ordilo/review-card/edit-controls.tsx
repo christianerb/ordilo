@@ -7,7 +7,36 @@ import { toDateInputValue } from "@/lib/format";
 import type { FamilyMemberOption } from "@/lib/analysis";
 
 /**
- * Person edit control — a dropdown of family members.
+ * Shared "edit" affordance — a small pencil button. By default every field
+ * row shows just its recognized value at full width; the actual editor
+ * (select, date picker, text input) only appears once the user taps this
+ * pencil. This keeps the common "looks right, nothing to change" case calm
+ * and readable instead of splitting every row into value + always-on editor.
+ */
+function FieldEditButton({
+  onClick,
+  label,
+  testId,
+}: {
+  onClick: () => void;
+  label: string;
+  testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      aria-label={label}
+      data-testid={testId}
+    >
+      <Pencil className="size-4" aria-hidden="true" />
+    </button>
+  );
+}
+
+/**
+ * Person edit control — a pencil that reveals a dropdown of family members.
  */
 export function PersonEditControl({
   value,
@@ -20,8 +49,19 @@ export function PersonEditControl({
 }) {
   const reactId = useId();
   const selectId = `review-person-${reactId}`;
+  const [isEditing, setIsEditing] = useState(false);
 
   if (familyMembers.length === 0) return null;
+
+  if (!isEditing) {
+    return (
+      <FieldEditButton
+        onClick={() => setIsEditing(true)}
+        label="Person ändern"
+        testId="person-edit-button"
+      />
+    );
+  }
 
   return (
     <div className="relative">
@@ -29,7 +69,12 @@ export function PersonEditControl({
         id={selectId}
         name="review-person"
         value={value ?? ""}
-        onChange={(e) => onChange(e.target.value || null)}
+        autoFocus
+        onChange={(e) => {
+          onChange(e.target.value || null);
+          setIsEditing(false);
+        }}
+        onBlur={() => setIsEditing(false)}
         className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
         aria-label="Person wechseln"
         data-testid="person-edit-select"
@@ -51,7 +96,8 @@ export function PersonEditControl({
 }
 
 /**
- * Category edit control — existing categories + free-text.
+ * Category edit control — a pencil that reveals existing categories plus a
+ * free-text option.
  */
 export function CategoryEditControl({
   value,
@@ -65,11 +111,22 @@ export function CategoryEditControl({
   const reactId = useId();
   const selectId = `review-category-${reactId}`;
   const inputId = `review-category-input-${reactId}`;
+  const [isEditing, setIsEditing] = useState(false);
   const [isFreeText, setIsFreeText] = useState(false);
   const [freeTextValue, setFreeTextValue] = useState("");
 
   // Check if the current value is in the existing categories.
   const isInExisting = existingCategories.includes(value);
+
+  if (!isEditing) {
+    return (
+      <FieldEditButton
+        onClick={() => setIsEditing(true)}
+        label="Kategorie ändern"
+        testId="category-edit-button"
+      />
+    );
+  }
 
   if (isFreeText || (!isInExisting && value && existingCategories.length > 0)) {
     return (
@@ -79,10 +136,12 @@ export function CategoryEditControl({
           name="review-category"
           type="text"
           value={freeTextValue || value}
+          autoFocus
           onChange={(e) => {
             setFreeTextValue(e.target.value);
             onChange(e.target.value);
           }}
+          onBlur={() => setIsEditing(false)}
           placeholder="Eigene Kategorie"
           className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           aria-label="Kategorie eingeben"
@@ -108,12 +167,14 @@ export function CategoryEditControl({
         id={selectId}
         name="review-category"
         value={value}
+        autoFocus
         onChange={(e) => {
           if (e.target.value === "__free__") {
             setIsFreeText(true);
             setFreeTextValue("");
           } else {
             onChange(e.target.value);
+            setIsEditing(false);
           }
         }}
         className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
@@ -159,15 +220,11 @@ export function FactEditControl({
 
   if (!isEditing) {
     return (
-      <button
-        type="button"
+      <FieldEditButton
         onClick={() => setIsEditing(true)}
-        className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        aria-label={`${label} korrigieren`}
-        data-testid="edit-fact-button"
-      >
-        <Pencil className="size-4" aria-hidden="true" />
-      </button>
+        label={`${label} korrigieren`}
+        testId="edit-fact-button"
+      />
     );
   }
 
@@ -188,7 +245,9 @@ export function FactEditControl({
 }
 
 /**
- * Date edit control — a date input field.
+ * Date edit control — a pencil that reveals a date input field. In `compact`
+ * mode (inline next to a task's due date) the pencil is a small petrol icon;
+ * otherwise it matches the standard field pencil.
  */
 export function DateEditControl({
   value,
@@ -222,16 +281,21 @@ export function DateEditControl({
     );
   }
 
-  if (compact && !isEditing && value) {
+  if (!isEditing && value) {
     return (
       <button
         type="button"
         onClick={() => setIsEditing(true)}
-        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+        className={cn(
+          "inline-flex items-center justify-center rounded-ordilo-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          compact
+            ? "gap-1 text-[var(--petrol)] hover:text-[var(--petrol-dark)]"
+            : "size-7 text-muted-foreground hover:bg-accent hover:text-foreground",
+        )}
         aria-label={`${label} bearbeiten`}
         data-testid="edit-date-button"
       >
-        <Pencil className="size-3" aria-hidden="true" />
+        <Pencil className={compact ? "size-3" : "size-4"} aria-hidden="true" />
       </button>
     );
   }

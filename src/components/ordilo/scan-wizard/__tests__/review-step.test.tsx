@@ -230,6 +230,7 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
 
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     fireEvent.click(await screen.findByTestId("autofile-edit-button"));
+    fireEvent.click(await screen.findByTestId("person-edit-button"));
     fireEvent.change(await screen.findByTestId("person-edit-select"), {
       target: { value: "member-2" },
     });
