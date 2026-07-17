@@ -54,10 +54,47 @@ function SheetContent({
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
 }) {
+  const isBottom = side === "bottom"
+  const contentRef = React.useRef<HTMLDivElement | null>(null)
+  const closeRef = React.useRef<HTMLButtonElement | null>(null)
+  const drag = React.useRef<{ startY: number } | null>(null)
+
+  // Swipe-down-to-dismiss for bottom sheets. The drag is initiated only
+  // from the top grab handle so it never competes with scrolling inside
+  // the sheet body. Past a threshold the sheet closes (Radix plays its
+  // own slide-out); otherwise it springs back to its resting position.
+  const setTransform = (y: number, animate: boolean) => {
+    const el = contentRef.current
+    if (!el) return
+    el.style.transition = animate ? "transform 220ms ease" : "none"
+    el.style.transform = y > 0 ? `translateY(${y}px)` : ""
+  }
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    drag.current = { startY: e.clientY }
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return
+    setTransform(Math.max(0, e.clientY - drag.current.startY), false)
+  }
+  const handlePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const start = drag.current
+    drag.current = null
+    if (!start) return
+    const delta = Math.max(0, e.clientY - start.startY)
+    if (delta > 100) {
+      closeRef.current?.click()
+    } else {
+      setTransform(0, true)
+    }
+  }
+
   return (
     <SheetPortal>
       <SheetOverlay />
       <SheetPrimitive.Content
+        ref={contentRef}
         data-slot="sheet-content"
         className={cn(
           "fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
@@ -73,7 +110,28 @@ function SheetContent({
         )}
         {...props}
       >
+        {isBottom && (
+          <div
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerEnd}
+            onPointerCancel={handlePointerEnd}
+            className="flex shrink-0 cursor-grab touch-none justify-center pt-2.5 pb-1 active:cursor-grabbing"
+            aria-hidden="true"
+            data-slot="sheet-drag-handle"
+          >
+            <div className="h-1.5 w-10 rounded-full bg-muted-foreground/30" />
+          </div>
+        )}
         {children}
+        {isBottom && (
+          <SheetPrimitive.Close
+            ref={closeRef}
+            tabIndex={-1}
+            aria-hidden="true"
+            className="sr-only"
+          />
+        )}
         {showCloseButton && (
           <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary">
             <XIcon className="size-4" />

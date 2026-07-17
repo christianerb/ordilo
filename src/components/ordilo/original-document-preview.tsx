@@ -256,7 +256,7 @@ function DocumentFrame({
         <img
           src={file.url}
           alt={`Original von ${title}`}
-          className="mx-auto h-auto min-h-full max-w-none rounded-ordilo-sm bg-[var(--warm-white)] shadow-card"
+          className="mx-auto h-auto max-w-full rounded-ordilo-sm bg-[var(--warm-white)] shadow-card"
         />
       ) : (
         <iframe
