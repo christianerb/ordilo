@@ -16,6 +16,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { EMAIL_OTP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth/constants";
 import { validateLoginEmail } from "@/lib/auth/validation";
 import { webmailFor } from "@/lib/auth/webmail";
 import { requestInviteSignIn } from "../actions";
@@ -62,10 +63,8 @@ export function InviteLanding({
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
-  const RESEND_COOLDOWN_SECONDS = 30;
-
   const startCooldown = useCallback(() => {
-    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    setResendCooldown(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
     if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
     cooldownTimerRef.current = setInterval(() => {
       setResendCooldown((s) => {

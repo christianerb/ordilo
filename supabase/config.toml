@@ -10,9 +10,10 @@ shadow_port = 54320
 major_version = 15
 
 [auth]
-site_url = "https://www.ordilo.de"
+site_url = "https://app.ordilo.de"
 additional_redirect_urls = [
   "http://localhost:3100/**",
+  "https://app.ordilo.de/auth/callback",
   "https://ordilo-six.vercel.app/auth/callback",
   "https://*.vercel.app/auth/callback",
   "https://ordilo-ordilo.vercel.app/",

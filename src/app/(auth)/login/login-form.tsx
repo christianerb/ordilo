@@ -13,6 +13,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import { EMAIL_OTP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth/constants";
 import { validateLoginEmail } from "@/lib/auth/validation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,9 +22,6 @@ import { AuthShell } from "@/components/ordilo/auth-shell";
 import { webmailFor } from "@/lib/auth/webmail";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
-
-/** Seconds before a login code can be re-sent. */
-const RESEND_COOLDOWN_SECONDS = 30;
 
 /**
  * Passwordless email-code login form.
@@ -48,7 +46,7 @@ export function LoginForm() {
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   const startCooldown = useCallback(() => {
-    setResendCooldown(RESEND_COOLDOWN_SECONDS);
+    setResendCooldown(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
     if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
     cooldownTimerRef.current = setInterval(() => {
       setResendCooldown((s) => {

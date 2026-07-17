@@ -41,6 +41,7 @@ describe("LoginForm", () => {
     expect(screen.getByTestId("sent-email").textContent).toBe(
       "familie@example.com",
     );
+    expect(screen.getByTestId("resend-button").textContent).toContain("(60s)");
   });
 
   it("does not generate two codes for duplicate form submissions", async () => {
