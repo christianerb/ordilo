@@ -20,7 +20,7 @@ describe("LoginForm", () => {
     verifyOtp.mockResolvedValue({ error: null });
   });
 
-  it("sends a code without an email redirect", async () => {
+  it("sends a code with the same-site auth callback", async () => {
     render(<LoginForm />);
 
     fireEvent.change(screen.getByLabelText("E-Mail-Adresse"), {
@@ -34,6 +34,9 @@ describe("LoginForm", () => {
 
     expect(signInWithOtp).toHaveBeenCalledWith({
       email: "familie@example.com",
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
     });
     expect(screen.getByTestId("sent-email").textContent).toBe(
       "familie@example.com",

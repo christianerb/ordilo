@@ -8,3 +8,31 @@ port = 54321
 port = 54322
 shadow_port = 54320
 major_version = 15
+
+[auth]
+site_url = "https://www.ordilo.de"
+additional_redirect_urls = [
+  "http://localhost:3100/**",
+  "https://ordilo-six.vercel.app/auth/callback",
+  "https://*.vercel.app/auth/callback",
+  "https://ordilo-ordilo.vercel.app/",
+  "https://ordilo-ordilo.vercel.app/**",
+  "https://ordilo-*-ordilo.vercel.app",
+  "https://ordilo-*-ordilo.vercel.app/**",
+  "https://ordilo.de",
+  "https://ordilo.de/auth/callback",
+]
+
+[auth.email]
+enable_confirmations = true
+max_frequency = "1m"
+otp_length = 6
+otp_expiry = 3600
+
+[auth.email.template.magic_link]
+subject = "Ordilo - Dein Anmelde-Code"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
