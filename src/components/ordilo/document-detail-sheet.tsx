@@ -76,7 +76,7 @@ export function DocumentDetailSheet({
             ? comparisonOpen
               ? "lg:max-w-[min(92vw,80rem)]"
               : "lg:max-w-xl xl:max-w-[42rem]"
-            : "max-h-[90vh] rounded-t-ordilo-xl",
+            : "max-h-[90dvh] rounded-t-ordilo-xl",
         )}
         data-testid="document-detail-sheet"
       >
