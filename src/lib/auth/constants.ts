@@ -1,0 +1,1 @@
+export const EMAIL_OTP_RESEND_COOLDOWN_SECONDS = 60;

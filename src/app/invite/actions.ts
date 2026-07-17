@@ -1,6 +1,8 @@
 "use server";
 
+import { cookies, headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import { INVITE_COOKIE } from "@/lib/invite";
 
 /**
  * Server actions for the invite landing page (`/invite/[token]`).
@@ -38,12 +40,40 @@ export async function requestInviteSignIn(
     return { success: false, error: "Die Einladung ist ungültig." };
   }
 
+  const requestHeaders = await headers();
+  const host = (
+    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host")
+  )?.split(",")[0]?.trim();
+  const protocol =
+    requestHeaders.get("x-forwarded-proto")?.split(",")[0]?.trim() ??
+    (host?.startsWith("localhost") ? "http" : "https");
+
+  if (!host || (protocol !== "http" && protocol !== "https")) {
+    return {
+      success: false,
+      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    };
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(INVITE_COOKIE, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: protocol === "https",
+    path: "/",
+    maxAge: 60 * 60,
+  });
+
   const supabase = await createClient();
   const { error } = await supabase.auth.signInWithOtp({
     email: trimmedEmail,
+    options: {
+      emailRedirectTo: `${protocol}://${host}/auth/callback`,
+    },
   });
 
   if (error) {
+    cookieStore.delete(INVITE_COOKIE);
     return {
       success: false,
       error: "E-Mail konnte nicht gesendet werden. Bitte versuche es erneut.",
