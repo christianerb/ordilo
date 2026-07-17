@@ -259,6 +259,19 @@ Login and email-code confirmation use a boxed, two-part welcome surface. On desk
 - **Email-code state:** Uses the same outer shell. On mobile, the story illustration collapses so the code inputs remain immediately accessible.
 - **Supporting colors:** Sage and apricot are soft background tints only. They never replace Harbor Blue for buttons, links, focus, or status actions.
 
+### Shared Canvas and Boxed App Layout
+
+The friendly boxed composition from authentication and the public landing page is the shared visual language for the whole product. Authenticated screens should feel like pages placed inside the same calm family journal, not like a separate dashboard product.
+
+- **Canvas:** Every major screen rests on Warm Canvas (`--canvas-warm`) with two or three large, low-contrast organic fields using Sage, Harbor Blue, and Apricot washes. These shapes are atmospheric and never carry information.
+- **Page frame:** Authenticated content sits inside a responsive Warm White frame (`--surface-box`) with a 20px desktop radius, a subtle white border, and Card Rest shadow. On mobile the frame may meet the viewport edges, but internal sections retain 12px radii.
+- **Story surfaces:** Page greetings, titles, summaries, empty states, and grouped information may use Sand Story (`--surface-story`) or Sage Wash (`--wash-sage`). One screen should not use more than two wash colors for content.
+- **Section grouping:** Related content belongs in one boxed section with internal dividers. Avoid repeated floating cards when a single grouped surface communicates the relationship more clearly.
+- **Page headers:** A page header combines title, count or short context, and the primary action in one calm surface. Harbor Blue remains the only primary action color.
+- **Organic fields:** Large circles and softly rotated 28px rectangles are allowed behind page frames or inside illustrative regions. They remain low contrast, non-interactive, and hidden from assistive technology.
+- **Mobile behavior:** Preserve one-thumb access and keep primary content above decorative areas. Organic fields may be cropped or hidden; forms, lists, and actions always take priority.
+- **Metadata contrast:** Secondary text uses Mist Dark or `text-muted-foreground` at full opacity. Opacity below 70% is reserved for decorative icons, never instructional copy, dates, counts, or labels.
+
 ### Badges
 
 - **Style:** Full pill radius (9999px), 2px/10px padding, 0.75rem font-size, medium weight

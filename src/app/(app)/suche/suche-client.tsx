@@ -534,9 +534,9 @@ export function SucheClient({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="relative flex h-[calc(100dvh-160px)] flex-col overflow-hidden lg:h-[calc(100dvh-96px)]">
+    <div className="relative flex h-[calc(100dvh-184px)] flex-col overflow-hidden rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] p-3 lg:h-[calc(100dvh-152px)] lg:p-4">
       {/* Chat header bar — dropdown trigger + new chat */}
-      <div className="flex items-center gap-2 border-b border-border/30 pb-2">
+      <div className="flex items-center gap-2 border-b border-border pb-3">
         <button
           type="button"
           onClick={() => setShowChatList(!showChatList)}
@@ -545,7 +545,7 @@ export function SucheClient({
           data-testid="chat-history-toggle"
         >
           <MessageSquare
-            className="size-3.5 shrink-0 text-muted-foreground/50"
+            className="size-3.5 shrink-0 text-muted-foreground"
             aria-hidden="true"
           />
           <span className="truncate text-muted-foreground">
@@ -553,7 +553,7 @@ export function SucheClient({
           </span>
           <ChevronDown
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground/40 transition-transform",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform",
               showChatList && "rotate-180",
             )}
             aria-hidden="true"
@@ -717,14 +717,14 @@ function ChatList({
   return (
     <div className="flex max-h-[400px] flex-col overflow-y-auto p-1.5">
       {groups.length === 0 ? (
-        <p className="px-2.5 py-4 text-xs text-muted-foreground/30">
+        <p className="px-2.5 py-4 text-xs text-muted-foreground">
           Noch keine Chats.
         </p>
       ) : (
         <div className="flex flex-col gap-2">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2 py-1 text-[10px] font-medium text-muted-foreground/30">
+              <p className="px-2 py-1 text-[10px] font-medium text-muted-foreground">
                 {group.label}
               </p>
               <div className="flex flex-col">

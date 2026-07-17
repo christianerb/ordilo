@@ -119,7 +119,7 @@ export function FamilySettingsClient({
   const formattedCreatedAt = formatGermanDate(createdAt);
 
   return (
-    <div className="space-y-6">
+    <div className="app-page-stack">
       <Link
         href="/familie"
         className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
@@ -128,7 +128,7 @@ export function FamilySettingsClient({
         Zurück zur Familie
       </Link>
 
-      <h1 className="text-xl font-semibold tracking-tight text-foreground">
+      <h1 className="app-page-heading text-xl font-semibold tracking-tight text-foreground">
         Familieneinstellungen
       </h1>
 

@@ -118,7 +118,7 @@ export function TaskCard({
         {/* Meta — dot + plain text, no pills or icons */}
         {hasMeta && (
           <div
-            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground/60"
+            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
             data-testid="task-meta"
           >
             <span
@@ -136,9 +136,9 @@ export function TaskCard({
                 {isOverdue ? `Überfällig · ${dueDate}` : dueDate}
               </span>
             )}
-            {hasDocument && dueDate && <span className="text-muted-foreground/30">·</span>}
+            {hasDocument && dueDate && <span className="text-muted-foreground">·</span>}
             {hasDocument && (
-              <span className="truncate text-muted-foreground/50">
+              <span className="truncate text-muted-foreground">
                 {task.document_title?.trim() || "Ohne Titel"}
               </span>
             )}

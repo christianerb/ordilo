@@ -114,9 +114,9 @@ export function CollectionClient({
   );
 
   return (
-    <div className="space-y-5">
+    <div className="app-page-stack">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="app-page-heading">
         <span
           className="flex size-12 shrink-0 items-center justify-center rounded-ordilo-md"
           style={{ backgroundColor: colorOption.bg }}

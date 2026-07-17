@@ -197,7 +197,7 @@ export function HomeClient({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="space-y-4">
+    <div className="app-page-stack">
       {isFirstVisit ? (
         <EmptyState
           title="Schön, dass du da bist"
@@ -215,10 +215,10 @@ export function HomeClient({
               row; 3-col desktop: all three sit side by side). Both stat
               tiles use petrol, not apricot — apricot is reserved for actual
               priority/urgency signals elsewhere on the page. */}
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
+          <div className="app-section-surface grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
             {/* Greeting tile — warm sand-warm background */}
             <div
-              className="col-span-2 lg:col-span-1 flex items-center justify-between rounded-ordilo-md bg-[var(--sand-warm)] p-4"
+              className="col-span-2 flex items-center justify-between rounded-ordilo-sm bg-[var(--wash-sage)]/70 p-4 lg:col-span-1"
             >
               <div>
                 <h1 className="text-lg font-semibold text-foreground">
@@ -238,7 +238,7 @@ export function HomeClient({
                   {members.slice(0, 5).map((m) => (
                     <div
                       key={m.id}
-                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--sand-warm)] text-xs font-semibold text-white"
+                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold text-white"
                       style={{
                         backgroundColor: m.avatar_color ?? "var(--petrol)",
                       }}
@@ -249,7 +249,7 @@ export function HomeClient({
                     </div>
                   ))}
                   {members.length > 5 && (
-                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--sand-warm)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
+                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
                       +{members.length - 5}
                     </div>
                   )}

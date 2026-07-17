@@ -150,7 +150,7 @@ function BoardColumn({
         <h2 className="flex-1 text-sm font-medium text-foreground">
           {column.label}
         </h2>
-        <span className="text-xs tabular-nums text-muted-foreground/40">
+        <span className="text-xs tabular-nums text-muted-foreground">
           {tasks.length}
         </span>
       </div>
@@ -171,7 +171,7 @@ function BoardColumn({
           ))
         ) : (
           <p
-            className="px-1 py-2 text-xs text-muted-foreground/30"
+            className="px-1 py-2 text-xs text-muted-foreground"
             data-testid={`column-empty-${column.id}`}
           >
             {column.emptyText}
@@ -296,11 +296,11 @@ export function AufgabenClient({
   const hasAnyTasks = tasks.length > 0;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-baseline gap-3">
+    <div className="app-page-stack">
+      <div className="app-page-heading">
         <h1 className="text-lg font-semibold text-foreground">Aufgaben</h1>
         {visibleTasks.length > 0 && (
-          <span className="text-xs text-muted-foreground/50">
+          <span className="text-xs text-muted-foreground">
             {visibleTasks.filter((t) => t.status === "open").length} offen · {visibleTasks.filter((t) => t.status === "done").length} erledigt
           </span>
         )}
