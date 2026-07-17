@@ -199,7 +199,10 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
     );
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const confirmCalls = fetchSpy.mock.calls.filter((args) =>
+      String(args[0]).includes("/confirm"),
+    );
+    expect(confirmCalls).toHaveLength(1);
     fetchSpy.mockRestore();
   });
 
@@ -237,7 +240,7 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
     ).toHaveValue("member-2");
   });
 
-  it("falls back to the manual summary when saving fails", async () => {
+  it("keeps the ready-to-save card and shows the error inline when saving fails", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ error: "Serverfehler." }), { status: 500 }),
     );
@@ -245,7 +248,8 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     fireEvent.click(await screen.findByTestId("autofile-done-button"));
 
-    expect(await screen.findByTestId("review-summary")).toBeDefined();
+    expect(await screen.findByTestId("review-step-autofile")).toBeDefined();
+    expect(screen.queryByTestId("review-summary")).toBeNull();
     expect(screen.getByText("Serverfehler.")).toBeDefined();
   });
 });

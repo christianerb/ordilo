@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
 // Mock the supabase browser client and the upload/ocr helpers so the
@@ -60,6 +60,21 @@ function mockSupabaseClient(documents: unknown[] = []) {
 describe("DokumentePage empty state", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Pretend prefers-reduced-motion is active so the CameraStep's
+    // auto-capture sampler (which calls canvas.getContext, not
+    // implemented in jsdom) doesn't start when the wizard opens.
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: true,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("renders the warm empty state with an explicit CTA when there are no documents", async () => {
@@ -228,7 +243,7 @@ describe("DokumentePage empty state", () => {
     expect(screen.getByTestId("document-list")).toBeDefined();
 
     await act(async () => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(1500);
       await Promise.resolve();
     });
 

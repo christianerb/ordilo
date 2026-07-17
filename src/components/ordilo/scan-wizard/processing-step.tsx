@@ -21,7 +21,11 @@ type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
  * it turns the wait into Ordilo visibly working instead of a dead spinner.
  */
 const STAGE_NARRATION: Record<string, string[]> = {
-  upload: ["Foto ist gleich da …"],
+  upload: [
+    "Foto ist gleich da …",
+    "Sende die Seiten an Ordilo …",
+    "Ein Moment, das Bild wird übertragen …",
+  ],
   ocr: [
     "Ich lese jede Zeile …",
     "Auch das Kleingedruckte …",

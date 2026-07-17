@@ -293,7 +293,7 @@ export function ReviewCardConfirmed({
             type="button"
             onClick={onReanalyze}
             disabled={reanalyzing}
-            className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground/70 transition-colors hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+            className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
             data-testid="confirmed-reanalyze-button"
           >
             {reanalyzing ? (
