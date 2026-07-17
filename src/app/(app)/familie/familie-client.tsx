@@ -266,7 +266,7 @@ export function FamilieClient({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="app-page-stack">
       <FamilyBanner
         familyName={familyName}
         members={memberList}
@@ -277,7 +277,7 @@ export function FamilieClient({
 
       {memberList.length > 0 && (
         <div
-          className="divide-y divide-border rounded-ordilo-sm border border-border bg-card stagger-children"
+          className="divide-y divide-border rounded-ordilo-sm border border-border bg-[var(--surface-story)] stagger-children"
           data-testid="member-list"
         >
           {memberList.map((member) => {

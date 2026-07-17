@@ -40,7 +40,7 @@ export function Topbar({
       className={cn(
         "w-full lg:hidden",
         showNav &&
-          "sticky top-0 z-30 border-b border-border bg-[var(--sand-warm)] shadow-[0_2px_8px_rgba(36,36,36,0.06)]",
+          "sticky top-0 z-30 border-b border-white/80 bg-[var(--wash-sage-soft)] shadow-card",
       )}
     >
       <div className="mx-auto flex w-full max-w-md flex-col gap-3 px-4 pb-3 md:max-w-2xl md:px-6">
@@ -132,7 +132,7 @@ export function MobileComposer({
   return (
     <div
       data-testid="mobile-composer"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-[var(--sand-warm)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-[var(--surface-box)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
       style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
       <div className="mx-auto flex w-full max-w-md gap-2">

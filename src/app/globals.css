@@ -281,6 +281,15 @@
   --auth-blue-wash: #E5EEF1;
   --auth-apricot-wash: #F8E7D4;
 
+  /* Shared canvas language — auth, landing, and authenticated app */
+  --canvas-warm: var(--auth-background);
+  --surface-box: var(--auth-surface);
+  --surface-story: var(--auth-story-surface);
+  --wash-sage: var(--auth-sage);
+  --wash-sage-soft: var(--auth-sage-wash);
+  --wash-blue: var(--auth-blue-wash);
+  --wash-apricot: var(--auth-apricot-wash);
+
   /* Radius — Ordilo uses 20-28px on primary cards */
   --radius: 20px; /* base for shadcn; sm/md/lg/xl overridden above */
 
@@ -398,6 +407,29 @@
   }
   .shadow-card-hover {
     box-shadow: var(--shadow-card-hover);
+  }
+
+  .app-page-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .app-section-surface {
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: var(--radius-ordilo-sm);
+    background: var(--surface-story);
+    padding: 1rem;
+  }
+
+  .app-page-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-radius: var(--radius-ordilo-sm);
+    background: color-mix(in srgb, var(--wash-sage) 58%, var(--surface-box));
+    padding: 0.75rem 1rem;
   }
 
   /* Card hover lift — tactile -2px elevate on interactive cards.

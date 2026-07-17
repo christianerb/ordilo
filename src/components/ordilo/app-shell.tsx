@@ -107,7 +107,20 @@ function AppShellContent({
   };
 
   return (
-    <div className="min-h-dvh bg-background lg:bg-[var(--sand)]">
+    <div className="relative isolate min-h-dvh overflow-x-hidden bg-[var(--canvas-warm)]">
+      <div
+        className="pointer-events-none fixed -right-24 -top-20 h-72 w-80 rotate-12 rounded-[28px] bg-[var(--wash-sage-soft)]"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none fixed -left-28 top-[34%] size-64 rounded-full bg-[var(--wash-blue)]"
+        aria-hidden="true"
+      />
+      <div
+        className="pointer-events-none fixed -bottom-32 right-[12%] h-64 w-80 -rotate-6 rounded-[28px] bg-[var(--wash-apricot)]"
+        aria-hidden="true"
+      />
+
       {/* Desktop sidebar navigation — hidden on mobile, shown on lg+ */}
       {showNav && (
         <SidebarNav
@@ -129,7 +142,7 @@ function AppShellContent({
           (bg-background throughout, no frame border/radius). */}
       <div
         className={cn(
-          "flex min-h-dvh flex-col",
+          "relative z-10 flex min-h-dvh flex-col",
           showNav && "transition-[padding] duration-200",
           showNav && (collapsed ? "lg:pl-[76px]" : "lg:pl-[180px]"),
         )}
@@ -138,16 +151,16 @@ function AppShellContent({
 
         <div
           className={cn(
-            "flex-1",
+            "flex-1 bg-[var(--surface-box)]",
             showNav &&
-              "lg:border-t lg:border-l lg:border-border lg:bg-background lg:shadow-card",
+              "mx-3 mt-3 overflow-hidden rounded-ordilo-md border border-white/80 shadow-card md:mx-5 lg:mx-4 lg:mb-24 lg:mt-4",
           )}
         >
           <div className="mx-auto flex h-full w-full max-w-md flex-col md:max-w-2xl lg:max-w-none">
             {/* Page content */}
             <main
               className={cn(
-                "flex-1 px-4 pt-6 md:px-6 lg:px-8 lg:pt-10",
+                "flex-1 px-4 pt-5 md:px-6 md:pt-6 lg:px-8 lg:pt-8",
                 showNav ? "pb-28 lg:pb-24" : "pb-8",
               )}
             >

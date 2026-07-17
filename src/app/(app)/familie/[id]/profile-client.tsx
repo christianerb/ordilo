@@ -118,7 +118,7 @@ export function ProfileClient({
   const suggestedInventory = inventoryItems.filter((i) => i.status === "suggested");
 
   return (
-    <div className="space-y-5">
+    <div className="app-page-stack">
       {/* Back link */}
       <Link
         href="/familie"

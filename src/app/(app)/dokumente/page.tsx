@@ -136,9 +136,9 @@ export default function DokumentePage() {
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="space-y-4 overflow-x-hidden"
+      className="app-page-stack overflow-x-hidden"
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="app-page-heading">
         <h1 className="text-lg font-semibold tracking-tight text-foreground">
           Dokumente
           <span className="ml-2 text-sm font-normal text-muted-foreground">
