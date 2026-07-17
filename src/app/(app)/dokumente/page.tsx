@@ -2,7 +2,6 @@
 
 import { useState, useMemo, useCallback } from "react";
 import {
-  Camera,
   UploadCloud,
   Loader2,
   Folder,
@@ -138,24 +137,12 @@ export default function DokumentePage() {
       onDrop={handleDrop}
       className="app-page-stack overflow-x-hidden"
     >
-      <div className="app-page-heading">
-        <h1 className="text-lg font-semibold tracking-tight text-foreground">
-          Dokumente
-          <span className="ml-2 text-sm font-normal text-muted-foreground">
-            {documents.length}
-          </span>
-        </h1>
-        <Button
-          type="button"
-          size="sm"
-          onClick={openWizard}
-          className="shrink-0"
-          data-testid="open-scan-wizard-button"
-        >
-          <Camera className="size-4" aria-hidden="true" />
-          Scannen
-        </Button>
-      </div>
+      <h1 className="text-lg font-semibold tracking-tight text-foreground">
+        Dokumente
+        <span className="ml-2 text-sm font-normal text-muted-foreground">
+          {documents.length}
+        </span>
+      </h1>
 
       {/* Drag overlay */}
       {isDragOver && (

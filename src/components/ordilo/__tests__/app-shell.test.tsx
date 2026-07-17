@@ -137,12 +137,13 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly two tabs (Dokumente, Familie)", () => {
-    expect(NAV_TABS).toHaveLength(2);
+  it("exports exactly three tabs (Heute, Dokumente, Familie)", () => {
+    expect(NAV_TABS).toHaveLength(3);
   });
 
   it("has tabs in the correct order with correct labels and hrefs", () => {
     const expected = [
+      { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
       { label: "Familie", href: "/familie" },
     ];
@@ -154,7 +155,7 @@ describe("NAV_TABS", () => {
   it("each tab has a distinct icon component", () => {
     const icons = NAV_TABS.map((t) => t.icon);
     const uniqueIcons = new Set(icons);
-    expect(uniqueIcons.size).toBe(2);
+    expect(uniqueIcons.size).toBe(3);
   });
 });
 
@@ -186,12 +187,20 @@ describe("AppShell", () => {
     expect(screen.getByTestId("page-content")).toBeDefined();
   });
 
-  it("renders a nav drawer with exactly two tab links", () => {
+  it("keeps the app content flat instead of wrapping it in a card", () => {
+    renderShell("/home");
+    const surface = screen.getByTestId("app-content-surface");
+    expect(surface.className).not.toContain("rounded-");
+    expect(surface.className).not.toContain("shadow-");
+    expect(surface.className).not.toContain("border");
+  });
+
+  it("renders a nav drawer with exactly three tab links", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(2);
+    expect(links).toHaveLength(3);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -209,6 +218,7 @@ describe("AppShell", () => {
     const links = within(nav).getAllByRole("link");
 
     const expected = [
+      { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
       { label: "Familie", href: "/familie" },
     ];
@@ -276,12 +286,19 @@ describe("AppShell", () => {
     expect(activeCount).toBe(1);
   });
 
-  it("marks no tab active on /home (dashboard, not a nav tab)", () => {
-    renderShell("/home");
+  it("marks Heute active on /home and /aufgaben", () => {
+    const { unmount } = renderShell("/home");
     openMobileMenu();
-    const nav = screen.getByRole("navigation");
-    const activeLinks = nav.querySelectorAll('a[aria-current="page"]');
-    expect(activeLinks.length).toBe(0);
+    let nav = screen.getByRole("navigation");
+    let heuteLink = within(nav).getByText("Heute").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
+
+    unmount();
+    renderShell("/aufgaben");
+    openMobileMenu();
+    nav = screen.getByRole("navigation");
+    heuteLink = within(nav).getByText("Heute").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("marks no tab active on /suche (fullscreen answer mode, not a place)", () => {
@@ -346,6 +363,14 @@ describe("AppShell", () => {
       expect(screen.getAllByRole("button", { name: /scannen/i })).toHaveLength(2);
       unmount();
     }
+  });
+
+  it("renders the desktop composer as a rounded floating dock", () => {
+    renderShell("/home");
+    const dock = screen.getByTestId("desktop-floating-dock");
+    expect(dock.className).toContain("rounded-ordilo-md");
+    expect(dock.className).toContain("shadow-card-hover");
+    expect(screen.queryByTestId("desktop-shell-elbow")).toBeNull();
   });
 
   it("does not render the search+scan row on /onboarding", () => {

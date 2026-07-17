@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
-  DESKTOP_SHELL_SURFACE_STYLE,
   isTabActive,
   NAV_TABS,
 } from "./app-shell-shared";
@@ -168,13 +167,15 @@ export function DesktopBottomBar({
   return (
     <div
       data-testid="desktop-bottom-bar"
-      className="fixed inset-x-0 bottom-0 z-30 hidden border-t border-border/60 py-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] transition-[left] duration-200 lg:flex"
+      className="pointer-events-none fixed bottom-4 right-4 z-30 hidden transition-[left] duration-200 lg:block"
       style={{
-        ...DESKTOP_SHELL_SURFACE_STYLE,
-        left: collapsed ? 76 : 180,
+        left: collapsed ? 92 : 196,
       }}
     >
-      <div className="mx-auto flex w-full max-w-6xl gap-2 px-8">
+      <div
+        data-testid="desktop-floating-dock"
+        className="pointer-events-auto mx-auto flex w-full max-w-6xl gap-2 rounded-ordilo-md border border-white/80 bg-[var(--sand-light)] p-2 shadow-card-hover"
+      >
         <div className="min-w-0 flex-1">
           <AISearchBar
             onSubmit={onSearch}

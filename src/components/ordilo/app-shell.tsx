@@ -26,9 +26,7 @@ export { isTabActive, shouldShowNav } from "@/components/ordilo/app-shell-shared
  * Provides:
  * - A minimal top bar with a logout affordance (German: "Abmelden").
  * - A centered, mobile-first content column (max-w-md).
- * - A fixed bottom tab navigation with a dark petrol background (#193232)
- *   and five tabs. The active tab is indicated by apricot-colored icon and
- *   label plus `aria-current="page"`.
+ * - Desktop sidebar navigation plus a persistent search and scan composer.
  *
  * The bottom nav is hidden on `/onboarding` so users cannot bypass the
  * onboarding flow via tab navigation.
@@ -131,15 +129,9 @@ function AppShellContent({
         />
       )}
 
-      {/* Content area — offset for sidebar on desktop. The actual page
-          content sits in its own warm-white "frame". The top-left corner
-          (sidebar meets content) stays sharp; only the bottom-left corner
-          (where the sidebar's column ends and the fixed DesktopBottomBar
-          begins) is rounded, tucking into the sand shell's inner elbow
-          there. The bottom bar itself stays a plain, straight-edged strip
-          (no rounding of its own — see there). On mobile there's no
-          sidebar to form that elbow, so this stays a flat page
-          (bg-background throughout, no frame border/radius). */}
+      {/* Content area — offset for the desktop sidebar. Mobile remains a
+          flat page; the desktop border separates content from the shared
+          sidebar surface. */}
       <div
         className={cn(
           "relative z-10 flex min-h-dvh flex-col",
@@ -149,13 +141,7 @@ function AppShellContent({
       >
         <Topbar showNav={showNav} pathname={pathname} />
 
-        <div
-          className={cn(
-            "flex-1 bg-[var(--surface-box)]",
-            showNav &&
-              "mx-3 mt-3 overflow-hidden rounded-ordilo-md border border-white/80 shadow-card md:mx-5 lg:mx-4 lg:mb-24 lg:mt-4",
-          )}
-        >
+        <div data-testid="app-content-surface" className="flex-1">
           <div className="mx-auto flex h-full w-full max-w-md flex-col md:max-w-2xl lg:max-w-none">
             {/* Page content */}
             <main

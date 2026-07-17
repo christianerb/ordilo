@@ -134,7 +134,9 @@ describe("DokumentePage — scan wizard flow", () => {
       </ScanProvider>,
     );
 
-    fireEvent.click(await screen.findByTestId("open-scan-wizard-button"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /dokument scannen/i }),
+    );
 
     expect(await screen.findByTestId("scan-wizard")).toBeDefined();
     expect(await screen.findByTestId("camera-step")).toBeDefined();
@@ -154,7 +156,9 @@ describe("DokumentePage — scan wizard flow", () => {
       </CollectionsProvider>
       </ScanProvider>,
     );
-    fireEvent.click(await screen.findByTestId("open-scan-wizard-button"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /dokument scannen/i }),
+    );
     expect(await screen.findByTestId("scan-wizard")).toBeDefined();
     // Let the camera-permission effect settle before closing.
     await screen.findByTestId("camera-fallback-gallery-button");
@@ -191,7 +195,9 @@ describe("DokumentePage — scan wizard flow", () => {
 
     // Open the wizard; the camera is unavailable in jsdom, so the
     // fallback panel (with its own gallery shortcut) renders.
-    fireEvent.click(await screen.findByTestId("open-scan-wizard-button"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /dokument scannen/i }),
+    );
     const fallbackGalleryButton = await screen.findByTestId(
       "camera-fallback-gallery-button",
     );
