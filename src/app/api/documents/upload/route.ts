@@ -45,6 +45,13 @@ const DAILY_UPLOAD_LIMIT = 50;
  * The documents row is inserted via the server client (RLS-scoped) so RLS
  * is enforced on the database insert as well.
  */
+/**
+ * The post-response pipeline drain (see step 7) runs OCR + analysis in
+ * this same invocation — allow enough wall-clock for Datalab (10–60s)
+ * plus the LLM extraction.
+ */
+export const maxDuration = 300;
+
 export async function POST(request: Request): Promise<Response> {
   // 1. Authenticate --------------------------------------------------------
   const auth = await requireUser();
@@ -217,18 +224,43 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 500 });
   }
 
-  // 7. Async pipeline: enqueue the OCR job ---------------------------------
-  // With PIPELINE_MODE=async the server-side job worker picks the document
-  // up (OCR → analyze) — durable, retried, and independent of the client
-  // connection. The client's own OCR trigger stays race-safe either way
-  // (conditional status transitions), so this is purely additive.
-  if (process.env.PIPELINE_MODE === "async") {
-    const { enqueueJob } = await import("@/lib/jobs");
-    await enqueueJob(adminClient, {
-      family_id: familyId,
-      document_id: documentId,
-      job_type: "ocr",
-    });
+  // 7. Async pipeline: enqueue the OCR job and process it in-band ----------
+  // Default ON (opt out with PIPELINE_MODE=sync): enqueue an `ocr` job,
+  // then — AFTER the response is sent (`next/server` after()) — drain the
+  // queue in this same invocation. The pipeline therefore runs server-side
+  // (OCR → analyze) even when the user locks their phone right after the
+  // upload, without requiring any external scheduler. The client's own
+  // OCR/analyze triggers stay race-safe either way (conditional status
+  // transitions — whoever transitions first does the work, the other
+  // no-ops), so this is purely additive. Any failure here must never fail
+  // the upload itself.
+  if (process.env.PIPELINE_MODE !== "sync") {
+    try {
+      const { enqueueJob, runPendingJobs } = await import("@/lib/jobs");
+      await enqueueJob(adminClient, {
+        family_id: familyId,
+        document_id: documentId,
+        job_type: "ocr",
+      });
+
+      const { after } = await import("next/server");
+      after(async () => {
+        try {
+          // Drain rounds: ocr → (chains) analyze → empty. Capped so a
+          // misbehaving queue can never keep the function alive forever.
+          for (let round = 0; round < 5; round++) {
+            const summary = await runPendingJobs(adminClient, 3);
+            if (summary.claimed === 0) break;
+          }
+        } catch (err) {
+          // Jobs stay pending — the retry/backoff worker and the
+          // client-triggered pipeline both cover for this.
+          console.error("[upload] pipeline drain failed:", err);
+        }
+      });
+    } catch (err) {
+      console.error("[upload] pipeline enqueue failed:", err);
+    }
   }
 
   // 8. Success ------------------------------------------------------------

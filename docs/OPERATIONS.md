@@ -25,21 +25,36 @@ manueller zweiter Aufruf verschickt den Digest erneut.
 
 ## 2. Async-Pipeline (Scan-Verarbeitung über die Job-Queue)
 
-Die gesamte Infrastruktur (Queue `processing_jobs`, Claim-RPC, Worker
-`/api/jobs/run`) ist deployt; die Pipeline läuft aber noch synchron.
+**Standardmäßig aktiv.** Der Upload-Endpoint enqueued einen `ocr`-Job und
+verarbeitet die Queue direkt nach der Response in derselben Invocation
+(`next/server` `after()`, `maxDuration = 300`) — OCR → Analyse laufen
+serverseitig weiter, auch wenn der Client die Verbindung verliert oder
+das Handy gesperrt wird. Es ist KEIN externer Scheduler nötig.
 
-Aktivierung:
+Opt-out: `PIPELINE_MODE=sync` setzen (dann treibt wieder ausschließlich
+der Client die Pipeline; die Job-Queue bleibt ungenutzt).
 
-1. `PIPELINE_MODE=async` setzen.
-2. `JOBS_RUNNER_SECRET` setzen (oder `CRON_SECRET` mitverwenden — der
-   Worker akzeptiert beide).
-3. Einen Scheduler auf `GET /api/jobs/run` zeigen lassen. Auf einem
-   Vercel-Pro-Plan als zweiten Cron-Eintrag in `vercel.json`
-   (z. B. `*/1 * * * *`); auf dem Hobby-Plan (max. 1 Cron/Tag) besser
-   pg_cron + pg_net in Supabase oder ein externer Scheduler.
+Zusätzlich als Backstop für gestrandete Jobs (z. B. Function mitten im
+OCR gekillt): ein täglicher Cron auf `GET /api/jobs/run` (siehe
+`vercel.json`, 05:00 UTC). Dafür muss `CRON_SECRET` gesetzt sein (oder
+`JOBS_RUNNER_SECRET` — der Worker akzeptiert beide). Auf einem
+Vercel-Pro-Plan den Cron gern auf `*/1 * * * *` verdichten; alternativ
+pg_cron + pg_net in Supabase.
 
 Der Worker ist idempotent und nebenläufigkeitssicher (FOR UPDATE SKIP
-LOCKED) — häufiges Aufrufen ist billig.
+LOCKED) — häufiges Aufrufen ist billig. Die client-getriggerten
+OCR-/Analyze-Routen bleiben als Fallback aktiv; alle Statusübergänge
+sind konditional, es kann also nie doppelt verarbeitet werden.
+
+## 2b. Realtime-Statusupdates (statt Polling)
+
+Migration `0033_documents_realtime.sql` published die `documents`-Tabelle
+auf der `supabase_realtime`-Publication. Der Client abonniert
+INSERT/UPDATE-Events (familien-gefiltert, RLS greift) und reduziert sein
+Polling auf einen 15s-Heartbeat, solange die Subscription steht. Ohne
+die Migration (oder bei Verbindungsproblemen) fällt er automatisch auf
+das 1,5s-Polling zurück — es muss nichts konfiguriert werden, nur die
+Migration ausgeführt sein.
 
 ## 3. E2E-Smoke-Tests
 

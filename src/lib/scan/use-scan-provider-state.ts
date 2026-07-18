@@ -446,8 +446,84 @@ export function useScanProviderState(): ScanProviderState {
   const hasProcessingDocsRef = useRef(hasProcessingDocs);
   hasProcessingDocsRef.current = hasProcessingDocs;
 
+  // --- Realtime: push-based status updates for the family's documents. ---
+  // Every pipeline transition (uploaded → ocr_processing → … → analyzed)
+  // arrives as a postgres_changes event; the handler refetches just that
+  // one document (trimmed columns) and reuses the existing sync logic —
+  // including the wizard's processing → review transition and the
+  // auto-analyze trigger. Polling below stays as a safety net but drops
+  // to a slow heartbeat while the subscription is live.
+  const realtimeReadyRef = useRef(false);
+  const pollTickRef = useRef(0);
+
+  useMountEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    void (async () => {
+      // The family id is resolved once per session and never changes, so
+      // a mount-only subscription is sufficient.
+      const fid = await ensureFamilyId();
+      if (cancelled || !fid) return;
+      // Defensive: test mocks (and any non-realtime client) don't
+      // implement channel(); the 1.5s polling keeps working unchanged.
+      if (typeof supabase.channel !== "function") return;
+
+      const handleChange = (payload: { new?: { id?: string } | null }) => {
+        const documentId = payload.new?.id;
+        if (!documentId) return;
+        void fetchDocumentByIdRef.current(documentId, {
+          syncWizard: wizardDocIdRef.current === documentId,
+          syncExpanded: expandedDocIdRef.current === documentId,
+          syncList: documentsLoadedRef.current,
+          allowAutoAnalyze: true,
+        });
+      };
+
+      channel = supabase
+        .channel(`documents-changes-${fid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "documents",
+            filter: `family_id=eq.${fid}`,
+          },
+          handleChange,
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "documents",
+            filter: `family_id=eq.${fid}`,
+          },
+          handleChange,
+        )
+        .subscribe((status) => {
+          if (!cancelled) {
+            realtimeReadyRef.current = status === "SUBSCRIBED";
+          }
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+      realtimeReadyRef.current = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  });
+
   useMountEffect(() => {
     const interval = setInterval(() => {
+      // With a live realtime subscription, polling is only a safety net —
+      // heartbeat every 15s instead of every 1.5s.
+      pollTickRef.current += 1;
+      if (realtimeReadyRef.current && pollTickRef.current % 10 !== 0) {
+        return;
+      }
       if (documentsLoadedRef.current && hasProcessingDocsRef.current) {
         void fetchDocumentsRef.current();
       }

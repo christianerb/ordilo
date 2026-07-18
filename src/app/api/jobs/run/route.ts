@@ -58,9 +58,9 @@ export async function POST(request: Request): Promise<Response> {
  * GET /api/jobs/run — Vercel Cron invokes scheduled paths with GET (and
  * no body), so GET runs the worker with the default limit. Same auth as
  * POST; the endpoint is idempotent, so an authed probe merely claims due
- * jobs early. NOTE: vercel.json does not schedule this path yet — the
- * pipeline still runs synchronously; see docs/OPERATIONS.md for how to
- * activate async mode.
+ * jobs early. vercel.json schedules this daily as a sweeper for stranded
+ * jobs — the primary drain happens in-band right after each upload (see
+ * the upload route). On a Pro plan, tighten the cron to every minute.
  */
 export async function GET(request: Request): Promise<Response> {
   return POST(request);
