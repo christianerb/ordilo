@@ -159,13 +159,11 @@ export function CameraStep({
         }
 
         streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play().catch(() => {
-            // Autoplay can be rejected in rare cases; the video still
-            // renders once the user interacts with the page.
-          });
-        }
+        // NOTE: the <video> element is only mounted once `permission`
+        // becomes "ready", so it does not exist yet at this point.
+        // Attaching the stream to it happens in the effect below, which
+        // runs after the element is in the DOM — assigning srcObject here
+        // would no-op against a null ref and leave the viewfinder black.
 
         // Feature-detect torch support (best-effort; most laptop/desktop
         // webcams and many mobile browsers don't expose it).
@@ -193,6 +191,29 @@ export function CameraStep({
       pagesRef.current.forEach((p) => URL.revokeObjectURL(p.url));
     };
   });
+
+  // --- Attach the acquired stream once the <video> is mounted. ---
+  // The viewfinder is only rendered in the "ready" state, so the stream
+  // must be wired up when the element actually appears — a callback ref
+  // fires exactly then (after mount), whereas assigning srcObject inside
+  // the acquire routine runs while still "requesting" (null ref) and would
+  // leave the viewfinder black. A stable useCallback identity keeps React
+  // from detaching/reattaching on every render.
+  const attachVideoRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    const stream = streamRef.current;
+    if (!node || !stream) return;
+    try {
+      if (node.srcObject !== stream) {
+        node.srcObject = stream;
+      }
+    } catch {
+      // Some environments (e.g. jsdom in tests) don't implement srcObject.
+    }
+    void node.play?.().catch(() => {
+      // Autoplay can be rejected; the feed resumes on user interaction.
+    });
+  }, []);
 
   // --- Auto-capture via stillness detection. ---
   // Samples the live video at ~5Hz into a tiny offscreen canvas, measures
@@ -377,7 +398,7 @@ export function CameraStep({
       {/* Live video feed */}
       {isReady && (
         <video
-          ref={videoRef}
+          ref={attachVideoRef}
           autoPlay
           playsInline
           muted

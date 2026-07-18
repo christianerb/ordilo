@@ -718,6 +718,7 @@ describe("ReviewCard", () => {
       expect(screen.getByTestId("review-card")).toBeDefined();
     });
 
+    fireEvent.click(screen.getByTestId("person-edit-button"));
     const select = screen.getByTestId("person-edit-select");
     expect(select).toBeDefined();
 
@@ -742,7 +743,8 @@ describe("ReviewCard", () => {
     // Initially no edited tag.
     expect(screen.queryAllByTestId("edited-tag").length).toBe(0);
 
-    // Change the person.
+    // Reveal the editor, then change the person.
+    fireEvent.click(screen.getByTestId("person-edit-button"));
     const select = screen.getByTestId(
       "person-edit-select",
     ) as HTMLSelectElement;
@@ -769,6 +771,7 @@ describe("ReviewCard", () => {
       expect(screen.getByTestId("review-card")).toBeDefined();
     });
 
+    fireEvent.click(screen.getByTestId("category-edit-button"));
     const select = screen.getByTestId("category-edit-select");
     expect(select).toBeDefined();
 
@@ -790,7 +793,8 @@ describe("ReviewCard", () => {
       expect(screen.getByTestId("review-card")).toBeDefined();
     });
 
-    // Change the category.
+    // Reveal the editor, then change the category.
+    fireEvent.click(screen.getByTestId("category-edit-button"));
     const select = screen.getByTestId(
       "category-edit-select",
     ) as HTMLSelectElement;
