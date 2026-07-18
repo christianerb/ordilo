@@ -46,7 +46,8 @@ Do not commit real secret values.
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `OPENAI_API_KEY`
 - `DATALAB_API_KEY`
-- `PIPELINE_MODE` (optional; `async` enables the background job pipeline)
+- `PIPELINE_MODE` (optional; the background job pipeline is ON by default,
+  set `sync` to opt out and let the client drive OCR/analysis)
 - `JOBS_RUNNER_SECRET` (optional; Bearer secret for `POST /api/jobs/run`)
 
 ## Setup
@@ -154,8 +155,11 @@ knowledge-graph traversal) is unchanged and merged at the chat/tool layer.
 The pipeline can run server-side via a durable job queue
 (`processing_jobs`, migration 0025):
 
-- Set `PIPELINE_MODE=async` to enqueue an `ocr` job on upload; the OCR job
-  chains an `analyze` job. Confirmation stays a user action.
+- On by default: every upload enqueues an `ocr` job and drains the queue
+  in-band right after the response (`next/server` `after()`), so OCR and
+  analysis run server-side without any scheduler; the OCR job chains an
+  `analyze` job. Confirmation stays a user action. Set `PIPELINE_MODE=sync`
+  to opt out.
 - The worker is `POST /api/jobs/run` (Bearer-authenticated via
   `JOBS_RUNNER_SECRET` or `CRON_SECRET`). Schedule it with Vercel Cron,
   pg_cron + pg_net, or any scheduler; concurrent invocations are safe

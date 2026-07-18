@@ -63,6 +63,17 @@ export function uploadFile(
       reject(new Error("Upload abgebrochen."));
     });
 
+    // A stalled connection must surface as a retryable error instead of
+    // leaving the wizard on "wird hochgeladen" forever.
+    xhr.timeout = 120_000;
+    xhr.addEventListener("timeout", () => {
+      reject(
+        new Error(
+          "Der Upload dauert zu lange. Bitte Verbindung überprüfen und erneut versuchen.",
+        ),
+      );
+    });
+
     xhr.open("POST", "/api/documents/upload");
     xhr.send(formData);
   });

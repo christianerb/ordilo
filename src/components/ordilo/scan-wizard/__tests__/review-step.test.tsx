@@ -55,6 +55,34 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("ScanReviewStep — analysis load failure", () => {
+  it("shows an error state with retry instead of an endless skeleton", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValueOnce(null);
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    expect(
+      await screen.findByTestId("review-step-load-error"),
+    ).toBeDefined();
+
+    // Retry succeeds (default mock resolves with the analysis).
+    fireEvent.click(screen.getByTestId("review-step-load-retry-button"));
+    expect(await screen.findByTestId("review-summary")).toBeDefined();
+  });
+
+  it("shows the error state when the analysis fetch rejects", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockRejectedValueOnce(
+      new Error("network down"),
+    );
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    expect(
+      await screen.findByTestId("review-step-load-error"),
+    ).toBeDefined();
+  });
+});
+
 describe("ScanReviewStep — manual review (uncertain analysis)", () => {
   it("shows a skeleton while loading", async () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);

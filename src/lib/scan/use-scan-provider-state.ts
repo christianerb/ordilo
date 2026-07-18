@@ -19,6 +19,7 @@ import {
   validateFile,
 } from "@/lib/schemas/document";
 import { uploadFile } from "@/lib/upload";
+import { prepareImageForUpload } from "@/lib/image-compress";
 import { createNote } from "@/lib/notes";
 import type { DocumentType } from "@/lib/schemas/extraction";
 import type {
@@ -28,6 +29,19 @@ import type {
 } from "@/lib/scan/scan-context-types";
 import type { ScanWizardStep } from "@/components/ordilo/scan-wizard/scan-wizard";
 import type { UploadState } from "@/components/ordilo/scan-wizard/upload-progress";
+
+/**
+ * Every documents column EXCEPT `ocr_text`. The list/detail polling runs
+ * every 1.5s while anything is processing, and `ocr_text` is by far the
+ * heaviest column (full document markdown, often tens of KB per row) —
+ * pulling it for every document on every poll saturates mobile
+ * connections. No client component renders `ocr_text`; the one consumer
+ * (failed-stage retry routing) fetches it on demand in `handleRetryFailed`.
+ */
+const DOCUMENT_LIST_COLUMNS =
+  "id, family_id, uploaded_by, title, document_type, category, status, " +
+  "file_url, original_filename, mime_type, page_count, summary, " +
+  "error_message, created_at, confirmed_at, tags, source, extraction_version";
 
 export function useScanProviderState(): ScanProviderState {
   const supabase = createClient();
@@ -125,11 +139,14 @@ export function useScanProviderState(): ScanProviderState {
       setLoadingDocs(true);
     }
 
-    const { data, error } = await supabase
+    const { data: listData, error } = await supabase
       .from("documents")
-      .select("*")
+      .select(DOCUMENT_LIST_COLUMNS)
       .eq("family_id", fid)
       .order("created_at", { ascending: false });
+    // The trimmed selection carries every column except the heavy
+    // `ocr_text`, which no list consumer reads.
+    const data = listData as DocumentRow[] | null;
 
     if (!error && data) {
       if (!seededPreExistingRef.current) {
@@ -150,9 +167,12 @@ export function useScanProviderState(): ScanProviderState {
         );
       }
       if (wizardDocIdRef.current) {
-        setWizardDocument(
-          data.find((doc) => doc.id === wizardDocIdRef.current) ?? null,
-        );
+        // Only overwrite when the row is actually in the fetched list.
+        // A list fetch that races the insert (or momentarily misses the
+        // row) must not null out the wizard document — that blanked the
+        // review step mid-flow.
+        const wizardDoc = data.find((doc) => doc.id === wizardDocIdRef.current);
+        if (wizardDoc) setWizardDocument(wizardDoc);
       }
 
       for (const doc of data) {
@@ -198,11 +218,11 @@ export function useScanProviderState(): ScanProviderState {
     ) => {
       const { data, error } = await supabase
         .from("documents")
-        .select("*")
+        .select(DOCUMENT_LIST_COLUMNS)
         .eq("id", documentId)
         .order("created_at", { ascending: false });
 
-      const document = data?.[0] ?? null;
+      const document = ((data as DocumentRow[] | null)?.[0]) ?? null;
 
       if (error || !document) {
         if (options?.syncExpanded && expandedDocIdRef.current === documentId) {
@@ -286,6 +306,12 @@ export function useScanProviderState(): ScanProviderState {
       const fid = familyIdRef.current ?? await ensureFamilyId();
       if (!fid) return;
 
+      // Downscale large gallery/camera photos before upload — multi-MB
+      // originals are the slowest part of the flow on mobile networks,
+      // and OCR reads a ~2000px JPEG just as well. Best-effort: on any
+      // failure the original file is used unchanged.
+      file = await prepareImageForUpload(file);
+
       const validation = validateFile(file.type, file.size);
       if (!validation.valid) {
         onUploadError?.(validation.error);
@@ -330,11 +356,21 @@ export function useScanProviderState(): ScanProviderState {
           setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
         }, 1200);
 
-        triggerOcr(result.document_id).catch(() => {
-          if (documentsLoadedRef.current) {
-            void fetchDocumentsRef.current(fid);
-          }
-        });
+        triggerOcr(result.document_id)
+          .then(() => {
+            // OCR finished — kick the analysis immediately instead of
+            // waiting for the next poll tick to notice `ocr_done`.
+            void fetchDocumentByIdRef.current(result.document_id, {
+              syncWizard: Boolean(onUploaded),
+              syncList: documentsLoadedRef.current,
+              allowAutoAnalyze: true,
+            });
+          })
+          .catch(() => {
+            if (documentsLoadedRef.current) {
+              void fetchDocumentsRef.current(fid);
+            }
+          });
 
         void fetchDocumentByIdRef.current(result.document_id, {
           syncWizard: Boolean(onUploaded),
@@ -410,8 +446,84 @@ export function useScanProviderState(): ScanProviderState {
   const hasProcessingDocsRef = useRef(hasProcessingDocs);
   hasProcessingDocsRef.current = hasProcessingDocs;
 
+  // --- Realtime: push-based status updates for the family's documents. ---
+  // Every pipeline transition (uploaded → ocr_processing → … → analyzed)
+  // arrives as a postgres_changes event; the handler refetches just that
+  // one document (trimmed columns) and reuses the existing sync logic —
+  // including the wizard's processing → review transition and the
+  // auto-analyze trigger. Polling below stays as a safety net but drops
+  // to a slow heartbeat while the subscription is live.
+  const realtimeReadyRef = useRef(false);
+  const pollTickRef = useRef(0);
+
+  useMountEffect(() => {
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
+    void (async () => {
+      // The family id is resolved once per session and never changes, so
+      // a mount-only subscription is sufficient.
+      const fid = await ensureFamilyId();
+      if (cancelled || !fid) return;
+      // Defensive: test mocks (and any non-realtime client) don't
+      // implement channel(); the 1.5s polling keeps working unchanged.
+      if (typeof supabase.channel !== "function") return;
+
+      const handleChange = (payload: { new?: { id?: string } | null }) => {
+        const documentId = payload.new?.id;
+        if (!documentId) return;
+        void fetchDocumentByIdRef.current(documentId, {
+          syncWizard: wizardDocIdRef.current === documentId,
+          syncExpanded: expandedDocIdRef.current === documentId,
+          syncList: documentsLoadedRef.current,
+          allowAutoAnalyze: true,
+        });
+      };
+
+      channel = supabase
+        .channel(`documents-changes-${fid}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "documents",
+            filter: `family_id=eq.${fid}`,
+          },
+          handleChange,
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "UPDATE",
+            schema: "public",
+            table: "documents",
+            filter: `family_id=eq.${fid}`,
+          },
+          handleChange,
+        )
+        .subscribe((status) => {
+          if (!cancelled) {
+            realtimeReadyRef.current = status === "SUBSCRIBED";
+          }
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+      realtimeReadyRef.current = false;
+      if (channel) void supabase.removeChannel(channel);
+    };
+  });
+
   useMountEffect(() => {
     const interval = setInterval(() => {
+      // With a live realtime subscription, polling is only a safety net —
+      // heartbeat every 15s instead of every 1.5s.
+      pollTickRef.current += 1;
+      if (realtimeReadyRef.current && pollTickRef.current % 10 !== 0) {
+        return;
+      }
       if (documentsLoadedRef.current && hasProcessingDocsRef.current) {
         void fetchDocumentsRef.current();
       }
@@ -444,17 +556,17 @@ export function useScanProviderState(): ScanProviderState {
 
   const handleRetryFailed = useCallback(
     async (documentId: string) => {
-      const document =
-        documentsRef.current.find((doc) => doc.id === documentId) ??
-        (expandedDocumentRef.current?.id === documentId
-          ? expandedDocumentRef.current
-          : null) ??
-        await fetchDocumentByIdRef.current(documentId, {
-          syncExpanded: expandedDocIdRef.current === documentId,
-        });
-      if (!document) return;
+      // Failed-stage routing needs `ocr_text`/`page_count`, which the
+      // trimmed list fetch intentionally no longer carries — read the two
+      // fields directly for this one document.
+      const { data: stageRow, error: stageError } = await supabase
+        .from("documents")
+        .select("ocr_text, page_count")
+        .eq("id", documentId)
+        .maybeSingle();
+      if (stageError || !stageRow) return;
 
-      const stage = getFailedStage(document);
+      const stage = getFailedStage(stageRow);
 
       if (stage === "ocr") {
         updateTrackedDocument(documentId, (current) => ({
@@ -494,7 +606,7 @@ export function useScanProviderState(): ScanProviderState {
         syncList: documentsLoadedRef.current,
       });
     },
-    [updateTrackedDocument],
+    [supabase, updateTrackedDocument],
   );
 
   const triggerAnalysis = useCallback(async (documentId: string) => {
