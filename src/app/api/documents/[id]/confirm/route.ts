@@ -35,6 +35,7 @@ import type {
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { normalizeFactValue } from "@/lib/schemas/extraction";
 import { canonicalizeCategory } from "@/lib/categories";
+import { getErrorCode } from "@/lib/pipeline/failure-tracking";
 
 /**
  * POST /api/documents/[id]/confirm
@@ -54,8 +55,8 @@ import { canonicalizeCategory } from "@/lib/categories";
  *   7. Fetch OCR text with page numbers (from document_pages or
  *      documents.ocr_text fallback)
  *   8. Generate embeddings via OpenAI FIRST (external call, OUTSIDE the DB
- *      transaction). On failure → mark document failed + structured error
- *      (no DB mutations have happened yet, so no partial state).
+ *      transaction). On failure → keep the analyzed state, record
+ *      diagnostics, and return a structured error.
  *   9. Build the RPC parameters (persons, organizations, precomputed
  *      embeddings, entities, tasks as JSONB arrays).
  *  10. Call the `confirm_document` RPC via supabase.rpc(...). The RPC
@@ -77,14 +78,14 @@ import { canonicalizeCategory } from "@/lib/categories";
  *        - "confirmed"   → 200 { status, document_id }
  *        - "status_changed" → 409 STATUS_CHANGED (no markFailed; the document
  *          was likely confirmed by a concurrent request)
- *        - RPC error      → mark document failed + structured error
+ *        - RPC error      → preserve analyzed state + structured error
  *
  * Atomicity (VAL-CONFIRM-011):
  *   All DB mutations happen inside the single RPC call, which runs in one
  *   Postgres transaction. If any statement inside the RPC fails, the entire
  *   transaction rolls back (status reverts to 'analyzed', no partial
- *   graph/embedding/entity/task rows). The route then marks the document
- *   'failed' (clearing confirmed_at) so the user can retry.
+ *   graph/embedding/entity/task rows). The route keeps the analyzed state
+ *   so the user can retry without running OCR or extraction again.
  *
  * Concurrency / idempotency (VAL-CONFIRM-012):
  *   - The conditional transition (UPDATE ... WHERE status='analyzed') inside
@@ -252,8 +253,8 @@ export async function POST(
   // 8. Generate embeddings via OpenAI FIRST (outside the DB transaction) --
   // The external OpenAI call cannot be part of the Postgres transaction, so
   // it happens before the RPC. If it fails, no DB mutations have occurred
-  // yet → no partial state. We mark the document failed and return a
-  // structured error.
+  // yet → no partial state. We preserve the analysis, record diagnostics,
+  // and return a structured error.
   const chunks = chunkPages(pageContents);
   let embeddings: number[][] = [];
   if (chunks.length > 0) {
@@ -276,7 +277,14 @@ export async function POST(
           ? err.statusCode
           : 502;
 
-      await markDocumentFailed(serverClient, documentId, message, true);
+      await markDocumentFailed(serverClient, documentId, message, {
+        stage: "embedding",
+        code,
+        cause: err,
+        familyId,
+        clearConfirmedAt: true,
+        retryable: true,
+      });
 
       const body: ConfirmErrorResponse = { error: message, code };
       return Response.json(body, { status: statusCode });
@@ -425,10 +433,17 @@ export async function POST(
   // 11. Handle the RPC result ----------------------------------------------
   if (rpcError) {
     // The RPC raised an exception → the transaction rolled back. No partial
-    // graph/embedding/entity/task state persists. Mark the document failed
-    // so the user can retry (VAL-CONFIRM-011).
+    // graph/embedding/entity/task state persists. Keep the analysis
+    // retryable and persist diagnostics (VAL-CONFIRM-011).
     const message = "Bestätigung fehlgeschlagen. Bitte erneut versuchen.";
-    await markDocumentFailed(serverClient, documentId, message, true);
+    await markDocumentFailed(serverClient, documentId, message, {
+      stage: "confirmation",
+      code: getErrorCode(rpcError, "CONFIRM_RPC_FAILED"),
+      cause: rpcError,
+      familyId,
+      clearConfirmedAt: true,
+      retryable: true,
+    });
     const body: ConfirmErrorResponse = {
       error: message,
       code: "CONFIRM_RPC_FAILED",
@@ -453,7 +468,16 @@ export async function POST(
   if (!result || result.status !== "confirmed") {
     // Unexpected RPC response shape — treat as a failure.
     const message = "Unerwartete Antwort der Bestätigungs-Funktion.";
-    await markDocumentFailed(serverClient, documentId, message, true);
+    await markDocumentFailed(serverClient, documentId, message, {
+      stage: "confirmation",
+      code: "CONFIRM_UNEXPECTED_RESULT",
+      cause: new Error(
+        `Unexpected confirm_document result: ${JSON.stringify(result)}`,
+      ),
+      familyId,
+      clearConfirmedAt: true,
+      retryable: true,
+    });
     const body: ConfirmErrorResponse = {
       error: message,
       code: "CONFIRM_UNEXPECTED_RESULT",

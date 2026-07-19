@@ -379,6 +379,9 @@ export type Database = {
           ocr_text: string | null;
           summary: string | null;
           error_message: string | null;
+          failure_stage: string | null;
+          failure_code: string | null;
+          failed_at: string | null;
           created_at: string;
           confirmed_at: string | null;
           tags: string[];
@@ -401,6 +404,9 @@ export type Database = {
           ocr_text?: string | null;
           summary?: string | null;
           error_message?: string | null;
+          failure_stage?: string | null;
+          failure_code?: string | null;
+          failed_at?: string | null;
           created_at?: string;
           confirmed_at?: string | null;
           tags?: string[];
@@ -422,6 +428,9 @@ export type Database = {
           ocr_text?: string | null;
           summary?: string | null;
           error_message?: string | null;
+          failure_stage?: string | null;
+          failure_code?: string | null;
+          failed_at?: string | null;
           created_at?: string;
           confirmed_at?: string | null;
           tags?: string[];

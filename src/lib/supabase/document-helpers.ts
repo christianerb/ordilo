@@ -1,6 +1,10 @@
 import type { Database } from "@/types/database";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import {
+  reportPipelineFailure,
+  type PipelineFailureStage,
+} from "@/lib/pipeline/failure-tracking";
 
 /**
  * Shared helpers for document API routes.
@@ -40,35 +44,64 @@ export function isValidUuid(id: string): boolean {
 }
 
 /**
- * Mark a document as failed with an error message.
+ * Persist a document pipeline failure with structured diagnostics.
  *
  * Best-effort: errors are silently ignored so we don't mask the primary
  * error with a secondary DB error.
  *
- * @param clearConfirmedAt When `true`, also sets `confirmed_at` to `null`.
- *   Used by the confirm route so a failed confirm (which the RPC may have
- *   set during the conditional transition before rolling back) does not
- *   leave a stale `confirmed_at` value on a failed document.
+ * Confirmation failures can remain retryable in the `analyzed` state;
+ * OCR and analysis failures move to the terminal `failed` state.
  */
 export async function markDocumentFailed(
   client: ServerClient,
   documentId: string,
   errorMessage: string,
-  clearConfirmedAt = false,
+  options: {
+    stage: PipelineFailureStage;
+    code: string;
+    cause: unknown;
+    familyId?: string | null;
+    clearConfirmedAt?: boolean;
+    retryable?: boolean;
+  },
 ): Promise<void> {
+  reportPipelineFailure(options.cause, {
+    stage: options.stage,
+    code: options.code,
+    documentId,
+    familyId: options.familyId,
+    source: "api",
+  });
+
   try {
-    await client
+    const { error } = await client
       .from("documents")
       .update({
-        status: "failed",
+        ...(options.retryable ? {} : { status: "failed" }),
         error_message: errorMessage,
-        ...(clearConfirmedAt ? { confirmed_at: null } : {}),
+        failure_stage: options.stage,
+        failure_code: options.code,
+        failed_at: new Date().toISOString(),
+        ...(options.clearConfirmedAt ? { confirmed_at: null } : {}),
       })
       .eq("id", documentId);
-  } catch {
-    // Best-effort: if we can't update the status, the document stays in
-    // its current state. This is a degraded state but preferable to
-    // crashing the route handler.
+    if (error) {
+      reportPipelineFailure(error, {
+        stage: options.stage,
+        code: "FAILURE_PERSIST_FAILED",
+        documentId,
+        familyId: options.familyId,
+        source: "api",
+      });
+    }
+  } catch (error) {
+    reportPipelineFailure(error, {
+      stage: options.stage,
+      code: "FAILURE_PERSIST_FAILED",
+      documentId,
+      familyId: options.familyId,
+      source: "api",
+    });
   }
 }
 

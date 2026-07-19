@@ -96,10 +96,12 @@ export function DocumentDetailSheet({
         {document && (
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
             <ReviewCard
-              key={document.id}
+              key={`${document.id}:${document.status}`}
               documentId={document.id}
               status={document.status}
               errorMessage={document.error_message}
+              failureStage={document.failure_stage}
+              failureCode={document.failure_code}
               onConfirmSuccess={onConfirmSuccess}
               onReanalyzeSuccess={onReanalyzeSuccess}
               onRetry={onRetry ? () => onRetry(document.id) : undefined}

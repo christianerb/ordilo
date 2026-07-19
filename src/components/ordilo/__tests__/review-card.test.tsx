@@ -250,6 +250,46 @@ describe("ReviewCard", () => {
     expect(screen.queryByText(/parse PDF/i)).toBeNull();
   });
 
+  it("shows which safe pipeline stage failed", async () => {
+    render(
+      <ReviewCard
+        documentId="doc-1"
+        status="failed"
+        failureStage="confirmation"
+        failureCode="23505"
+        errorMessage="duplicate key value violates unique constraint"
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        /Das Dokument konnte nicht gespeichert werden\. Bitte nochmal versuchen/,
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/duplicate key/i)).toBeNull();
+  });
+
+  it("loads the analysis when a retry changes failed to analyzed", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const { rerender } = render(
+      <ReviewCard
+        key="failed"
+        documentId="doc-1"
+        status="failed"
+        failureStage="analysis"
+      />,
+    );
+
+    expect(await screen.findByTestId("review-card-error")).toBeDefined();
+
+    rerender(
+      <ReviewCard key="analyzed" documentId="doc-1" status="analyzed" />,
+    );
+
+    expect(await screen.findByTestId("review-card")).toBeDefined();
+    expect(fetchDocumentAnalysis).toHaveBeenCalledWith("doc-1");
+  });
+
   it("shows a retry button in the error state", async () => {
     render(
       <ReviewCard documentId="doc-1" status="failed" />,

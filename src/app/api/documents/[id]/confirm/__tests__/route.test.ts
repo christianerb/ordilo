@@ -104,7 +104,7 @@ function createRequest(body: unknown): Request {
  * The route performs:
  *   - documents.select(...).eq("id").maybeSingle()  — read document
  *   - document_pages.select(...).eq(...).order(...)  — fetch OCR pages
- *   - documents.update({status:"failed",...}).eq("id",...)  — markFailed
+ *   - documents.update({failure_stage,...}).eq("id",...)  — diagnostics
  *   - rpc("confirm_document", params)  — the single atomic confirm RPC
  *
  * All graph/embedding/entity/task mutations now happen inside the RPC, so
@@ -609,13 +609,13 @@ describe("POST /api/documents/[id]/confirm", () => {
   //
   // All DB mutations happen inside the single confirm_document RPC. If the
   // RPC errors, the Postgres transaction rolls back — no partial graph,
-  // embedding, entity, or task state persists. The route then marks the
-  // document failed. This test verifies the route's contract: on RPC error
+  // embedding, entity, or task state persists. The route then records the
+  // failure. This test verifies the route's contract: on RPC error
   // it makes no individual graph/embedding/entity/task mutation calls
-  // (they are all inside the atomic RPC), marks the document failed, and
-  // returns a structured error.
+  // (they are all inside the atomic RPC), records diagnostics without
+  // discarding the analyzed state, and returns a structured error.
 
-  it("marks document failed and returns 500 when the RPC errors (atomic rollback)", async () => {
+  it("keeps the document retryable and returns 500 when the RPC errors", async () => {
     const client = mockServerClient({
       rpcResult: null,
       rpcError: { message: "constraint violation", code: "23505" },
@@ -632,8 +632,17 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(body.code).toBe("CONFIRM_RPC_FAILED");
     // The RPC was called exactly once.
     expect(client._operations.rpc).toBe(1);
-    // The document was marked failed.
-    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+    expect(client._operations.markFailed ?? 0).toBe(0);
+    expect(client._documentsBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failure_stage: "confirmation",
+        failure_code: "23505",
+        failed_at: expect.any(String),
+      }),
+    );
+    expect(client._documentsBuilder.update.mock.calls[0][0]).not.toHaveProperty(
+      "status",
+    );
   });
 
   it("does not call the RPC when embedding generation fails (no DB mutations)", async () => {
@@ -656,8 +665,13 @@ describe("POST /api/documents/[id]/confirm", () => {
     // The RPC must NOT have been called (embeddings are generated first,
     // before the DB transaction).
     expect(client._operations.rpc).toBeUndefined();
-    // The document should have been marked failed.
-    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+    expect(client._operations.markFailed ?? 0).toBe(0);
+    expect(client._documentsBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failure_stage: "embedding",
+        failure_code: "OPENAI_API_ERROR",
+      }),
+    );
   });
 
   // --- Concurrent node reuse via upsert (VAL-CONFIRM-012) ---
@@ -819,7 +833,7 @@ describe("POST /api/documents/[id]/confirm", () => {
 
   // --- Unexpected RPC result ---
 
-  it("marks failed and returns 500 when the RPC returns an unexpected result shape", async () => {
+  it("records diagnostics when the RPC returns an unexpected result shape", async () => {
     const client = mockServerClient({
       rpcResult: { status: "something_else" } as { status: string; document_id?: string },
     });
@@ -833,7 +847,13 @@ describe("POST /api/documents/[id]/confirm", () => {
 
     expect(response.status).toBe(500);
     expect(body.code).toBe("CONFIRM_UNEXPECTED_RESULT");
-    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+    expect(client._operations.markFailed ?? 0).toBe(0);
+    expect(client._documentsBuilder.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        failure_stage: "confirmation",
+        failure_code: "CONFIRM_UNEXPECTED_RESULT",
+      }),
+    );
   });
 
   // --- Method not allowed ---

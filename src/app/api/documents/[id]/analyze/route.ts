@@ -12,6 +12,7 @@ import {
   NoOcrTextError,
   PipelineStepError,
 } from "@/lib/pipeline/analyze-step";
+import { CLEAR_DOCUMENT_FAILURE } from "@/lib/pipeline/failure-tracking";
 import { ANALYZE_ALLOWED_SOURCE_STATUSES } from "@/lib/schemas/document";
 import {
   type DocumentAnalysis,
@@ -116,7 +117,7 @@ export async function POST(
     .from("documents")
     .update({
       status: "analyzing",
-      error_message: null,
+      ...CLEAR_DOCUMENT_FAILURE,
     })
     .eq("id", documentId)
     .in("status", [...ANALYZE_ALLOWED_SOURCE_STATUSES])
@@ -165,7 +166,12 @@ export async function POST(
           ? "ANALYSIS_FAILED"
           : "EXTRACTION_FAILED";
 
-    await markDocumentFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message, {
+      stage: "analysis",
+      code,
+      cause: err,
+      familyId: document.family_id,
+    });
 
     const statusCode =
       isExtractionError && err instanceof ExtractionError

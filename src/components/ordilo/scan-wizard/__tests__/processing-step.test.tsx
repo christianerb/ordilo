@@ -127,6 +127,27 @@ describe("ScanProcessingStep", () => {
     ).toBeDefined();
   });
 
+  it("shows a safe confirmation-stage error without backend details", () => {
+    render(
+      <ScanProcessingStep
+        doc={makeDoc("failed", {
+          failure_stage: "confirmation",
+          failure_code: "23505",
+          error_message: "duplicate key value violates unique constraint",
+        })}
+        onRetry={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        /Das Dokument konnte nicht gespeichert werden\. Bitte nochmal versuchen/,
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/duplicate key/i)).toBeNull();
+  });
+
   it("calls onClose from the close button", () => {
     const onClose = vi.fn();
     render(

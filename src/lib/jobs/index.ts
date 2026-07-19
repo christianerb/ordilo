@@ -8,6 +8,12 @@ import {
   OCR_ALLOWED_SOURCE_STATUSES,
   ANALYZE_ALLOWED_SOURCE_STATUSES,
 } from "@/lib/schemas/document";
+import {
+  CLEAR_DOCUMENT_FAILURE,
+  getErrorCode,
+  reportPipelineFailure,
+  type PipelineFailureStage,
+} from "@/lib/pipeline/failure-tracking";
 
 /**
  * Background job queue for the document pipeline.
@@ -86,7 +92,14 @@ export async function enqueueJob(
   // already exists; the work will happen, so this enqueue succeeded.
   if (error.code === "23505") return true;
 
-  console.error("[jobs] enqueue failed:", error);
+  reportPipelineFailure(error, {
+    stage: getJobFailureStage(params.job_type),
+    code: getErrorCode(error, "JOB_ENQUEUE_FAILED"),
+    documentId: params.document_id,
+    familyId: params.family_id,
+    source: "job",
+    jobType: params.job_type,
+  });
   return false;
 }
 
@@ -146,6 +159,20 @@ export async function runPendingJobs(
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unbekannter Fehler.";
+      const code = getErrorCode(
+        err,
+        `${job.job_type.toUpperCase()}_JOB_FAILED`,
+      );
+      reportPipelineFailure(err, {
+        stage: getJobFailureStage(job.job_type),
+        code,
+        documentId: job.document_id ?? "unknown",
+        familyId: job.family_id,
+        source: "job",
+        jobId: job.id,
+        jobType: job.job_type,
+        attempt: job.attempts,
+      });
       const outcome = await markJobFailed(adminClient, job, message);
       summary.failed += 1;
       summary.results.push({
@@ -188,6 +215,12 @@ async function executeJob(
   }
 }
 
+function getJobFailureStage(jobType: string): PipelineFailureStage {
+  if (jobType === "ocr") return "ocr";
+  if (jobType === "analyze") return "analysis";
+  return "embedding";
+}
+
 async function executeOcrJob(
   adminClient: Client,
   documentId: string,
@@ -196,7 +229,7 @@ async function executeOcrJob(
   // Atomic conditional transition (same guard as the OCR route).
   const { data: document, error } = await adminClient
     .from("documents")
-    .update({ status: "ocr_processing", error_message: null })
+    .update({ status: "ocr_processing", ...CLEAR_DOCUMENT_FAILURE })
     .eq("id", documentId)
     .in("status", [...OCR_ALLOWED_SOURCE_STATUSES])
     .select()
@@ -211,7 +244,11 @@ async function executeOcrJob(
   try {
     await performOcrStep(adminClient, adminClient, document);
   } catch (err) {
-    await markDocumentFailedAdmin(adminClient, documentId, err);
+    await markDocumentFailedAdmin(adminClient, documentId, err, {
+      stage: "ocr",
+      code: getErrorCode(err, "OCR_FAILED"),
+      familyId,
+    });
     throw err;
   }
 
@@ -247,7 +284,7 @@ async function executeAnalyzeJob(
 
   const { data: transitioned, error: transitionError } = await adminClient
     .from("documents")
-    .update({ status: "analyzing", error_message: null })
+    .update({ status: "analyzing", ...CLEAR_DOCUMENT_FAILURE })
     .eq("id", documentId)
     .in("status", [...ANALYZE_ALLOWED_SOURCE_STATUSES])
     .select("id")
@@ -266,7 +303,11 @@ async function executeAnalyzeJob(
       wasConfirmed,
     });
   } catch (err) {
-    await markDocumentFailedAdmin(adminClient, documentId, err);
+    await markDocumentFailedAdmin(adminClient, documentId, err, {
+      stage: "analysis",
+      code: getErrorCode(err, "ANALYSIS_FAILED"),
+      familyId: document.family_id,
+    });
     throw err;
   }
 
@@ -366,11 +407,31 @@ async function markDocumentFailedAdmin(
   adminClient: Client,
   documentId: string,
   err: unknown,
+  context: {
+    stage: PipelineFailureStage;
+    code: string;
+    familyId: string;
+  },
 ): Promise<void> {
   const message =
     err instanceof Error ? err.message : "Verarbeitung fehlgeschlagen.";
-  await adminClient
+  const { error } = await adminClient
     .from("documents")
-    .update({ status: "failed", error_message: message })
+    .update({
+      status: "failed",
+      error_message: message,
+      failure_stage: context.stage,
+      failure_code: context.code,
+      failed_at: new Date().toISOString(),
+    })
     .eq("id", documentId);
+  if (error) {
+    reportPipelineFailure(error, {
+      stage: context.stage,
+      code: "FAILURE_PERSIST_FAILED",
+      documentId,
+      familyId: context.familyId,
+      source: "job",
+    });
+  }
 }
