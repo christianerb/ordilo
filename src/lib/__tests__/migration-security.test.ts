@@ -132,4 +132,13 @@ describe("migration security: auth.flow_state helper", () => {
       /delete\s+from\s+tmp_label_embeddings/i,
     );
   });
+
+  it("terminates PL/pgSQL blocks before closing dollar quotes", () => {
+    const diagnosticsMigration = migrations.find(
+      (m) => m.name === "0034_document_failure_diagnostics.sql",
+    );
+
+    expect(diagnosticsMigration).toBeDefined();
+    expect(diagnosticsMigration?.content).not.toMatch(/\bend\s*\$\$/i);
+  });
 });
