@@ -18,7 +18,7 @@ begin
         or failure_stage in ('upload', 'ocr', 'analysis', 'confirmation', 'embedding')
       );
   end if;
-end
+end;
 $$;
 
 create or replace function public.sync_document_failure_diagnostics()
@@ -36,7 +36,7 @@ begin
     new.failed_at = null;
   end if;
   return new;
-end
+end;
 $$;
 
 drop trigger if exists sync_document_failure_diagnostics on public.documents;
