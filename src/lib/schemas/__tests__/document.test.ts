@@ -21,6 +21,8 @@ import {
   uploadFamilyIdSchema,
   isValidTransition,
   OCR_ALLOWED_SOURCE_STATUSES,
+  getFailedStage,
+  getFailedStageCopy,
 } from "@/lib/schemas/document";
 
 // ---------------------------------------------------------------------------
@@ -167,6 +169,41 @@ describe("getStatusBadgeClasses", () => {
 
   it("falls back to uploaded classes for unknown statuses", () => {
     expect(getStatusBadgeClasses("unknown")).toBe(STATUS_BADGE_CLASSES.uploaded);
+  });
+});
+
+describe("failed document diagnostics", () => {
+  it("prefers the persisted confirmation stage over OCR inference", () => {
+    expect(
+      getFailedStage({
+        failure_stage: "confirmation",
+        ocr_text: "recognized text",
+        page_count: 1,
+      }),
+    ).toBe("confirmation");
+  });
+
+  it("maps embedding failures to the confirmation retry path", () => {
+    expect(
+      getFailedStage({
+        failure_stage: "embedding",
+        ocr_text: "recognized text",
+        page_count: 1,
+      }),
+    ).toBe("confirmation");
+  });
+
+  it("keeps inference for documents created before diagnostics existed", () => {
+    expect(getFailedStage({ ocr_text: null, page_count: null })).toBe("ocr");
+    expect(getFailedStage({ ocr_text: "recognized", page_count: 1 })).toBe(
+      "analysis",
+    );
+  });
+
+  it("shows safe stage-specific German copy", () => {
+    expect(getFailedStageCopy("ocr")).toContain("gelesen");
+    expect(getFailedStageCopy("analysis")).toContain("ausgewertet");
+    expect(getFailedStageCopy("confirmation")).toContain("gespeichert");
   });
 });
 

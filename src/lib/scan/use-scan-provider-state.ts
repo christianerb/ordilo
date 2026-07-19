@@ -21,6 +21,7 @@ import {
 import { uploadFile } from "@/lib/upload";
 import { prepareImageForUpload } from "@/lib/image-compress";
 import { createNote } from "@/lib/notes";
+import { retryFailedDocument } from "@/lib/document-retry";
 import type { DocumentType } from "@/lib/schemas/extraction";
 import type {
   DocumentRow,
@@ -41,7 +42,8 @@ import type { UploadState } from "@/components/ordilo/scan-wizard/upload-progres
 const DOCUMENT_LIST_COLUMNS =
   "id, family_id, uploaded_by, title, document_type, category, status, " +
   "file_url, original_filename, mime_type, page_count, summary, " +
-  "error_message, created_at, confirmed_at, tags, source, extraction_version";
+  "error_message, failure_stage, failure_code, failed_at, created_at, " +
+  "confirmed_at, tags, source, extraction_version";
 
 export function useScanProviderState(): ScanProviderState {
   const supabase = createClient();
@@ -561,42 +563,51 @@ export function useScanProviderState(): ScanProviderState {
       // fields directly for this one document.
       const { data: stageRow, error: stageError } = await supabase
         .from("documents")
-        .select("ocr_text, page_count")
+        .select("ocr_text, page_count, failure_stage")
         .eq("id", documentId)
         .maybeSingle();
-      if (stageError || !stageRow) return;
+      if (stageError || !stageRow) {
+        toast.error("Fehlerdetails konnten nicht geladen werden.");
+        return;
+      }
 
       const stage = getFailedStage(stageRow);
+      let retryError: string | null = null;
 
       if (stage === "ocr") {
         updateTrackedDocument(documentId, (current) => ({
           ...current,
           status: "ocr_processing",
           error_message: null,
+          failure_stage: null,
+          failure_code: null,
+          failed_at: null,
         }));
         try {
-          await triggerOcr(documentId);
-        } catch {}
-        if (documentsLoadedRef.current) {
-          await fetchDocumentsRef.current();
+          await retryFailedDocument(documentId, stage);
+        } catch (error) {
+          retryError =
+            error instanceof Error ? error.message : "OCR konnte nicht neu gestartet werden.";
         }
-        await fetchDocumentByIdRef.current(documentId, {
-          syncExpanded: expandedDocIdRef.current === documentId,
-          syncWizard: wizardDocIdRef.current === documentId,
-          syncList: documentsLoadedRef.current,
-          allowAutoAnalyze: true,
-        });
-        return;
+      } else {
+        updateTrackedDocument(documentId, (current) => ({
+          ...current,
+          status: "analyzing",
+          error_message: null,
+          failure_stage: null,
+          failure_code: null,
+          failed_at: null,
+        }));
+        try {
+          await retryFailedDocument(documentId, stage);
+        } catch (error) {
+          retryError =
+            error instanceof Error
+              ? error.message
+              : "Analyse konnte nicht neu gestartet werden.";
+        }
       }
 
-      updateTrackedDocument(documentId, (current) => ({
-        ...current,
-        status: "analyzing",
-        error_message: null,
-      }));
-      try {
-        await fetch(`/api/documents/${documentId}/analyze`, { method: "POST" });
-      } catch {}
       if (documentsLoadedRef.current) {
         await fetchDocumentsRef.current();
       }
@@ -604,7 +615,9 @@ export function useScanProviderState(): ScanProviderState {
         syncExpanded: expandedDocIdRef.current === documentId,
         syncWizard: wizardDocIdRef.current === documentId,
         syncList: documentsLoadedRef.current,
+        allowAutoAnalyze: stage === "ocr",
       });
+      if (retryError) toast.error(retryError);
     },
     [supabase, updateTrackedDocument],
   );
@@ -777,13 +790,17 @@ export function useScanProviderState(): ScanProviderState {
   );
 
   const handleWizardRetryUpload = useCallback(() => {
+    if (wizardDocIdRef.current && wizardDocumentRef.current?.status === "failed") {
+      void handleRetryFailed(wizardDocIdRef.current);
+      return;
+    }
     const file = wizardFileRef.current;
     if (file) {
       handleWizardCapture(file);
     } else {
       setWizardStep("camera");
     }
-  }, [handleWizardCapture]);
+  }, [handleRetryFailed, handleWizardCapture]);
 
   const handleWizardReviewDone = useCallback(() => {
     setWizardOpen(false);

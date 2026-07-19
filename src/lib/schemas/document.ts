@@ -447,7 +447,7 @@ export type UploadFamilyIdInput = z.infer<typeof uploadFamilyIdSchema>;
  *   - `"analysis"` → retry via the analyze endpoint
  *     (`POST /api/documents/[id]/analyze`)
  */
-export type FailedStage = "ocr" | "analysis";
+export type FailedStage = "ocr" | "analysis" | "confirmation";
 
 /**
  * Derive the failing pipeline stage from the document's persisted state.
@@ -470,7 +470,17 @@ export type FailedStage = "ocr" | "analysis";
 export function getFailedStage(doc: {
   ocr_text?: string | null;
   page_count?: number | null;
+  failure_stage?: string | null;
 }): FailedStage {
+  if (doc.failure_stage === "ocr") return "ocr";
+  if (doc.failure_stage === "analysis") return "analysis";
+  if (
+    doc.failure_stage === "confirmation" ||
+    doc.failure_stage === "embedding"
+  ) {
+    return "confirmation";
+  }
+
   // OCR completed if there is any non-empty OCR text.
   if (doc.ocr_text && doc.ocr_text.trim().length > 0) {
     return "analysis";
@@ -480,6 +490,22 @@ export function getFailedStage(doc: {
     return "analysis";
   }
   return "ocr";
+}
+
+export function getFailedStageCopy(
+  stage: FailedStage | string | null | undefined,
+): string {
+  switch (stage) {
+    case "ocr":
+      return "Das Dokument konnte nicht gelesen werden.";
+    case "analysis":
+      return "Der Inhalt konnte nicht ausgewertet werden.";
+    case "confirmation":
+    case "embedding":
+      return "Das Dokument konnte nicht gespeichert werden.";
+    default:
+      return `${FAILED_CARD_COPY}.`;
+  }
 }
 
 /**

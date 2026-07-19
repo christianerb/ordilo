@@ -4,8 +4,8 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import {
-  FAILED_CARD_COPY,
   PIPELINE_STEPS,
+  getFailedStageCopy,
   getPipelineStepsCompleted,
 } from "@/lib/schemas/document";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
@@ -146,10 +146,14 @@ export function ReviewCardProcessing({
  * compatibility but is intentionally not displayed.
  */
 export function ReviewCardError({
+  failureStage,
+  failureCode,
   onRetry,
   className,
 }: {
   errorMessage?: string | null;
+  failureStage?: string | null;
+  failureCode?: string | null;
   onRetry?: () => void;
   className?: string;
 }) {
@@ -176,8 +180,15 @@ export function ReviewCardError({
           Das hat nicht geklappt
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          {FAILED_CARD_COPY}. Bitte nochmal versuchen.
+          {getFailedStageCopy(failureStage)} Bitte nochmal versuchen.
         </p>
+        {process.env.NODE_ENV === "development" &&
+          (failureStage || failureCode) && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Lokale Diagnose: {failureStage ?? "unbekannt"} /{" "}
+              {failureCode ?? "ohne Code"}
+            </p>
+          )}
         {onRetry && (
           <Button
             type="button"

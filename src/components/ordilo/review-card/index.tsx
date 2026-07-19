@@ -1,6 +1,11 @@
 "use client";
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
@@ -40,6 +45,10 @@ export interface ReviewCardProps {
   status: string;
   /** Error message when status is "failed". */
   errorMessage?: string | null;
+  /** Persisted pipeline stage that failed. */
+  failureStage?: string | null;
+  /** Machine-readable failure code for diagnostics. */
+  failureCode?: string | null;
   /** Called after a successful confirm to notify the parent to refresh. */
   onConfirmSuccess?: () => void;
   /** Called after a successful re-analyze to notify the parent to refresh. */
@@ -94,6 +103,8 @@ export function ReviewCard({
   documentId,
   status,
   errorMessage,
+  failureStage,
+  failureCode,
   onConfirmSuccess,
   onReanalyzeSuccess,
   onRetry,
@@ -153,11 +164,8 @@ export function ReviewCard({
     setLoading(false);
   }, [documentId, status]);
 
-  // Note: This loads analysis once on mount using the initial documentId
-  // and status. If the parent changes documentId, it should use a `key`
-  // prop to force a remount so the analysis reloads.
   useMountEffect(() => {
-    loadAnalysis();
+    void loadAnalysis();
   });
 
   // --- Derived: check if needs_user_review ---
@@ -477,6 +485,8 @@ export function ReviewCard({
     return (
       <ReviewCardError
         errorMessage={errorMessage}
+        failureStage={failureStage}
+        failureCode={failureCode}
         onRetry={onRetry ?? handleReanalyze}
         className={className}
       />

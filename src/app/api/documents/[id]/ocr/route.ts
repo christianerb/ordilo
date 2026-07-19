@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { isValidUuid, markDocumentFailed } from "@/lib/supabase/document-helpers";
 import { DatalabOcrError } from "@/lib/ai/ocr";
 import { performOcrStep } from "@/lib/pipeline/ocr-step";
+import { CLEAR_DOCUMENT_FAILURE } from "@/lib/pipeline/failure-tracking";
 import {
   OCR_ALLOWED_SOURCE_STATUSES,
   type OcrSuccessResponse,
@@ -89,7 +90,7 @@ export async function POST(
     .from("documents")
     .update({
       status: "ocr_processing",
-      error_message: null,
+      ...CLEAR_DOCUMENT_FAILURE,
     })
     .eq("id", documentId)
     .in("status", [...OCR_ALLOWED_SOURCE_STATUSES])
@@ -153,7 +154,12 @@ export async function POST(
       : "OCR ist fehlgeschlagen. Bitte erneut versuchen.";
     const code = isDatalabError ? err.code : "OCR_FAILED";
 
-    await markDocumentFailed(serverClient, documentId, message);
+    await markDocumentFailed(serverClient, documentId, message, {
+      stage: "ocr",
+      code,
+      cause: err,
+      familyId: document.family_id,
+    });
 
     // Determine HTTP status: 502 for upstream (Datalab) errors,
     // 500 for internal errors (storage/DB), 4xx for client/config issues.

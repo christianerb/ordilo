@@ -118,4 +118,18 @@ describe("migration security: auth.flow_state helper", () => {
       /alter\s+table\s+public\.families\s+no\s+force\s+row\s+level\s+security/i,
     );
   });
+
+  it("clears the confirmation temp table without an unscoped DELETE", () => {
+    const confirmMigration = migrations.find(
+      (m) => m.name === "0035_confirm_rpc_safe_temp_cleanup.sql",
+    );
+
+    expect(confirmMigration).toBeDefined();
+    expect(confirmMigration?.content).toMatch(
+      /truncate\s+table\s+tmp_label_embeddings/i,
+    );
+    expect(confirmMigration?.content).not.toMatch(
+      /delete\s+from\s+tmp_label_embeddings/i,
+    );
+  });
 });

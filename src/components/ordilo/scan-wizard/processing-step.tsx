@@ -7,8 +7,8 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
-  FAILED_CARD_COPY,
   PIPELINE_STEPS as STEPS,
+  getFailedStageCopy,
   getPipelineStepsCompleted,
 } from "@/lib/schemas/document";
 import type { Database } from "@/types/database";
@@ -154,8 +154,17 @@ export function ScanProcessingStep({
               Das hat nicht geklappt
             </h2>
             <p className="text-sm text-muted-foreground">
-              {uploadError || `${FAILED_CARD_COPY}.`} Bitte nochmal versuchen.
+              {uploadError || getFailedStageCopy(doc?.failure_stage)} Bitte
+              nochmal versuchen.
             </p>
+            {process.env.NODE_ENV === "development" &&
+              doc &&
+              (doc.failure_stage || doc.failure_code) && (
+                <p className="text-xs text-muted-foreground">
+                  Lokale Diagnose: {doc.failure_stage ?? "unbekannt"} /{" "}
+                  {doc.failure_code ?? "ohne Code"}
+                </p>
+              )}
             <Button
               type="button"
               size="lg"

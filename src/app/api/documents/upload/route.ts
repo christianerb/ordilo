@@ -7,6 +7,10 @@ import {
   type UploadSuccessResponse,
   type UploadErrorResponse,
 } from "@/lib/schemas/document";
+import {
+  getErrorCode,
+  reportPipelineFailure,
+} from "@/lib/pipeline/failure-tracking";
 
 /**
  * Maximum document uploads per family per day.
@@ -188,6 +192,13 @@ export async function POST(request: Request): Promise<Response> {
     });
 
   if (uploadError) {
+    reportPipelineFailure(uploadError, {
+      stage: "upload",
+      code: getErrorCode(uploadError, "STORAGE_UPLOAD_FAILED"),
+      documentId,
+      familyId,
+      source: "api",
+    });
     // Storage upload failed — do NOT create a documents row (no orphaned rows).
     const body: UploadErrorResponse = {
       error: "Upload fehlgeschlagen. Bitte erneut versuchen.",
@@ -213,6 +224,16 @@ export async function POST(request: Request): Promise<Response> {
     .single();
 
   if (insertError || !docRow) {
+    reportPipelineFailure(
+      insertError ?? new Error("Document insert returned no row."),
+      {
+        stage: "upload",
+        code: getErrorCode(insertError, "DB_INSERT_FAILED"),
+        documentId,
+        familyId,
+        source: "api",
+      },
+    );
     // DB insert failed — clean up the orphaned Storage object so we don't
     // leave a file with no corresponding document row.
     await adminClient.storage.from("documents").remove([storagePath]);
@@ -255,11 +276,23 @@ export async function POST(request: Request): Promise<Response> {
         } catch (err) {
           // Jobs stay pending — the retry/backoff worker and the
           // client-triggered pipeline both cover for this.
-          console.error("[upload] pipeline drain failed:", err);
+          reportPipelineFailure(err, {
+            stage: "ocr",
+            code: getErrorCode(err, "PIPELINE_DRAIN_FAILED"),
+            documentId,
+            familyId,
+            source: "job",
+          });
         }
       });
     } catch (err) {
-      console.error("[upload] pipeline enqueue failed:", err);
+      reportPipelineFailure(err, {
+        stage: "ocr",
+        code: getErrorCode(err, "PIPELINE_ENQUEUE_FAILED"),
+        documentId,
+        familyId,
+        source: "job",
+      });
     }
   }
 
