@@ -36,7 +36,7 @@ export interface ProfileTask {
   due_date: string | null;
   priority: string;
   status: string;
-  document_id: string;
+  document_id: string | null;
 }
 
 /**
@@ -153,7 +153,7 @@ export function buildTimelineEvents(
       type: "task",
       date,
       title: task.title,
-      documentId: task.document_id,
+      documentId: task.document_id ?? undefined,
     });
   }
 

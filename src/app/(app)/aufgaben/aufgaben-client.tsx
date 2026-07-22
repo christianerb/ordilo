@@ -3,11 +3,13 @@
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import type { TaskCardData } from "@/components/ordilo/task-card";
+import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import { SwipeableTaskCard } from "@/components/ordilo/swipeable-task-card";
 import { TaskDetailSheet } from "@/components/ordilo/task-detail-sheet";
+import { TaskCreateSheet } from "@/components/ordilo/task-create-sheet";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -184,9 +186,13 @@ function BoardColumn({
 
 export function AufgabenClient({
   initialTasks,
+  members,
+  familyId,
   initialError = null,
 }: {
   initialTasks: TaskCardData[];
+  members: AssigneeOption[];
+  familyId: string | null;
   initialError?: string | null;
 }) {
   const router = useRouter();
@@ -195,6 +201,7 @@ export function AufgabenClient({
   const [error] = useState<string | null>(initialError);
   const [selectedTask, setSelectedTask] = useState<TaskCardData | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const { toggleDone, dismiss } = useTaskMutation({
@@ -259,6 +266,11 @@ export function AufgabenClient({
     router.refresh();
   }, [router]);
 
+  const handleSheetCreated = useCallback(() => {
+    toast.success("Aufgabe erstellt");
+    router.refresh();
+  }, [router]);
+
   const handleDrop = useCallback(
     (taskId: string, targetColumnId: string) => {
       const task = tasks.find((t) => t.id === taskId);
@@ -299,11 +311,24 @@ export function AufgabenClient({
     <div className="app-page-stack">
       <div className="app-page-heading">
         <h1 className="text-lg font-semibold text-foreground">Aufgaben</h1>
-        {visibleTasks.length > 0 && (
-          <span className="text-xs text-muted-foreground">
-            {visibleTasks.filter((t) => t.status === "open").length} offen · {visibleTasks.filter((t) => t.status === "done").length} erledigt
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {visibleTasks.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {visibleTasks.filter((t) => t.status === "open").length} offen · {visibleTasks.filter((t) => t.status === "done").length} erledigt
+            </span>
+          )}
+          {familyId && (
+            <Button
+              size="sm"
+              className="h-7 gap-1 px-2.5 text-xs"
+              onClick={() => setCreateSheetOpen(true)}
+              data-testid="task-create-button"
+            >
+              <Plus className="size-3.5" aria-hidden="true" />
+              Neue Aufgabe
+            </Button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -355,7 +380,18 @@ export function AufgabenClient({
         onSaved={handleSheetSaved}
         onToggleDone={handleToggleDone}
         onDismiss={handleDismiss}
+        members={members}
       />
+
+      {familyId && (
+        <TaskCreateSheet
+          open={createSheetOpen}
+          onOpenChange={setCreateSheetOpen}
+          familyId={familyId}
+          members={members}
+          onCreated={handleSheetCreated}
+        />
+      )}
 
       <Sheet
         open={!!deleteConfirmId}

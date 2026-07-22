@@ -13,7 +13,7 @@
 export interface TaskRow {
   id: string;
   family_id: string;
-  document_id: string;
+  document_id: string | null;
   title: string;
   description: string | null;
   due_date: string | null;
@@ -23,6 +23,7 @@ export interface TaskRow {
   confirmed: boolean;
   created_at: string;
   tags: string[];
+  assigned_to: string | null;
 }
 
 /** The three status filter options shown in the Aufgaben tab. */

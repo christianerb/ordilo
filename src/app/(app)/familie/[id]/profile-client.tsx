@@ -72,7 +72,9 @@ export function ProfileClient({
 
   const taskPriorityMap = new Map<string, string>();
   for (const task of tasks) {
-    taskPriorityMap.set(task.document_id, getPriorityLabel(task.priority));
+    if (task.document_id) {
+      taskPriorityMap.set(task.document_id, getPriorityLabel(task.priority));
+    }
   }
 
   const timelineEvents = sortTimelineEvents(
@@ -102,7 +104,8 @@ export function ProfileClient({
     confirmed: true,
     created_at: "",
     tags: [],
-    document_title: documentTitles?.get(task.document_id) ?? null,
+    assigned_to: null,
+    document_title: task.document_id ? documentTitles?.get(task.document_id) ?? null : null,
   }));
 
   const navigateToDocument = (docId: string) => {

@@ -30,6 +30,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     created_at: "2026-07-01T00:00:00Z",
     tags: [],
     document_title: "Stromrechnung Juli",
+    assigned_to: null,
     ...overrides,
   };
 }

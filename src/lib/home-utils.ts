@@ -24,6 +24,7 @@ export interface HomeTask {
   tags: string[];
   document_id: string | null;
   document_title?: string | null;
+  assigned_to?: string | null;
 }
 
 /** A document row with the fields needed by the home dashboard. */

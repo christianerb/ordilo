@@ -176,7 +176,7 @@ export default async function PersonProfilePage({
 
   // Fetch document titles for the task cards' source-document links.
   const taskDocIds = [
-    ...new Set((taskData ?? []).map((t) => t.document_id)),
+    ...new Set((taskData ?? []).map((t) => t.document_id).filter((id): id is string => Boolean(id))),
   ];
   const taskDocIdsToFetch = taskDocIds.filter(
     (docId) => !documentIds.includes(docId),
