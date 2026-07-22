@@ -189,6 +189,7 @@ describe("DokumentePage auto-analyze navigation guard", () => {
     vi.mocked(uploadFile).mockResolvedValue({
       document_id: "doc-fresh-1",
       status: "uploaded",
+      server_pipeline: false,
     });
     vi.mocked(triggerOcr).mockResolvedValue({
       status: "ocr_done",
