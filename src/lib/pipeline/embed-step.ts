@@ -6,8 +6,11 @@ import {
   embeddingToVectorString,
   deduplicateChunks,
   generateSyntheticQuestions,
+  cleanOcrForEmbedding,
+  contextualizeForEmbedding,
   type PageContent,
   type PageTextChunk,
+  type TextChunk,
 } from "@/lib/ai/embeddings";
 
 /**
@@ -61,22 +64,30 @@ export async function buildDocumentEmbeddings(
 
   const pageContents: PageContent[] = (pages ?? [])
     .filter((p) => p.ocr_markdown && p.ocr_markdown.trim())
-    .map((p) => ({ text: p.ocr_markdown!, page_number: p.page_number }));
+    .map((p) => ({ text: cleanOcrForEmbedding(p.ocr_markdown!), page_number: p.page_number }))
+    .filter((p) => p.text.length > 0);
 
   if (pageContents.length === 0) {
-    const fallbackText = (document.ocr_text ?? "").trim();
+    const fallbackText = cleanOcrForEmbedding((document.ocr_text ?? "").trim());
     if (fallbackText) {
       pageContents.push({ text: fallbackText, page_number: 1 });
     }
   }
 
   // 2. Chunk + embed + deduplicate -------------------------------------------
+  //    Chunks are contextualized with the document title before embedding
+  //    so the embedding vector carries document-level context. The stored
+  //    chunk_text remains the clean original (for FTS + display).
   const chunks = chunkPages(pageContents);
   let finalChunks: PageTextChunk[] = chunks;
   let finalEmbeddings: number[][] = [];
 
   if (chunks.length > 0) {
-    const embeddings = await generateEmbeddings(chunks);
+    const embedChunks: TextChunk[] = chunks.map((c) => ({
+      text: contextualizeForEmbedding(c.text, document.title),
+      index: c.index,
+    }));
+    const embeddings = await generateEmbeddings(embedChunks);
     finalEmbeddings = embeddings;
 
     if (chunks.length > 1 && embeddings.length > 1) {
@@ -88,18 +99,22 @@ export async function buildDocumentEmbeddings(
   }
 
   // 3. Synthetic question embeddings from stored metadata --------------------
-  const { data: personEntities } = await client
+  const { data: entities } = await client
     .from("extracted_entities")
     .select("entity_value, entity_type")
     .eq("document_id", documentId)
-    .in("entity_type", ["person", "organization"]);
+    .in("entity_type", ["person", "organization", "tag", "date"]);
 
-  const persons = (personEntities ?? [])
+  const persons = (entities ?? [])
     .filter((e) => e.entity_type === "person")
     .map((e) => e.entity_value);
   const organization =
-    (personEntities ?? []).find((e) => e.entity_type === "organization")
+    (entities ?? []).find((e) => e.entity_type === "organization")
       ?.entity_value ?? null;
+  const tags = (entities ?? [])
+    .filter((e) => e.entity_type === "tag")
+    .map((e) => e.entity_value);
+  const hasDates = (entities ?? []).some((e) => e.entity_type === "date");
 
   const syntheticQuestions = generateSyntheticQuestions({
     title: document.title,
@@ -107,6 +122,8 @@ export async function buildDocumentEmbeddings(
     documentType: document.document_type,
     persons,
     organization,
+    tags,
+    hasDates,
   });
 
   let questionEmbeddings: number[][] = [];

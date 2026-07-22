@@ -534,7 +534,7 @@ export function SucheClient({
   // -------------------------------------------------------------------------
 
   return (
-    <div className="relative flex h-[calc(100dvh-160px)] flex-col overflow-hidden">
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Chat header bar — dropdown trigger + new chat */}
       <div className="flex items-center gap-2 border-b border-border pb-3">
         <button
@@ -592,7 +592,7 @@ export function SucheClient({
       )}
 
       {/* Chat area */}
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {hasFacets && (
           <FilterChips
             facets={facets}
@@ -603,7 +603,7 @@ export function SucheClient({
         )}
 
         <div
-          className="flex-1 overflow-y-auto"
+          className="min-h-0 flex-1 overflow-y-auto"
           aria-live="polite"
           aria-label="Konversation"
         >

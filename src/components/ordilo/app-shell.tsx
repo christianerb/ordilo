@@ -105,7 +105,7 @@ function AppShellContent({
   };
 
   return (
-    <div className="relative isolate min-h-dvh overflow-x-clip bg-[var(--canvas-warm)]">
+    <div className="relative isolate h-dvh overflow-x-clip overflow-hidden bg-[var(--canvas-warm)]">
       <div
         className="pointer-events-none fixed -right-24 -top-20 h-72 w-80 rotate-12 rounded-[28px] bg-[var(--wash-sage-soft)]"
         aria-hidden="true"
@@ -134,19 +134,19 @@ function AppShellContent({
           sidebar surface. */}
       <div
         className={cn(
-          "relative z-10 flex min-h-dvh flex-col",
+          "relative z-10 flex h-dvh flex-col",
           showNav && "transition-[padding] duration-200",
           showNav && (collapsed ? "lg:pl-[76px]" : "lg:pl-[180px]"),
         )}
       >
         <Topbar showNav={showNav} pathname={pathname} />
 
-        <div data-testid="app-content-surface" className="flex-1">
-          <div className="mx-auto flex h-full w-full max-w-md flex-col md:max-w-2xl lg:max-w-none">
+        <div data-testid="app-content-surface" className="flex min-h-0 flex-1 flex-col">
+          <div className="mx-auto flex h-full min-h-0 w-full max-w-md flex-col md:max-w-2xl lg:max-w-none">
             {/* Page content */}
             <main
               className={cn(
-                "flex-1 px-4 pt-5 md:px-6 md:pt-6 lg:px-8 lg:pt-8",
+                "flex flex-1 flex-col overflow-y-auto px-4 pt-5 md:px-6 md:pt-6 lg:px-8 lg:pt-8",
                 showNav ? "pb-28 lg:pb-24" : "pb-8",
               )}
             >

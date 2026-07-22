@@ -13,9 +13,16 @@ export const EXTRACTION_MODEL = "gpt-5.4-mini";
 export const CHAT_MODEL = "gpt-5.4-mini";
 
 /** Model for text embeddings (semantic search vectors). */
-export const EMBEDDINGS_MODEL = "text-embedding-3-small";
+export const EMBEDDINGS_MODEL = "text-embedding-3-large";
 
-/** Dimensionality of the embedding vectors (must match pgvector column). */
+/** Dimensionality of the embedding vectors (must match pgvector column).
+ *
+ * We use text-embedding-3-large with dimensionality reduction to 1536
+ * (via the OpenAI `dimensions` API parameter). This gives us the quality
+ * of the large model while staying within pgvector's 2000-dim HNSW limit
+ * and avoiding a schema migration. The large model at 1536 dims
+ * outperforms text-embedding-3-small at the same dimensionality.
+ */
 export const EMBEDDING_DIMENSIONS = 1536;
 
 /**
@@ -31,5 +38,7 @@ export const EMBEDDING_DIMENSIONS = 1536;
  * History:
  *   1 — initial pipeline (pre-versioning)
  *   2 — typed document facts extraction + versioned embeddings
+ *   3 — text-embedding-3-large (3072 dims) + OCR cleaning + contextual
+ *        chunks (title prefix) + enriched synthetic questions (tags/dates)
  */
-export const PIPELINE_VERSION = 2;
+export const PIPELINE_VERSION = 3;

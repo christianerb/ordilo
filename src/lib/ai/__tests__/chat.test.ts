@@ -239,8 +239,8 @@ describe("filterByRelevanceThreshold", () => {
 
   it("returns empty when all semantic results are below the threshold", () => {
     const results = [
-      makeSemanticResult("doc-1", "Brief", "Inhalt", 0.15),
-      makeSemanticResult("doc-2", "Brief 2", "Inhalt 2", 0.2),
+      makeSemanticResult("doc-1", "Brief", "Inhalt", 0.05),
+      makeSemanticResult("doc-2", "Brief 2", "Inhalt 2", 0.1),
     ];
     const filtered = filterByRelevanceThreshold(results);
     expect(filtered).toEqual([]);
@@ -264,12 +264,11 @@ describe("filterByRelevanceThreshold", () => {
     expect(filterByRelevanceThreshold([])).toEqual([]);
   });
 
-  it("uses a conservative threshold value (0.3) that does not regress genuine low-but-relevant matches", () => {
-    // The threshold should be conservative — low enough to keep genuine
-    // low-relevance matches (e.g. 0.35) while filtering clear noise
-    // (e.g. 0.1–0.2). A threshold of 0.3 is the conventional cutoff for
-    // text-embedding-3-small cosine similarity.
-    expect(RELEVANCE_THRESHOLD).toBe(0.3);
+  it("uses a threshold value (0.2) calibrated for small family corpora", () => {
+    // The threshold is set low (0.2) because a family has 20–100 documents,
+    // so even marginal semantic matches are likely relevant. Larger corpora
+    // would need 0.3+ to suppress noise.
+    expect(RELEVANCE_THRESHOLD).toBe(0.2);
   });
 });
 

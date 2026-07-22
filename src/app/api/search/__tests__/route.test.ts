@@ -6,6 +6,11 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/ai/embeddings", () => ({
   generateQueryEmbedding: vi.fn(),
+  generateEmbeddings: vi.fn((chunks: unknown[]) =>
+    Array.isArray(chunks) && chunks.length === 0
+      ? Promise.resolve([])
+      : Promise.resolve([[0.1, 0.2, 0.3]]),
+  ),
   embeddingToVectorString: vi.fn((emb: number[]) => `[${emb.join(",")}]`),
   EmbeddingError: class EmbeddingError extends Error {
     code: string;
