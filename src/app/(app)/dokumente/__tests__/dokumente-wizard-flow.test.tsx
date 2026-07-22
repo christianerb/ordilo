@@ -181,6 +181,7 @@ describe("DokumentePage — scan wizard flow", () => {
     vi.mocked(uploadFile).mockResolvedValue({
       document_id: docId,
       status: "uploaded",
+      server_pipeline: false,
     });
     vi.mocked(triggerOcr).mockResolvedValue({ status: "ocr_done", page_count: 1 });
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(analysis);

@@ -1,4 +1,9 @@
-import type { UploadSuccessResponse, UploadErrorResponse } from "@/lib/schemas/document";
+import {
+  MAX_FILE_SIZE,
+  MAX_FILE_SIZE_LABEL,
+  type UploadSuccessResponse,
+  type UploadErrorResponse,
+} from "@/lib/schemas/document";
 
 /**
  * Upload a file to the /api/documents/upload endpoint with progress tracking.
@@ -20,6 +25,17 @@ export function uploadFile(
   onProgress?: (percent: number) => void,
 ): Promise<UploadSuccessResponse> {
   return new Promise((resolve, reject) => {
+    // Pre-flight size check: reject before opening a connection so the
+    // user gets an immediate, specific message instead of a platform 413.
+    if (file.size > MAX_FILE_SIZE) {
+      reject(
+        new Error(
+          `Die Datei ist zu groß. Maximum: ${MAX_FILE_SIZE_LABEL}.`,
+        ),
+      );
+      return;
+    }
+
     const xhr = new XMLHttpRequest();
     const formData = new FormData();
     formData.append("file", file);
@@ -43,6 +59,17 @@ export function uploadFile(
           reject(new Error("Upload fehlgeschlagen. Bitte erneut versuchen."));
         }
       } else {
+        // 413 can come from Vercel's platform (HTML body) before the route
+        // handler runs, or from our own JSON validation. Handle both.
+        if (xhr.status === 413) {
+          try {
+            const error: UploadErrorResponse = JSON.parse(xhr.responseText);
+            reject(new Error(error.error || `Die Datei ist zu groß. Maximum: ${MAX_FILE_SIZE_LABEL}.`));
+          } catch {
+            reject(new Error(`Die Datei ist zu groß. Maximum: ${MAX_FILE_SIZE_LABEL}.`));
+          }
+          return;
+        }
         // Parse the structured error response.
         try {
           const error: UploadErrorResponse = JSON.parse(xhr.responseText);

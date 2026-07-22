@@ -30,7 +30,7 @@ const DAILY_UPLOAD_LIMIT = 50;
  * Pipeline:
  *   1. Authenticate the user (requireUser → 401 if no session)
  *   2. Validate family_id belongs to the authenticated user (RLS)
- *   3. Validate the file type (images + PDF only) and size (≤ 25 MB)
+ *   3. Validate the file type (images + PDF only) and size (≤ 4 MB)
  *   4. Upload the file to Supabase Storage at {family_id}/{document_id}/{filename}
  *   5. Create a `documents` row with status = "uploaded"
  *   6. Return { document_id, status: "uploaded" }
@@ -111,7 +111,7 @@ export async function POST(request: Request): Promise<Response> {
   //
   // We read the full file into memory (it's already buffered for the
   // Storage upload) and take the first 16 bytes. This is safe for the
-  // 25 MB max file size and avoids platform-specific Blob.slice() issues.
+  // 4 MB max file size and avoids platform-specific Blob.slice() issues.
   let headerBytes: Uint8Array;
   try {
     const fullBuffer = await file.arrayBuffer();
@@ -250,12 +250,17 @@ export async function POST(request: Request): Promise<Response> {
   // then — AFTER the response is sent (`next/server` after()) — drain the
   // queue in this same invocation. The pipeline therefore runs server-side
   // (OCR → analyze) even when the user locks their phone right after the
-  // upload, without requiring any external scheduler. The client's own
-  // OCR/analyze triggers stay race-safe either way (conditional status
-  // transitions — whoever transitions first does the work, the other
-  // no-ops), so this is purely additive. Any failure here must never fail
-  // the upload itself.
-  if (process.env.PIPELINE_MODE !== "sync") {
+  // upload, without requiring any external scheduler.
+  //
+  // When the server pipeline is active, the response includes
+  // `server_pipeline: true` so the client skips its own triggerOcr and
+  // auto-analyze calls — eliminating the 409 race conditions that occurred
+  // when both paths tried to transition the same document simultaneously.
+  // The client's realtime subscription and polling still update the UI.
+  // Any failure here must never fail the upload itself.
+  const serverPipeline = process.env.PIPELINE_MODE !== "sync";
+
+  if (serverPipeline) {
     try {
       const { enqueueJob, runPendingJobs } = await import("@/lib/jobs");
       await enqueueJob(adminClient, {
@@ -300,6 +305,7 @@ export async function POST(request: Request): Promise<Response> {
   const body: UploadSuccessResponse = {
     document_id: documentId,
     status: "uploaded",
+    server_pipeline: serverPipeline,
   };
   return Response.json(body, { status: 200 });
 }

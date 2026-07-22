@@ -7,7 +7,7 @@ import {
   useMemo,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown } from "lucide-react";
+import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown, RefreshCw } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
@@ -105,6 +105,9 @@ export function SucheClient({
   const [activeConversationId, setActiveConversationId] = useState(initialConversationId);
   const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
   const [showChatList, setShowChatList] = useState(false);
+
+  // --- Last query for retry on error ---
+  const lastQueryRef = useRef<string>("");
 
   // --- Filter state ---
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
@@ -331,6 +334,7 @@ export function SucheClient({
       setError(false);
       setRateLimitError(false);
       setIsLoading(true);
+      lastQueryRef.current = query;
 
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
@@ -378,6 +382,9 @@ export function SucheClient({
         });
 
         if (!res.ok) {
+          // Remove the empty AI placeholder so the user doesn't see a
+          // blank bubble alongside the error message.
+          setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
           if (res.status === 429) {
             setRateLimitError(true);
           } else {
@@ -460,6 +467,9 @@ export function SucheClient({
           }
         }
       } catch {
+        // Network error or stream interrupted — remove the empty AI
+        // placeholder so the user doesn't see a blank bubble.
+        setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
         setError(true);
       } finally {
         setStreamingId(null);
@@ -634,6 +644,19 @@ export function SucheClient({
                       <p className="text-sm leading-relaxed text-destructive">
                         Da ist was schiefgegangen. Bitte frag nochmal.
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (lastQueryRef.current) {
+                            void handleSubmitRef.current(lastQueryRef.current);
+                          }
+                        }}
+                        className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 rounded-ordilo-sm px-2 py-1"
+                        aria-label="Frage erneut stellen"
+                      >
+                        <RefreshCw className="size-3" aria-hidden="true" />
+                        Nochmal fragen
+                      </button>
                     </div>
                   </div>
                 </div>
