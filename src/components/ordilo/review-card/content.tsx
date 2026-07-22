@@ -33,7 +33,7 @@ import {
   FieldRow,
   EditedTag,
   DisambiguationPrompt,
-  FieldGroup,
+  ReviewFieldSection,
 } from "./helpers";
 import {
   PersonEditControl,
@@ -93,7 +93,7 @@ export function ReviewCardContent({
   onReanalyze: () => void;
   /** Document ID — when provided, enables original-file comparison. */
   documentId?: string;
-  onViewOriginal?: () => void;
+  onViewOriginal?: (sourceText?: string) => void;
   /** "Zurück" — returns to the summary view (scan wizard only). */
   onBack?: () => void;
   className?: string;
@@ -152,13 +152,10 @@ export function ReviewCardContent({
         )}
       </div>
 
-      {/* Fields — one flat, dense list; every row shares the same hairline
-          divider regardless of which field type it belongs to (VAL-REVIEW
-          compact restyle). */}
-      <div className="divide-y divide-border/60">
+      <div>
         {/* Persons */}
         {analysis.family_members.length > 0 && (
-          <FieldGroup testId="review-persons">
+          <ReviewFieldSection icon={User} title="Personen" testId="review-persons">
             {analysis.family_members.map((member, i) => {
               const edited = edits.persons.get(i);
               const isEdited = Boolean(edited);
@@ -168,9 +165,9 @@ export function ReviewCardContent({
               return (
                 <FieldRow
                   key={i}
-                  icon={User}
-                  label="Personen"
                   confidence={member.confidence}
+                  sourceText={member.name}
+                  onShowSource={onViewOriginal}
                   isEdited={isEdited}
                   editControl={
                     <PersonEditControl
@@ -190,18 +187,22 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {/* Organizations */}
         {analysis.organizations.length > 0 && (
-          <FieldGroup testId="review-organizations">
+          <ReviewFieldSection
+            icon={Building2}
+            title="Organisationen"
+            testId="review-organizations"
+          >
             {analysis.organizations.map((org, i) => (
               <FieldRow
                 key={i}
-                icon={Building2}
-                label="Organisationen"
                 confidence={org.confidence}
+                sourceText={org.name}
+                onShowSource={onViewOriginal}
               >
                 <span className="block truncate">{org.name}</span>
                 {org.type && org.type !== "organization" && (
@@ -211,12 +212,16 @@ export function ReviewCardContent({
                 )}
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {/* Dates */}
         {analysis.dates.length > 0 && (
-          <FieldGroup testId="review-dates">
+          <ReviewFieldSection
+            icon={Calendar}
+            title="Wichtige Termine"
+            testId="review-dates"
+          >
             {analysis.dates.map((date, i) => {
               const edited = edits.dates.get(i);
               const isEdited = Boolean(edited);
@@ -225,9 +230,9 @@ export function ReviewCardContent({
               return (
                 <FieldRow
                   key={i}
-                  icon={Calendar}
-                  label="Datum"
                   confidence={date.confidence}
+                  sourceText={date.date}
+                  onShowSource={onViewOriginal}
                   isEdited={isEdited}
                   editControl={
                     <DateEditControl
@@ -246,19 +251,18 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {/* Amounts */}
         {analysis.amounts.length > 0 && (
-          <FieldGroup testId="review-amounts">
+          <ReviewFieldSection icon={Euro} title="Beträge" testId="review-amounts">
             {analysis.amounts.map((amount, i) => (
               <FieldRow
                 key={i}
-                icon={Euro}
-                label="Beträge"
                 confidence={amount.confidence}
-                onCompareOriginal={onViewOriginal}
+                sourceText={amount.amount}
+                onShowSource={onViewOriginal}
               >
                 <span className="block truncate">
                   {amount.amount} {amount.currency}
@@ -270,14 +274,18 @@ export function ReviewCardContent({
                 )}
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {/* Facts — exact identifiers (serial numbers, contract numbers, …).
             Shown monospaced so single-character OCR errors are easy to
             spot, with a one-tap correction input. */}
         {analysis.facts.length > 0 && (
-          <FieldGroup testId="review-facts">
+          <ReviewFieldSection
+            icon={Hash}
+            title="Nummern & Kennungen"
+            testId="review-facts"
+          >
             {analysis.facts.map((fact, i) => {
               const edited = edits.factValues.get(i);
               const isEdited = Boolean(edited);
@@ -287,12 +295,11 @@ export function ReviewCardContent({
               return (
                 <FieldRow
                   key={i}
-                  icon={Hash}
-                  label="Nummern & Kennungen"
                   testId={`review-fact-${i}`}
                   confidence={fact.confidence}
                   isEdited={isEdited}
-                  onCompareOriginal={onViewOriginal}
+                  sourceText={fact.value}
+                  onShowSource={onViewOriginal}
                   editControl={
                     <FactEditControl
                       value={displayValue}
@@ -308,12 +315,16 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {/* Tasks */}
         {activeTasks.length > 0 && (
-          <FieldGroup testId="review-tasks">
+          <ReviewFieldSection
+            icon={ListTodo}
+            title={`Nächste Schritte (${activeTasks.length})`}
+            testId="review-tasks"
+          >
             {activeTasks.map(({ task, index }) => {
               const editedDueDate = edits.taskDueDates.get(index);
               const isEdited = Boolean(editedDueDate);
@@ -322,10 +333,10 @@ export function ReviewCardContent({
               return (
                 <FieldRow
                   key={index}
-                  icon={ListTodo}
-                  label="Aufgaben"
                   testId={`review-task-${index}`}
                   confidence={task.confidence}
+                  sourceText={task.title}
+                  onShowSource={onViewOriginal}
                   editControl={
                     <button
                       type="button"
@@ -374,7 +385,7 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {/* Empty tasks state */}
@@ -419,7 +430,7 @@ export function ReviewCardContent({
         <div className="mt-4">
           <button
             type="button"
-            onClick={onViewOriginal}
+            onClick={() => onViewOriginal()}
             className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-testid="review-view-original"
           >

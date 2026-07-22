@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
+import type { SourceLocation } from "@/lib/source-locations";
 
 interface SignedFileResponse {
   url: string;
@@ -22,16 +23,20 @@ export function OriginalDocumentPreview({
   title,
   open,
   onOpenChange,
+  sourceText,
 }: {
   documentId: string;
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Raw field value used to locate one OCR block in the original. */
+  sourceText?: string | null;
 }) {
   const [desktop, setDesktop] = useState(false);
   const [file, setFile] = useState<SignedFileResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null);
   const requestController = useRef<AbortController | null>(null);
 
   useMountEffect(() => {
@@ -49,9 +54,27 @@ export function OriginalDocumentPreview({
     requestController.current = controller;
     setFile(null);
     setError(null);
+    setSourceLocation(null);
     setLoading(true);
 
     try {
+      const sourceRequest = sourceText
+        ? fetch(
+            `/api/documents/${documentId}/source`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: sourceText }),
+              signal: controller.signal,
+            },
+          ).then(async (response) => {
+            if (!response.ok) return null;
+            const result = (await response.json()) as {
+              location?: SourceLocation | null;
+            };
+            return result.location ?? null;
+          }).catch(() => null)
+        : Promise.resolve(null);
       const response = await fetch(`/api/documents/${documentId}/file`, {
         signal: controller.signal,
       });
@@ -59,6 +82,7 @@ export function OriginalDocumentPreview({
       const result = (await response.json()) as SignedFileResponse;
       if (!result.url) throw new Error();
       setFile(result);
+      setSourceLocation(await sourceRequest);
     } catch {
       if (!controller.signal.aborted) {
         setError("Das Original konnte gerade nicht geladen werden.");
@@ -66,7 +90,7 @@ export function OriginalDocumentPreview({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [documentId]);
+  }, [documentId, sourceText]);
 
   useMountEffect(() => {
     void loadOriginal();
@@ -79,6 +103,7 @@ export function OriginalDocumentPreview({
       loading={loading}
       error={error}
       title={title}
+      sourceLocation={sourceLocation}
       onRetry={() => void loadOriginal()}
     />
   );
@@ -206,12 +231,14 @@ function DocumentFrame({
   loading,
   error,
   title,
+  sourceLocation,
   onRetry,
 }: {
   file: SignedFileResponse | null;
   loading: boolean;
   error: string | null;
   title: string;
+  sourceLocation: SourceLocation | null;
   onRetry: () => void;
 }) {
   if (loading) {
@@ -250,14 +277,34 @@ function DocumentFrame({
   const isImage = file.mimeType?.startsWith("image/");
 
   return (
-    <div className={cn("min-h-0 flex-1 bg-[var(--sand-light)]", isImage && "overflow-auto p-4")}>
+    <div
+      className={cn(
+        "min-h-0 flex-1 bg-[var(--sand-light)]",
+        isImage && "flex items-center justify-center overflow-hidden p-4",
+      )}
+    >
       {isImage ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={file.url}
-          alt={`Original von ${title}`}
-          className="mx-auto h-auto max-w-full rounded-ordilo-sm bg-[var(--warm-white)] shadow-card"
-        />
+        <div className="relative max-h-full max-w-full">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={file.url}
+            alt={`Original von ${title}`}
+            className="block max-h-full max-w-full rounded-ordilo-sm bg-[var(--warm-white)] object-contain shadow-card"
+          />
+          {sourceLocation && (
+            <div
+              className="pointer-events-none absolute rounded-sm border-2 border-[var(--apricot)] bg-[var(--apricot)]/15"
+              style={{
+                left: `${sourceLocation.bounds.left * 100}%`,
+                top: `${sourceLocation.bounds.top * 100}%`,
+                width: `${sourceLocation.bounds.width * 100}%`,
+                height: `${sourceLocation.bounds.height * 100}%`,
+              }}
+              aria-label="Passage im Original"
+              role="img"
+            />
+          )}
+        </div>
       ) : (
         <iframe
           src={file.url}

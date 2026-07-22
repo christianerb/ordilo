@@ -101,6 +101,32 @@ const emptyAnalysis: DocumentAnalysis = {
   needs_user_review: false,
 };
 
+const groupedAnalysis: DocumentAnalysis = {
+  ...fullAnalysis,
+  dates: [
+    { date: "2026-08-15", type: "deadline", label: "Anmeldefrist", confidence: 0.88 },
+    { date: "2026-08-01", type: "start_date", label: "Start der Betreuung", confidence: 0.91 },
+  ],
+  amounts: [
+    { amount: "150", currency: "EUR", label: "Anmeldegebühr", confidence: 0.82 },
+    { amount: "35", currency: "EUR", label: "Mittagessen", confidence: 0.86 },
+  ],
+  tasks: [
+    {
+      title: "Anmeldung abschicken",
+      due_date: "2026-08-15",
+      priority: "high",
+      confidence: 0.91,
+    },
+    {
+      title: "Betreuung bestätigen",
+      due_date: null,
+      priority: "medium",
+      confidence: 0.89,
+    },
+  ],
+};
+
 // ---------------------------------------------------------------------------
 // Setup
 // ---------------------------------------------------------------------------
@@ -458,6 +484,25 @@ describe("ReviewCard", () => {
     expect(screen.getByTestId("review-category")).toBeDefined();
     // Tags are invisible search fuel — never rendered in the review card.
     expect(screen.queryByTestId("review-tags")).toBeNull();
+  });
+
+  it("groups repeated field types and keeps one comparison action", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(groupedAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    await screen.findByTestId("review-card");
+
+    expect(screen.getAllByText("Wichtige Termine")).toHaveLength(1);
+    expect(screen.getAllByText("Beträge")).toHaveLength(1);
+    expect(screen.getAllByText("Nächste Schritte (2)")).toHaveLength(1);
+    const dates = screen.getByTestId("review-dates");
+    expect(within(dates).getByText("15.08.2026")).toBeDefined();
+    expect(within(dates).getByText("01.08.2026")).toBeDefined();
+    expect(screen.getByText("Anmeldung abschicken")).toBeDefined();
+    expect(screen.getByText("Betreuung bestätigen")).toBeDefined();
+    expect(screen.getByTestId("review-view-original")).toBeDefined();
+    expect(screen.queryByText("Im Original vergleichen")).toBeNull();
   });
 
   it("does not show the redundant review intro sentence", async () => {

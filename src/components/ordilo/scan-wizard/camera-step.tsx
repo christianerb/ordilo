@@ -331,12 +331,39 @@ export function CameraStep({
       }
     }
 
+    const viewportWidth = video.clientWidth;
+    const viewportHeight = video.clientHeight;
+    const sourceAspect = video.videoWidth / video.videoHeight;
+    const viewportAspect = viewportWidth / viewportHeight;
+    const cropToViewport =
+      Number.isFinite(viewportAspect) && viewportWidth > 0 && viewportHeight > 0;
+    const cropWidth =
+      cropToViewport && sourceAspect > viewportAspect
+        ? Math.round(video.videoHeight * viewportAspect)
+        : video.videoWidth;
+    const cropHeight =
+      cropToViewport && sourceAspect < viewportAspect
+        ? Math.round(video.videoWidth / viewportAspect)
+        : video.videoHeight;
+    const cropX = Math.round((video.videoWidth - cropWidth) / 2);
+    const cropY = Math.round((video.videoHeight - cropHeight) / 2);
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+      video,
+      cropX,
+      cropY,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
 
     // Brief white shutter-flash for tactile feedback.
     setFlash(true);
