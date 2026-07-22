@@ -137,14 +137,15 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly three tabs (Heute, Dokumente, Familie)", () => {
-    expect(NAV_TABS).toHaveLength(3);
+  it("exports exactly four tabs (Heute, Dokumente, Aufgaben, Familie)", () => {
+    expect(NAV_TABS).toHaveLength(4);
   });
 
   it("has tabs in the correct order with correct labels and hrefs", () => {
     const expected = [
       { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
+      { label: "Aufgaben", href: "/aufgaben" },
       { label: "Familie", href: "/familie" },
     ];
     expect(NAV_TABS.map((t) => ({ label: t.label, href: t.href }))).toEqual(
@@ -155,7 +156,7 @@ describe("NAV_TABS", () => {
   it("each tab has a distinct icon component", () => {
     const icons = NAV_TABS.map((t) => t.icon);
     const uniqueIcons = new Set(icons);
-    expect(uniqueIcons.size).toBe(3);
+    expect(uniqueIcons.size).toBe(4);
   });
 });
 
@@ -195,12 +196,12 @@ describe("AppShell", () => {
     expect(surface.className).not.toContain("border");
   });
 
-  it("renders a nav drawer with exactly three tab links", () => {
+  it("renders a nav drawer with exactly four tab links", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(3);
+    expect(links).toHaveLength(4);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -220,6 +221,7 @@ describe("AppShell", () => {
     const expected = [
       { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
+      { label: "Aufgaben", href: "/aufgaben" },
       { label: "Familie", href: "/familie" },
     ];
 
@@ -286,19 +288,23 @@ describe("AppShell", () => {
     expect(activeCount).toBe(1);
   });
 
-  it("marks Heute active on /home and /aufgaben", () => {
+  it("marks Heute active on /home", () => {
     const { unmount } = renderShell("/home");
     openMobileMenu();
-    let nav = screen.getByRole("navigation");
-    let heuteLink = within(nav).getByText("Heute").closest("a");
+    const nav = screen.getByRole("navigation");
+    const heuteLink = within(nav).getByText("Heute").closest("a");
     expect(heuteLink?.getAttribute("aria-current")).toBe("page");
-
     unmount();
+  });
+
+  it("marks only Aufgaben active on /aufgaben", () => {
     renderShell("/aufgaben");
     openMobileMenu();
-    nav = screen.getByRole("navigation");
-    heuteLink = within(nav).getByText("Heute").closest("a");
-    expect(heuteLink?.getAttribute("aria-current")).toBe("page");
+    const nav = screen.getByRole("navigation");
+    const heuteLink = within(nav).getByText("Heute").closest("a");
+    const aufgabenLink = within(nav).getByText("Aufgaben").closest("a");
+    expect(heuteLink?.getAttribute("aria-current")).toBeNull();
+    expect(aufgabenLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("marks no tab active on /suche (fullscreen answer mode, not a place)", () => {
@@ -653,8 +659,7 @@ describe("AppShell sidebar profile footer", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sidebar visual polish — ambient gradient, greeting, colored dots/rows,
-// time-of-day scenery
+// Sidebar visual polish — ambient surface, greeting, and focused active states
 // ---------------------------------------------------------------------------
 
 describe("AppShell sidebar personality touches", () => {
@@ -743,7 +748,7 @@ describe("AppShell sidebar personality touches", () => {
     expect(dot?.className).toContain("bg-[var(--apricot)]");
   });
 
-  it("tints each collection row with its own color", async () => {
+  it("keeps inactive collection rows flat", async () => {
     mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
     render(
       <AppShell>
@@ -751,37 +756,22 @@ describe("AppShell sidebar personality touches", () => {
       </AppShell>,
     );
     const link = await screen.findByRole("link", { name: /Rechnungen/i });
-    expect(link.getAttribute("style")).toContain("color-mix");
+    expect(link.getAttribute("style") ?? "").not.toContain("background-color");
   });
 
-  it("adds a starry sky to the scenery illustration at night", async () => {
-    // Use fake timers only for Date to control time-of-day, but let
-    // Promises/useEffect run normally.
-    vi.useFakeTimers({ now: new Date("2024-01-01T23:00:00"), toFake: ["Date"] });
-    mockSupabaseData();
+  it("uses one current-page marker when a collection is active", async () => {
+    mockUsePathname.mockReturnValue("/sammlungen/col-1");
+    mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
     const { container } = render(
       <AppShell>
         <div>content</div>
       </AppShell>,
     );
-    // Let effects run
-    await vi.waitFor(() => {
-      const stars = container.querySelectorAll('aside svg g[opacity="0.7"] circle');
-      expect(stars.length).toBe(4);
-    });
-  });
-
-  it("renders no stars in the scenery illustration during the day", async () => {
-    vi.useFakeTimers({ now: new Date("2024-01-01T13:00:00"), toFake: ["Date"] });
-    mockSupabaseData();
-    const { container } = render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
+    await screen.findByRole("link", { name: /Rechnungen/i });
+    const currentLinks = container.querySelectorAll(
+      'aside a[aria-current="page"]',
     );
-    await vi.waitFor(() => {
-      const stars = container.querySelectorAll('aside svg g[opacity="0.7"] circle');
-      expect(stars.length).toBe(0);
-    });
+    expect(currentLinks).toHaveLength(1);
+    expect(currentLinks[0]?.textContent).toContain("Rechnungen");
   });
 });

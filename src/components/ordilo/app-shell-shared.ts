@@ -3,6 +3,7 @@
 import {
   BookOpen,
   House,
+  ListChecks,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -13,27 +14,25 @@ export interface NavTab {
   icon: LucideIcon;
   /**
    * Additional path prefixes that keep this tab highlighted. Sub-pages
-   * (Aufgaben under Heute, Sammlungen under Familienbuch) stay reachable
-   * via in-page links but no longer occupy their own tab.
+   * such as Sammlungen stay reachable via in-page links without occupying
+   * their own tab.
    */
   match?: string[];
 }
 
 /**
- * The three-tab information architecture.
+ * The four-tab information architecture.
  *
  * The product promise is two verbs — ask (the ever-present search bar)
- * and add (the Scannen button) — so navigation carries only three
- * places: what needs me today, the family's library, and the family
- * itself. Searching is NOT a tab: the bottom bar opens the fullscreen
- * answer mode (/suche) from anywhere.
+ * and add (the Scannen button) — so navigation carries only the family's
+ * four primary places. Searching is NOT a tab: the bottom bar opens the
+ * fullscreen answer mode (/suche) from anywhere.
  */
 export const NAV_TABS: NavTab[] = [
   {
     label: "Heute",
     href: "/home",
     icon: House,
-    match: ["/aufgaben"],
   },
   {
     label: "Dokumente",
@@ -41,6 +40,7 @@ export const NAV_TABS: NavTab[] = [
     icon: BookOpen,
     match: ["/sammlungen"],
   },
+  { label: "Aufgaben", href: "/aufgaben", icon: ListChecks },
   { label: "Familie", href: "/familie", icon: Users },
 ];
 
