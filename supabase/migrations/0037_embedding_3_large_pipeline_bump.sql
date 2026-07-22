@@ -13,3 +13,4 @@
 -- This migration is a no-op at the SQL level — the pipeline version is
 -- tracked in application code (src/lib/ai/models.ts). It exists only to
 -- document the version bump in the migration history.
+select 1;
