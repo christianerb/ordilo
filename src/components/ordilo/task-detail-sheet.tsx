@@ -9,6 +9,7 @@ import {
   RotateCcw,
   Loader2,
   Calendar,
+  User,
 } from "lucide-react";
 import {
   Sheet,
@@ -21,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type { TaskCardData } from "@/components/ordilo/task-card";
+import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { TagInput } from "@/components/ordilo/tag-input";
 
@@ -50,6 +51,7 @@ export interface TaskDetailSheetProps {
   onSaved: () => void;
   onToggleDone: (taskId: string, newStatus: string) => void;
   onDismiss: (taskId: string) => void;
+  members?: AssigneeOption[];
 }
 
 export function TaskDetailSheet({
@@ -59,6 +61,7 @@ export function TaskDetailSheet({
   onSaved,
   onToggleDone,
   onDismiss,
+  members = [],
 }: TaskDetailSheetProps) {
   const supabase = createClient();
   const { openDocument } = useDocumentViewer();
@@ -71,6 +74,7 @@ export function TaskDetailSheet({
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
   const [priority, setPriority] = useState(task?.priority ?? "medium");
   const [tags, setTags] = useState<string[]>(task?.tags ?? []);
+  const [assignedTo, setAssignedTo] = useState<string>(task?.assigned_to ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -87,7 +91,8 @@ export function TaskDetailSheet({
       description !== (task.description ?? "") ||
       dueDate !== (task.due_date ?? "") ||
       priority !== task.priority ||
-      JSON.stringify(tags) !== JSON.stringify(task.tags ?? []));
+      JSON.stringify(tags) !== JSON.stringify(task.tags ?? []) ||
+      assignedTo !== (task.assigned_to ?? ""));
 
   const handleSave = useCallback(async () => {
     if (!task) return;
@@ -102,6 +107,7 @@ export function TaskDetailSheet({
           due_date: dueDate || null,
           priority,
           tags,
+          assigned_to: assignedTo || null,
         })
         .eq("id", task.id);
 
@@ -117,7 +123,7 @@ export function TaskDetailSheet({
     } finally {
       setSaving(false);
     }
-  }, [task, title, description, dueDate, priority, tags, supabase, onSaved, onOpenChange]);
+  }, [task, title, description, dueDate, priority, tags, assignedTo, supabase, onSaved, onOpenChange]);
 
   const handleToggle = useCallback(() => {
     if (!task) return;
@@ -280,6 +286,51 @@ export function TaskDetailSheet({
                   variant="minimal"
                 />
               </div>
+
+              {/* ── Assignee picker ─────────────────────────────────── */}
+              {members.length > 0 && (
+                <div className="mt-4" data-testid="task-detail-assignee-section">
+                  <p className="mb-2 text-xs text-muted-foreground/50">
+                    Verantwortlich
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAssignedTo("")}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        !assignedTo
+                          ? "bg-secondary font-medium text-foreground"
+                          : "text-muted-foreground/60 hover:text-foreground",
+                      )}
+                      data-testid="task-detail-assignee-none"
+                    >
+                      <User
+                        className="size-3"
+                        aria-hidden="true"
+                        strokeWidth={1.5}
+                      />
+                      Niemand
+                    </button>
+                    {members.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setAssignedTo(m.id)}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                          assignedTo === m.id
+                            ? "bg-secondary font-medium text-foreground"
+                            : "text-muted-foreground/60 hover:text-foreground",
+                        )}
+                        data-testid={`task-detail-assignee-${m.id}`}
+                      >
+                        {m.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* ── Linked documents — compact rows ────────────────── */}
               {allDocs.length > 0 && (

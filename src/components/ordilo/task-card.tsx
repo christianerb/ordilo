@@ -12,6 +12,13 @@ export interface TaskCardData extends Omit<TaskRow, "document_id"> {
   document_id: string | null;
   document_title?: string | null;
   linked_documents?: { id: string; title: string | null }[];
+  assigned_member_name?: string | null;
+}
+
+export interface AssigneeOption {
+  id: string;
+  name: string;
+  role: string | null;
 }
 
 export interface TaskCardProps {
@@ -53,7 +60,7 @@ export function TaskCard({
     task.due_date < new Date().toLocaleDateString("sv-SE");
   const hasDocument = Boolean(task.document_id);
   const prioDot = PRIORITY_DOT[task.priority] ?? PRIORITY_DOT.medium;
-  const hasMeta = dueDate || hasDocument;
+  const hasMeta = dueDate || hasDocument || Boolean(task.assigned_member_name);
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -141,6 +148,14 @@ export function TaskCard({
               <span className="truncate text-muted-foreground">
                 {task.document_title?.trim() || "Ohne Titel"}
               </span>
+            )}
+            {task.assigned_member_name && (
+              <>
+                <span className="text-muted-foreground">·</span>
+                <span className="truncate text-muted-foreground" data-testid="task-assignee">
+                  {task.assigned_member_name}
+                </span>
+              </>
             )}
           </div>
         )}

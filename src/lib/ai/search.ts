@@ -1162,7 +1162,7 @@ async function searchTasks(
   if (!tasks || tasks.length === 0) return [];
 
   // Fetch confirmed documents for the task document_ids.
-  const taskDocIds = [...new Set(tasks.map((t) => t.document_id))];
+  const taskDocIds = [...new Set(tasks.map((t) => t.document_id).filter((id): id is string => Boolean(id)))];
   const confirmedDocs = await fetchConfirmedDocuments(
     serverClient,
     familyId,

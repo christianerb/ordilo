@@ -158,6 +158,7 @@ describe("task-utils", () => {
         confirmed: true,
         created_at: "2026-07-01T00:00:00Z",
         tags: [],
+        assigned_to: null,
       },
       {
         id: "2",
@@ -172,6 +173,7 @@ describe("task-utils", () => {
         confirmed: true,
         created_at: "2026-07-02T00:00:00Z",
         tags: [],
+        assigned_to: null,
       },
       {
         id: "3",
@@ -186,6 +188,7 @@ describe("task-utils", () => {
         confirmed: true,
         created_at: "2026-07-03T00:00:00Z",
         tags: [],
+        assigned_to: null,
       },
       {
         id: "4",
@@ -200,6 +203,7 @@ describe("task-utils", () => {
         confirmed: true,
         created_at: "2026-07-04T00:00:00Z",
         tags: [],
+        assigned_to: null,
       },
     ];
 

@@ -189,6 +189,8 @@ export function HomeClient({
     created_at: t.created_at,
     tags: t.tags,
     document_title: t.document_title ?? null,
+    assigned_to: t.assigned_to ?? null,
+    assigned_member_name: null,
   });
 
   // -------------------------------------------------------------------------

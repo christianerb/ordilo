@@ -512,7 +512,7 @@ export type Database = {
         Row: {
           id: string;
           family_id: string;
-          document_id: string;
+          document_id: string | null;
           title: string;
           description: string | null;
           due_date: string | null;
@@ -522,11 +522,12 @@ export type Database = {
           confirmed: boolean;
           created_at: string;
           tags: string[];
+          assigned_to: string | null;
         };
         Insert: {
           id?: string;
           family_id: string;
-          document_id: string;
+          document_id?: string | null;
           title: string;
           description?: string | null;
           due_date?: string | null;
@@ -536,11 +537,12 @@ export type Database = {
           confirmed?: boolean;
           created_at?: string;
           tags?: string[];
+          assigned_to?: string | null;
         };
         Update: {
           id?: string;
           family_id?: string;
-          document_id?: string;
+          document_id?: string | null;
           title?: string;
           description?: string | null;
           due_date?: string | null;
@@ -550,6 +552,7 @@ export type Database = {
           confirmed?: boolean;
           created_at?: string;
           tags?: string[];
+          assigned_to?: string | null;
         };
         Relationships: [];
       };
