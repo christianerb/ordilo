@@ -1,0 +1,15 @@
+-- Pipeline version bump to 3.
+--
+-- No schema changes needed: we switched from text-embedding-3-small to
+-- text-embedding-3-large with dimensions=1536 (dimensionality reduction
+-- via the OpenAI API `dimensions` parameter). The pgvector columns stay
+-- vector(1536) — the large model at 1536 dims outperforms the small model
+-- at the same dimensionality.
+--
+-- The pipeline version bump ensures the reindex job re-embeds all existing
+-- documents with the new model + improved pipeline (OCR cleaning,
+-- contextual chunks, enriched synthetic questions).
+--
+-- This migration is a no-op at the SQL level — the pipeline version is
+-- tracked in application code (src/lib/ai/models.ts). It exists only to
+-- document the version bump in the migration history.

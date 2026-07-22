@@ -12,6 +12,8 @@ vi.mock("@/lib/ai/embeddings", () => ({
   chunkPages: vi.fn((pages: { text: string; page_number: number }[]) =>
     pages.map((p, i) => ({ text: p.text, index: i, page_number: p.page_number })),
   ),
+  cleanOcrForEmbedding: vi.fn((text: string) => text),
+  contextualizeForEmbedding: vi.fn((text: string) => text),
   generateEmbeddings: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
   embeddingToVectorString: vi.fn((emb: number[]) => `[${emb.join(",")}]`),
   deduplicateChunks: vi.fn((chunks: unknown[]) => ({

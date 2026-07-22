@@ -11,7 +11,10 @@ import {
   embeddingToVectorString,
   deduplicateChunks,
   generateSyntheticQuestions,
+  cleanOcrForEmbedding,
+  contextualizeForEmbedding,
   EmbeddingError,
+  type TextChunk,
   type PageContent,
   type PageTextChunk,
 } from "@/lib/ai/embeddings";
@@ -233,18 +236,21 @@ export async function POST(
   // Build page-aware content for embedding chunking.
   // Each non-empty page's markdown is chunked separately so that every
   // embedding row carries its originating page_number in metadata_json
-  // (VAL-CONFIRM-005).
+  // (VAL-CONFIRM-005). OCR noise (image references, icon labels, rules)
+  // is stripped before chunking so embeddings capture semantic content,
+  // not formatting artifacts.
   const pageContents: PageContent[] = (pages ?? [])
     .filter((p) => p.ocr_markdown && p.ocr_markdown.trim())
     .map((p) => ({
-      text: p.ocr_markdown!,
+      text: cleanOcrForEmbedding(p.ocr_markdown!),
       page_number: p.page_number,
-    }));
+    }))
+    .filter((p) => p.text.length > 0);
 
   // Fallback: if no page markdown is available, use documents.ocr_text
   // as a single "page" (page_number = 1) so embeddings are still generated.
   if (pageContents.length === 0) {
-    const fallbackText = (document.ocr_text ?? "").trim();
+    const fallbackText = cleanOcrForEmbedding((document.ocr_text ?? "").trim());
     if (fallbackText) {
       pageContents.push({ text: fallbackText, page_number: 1 });
     }
@@ -259,7 +265,14 @@ export async function POST(
   let embeddings: number[][] = [];
   if (chunks.length > 0) {
     try {
-      embeddings = await generateEmbeddings(chunks);
+      // Contextualize chunks with the document title before embedding so
+      // each embedding vector carries document-level context. The stored
+      // chunk_text remains the clean original (for FTS + display).
+      const embedChunks: TextChunk[] = chunks.map((c) => ({
+        text: contextualizeForEmbedding(c.text, payload.title),
+        index: c.index,
+      }));
+      embeddings = await generateEmbeddings(embedChunks);
     } catch (err) {
       const isEmbeddingError = err instanceof EmbeddingError;
       const message = err instanceof Error
@@ -317,6 +330,8 @@ export async function POST(
     documentType: payload.document_type,
     persons: payload.family_members.map((m) => m.name).filter(Boolean),
     organization: payload.organizations[0]?.name ?? null,
+    tags: payload.tags,
+    hasDates: payload.dates.length > 0,
   });
 
   let questionEmbeddings: number[][] = [];

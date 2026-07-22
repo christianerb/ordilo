@@ -277,9 +277,10 @@ describe("generateEmbeddings", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.model).toBe("text-embedding-3-small");
+    expect(callArgs.model).toBe("text-embedding-3-large");
     expect(callArgs.input).toBeInstanceOf(Array);
     expect(callArgs.input.length).toBe(chunks.length);
+    expect(callArgs.dimensions).toBe(EMBEDDING_DIMENSIONS);
   });
 
   it("returns embeddings in correct order for multiple chunks", async () => {
@@ -450,9 +451,10 @@ describe("generateQueryEmbedding", () => {
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.model).toBe("text-embedding-3-small");
+    expect(callArgs.model).toBe("text-embedding-3-large");
     expect(callArgs.input).toBeInstanceOf(Array);
     expect(callArgs.input).toHaveLength(1);
+    expect(callArgs.dimensions).toBe(EMBEDDING_DIMENSIONS);
   });
 
   it("trims whitespace from the query before embedding", async () => {

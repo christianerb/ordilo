@@ -68,6 +68,88 @@ export class EmbeddingError extends Error {
 }
 
 // ---------------------------------------------------------------------------
+// Contextual chunk text (title prefix for better embeddings)
+// ---------------------------------------------------------------------------
+
+/**
+ * Prepend the document title to chunk text before embedding.
+ *
+ * Raw chunks often lack document-level context (e.g., a chunk containing
+ * "19:25\n20:55\nTerminal 1" says nothing about what document it's from).
+ * Prepending the title ("Fluginfo für easyJet-Flug EZS1183: 19:25...")
+ * anchors the embedding in the document's semantic space, so a query for
+ * "Flug" matches the chunk even if the chunk text itself doesn't contain
+ * the word "Flug".
+ *
+ * The stored `chunk_text` in the database remains the clean original (for
+ * FTS and display); only the text passed to the embedding API is prefixed.
+ *
+ * @param chunkText - The raw chunk text (after OCR cleaning).
+ * @param title - The document title, or null.
+ * @returns The contextualized text to pass to the embedding API.
+ */
+export function contextualizeForEmbedding(
+  chunkText: string,
+  title: string | null,
+): string {
+  if (!title || !title.trim()) return chunkText;
+  return `${title.trim()}: ${chunkText}`;
+}
+
+// ---------------------------------------------------------------------------
+// OCR text cleaning
+// ---------------------------------------------------------------------------
+
+/**
+ * Regex matching markdown image references: `![alt text](url)`.
+ *
+ * OCR engines (Datalab) often produce markdown with embedded image
+ * references for icons, logos, and decorative elements. These references
+ * are noise for semantic search — they dilute the embedding with URLs
+ * and icon labels that have no relationship to the document's content.
+ */
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\([^)]*\)/g;
+
+/**
+ * Regex matching standalone alt-text lines that OCR engines emit after
+ * image references (e.g. "back arrow icon", "refresh icon"). These are
+ * typically short lines (≤ 6 words) containing the word "icon".
+ */
+const ICON_LABEL_RE = /^[a-z][a-z\s]{2,40}icon\s*$/gim;
+
+/**
+ * Regex matching horizontal rules made of dashes, possibly prefixed by
+ * OCR artifacts like `{0}`.
+ */
+const HR_RE = /^\{?\d*\}?-{10,}\s*$/gim;
+
+/**
+ * Clean OCR markdown before embedding to remove noise that dilutes
+ * semantic similarity.
+ *
+ * Removes:
+ *   - Markdown image references `![alt](url)`
+ *   - Standalone icon-label lines ("back arrow icon", "refresh icon")
+ *   - Horizontal rules (`---`, `{0}---`)
+ *   - Excess blank lines (3+ → 1)
+ *
+ * The cleaned text preserves all meaningful content (headings, body text,
+ * numbers, dates) while stripping the OCR formatting artifacts that have
+ * no semantic value.
+ *
+ * @param text - Raw OCR markdown text.
+ * @returns Cleaned text suitable for embedding.
+ */
+export function cleanOcrForEmbedding(text: string): string {
+  return text
+    .replace(MARKDOWN_IMAGE_RE, "")
+    .replace(ICON_LABEL_RE, "")
+    .replace(HR_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+// ---------------------------------------------------------------------------
 // Chunking
 // ---------------------------------------------------------------------------
 
@@ -258,6 +340,7 @@ export async function generateEmbeddings(
       response = await client.embeddings.create({
         model: EMBEDDINGS_MODEL,
         input: inputs,
+        dimensions: EMBEDDING_DIMENSIONS,
       });
     } catch (err) {
       if (err instanceof OpenAI.APIError) {
@@ -463,9 +546,11 @@ export function generateSyntheticQuestions(params: {
   documentType: string | null;
   persons: string[];
   organization: string | null;
+  tags?: string[];
+  hasDates?: boolean;
 }): string[] {
   const questions: string[] = [];
-  const { title, summary, documentType, persons, organization } = params;
+  const { title, summary, documentType, persons, organization, tags = [], hasDates = false } = params;
 
   // Question from title + type
   if (title) {
@@ -478,6 +563,24 @@ export function generateSyntheticQuestions(params: {
   // Question from summary
   if (summary && summary.trim()) {
     questions.push(`Welche Informationen enthält ${title ?? "das Dokument"}? ${summary.trim()}`);
+  }
+
+  // Temporal question — "Wann war/fand [title]?" — only when the document
+  // has date entities. This covers queries like "Wann ging mein letzter
+  // Flug?" that would otherwise have low semantic similarity to the
+  // title-only or summary-only questions.
+  if (hasDates && title) {
+    questions.push(`Wann war ${title}?`);
+    questions.push(`Wann fand ${title} statt?`);
+  }
+
+  // Tag-based questions — "Welche [tag]-Dokumente habe ich?" — so that
+  // topic-oriented queries (e.g. "Flug", "Reise", "Steuer") match even
+  // when the query phrasing differs from the title.
+  for (const tag of tags) {
+    const t = tag.trim();
+    if (!t) continue;
+    questions.push(`Welche ${t}-Dokumente habe ich?`);
   }
 
   // Question from person association

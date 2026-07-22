@@ -1,5 +1,6 @@
 import {
   generateQueryEmbedding,
+  generateEmbeddings,
   embeddingToVectorString,
 } from "@/lib/ai/embeddings";
 import {
@@ -8,6 +9,7 @@ import {
   type FactType,
 } from "@/lib/schemas/extraction";
 import { expandQuery } from "@/lib/ai/query-expansion";
+import { CHAT_MODEL } from "@/lib/ai/models";
 import {
   findMentionedMembers,
   isTaskQuery,
@@ -44,23 +46,28 @@ export const MAX_RESULTS = 10;
  * i.e. cosine similarity in [0, 1] for normalised text embeddings. Scores
  * below this threshold indicate that the document is not meaningfully
  * related to the query (typical noise floor for text-embedding-3-small is
- * 0.0–0.25). The threshold is conservative (0.3) so genuine low-but-relevant
- * matches (e.g. 0.35–0.5 for queries using different terminology than the
- * document) are NOT regressed, while clearly irrelevant documents surfaced
- * for nonsense/irrelevant queries are dropped before they reach the chat
- * synthesis step.
+ * 0.0–0.25). The threshold is set to 0.2 for small family corpora (20–100
+ * documents) where false positives are low-cost — even a marginal semantic
+ * match is likely relevant at this scale. Larger corpora would need 0.3+
+ * to suppress noise, but that is not the Ordilo scale.
  *
  * This threshold is ONLY applied to semantic search results — graph results
  * (person/task matches) are inherently relevant (they match via word-boundary
  * name/keyword matching) and are not subject to this filter.
  */
-export const RELEVANCE_THRESHOLD = 0.3;
+export const RELEVANCE_THRESHOLD = 0.2;
 
 /** How many days ahead to look for upcoming task deadlines. */
 export const TASK_DEADLINE_WINDOW_DAYS = 7;
 
 /** Max user-visible latency the LLM query expansion may add (ms). */
 export const EXPANSION_BUDGET_MS = 700;
+
+/** Max latency for multi-query + HyDE generation (ms). */
+const MULTI_QUERY_BUDGET_MS = 1500;
+
+/** Max number of query variants to generate (besides the original + HyDE). */
+const MAX_QUERY_VARIANTS = 2;
 
 // ---------------------------------------------------------------------------
 // Type alias for the server client (avoids importing the concrete factory
@@ -146,15 +153,21 @@ export async function resolveAutoMode(
 // ---------------------------------------------------------------------------
 
 /**
- * Execute a semantic search.
+ * Execute a semantic search with multi-query retrieval + HyDE.
  *
- * 1. Embed the query via OpenAI text-embedding-3-small.
- * 2. Call the `semantic_search` Postgres RPC with the embedding and family_id.
- * 3. Map the RPC results to SearchResult[].
+ * Instead of embedding only the original query, this function:
+ *   1. Generates 2 query variants + 1 hypothetical answer (HyDE) via LLM
+ *   2. Embeds the original query + all variants in a single batched call
+ *   3. Runs `semantic_search` RPC for each embedding
+ *   4. Fuses all result lists with RRF
  *
- * The RPC filters by family_id (RLS) and documents.status = 'confirmed',
- * so only confirmed documents from the user's family are returned.
- * The RPC limits to 10 results (VAL-SEARCH-004).
+ * This dramatically improves recall for questions like "Wann ging mein
+ * letzter Flug?" — a HyDE document like "Der Flug EZS1183 von easyJet fand
+ * am 17. Juli von Basel nach Hamburg statt" is much closer in embedding
+ * space to the actual document than the question is.
+ *
+ * Falls back to single-query semantic search if the LLM call fails or
+ * times out (graceful degradation — multi-query is a bonus, not a req).
  *
  * @throws {EmbeddingError} if the OpenAI embedding call fails.
  * @throws {Error} if the RPC returns an error.
@@ -164,36 +177,150 @@ export async function semanticSearch(
   query: string,
   familyId: string,
 ): Promise<SearchResult[]> {
-  // 1. Embed the query (deduped across semantic + graph paths).
-  const queryEmbedding = await getQueryEmbedding(query);
-  const vectorString = embeddingToVectorString(queryEmbedding);
+  // 1. Generate query variants + HyDE via LLM (time-boxed).
+  const variants = await generateSearchQueries(query);
 
-  // 2. Call the semantic_search RPC.
-  const { data, error } = await serverClient.rpc("semantic_search", {
-    p_query_embedding: vectorString,
-    p_family_id: familyId,
-    p_limit: MAX_RESULTS,
-  });
+  // 2. Embed the original query + all variants in one batched call.
+  const queryEmbedding = await getQueryEmbedding(query); // cached original
+  const variantEmbeddings = await generateEmbeddings(
+    variants.map((v, i) => ({ text: v, index: i })),
+  );
 
-  if (error) {
-    throw new Error("Semantische Suche fehlgeschlagen.");
-  }
+  // 3. Run semantic_search RPC for the original query first (must throw
+  //    on error so the caller can surface failures), then variant queries
+  //    in parallel (errors are swallowed — variants are a recall bonus).
+  const originalVec = embeddingToVectorString(queryEmbedding);
+  const variantVecs = variantEmbeddings.map((e) => embeddingToVectorString(e));
 
-  // 3. Map results.
-  const rows = (data ?? []) as Array<{
+  type SemanticRow = {
     document_id: string;
     title: string | null;
     chunk_text: string;
     score: number;
-  }>;
+  };
 
-  return rows.map((row) => ({
-    document_id: row.document_id,
-    title: row.title,
-    chunk_text: row.chunk_text,
-    score: row.score,
-    source: "semantic",
-  }));
+  // Original query — propagate errors.
+  const { data: origData, error: origError } = await serverClient.rpc(
+    "semantic_search",
+    {
+      p_query_embedding: originalVec,
+      p_family_id: familyId,
+      p_limit: MAX_RESULTS,
+    },
+  );
+  if (origError) {
+    throw new Error("Semantische Suche fehlgeschlagen.");
+  }
+  const origRows = (origData ?? []) as SemanticRow[];
+
+  // Variant queries — best effort, swallow errors.
+  const variantResults = await Promise.all(
+    variantVecs.map(async (vec): Promise<SemanticRow[]> => {
+      try {
+        const { data, error } = await serverClient.rpc("semantic_search", {
+          p_query_embedding: vec,
+          p_family_id: familyId,
+          p_limit: MAX_RESULTS,
+        });
+        if (error) return [];
+        return (data ?? []) as SemanticRow[];
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  // 4. Map each RPC result list to SearchResult[].
+  const allRows = [origRows, ...variantResults];
+  const searchLists: SearchResult[][] = allRows.map((rows: SemanticRow[]) =>
+    rows.map((row) => ({
+      document_id: row.document_id,
+      title: row.title,
+      chunk_text: row.chunk_text,
+      score: row.score,
+      source: "semantic" as const,
+    })),
+  );
+
+  // 5. Fuse with RRF. If only the original query produced results, skip RRF.
+  if (searchLists.length === 1) return searchLists[0];
+  const fused = fuseResultsRrf(searchLists);
+  return fused.slice(0, MAX_RESULTS);
+}
+
+// ---------------------------------------------------------------------------
+// Multi-query + HyDE generation
+// ---------------------------------------------------------------------------
+
+/**
+ * Generate search query variants and a HyDE (Hypothetical Document
+ * Embedding) answer for multi-query retrieval.
+ *
+ * Uses a single LLM call to produce:
+ *   - 2 keyword-focused query variants (e.g., "Flug Basel Hamburg Datum"
+ *     for "Wann ging mein letzter Flug")
+ *   - 1 hypothetical answer paragraph (HyDE) that describes what the
+ *     matching document might contain
+ *
+ * Time-boxed: if the LLM call exceeds MULTI_QUERY_BUDGET_MS, returns an
+ * empty array (caller falls back to single-query search).
+ */
+async function generateSearchQueries(query: string): Promise<string[]> {
+  const trimmed = query.trim();
+  if (!trimmed) return [];
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return [];
+
+    const OpenAI = (await import("openai")).default;
+    const client = new OpenAI({ apiKey });
+
+    const prompt = `Suchanfrage: "${trimmed}"
+
+Generiere fuer eine Dokumentensuche in einer Familien-Dokumenten-App:
+1. ${MAX_QUERY_VARIANTS} alternative Suchanfragen mit den wichtigsten Stichworten (auf Deutsch)
+2. Einen hypothetischen Antworttext (2-3 Saetze), der beschreibt, was das gesuchte Dokument enthalten koennte
+
+Beispiel fuer "Wann ging mein letzter Flug?":
+Variante 1: Flug Datum Abflug Ankunft
+Variante 2: easyJet Fluginfo Flugnummer Route
+HyDE: Der Flug fand am 17. Juli mit easyJet von Basel nach Hamburg statt. Abflug um 19:25, Ankunft um 20:55. Flugnummer EZS1183.
+
+Antworte im Format:
+V1: <variante>
+V2: <variante>
+HYDE: <hypothetischer antworttext>`;
+
+    const response = await Promise.race([
+      client.chat.completions.create({
+        model: CHAT_MODEL,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0,
+      }),
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), MULTI_QUERY_BUDGET_MS),
+      ),
+    ]);
+
+    if (!response) return [];
+
+    const text = response.choices[0]?.message?.content ?? "";
+    const variants: string[] = [];
+
+    for (const line of text.split("\n")) {
+      const match = line.match(/^(V\d+|HYDE):\s*(.+)/i);
+      if (match) {
+        const content = match[2].trim();
+        if (content.length > 3) variants.push(content);
+      }
+    }
+
+    return variants.slice(0, MAX_QUERY_VARIANTS + 1);
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
