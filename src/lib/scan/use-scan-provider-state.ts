@@ -941,12 +941,16 @@ export function useScanProviderState(): ScanProviderState {
       // The scan context's polling will pick up the "analyzing" → "analyzed"
       // transition and the document will appear in the review queue.
       try {
-        await fetch(`/api/documents/${result.document_id}/analyze`, {
+        const response = await fetch(`/api/documents/${result.document_id}/analyze`, {
           method: "POST",
         });
+        if (!response.ok) {
+          triggeredAnalysisRef.current.delete(result.document_id);
+        }
       } catch {
         // Analysis trigger failed — the document is still in "ocr_done"
         // and the polling loop will retry automatically.
+        triggeredAnalysisRef.current.delete(result.document_id);
       }
 
       // Fetch the updated document to reflect the "analyzing" status.

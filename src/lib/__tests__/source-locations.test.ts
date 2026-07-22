@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { findSourceLocation } from "@/lib/source-locations";
 
 const layout = {
+  bbox: [0, 0, 220, 160],
   children: [
     {
       block_type: "Text",
@@ -21,10 +22,10 @@ describe("findSourceLocation", () => {
     expect(findSourceLocation(layout, 1, "11,00 Euro")).toEqual({
       pageNumber: 1,
       bounds: {
-        left: 0,
-        top: 0.6666666666666666,
-        width: 1,
-        height: 0.3333333333333333,
+        left: 0.045454545454545456,
+        top: 0.5,
+        width: 0.9090909090909091,
+        height: 0.1875,
       },
     });
   });
@@ -42,5 +43,11 @@ describe("findSourceLocation", () => {
     };
 
     expect(findSourceLocation(repeated, 1, "11,00 Euro")).toBeNull();
+  });
+
+  it("returns null when the OCR page has no bounding box", () => {
+    const layoutWithoutBounds = { children: layout.children };
+
+    expect(findSourceLocation(layoutWithoutBounds, 1, "11,00 Euro")).toBeNull();
   });
 });

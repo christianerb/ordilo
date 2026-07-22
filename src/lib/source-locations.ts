@@ -88,16 +88,7 @@ export function findSourceLocation(
   );
   if (matches.length !== 1) return null;
 
-  const pageBounds = blocks.reduce<BoundingBox | null>((bounds, block) => {
-    const [left, top, right, bottom] = block.bbox;
-    if (!bounds) return [left, top, right, bottom];
-    return [
-      Math.min(bounds[0], left),
-      Math.min(bounds[1], top),
-      Math.max(bounds[2], right),
-      Math.max(bounds[3], bottom),
-    ];
-  }, null);
+  const pageBounds = parseBoundingBox((layout as LayoutBlock).bbox);
   if (!pageBounds) return null;
 
   const [pageLeft, pageTop, pageRight, pageBottom] = pageBounds;

@@ -79,6 +79,7 @@ describe("POST /api/documents/[id]/source", () => {
           {
             page_number: 1,
             layout_json: {
+              bbox: [0, 0, 220, 120],
               children: [
                 {
                   html: "<p>Familieneigenanteil 11,00 Euro</p>",
@@ -110,7 +111,12 @@ describe("POST /api/documents/[id]/source", () => {
     await expect(response.json()).resolves.toEqual({
       location: {
         pageNumber: 1,
-        bounds: { left: 0, top: 0, width: 1, height: 0.4 },
+        bounds: {
+          left: 0.045454545454545456,
+          top: 0.16666666666666666,
+          width: 0.9090909090909091,
+          height: 0.3333333333333333,
+        },
       },
     });
   });
