@@ -16,7 +16,7 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.JOBS_RUNNER_SECRET }}" \
             -H "Content-Type: application/json" \
             -d '{"limit": 10}' \
-            "${{ vars.VERCEL_DEPLOYMENT_URL || 'https://app.ordilo.de' }}/api/jobs/run")
+            "${{ vars.VERCEL_DEPLOYMENT_URL || 'https://ordilo.vercel.app' }}/api/jobs/run")
           http_code=$(echo "$response" | tail -1)
           body=$(echo "$response" | sed '$d')
           echo "HTTP status: $http_code"
