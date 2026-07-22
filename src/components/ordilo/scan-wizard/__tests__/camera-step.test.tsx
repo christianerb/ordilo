@@ -207,6 +207,46 @@ describe("CameraStep", () => {
       expect(track.stop).toHaveBeenCalled();
     });
 
+    it("captures the same crop shown in the portrait viewfinder", async () => {
+      mockReadyCamera();
+      const drawImage = vi.fn();
+      vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+        drawImage,
+      } as unknown as CanvasRenderingContext2D);
+      vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+        (callback: BlobCallback) => {
+          callback(new Blob(["fake-jpeg"], { type: "image/jpeg" }));
+        },
+      );
+      stubObjectUrls();
+
+      render(
+        <CameraStep onCapture={vi.fn()} onUseGallery={vi.fn()} onClose={vi.fn()} />,
+      );
+
+      const video = await screen.findByTestId("camera-video");
+      Object.defineProperties(video, {
+        videoWidth: { value: 1280, configurable: true },
+        videoHeight: { value: 720, configurable: true },
+        clientWidth: { value: 360, configurable: true },
+        clientHeight: { value: 720, configurable: true },
+      });
+
+      fireEvent.click(screen.getByTestId("camera-shutter-button"));
+
+      expect(drawImage).toHaveBeenCalledWith(
+        video,
+        460,
+        0,
+        360,
+        720,
+        0,
+        0,
+        360,
+        720,
+      );
+    });
+
     it("combines multiple captured pages into a single PDF", async () => {
       mockReadyCamera();
       const onCapture = vi.fn();

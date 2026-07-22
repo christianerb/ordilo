@@ -7,11 +7,16 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createClient: vi.fn(),
 }));
+vi.mock("@/lib/jobs", () => ({
+  enqueueJob: vi.fn(),
+  runPendingJobs: vi.fn(),
+}));
 
 import { POST } from "@/app/api/documents/upload/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { MAX_FILE_SIZE } from "@/lib/schemas/document";
+import { enqueueJob } from "@/lib/jobs";
 
 /**
  * Build a mock server Supabase client.
@@ -173,6 +178,7 @@ function createMockRequest(formData: FormData): Request {
 describe("POST /api/documents/upload", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(enqueueJob).mockResolvedValue(false);
   });
 
   // --- Authentication ---
@@ -467,6 +473,25 @@ describe("POST /api/documents/upload", () => {
     expect(response.status).toBe(200);
     expect(body.document_id).toBeTruthy();
     expect(body.status).toBe("uploaded");
+  });
+
+  it("falls back to client OCR when the server job cannot be queued", async () => {
+    const serverClient = mockServerClient({});
+    const adminClient = mockAdminClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(adminClient);
+    vi.mocked(enqueueJob).mockResolvedValue(false);
+
+    const response = await POST(
+      createUploadRequest(
+        createMockFile("invoice.pdf", "application/pdf"),
+        "550e8400-e29b-41d4-a716-446655440000",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.server_pipeline).toBe(false);
   });
 
   it("returns 200 on successful upload (JPEG image)", async () => {

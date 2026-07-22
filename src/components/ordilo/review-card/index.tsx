@@ -130,6 +130,7 @@ export function ReviewCard({
   const [reanalyzing, setReanalyzing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
+  const [originalSourceText, setOriginalSourceText] = useState<string | null>(null);
 
   // --- Fetch family members and categories on mount ---
   useMountEffect(() => {
@@ -431,9 +432,18 @@ export function ReviewCard({
   const handleOriginalPreviewChange = useCallback(
     (open: boolean) => {
       setOriginalPreviewOpen(open);
+      if (!open) setOriginalSourceText(null);
       onOriginalPreviewChange?.(open);
     },
     [onOriginalPreviewChange],
+  );
+
+  const handleOpenOriginal = useCallback(
+    (sourceText?: string) => {
+      setOriginalSourceText(sourceText ?? null);
+      handleOriginalPreviewChange(true);
+    },
+    [handleOriginalPreviewChange],
   );
 
   const withOriginalPreview = (content: ReactNode) => (
@@ -450,10 +460,12 @@ export function ReviewCard({
           sits in the second grid column (lg:order-2). */}
       <div className={cn("order-first lg:order-2", !originalPreviewOpen && "lg:hidden")}>
         <OriginalDocumentPreview
+          key={originalSourceText ?? "full-document"}
           documentId={documentId}
           title={analysis?.title ?? "Dokument"}
           open={originalPreviewOpen}
           onOpenChange={handleOriginalPreviewChange}
+          sourceText={originalSourceText}
         />
       </div>
       <div className={cn("lg:order-1", !originalPreviewOpen && "mx-auto w-full max-w-xl")}>
@@ -512,7 +524,7 @@ export function ReviewCard({
         askTitle={confirmed ? (analysis?.title ?? null) : null}
         onReanalyze={handleReanalyze}
         reanalyzing={reanalyzing}
-        onViewOriginal={() => handleOriginalPreviewChange(true)}
+        onViewOriginal={handleOpenOriginal}
       />
     );
   }
@@ -558,7 +570,7 @@ export function ReviewCard({
       onConfirm={handleConfirm}
       onReanalyze={handleReanalyze}
       documentId={documentId}
-      onViewOriginal={() => handleOriginalPreviewChange(true)}
+      onViewOriginal={handleOpenOriginal}
       onBack={onBack ? () => onBack(edits) : undefined}
     />
   );

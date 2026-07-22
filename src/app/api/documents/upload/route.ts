@@ -258,39 +258,42 @@ export async function POST(request: Request): Promise<Response> {
   // when both paths tried to transition the same document simultaneously.
   // The client's realtime subscription and polling still update the UI.
   // Any failure here must never fail the upload itself.
-  const serverPipeline = process.env.PIPELINE_MODE !== "sync";
+  let serverPipeline = process.env.PIPELINE_MODE !== "sync";
 
   if (serverPipeline) {
     try {
       const { enqueueJob, runPendingJobs } = await import("@/lib/jobs");
-      await enqueueJob(adminClient, {
+      serverPipeline = await enqueueJob(adminClient, {
         family_id: familyId,
         document_id: documentId,
         job_type: "ocr",
       });
 
-      const { after } = await import("next/server");
-      after(async () => {
-        try {
-          // Drain rounds: ocr → (chains) analyze → empty. Capped so a
-          // misbehaving queue can never keep the function alive forever.
-          for (let round = 0; round < 5; round++) {
-            const summary = await runPendingJobs(adminClient, 3);
-            if (summary.claimed === 0) break;
+      if (serverPipeline) {
+        const { after } = await import("next/server");
+        after(async () => {
+          try {
+            // Drain rounds: ocr → (chains) analyze → empty. Capped so a
+            // misbehaving queue can never keep the function alive forever.
+            for (let round = 0; round < 5; round++) {
+              const summary = await runPendingJobs(adminClient, 3);
+              if (summary.claimed === 0) break;
+            }
+          } catch (err) {
+            // Jobs stay pending — the retry/backoff worker and the
+            // client-triggered pipeline both cover for this.
+            reportPipelineFailure(err, {
+              stage: "ocr",
+              code: getErrorCode(err, "PIPELINE_DRAIN_FAILED"),
+              documentId,
+              familyId,
+              source: "job",
+            });
           }
-        } catch (err) {
-          // Jobs stay pending — the retry/backoff worker and the
-          // client-triggered pipeline both cover for this.
-          reportPipelineFailure(err, {
-            stage: "ocr",
-            code: getErrorCode(err, "PIPELINE_DRAIN_FAILED"),
-            documentId,
-            familyId,
-            source: "job",
-          });
-        }
-      });
+        });
+      }
     } catch (err) {
+      serverPipeline = false;
       reportPipelineFailure(err, {
         stage: "ocr",
         code: getErrorCode(err, "PIPELINE_ENQUEUE_FAILED"),

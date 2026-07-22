@@ -106,6 +106,7 @@ export function CameraStep({
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const prevSampleRef = useRef<Uint8ClampedArray | null>(null);
   const stillnessStartRef = useRef<number | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoCaptureRef = useRef<boolean>(true);
   const [permission, setPermission] = useState<CameraPermissionState>("requesting");
   const [torchSupported, setTorchSupported] = useState(false);
@@ -185,6 +186,9 @@ export function CameraStep({
     return () => {
       cancelled = true;
       clearTimeout(permissionTimer);
+      if (flashTimerRef.current) {
+        clearTimeout(flashTimerRef.current);
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       // Release thumbnail object URLs.
@@ -331,16 +335,49 @@ export function CameraStep({
       }
     }
 
+    const viewportWidth = video.clientWidth;
+    const viewportHeight = video.clientHeight;
+    const sourceAspect = video.videoWidth / video.videoHeight;
+    const viewportAspect = viewportWidth / viewportHeight;
+    const cropToViewport =
+      Number.isFinite(viewportAspect) && viewportWidth > 0 && viewportHeight > 0;
+    const cropWidth =
+      cropToViewport && sourceAspect > viewportAspect
+        ? Math.round(video.videoHeight * viewportAspect)
+        : video.videoWidth;
+    const cropHeight =
+      cropToViewport && sourceAspect < viewportAspect
+        ? Math.round(video.videoWidth / viewportAspect)
+        : video.videoHeight;
+    const cropX = Math.round((video.videoWidth - cropWidth) / 2);
+    const cropY = Math.round((video.videoHeight - cropHeight) / 2);
+
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(
+      video,
+      cropX,
+      cropY,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
 
     // Brief white shutter-flash for tactile feedback.
     setFlash(true);
-    setTimeout(() => setFlash(false), 180);
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current);
+    }
+    flashTimerRef.current = setTimeout(() => {
+      setFlash(false);
+      flashTimerRef.current = null;
+    }, 180);
 
     // Reset stillness so auto-capture doesn't immediately re-fire.
     stillnessStartRef.current = Date.now();

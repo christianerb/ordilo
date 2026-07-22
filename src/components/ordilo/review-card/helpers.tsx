@@ -1,7 +1,8 @@
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
-import { Check, AlertTriangle } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Check, AlertTriangle, Search } from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -244,14 +245,36 @@ export function FieldGroup({
 }
 
 /**
- * A single, flat field row — icon + label, value, and an optional edit
- * control, all on one line (label repeats per row rather than sitting in
- * a group header, so every row reads on its own and the whole field list
- * can share one continuous divider list). No border, no background
- * tint: per the design system's no-shadow-stacking rule, the outer
- * `ReviewCardContent` card is the single bordered surface, and rows
- * inside it are separated only by hairline dividers — never boxes within
- * a box.
+ * A section for related extracted values. It introduces the field type once,
+ * then lets every row focus on its actual value and edit control.
+ */
+export function ReviewFieldSection({
+  icon: Icon,
+  title,
+  testId,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section data-testid={testId} className="border-b border-border/60 py-4 first:pt-0">
+      <h4 className="flex items-center gap-1.5 text-sm font-medium text-[var(--mist-dark)]">
+        <Icon className="size-3.5" aria-hidden="true" />
+        {title}
+      </h4>
+      <div className="mt-2 divide-y divide-border/60">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * A single, flat field row with an optional contextual label and edit
+ * control. Grouped sections introduce their label once, so their rows can
+ * focus on the extracted value. No background tint: per the design system's
+ * no-shadow-stacking rule, rows rely on hairline dividers, never nested boxes.
  *
  * The confidence badge only appears for medium/low confidence — i.e.
  * fields actually worth a second look. A well-extracted field (the vast
@@ -267,32 +290,57 @@ export function FieldRow({
   isEdited = false,
   editControl,
   onCompareOriginal,
+  sourceText,
+  onShowSource,
   testId,
   children,
 }: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  label?: string;
   confidence?: number;
   isEdited?: boolean;
   editControl?: React.ReactNode;
   onCompareOriginal?: () => void;
+  /** Exact value to locate in the original OCR layout. */
+  sourceText?: string;
+  onShowSource?: (sourceText: string) => void;
   testId?: string;
   children: React.ReactNode;
 }) {
   return (
     <div
       data-testid={testId}
-      className="flex flex-col gap-2.5 py-3 sm:flex-row sm:items-start sm:gap-3"
+      className={cn(
+        "flex flex-col gap-2.5 py-3 sm:flex-row sm:items-start sm:gap-3",
+        !label && "sm:gap-2",
+      )}
     >
-      <div className="flex shrink-0 items-center gap-1.5 text-[var(--mist-dark)] sm:w-32 sm:pt-0.5">
-        <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-        <span className="truncate text-sm">{label}</span>
-      </div>
+      {Icon && label && (
+        <div className="flex shrink-0 items-center gap-1.5 text-[var(--mist-dark)] sm:w-32 sm:pt-0.5">
+          <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+          <span className="truncate text-sm">{label}</span>
+        </div>
+      )}
 
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 text-sm font-medium text-foreground">{children}</div>
-          {editControl && <div className="shrink-0">{editControl}</div>}
+          {(editControl || (sourceText && onShowSource)) && (
+            <div className="flex shrink-0 items-center gap-1">
+              {sourceText && onShowSource && (
+                <button
+                  type="button"
+                  onClick={() => onShowSource(sourceText)}
+                  className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--petrol)]/10 hover:text-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  aria-label="Im Original zeigen"
+                  title="Im Original zeigen"
+                >
+                  <Search className="size-3.5" aria-hidden="true" />
+                </button>
+              )}
+              {editControl}
+            </div>
+          )}
         </div>
 
         {isEdited && (

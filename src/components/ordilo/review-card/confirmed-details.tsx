@@ -209,7 +209,7 @@ export function ConfirmedAnalysisDetails({
       {onViewOriginal && (
         <button
           type="button"
-          onClick={onViewOriginal}
+          onClick={() => onViewOriginal()}
           className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           data-testid="view-original-file-button"
         >
