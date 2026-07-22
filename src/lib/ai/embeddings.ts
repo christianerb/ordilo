@@ -572,6 +572,9 @@ export function generateSyntheticQuestions(params: {
   if (hasDates && title) {
     questions.push(`Wann war ${title}?`);
     questions.push(`Wann fand ${title} statt?`);
+    questions.push(`Um wieviel Uhr war ${title}?`);
+    questions.push(`Wie spät war ${title}?`);
+    questions.push(`Welche Uhrzeit steht in ${title}?`);
   }
 
   // Tag-based questions — "Welche [tag]-Dokumente habe ich?" — so that

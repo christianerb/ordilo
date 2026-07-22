@@ -135,10 +135,18 @@ export function combineSearchResults(
 
   // Group results by document_id, tracking the semantic result (for excerpt)
   // and the best-scoring result (for title and score).
+  // We track both the best question-shaped chunk and the best content chunk
+  // separately, so we can prefer actual content for the excerpt even when a
+  // synthetic question scores higher (the question helps find the document,
+  // but the content has the answer the LLM needs).
   const byDocId = new Map<
     string,
     { semantic: SearchResult | null; best: SearchResult }
   >();
+
+  /** Heuristic: does this chunk look like a synthetic question? */
+  const isQuestion = (text: string): boolean =>
+    text.trimEnd().endsWith("?") && text.length < 150;
 
   for (const result of allResults) {
     const existing = byDocId.get(result.document_id);
@@ -149,13 +157,26 @@ export function combineSearchResults(
       });
     } else {
       if (result.source === "semantic") {
-        // Prefer the semantic result with the highest score for the excerpt.
-        if (
-          !existing.semantic ||
-          result.score > existing.semantic.score
-        ) {
+        // For the excerpt, prefer content chunks over synthetic questions.
+        // A synthetic question may score highest (it's query-aligned), but
+        // the content chunk has the actual answer the LLM needs to see.
+        if (!existing.semantic) {
           existing.semantic = result;
+        } else if (isQuestion(existing.semantic.chunk_text) && !isQuestion(result.chunk_text)) {
+          // Replace a question with content, even if the content has a lower score.
+          existing.semantic = result;
+        } else if (!isQuestion(existing.semantic.chunk_text) && !isQuestion(result.chunk_text)) {
+          // Both are content — keep the higher-scoring one.
+          if (result.score > existing.semantic.score) {
+            existing.semantic = result;
+          }
+        } else if (isQuestion(existing.semantic.chunk_text) && isQuestion(result.chunk_text)) {
+          // Both are questions — keep the higher-scoring one.
+          if (result.score > existing.semantic.score) {
+            existing.semantic = result;
+          }
         }
+        // If existing is content and new is question, keep existing (content wins).
       }
       if (result.score > existing.best.score) {
         existing.best = result;

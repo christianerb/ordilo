@@ -686,6 +686,9 @@ describe("generateSyntheticQuestions (enriched)", () => {
     });
     expect(questions).toContain("Wann war Fluginfo für easyJet-Flug EZS1183?");
     expect(questions).toContain("Wann fand Fluginfo für easyJet-Flug EZS1183 statt?");
+    expect(questions).toContain("Um wieviel Uhr war Fluginfo für easyJet-Flug EZS1183?");
+    expect(questions).toContain("Wie spät war Fluginfo für easyJet-Flug EZS1183?");
+    expect(questions).toContain("Welche Uhrzeit steht in Fluginfo für easyJet-Flug EZS1183?");
   });
 
   it("does not generate temporal questions when hasDates is false", () => {
@@ -699,6 +702,9 @@ describe("generateSyntheticQuestions (enriched)", () => {
       hasDates: false,
     });
     expect(questions).not.toContain("Wann war Stromrechnung?");
+    expect(questions).not.toContain("Um wieviel Uhr war Stromrechnung?");
+    expect(questions).not.toContain("Wie spät war Stromrechnung?");
+    expect(questions).not.toContain("Welche Uhrzeit steht in Stromrechnung?");
   });
 
   it("generates tag-based questions for each tag", () => {
