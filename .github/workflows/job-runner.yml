@@ -1,0 +1,20 @@
+name: Job Runner
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run:
+    name: Trigger /api/jobs/run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger job runner
+        run: |
+          curl -sf -X POST \
+            -H "Authorization: Bearer ${{ secrets.JOBS_RUNNER_SECRET }}" \
+            -H "Content-Type: application/json" \
+            -d '{"limit": 10}' \
+            "${{ vars.VERCEL_DEPLOYMENT_URL || 'https://app.ordilo.de' }}/api/jobs/run" \
+            || true

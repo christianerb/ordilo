@@ -33,6 +33,9 @@ import {
   generateEmbeddings,
   generateQueryEmbedding,
   embeddingToVectorString,
+  cleanOcrForEmbedding,
+  contextualizeForEmbedding,
+  generateSyntheticQuestions,
   EmbeddingError,
   EMBEDDING_DIMENSIONS,
 } from "@/lib/ai/embeddings";
@@ -568,5 +571,179 @@ describe("EmbeddingError", () => {
   it("works without statusCode", () => {
     const err = new EmbeddingError("Test error", "TEST_CODE");
     expect(err.statusCode).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cleanOcrForEmbedding
+// ---------------------------------------------------------------------------
+
+describe("cleanOcrForEmbedding", () => {
+  it("removes markdown image references", () => {
+    const input = "![back arrow icon](abc123_img.jpg)\n\n# Flug-Info\n\nText";
+    const result = cleanOcrForEmbedding(input);
+    expect(result).not.toContain("![");
+    expect(result).not.toContain("img.jpg");
+    expect(result).toContain("Flug-Info");
+    expect(result).toContain("Text");
+  });
+
+  it("removes standalone icon label lines", () => {
+    const input = "back arrow icon\n\nrefresh icon\n\n# Heading";
+    const result = cleanOcrForEmbedding(input);
+    expect(result).not.toContain("back arrow icon");
+    expect(result).not.toContain("refresh icon");
+    expect(result).toContain("Heading");
+  });
+
+  it("removes horizontal rules and OCR artifacts", () => {
+    const input = "{0}------------------------------------------------\n\nContent here";
+    const result = cleanOcrForEmbedding(input);
+    expect(result).not.toContain("----");
+    expect(result).not.toContain("{0}");
+    expect(result).toContain("Content here");
+  });
+
+  it("collapses multiple blank lines", () => {
+    const input = "Line 1\n\n\n\n\nLine 2";
+    const result = cleanOcrForEmbedding(input);
+    expect(result).toBe("Line 1\n\nLine 2");
+  });
+
+  it("preserves meaningful content (headings, numbers, dates)", () => {
+    const input = "![icon](x.jpg)\n\n# Flug-Info\n\nEZS1183\n\n17 Jul\n\n19:25\n\nHamburg";
+    const result = cleanOcrForEmbedding(input);
+    expect(result).toContain("Flug-Info");
+    expect(result).toContain("EZS1183");
+    expect(result).toContain("17 Jul");
+    expect(result).toContain("19:25");
+    expect(result).toContain("Hamburg");
+  });
+
+  it("returns empty string for empty input", () => {
+    expect(cleanOcrForEmbedding("")).toBe("");
+    expect(cleanOcrForEmbedding("   ")).toBe("");
+  });
+
+  it("handles the real EasyJet OCR chunk", () => {
+    const realChunk = `{0}------------------------------------------------\n\n![back arrow icon](30a26f2d17ca95672702bf50fb4f0242_img.jpg)\n\nback arrow icon\n\n![refresh icon](5fb340ad68b0c71df0b56698b137e35b_img.jpg)\n\nrefresh icon\n\n# Flug-Info\n\nLive-Updates\n\n2\n\nEZS1183\n\nDer Flug wird durchgeführt von easyJet Switzerland.`;
+    const result = cleanOcrForEmbedding(realChunk);
+    expect(result).not.toContain("img.jpg");
+    expect(result).not.toContain("back arrow icon");
+    expect(result).not.toContain("refresh icon");
+    expect(result).not.toContain("----");
+    expect(result).toContain("Flug-Info");
+    expect(result).toContain("EZS1183");
+    expect(result).toContain("easyJet Switzerland");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// contextualizeForEmbedding
+// ---------------------------------------------------------------------------
+
+describe("contextualizeForEmbedding", () => {
+  it("prepends document title to chunk text", () => {
+    const result = contextualizeForEmbedding("19:25\nTerminal 1", "Fluginfo für easyJet-Flug EZS1183");
+    expect(result).toBe("Fluginfo für easyJet-Flug EZS1183: 19:25\nTerminal 1");
+  });
+
+  it("returns original text when title is null", () => {
+    const result = contextualizeForEmbedding("Some content", null);
+    expect(result).toBe("Some content");
+  });
+
+  it("returns original text when title is empty", () => {
+    const result = contextualizeForEmbedding("Some content", "");
+    expect(result).toBe("Some content");
+  });
+
+  it("returns original text when title is whitespace", () => {
+    const result = contextualizeForEmbedding("Some content", "   ");
+    expect(result).toBe("Some content");
+  });
+
+  it("trims the title before prepending", () => {
+    const result = contextualizeForEmbedding("Content", "  Rechnung Juli  ");
+    expect(result).toBe("Rechnung Juli: Content");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// generateSyntheticQuestions (enriched)
+// ---------------------------------------------------------------------------
+
+describe("generateSyntheticQuestions (enriched)", () => {
+  it("generates temporal questions when hasDates is true", () => {
+    const questions = generateSyntheticQuestions({
+      title: "Fluginfo für easyJet-Flug EZS1183",
+      summary: null,
+      documentType: "other",
+      persons: [],
+      organization: null,
+      tags: [],
+      hasDates: true,
+    });
+    expect(questions).toContain("Wann war Fluginfo für easyJet-Flug EZS1183?");
+    expect(questions).toContain("Wann fand Fluginfo für easyJet-Flug EZS1183 statt?");
+  });
+
+  it("does not generate temporal questions when hasDates is false", () => {
+    const questions = generateSyntheticQuestions({
+      title: "Stromrechnung",
+      summary: null,
+      documentType: "invoice",
+      persons: [],
+      organization: null,
+      tags: [],
+      hasDates: false,
+    });
+    expect(questions).not.toContain("Wann war Stromrechnung?");
+  });
+
+  it("generates tag-based questions for each tag", () => {
+    const questions = generateSyntheticQuestions({
+      title: "Fluginfo",
+      summary: null,
+      documentType: "other",
+      persons: [],
+      organization: null,
+      tags: ["Flug", "Reise", "Terminal"],
+      hasDates: false,
+    });
+    expect(questions).toContain("Welche Flug-Dokumente habe ich?");
+    expect(questions).toContain("Welche Reise-Dokumente habe ich?");
+    expect(questions).toContain("Welche Terminal-Dokumente habe ich?");
+  });
+
+  it("skips empty tags", () => {
+    const questions = generateSyntheticQuestions({
+      title: "Test",
+      summary: null,
+      documentType: "other",
+      persons: [],
+      organization: null,
+      tags: ["Flug", "", "  "],
+      hasDates: false,
+    });
+    const tagQuestions = questions.filter((q) => q.startsWith("Welche") && q.endsWith("habe ich?"));
+    expect(tagQuestions).toHaveLength(1);
+    expect(tagQuestions[0]).toContain("Flug");
+  });
+
+  it("still generates title, summary, person, and organization questions", () => {
+    const questions = generateSyntheticQuestions({
+      title: "Kita-Brief für Emma",
+      summary: "Einladung zum Elternabend",
+      documentType: "letter",
+      persons: ["Emma"],
+      organization: "Kita Sonnenblume",
+      tags: [],
+      hasDates: false,
+    });
+    expect(questions).toContain("Was steht in Kita-Brief für Emma (Brief)?");
+    expect(questions.some((q) => q.startsWith("Welche Informationen enthält"))).toBe(true);
+    expect(questions).toContain("Welche Dokumente betreffen Emma?");
+    expect(questions).toContain("Welche Dokumente gibt es von Kita Sonnenblume?");
   });
 });
