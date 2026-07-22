@@ -41,6 +41,14 @@ export async function triggerOcr(
     return (await response.json()) as OcrSuccessResponse;
   }
 
+  // 409 Conflict: another pipeline path (server-side job queue) already
+  // claimed this document. Not an error — the work is being done. Return
+  // a synthetic response so the caller's .then() refetch runs and picks
+  // up the server-driven status changes via realtime/polling.
+  if (response.status === 409) {
+    return { status: "ocr_done", page_count: 0 } as OcrSuccessResponse;
+  }
+
   // Parse the structured error response.
   let errorBody: OcrErrorResponse;
   try {

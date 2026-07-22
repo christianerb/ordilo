@@ -13,7 +13,7 @@ export async function retryFailedDocument(
   const response = await fetch(`/api/documents/${documentId}/analyze`, {
     method: "POST",
   });
-  if (response.ok) return;
+  if (response.ok || response.status === 409) return;
 
   const body = (await response.json().catch(() => null)) as {
     error?: string;

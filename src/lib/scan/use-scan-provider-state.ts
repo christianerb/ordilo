@@ -62,6 +62,8 @@ export function useScanProviderState(): ScanProviderState {
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
 
   const triggeredAnalysisRef = useRef<Set<string>>(new Set());
+  /** Document IDs whose pipeline is handled server-side (skip client triggers). */
+  const serverPipelineRef = useRef<Set<string>>(new Set());
   const seededPreExistingRef = useRef(false);
   const initialDocumentsLoadedRef = useRef(false);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -342,6 +344,15 @@ export function useScanProviderState(): ScanProviderState {
 
         onUploaded?.(result.document_id);
 
+        // When the server-side pipeline is active, it handles OCR + analyze
+        // via the job queue (drained in next/server after()). The client
+        // skips triggerOcr and auto-analyze to avoid 409 race conditions —
+        // realtime/polling update the UI as the server progresses.
+        if (result.server_pipeline) {
+          serverPipelineRef.current.add(result.document_id);
+          triggeredAnalysisRef.current.add(result.document_id);
+        }
+
         if (documentsLoadedRef.current) {
           await fetchDocumentsRef.current(fid);
         }
@@ -358,21 +369,26 @@ export function useScanProviderState(): ScanProviderState {
           setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
         }, 1200);
 
-        triggerOcr(result.document_id)
-          .then(() => {
-            // OCR finished — kick the analysis immediately instead of
-            // waiting for the next poll tick to notice `ocr_done`.
-            void fetchDocumentByIdRef.current(result.document_id, {
-              syncWizard: Boolean(onUploaded),
-              syncList: documentsLoadedRef.current,
-              allowAutoAnalyze: true,
+        // Only trigger OCR from the client when the server pipeline is NOT
+        // active (PIPELINE_MODE=sync). Otherwise the server's job queue
+        // handles it, and both racing on the same document caused 409s.
+        if (!result.server_pipeline) {
+          triggerOcr(result.document_id)
+            .then(() => {
+              // OCR finished — kick the analysis immediately instead of
+              // waiting for the next poll tick to notice `ocr_done`.
+              void fetchDocumentByIdRef.current(result.document_id, {
+                syncWizard: Boolean(onUploaded),
+                syncList: documentsLoadedRef.current,
+                allowAutoAnalyze: true,
+              });
+            })
+            .catch(() => {
+              if (documentsLoadedRef.current) {
+                void fetchDocumentsRef.current(fid);
+              }
             });
-          })
-          .catch(() => {
-            if (documentsLoadedRef.current) {
-              void fetchDocumentsRef.current(fid);
-            }
-          });
+        }
 
         void fetchDocumentByIdRef.current(result.document_id, {
           syncWizard: Boolean(onUploaded),
@@ -384,7 +400,7 @@ export function useScanProviderState(): ScanProviderState {
           if (documentsLoadedRef.current) {
             void fetchDocumentsRef.current(fid);
           }
-          if (onUploaded) {
+          if (onUploaded && !result.server_pipeline) {
             void fetchDocumentByIdRef.current(result.document_id, {
               syncWizard: true,
               syncList: documentsLoadedRef.current,
@@ -573,6 +589,11 @@ export function useScanProviderState(): ScanProviderState {
 
       const stage = getFailedStage(stageRow);
       let retryError: string | null = null;
+
+      // Clear the server-pipeline and analysis-triggered flags so the
+      // retry path can re-trigger analysis after OCR completes.
+      serverPipelineRef.current.delete(documentId);
+      triggeredAnalysisRef.current.delete(documentId);
 
       if (stage === "ocr") {
         updateTrackedDocument(documentId, (current) => ({
@@ -906,6 +927,10 @@ export function useScanProviderState(): ScanProviderState {
         familyId: fid,
         file: params.file,
       });
+
+      // Pre-mark as triggered so fetchDocuments doesn't auto-trigger
+      // analyze in parallel with the direct call below (409 race).
+      triggeredAnalysisRef.current.add(result.document_id);
 
       // Refresh the document list so the new note appears.
       if (documentsLoadedRef.current) {
