@@ -46,8 +46,8 @@ import {
  * Re-analyze: When the document is already in `analyzed` or `confirmed`
  * status, prior extracted_entities/tasks/facts are cleared before storing
  * new results (no duplicates). When coming from `confirmed`,
- * knowledge_edges and document_embeddings are also cleared (they will be
- * regenerated on the next confirm).
+ * knowledge_edges are also cleared and embeddings are replaced atomically
+ * with the updated title/summary/tags. The document stays `confirmed`.
  */
 export async function POST(
   request: Request,
@@ -190,7 +190,7 @@ export async function POST(
   const body: AnalyzeSuccessResponse = {
     ...analysis,
     document_id: documentId,
-    status: "analyzed",
+    status: wasConfirmed ? "confirmed" : "analyzed",
   };
   return Response.json(body, { status: 200 });
 }

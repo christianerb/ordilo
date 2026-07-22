@@ -111,15 +111,15 @@ export function buildSystemPrompt(familyContext: FamilyContext): string {
 Aufgaben:
 1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, other).
 2. Erstelle einen kurzen, aussagekräftigen Titel.
-3. Fasse den Inhalt in 1-3 Sätzen zusammen.
+3. Fasse den Inhalt in 1-3 Sätzen zusammen. Nenne DABEI KONKRETE Werte aus dem Dokument: Uhrzeiten, Daten, Betraege, Namen, Orte, Flugnummern, Verspätungen. Nicht nur "es gibt Zeiten" sondern "Abflug 19:25, Ankunft 20:55". Nicht nur "ein Betrag" sondern "45,30 EUR". Diese Details sind fuer die Suchfunktion entscheidend.
 4. Identifiziere erwähnte Familienmitglieder und ordne sie zu.
 5. Extrahiere Organisationen mit ihrem Typ (z.B. "Kita", "Arztpraxis", "Versicherung", "Behörde").
-6. Extrahiere alle relevanten Daten (Fristen, Termine, Zahlungsdaten) mit Typ und Label.
+6. Extrahiere alle relevanten Daten UND UHRZEITEN (Fristen, Termine, Abflugzeiten, Ankunftszeiten, Zahlungsdaten, Geburtstage) mit Typ und Label. Auch Uhrzeiten wie "19:25" als Date mit Typ "time" und beschreibendem Label wie "Abflug geplant" extrahieren.
 7. Extrahiere Geldbeträge mit Währung und Label.
 8. Identifiziere Aufgaben (To-dos) mit Frist und Priorität (low, medium, high).
-9. Extrahiere eindeutige Identifikatoren als facts: Seriennummern (serial_number), Vertragsnummern (contract_number), Policennummern (policy_number), Kundennummern (customer_number), Rechnungsnummern (invoice_number), IBAN (iban), Kfz-Kennzeichen (license_plate), Mitgliedsnummern (member_id), sonstige Kennungen (other). Übernimm den Wert EXAKT wie im Dokument (inkl. Bindestriche/Leerzeichen). Das Label beschreibt, wozu die Kennung gehört (z.B. "Seriennummer Waschmaschine", "Vertragsnummer Stromvertrag").
+9. Extrahiere eindeutige Identifikatoren als facts: Seriennummern (serial_number), Vertragsnummern (contract_number), Policennummern (policy_number), Kundennummern (customer_number), Rechnungsnummern (invoice_number), IBAN (iban), Kfz-Kennzeichen (license_plate), Mitgliedsnummern (member_id), Flugnummern (other), sonstige Kennungen (other). Übernimm den Wert EXAKT wie im Dokument (inkl. Bindestriche/Leerzeichen). Das Label beschreibt, wozu die Kennung gehört (z.B. "Seriennummer Waschmaschine", "Vertragsnummer Stromvertrag", "Flugnummer").
 10. Schlage eine Kategorie vor.
-11. Vergibe passende Tags (Schlüsselwörter).
+11. Vergibe IMMER 2-5 passende Tags (Schlüsselwörter), die typische Suchanfragen abdecken. Beispiele: "Flug", "Reise", "Rechnung", "Strom", "Versicherung", "Arzt", "Kita", "Schule", "Steuer", "Verspätung", "Abflug", "Terminal".
 12. Setze needs_user_review auf true, wenn du dir bei wichtigen Feldern unsicher bist.
 
 Alle Textfelder müssen auf Deutsch sein. Antworte NUR im angegebenen JSON-Format.`);
