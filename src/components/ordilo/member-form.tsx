@@ -215,6 +215,7 @@ export function MemberForm({
           type="text"
           autoComplete="off"
           placeholder="z. B. Emma"
+          maxLength={100}
           value={name}
           onChange={(e) => handleNameChange(e.target.value)}
           aria-invalid={validationError ? true : undefined}
@@ -237,6 +238,7 @@ export function MemberForm({
           autoComplete="off"
           list="member-role-suggestions"
           placeholder="z. B. Vater, Mutter, Kind"
+          maxLength={50}
           value={role}
           onChange={(e) => setRole(e.target.value)}
           disabled={isSubmitting}
@@ -368,6 +370,7 @@ export function MemberForm({
                   type="text"
                   autoComplete="off"
                   placeholder="Art der Beziehung, z. B. Ehepartner, Bruder"
+                  maxLength={50}
                   value={relationshipLabel}
                   onChange={(e) => setRelationshipLabel(e.target.value)}
                   disabled={isSubmitting}

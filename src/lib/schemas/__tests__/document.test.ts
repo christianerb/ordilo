@@ -38,12 +38,12 @@ describe("upload constants", () => {
     expect(ACCEPTED_MIME_TYPES).toContain("application/pdf");
   });
 
-  it("MAX_FILE_SIZE is 25 MB", () => {
-    expect(MAX_FILE_SIZE).toBe(25 * 1024 * 1024);
+  it("MAX_FILE_SIZE is 4 MB", () => {
+    expect(MAX_FILE_SIZE).toBe(4 * 1024 * 1024);
   });
 
   it("MAX_FILE_SIZE_LABEL is a human-readable German label", () => {
-    expect(MAX_FILE_SIZE_LABEL).toBe("25 MB");
+    expect(MAX_FILE_SIZE_LABEL).toBe("4 MB");
   });
 
   it("ACCEPTED_FILE_EXTENSIONS includes pdf and image extensions", () => {
@@ -255,7 +255,7 @@ describe("validateFile", () => {
   });
 
   it("accepts a valid PDF within size limit", () => {
-    const result = validateFile("application/pdf", 10 * 1024 * 1024);
+    const result = validateFile("application/pdf", 3 * 1024 * 1024);
     expect(result.valid).toBe(true);
   });
 

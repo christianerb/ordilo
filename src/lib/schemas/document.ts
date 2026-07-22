@@ -27,16 +27,21 @@ export const ACCEPTED_MIME_TYPES = [
 export type AcceptedMimeType = (typeof ACCEPTED_MIME_TYPES)[number];
 
 /**
- * Maximum upload file size: 25 MB.
- * Generous enough for multi-page PDFs and high-res photos, while staying
- * well within Supabase Storage limits.
+ * Maximum upload file size: 4 MB.
+ *
+ * Vercel Hobby plan enforces a 4.5 MB request-body limit on serverless
+ * functions — the platform rejects larger payloads with a 413 before the
+ * route handler ever runs. 4 MB stays safely under that ceiling while
+ * leaving room for multipart form overhead (boundary, headers, family_id
+ * field). Images are already downscaled to ~2000 px JPEG by
+ * prepareImageForUpload, so this mainly constrains raw PDFs.
  */
-export const MAX_FILE_SIZE = 25 * 1024 * 1024;
+export const MAX_FILE_SIZE = 4 * 1024 * 1024;
 
 /**
  * Human-readable max size label for German UI messages.
  */
-export const MAX_FILE_SIZE_LABEL = "25 MB";
+export const MAX_FILE_SIZE_LABEL = "4 MB";
 
 /**
  * File extensions accepted by the file picker inputs.
@@ -402,10 +407,18 @@ export function getFileIcon(mimeType: string | null | undefined): LucideIcon {
 
 /**
  * Successful upload API response.
+ *
+ * `server_pipeline` indicates whether the server-side job queue will
+ * handle OCR + analysis (PIPELINE_MODE !== "sync"). When true, the
+ * client should NOT call triggerOcr or auto-trigger analyze — the
+ * server drains the pipeline via next/server `after()`, and the
+ * client's realtime/polling picks up status changes for UI updates.
+ * When false (PIPELINE_MODE=sync), the client must trigger OCR itself.
  */
 export type UploadSuccessResponse = {
   document_id: string;
   status: "uploaded";
+  server_pipeline: boolean;
 };
 
 /**

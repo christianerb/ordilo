@@ -265,7 +265,7 @@ Legend: `→` = context.
 | 6.17 | `"Datei konnte nicht geöffnet werden."` | `src/components/ordilo/review-card/states.tsx` | Signed-URL fetch error (confirmed details) |
 | 6.18 | `"Upload hat nicht geklappt. Bitte nochmal versuchen."` | `src/lib/scan/scan-context.tsx` | Upload catch fallback |
 | 6.19 | `"Dieser Dateityp wird nicht unterstützt. Bitte ein Bild oder PDF hochladen."` | `src/lib/schemas/document.ts` | File validation: unsupported type |
-| 6.20 | `"Die Datei ist zu groß. Maximum: 25 MB."` (template with MAX_FILE_SIZE_LABEL) | `src/lib/schemas/document.ts` | File validation: too large |
+| 6.20 | `"Die Datei ist zu groß. Maximum: 4 MB."` (template with MAX_FILE_SIZE_LABEL) | `src/lib/schemas/document.ts` | File validation: too large |
 | 6.21 | `"Der Dateiinhalt stimmt nicht mit dem angegebenen Dateityp überein."` | `src/lib/schemas/document.ts` | File validation: signature mismatch |
 | 6.22 | `"Ungültige Familien-ID"` | `src/lib/schemas/document.ts` | Upload family_id schema error |
 | 6.23 | `"Bitte einen Namen eingeben"` | `src/app/(app)/familie/familie-client.tsx` (validation) + `src/app/(app)/onboarding/onboarding-flow.tsx` (validation) + `src/lib/schemas/onboarding.ts` | Member name validation error |
