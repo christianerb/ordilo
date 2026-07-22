@@ -319,6 +319,30 @@ describe("combineSearchResults", () => {
     expect(result[0].score).toBe(0.95);
   });
 
+  it("prefers content chunks over synthetic questions for the excerpt", () => {
+    // A synthetic question scores highest (0.9), but the content chunk (0.7)
+    // has the actual answer. The excerpt should be the content, not the question.
+    const semantic = [
+      makeSemanticResult("doc-1", "Fluginfo", "Um wieviel Uhr war Fluginfo?", 0.9),
+      makeSemanticResult("doc-1", "Fluginfo", "# Flug-Info\n\n19:25\n\nGeplant\n\n20:55\n\nTerminal 1", 0.7),
+    ];
+    const result = combineSearchResults(semantic, []);
+    expect(result).toHaveLength(1);
+    expect(result[0].excerpt).toContain("19:25");
+    expect(result[0].excerpt).not.toContain("Um wieviel Uhr");
+    // Score should still be the highest (from the question)
+    expect(result[0].score).toBe(0.9);
+  });
+
+  it("falls back to question excerpt when no content chunk exists", () => {
+    const semantic = [
+      makeSemanticResult("doc-1", "Fluginfo", "Um wieviel Uhr war Fluginfo?", 0.9),
+    ];
+    const result = combineSearchResults(semantic, []);
+    expect(result).toHaveLength(1);
+    expect(result[0].excerpt).toBe("Um wieviel Uhr war Fluginfo?");
+  });
+
   it("includes documents from both semantic and graph results", () => {
     const semantic = [
       makeSemanticResult("doc-1", "Stromrechnung", "Betrag: 45 EUR", 0.8),

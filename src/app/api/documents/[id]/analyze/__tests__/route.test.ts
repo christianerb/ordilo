@@ -20,6 +20,9 @@ vi.mock("@/lib/ai/extraction", () => ({
     }
   },
 }));
+vi.mock("@/lib/pipeline/embed-step", () => ({
+  buildDocumentEmbeddings: vi.fn().mockResolvedValue([]),
+}));
 
 import { POST } from "@/app/api/documents/[id]/analyze/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -193,7 +196,7 @@ function mockServerClient(options: {
     // Update: .update(payload).eq() or .update(payload).eq().in().select().maybeSingle()
     update: vi.fn((payload: Record<string, unknown>) => {
       const isTransition = payload.status === "analyzing";
-      const isFinalUpdate = payload.status === "analyzed";
+      const isFinalUpdate = payload.status === "analyzed" || payload.status === "confirmed";
       const isMarkFailed = payload.status === "failed";
 
       if (isTransition) {
@@ -359,6 +362,7 @@ function mockServerClient(options: {
           throw new Error(`Unexpected table: ${table}`);
       }
     }),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
     _operations: operations,
     _entitiesBuilder: entitiesBuilder,
     _tasksBuilder: tasksBuilder,
@@ -710,7 +714,7 @@ describe("POST /api/documents/[id]/analyze", () => {
     // The delete operations should have been called.
   });
 
-  it("clears knowledge_edges and document_embeddings on re-analyze from confirmed", async () => {
+  it("clears knowledge_edges on re-analyze from confirmed (embeddings replaced, not deleted)", async () => {
     const client = mockServerClient({ docStatus: "confirmed" });
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
@@ -718,7 +722,9 @@ describe("POST /api/documents/[id]/analyze", () => {
 
     expect(response.status).toBe(200);
     expect(client._edgesBuilder.delete).toHaveBeenCalled();
-    expect(client._embeddingsBuilder.delete).toHaveBeenCalled();
+    // Embeddings are NOT deleted — they are replaced atomically by
+    // performAnalyzeStep after generating new ones.
+    expect(client._embeddingsBuilder.delete).not.toHaveBeenCalled();
   });
 
   it("does NOT clear knowledge_edges when re-analyzing from ocr_done (not confirmed)", async () => {
@@ -734,7 +740,7 @@ describe("POST /api/documents/[id]/analyze", () => {
 
   // --- Re-analyze from confirmed status works ---
 
-  it("accepts re-analyze from confirmed status and transitions to analyzed", async () => {
+  it("accepts re-analyze from confirmed status and transitions back to confirmed with new embeddings", async () => {
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockServerClient({ docStatus: "confirmed" }),
     );
@@ -743,7 +749,9 @@ describe("POST /api/documents/[id]/analyze", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
-    expect(body.status).toBe("analyzed");
+    // When re-analyzing a confirmed document, it transitions back to
+    // "confirmed" (not "analyzed") with auto re-embedding.
+    expect(body.status).toBe("confirmed");
   });
 
   // --- Re-analyze from failed status works ---

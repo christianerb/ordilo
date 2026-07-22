@@ -9,6 +9,7 @@ import {
   type FamilyContext,
 } from "@/lib/schemas/extraction";
 import { canonicalizeCategory } from "@/lib/categories";
+import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
 
 /**
  * Shared analyze (LLM extraction) pipeline step.
@@ -159,6 +160,11 @@ export async function fetchFamilyContext(
  * Run the LLM extraction for a document whose status is already
  * `analyzing`, store the results, and transition to `analyzed`.
  *
+ * When re-analyzing a previously confirmed document (`wasConfirmed = true`),
+ * the function also generates new embeddings with the updated title/summary/
+ * tags and transitions back to `confirmed` (not `analyzed`), keeping the
+ * document searchable throughout the re-analysis.
+ *
  * @returns The validated (and review-flagged) analysis.
  * @throws {ExtractionError | NoOcrTextError | Error} on any failure — the
  *         caller must mark the document failed.
@@ -200,6 +206,54 @@ export async function performAnalyzeStep(
     throw new PipelineStepError(message, "DB_STORE_FAILED");
   }
 
+  // When re-analyzing a confirmed document, generate new embeddings with
+  // the updated title/summary/tags and transition back to "confirmed".
+  // This keeps the document searchable with the improved extraction.
+  if (document.wasConfirmed) {
+    try {
+      const embeddings = await buildDocumentEmbeddings(client, document.id);
+      const { error: rpcError } = await client.rpc(
+        "replace_document_embeddings",
+        {
+          p_document_id: document.id,
+          p_family_id: document.family_id,
+          p_embeddings: embeddings,
+          p_pipeline_version: PIPELINE_VERSION,
+        },
+      );
+      if (rpcError) throw new Error("Embeddings konnten nicht aktualisiert werden.");
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Re-Embedding fehlgeschlagen.";
+      throw new PipelineStepError(message, "EMBEDDING_FAILED");
+    }
+
+    const { error: updateError } = await client
+      .from("documents")
+      .update({
+        status: "confirmed",
+        title: analysis.title,
+        summary: analysis.summary,
+        document_type: analysis.document_type,
+        category: analysis.suggested_category,
+        tags: analysis.tags,
+        extraction_version: PIPELINE_VERSION,
+        error_message: null,
+      })
+      .eq("id", document.id);
+
+    if (updateError) {
+      throw new PipelineStepError(
+        "Dokument-Status konnte nicht aktualisiert werden.",
+        "DB_UPDATE_FAILED",
+      );
+    }
+
+    return analysis;
+  }
+
   const { error: updateError } = await client
     .from("documents")
     .update({
@@ -226,8 +280,9 @@ export async function performAnalyzeStep(
 /**
  * Store the extraction results: replace extracted_entities, tasks, and
  * document_facts for the document. When re-analyzing a previously
- * confirmed document, also clear knowledge_edges and document_embeddings
- * (they are regenerated on the next confirm).
+ * confirmed document, also clear knowledge_edges. Embeddings are NOT
+ * cleared here — they are replaced atomically by performAnalyzeStep
+ * after generating new ones with the updated metadata.
  *
  * @throws {Error} if any DB operation fails.
  */
@@ -275,15 +330,10 @@ export async function storeExtractionResults(
     if (edgesDeleteError) {
       throw new Error("Wissensgraph-Kanten konnten nicht gelöscht werden.");
     }
-
-    const { error: embeddingsDeleteError } = await client
-      .from("document_embeddings")
-      .delete()
-      .eq("document_id", documentId);
-
-    if (embeddingsDeleteError) {
-      throw new Error("Embeddings konnten nicht gelöscht werden.");
-    }
+    // Note: embeddings are NOT deleted here when wasConfirmed. They are
+    // replaced atomically by performAnalyzeStep after generating new ones
+    // with the updated title/summary/tags. This keeps the document
+    // searchable during re-analysis.
   }
 
   // 2. Insert new extracted_entities rows ----------------------------------

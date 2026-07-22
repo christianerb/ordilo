@@ -438,7 +438,8 @@ export function computeNeedsUserReview(analysis: DocumentAnalysis): boolean {
  */
 export type AnalyzeSuccessResponse = DocumentAnalysis & {
   document_id: string;
-  status: "analyzed";
+  /** "analyzed" for new analysis, "confirmed" when re-analyzing a confirmed document. */
+  status: "analyzed" | "confirmed";
 };
 
 /**

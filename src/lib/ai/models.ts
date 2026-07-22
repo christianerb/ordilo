@@ -40,5 +40,8 @@ export const EMBEDDING_DIMENSIONS = 1536;
  *   2 — typed document facts extraction + versioned embeddings
  *   3 — text-embedding-3-large (3072 dims) + OCR cleaning + contextual
  *        chunks (title prefix) + enriched synthetic questions (tags/dates)
+ *   4 — time-specific synthetic questions (Um wieviel Uhr, Wie spät, Uhrzeit)
+ *        + improved extraction prompt (detailed summaries, always tags, times)
+ *        + re-analyze keeps confirmed status with auto re-embedding
  */
-export const PIPELINE_VERSION = 3;
+export const PIPELINE_VERSION = 4;
