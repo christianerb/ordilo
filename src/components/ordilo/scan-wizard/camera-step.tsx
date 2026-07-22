@@ -106,6 +106,7 @@ export function CameraStep({
   const sampleCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const prevSampleRef = useRef<Uint8ClampedArray | null>(null);
   const stillnessStartRef = useRef<number | null>(null);
+  const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoCaptureRef = useRef<boolean>(true);
   const [permission, setPermission] = useState<CameraPermissionState>("requesting");
   const [torchSupported, setTorchSupported] = useState(false);
@@ -185,6 +186,9 @@ export function CameraStep({
     return () => {
       cancelled = true;
       clearTimeout(permissionTimer);
+      if (flashTimerRef.current) {
+        clearTimeout(flashTimerRef.current);
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
       // Release thumbnail object URLs.
@@ -367,7 +371,13 @@ export function CameraStep({
 
     // Brief white shutter-flash for tactile feedback.
     setFlash(true);
-    setTimeout(() => setFlash(false), 180);
+    if (flashTimerRef.current) {
+      clearTimeout(flashTimerRef.current);
+    }
+    flashTimerRef.current = setTimeout(() => {
+      setFlash(false);
+      flashTimerRef.current = null;
+    }, 180);
 
     // Reset stillness so auto-capture doesn't immediately re-fire.
     stillnessStartRef.current = Date.now();
