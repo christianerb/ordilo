@@ -41,6 +41,13 @@ const PRIORITIES: {
   { value: "low", label: "Niedrig", dot: "bg-[var(--mist)]" },
 ];
 
+/** Order-insensitive comparison of two tag arrays. */
+function areTagsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  return a.every((tag) => setB.has(tag));
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -94,8 +101,8 @@ export function TaskDetailSheet({
       description !== (task.description ?? "") ||
       dueDate !== (task.due_date ?? "") ||
       priority !== task.priority ||
-      JSON.stringify(tags) !== JSON.stringify(task.tags ?? []) ||
-      assignedTo !== (task.assigned_to ?? ""));
+      assignedTo !== (task.assigned_to ?? "") ||
+      !areTagsEqual(tags, task.tags ?? []));
 
   const handleSave = useCallback(async () => {
     if (!task) return;

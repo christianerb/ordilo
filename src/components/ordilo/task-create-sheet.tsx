@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Loader2, Calendar, User } from "lucide-react";
+import { Loader2, Calendar, User, ChevronDown } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -153,95 +153,106 @@ export function TaskCreateSheet({
             />
 
             {/* Meta row — due date + priority */}
-            <div className="mt-3 flex items-center gap-3">
-              <div className="flex items-center gap-1.5 rounded-ordilo-sm bg-secondary/50 px-2.5 py-1.5">
-                <Calendar
-                  className="size-3.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                  strokeWidth={1.5}
-                />
-                <input
-                  type="date"
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                  className="min-w-0 border-0 bg-transparent text-xs text-foreground outline-none focus:ring-0"
-                  data-testid="task-create-due-date"
-                />
+            <div className="mt-3 grid gap-3 min-[480px]:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="task-create-due-date"
+                  className="mb-2 block text-sm font-medium text-foreground"
+                >
+                  Fällig am
+                </label>
+                <div className="flex h-12 items-center gap-2 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] px-3 transition-colors focus-within:border-[var(--petrol)] focus-within:ring-[3px] focus-within:ring-ring/20">
+                  <Calendar
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                    strokeWidth={1.5}
+                  />
+                  <input
+                    id="task-create-due-date"
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none focus:ring-0"
+                    data-testid="task-create-due-date"
+                  />
+                </div>
               </div>
 
-              <div
-                className="flex items-center gap-1.5"
-                role="radiogroup"
-                aria-label="Priorität"
-                data-testid="task-create-priority"
-              >
-                {PRIORITIES.map((p) => (
-                  <button
-                    key={p.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={priority === p.value}
-                    aria-label={p.label}
-                    onClick={() => setPriority(p.value)}
-                    className={cn(
-                      "flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      priority === p.value
-                        ? "bg-secondary font-medium text-foreground"
-                        : "text-muted-foreground/60 hover:text-foreground",
-                    )}
-                    data-testid={`task-create-priority-${p.value}`}
-                  >
-                    <span
-                      className={cn("size-2 rounded-full", p.dot)}
-                      aria-hidden="true"
-                    />
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Assignee picker */}
-            {members.length > 0 && (
-              <div className="mt-4" data-testid="task-create-assignee-section">
-                <p className="mb-2 text-xs text-muted-foreground/50">
-                  Verantwortlich
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setAssignedTo("")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      !assignedTo
-                        ? "bg-secondary font-medium text-foreground"
-                        : "text-muted-foreground/60 hover:text-foreground",
-                    )}
-                    data-testid="task-create-assignee-none"
-                  >
-                    <User
-                      className="size-3"
-                      aria-hidden="true"
-                      strokeWidth={1.5}
-                    />
-                    Niemand
-                  </button>
-                  {members.map((m) => (
+              <fieldset>
+                <legend className="mb-2 text-sm font-medium text-foreground">
+                  Priorität
+                </legend>
+                <div
+                  className="grid grid-cols-3 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] p-1"
+                  role="radiogroup"
+                  aria-label="Priorität"
+                  data-testid="task-create-priority"
+                >
+                  {PRIORITIES.map((p) => (
                     <button
-                      key={m.id}
+                      key={p.value}
                       type="button"
-                      onClick={() => setAssignedTo(m.id)}
+                      role="radio"
+                      aria-checked={priority === p.value}
+                      aria-label={p.label}
+                      onClick={() => setPriority(p.value)}
                       className={cn(
-                        "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        assignedTo === m.id
-                          ? "bg-secondary font-medium text-foreground"
-                          : "text-muted-foreground/60 hover:text-foreground",
+                        "flex h-10 min-w-0 items-center justify-center gap-1 rounded-[8px] px-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        priority === p.value
+                          ? "bg-primary font-medium text-primary-foreground"
+                          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                       )}
-                      data-testid={`task-create-assignee-${m.id}`}
+                      data-testid={`task-create-priority-${p.value}`}
                     >
-                      {m.name}
+                      <span
+                        className={cn(
+                          "size-2 shrink-0 rounded-full",
+                          priority === p.value && p.value === "medium"
+                            ? "bg-primary-foreground/80"
+                            : p.dot,
+                        )}
+                        aria-hidden="true"
+                      />
+                      {p.label}
                     </button>
                   ))}
+                </div>
+              </fieldset>
+            </div>
+
+            {/* Assignee picker — select dropdown matching the detail sheet */}
+            {members.length > 0 && (
+              <div className="mt-4" data-testid="task-create-assignee-section">
+                <label
+                  htmlFor="task-create-assignee"
+                  className="mb-2 block text-sm font-medium text-foreground"
+                >
+                  Verantwortlich
+                </label>
+                <div className="relative">
+                  <User
+                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                    strokeWidth={1.5}
+                  />
+                  <select
+                    id="task-create-assignee"
+                    value={assignedTo}
+                    onChange={(event) => setAssignedTo(event.target.value)}
+                    className="h-12 w-full appearance-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] pr-10 pl-10 text-sm text-foreground outline-none transition-colors hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                    data-testid="task-create-assignee"
+                  >
+                    <option value="">Nicht festgelegt</option>
+                    {members.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown
+                    className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
+                    aria-hidden="true"
+                  />
                 </div>
               </div>
             )}

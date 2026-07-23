@@ -433,11 +433,13 @@ describe("HomeClient — Task Interaction", () => {
     expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
   });
 
-  it("shows a success toast immediately when a task is marked done", () => {
+  it("shows a success toast after a task is marked done", async () => {
     render(<HomeClient {...defaultProps} />);
     const checkboxes = screen.getAllByTestId("task-checkbox");
     fireEvent.click(checkboxes[0]);
-    expect(toast.success).toHaveBeenCalledWith("Erledigt — gut gemacht!");
+    await waitFor(() => {
+      expect(toast.success).toHaveBeenCalledWith("Erledigt — gut gemacht!");
+    });
   });
 });
 

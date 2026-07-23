@@ -141,11 +141,11 @@ export function HomeClient({
   });
 
   const handleToggleDone = useCallback(
-    (taskId: string, newStatus: string) => {
-      if (newStatus === "done") {
+    async (taskId: string, newStatus: string) => {
+      const ok = await toggleDone(taskId, newStatus);
+      if (ok && newStatus === "done") {
         toast.success("Erledigt — gut gemacht!");
       }
-      toggleDone(taskId, newStatus);
     },
     [toggleDone],
   );

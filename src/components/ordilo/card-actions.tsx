@@ -22,11 +22,14 @@ import { cn } from "@/lib/utils";
 export function CardActions({
   onEdit,
   onDelete,
+  deleteLabel = "Löschen",
   className,
   testId,
 }: {
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Label for the delete/dismiss menu item. Defaults to "Löschen". */
+  deleteLabel?: string;
   className?: string;
   testId?: string;
 }) {
@@ -62,7 +65,7 @@ export function CardActions({
             data-testid="card-action-delete"
           >
             <Trash2 className="size-4" aria-hidden="true" />
-            Löschen
+            {deleteLabel}
           </DropdownMenuItem>
         )}
       </DropdownMenuContent>
