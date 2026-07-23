@@ -45,7 +45,7 @@ describe("TagInput", () => {
   it("removes a tag when its remove button is clicked", () => {
     const onChange = vi.fn();
     render(<TagInput value={["Auto", "Versicherung"]} onChange={onChange} />);
-    fireEvent.click(screen.getByLabelText('Tag "Auto" entfernen'));
+    fireEvent.click(screen.getByLabelText('Stichwort "Auto" entfernen'));
     expect(onChange).toHaveBeenCalledWith(["Versicherung"]);
   });
 

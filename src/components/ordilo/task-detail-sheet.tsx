@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   FileText,
@@ -10,6 +10,7 @@ import {
   Loader2,
   Calendar,
   User,
+  ChevronDown,
 } from "lucide-react";
 import {
   Sheet,
@@ -65,6 +66,7 @@ export function TaskDetailSheet({
 }: TaskDetailSheetProps) {
   const supabase = createClient();
   const { openDocument } = useDocumentViewer();
+  const sheetTitleRef = useRef<HTMLHeadingElement>(null);
   // Form state is initialized from the task prop on mount. The parent
   // uses a key prop (Rule 5: reset with key) to force a clean remount
   // when a different task is selected, so these initializers pick up the
@@ -75,6 +77,7 @@ export function TaskDetailSheet({
   const [priority, setPriority] = useState(task?.priority ?? "medium");
   const [tags, setTags] = useState<string[]>(task?.tags ?? []);
   const [assignedTo, setAssignedTo] = useState<string>(task?.assigned_to ?? "");
+  const [showMore, setShowMore] = useState((task?.tags?.length ?? 0) > 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -146,199 +149,198 @@ export function TaskDetailSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
-        className="w-full gap-0 sm:max-w-md"
+        className="w-full gap-0 bg-[var(--surface-box)] sm:max-w-md"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          sheetTitleRef.current?.focus();
+        }}
         data-testid="task-detail-sheet"
       >
-        <SheetHeader className="border-b border-border/60">
-          <SheetTitle className="pr-6 text-sm font-medium text-muted-foreground">
-            Aufgabendetails
-          </SheetTitle>
+        <SheetHeader className="border-b border-border/60 px-5 py-4 pr-16">
+          <div className="flex items-center gap-3">
+            <SheetTitle
+              ref={sheetTitleRef}
+              tabIndex={-1}
+              className="text-base font-semibold outline-none"
+            >
+              Aufgabe
+            </SheetTitle>
+            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+              <span
+                className={cn(
+                  "size-2 rounded-full",
+                  isDone
+                    ? "bg-[var(--petrol)]"
+                    : isOpen
+                      ? "bg-[var(--warm-apricot)]"
+                      : "bg-[var(--mist)]",
+                )}
+                aria-hidden="true"
+              />
+              {isDone ? "Erledigt" : isOpen ? "Offen" : "Verworfen"}
+            </span>
+          </div>
           <SheetDescription className="sr-only">
-            Details und Einstellungen für diese Aufgabe
+            Aufgabe ansehen und bearbeiten
           </SheetDescription>
         </SheetHeader>
 
         {task && (
           <div className="flex min-h-0 flex-1 flex-col">
-            {/* Scrollable content */}
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {/* ── Status row — tiny dot + date ──────────────────── */}
-              <div className="mb-3 flex items-center gap-2">
-                <span
-                  className={cn(
-                    "size-2 rounded-full",
-                    isDone
-                      ? "bg-[var(--petrol)]"
-                      : isOpen
-                        ? "bg-[var(--warm-apricot)]"
-                        : "bg-[var(--mist)]",
-                  )}
-                  aria-hidden="true"
-                />
-                <span className="text-xs text-muted-foreground">
-                  {isDone ? "Erledigt" : isOpen ? "Offen" : "Verworfen"}
-                </span>
-                {createdDate && (
-                  <>
-                    <span className="text-xs text-muted-foreground/40">·</span>
-                    <span className="text-xs text-muted-foreground/60">
-                      {createdDate}
-                    </span>
-                  </>
-                )}
-                {task.confidence > 0 && (
-                  <>
-                    <span className="text-xs text-muted-foreground/40">·</span>
-                    <span className="text-xs text-muted-foreground/60">
-                      {Math.round(task.confidence * 100)}% KI
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Error */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
               {error && (
                 <div
-                  className="mb-3 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+                  className="mb-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
                   role="alert"
                 >
                   {error}
                 </div>
               )}
 
-              {/* ── Title — the hero ──────────────────────────────── */}
               <input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="Aufgabentitel"
-                className="w-full border-0 bg-transparent text-lg font-semibold text-foreground outline-none focus:ring-0"
+                aria-label="Aufgabentitel"
+                className="w-full border-0 border-b border-transparent bg-transparent px-0 pb-2 text-xl font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-0"
                 data-testid="task-detail-title"
               />
 
-              {/* ── Description ────────────────────────────────────── */}
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Notizen, Details, was zu tun ist…"
-                rows={3}
-                className="mt-3 w-full resize-none rounded-ordilo-sm border-0 bg-secondary/50 px-3 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:bg-secondary/80 focus:ring-0"
-                data-testid="task-detail-description"
-              />
-
-              {/* ── Meta row — due date + priority ─────────────────── */}
-              <div className="mt-3 flex items-center gap-3">
-                {/* Due date — inline, compact */}
-                <div className="flex items-center gap-1.5 rounded-ordilo-sm bg-secondary/50 px-2.5 py-1.5">
-                  <Calendar
-                    className="size-3.5 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                    strokeWidth={1.5}
-                  />
-                  <input
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="min-w-0 border-0 bg-transparent text-xs text-foreground outline-none focus:ring-0"
-                    data-testid="task-detail-due-date"
-                  />
-                </div>
-
-                {/* Priority — dot picker */}
-                <div
-                  className="flex items-center gap-1.5"
-                  role="radiogroup"
-                  aria-label="Priorität"
-                  data-testid="task-detail-priority"
+              <div className="mt-5">
+                <label
+                  htmlFor="task-detail-description"
+                  className="mb-2 block text-sm font-medium text-foreground"
                 >
-                  {PRIORITIES.map((p) => (
-                    <button
-                      key={p.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={priority === p.value}
-                      aria-label={p.label}
-                      onClick={() => setPriority(p.value)}
-                      className={cn(
-                        "flex items-center gap-1 rounded-full px-2 py-1 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        priority === p.value
-                          ? "bg-secondary font-medium text-foreground"
-                          : "text-muted-foreground/60 hover:text-foreground",
-                      )}
-                      data-testid={`task-detail-priority-${p.value}`}
-                    >
-                      <span
-                        className={cn("size-2 rounded-full", p.dot)}
-                        aria-hidden="true"
-                      />
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ── Tags ───────────────────────────────────────────── */}
-              <div className="mt-4" data-testid="task-detail-tags-section">
-                <TagInput
-                  value={tags}
-                  onChange={setTags}
-                  testId="task-detail-tag"
-                  disabled={saving}
-                  variant="minimal"
+                  Notiz
+                </label>
+                <textarea
+                  id="task-detail-description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Was ist zu tun?"
+                  rows={4}
+                  className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                  data-testid="task-detail-description"
                 />
               </div>
 
-              {/* ── Assignee picker ─────────────────────────────────── */}
-              {members.length > 0 && (
-                <div className="mt-4" data-testid="task-detail-assignee-section">
-                  <p className="mb-2 text-xs text-muted-foreground/50">
-                    Verantwortlich
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setAssignedTo("")}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        !assignedTo
-                          ? "bg-secondary font-medium text-foreground"
-                          : "text-muted-foreground/60 hover:text-foreground",
-                      )}
-                      data-testid="task-detail-assignee-none"
+              <section
+                className="mt-5 overflow-hidden rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)]"
+                aria-label="Aufgabenplanung"
+              >
+                <div className="grid gap-4 p-4 min-[480px]:grid-cols-2">
+                  <div>
+                    <label
+                      htmlFor="task-detail-due-date"
+                      className="mb-2 block text-sm font-medium text-foreground"
                     >
-                      <User
-                        className="size-3"
+                      Fällig am
+                    </label>
+                    <div className="flex h-12 items-center gap-2 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] px-3 transition-colors focus-within:border-[var(--petrol)] focus-within:ring-[3px] focus-within:ring-ring/20">
+                      <Calendar
+                        className="size-4 shrink-0 text-muted-foreground"
                         aria-hidden="true"
                         strokeWidth={1.5}
                       />
-                      Niemand
-                    </button>
-                    {members.map((m) => (
-                      <button
-                        key={m.id}
-                        type="button"
-                        onClick={() => setAssignedTo(m.id)}
-                        className={cn(
-                          "flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          assignedTo === m.id
-                            ? "bg-secondary font-medium text-foreground"
-                            : "text-muted-foreground/60 hover:text-foreground",
-                        )}
-                        data-testid={`task-detail-assignee-${m.id}`}
-                      >
-                        {m.name}
-                      </button>
-                    ))}
+                      <input
+                        id="task-detail-due-date"
+                        type="date"
+                        value={dueDate}
+                        onChange={(e) => setDueDate(e.target.value)}
+                        className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none focus:ring-0"
+                        data-testid="task-detail-due-date"
+                      />
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {/* ── Linked documents — compact rows ────────────────── */}
+                  <fieldset>
+                    <legend className="mb-2 text-sm font-medium text-foreground">
+                      Priorität
+                    </legend>
+                    <div
+                      className="grid grid-cols-3 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] p-1"
+                      role="radiogroup"
+                      aria-label="Priorität"
+                      data-testid="task-detail-priority"
+                    >
+                      {PRIORITIES.map((p) => (
+                        <button
+                          key={p.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={priority === p.value}
+                          aria-label={p.label}
+                          onClick={() => setPriority(p.value)}
+                          className={cn(
+                            "flex h-10 min-w-0 items-center justify-center gap-1 rounded-[8px] px-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                            priority === p.value
+                              ? "bg-primary font-medium text-primary-foreground"
+                              : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                          )}
+                          data-testid={`task-detail-priority-${p.value}`}
+                        >
+                          <span
+                            className={cn(
+                              "size-2 shrink-0 rounded-full",
+                              priority === p.value && p.value === "medium"
+                                ? "bg-primary-foreground/80"
+                                : p.dot,
+                            )}
+                            aria-hidden="true"
+                          />
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </fieldset>
+                </div>
+
+                {members.length > 0 && (
+                  <div
+                    className="border-t border-border/70 p-4"
+                    data-testid="task-detail-assignee-section"
+                  >
+                    <label
+                      htmlFor="task-detail-assignee"
+                      className="mb-2 block text-sm font-medium text-foreground"
+                    >
+                      Verantwortlich
+                    </label>
+                    <div className="relative">
+                      <User
+                        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden="true"
+                        strokeWidth={1.5}
+                      />
+                      <select
+                        id="task-detail-assignee"
+                        value={assignedTo}
+                        onChange={(event) => setAssignedTo(event.target.value)}
+                        className="h-12 w-full appearance-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] pr-10 pl-10 text-sm text-foreground outline-none transition-colors hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                        data-testid="task-detail-assignee"
+                      >
+                        <option value="">Nicht festgelegt</option>
+                        {members.map((member) => (
+                          <option key={member.id} value={member.id}>
+                            {member.name}
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown
+                        className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    </div>
+                  </div>
+                )}
+              </section>
+
               {allDocs.length > 0 && (
-                <div className="mt-4" data-testid="task-detail-documents">
-                  <p className="mb-2 text-xs text-muted-foreground/50">
-                    Verlinkte Dokumente
-                  </p>
-                  <div className="space-y-1">
+                <section className="mt-5" data-testid="task-detail-documents">
+                  <h3 className="mb-2 text-sm font-medium text-foreground">
+                    Verknüpfte Dokumente
+                  </h3>
+                  <div className="overflow-hidden rounded-ordilo-sm border border-border/70">
                     {allDocs.map((doc) => (
                       <Link
                         key={doc.id}
@@ -348,87 +350,149 @@ export function TaskDetailSheet({
                           onOpenChange(false);
                           void openDocument(doc.id);
                         }}
-                        className="flex items-center gap-2.5 rounded-ordilo-sm px-2 py-1.5 transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="flex min-h-12 items-center gap-3 bg-[var(--surface-story)] px-3 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
                         data-testid="task-detail-document-link"
                       >
-                        <FileText
-                          className="size-3.5 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                          strokeWidth={1.5}
-                        />
+                        <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-box)] text-muted-foreground">
+                          <FileText
+                            className="size-4"
+                            aria-hidden="true"
+                            strokeWidth={1.5}
+                          />
+                        </span>
                         <span className="min-w-0 flex-1 truncate text-sm text-foreground">
                           {doc.title?.trim() || "Ohne Titel"}
                         </span>
                         {doc.primary && (
-                          <span className="shrink-0 text-[10px] text-muted-foreground/40">
-                            Hauptdokument
-                          </span>
+                          <span className="sr-only">Hauptdokument</span>
                         )}
                       </Link>
                     ))}
                   </div>
-                </div>
+                </section>
               )}
+
+              <div className="mt-5 border-t border-border/60 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowMore((current) => !current)}
+                  aria-expanded={showMore}
+                  aria-controls="task-detail-more"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-ordilo-sm px-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  data-testid="task-detail-more-toggle"
+                >
+                  <span>Weitere Angaben</span>
+                  <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+                    {tags.length > 0
+                      ? `${tags.length} ${tags.length === 1 ? "Stichwort" : "Stichwörter"}`
+                      : "Optional"}
+                    <ChevronDown
+                      className={cn(
+                        "size-4 transition-transform",
+                        showMore && "rotate-180",
+                      )}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </button>
+
+                {showMore && (
+                  <div
+                    id="task-detail-more"
+                    className="px-2 pt-3 pb-1"
+                    data-testid="task-detail-more"
+                  >
+                    <div data-testid="task-detail-tags-section">
+                      <p className="text-sm font-medium text-foreground">
+                        Stichwörter
+                      </p>
+                      <p className="mt-0.5 mb-2 text-xs text-muted-foreground">
+                        Helfen dir, die Aufgabe später wiederzufinden.
+                      </p>
+                      <TagInput
+                        value={tags}
+                        onChange={setTags}
+                        placeholder="Stichwort hinzufügen…"
+                        testId="task-detail-tag"
+                        disabled={saving}
+                      />
+                    </div>
+
+                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+                      {createdDate && (
+                        <span className="text-xs text-muted-foreground">
+                          Erstellt am {createdDate}
+                        </span>
+                      )}
+                      {isOpen && (
+                        <button
+                          type="button"
+                          onClick={handleDismiss}
+                          className="ml-auto flex min-h-11 items-center gap-2 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                          data-testid="task-detail-dismiss"
+                        >
+                          <Trash2
+                            className="size-4"
+                            aria-hidden="true"
+                            strokeWidth={1.5}
+                          />
+                          Aufgabe verwerfen
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
-            {/* ── Action bar — compact ────────────────────────────── */}
-            <div className="border-t border-border/60 px-4 py-3">
-              <div className="flex items-center gap-2">
-                {/* Toggle — primary */}
+            <div className="border-t border-border/60 bg-[var(--surface-box)] px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+              {hasChanges ? (
+                <Button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="h-11 w-full"
+                  data-testid="task-detail-save"
+                >
+                  {saving ? (
+                    <Loader2
+                      className="size-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    "Änderungen speichern"
+                  )}
+                </Button>
+              ) : isDismissed ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled
+                  className="h-11 w-full"
+                >
+                  Aufgabe verworfen
+                </Button>
+              ) : (
                 <Button
                   type="button"
                   variant={isDone ? "outline" : "default"}
-                  size="sm"
                   onClick={handleToggle}
-                  disabled={isDismissed}
-                  className="flex-1"
+                  className="h-11 w-full"
                   data-testid="task-detail-toggle"
                 >
                   {isDone ? (
                     <>
-                      <RotateCcw className="size-3.5" aria-hidden="true" />
+                      <RotateCcw className="size-4" aria-hidden="true" />
                       Wieder öffnen
                     </>
                   ) : (
                     <>
-                      <Check className="size-3.5" aria-hidden="true" />
-                      Erledigt
+                      <Check className="size-4" aria-hidden="true" />
+                      Als erledigt markieren
                     </>
                   )}
                 </Button>
-
-                {/* Save */}
-                {hasChanges && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="flex-1"
-                    data-testid="task-detail-save"
-                  >
-                    {saving ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      "Speichern"
-                    )}
-                  </Button>
-                )}
-
-                {/* Dismiss — ghost, only for open */}
-                {isOpen && !hasChanges && (
-                  <button
-                    type="button"
-                    onClick={handleDismiss}
-                    className="shrink-0 rounded-ordilo-sm p-2 text-muted-foreground/50 transition-colors hover:bg-destructive/5 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    aria-label="Aufgabe verwerfen"
-                    data-testid="task-detail-dismiss"
-                  >
-                    <Trash2 className="size-3.5" aria-hidden="true" strokeWidth={1.5} />
-                  </button>
-                )}
-              </div>
+              )}
             </div>
           </div>
         )}
