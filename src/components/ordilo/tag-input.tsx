@@ -34,7 +34,7 @@ export interface TagInputProps {
 export function TagInput({
   value,
   onChange,
-  placeholder = "Tag hinzufügen…",
+  placeholder = "Stichwort hinzufügen…",
   disabled = false,
   testId = "tag-input",
   variant = "boxed",
@@ -117,7 +117,7 @@ export function TagInput({
                 type="button"
                 onClick={() => removeTag(tag)}
                 className="ml-0.5 rounded-full p-0.5 hover:bg-[var(--mist-light)]"
-                aria-label={`Tag "${tag}" entfernen`}
+                aria-label={`Stichwort "${tag}" entfernen`}
                 disabled={disabled}
               >
                 <X className="size-2.5" aria-hidden="true" />
@@ -146,8 +146,8 @@ export function TagInput({
           disabled={disabled}
           className={
             variant === "boxed"
-              ? "min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground/40"
-              : "min-w-0 flex-1 border-0 border-b border-transparent bg-transparent text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/40 focus:border-border focus:ring-0"
+              ? "min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+              : "min-w-0 flex-1 border-0 border-b border-transparent bg-transparent text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-border focus:ring-0"
           }
           data-testid={`${testId}-input`}
         />
@@ -158,6 +158,7 @@ export function TagInput({
             className="shrink-0 rounded-ordilo-sm px-2 py-0.5 text-xs text-[var(--petrol)] transition-colors hover:bg-secondary"
             data-testid={`${testId}-add`}
             disabled={disabled}
+            aria-label="Stichwort hinzufügen"
           >
             <Check className="size-3" aria-hidden="true" strokeWidth={2.5} />
           </button>
