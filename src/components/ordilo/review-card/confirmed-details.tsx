@@ -29,6 +29,18 @@ import { createClient } from "@/lib/supabase/client";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { FieldGroup, FieldRow, getPriorityLabel, getPriorityBadgeClasses } from "./helpers";
 
+function shouldShowOrganizationType(name: string, type?: string | null): boolean {
+  if (!type) return false;
+  const normalize = (value: string) =>
+    value.toLocaleLowerCase("de").replace(/[^a-z0-9äöüß]+/g, " ").trim();
+  const normalizedType = normalize(type);
+  return (
+    normalizedType !== "organization" &&
+    normalizedType !== "organisation" &&
+    normalizedType !== normalize(name)
+  );
+}
+
 /**
  * Read-only analysis details shown for a confirmed document — the
  * metadata, persons, dates, amounts, tasks, category, and tags that were
@@ -42,12 +54,14 @@ export function ConfirmedAnalysisDetails({
   loading,
   onViewOriginal,
   documentId,
+  standalone = false,
 }: {
   analysis: DocumentAnalysis | null;
   loading: boolean;
   onViewOriginal?: () => void;
   /** Enables the editable facts section (loads + writes document_facts). */
   documentId?: string;
+  standalone?: boolean;
 }) {
   if (loading) {
     return (
@@ -69,14 +83,16 @@ export function ConfirmedAnalysisDetails({
     analysis.dates.length > 0 ||
     analysis.amounts.length > 0 ||
     analysis.tasks.length > 0 ||
-    analysis.tags.length > 0 ||
     Boolean(analysis.summary?.trim());
 
   if (!hasAnyFields && !onViewOriginal) return null;
 
   return (
     <div
-      className="mt-5 w-full space-y-3.5 border-t border-border pt-5 text-left"
+      className={cn(
+        "w-full space-y-3.5 text-left",
+        !standalone && "mt-5 border-t border-border pt-5",
+      )}
       data-testid="confirmed-details"
     >
       {analysis.summary?.trim() && (
@@ -103,7 +119,7 @@ export function ConfirmedAnalysisDetails({
             {analysis.organizations.map((org, i) => (
               <FieldRow key={i} icon={Building2} label="Organisationen">
                 <span className="block truncate">{org.name}</span>
-                {org.type && org.type !== "organization" && (
+                {shouldShowOrganizationType(org.name, org.type) && (
                   <span className="block truncate font-normal text-muted-foreground">
                     {org.type}
                   </span>
@@ -186,24 +202,9 @@ export function ConfirmedAnalysisDetails({
           </FieldGroup>
         )}
 
-        <FieldRow icon={Tag} label="Kategorie" testId="confirmed-category">
+        <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
           <span className="block truncate">{analysis.suggested_category}</span>
         </FieldRow>
-
-        {analysis.tags.length > 0 && (
-          <FieldRow icon={Tag} label="Tags" testId="confirmed-tags">
-            <div className="flex flex-wrap gap-2">
-              {analysis.tags.map((tag, i) => (
-                <span
-                  key={i}
-                  className="rounded-full bg-[var(--sand-light)] px-2.5 py-1 text-xs font-medium text-[var(--mist-dark)]"
-                >
-                  {tag}
-                </span>
-              ))}
-            </div>
-          </FieldRow>
-        )}
       </div>
 
       {onViewOriginal && (
@@ -332,7 +333,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                   setEditValue(fact.value);
                 }}
                 aria-label={`${fact.label} korrigieren`}
-                className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="confirmed-fact-edit-button"
               >
                 <Pencil className="size-4" aria-hidden="true" />
@@ -362,7 +363,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 type="submit"
                 disabled={saving || !editValue.trim()}
                 aria-label="Speichern"
-                className="flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
+                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
                 data-testid="confirmed-fact-save-button"
               >
                 {saving ? (
@@ -375,7 +376,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 type="button"
                 onClick={() => setEditingId(null)}
                 aria-label="Abbrechen"
-                className="flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
+                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
               >
                 <X className="size-3.5" aria-hidden="true" />
               </button>
@@ -427,7 +428,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             type="submit"
             disabled={saving || !newValue.trim()}
             aria-label="Nummer speichern"
-            className="flex size-8 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
             data-testid="confirmed-fact-add-save"
           >
             {saving ? (
@@ -443,7 +444,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
               setNewValue("");
             }}
             aria-label="Abbrechen"
-            className="flex size-8 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
           >
             <X className="size-4" aria-hidden="true" />
           </button>

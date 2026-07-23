@@ -26,6 +26,10 @@ const EMPTY_EDITS: EditState = {
   factValues: new Map(),
   category: null,
   dates: new Map(),
+  organizationNames: new Map(),
+  amountValues: new Map(),
+  taskTitles: new Map(),
+  taskPriorities: new Map(),
   taskDueDates: new Map(),
   deletedTasks: new Set(),
 };

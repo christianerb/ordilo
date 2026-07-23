@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Loader2,
   ArrowLeft,
+  Undo2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -22,6 +23,7 @@ import {
   DOCUMENT_TYPE_LABELS,
   FACT_TYPE_LABELS,
   type DocumentAnalysis,
+  type TaskPriority,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
 import type { FamilyMemberOption } from "@/lib/analysis";
@@ -40,7 +42,21 @@ import {
   CategoryEditControl,
   DateEditControl,
   FactEditControl,
+  TaskPriorityEditControl,
+  TextEditControl,
 } from "./edit-controls";
+
+function shouldShowOrganizationType(name: string, type?: string | null): boolean {
+  if (!type) return false;
+  const normalize = (value: string) =>
+    value.toLocaleLowerCase("de").replace(/[^a-z0-9äöüß]+/g, " ").trim();
+  const normalizedType = normalize(type);
+  return (
+    normalizedType !== "organization" &&
+    normalizedType !== "organisation" &&
+    normalizedType !== normalize(name)
+  );
+}
 
 /**
  * Full review card content — renders all extracted fields with
@@ -60,9 +76,14 @@ export function ReviewCardContent({
   onCreateMember,
   onEditCategory,
   onEditDate,
+  onEditOrganization,
+  onEditAmount,
+  onEditTaskTitle,
+  onEditTaskPriority,
   onEditTaskDueDate,
   onEditFact,
   onDeleteTask,
+  onUndoDeleteTask,
   onResolveDisambiguation,
   onConfirm,
   onReanalyze,
@@ -85,9 +106,14 @@ export function ReviewCardContent({
   onCreateMember?: (entityIndex: number, name: string) => Promise<boolean>;
   onEditCategory: (category: string) => void;
   onEditDate: (entityIndex: number, date: string) => void;
+  onEditOrganization: (entityIndex: number, value: string) => void;
+  onEditAmount: (entityIndex: number, value: string) => void;
+  onEditTaskTitle: (taskIndex: number, value: string) => void;
+  onEditTaskPriority: (taskIndex: number, priority: TaskPriority) => void;
   onEditTaskDueDate: (taskIndex: number, dueDate: string) => void;
   onEditFact: (factIndex: number, value: string) => void;
   onDeleteTask: (taskIndex: number) => void;
+  onUndoDeleteTask: () => void;
   onResolveDisambiguation: (entityIndex: number, memberId: string) => void;
   onConfirm: () => void;
   onReanalyze: () => void;
@@ -101,12 +127,19 @@ export function ReviewCardContent({
   const activeTasks = analysis.tasks
     .map((t, i) => ({ task: t, index: i }))
     .filter(({ index }) => !edits.deletedTasks.has(index));
-  const typeLabel =
-    DOCUMENT_TYPE_LABELS[analysis.document_type] ?? "Dokument";
-  const primaryPerson = analysis.family_members[0]?.name;
-  const detailHeading = primaryPerson
-    ? `${typeLabel} für ${primaryPerson}`
-    : typeLabel;
+  const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type] ?? "Dokument";
+  const primaryPerson =
+    edits.persons.get(0)?.name ?? analysis.family_members[0]?.name;
+  const contextLabel = primaryPerson ? `${typeLabel} für ${primaryPerson}` : typeLabel;
+  const firstDate = analysis.dates[0];
+  const firstAmount = analysis.amounts[0];
+  const firstTaskEntry = activeTasks[0];
+  const firstTask = firstTaskEntry?.task;
+  const firstDateValue = edits.dates.get(0) ?? firstDate?.date;
+  const firstAmountValue = edits.amountValues.get(0) ?? firstAmount?.amount;
+  const firstTaskTitle = firstTaskEntry
+    ? edits.taskTitles.get(firstTaskEntry.index) ?? firstTaskEntry.task.title
+    : null;
 
   return (
     <div
@@ -118,8 +151,9 @@ export function ReviewCardContent({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold leading-tight text-foreground">
-              {detailHeading}
+              Auf einen Blick
             </h3>
+            <p className="mt-1 text-sm text-[var(--mist-dark)]">{contextLabel}</p>
           </div>
 
           {needsReview && (
@@ -138,6 +172,29 @@ export function ReviewCardContent({
             <p className="max-w-[60ch] text-sm leading-relaxed text-[var(--mist-dark)]">
               {analysis.summary}
             </p>
+          </div>
+        )}
+
+        {(firstDate || firstAmount || firstTask) && (
+          <div className="mt-4 flex flex-wrap gap-2 text-xs text-[var(--mist-dark)]">
+            {firstDate && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2.5 py-1.5">
+                <Calendar className="size-3.5" aria-hidden="true" />
+                {formatGermanDate(firstDateValue) || firstDateValue}
+              </span>
+            )}
+            {firstAmount && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-white/75 px-2.5 py-1.5">
+                <Euro className="size-3.5" aria-hidden="true" />
+                {firstAmountValue} {firstAmount.currency}
+              </span>
+            )}
+            {firstTask && (
+              <span className="inline-flex max-w-full items-center gap-1.5 rounded-full bg-white/75 px-2.5 py-1.5">
+                <ListTodo className="size-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{firstTaskTitle}</span>
+              </span>
+            )}
           </div>
         )}
 
@@ -197,21 +254,34 @@ export function ReviewCardContent({
             title="Organisationen"
             testId="review-organizations"
           >
-            {analysis.organizations.map((org, i) => (
-              <FieldRow
-                key={i}
-                confidence={org.confidence}
-                sourceText={org.name}
-                onShowSource={onViewOriginal}
-              >
-                <span className="block truncate">{org.name}</span>
-                {org.type && org.type !== "organization" && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {org.type}
-                  </span>
-                )}
-              </FieldRow>
-            ))}
+            {analysis.organizations.map((org, i) => {
+              const editedName = edits.organizationNames.get(i);
+              const displayName = editedName ?? org.name;
+              return (
+                <FieldRow
+                  key={i}
+                  confidence={org.confidence}
+                  sourceText={org.name}
+                  onShowSource={onViewOriginal}
+                  isEdited={Boolean(editedName)}
+                  editControl={
+                    <TextEditControl
+                      value={displayName}
+                      label="Organisation korrigieren"
+                      onChange={(value) => onEditOrganization(i, value)}
+                      testId="organization-edit"
+                    />
+                  }
+                >
+                  <span className="block truncate">{displayName}</span>
+                  {shouldShowOrganizationType(displayName, org.type) && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {org.type}
+                    </span>
+                  )}
+                </FieldRow>
+              );
+            })}
           </ReviewFieldSection>
         )}
 
@@ -257,23 +327,37 @@ export function ReviewCardContent({
         {/* Amounts */}
         {analysis.amounts.length > 0 && (
           <ReviewFieldSection icon={Euro} title="Beträge" testId="review-amounts">
-            {analysis.amounts.map((amount, i) => (
-              <FieldRow
-                key={i}
-                confidence={amount.confidence}
-                sourceText={amount.amount}
-                onShowSource={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {amount.amount} {amount.currency}
-                </span>
-                {amount.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {amount.label}
+            {analysis.amounts.map((amount, i) => {
+              const editedValue = edits.amountValues.get(i);
+              const displayValue = editedValue ?? amount.amount;
+              return (
+                <FieldRow
+                  key={i}
+                  confidence={amount.confidence}
+                  sourceText={amount.amount}
+                  onShowSource={onViewOriginal}
+                  isEdited={Boolean(editedValue)}
+                  editControl={
+                    <TextEditControl
+                      value={displayValue}
+                      label="Betrag korrigieren"
+                      onChange={(value) => onEditAmount(i, value)}
+                      testId="amount-edit"
+                      inputMode="decimal"
+                    />
+                  }
+                >
+                  <span className="block truncate">
+                    {displayValue} {amount.currency}
                   </span>
-                )}
-              </FieldRow>
-            ))}
+                  {amount.label && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {amount.label}
+                    </span>
+                  )}
+                </FieldRow>
+              );
+            })}
           </ReviewFieldSection>
         )}
 
@@ -327,9 +411,13 @@ export function ReviewCardContent({
           >
             {activeTasks.map(({ task, index }) => {
               const editedDueDate = edits.taskDueDates.get(index);
-              const isEdited = Boolean(editedDueDate);
+              const editedTitle = edits.taskTitles.get(index);
+              const editedPriority = edits.taskPriorities.get(index);
+              const isEdited = Boolean(editedDueDate || editedTitle || editedPriority);
               const displayDueDate = editedDueDate ?? task.due_date;
-              const priorityLabel = getPriorityLabel(task.priority);
+              const displayTitle = editedTitle ?? task.title;
+              const displayPriority = editedPriority ?? task.priority;
+              const priorityLabel = getPriorityLabel(displayPriority);
               return (
                 <FieldRow
                   key={index}
@@ -338,18 +426,31 @@ export function ReviewCardContent({
                   sourceText={task.title}
                   onShowSource={onViewOriginal}
                   editControl={
-                    <button
-                      type="button"
-                      onClick={() => onDeleteTask(index)}
-                      className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                      aria-label="Aufgabe löschen"
-                      data-testid={`delete-task-${index}`}
-                    >
-                      <Trash2 className="size-4" aria-hidden="true" />
-                    </button>
+                    <div className="flex items-center gap-0.5">
+                      <TextEditControl
+                        value={displayTitle}
+                        label="Aufgabe korrigieren"
+                        onChange={(value) => onEditTaskTitle(index, value)}
+                        testId="task-title-edit"
+                      />
+                      <TaskPriorityEditControl
+                        value={displayPriority}
+                        onChange={(priority) => onEditTaskPriority(index, priority)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => onDeleteTask(index)}
+                        className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        aria-label="Aufgabe löschen"
+                        title="Aufgabe löschen"
+                        data-testid={`delete-task-${index}`}
+                      >
+                        <Trash2 className="size-4" aria-hidden="true" />
+                      </button>
+                    </div>
                   }
                 >
-                  <p className="text-foreground">{task.title}</p>
+                  <p className="text-foreground">{displayTitle}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 font-normal">
                     {displayDueDate && (
                       <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
@@ -375,7 +476,7 @@ export function ReviewCardContent({
                     <span
                       className={cn(
                         "rounded-full px-2 py-0.5 text-xs font-medium",
-                        getPriorityBadgeClasses(task.priority),
+                        getPriorityBadgeClasses(displayPriority),
                       )}
                     >
                       {priorityLabel}
@@ -395,10 +496,22 @@ export function ReviewCardContent({
           </p>
         )}
 
+        {edits.deletedTasks.size > 0 && (
+          <button
+            type="button"
+            onClick={onUndoDeleteTask}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="undo-delete-task"
+          >
+            <Undo2 className="size-4" aria-hidden="true" />
+            Letzte Aufgabe wiederherstellen
+          </button>
+        )}
+
         {/* Category */}
         <FieldRow
           icon={Tag}
-          label="Kategorie"
+          label="Sammlung"
           testId="review-category"
           isEdited={edits.category !== null}
           editControl={
@@ -440,7 +553,12 @@ export function ReviewCardContent({
       )}
 
       {/* Actions */}
-      <div className="sticky bottom-0 z-10 mt-5 -mx-4 bg-[var(--background)]/95 px-4 pt-4 pb-1 backdrop-blur supports-[backdrop-filter]:bg-[var(--background)]/88">
+      <div
+        className="sticky bottom-0 z-10 mt-5 -mx-4 bg-[var(--background)]/95 px-4 pt-4 backdrop-blur supports-[backdrop-filter]:bg-[var(--background)]/88"
+        style={{
+          paddingBottom: "max(0.25rem, env(safe-area-inset-bottom))",
+        }}
+      >
         <div className="flex flex-col gap-2.5">
         <Button
           type="button"
@@ -463,7 +581,7 @@ export function ReviewCardContent({
           ) : (
             <>
               <Check className="size-4" aria-hidden="true" />
-              Speichern
+              Angaben übernehmen
             </>
           )}
         </Button>
