@@ -7,7 +7,10 @@ import {
   type ReactNode,
 } from "react";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
-import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/schemas/extraction";
+import {
+  LOW_CONFIDENCE_THRESHOLD,
+  type TaskPriority,
+} from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import {
   fetchDocumentAnalysis,
@@ -22,10 +25,23 @@ import {
   ReviewCardConfirmed,
   ReviewCardProcessing,
 } from "./states";
-import { buildConfirmPayload } from "./helpers";
+import {
+  buildConfirmPayload,
+  hasReviewEdits,
+  postConfirm,
+} from "./helpers";
 import type { EditState, EditedAnalysisPayload } from "./helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 // Re-export public types so that imports from "@/components/ordilo/review-card"
 // continue to resolve.
@@ -59,6 +75,8 @@ export interface ReviewCardProps {
   onBack?: (edits: EditState) => void;
   /** Notifies a containing detail sheet when comparison opens or closes. */
   onOriginalPreviewChange?: (open: boolean) => void;
+  /** Notifies a containing detail sheet about unsaved review changes. */
+  onDirtyChange?: (dirty: boolean) => void;
   /** Optional additional className. */
   className?: string;
 }
@@ -110,6 +128,7 @@ export function ReviewCard({
   onRetry,
   onBack,
   onOriginalPreviewChange,
+  onDirtyChange,
   className,
 }: ReviewCardProps) {
   // --- State ---
@@ -122,6 +141,10 @@ export function ReviewCard({
     factValues: new Map(),
     category: null,
     dates: new Map(),
+    organizationNames: new Map(),
+    amountValues: new Map(),
+    taskTitles: new Map(),
+    taskPriorities: new Map(),
     taskDueDates: new Map(),
     deletedTasks: new Set(),
   });
@@ -131,6 +154,7 @@ export function ReviewCard({
   const [confirmed, setConfirmed] = useState(false);
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
   const [originalSourceText, setOriginalSourceText] = useState<string | null>(null);
+  const [reanalyzePromptOpen, setReanalyzePromptOpen] = useState(false);
 
   // --- Fetch family members and categories on mount ---
   useMountEffect(() => {
@@ -191,13 +215,28 @@ export function ReviewCard({
 
   // --- Handlers ---
 
+  const updateEdits = useCallback(
+    (update: (previous: EditState) => EditState) => {
+      setEdits((previous) => {
+        const next = update(previous);
+        onDirtyChange?.(hasReviewEdits(next));
+        return next;
+      });
+    },
+    [onDirtyChange],
+  );
+
   /** Edit person: select a family member from the dropdown. */
   const handleEditPerson = useCallback(
     (entityIndex: number, memberId: string | null) => {
       const member = familyMembers.find((m) => m.id === memberId);
-      setEdits((prev) => {
+      updateEdits((prev) => {
         const newPersons = new Map(prev.persons);
-        if (member) {
+        const original = analysis?.family_members[entityIndex];
+        if (
+          member &&
+          (member.id !== original?.person_id || member.name !== original?.name)
+        ) {
           newPersons.set(entityIndex, {
             name: member.name,
             personId: member.id,
@@ -208,7 +247,7 @@ export function ReviewCard({
         return { ...prev, persons: newPersons };
       });
     },
-    [familyMembers],
+    [analysis, familyMembers, updateEdits],
   );
 
   /**
@@ -228,7 +267,7 @@ export function ReviewCard({
         role: result.data.role,
       };
       setFamilyMembers((prev) => [...prev, newMember]);
-      setEdits((prev) => {
+      updateEdits((prev) => {
         const newPersons = new Map(prev.persons);
         newPersons.set(entityIndex, {
           name: newMember.name,
@@ -238,32 +277,68 @@ export function ReviewCard({
       });
       return true;
     },
-    [],
+    [updateEdits],
   );
 
   /** Edit category. */
   const handleEditCategory = useCallback((category: string) => {
-    setEdits((prev) => ({ ...prev, category }));
-  }, []);
+    updateEdits((prev) => ({
+      ...prev,
+      category:
+        category === analysis?.suggested_category ? null : category,
+    }));
+  }, [analysis, updateEdits]);
 
   /** Edit date. */
   const handleEditDate = useCallback(
     (entityIndex: number, date: string) => {
-      setEdits((prev) => {
+      updateEdits((prev) => {
         const newDates = new Map(prev.dates);
-        newDates.set(entityIndex, date);
+        if (date === analysis?.dates[entityIndex]?.date) {
+          newDates.delete(entityIndex);
+        } else {
+          newDates.set(entityIndex, date);
+        }
         return { ...prev, dates: newDates };
       });
     },
-    [],
+    [analysis, updateEdits],
+  );
+
+  const handleEditOrganization = useCallback(
+    (entityIndex: number, value: string) => {
+      updateEdits((prev) => {
+        const organizationNames = new Map(prev.organizationNames);
+        if (value.trim() && value !== analysis?.organizations[entityIndex]?.name) {
+          organizationNames.set(entityIndex, value);
+        }
+        else organizationNames.delete(entityIndex);
+        return { ...prev, organizationNames };
+      });
+    },
+    [analysis, updateEdits],
+  );
+
+  const handleEditAmount = useCallback(
+    (entityIndex: number, value: string) => {
+      updateEdits((prev) => {
+        const amountValues = new Map(prev.amountValues);
+        if (value.trim() && value !== analysis?.amounts[entityIndex]?.amount) {
+          amountValues.set(entityIndex, value);
+        }
+        else amountValues.delete(entityIndex);
+        return { ...prev, amountValues };
+      });
+    },
+    [analysis, updateEdits],
   );
 
   /** Edit task due date. */
   const handleEditFact = useCallback(
     (factIndex: number, value: string) => {
-      setEdits((prev) => {
+      updateEdits((prev) => {
         const factValues = new Map(prev.factValues);
-        if (value.trim()) {
+        if (value.trim() && value !== analysis?.facts[factIndex]?.value) {
           factValues.set(factIndex, value);
         } else {
           factValues.delete(factIndex);
@@ -271,28 +346,70 @@ export function ReviewCard({
         return { ...prev, factValues };
       });
     },
-    [],
+    [analysis, updateEdits],
+  );
+
+  const handleEditTaskTitle = useCallback(
+    (taskIndex: number, value: string) => {
+      updateEdits((prev) => {
+        const taskTitles = new Map(prev.taskTitles);
+        if (value.trim() && value !== analysis?.tasks[taskIndex]?.title) {
+          taskTitles.set(taskIndex, value);
+        }
+        else taskTitles.delete(taskIndex);
+        return { ...prev, taskTitles };
+      });
+    },
+    [analysis, updateEdits],
+  );
+
+  const handleEditTaskPriority = useCallback(
+    (taskIndex: number, priority: TaskPriority) => {
+      updateEdits((prev) => {
+        const taskPriorities = new Map(prev.taskPriorities);
+        if (priority === analysis?.tasks[taskIndex]?.priority) {
+          taskPriorities.delete(taskIndex);
+        } else {
+          taskPriorities.set(taskIndex, priority);
+        }
+        return { ...prev, taskPriorities };
+      });
+    },
+    [analysis, updateEdits],
   );
 
   const handleEditTaskDueDate = useCallback(
     (taskIndex: number, dueDate: string) => {
-      setEdits((prev) => {
+      updateEdits((prev) => {
         const newTaskDueDates = new Map(prev.taskDueDates);
-        newTaskDueDates.set(taskIndex, dueDate);
+        if (dueDate === analysis?.tasks[taskIndex]?.due_date) {
+          newTaskDueDates.delete(taskIndex);
+        } else {
+          newTaskDueDates.set(taskIndex, dueDate);
+        }
         return { ...prev, taskDueDates: newTaskDueDates };
       });
     },
-    [],
+    [analysis, updateEdits],
   );
 
   /** Delete a task. */
   const handleDeleteTask = useCallback((taskIndex: number) => {
-    setEdits((prev) => {
+    updateEdits((prev) => {
       const newDeleted = new Set(prev.deletedTasks);
       newDeleted.add(taskIndex);
       return { ...prev, deletedTasks: newDeleted };
     });
-  }, []);
+  }, [updateEdits]);
+
+  const handleUndoDeleteTask = useCallback(() => {
+    updateEdits((prev) => {
+      const deletedTasks = new Set(prev.deletedTasks);
+      const lastDeleted = [...deletedTasks].at(-1);
+      if (lastDeleted !== undefined) deletedTasks.delete(lastDeleted);
+      return { ...prev, deletedTasks };
+    });
+  }, [updateEdits]);
 
   /** Resolve disambiguation: select a person. */
   const handleResolveDisambiguation = useCallback(
@@ -327,14 +444,7 @@ export function ReviewCard({
         edits,
       );
 
-      const response = await fetch(
-        `/api/documents/${documentId}/confirm`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      );
+      const response = await postConfirm(documentId, payload);
 
       if (!response.ok) {
         let errorBody: { error?: string };
@@ -350,6 +460,7 @@ export function ReviewCard({
       }
 
       setConfirmed(true);
+      onDirtyChange?.(false);
       onConfirmSuccess?.();
 
       // Re-fetch the analysis so the confirmed success state shows the
@@ -373,6 +484,7 @@ export function ReviewCard({
     onConfirmSuccess,
     hasUnresolvedDisambiguation,
     loadAnalysis,
+    onDirtyChange,
   ]);
 
   /** "Neu analysieren" — re-run extraction. */
@@ -383,10 +495,10 @@ export function ReviewCard({
     setConfirmError(null);
 
     try {
-      const response = await fetch(
-        `/api/documents/${documentId}/analyze`,
-        { method: "POST" },
-      );
+      const response = await fetch(`/api/documents/${documentId}/analyze`, {
+        method: "POST",
+        signal: AbortSignal.timeout(20_000),
+      });
 
       if (!response.ok) {
         let errorBody: { error?: string };
@@ -407,15 +519,22 @@ export function ReviewCard({
         factValues: new Map(),
         category: null,
         dates: new Map(),
+        organizationNames: new Map(),
+        amountValues: new Map(),
+        taskTitles: new Map(),
+        taskPriorities: new Map(),
         taskDueDates: new Map(),
         deletedTasks: new Set(),
       });
+      onDirtyChange?.(false);
       setConfirmed(false);
       await loadAnalysis();
       onReanalyzeSuccess?.();
     } catch (err) {
       setConfirmError(
-        err instanceof Error
+        err instanceof DOMException && err.name === "TimeoutError"
+          ? "Das neue Lesen dauert gerade zu lange. Bitte versuche es erneut."
+          : err instanceof Error
           ? err.message
           : "Analyse fehlgeschlagen. Bitte erneut versuchen.",
       );
@@ -427,7 +546,12 @@ export function ReviewCard({
     documentId,
     loadAnalysis,
     onReanalyzeSuccess,
+    onDirtyChange,
   ]);
+
+  const requestReanalyze = useCallback(() => {
+    setReanalyzePromptOpen(true);
+  }, []);
 
   const handleOriginalPreviewChange = useCallback(
     (open: boolean) => {
@@ -451,16 +575,20 @@ export function ReviewCard({
       className={cn(
         "lg:grid lg:items-start lg:gap-6",
         originalPreviewOpen &&
-          "lg:grid-cols-[minmax(0,42rem)_minmax(28rem,1fr)]",
+          "lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.9fr)]",
         className,
       )}
     >
       {/* Original preview — mounted eagerly for prefetch; on mobile it
           stacks above the review content (order-first), on desktop it
           sits in the second grid column (lg:order-2). */}
-      <div className={cn("order-first lg:order-2", !originalPreviewOpen && "lg:hidden")}>
+      <div
+        className={cn(
+          "order-first lg:order-2 lg:sticky lg:top-0 lg:self-start",
+          !originalPreviewOpen && "lg:hidden",
+        )}
+      >
         <OriginalDocumentPreview
-          key={originalSourceText ?? "full-document"}
           documentId={documentId}
           title={analysis?.title ?? "Dokument"}
           open={originalPreviewOpen}
@@ -471,6 +599,35 @@ export function ReviewCard({
       <div className={cn("lg:order-1", !originalPreviewOpen && "mx-auto w-full max-w-xl")}>
         {content}
       </div>
+      <Dialog open={reanalyzePromptOpen} onOpenChange={setReanalyzePromptOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Dokument neu lesen?</DialogTitle>
+            <DialogDescription>
+              Ordilo ersetzt die erkannten Angaben. Deine Änderungen gehen
+              dabei verloren.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setReanalyzePromptOpen(false)}
+            >
+              Abbrechen
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                setReanalyzePromptOpen(false);
+                void handleReanalyze();
+              }}
+            >
+              Neu lesen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -522,7 +679,7 @@ export function ReviewCard({
         // celebration: right after adding, invite the next natural action —
         // asking Ordilo about the document.
         askTitle={confirmed ? (analysis?.title ?? null) : null}
-        onReanalyze={handleReanalyze}
+        onReanalyze={requestReanalyze}
         reanalyzing={reanalyzing}
         onViewOriginal={handleOpenOriginal}
       />
@@ -563,12 +720,17 @@ export function ReviewCard({
       onCreateMember={handleCreateMember}
       onEditCategory={handleEditCategory}
       onEditDate={handleEditDate}
+      onEditOrganization={handleEditOrganization}
+      onEditAmount={handleEditAmount}
+      onEditTaskTitle={handleEditTaskTitle}
+      onEditTaskPriority={handleEditTaskPriority}
       onEditTaskDueDate={handleEditTaskDueDate}
       onEditFact={handleEditFact}
       onDeleteTask={handleDeleteTask}
+      onUndoDeleteTask={handleUndoDeleteTask}
       onResolveDisambiguation={handleResolveDisambiguation}
       onConfirm={handleConfirm}
-      onReanalyze={handleReanalyze}
+      onReanalyze={requestReanalyze}
       documentId={documentId}
       onViewOriginal={handleOpenOriginal}
       onBack={onBack ? () => onBack(edits) : undefined}

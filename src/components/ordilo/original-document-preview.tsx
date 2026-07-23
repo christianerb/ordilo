@@ -18,6 +18,17 @@ interface SignedFileResponse {
   mimeType?: string | null;
 }
 
+function isImageFile(file: SignedFileResponse): boolean {
+  if (file.mimeType) return file.mimeType.startsWith("image/");
+  try {
+    return /\.(avif|gif|heic|heif|jpe?g|png|webp)$/i.test(
+      new URL(file.url).pathname,
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function OriginalDocumentPreview({
   documentId,
   title,
@@ -36,7 +47,6 @@ export function OriginalDocumentPreview({
   const [file, setFile] = useState<SignedFileResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [sourceLocation, setSourceLocation] = useState<SourceLocation | null>(null);
   const requestController = useRef<AbortController | null>(null);
 
   useMountEffect(() => {
@@ -54,27 +64,9 @@ export function OriginalDocumentPreview({
     requestController.current = controller;
     setFile(null);
     setError(null);
-    setSourceLocation(null);
     setLoading(true);
 
     try {
-      const sourceRequest = sourceText
-        ? fetch(
-            `/api/documents/${documentId}/source`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text: sourceText }),
-              signal: controller.signal,
-            },
-          ).then(async (response) => {
-            if (!response.ok) return null;
-            const result = (await response.json()) as {
-              location?: SourceLocation | null;
-            };
-            return result.location ?? null;
-          }).catch(() => null)
-        : Promise.resolve(null);
       const response = await fetch(`/api/documents/${documentId}/file`, {
         signal: controller.signal,
       });
@@ -82,7 +74,6 @@ export function OriginalDocumentPreview({
       const result = (await response.json()) as SignedFileResponse;
       if (!result.url) throw new Error();
       setFile(result);
-      setSourceLocation(await sourceRequest);
     } catch {
       if (!controller.signal.aborted) {
         setError("Das Original konnte gerade nicht geladen werden.");
@@ -90,7 +81,7 @@ export function OriginalDocumentPreview({
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [documentId, sourceText]);
+  }, [documentId]);
 
   useMountEffect(() => {
     void loadOriginal();
@@ -103,7 +94,8 @@ export function OriginalDocumentPreview({
       loading={loading}
       error={error}
       title={title}
-      sourceLocation={sourceLocation}
+      documentId={documentId}
+      sourceText={sourceText}
       onRetry={() => void loadOriginal()}
     />
   );
@@ -112,7 +104,7 @@ export function OriginalDocumentPreview({
   if (desktop && open) {
     return (
       <aside
-        className="flex min-h-[36rem] flex-col overflow-hidden rounded-ordilo-md border border-border bg-[var(--sand-light)]"
+        className="flex h-[calc(100dvh-8rem)] min-h-[32rem] flex-col overflow-hidden rounded-ordilo-md border border-border bg-[var(--sand-light)]"
         aria-label="Originaldokument"
         data-testid="original-document-preview-desktop"
       >
@@ -128,7 +120,7 @@ export function OriginalDocumentPreview({
   // once we know the file is a PDF. While the signed URL is still
   // loading we render the inline panel (spinner) — for a PDF it swaps to
   // fullscreen as soon as the type is known.
-  const isImage = file?.mimeType?.startsWith("image/") ?? true;
+  const isImage = file ? isImageFile(file) : true;
 
   if (!desktop && open && !isImage) {
     return (
@@ -180,7 +172,7 @@ function InlineMobilePreview({
   useMountEffect(() => {
     // Defer one frame so the panel has its height before scrolling.
     const id = requestAnimationFrame(() => {
-      ref.current?.scrollIntoView({ block: "start", behavior: "auto" });
+      ref.current?.scrollIntoView?.({ block: "start", behavior: "auto" });
     });
     return () => cancelAnimationFrame(id);
   });
@@ -188,7 +180,7 @@ function InlineMobilePreview({
   return (
     <div
       ref={ref}
-      className="flex max-h-[60vh] min-h-[24rem] flex-col overflow-hidden rounded-ordilo-md border border-border bg-[var(--sand-light)]"
+      className="flex h-[min(56dvh,30rem)] min-h-[18rem] flex-col overflow-hidden rounded-ordilo-md border border-border bg-[var(--sand-light)]"
       aria-label="Originaldokument"
       data-testid="original-document-preview-mobile"
     >
@@ -208,11 +200,18 @@ function PreviewHeader({
   mobile?: boolean;
 }) {
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-border bg-[var(--sand)] px-4 py-3">
+    <div
+      className="flex shrink-0 items-center gap-3 border-b border-border bg-[var(--sand)] px-4 py-3"
+      style={
+        mobile
+          ? { paddingTop: "max(0.75rem, env(safe-area-inset-top))" }
+          : undefined
+      }
+    >
       <button
         type="button"
         onClick={onClose}
-        className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         aria-label={mobile ? "Zurück zu den Angaben" : "Original schließen"}
         data-testid="original-document-preview-close"
       >
@@ -231,14 +230,16 @@ function DocumentFrame({
   loading,
   error,
   title,
-  sourceLocation,
+  documentId,
+  sourceText,
   onRetry,
 }: {
   file: SignedFileResponse | null;
   loading: boolean;
   error: string | null;
   title: string;
-  sourceLocation: SourceLocation | null;
+  documentId: string;
+  sourceText?: string | null;
   onRetry: () => void;
 }) {
   if (loading) {
@@ -274,34 +275,28 @@ function DocumentFrame({
 
   if (!file) return null;
 
-  const isImage = file.mimeType?.startsWith("image/");
+  const isImage = isImageFile(file);
 
   return (
     <div
       className={cn(
         "min-h-0 flex-1 bg-[var(--sand-light)]",
-        isImage && "flex items-center justify-center overflow-hidden p-4",
+        isImage && "overflow-auto p-4",
       )}
     >
       {isImage ? (
-        <div className="relative max-h-full max-w-full">
+        <div className="relative mx-auto w-full">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={file.url}
             alt={`Original von ${title}`}
-            className="block max-h-full max-w-full rounded-ordilo-sm bg-[var(--warm-white)] object-contain shadow-card"
+            className="block h-auto w-full rounded-ordilo-sm bg-[var(--warm-white)] shadow-card"
           />
-          {sourceLocation && (
-            <div
-              className="pointer-events-none absolute rounded-sm border-2 border-[var(--apricot)] bg-[var(--apricot)]/15"
-              style={{
-                left: `${sourceLocation.bounds.left * 100}%`,
-                top: `${sourceLocation.bounds.top * 100}%`,
-                width: `${sourceLocation.bounds.width * 100}%`,
-                height: `${sourceLocation.bounds.height * 100}%`,
-              }}
-              aria-label="Passage im Original"
-              role="img"
+          {sourceText && (
+            <SourceHighlight
+              key={sourceText}
+              documentId={documentId}
+              sourceText={sourceText}
             />
           )}
         </div>
@@ -313,5 +308,62 @@ function DocumentFrame({
         />
       )}
     </div>
+  );
+}
+
+function SourceHighlight({
+  documentId,
+  sourceText,
+}: {
+  documentId: string;
+  sourceText: string;
+}) {
+  const [location, setLocation] = useState<SourceLocation | null>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+
+  useMountEffect(() => {
+    const controller = new AbortController();
+
+    void fetch(`/api/documents/${documentId}/source`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: sourceText }),
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) return;
+        const result = (await response.json()) as {
+          location?: SourceLocation | null;
+        };
+        if (!controller.signal.aborted) {
+          setLocation(result.location ?? null);
+          requestAnimationFrame(() => {
+            highlightRef.current?.scrollIntoView?.({
+              block: "center",
+              behavior: "smooth",
+            });
+          });
+        }
+      })
+      .catch(() => undefined);
+
+    return () => controller.abort();
+  });
+
+  if (!location) return null;
+
+  return (
+    <div
+      ref={highlightRef}
+      className="pointer-events-none absolute rounded-sm border-2 border-[var(--apricot)] bg-[var(--apricot)]/15"
+      style={{
+        left: `${location.bounds.left * 100}%`,
+        top: `${location.bounds.top * 100}%`,
+        width: `${location.bounds.width * 100}%`,
+        height: `${location.bounds.height * 100}%`,
+      }}
+      aria-label="Passage im Original"
+      role="img"
+    />
   );
 }

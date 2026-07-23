@@ -360,7 +360,7 @@ describe("ReviewCard", () => {
     expect(screen.queryByTestId("confirm-button")).toBeNull();
   });
 
-  it("shows 'Nochmal lesen' button in confirmed state (VAL-EXTRACT-012)", async () => {
+  it("shows 'Neu lesen' button in confirmed state (VAL-EXTRACT-012)", async () => {
     render(
       <ReviewCard documentId="doc-1" status="confirmed" />,
     );
@@ -376,7 +376,7 @@ describe("ReviewCard", () => {
     ).toBeDefined();
   });
 
-  it("shows the document's actual metadata (persons, category, tags) for an already-confirmed document", async () => {
+  it("shows useful metadata without internal tags for an already-confirmed document", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(<ReviewCard documentId="doc-1" status="confirmed" />);
@@ -388,9 +388,7 @@ describe("ReviewCard", () => {
     expect(
       within(within(details).getByTestId("confirmed-category")).getByText("Kita"),
     ).toBeDefined();
-    expect(
-      within(within(details).getByTestId("confirmed-tags")).getByText("Anmeldung"),
-    ).toBeDefined();
+    expect(within(details).queryByTestId("confirmed-tags")).toBeNull();
   });
 
   it("does not render confirmed-details when the analysis has no data", async () => {
@@ -433,7 +431,62 @@ describe("ReviewCard", () => {
     fetchSpy.mockRestore();
   });
 
-  it("calls the analyze API when 'Nochmal lesen' is clicked in confirmed state (VAL-EXTRACT-012)", async () => {
+  it("keeps the original image loaded when another source is selected", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input) => {
+        const url = String(input);
+        if (url.endsWith("/source")) {
+          return new Response(
+            JSON.stringify({
+              location: {
+                pageNumber: 1,
+                bounds: { left: 0.1, top: 0.2, width: 0.3, height: 0.1 },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            url: "https://storage.example.com/signed",
+            mimeType: "image/jpeg",
+          }),
+          { status: 200 },
+        );
+      },
+    );
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    const sourceButtons = await screen.findAllByLabelText("Im Original zeigen");
+    await waitFor(() => {
+      expect(
+        fetchSpy.mock.calls.filter(([input]) =>
+          String(input).endsWith("/file"),
+        ),
+      ).toHaveLength(1);
+    });
+
+    fireEvent.click(sourceButtons[0]);
+    await screen.findByLabelText("Passage im Original");
+    fireEvent.click(sourceButtons[1]);
+
+    await waitFor(() => {
+      expect(
+        fetchSpy.mock.calls.filter(([input]) =>
+          String(input).endsWith("/source"),
+        ),
+      ).toHaveLength(2);
+    });
+    expect(
+      fetchSpy.mock.calls.filter(([input]) => String(input).endsWith("/file")),
+    ).toHaveLength(1);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("confirms before calling the analyze API in confirmed state (VAL-EXTRACT-012)", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ status: "analyzed" }), { status: 200 }),
     );
@@ -445,6 +498,8 @@ describe("ReviewCard", () => {
     // The re-analyze button should be present in the confirmed state.
     const reanalyzeButton = screen.getByTestId("confirmed-reanalyze-button");
     fireEvent.click(reanalyzeButton);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Neu lesen" }));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith(
@@ -499,7 +554,7 @@ describe("ReviewCard", () => {
     const dates = screen.getByTestId("review-dates");
     expect(within(dates).getByText("15.08.2026")).toBeDefined();
     expect(within(dates).getByText("01.08.2026")).toBeDefined();
-    expect(screen.getByText("Anmeldung abschicken")).toBeDefined();
+    expect(within(screen.getByTestId("review-tasks")).getByText("Anmeldung abschicken")).toBeDefined();
     expect(screen.getByText("Betreuung bestätigen")).toBeDefined();
     expect(screen.getByTestId("review-view-original")).toBeDefined();
     expect(screen.queryByText("Im Original vergleichen")).toBeNull();
@@ -890,6 +945,112 @@ describe("ReviewCard", () => {
     });
   });
 
+  it("edits organization, amount, task title, and task priority before confirming", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const onDirtyChange = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+      async (input) => {
+        if (String(input).endsWith("/file")) {
+          return new Response(
+            JSON.stringify({
+              url: "https://storage.example.com/signed",
+              mimeType: "image/jpeg",
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(JSON.stringify({ status: "confirmed" }), {
+          status: 200,
+        });
+      },
+    );
+
+    render(
+      <ReviewCard
+        documentId="doc-1"
+        status="analyzed"
+        onDirtyChange={onDirtyChange}
+      />,
+    );
+
+    await screen.findByTestId("review-card");
+
+    fireEvent.click(screen.getByTestId("organization-edit-button"));
+    fireEvent.change(screen.getByTestId("organization-edit-input"), {
+      target: { value: "Kita Zukunft" },
+    });
+    fireEvent.click(screen.getByTestId("amount-edit-button"));
+    fireEvent.change(screen.getByTestId("amount-edit-input"), {
+      target: { value: "175" },
+    });
+    fireEvent.click(screen.getByTestId("task-title-edit-button"));
+    fireEvent.change(screen.getByTestId("task-title-edit-input"), {
+      target: { value: "Unterlagen senden" },
+    });
+    fireEvent.click(screen.getByTestId("task-priority-edit-button"));
+    fireEvent.change(screen.getByTestId("task-priority-edit-select"), {
+      target: { value: "medium" },
+    });
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      const confirmCall = fetchSpy.mock.calls.find(([input]) =>
+        String(input).endsWith("/confirm"),
+      );
+      expect(confirmCall).toBeDefined();
+      const payload = JSON.parse(
+        String((confirmCall?.[1] as RequestInit).body),
+      ) as DocumentAnalysis;
+      expect(payload.organizations[0].name).toBe("Kita Zukunft");
+      expect(payload.amounts[0].amount).toBe("175");
+      expect(payload.tasks[0].title).toBe("Unterlagen senden");
+      expect(payload.tasks[0].priority).toBe("medium");
+    });
+    expect(onDirtyChange).toHaveBeenCalledWith(true);
+
+    fetchSpy.mockRestore();
+  });
+
+  it("flags only lower-confidence fields for review", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    await screen.findByTestId("review-card");
+    expect(
+      within(screen.getByTestId("review-amounts")).getByText("Bitte prüfen"),
+    ).toBeDefined();
+    expect(
+      within(screen.getByTestId("review-organizations")).queryByText(
+        "Bitte prüfen",
+      ),
+    ).toBeNull();
+  });
+
+  it("hides organization types that duplicate the organization name", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...fullAnalysis,
+      organizations: [
+        {
+          name: "Freie und Hansestadt Hamburg",
+          type: "freie und hansestadt hamburg",
+          confidence: 0.95,
+        },
+      ],
+    });
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    const organizations = await screen.findByTestId("review-organizations");
+    expect(
+      within(organizations).getByText("Freie und Hansestadt Hamburg"),
+    ).toBeDefined();
+    expect(
+      within(organizations).queryByText("freie und hansestadt hamburg"),
+    ).toBeNull();
+  });
+
   // ---------------------------------------------------------------------------
   // Delete task flow
   // ---------------------------------------------------------------------------
@@ -933,6 +1094,24 @@ describe("ReviewCard", () => {
         screen.getByText("Alle Aufgaben wurden entfernt."),
       ).toBeDefined();
     });
+  });
+
+  it("restores the last removed task", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    await screen.findByTestId("review-task-0");
+    fireEvent.click(screen.getByTestId("delete-task-0"));
+    expect(screen.queryByTestId("review-task-0")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("undo-delete-task"));
+
+    expect(
+      within(screen.getByTestId("review-tasks")).getByText(
+        "Anmeldung abschicken",
+      ),
+    ).toBeDefined();
   });
 
   // ---------------------------------------------------------------------------
@@ -999,7 +1178,7 @@ describe("ReviewCard", () => {
   // Re-analyze
   // ---------------------------------------------------------------------------
 
-  it("calls the analyze API when 'Nochmal lesen' is clicked", async () => {
+  it("confirms before calling the analyze API", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
@@ -1015,6 +1194,8 @@ describe("ReviewCard", () => {
     });
 
     fireEvent.click(screen.getByTestId("reanalyze-button"));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Neu lesen" }));
 
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith(

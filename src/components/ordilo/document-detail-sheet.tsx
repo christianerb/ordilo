@@ -10,10 +10,23 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { ReviewCard } from "@/components/ordilo/review-card";
-import { getFileIcon } from "@/lib/schemas/document";
+import {
+  getFileIcon,
+  getStatusBadgeClasses,
+  getStatusLabel,
+} from "@/lib/schemas/document";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type DocRow = Database["public"]["Tables"]["documents"]["Row"];
 
@@ -46,6 +59,8 @@ export function DocumentDetailSheet({
     document?.title?.trim() || document?.original_filename || "Dokument";
   const [desktop, setDesktop] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const [discardPromptOpen, setDiscardPromptOpen] = useState(false);
 
   useMountEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -60,14 +75,29 @@ export function DocumentDetailSheet({
     return () => media.removeListener(sync);
   });
 
+  const closeSheet = () => {
+    setDirty(false);
+    setComparisonOpen(false);
+    setDiscardPromptOpen(false);
+    onOpenChange(false);
+  };
+
   return (
-    <Sheet
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) setComparisonOpen(false);
-        onOpenChange(nextOpen);
-      }}
-    >
+    <>
+      <Sheet
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (nextOpen) {
+            onOpenChange(true);
+            return;
+          }
+          if (dirty) {
+            setDiscardPromptOpen(true);
+            return;
+          }
+          closeSheet();
+        }}
+      >
       <SheetContent
         side={desktop ? "right" : "bottom"}
         className={cn(
@@ -81,12 +111,26 @@ export function DocumentDetailSheet({
         data-testid="document-detail-sheet"
       >
         <SheetHeader className="border-b border-border bg-[var(--sand)]/70 px-5 py-4">
-          <SheetTitle className="flex items-center gap-2 pr-8 text-[15px]">
-            <FileIcon
-              className="size-4 shrink-0 text-[var(--mist-dark)]"
-              aria-hidden="true"
-            />
-            <span className="truncate">{displayTitle}</span>
+          <SheetTitle className="flex flex-col items-start gap-2 pr-12">
+            <span className="flex min-w-0 items-start gap-2 text-[15px]">
+              <FileIcon
+                className="mt-0.5 size-4 shrink-0 text-[var(--mist-dark)]"
+                aria-hidden="true"
+              />
+              <span className="line-clamp-2 text-left leading-snug">
+                {displayTitle}
+              </span>
+            </span>
+            {document && (
+              <span
+                className={cn(
+                  "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+                  getStatusBadgeClasses(document.status),
+                )}
+              >
+                {getStatusLabel(document.status)}
+              </span>
+            )}
           </SheetTitle>
           <SheetDescription className="sr-only">
             Details und Metadaten für dieses Dokument
@@ -106,10 +150,35 @@ export function DocumentDetailSheet({
               onReanalyzeSuccess={onReanalyzeSuccess}
               onRetry={onRetry ? () => onRetry(document.id) : undefined}
               onOriginalPreviewChange={setComparisonOpen}
+              onDirtyChange={setDirty}
             />
           </div>
         )}
       </SheetContent>
-    </Sheet>
+      </Sheet>
+
+      <Dialog open={discardPromptOpen} onOpenChange={setDiscardPromptOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Änderungen verwerfen?</DialogTitle>
+            <DialogDescription>
+              Deine Korrekturen wurden noch nicht übernommen.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDiscardPromptOpen(false)}
+            >
+              Weiter bearbeiten
+            </Button>
+            <Button type="button" variant="destructive" onClick={closeSheet}>
+              Verwerfen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

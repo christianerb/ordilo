@@ -5,6 +5,10 @@ import { ChevronDown, Calendar, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDateInputValue } from "@/lib/format";
 import type { FamilyMemberOption } from "@/lib/analysis";
+import {
+  TASK_PRIORITIES,
+  type TaskPriority,
+} from "@/lib/schemas/extraction";
 
 /**
  * Shared "edit" affordance — a small pencil button. By default every field
@@ -26,8 +30,9 @@ function FieldEditButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       aria-label={label}
+      title={label}
       data-testid={testId}
     >
       <Pencil className="size-4" aria-hidden="true" />
@@ -122,7 +127,7 @@ export function CategoryEditControl({
     return (
       <FieldEditButton
         onClick={() => setIsEditing(true)}
-        label="Kategorie ändern"
+        label="Sammlung ändern"
         testId="category-edit-button"
       />
     );
@@ -133,7 +138,7 @@ export function CategoryEditControl({
       <div className="flex items-center gap-1">
         <input
           id={inputId}
-          name="review-category"
+          name="review-collection"
           type="text"
           value={freeTextValue || value}
           autoFocus
@@ -142,16 +147,16 @@ export function CategoryEditControl({
             onChange(e.target.value);
           }}
           onBlur={() => setIsEditing(false)}
-          placeholder="Eigene Kategorie"
+          placeholder="Eigene Sammlung"
           className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          aria-label="Kategorie eingeben"
+          aria-label="Sammlung eingeben"
           data-testid="category-edit-input"
         />
         {existingCategories.length > 0 && (
           <button
             type="button"
             onClick={() => setIsFreeText(false)}
-            className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             aria-label="Zurück zur Auswahl"
           >
             <ChevronDown className="size-4" aria-hidden="true" />
@@ -165,7 +170,7 @@ export function CategoryEditControl({
     <div className="relative">
       <select
         id={selectId}
-        name="review-category"
+      name="review-collection"
         value={value}
         autoFocus
         onChange={(e) => {
@@ -178,7 +183,7 @@ export function CategoryEditControl({
           }
         }}
         className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
-        aria-label="Kategorie wechseln"
+      aria-label="Sammlung wechseln"
         data-testid="category-edit-select"
       >
         {existingCategories.length === 0 && (
@@ -189,7 +194,7 @@ export function CategoryEditControl({
             {cat}
           </option>
         ))}
-        <option value="__free__">+ Eigene Kategorie …</option>
+        <option value="__free__">+ Eigene Sammlung …</option>
       </select>
       <ChevronDown
         className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
@@ -244,6 +249,99 @@ export function FactEditControl({
   );
 }
 
+export function TextEditControl({
+  value,
+  label,
+  onChange,
+  testId,
+  inputMode,
+}: {
+  value: string;
+  label: string;
+  onChange: (value: string) => void;
+  testId: string;
+  inputMode?: "text" | "decimal";
+}) {
+  const reactId = useId();
+  const inputId = `review-text-${reactId}`;
+  const [isEditing, setIsEditing] = useState(false);
+
+  if (!isEditing) {
+    return (
+      <FieldEditButton
+        onClick={() => setIsEditing(true)}
+        label={label}
+        testId={`${testId}-button`}
+      />
+    );
+  }
+
+  return (
+    <input
+      id={inputId}
+      type="text"
+      defaultValue={value}
+      inputMode={inputMode}
+      onChange={(event) => onChange(event.target.value)}
+      onBlur={() => setIsEditing(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.currentTarget.blur();
+        }
+      }}
+      autoFocus
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      aria-label={label}
+      data-testid={`${testId}-input`}
+    />
+  );
+}
+
+export function TaskPriorityEditControl({
+  value,
+  onChange,
+}: {
+  value: TaskPriority;
+  onChange: (priority: TaskPriority) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  if (!isEditing) {
+    return (
+      <FieldEditButton
+        onClick={() => setIsEditing(true)}
+        label="Priorität ändern"
+        testId="task-priority-edit-button"
+      />
+    );
+  }
+
+  return (
+    <select
+      value={value}
+      autoFocus
+      onChange={(event) => {
+        onChange(event.target.value as TaskPriority);
+        setIsEditing(false);
+      }}
+      onBlur={() => setIsEditing(false)}
+      className="rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      aria-label="Priorität wählen"
+      data-testid="task-priority-edit-select"
+    >
+      {TASK_PRIORITIES.map((priority) => (
+        <option key={priority} value={priority}>
+          {priority === "high"
+            ? "Hoch"
+            : priority === "medium"
+              ? "Mittel"
+              : "Niedrig"}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 /**
  * Date edit control — a pencil that reveals a date input field. In `compact`
  * mode (inline next to a task's due date) the pencil is a small petrol icon;
@@ -287,10 +385,10 @@ export function DateEditControl({
         type="button"
         onClick={() => setIsEditing(true)}
         className={cn(
-          "inline-flex items-center justify-center rounded-ordilo-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "inline-flex min-h-11 items-center justify-center rounded-ordilo-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
           compact
-            ? "gap-1 text-[var(--petrol)] hover:text-[var(--petrol-dark)]"
-            : "size-7 text-muted-foreground hover:bg-accent hover:text-foreground",
+            ? "gap-1 px-1.5 text-[var(--petrol)] hover:text-[var(--petrol-dark)]"
+            : "size-11 text-muted-foreground hover:bg-accent hover:text-foreground",
         )}
         aria-label={`${label} bearbeiten`}
         data-testid="edit-date-button"

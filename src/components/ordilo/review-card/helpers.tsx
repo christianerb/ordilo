@@ -1,5 +1,8 @@
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
-import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
+import {
+  DOCUMENT_TYPE_LABELS,
+  type TaskPriority,
+} from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import { cn } from "@/lib/utils";
 import { Check, AlertTriangle, Search } from "lucide-react";
@@ -27,6 +30,14 @@ export interface EditState {
   category: string | null;
   /** Edited dates (by entity index). */
   dates: Map<number, string>;
+  /** Edited organization names (by entity index). */
+  organizationNames: Map<number, string>;
+  /** Edited amount values (by entity index). */
+  amountValues: Map<number, string>;
+  /** Edited task titles (by task index). */
+  taskTitles: Map<number, string>;
+  /** Edited task priorities (by task index). */
+  taskPriorities: Map<number, TaskPriority>;
   /** Edited task due dates (by task index). */
   taskDueDates: Map<number, string>;
   /** Deleted task indices. */
@@ -102,14 +113,28 @@ export function buildConfirmPayload(
     return d;
   });
 
-  // Apply task due date edits and filter deleted tasks.
+  const organizations = analysis.organizations.map((organization, i) => {
+    const editedName = edits.organizationNames.get(i);
+    return editedName ? { ...organization, name: editedName } : organization;
+  });
+
+  const amounts = analysis.amounts.map((amount, i) => {
+    const editedValue = edits.amountValues.get(i);
+    return editedValue ? { ...amount, amount: editedValue } : amount;
+  });
+
+  // Apply task edits and filter deleted tasks.
   const tasks = analysis.tasks
     .map((t, i) => {
-      const edited = edits.taskDueDates.get(i);
-      if (edited) {
-        return { ...t, due_date: edited };
-      }
-      return t;
+      const title = edits.taskTitles.get(i) ?? t.title;
+      const priority = edits.taskPriorities.get(i) ?? t.priority;
+      const dueDate = edits.taskDueDates.get(i);
+      return {
+        ...t,
+        title,
+        priority,
+        due_date: dueDate ?? t.due_date,
+      };
     })
     .filter((_, i) => !edits.deletedTasks.has(i));
 
@@ -127,10 +152,27 @@ export function buildConfirmPayload(
     family_members: familyMembers,
     suggested_category: suggestedCategory,
     dates,
+    organizations,
+    amounts,
     tasks,
     facts,
     deletedTaskIndices: [...edits.deletedTasks],
   };
+}
+
+export function hasReviewEdits(edits: EditState): boolean {
+  return (
+    edits.persons.size > 0 ||
+    edits.factValues.size > 0 ||
+    edits.category !== null ||
+    edits.dates.size > 0 ||
+    edits.organizationNames.size > 0 ||
+    edits.amountValues.size > 0 ||
+    edits.taskTitles.size > 0 ||
+    edits.taskPriorities.size > 0 ||
+    edits.taskDueDates.size > 0 ||
+    edits.deletedTasks.size > 0
+  );
 }
 
 /**
@@ -287,6 +329,7 @@ export function ReviewFieldSection({
 export function FieldRow({
   icon: Icon,
   label,
+  confidence,
   isEdited = false,
   editControl,
   onCompareOriginal,
@@ -307,6 +350,8 @@ export function FieldRow({
   testId?: string;
   children: React.ReactNode;
 }) {
+  const shouldReview = confidence !== undefined && confidence < 0.85;
+
   return (
     <div
       data-testid={testId}
@@ -323,19 +368,28 @@ export function FieldRow({
       )}
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 text-sm font-medium text-foreground">{children}</div>
-          {(editControl || (sourceText && onShowSource)) && (
-            <div className="flex shrink-0 items-center gap-1">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1 text-sm font-medium text-foreground">{children}</div>
+          {(shouldReview || editControl || (sourceText && onShowSource)) && (
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-0.5">
+              {shouldReview && (
+                <span
+                  className="mr-1 inline-flex items-center gap-1 rounded-full bg-[var(--sand-warm)] px-2 py-1 text-xs font-medium text-foreground"
+                  data-testid="field-review-cue"
+                >
+                  <AlertTriangle className="size-3" aria-hidden="true" />
+                  Bitte prüfen
+                </span>
+              )}
               {sourceText && onShowSource && (
                 <button
                   type="button"
                   onClick={() => onShowSource(sourceText)}
-                  className="flex size-7 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--petrol)]/10 hover:text-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--petrol)]/10 hover:text-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   aria-label="Im Original zeigen"
                   title="Im Original zeigen"
                 >
-                  <Search className="size-3.5" aria-hidden="true" />
+                  <Search className="size-4" aria-hidden="true" />
                 </button>
               )}
               {editControl}

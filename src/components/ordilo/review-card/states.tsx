@@ -257,6 +257,39 @@ export function ReviewCardConfirmed({
   onViewOriginal?: () => void;
   className?: string;
 }) {
+  if (!celebrate) {
+    return (
+      <div
+        data-testid="review-card-confirmed"
+        className={cn("text-left", className)}
+      >
+        <ConfirmedAnalysisDetails
+          analysis={analysis}
+          loading={analysisLoading}
+          onViewOriginal={documentId ? onViewOriginal : undefined}
+          documentId={documentId ?? undefined}
+          standalone
+        />
+        {onReanalyze && (
+          <button
+            type="button"
+            onClick={onReanalyze}
+            disabled={reanalyzing}
+            className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="confirmed-reanalyze-button"
+          >
+            {reanalyzing ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <RefreshCw className="size-4" aria-hidden="true" />
+            )}
+            Neu lesen
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       data-testid="review-card-confirmed"
@@ -312,7 +345,7 @@ export function ReviewCardConfirmed({
             ) : (
               <RefreshCw className="size-3" aria-hidden="true" />
             )}
-            Nochmal lesen
+            Neu lesen
           </button>
         )}
       </div>
