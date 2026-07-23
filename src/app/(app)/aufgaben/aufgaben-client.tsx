@@ -30,70 +30,43 @@ interface ColumnConfig {
   emptyText: string;
 }
 
-const now = new Date();
-const in7Days = new Date();
-in7Days.setDate(now.getDate() + 7);
-const nowStr = now.toISOString().split("T")[0];
-const in7DaysStr = in7Days.toISOString().split("T")[0];
-
-const COLUMNS: ColumnConfig[] = [
-  {
-    id: "overdue",
-    label: "Überfällig",
-    dot: "bg-[var(--warm-apricot)]",
-    filter: (t) =>
-      t.status === "open" &&
-      t.due_date !== null &&
-      t.due_date < nowStr,
-    emptyText: "Puh, nichts überfällig",
-  },
-  {
-    id: "this-week",
-    label: "Diese Woche",
-    dot: "bg-[var(--petrol)]",
-    filter: (t) =>
-      t.status === "open" &&
-      t.due_date !== null &&
-      t.due_date >= nowStr &&
-      t.due_date <= in7DaysStr,
-    emptyText: "Nichts drängt",
-  },
-  {
-    id: "later",
-    label: "Später",
-    dot: "bg-[var(--mist)]",
-    filter: (t) =>
-      t.status === "open" &&
-      (t.due_date === null || t.due_date > in7DaysStr),
-    emptyText: "Ruhige Aussichten",
-  },
-  {
-    id: "done",
-    label: "Erledigt",
-    dot: "bg-[var(--petrol)]",
-    filter: (t) => t.status === "done",
-    emptyText: "Noch nichts geschafft",
-  },
+/**
+ * Static column definitions (without date-dependent filters). The filters
+ * are attached inside the component so they use fresh "today" values on
+ * every render instead of freezing at module-load time.
+ */
+const COLUMN_DEFS: Omit<ColumnConfig, "filter">[] = [
+  { id: "overdue", label: "Überfällig", dot: "bg-[var(--warm-apricot)]", emptyText: "Puh, nichts überfällig" },
+  { id: "this-week", label: "Diese Woche", dot: "bg-[var(--petrol)]", emptyText: "Nichts drängt" },
+  { id: "later", label: "Später", dot: "bg-[var(--mist)]", emptyText: "Ruhige Aussichten" },
+  { id: "done", label: "Erledigt", dot: "bg-[var(--petrol)]", emptyText: "Noch nichts geschafft" },
 ];
 
 function BoardColumn({
   column,
   tasks,
+  canAcceptDrop,
   onToggleDone,
   onDismiss,
   onCardClick,
   onEdit,
   onDelete,
   onDrop,
+  deleteLabel,
+  onDragStateChange,
 }: {
   column: ColumnConfig;
   tasks: TaskCardData[];
+  /** Whether this column can accept the currently-dragged task. */
+  canAcceptDrop: boolean;
   onToggleDone: (taskId: string, newStatus: string) => void;
   onDismiss: (taskId: string) => void;
   onCardClick: (task: TaskCardData) => void;
   onEdit: (task: TaskCardData) => void;
   onDelete: (taskId: string) => void;
   onDrop: (taskId: string, targetColumnId: string) => void;
+  deleteLabel?: string;
+  onDragStateChange?: (taskId: string | null) => void;
 }) {
   const sortedTasks = useMemo(
     () => sortTasksByPriorityAndDate(tasks),
@@ -104,25 +77,29 @@ function BoardColumn({
   const dragCounter = useRef(0);
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!canAcceptDrop) return;
     e.preventDefault();
     dragCounter.current++;
     setIsDragOver(true);
-  }, []);
+  }, [canAcceptDrop]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!canAcceptDrop) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-  }, []);
+  }, [canAcceptDrop]);
 
   const handleDragLeave = useCallback(() => {
+    if (!canAcceptDrop) return;
     dragCounter.current--;
     if (dragCounter.current <= 0) {
       setIsDragOver(false);
       dragCounter.current = 0;
     }
-  }, []);
+  }, [canAcceptDrop]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
+    if (!canAcceptDrop) return;
     e.preventDefault();
     dragCounter.current = 0;
     setIsDragOver(false);
@@ -130,7 +107,7 @@ function BoardColumn({
     if (taskId) {
       onDrop(taskId, column.id);
     }
-  }, [column.id, onDrop]);
+  }, [canAcceptDrop, column.id, onDrop]);
 
   return (
     <div
@@ -169,6 +146,8 @@ function BoardColumn({
               onDelete={() => onDelete(task.id)}
               onClick={() => onCardClick(task)}
               showConfidence={false}
+              deleteLabel={deleteLabel}
+              onDragStateChange={onDragStateChange}
             />
           ))
         ) : (
@@ -203,6 +182,37 @@ export function AufgabenClient({
   const [sheetOpen, setSheetOpen] = useState(false);
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+
+  // Fresh "today" on every render so overdue/this-week buckets stay
+  // correct across long sessions (module-level dates would freeze).
+  const nowStr = new Date().toISOString().split("T")[0];
+  const in7DaysStr = new Date(Date.now() + 7 * 86_400_000)
+    .toISOString()
+    .split("T")[0];
+
+  const columns: ColumnConfig[] = COLUMN_DEFS.map((col) => ({
+    ...col,
+    filter:
+      col.id === "overdue"
+        ? (t: TaskCardData) =>
+            t.status === "open" && t.due_date !== null && t.due_date < nowStr
+        : col.id === "this-week"
+          ? (t: TaskCardData) =>
+              t.status === "open" &&
+              t.due_date !== null &&
+              t.due_date >= nowStr &&
+              t.due_date <= in7DaysStr
+          : col.id === "later"
+            ? (t: TaskCardData) =>
+                t.status === "open" &&
+                (t.due_date === null || t.due_date > in7DaysStr)
+            : (t: TaskCardData) => t.status === "done",
+  }));
+
+  const draggingTaskStatus = draggingTaskId
+    ? tasks.find((t) => t.id === draggingTaskId)?.status
+    : undefined;
 
   const { toggleDone, dismiss } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
@@ -234,24 +244,25 @@ export function AufgabenClient({
   });
 
   const handleToggleDone = useCallback(
-    (taskId: string, newStatus: string) => {
-      if (newStatus === "done") {
-        toast.success("Erledigt — gut gemacht!");
-      } else {
-        toast.success("Wieder geöffnet");
-      }
-      toggleDone(taskId, newStatus);
+    async (taskId: string, newStatus: string) => {
+      // Optimistically update the selected task for immediate feedback.
       setSelectedTask((prev) =>
         prev && prev.id === taskId ? { ...prev, status: newStatus } : prev,
       );
+      const ok = await toggleDone(taskId, newStatus);
+      if (ok) {
+        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet");
+      }
     },
     [toggleDone],
   );
 
   const handleDismiss = useCallback(
-    (taskId: string) => {
-      toast.success("Verworfen — weg damit");
-      dismiss(taskId);
+    async (taskId: string) => {
+      const ok = await dismiss(taskId);
+      if (ok) {
+        toast.success("Verworfen — weg damit");
+      }
     },
     [dismiss],
   );
@@ -272,22 +283,20 @@ export function AufgabenClient({
   }, [router]);
 
   const handleDrop = useCallback(
-    (taskId: string, targetColumnId: string) => {
+    async (taskId: string, targetColumnId: string) => {
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
 
       const newStatus = targetColumnId === "done" ? "done" : "open";
       if (task.status === newStatus) return;
 
-      if (newStatus === "done") {
-        toast.success("Erledigt — gut gemacht!");
-      } else {
-        toast.success("Wieder geöffnet");
-      }
-      toggleDone(taskId, newStatus);
       setSelectedTask((prev) =>
         prev && prev.id === taskId ? { ...prev, status: newStatus } : prev,
       );
+      const ok = await toggleDone(taskId, newStatus);
+      if (ok) {
+        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet");
+      }
     },
     [tasks, toggleDone],
   );
@@ -299,11 +308,11 @@ export function AufgabenClient({
 
   const columnTasks = useMemo(() => {
     const groups: Record<string, TaskCardData[]> = {};
-    for (const col of COLUMNS) {
+    for (const col of columns) {
       groups[col.id] = visibleTasks.filter(col.filter);
     }
     return groups;
-  }, [visibleTasks]);
+  }, [visibleTasks, columns]);
 
   const hasAnyTasks = tasks.length > 0;
 
@@ -356,17 +365,23 @@ export function AufgabenClient({
           data-testid="task-board"
           className="space-y-4 md:grid md:grid-cols-2 md:gap-3 md:space-y-0 lg:grid-cols-4"
         >
-          {COLUMNS.map((col) => (
+          {columns.map((col) => (
             <BoardColumn
               key={col.id}
               column={col}
               tasks={columnTasks[col.id]}
+              canAcceptDrop={
+                draggingTaskStatus !== undefined &&
+                (col.id === "done") !== (draggingTaskStatus === "done")
+              }
               onToggleDone={handleToggleDone}
               onDismiss={handleDismiss}
               onCardClick={handleCardClick}
               onEdit={handleCardClick}
               onDelete={(taskId) => setDeleteConfirmId(taskId)}
               onDrop={handleDrop}
+              deleteLabel="Verwerfen"
+              onDragStateChange={setDraggingTaskId}
             />
           ))}
         </div>
@@ -401,9 +416,9 @@ export function AufgabenClient({
       >
         <SheetContent side="bottom" data-testid="task-delete-confirm-sheet">
           <SheetHeader>
-            <SheetTitle>Aufgabe löschen?</SheetTitle>
+            <SheetTitle>Aufgabe verwerfen?</SheetTitle>
             <SheetDescription>
-              Die Aufgabe wird für immer entfernt. Das lässt sich nicht rückgängig machen.
+              Die Aufgabe wird aus deiner Liste entfernt.
             </SheetDescription>
           </SheetHeader>
           <div className="mt-4 flex gap-3">
@@ -417,15 +432,15 @@ export function AufgabenClient({
             <Button
               variant="destructive"
               className="flex-1"
-              onClick={() => {
+              onClick={async () => {
                 if (!deleteConfirmId) return;
-                handleDismiss(deleteConfirmId);
+                const id = deleteConfirmId;
                 setDeleteConfirmId(null);
-                toast.success("Gelöscht");
+                await handleDismiss(id);
               }}
               data-testid="confirm-delete-task-button"
             >
-              Löschen
+              Verwerfen
             </Button>
           </div>
         </SheetContent>

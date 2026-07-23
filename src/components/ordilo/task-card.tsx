@@ -30,6 +30,8 @@ export interface TaskCardProps {
   onClick?: () => void;
   className?: string;
   showConfidence?: boolean;
+  /** Label for the delete/dismiss menu item. Defaults to "Löschen". */
+  deleteLabel?: string;
 }
 
 const PRIORITY_DOT: Record<string, string> = {
@@ -46,6 +48,7 @@ export function TaskCard({
   onDelete,
   onClick,
   className,
+  deleteLabel = "Löschen",
 }: TaskCardProps) {
   const { openDocument } = useDocumentViewer();
   const isDone = task.status === "done";
@@ -60,7 +63,7 @@ export function TaskCard({
     task.due_date < new Date().toLocaleDateString("sv-SE");
   const hasDocument = Boolean(task.document_id);
   const prioDot = PRIORITY_DOT[task.priority] ?? PRIORITY_DOT.medium;
-  const hasMeta = dueDate || hasDocument || Boolean(task.assigned_member_name);
+  const hasMeta = Boolean(dueDate || hasDocument || Boolean(task.assigned_member_name));
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -72,19 +75,9 @@ export function TaskCard({
       data-testid="task-card"
       data-status={task.status}
       data-priority={task.priority}
-      role={onClick ? "button" : "group"}
-      aria-label={onClick ? task.title : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={(e) => {
-        if (onClick && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          onClick();
-        }
-      }}
+      role="group"
       className={cn(
         "flex items-start gap-2.5 rounded-ordilo-sm bg-card p-3 shadow-card card-lift",
-        onClick && "cursor-pointer",
         isDone && "animate-task-done",
         className,
       )}
@@ -109,63 +102,28 @@ export function TaskCard({
         )}
       </button>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        {/* Title */}
-        <p
-          className={cn(
-            "line-clamp-2 text-sm font-medium leading-snug text-foreground",
-            isDone && "text-muted-foreground line-through animate-strike",
-          )}
-          data-testid="task-title"
+      {/* Content — button opens the detail sheet when onClick is provided */}
+      {onClick ? (
+        <button
+          type="button"
+          onClick={onClick}
+          className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+          aria-label={`Aufgabe öffnen: ${task.title}`}
         >
-          {task.title}
-        </p>
-
-        {/* Meta — dot + plain text, no pills or icons */}
-        {hasMeta && (
-          <div
-            className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
-            data-testid="task-meta"
-          >
-            <span
-              className={cn("size-1.5 shrink-0 rounded-full", prioDot)}
-              aria-hidden="true"
-            />
-            {dueDate && (
-              <span
-                className={cn(
-                  "tabular-nums",
-                  isOverdue && "font-medium text-[var(--apricot)]",
-                )}
-                data-testid="task-due-date"
-              >
-                {isOverdue ? `Überfällig · ${dueDate}` : dueDate}
-              </span>
-            )}
-            {hasDocument && dueDate && <span className="text-muted-foreground">·</span>}
-            {hasDocument && (
-              <span className="truncate text-muted-foreground">
-                {task.document_title?.trim() || "Ohne Titel"}
-              </span>
-            )}
-            {task.assigned_member_name && (
-              <>
-                <span className="text-muted-foreground">·</span>
-                <span className="truncate text-muted-foreground" data-testid="task-assignee">
-                  {task.assigned_member_name}
-                </span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
+          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} prioDot={prioDot} hasMeta={hasMeta} />
+        </button>
+      ) : (
+        <div className="min-w-0 flex-1">
+          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} prioDot={prioDot} hasMeta={hasMeta} />
+        </div>
+      )}
 
       {/* Card actions menu ("..." → edit / delete) */}
       {(onEdit || onDelete || (isOpen && onDismiss)) && (
         <CardActions
           onEdit={onEdit}
           onDelete={onDelete ?? (isOpen ? onDismiss : undefined)}
+          deleteLabel={deleteLabel}
           testId="task-card-actions"
         />
       )}
@@ -188,5 +146,74 @@ export function TaskCard({
         </Link>
       )}
     </div>
+  );
+}
+
+function CardContent({
+  task,
+  isDone,
+  isOverdue,
+  dueDate,
+  prioDot,
+  hasMeta,
+}: {
+  task: TaskCardData;
+  isDone: boolean;
+  isOverdue: boolean;
+  dueDate: string | false | null;
+  prioDot: string;
+  hasMeta: boolean;
+}) {
+  return (
+    <>
+      {/* Title */}
+      <p
+        className={cn(
+          "line-clamp-2 text-sm font-medium leading-snug text-foreground",
+          isDone && "text-muted-foreground line-through animate-strike",
+        )}
+        data-testid="task-title"
+      >
+        {task.title}
+      </p>
+
+      {/* Meta — dot + plain text, no pills or icons */}
+      {hasMeta && (
+        <div
+          className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+          data-testid="task-meta"
+        >
+          <span
+            className={cn("size-1.5 shrink-0 rounded-full", prioDot)}
+            aria-hidden="true"
+          />
+          {dueDate && (
+            <span
+              className={cn(
+                "tabular-nums",
+                isOverdue && "font-medium text-[var(--apricot)]",
+              )}
+              data-testid="task-due-date"
+            >
+              {isOverdue ? `Überfällig · ${dueDate}` : dueDate}
+            </span>
+          )}
+          {Boolean(task.document_id) && dueDate && <span className="text-muted-foreground">·</span>}
+          {Boolean(task.document_id) && (
+            <span className="truncate text-muted-foreground">
+              {task.document_title?.trim() || "Ohne Titel"}
+            </span>
+          )}
+          {task.assigned_member_name && (
+            <>
+              <span className="text-muted-foreground">·</span>
+              <span className="truncate text-muted-foreground" data-testid="task-assignee">
+                {task.assigned_member_name}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+    </>
   );
 }

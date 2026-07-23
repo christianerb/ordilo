@@ -32,6 +32,10 @@ export interface SwipeableTaskCardProps {
   onDelete?: () => void;
   onClick?: () => void;
   showConfidence?: boolean;
+  /** Label for the delete/dismiss menu item. Defaults to "Löschen". */
+  deleteLabel?: string;
+  /** Notifies the parent when a drag starts/ends (for drop-target gating). */
+  onDragStateChange?: (taskId: string | null) => void;
 }
 
 export function SwipeableTaskCard({
@@ -42,6 +46,8 @@ export function SwipeableTaskCard({
   onDelete,
   onClick,
   showConfidence = false,
+  deleteLabel = "Löschen",
+  onDragStateChange,
 }: SwipeableTaskCardProps) {
   const startX = useRef(0);
   const startY = useRef(0);
@@ -96,11 +102,13 @@ export function SwipeableTaskCard({
     e.dataTransfer.setData("text/plain", task.id);
     e.dataTransfer.effectAllowed = "move";
     setIsDragging(true);
-  }, [task.id]);
+    onDragStateChange?.(task.id);
+  }, [task.id, onDragStateChange]);
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
-  }, []);
+    onDragStateChange?.(null);
+  }, [onDragStateChange]);
 
   const hintOpacity = Math.min(1, Math.abs(offset) / SWIPE_THRESHOLD);
   const transition =
@@ -168,6 +176,7 @@ export function SwipeableTaskCard({
           onDelete={onDelete}
           onClick={onClick}
           showConfidence={showConfidence}
+          deleteLabel={deleteLabel}
         />
       </div>
     </div>

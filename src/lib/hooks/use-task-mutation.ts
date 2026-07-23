@@ -57,9 +57,10 @@ export interface UseTaskMutationOptions {
    */
   onDismissException?: () => void;
   /**
-   * Called after the Supabase update resolves — whether it succeeded or
-   * returned an error object — but NOT when the call throws an exception.
-   * Used to sync server state (e.g. `router.refresh()`).
+   * Called after a successful Supabase update (no error, no exception).
+   * Used to sync server state (e.g. `router.refresh()`). NOT called on
+   * error or exception paths — `onToggleError` / `onDismissError` cover
+   * those.
    */
   onSettled?: () => void;
 }
@@ -76,13 +77,15 @@ export interface UseTaskMutationOptions {
  *
  * The returned `toggleDone` and `dismiss` functions have stable
  * identities across renders (they read the latest callbacks from an
- * internal ref), so they are safe to pass to memoized children.
+ * internal ref), so they are safe to pass to memoized children. Both
+ * return `true` on success and `false` on error so callers can show
+ * success toasts only after the mutation actually resolved.
  *
  * @returns `{ toggleDone, dismiss }` — async mutation functions.
  */
 export function useTaskMutation(options: UseTaskMutationOptions): {
-  toggleDone: (taskId: string, newStatus: string) => Promise<void>;
-  dismiss: (taskId: string) => Promise<void>;
+  toggleDone: (taskId: string, newStatus: string) => Promise<boolean>;
+  dismiss: (taskId: string) => Promise<boolean>;
 } {
   const supabase = createClient();
 
@@ -91,7 +94,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
   optionsRef.current = options;
 
   const toggleDone = useCallback(
-    async (taskId: string, newStatus: string) => {
+    async (taskId: string, newStatus: string): Promise<boolean> => {
       const opts = optionsRef.current;
       opts.onOptimisticToggle(taskId, newStatus);
 
@@ -104,18 +107,21 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
         if (error) {
           opts.onRevertToggle(taskId, newStatus);
           opts.onToggleError();
+          return false;
         }
         opts.onSettled?.();
+        return true;
       } catch {
         opts.onRevertToggle(taskId, newStatus);
         (opts.onToggleException ?? opts.onToggleError)();
+        return false;
       }
     },
     [supabase],
   );
 
   const dismiss = useCallback(
-    async (taskId: string) => {
+    async (taskId: string): Promise<boolean> => {
       const opts = optionsRef.current;
       opts.onOptimisticDismiss(taskId);
 
@@ -128,11 +134,14 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
         if (error) {
           opts.onRevertDismiss(taskId);
           opts.onDismissError();
+          return false;
         }
         opts.onSettled?.();
+        return true;
       } catch {
         opts.onRevertDismiss(taskId);
         (opts.onDismissException ?? opts.onDismissError)();
+        return false;
       }
     },
     [supabase],

@@ -105,7 +105,9 @@ async function loadInitialData(): Promise<{
 export default async function AufgabenPage() {
   const { tasks: initialTasks, members, familyId, error } = await loadInitialData();
   const taskKey = initialTasks
-    .map((task) => `${task.id}:${task.status}:${task.title}:${task.due_date ?? ""}:${task.linked_documents?.length ?? 0}:${task.assigned_to ?? ""}`)
+    .map((task) =>
+      `${task.id}:${task.status}:${task.title}:${task.description ?? ""}:${task.due_date ?? ""}:${task.priority}:${(task.tags ?? []).join(",")}:${task.linked_documents?.length ?? 0}:${task.assigned_to ?? ""}`,
+    )
     .join("|");
 
   return (
