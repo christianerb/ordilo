@@ -391,6 +391,53 @@ describe("ReviewCard", () => {
     expect(within(details).queryByTestId("confirmed-tags")).toBeNull();
   });
 
+  it("keeps actions visible and collapses secondary document details", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(groupedAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    const details = await screen.findByTestId("confirmed-details");
+    expect(
+      within(details).getByText("Nächste Schritte (2)"),
+    ).toBeDefined();
+    expect(
+      within(details).getByTestId("confirmed-fact-add-button"),
+    ).toBeDefined();
+
+    const moreDetails = within(details).getByTestId(
+      "confirmed-more-details",
+    ) as HTMLDetailsElement;
+    expect(moreDetails.open).toBe(false);
+    expect(within(moreDetails).getByText("Weitere Angaben")).toBeDefined();
+    expect(within(moreDetails).getByText("01.08.2026")).toBeDefined();
+    expect(within(moreDetails).queryByText("15.08.2026")).toBeNull();
+
+    fireEvent.click(moreDetails.querySelector("summary")!);
+    expect(moreDetails.open).toBe(true);
+  });
+
+  it("deduplicates repeated metadata in the confirmed detail sheet", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...fullAnalysis,
+      family_members: [
+        ...fullAnalysis.family_members,
+        ...fullAnalysis.family_members,
+      ],
+      organizations: [
+        ...fullAnalysis.organizations,
+        ...fullAnalysis.organizations,
+      ],
+      amounts: [...fullAnalysis.amounts, ...fullAnalysis.amounts],
+    });
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    const details = await screen.findByTestId("confirmed-details");
+    expect(within(details).getAllByText("Emma")).toHaveLength(1);
+    expect(within(details).getAllByText("Kita Sonnenschein")).toHaveLength(1);
+    expect(within(details).getAllByText("150 EUR")).toHaveLength(1);
+  });
+
   it("does not render confirmed-details when the analysis has no data", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(null);
 

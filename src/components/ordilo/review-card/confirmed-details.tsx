@@ -15,6 +15,7 @@ import {
   Plus,
   X,
   Check,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -27,7 +28,7 @@ import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { FieldGroup, FieldRow, getPriorityLabel, getPriorityBadgeClasses } from "./helpers";
+import { FieldRow, getPriorityLabel, getPriorityBadgeClasses } from "./helpers";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
   if (!type) return false;
@@ -41,13 +42,42 @@ function shouldShowOrganizationType(name: string, type?: string | null): boolean
   );
 }
 
+function dedupeBy<T>(items: T[], getKey: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = getKey(item).trim().toLocaleLowerCase("de");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function ConfirmedSection({
+  icon: Icon,
+  title,
+  testId,
+  children,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section data-testid={testId} className="py-3 first:pt-0">
+      <h4 className="flex items-center gap-1.5 text-xs font-medium text-[var(--mist-dark)]">
+        <Icon className="size-3.5" aria-hidden="true" />
+        {title}
+      </h4>
+      <div className="mt-1 divide-y divide-border/60">{children}</div>
+    </section>
+  );
+}
+
 /**
- * Read-only analysis details shown for a confirmed document — the
- * metadata, persons, dates, amounts, tasks, category, and tags that were
- * extracted and saved to the family book. Reuses the same flat
- * `FieldGroup`/`FieldRow` list as the in-review card content for visual
- * consistency, minus the edit affordances and confidence badges (nothing
- * left to edit or doubt).
+ * Read-only analysis details shown for a confirmed document. Actionable
+ * information stays visible while supporting metadata is grouped behind
+ * progressive disclosure.
  */
 export function ConfirmedAnalysisDetails({
   analysis,
@@ -83,9 +113,29 @@ export function ConfirmedAnalysisDetails({
     analysis.dates.length > 0 ||
     analysis.amounts.length > 0 ||
     analysis.tasks.length > 0 ||
+    Boolean(analysis.suggested_category?.trim()) ||
     Boolean(analysis.summary?.trim());
 
-  if (!hasAnyFields && !onViewOriginal) return null;
+  if (!hasAnyFields && !onViewOriginal && !documentId) return null;
+
+  const people = dedupeBy(analysis.family_members, (member) => member.name);
+  const organizations = dedupeBy(
+    analysis.organizations,
+    (organization) => `${organization.name}|${organization.type ?? ""}`,
+  );
+  const taskDueDates = new Set(
+    analysis.tasks.map((task) => task.due_date).filter(Boolean),
+  );
+  const dates = dedupeBy(
+    analysis.dates.filter((date) => !taskDueDates.has(date.date)),
+    (date) => `${date.date}|${date.label ?? ""}|${date.type}`,
+  );
+  const amounts = dedupeBy(
+    analysis.amounts,
+    (amount) => `${amount.amount}|${amount.currency}|${amount.label ?? ""}`,
+  );
+  const additionalCount =
+    organizations.length + dates.length + amounts.length;
 
   return (
     <div
@@ -101,111 +151,164 @@ export function ConfirmedAnalysisDetails({
         </p>
       )}
 
-      <div className="divide-y divide-border/60">
-        {analysis.family_members.length > 0 && (
-          <FieldGroup testId="confirmed-persons">
-            {analysis.family_members.map((member, i) => (
-              <FieldRow key={i} icon={User} label="Personen">
-                <span className="block truncate">{member.name}</span>
-              </FieldRow>
-            ))}
-          </FieldGroup>
+      <div className="space-y-2 rounded-ordilo-sm bg-[var(--surface-story)] px-3 py-2.5">
+        {people.length > 0 && (
+          <div
+            className="flex items-start gap-2 text-sm"
+            data-testid="confirmed-persons"
+          >
+            <User
+              className="mt-0.5 size-3.5 shrink-0 text-[var(--mist-dark)]"
+              aria-hidden="true"
+            />
+            <span className="w-16 shrink-0 text-muted-foreground">Für</span>
+            <span className="min-w-0 font-medium text-foreground">
+              {people.map((member) => member.name).join(", ")}
+            </span>
+          </div>
         )}
 
-        {documentId && <EditableFactsSection documentId={documentId} />}
-
-        {analysis.organizations.length > 0 && (
-          <FieldGroup testId="confirmed-organizations">
-            {analysis.organizations.map((org, i) => (
-              <FieldRow key={i} icon={Building2} label="Organisationen">
-                <span className="block truncate">{org.name}</span>
-                {shouldShowOrganizationType(org.name, org.type) && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {org.type}
-                  </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
+        {analysis.suggested_category && (
+          <div
+            className="flex items-start gap-2 text-sm"
+            data-testid="confirmed-category"
+          >
+            <Tag
+              className="mt-0.5 size-3.5 shrink-0 text-[var(--mist-dark)]"
+              aria-hidden="true"
+            />
+            <span className="w-16 shrink-0 text-muted-foreground">
+              Sammlung
+            </span>
+            <span className="min-w-0 font-medium text-foreground">
+              {analysis.suggested_category}
+            </span>
+          </div>
         )}
-
-        {analysis.dates.length > 0 && (
-          <FieldGroup testId="confirmed-dates">
-            {analysis.dates.map((date, i) => (
-              <FieldRow
-                key={i}
-                icon={Calendar}
-                label="Datum"
-                onCompareOriginal={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {formatGermanDate(date.date) || date.date}
-                </span>
-                {date.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {date.label}
-                  </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
-        )}
-
-        {analysis.amounts.length > 0 && (
-          <FieldGroup testId="confirmed-amounts">
-            {analysis.amounts.map((amount, i) => (
-              <FieldRow
-                key={i}
-                icon={Euro}
-                label="Beträge"
-                onCompareOriginal={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {amount.amount} {amount.currency}
-                </span>
-                {amount.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {amount.label}
-                  </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
-        )}
-
-        {analysis.tasks.length > 0 && (
-          <FieldGroup testId="confirmed-tasks">
-            {analysis.tasks.map((task, i) => (
-              <FieldRow
-                key={i}
-                icon={ListTodo}
-                label="Aufgaben"
-                editControl={
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                      getPriorityBadgeClasses(task.priority),
-                    )}
-                  >
-                    {getPriorityLabel(task.priority)}
-                  </span>
-                }
-              >
-                <p className="text-foreground">{task.title}</p>
-                {task.due_date && (
-                  <p className="mt-0.5 font-normal text-muted-foreground">
-                    {formatGermanDate(task.due_date) || task.due_date}
-                  </p>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
-        )}
-
-        <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
-          <span className="block truncate">{analysis.suggested_category}</span>
-        </FieldRow>
       </div>
+
+      {analysis.tasks.length > 0 && (
+        <ConfirmedSection
+          icon={ListTodo}
+          title={
+            analysis.tasks.length === 1
+              ? "Nächster Schritt"
+              : `Nächste Schritte (${analysis.tasks.length})`
+          }
+          testId="confirmed-tasks"
+        >
+          {analysis.tasks.map((task, i) => (
+            <FieldRow
+              key={i}
+              editControl={
+                <span
+                  className={cn(
+                    "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
+                    getPriorityBadgeClasses(task.priority),
+                  )}
+                >
+                  {getPriorityLabel(task.priority)}
+                </span>
+              }
+            >
+              <p className="text-foreground">{task.title}</p>
+              {task.due_date && (
+                <p className="mt-0.5 font-normal text-muted-foreground">
+                  {formatGermanDate(task.due_date) || task.due_date}
+                </p>
+              )}
+            </FieldRow>
+          ))}
+        </ConfirmedSection>
+      )}
+
+      {documentId && <EditableFactsSection documentId={documentId} />}
+
+      {additionalCount > 0 && (
+        <details
+          className="group border-t border-border/60 pt-1"
+          data-testid="confirmed-more-details"
+        >
+          <summary className="flex cursor-pointer list-none items-center justify-between rounded-ordilo-sm px-1 py-2 text-sm font-medium text-[var(--petrol)] hover:bg-[var(--surface-story)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <span>
+              Weitere Angaben
+              <span className="ml-1 font-normal text-muted-foreground">
+                ({additionalCount})
+              </span>
+            </span>
+            <ChevronDown
+              className="size-4 transition-transform duration-200 group-open:rotate-180"
+              aria-hidden="true"
+            />
+          </summary>
+
+          <div className="divide-y divide-border/60 pl-1">
+            {organizations.length > 0 && (
+              <ConfirmedSection
+                icon={Building2}
+                title="Organisationen"
+                testId="confirmed-organizations"
+              >
+                {organizations.map((organization, i) => (
+                  <FieldRow key={i}>
+                    <span className="block truncate">{organization.name}</span>
+                    {shouldShowOrganizationType(
+                      organization.name,
+                      organization.type,
+                    ) && (
+                      <span className="block truncate font-normal text-muted-foreground">
+                        {organization.type}
+                      </span>
+                    )}
+                  </FieldRow>
+                ))}
+              </ConfirmedSection>
+            )}
+
+            {dates.length > 0 && (
+              <ConfirmedSection
+                icon={Calendar}
+                title="Termine"
+                testId="confirmed-dates"
+              >
+                {dates.map((date, i) => (
+                  <FieldRow key={i}>
+                    <span className="block truncate">
+                      {formatGermanDate(date.date) || date.date}
+                    </span>
+                    {date.label && (
+                      <span className="block truncate font-normal text-muted-foreground">
+                        {date.label}
+                      </span>
+                    )}
+                  </FieldRow>
+                ))}
+              </ConfirmedSection>
+            )}
+
+            {amounts.length > 0 && (
+              <ConfirmedSection
+                icon={Euro}
+                title="Beträge"
+                testId="confirmed-amounts"
+              >
+                {amounts.map((amount, i) => (
+                  <FieldRow key={i}>
+                    <span className="block truncate">
+                      {amount.amount} {amount.currency}
+                    </span>
+                    {amount.label && (
+                      <span className="block truncate font-normal text-muted-foreground">
+                        {amount.label}
+                      </span>
+                    )}
+                  </FieldRow>
+                ))}
+              </ConfirmedSection>
+            )}
+          </div>
+        </details>
+      )}
 
       {onViewOriginal && (
         <button
@@ -318,12 +421,14 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
   };
 
   return (
-    <FieldGroup testId="confirmed-facts">
+    <ConfirmedSection
+      icon={Hash}
+      title="Nummern & Kennungen"
+      testId="confirmed-facts"
+    >
       {facts.map((fact) => (
         <FieldRow
           key={fact.id}
-          icon={Hash}
-          label="Nummern & Kennungen"
           editControl={
             editingId === fact.id ? undefined : (
               <button
@@ -460,6 +565,6 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           Nummer hinzufügen
         </button>
       )}
-    </FieldGroup>
+    </ConfirmedSection>
   );
 }
