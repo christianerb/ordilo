@@ -32,7 +32,7 @@ export function FilterChips({
   return (
     <div
       data-testid="filter-chips"
-      className="flex flex-wrap items-center gap-2 border-b border-border pb-3"
+      className="order-3 flex w-full min-w-0 items-center gap-1.5 overflow-x-auto px-1 pb-0.5 sm:order-none sm:w-auto sm:flex-1 sm:px-0 sm:pb-0"
     >
       {facets.personChips.map((chip) => (
         <FilterChip
@@ -65,7 +65,7 @@ export function FilterChips({
         <button
           type="button"
           onClick={onClearAll}
-          className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           aria-label="Filter zurücksetzen"
         >
           <X className="size-3" aria-hidden="true" />
@@ -91,10 +91,10 @@ function FilterChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
         active
-          ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
-          : "border-border bg-card text-muted-foreground hover:bg-accent",
+          ? "border-[var(--petrol)]/20 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+          : "border-border/80 bg-card/70 text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
       )}
     >
       {active && <X className="size-3" aria-hidden="true" />}

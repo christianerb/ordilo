@@ -101,7 +101,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
     expect(screen.getAllByTestId("source-card")).toHaveLength(1);
   });
 
-  it("does not render the 'Quellen' label when there are no sources", () => {
+  it("does not render the document suggestions label when there are no sources", () => {
     render(
       <MessageBubble
         message={buildMessage({ content: "Antwort", sources: [] })}
@@ -109,10 +109,10 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.queryByText("Quellen")).toBeNull();
+    expect(screen.queryByText("Passende Dokumente")).toBeNull();
   });
 
-  it("renders the 'Quellen' label when sources are visible", () => {
+  it("renders the document suggestions label and count when sources are visible", () => {
     render(
       <MessageBubble
         message={buildMessage({ content: "Antwort", sources })}
@@ -120,7 +120,8 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("Quellen")).toBeDefined();
+    expect(screen.getByText("Passende Dokumente")).toBeDefined();
+    expect(screen.getByText("2")).toBeDefined();
   });
 
   it("labels a source with an 'Aufgabe: ' excerpt prefix as Aufgaben-Suche", () => {
@@ -195,6 +196,28 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
       "Sehr relevant",
     );
     expect(screen.queryByText(/92\s*%/)).toBeNull();
+  });
+
+  it("shows why the best document matches without adding another card", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Antwort",
+          sources: [
+            {
+              document_id: "doc-1",
+              title: "Kita-Brief",
+              excerpt: "Die Bewilligung gilt bis 31.07.2026.",
+              score: 0.92,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Die Bewilligung gilt bis 31.07.2026.")).toBeDefined();
+    expect(screen.getByText("Beste Übereinstimmung")).toBeDefined();
   });
 
   it("does not show a sources toggle when every source is a top match", () => {

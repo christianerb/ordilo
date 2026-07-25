@@ -1,5 +1,6 @@
 "use client";
 
+import { ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   getRelevanceLabel,
@@ -13,8 +14,12 @@ export interface SourceMatchCardProps {
   title: string | null;
   /** Relevance score in [0, 1]. Drives the "Sehr relevant"/"Relevant" badge. */
   score: number;
+  /** Short matching passage that explains why the document was suggested. */
+  excerpt?: string | null;
   /** Icon + label describing where this source came from. */
   kind: SourceCardKind;
+  /** Highlights the strongest match without turning it into a larger card. */
+  isBestMatch?: boolean;
   /** Click handler — when provided, the card is interactive (navigates to document). */
   onClick?: () => void;
   className?: string;
@@ -42,7 +47,9 @@ export interface SourceMatchCardProps {
 export function SourceMatchCard({
   title,
   score,
+  excerpt,
   kind,
+  isBestMatch = false,
   onClick,
   className,
   style,
@@ -51,8 +58,10 @@ export function SourceMatchCard({
   const displayTitle = title?.trim() || "Unbenanntes Dokument";
   const Icon = kind.icon;
   const relevanceLabel = getRelevanceLabel(clampedScore);
-  const isTopTier = relevanceLabel === "Sehr relevant";
   const isInteractive = !!onClick;
+  const displayExcerpt = excerpt
+    ?.replace(/^(Aufgabe|Person):\s*/u, "")
+    .trim();
 
   return (
     <div
@@ -73,44 +82,47 @@ export function SourceMatchCard({
       }
       style={style}
       className={cn(
-        "flex w-full flex-col gap-2.5 rounded-ordilo-sm border border-border bg-card p-3 shadow-card animate-source-card-in",
+        "group flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 animate-source-card-in",
+        isBestMatch && "bg-[var(--wash-sage-soft)]",
         isInteractive &&
-          "cursor-pointer card-lift press-scale focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "cursor-pointer transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50",
         className,
       )}
     >
-      <div className="flex items-start gap-2.5">
-        <div
-          className="flex size-8 shrink-0 items-center justify-center rounded-ordilo-sm"
-          style={{ backgroundColor: "var(--secondary)" }}
-          aria-hidden="true"
-        >
-          <Icon
-            className="size-4"
-            style={{ color: "var(--petrol)" }}
-            strokeWidth={1.75}
-          />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-[11px] font-medium text-muted-foreground">
-            {kind.label}
-          </p>
+      <div
+        className="flex size-8 shrink-0 items-center justify-center rounded-ordilo-sm bg-card text-[var(--petrol)]"
+        aria-hidden="true"
+      >
+        <Icon className="size-4" strokeWidth={1.75} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
           <p className="truncate text-sm font-medium text-foreground">
             {displayTitle}
           </p>
+          {isBestMatch && (
+            <span className="hidden shrink-0 text-[11px] font-medium text-[var(--petrol)] sm:inline">
+              Beste Übereinstimmung
+            </span>
+          )}
         </div>
+        <p className="truncate text-xs text-muted-foreground">
+          {displayExcerpt && <span className="sr-only">{kind.label}</span>}
+          {displayExcerpt || kind.label}
+        </p>
       </div>
       <span
+        className="sr-only"
         data-testid="source-match-relevance"
-        className={cn(
-          "inline-flex w-fit items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-          isTopTier
-            ? "bg-[var(--petrol)] text-white"
-            : "bg-[var(--petrol)]/10 text-[var(--petrol)]",
-        )}
       >
         {relevanceLabel}
       </span>
+      {isInteractive && (
+        <span className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors group-hover:bg-card group-hover:text-[var(--petrol)]">
+          <ChevronRight className="size-4" aria-hidden="true" />
+          <span className="sr-only">Dokument öffnen</span>
+        </span>
+      )}
     </div>
   );
 }

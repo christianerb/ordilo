@@ -192,6 +192,14 @@ describe("SucheClient — Empty State", () => {
     const heading = screen.getByRole("heading");
     expect(heading.textContent).toMatch(/finden|suchen|frage|helfen|ordilo/i);
   });
+
+  it("groups chat history and the new-chat action in one toolbar", () => {
+    render(<SucheClient {...defaultProps} />);
+    const history = screen.getByTestId("chat-history-toggle");
+    const newChat = screen.getByTestId("new-chat-button");
+    expect(history.parentElement).toBe(newChat.parentElement);
+    expect(newChat.textContent).toContain("Neuer Chat");
+  });
 });
 
 describe("SucheClient — Chat Interaction (Streaming)", () => {
@@ -524,6 +532,9 @@ describe("SucheClient — Filter Chips", () => {
     await waitFor(() => {
       expect(screen.getByTestId("filter-chips")).toBeDefined();
     });
+    expect(screen.getByTestId("filter-chips").parentElement).toBe(
+      screen.getByTestId("new-chat-button").parentElement,
+    );
     expect(screen.getByText("Sonstiges")).toBeDefined();
     const filterChipsContainer = screen.getByTestId("filter-chips");
     const chipButtons = within(filterChipsContainer).getAllByRole("button");

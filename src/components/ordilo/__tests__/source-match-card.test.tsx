@@ -18,6 +18,22 @@ describe("SourceMatchCard", () => {
     expect(screen.getByText("Dokumenten-Suche")).toBeDefined();
   });
 
+  it("shows a matching excerpt instead of the technical source kind", () => {
+    render(
+      <SourceMatchCard
+        {...defaultProps}
+        excerpt="Bewilligt bis 31.07.2026"
+      />,
+    );
+    expect(screen.getByText("Bewilligt bis 31.07.2026")).toBeDefined();
+    expect(screen.getByText("Dokumenten-Suche").className).toContain("sr-only");
+  });
+
+  it("marks the strongest result as the best match", () => {
+    render(<SourceMatchCard {...defaultProps} isBestMatch />);
+    expect(screen.getByText("Beste Übereinstimmung")).toBeDefined();
+  });
+
   it("falls back to 'Unbenanntes Dokument' when title is null", () => {
     render(<SourceMatchCard {...defaultProps} title={null} />);
     expect(screen.getByText("Unbenanntes Dokument")).toBeDefined();
@@ -59,6 +75,7 @@ describe("SourceMatchCard", () => {
     render(<SourceMatchCard {...defaultProps} onClick={onClick} />);
     fireEvent.click(screen.getByTestId("source-card"));
     expect(onClick).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Dokument öffnen")).toBeDefined();
   });
 
   it("is keyboard accessible (role button, tabIndex, Enter key)", () => {
