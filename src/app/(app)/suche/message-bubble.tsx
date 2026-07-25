@@ -169,23 +169,25 @@ export function MessageBubble({
       {hasAnswer && <AnswerFeedback message={message} />}
 
       {visibleSources.length > 0 && !isStreaming && (
-        <div className="ml-10 w-[calc(100%-40px)] space-y-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            Quellen
-          </span>
-          <div
-            className={cn(
-              "grid gap-2",
-              topSources.length > 1 && "sm:grid-cols-2",
-            )}
-          >
+        <div className="ml-10 w-[calc(100%_-_2.5rem)] space-y-1.5">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-xs font-medium text-muted-foreground">
+              Passende Dokumente
+            </span>
+            <span className="text-[11px] text-muted-foreground">
+              {visibleSources.length}
+            </span>
+          </div>
+          <div className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--surface-story)]">
             {topSources.map((source, i) => (
               <SourceMatchCard
                 key={source.document_id}
                 documentId={source.document_id}
                 title={source.title}
                 score={source.score}
+                excerpt={source.excerpt}
                 kind={getSourceKind(source)}
+                isBestMatch={i === 0}
                 onClick={() => onSourceCardClick(source.document_id)}
                 style={{ animationDelay: `${i * 40}ms` }}
               />

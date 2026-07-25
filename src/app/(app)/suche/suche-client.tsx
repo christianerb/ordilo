@@ -545,39 +545,48 @@ export function SucheClient({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Chat header bar — dropdown trigger + new chat */}
-      <div className="flex items-center gap-2 border-b border-border pb-3">
+      <div className="mb-2 flex flex-wrap items-center gap-2 rounded-ordilo-sm border border-border bg-[var(--surface-story)] p-1.5">
         <button
           type="button"
           onClick={() => setShowChatList(!showChatList)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-ordilo-sm px-2.5 py-1.5 text-sm transition-colors hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-ordilo-sm px-2 py-1.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:max-w-[42%]"
           aria-label="Chat-Historie öffnen"
           data-testid="chat-history-toggle"
         >
-          <MessageSquare
-            className="size-3.5 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <span className="truncate text-muted-foreground">
-            {conversations.find((c) => c.id === activeConversationId)?.title || "Neuer Chat"}
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm bg-card text-[var(--petrol)]">
+            <MessageSquare className="size-3.5" aria-hidden="true" />
+          </span>
+          <span className="truncate text-sm font-medium text-foreground">
+            {conversations.find((c) => c.id === activeConversationId)?.title ||
+              "Neuer Chat"}
           </span>
           <ChevronDown
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
               showChatList && "rotate-180",
             )}
             aria-hidden="true"
           />
         </button>
+
+        {hasFacets && (
+          <FilterChips
+            facets={facets}
+            activeFilters={activeFilters}
+            onToggle={toggleFilter}
+            onClearAll={clearAllFilters}
+          />
+        )}
+
         <button
           type="button"
           onClick={handleNewChat}
-          className="flex shrink-0 items-center gap-1.5 rounded-ordilo-sm px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-secondary/30 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="ml-auto flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-auto sm:px-3"
           aria-label="Neuer Chat"
           data-testid="new-chat-button"
         >
           <Plus className="size-3.5" aria-hidden="true" />
-          <span className="hidden sm:inline">Neu</span>
+          <span className="hidden sm:inline">Neuer Chat</span>
         </button>
       </div>
 
@@ -603,15 +612,6 @@ export function SucheClient({
 
       {/* Chat area */}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {hasFacets && (
-          <FilterChips
-            facets={facets}
-            activeFilters={activeFilters}
-            onToggle={toggleFilter}
-            onClearAll={clearAllFilters}
-          />
-        )}
-
         <div
           className="min-h-0 flex-1 overflow-y-auto"
           aria-live="polite"
