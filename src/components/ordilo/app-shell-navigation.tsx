@@ -160,25 +160,18 @@ export function MobileComposer({
       className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-[var(--surface-box)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
       style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="mx-auto flex w-full max-w-md items-end gap-2">
-        <div className="min-w-0 flex-1">
-          <AISearchBar
-            onSubmit={onSearch}
-            isLoading={isLoading}
-            placeholder="Frage Ordilo …"
-          />
-        </div>
-        {/* Icon-only on mobile: a labelled button would squeeze the input,
-            and stretching with the growing textarea looks broken. */}
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onScan}
-          aria-label="Scannen"
-          className="size-[52px] shrink-0 rounded-full p-0"
-        >
-          <Camera className="size-5" aria-hidden="true" />
-        </Button>
+      {/* Scanning lives inside the bar, next to the mic, and the text gets
+          its own full-width row above the controls. A button beside the bar
+          cost ~60px of the 393px a phone has, which is why a normal German
+          question used to wrap every three words. */}
+      <div className="mx-auto w-full max-w-md">
+        <AISearchBar
+          onSubmit={onSearch}
+          onScan={onScan}
+          layout="stacked"
+          isLoading={isLoading}
+          placeholder="Frage Ordilo …"
+        />
       </div>
     </div>
   );

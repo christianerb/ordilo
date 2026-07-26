@@ -40,11 +40,38 @@ describe("MobileComposer", () => {
     ).toBe(true);
   });
 
-  it("opens the scanner from its own button", () => {
+  it("opens the scanner from inside the bar, next to the mic", () => {
+    // The scan button used to sit beside the bar and cost ~60px of the
+    // 393px a phone has, which is why the input was ~23 characters wide.
     const onScan = vi.fn();
-    render(<MobileComposer onSearch={vi.fn()} onScan={onScan} />);
-    fireEvent.click(screen.getByRole("button", { name: /scannen/i }));
+    const { container } = render(
+      <MobileComposer onSearch={vi.fn()} onScan={onScan} />,
+    );
+
+    const scan = screen.getByTestId("composer-scan-button");
+    expect(scan).toHaveAttribute("aria-label", "Scannen");
+    // Inside the search bar, not a sibling of it.
+    expect(
+      container.querySelector('[data-testid="ai-search-bar"]')!.contains(scan),
+    ).toBe(true);
+
+    fireEvent.click(scan);
     expect(onScan).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives the text its own full-width row above the controls", () => {
+    render(<MobileComposer onSearch={vi.fn()} onScan={vi.fn()} />);
+    const input = screen.getByRole("textbox");
+    // w-full instead of flex-1 next to the buttons — the stacked layout is
+    // what frees the width (measured: 201px to 335px at 393px viewport).
+    expect(input.className).toContain("w-full");
+  });
+
+  it("disables scanning while an answer streams, like the rest of the bar", () => {
+    const onScan = vi.fn();
+    render(<MobileComposer onSearch={vi.fn()} onScan={onScan} isLoading />);
+    const scan = screen.getByTestId("composer-scan-button") as HTMLButtonElement;
+    expect(scan.disabled).toBe(true);
   });
 
   it("publishes its height so page content can clear the fixed bar", () => {

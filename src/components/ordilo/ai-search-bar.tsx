@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { Sparkles, ArrowUp, Mic, MicOff } from "lucide-react";
+import { Sparkles, ArrowUp, Mic, MicOff, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,6 +35,18 @@ export interface AISearchBarProps {
   placeholder?: string;
   /** When true, the input and send button are disabled and no submit fires. */
   isLoading?: boolean;
+  /**
+   * Opens the scanner. When set, a camera button renders in the control row
+   * instead of sitting outside the bar, which is what freed the width the
+   * input now has.
+   */
+  onScan?: () => void;
+  /**
+   * "stacked" puts the text on its own full-width row with the controls
+   * beneath it (phone); "inline" keeps everything in one pill row (desktop,
+   * where there is width to spare). A grown textarea always stacks.
+   */
+  layout?: "inline" | "stacked";
   /** Optional additional className for the outer container. */
   className?: string;
 }
@@ -105,6 +117,8 @@ export function AISearchBar({
   onValueChange,
   placeholder = "Frage Ordilo oder suche nach Dokumenten…",
   isLoading = false,
+  onScan,
+  layout = "inline",
   className,
 }: AISearchBarProps) {
   // Controlled mode is active when the parent provides a `value` prop.
@@ -180,6 +194,9 @@ export function AISearchBar({
     [handleSubmit],
   );
 
+  // A grown textarea always stacks, even in the inline layout.
+  const stacked = layout === "stacked" || multiline;
+
   const handleInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -245,14 +262,14 @@ export function AISearchBar({
         // Single line: everything in one pill row. Multi-line: the text gets
         // the full width and the controls sit underneath, so a long question
         // is not squeezed into a ~24-character column.
-        multiline
+        stacked
           ? "flex flex-col gap-1 rounded-ordilo-md px-3 py-2"
           : "flex items-end gap-2 rounded-full py-2 pr-1.5 pl-3",
         isLoading ? "border-transparent opacity-70" : "border-border",
         className,
       )}
     >
-      {!multiline && (
+      {!stacked && (
         <Sparkles
           className="mb-1.5 size-5 shrink-0 animate-sparkle-pulse"
           style={{ color: "var(--petrol)" }}
@@ -275,23 +292,40 @@ export function AISearchBar({
         aria-label="Such- und Chat-Eingabe"
         className={cn(
           "max-h-[120px] resize-none border-0 bg-transparent py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed",
-          multiline ? "w-full" : "flex-1",
+          stacked ? "w-full" : "flex-1",
         )}
       />
 
       <div
         className={cn(
           "flex shrink-0 items-center",
-          multiline ? "justify-end gap-1" : "gap-2",
+          stacked ? "gap-1" : "gap-2",
         )}
       >
-        {multiline && (
+        {onScan && (
+          <button
+            type="button"
+            onClick={onScan}
+            disabled={isLoading}
+            aria-label="Scannen"
+            data-testid="composer-scan-button"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          >
+            <Camera className="size-5" aria-hidden="true" />
+          </button>
+        )}
+
+        {stacked && !onScan && (
           <Sparkles
-            className="mr-auto size-5 shrink-0 animate-sparkle-pulse"
+            className="size-5 shrink-0 animate-sparkle-pulse"
             style={{ color: "var(--petrol)" }}
             aria-hidden="true"
           />
         )}
+
+        {/* Push the mic and send to the trailing edge (stacked only — in
+            the inline layout the row is content-sized). */}
+        {stacked && <span className="flex-1" aria-hidden="true" />}
 
         {/* Voice input button (only when the browser supports it) */}
         {voiceSupported && (

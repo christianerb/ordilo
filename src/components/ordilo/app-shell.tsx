@@ -149,9 +149,11 @@ function AppShellContent({
                 "flex flex-1 flex-col overflow-y-auto px-4 pt-5 md:px-6 md:pt-6 lg:px-8 lg:pt-8",
                 // The mobile composer publishes its live height, so the
                 // scroll container keeps clearing it even when the textarea
-                // grows past what a fixed pb-28 would have covered.
+                // grows past what a fixed pb-28 would have covered. The
+                // fallback covers the resting height (~127px) for the moment
+                // before hydration sets the variable.
                 showNav
-                  ? "pb-[calc(var(--composer-height,7rem)+0.75rem)] lg:pb-24"
+                  ? "pb-[calc(var(--composer-height,8.5rem)+0.75rem)] lg:pb-24"
                   : "pb-8",
               )}
             >
