@@ -72,6 +72,15 @@ function meaningfulLabel(
 }
 
 /**
+ * Pick the singular or plural section heading — "Betrag" over one amount,
+ * "Beträge" over several. A plural heading over a single row reads like
+ * something is missing.
+ */
+function countedTitle(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
+}
+
+/**
  * Collapse entries the extraction reported more than once. The same due
  * date (or the same amount) often appears in several places of a letter,
  * and each mention used to become its own identical row. One row per
@@ -175,7 +184,7 @@ export function ConfirmedAnalysisDetails({
 
       <div>
         {analysis.family_members.length > 0 && (
-          <ReviewFieldSection icon={User} title="Personen" testId="confirmed-persons">
+          <ReviewFieldSection icon={User} title={countedTitle(analysis.family_members.length, "Person", "Personen")} testId="confirmed-persons">
             {analysis.family_members.map((member, i) => (
               <FieldRow key={i}>
                 <span className="block truncate">{member.name}</span>
@@ -189,7 +198,7 @@ export function ConfirmedAnalysisDetails({
         {analysis.organizations.length > 0 && (
           <ReviewFieldSection
             icon={Building2}
-            title="Organisationen"
+            title={countedTitle(analysis.organizations.length, "Organisation", "Organisationen")}
             testId="confirmed-organizations"
           >
             {analysis.organizations.map((org, i) => (
@@ -208,7 +217,7 @@ export function ConfirmedAnalysisDetails({
         {dates.length > 0 && (
           <ReviewFieldSection
             icon={Calendar}
-            title="Wichtige Termine"
+            title={countedTitle(dates.length, "Wichtiger Termin", "Wichtige Termine")}
             testId="confirmed-dates"
           >
             {dates.map((date, i) => {
@@ -230,7 +239,7 @@ export function ConfirmedAnalysisDetails({
         )}
 
         {amounts.length > 0 && (
-          <ReviewFieldSection icon={Euro} title="Beträge" testId="confirmed-amounts">
+          <ReviewFieldSection icon={Euro} title={countedTitle(amounts.length, "Betrag", "Beträge")} testId="confirmed-amounts">
             {amounts.map((amount, i) => {
               const label = meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS);
               return (
@@ -250,7 +259,7 @@ export function ConfirmedAnalysisDetails({
         )}
 
         {analysis.tasks.length > 0 && (
-          <ReviewFieldSection icon={ListTodo} title="Aufgaben" testId="confirmed-tasks">
+          <ReviewFieldSection icon={ListTodo} title={countedTitle(analysis.tasks.length, "Aufgabe", "Aufgaben")} testId="confirmed-tasks">
             {analysis.tasks.map((task, i) => (
               <FieldRow
                 key={i}
