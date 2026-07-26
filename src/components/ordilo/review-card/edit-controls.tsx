@@ -4,7 +4,6 @@ import { useId, useState } from "react";
 import { ChevronDown, Calendar, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDateInputValue } from "@/lib/format";
-import type { FamilyMemberOption } from "@/lib/analysis";
 import {
   TASK_PRIORITIES,
   type TaskPriority,
@@ -17,7 +16,7 @@ import {
  * pencil. This keeps the common "looks right, nothing to change" case calm
  * and readable instead of splitting every row into value + always-on editor.
  */
-function FieldEditButton({
+export function FieldEditButton({
   onClick,
   label,
   testId,
@@ -37,66 +36,6 @@ function FieldEditButton({
     >
       <Pencil className="size-4" aria-hidden="true" />
     </button>
-  );
-}
-
-/**
- * Person edit control — a pencil that reveals a dropdown of family members.
- */
-export function PersonEditControl({
-  value,
-  familyMembers,
-  onChange,
-}: {
-  value: string | null;
-  familyMembers: FamilyMemberOption[];
-  onChange: (memberId: string | null) => void;
-}) {
-  const reactId = useId();
-  const selectId = `review-person-${reactId}`;
-  const [isEditing, setIsEditing] = useState(false);
-
-  if (familyMembers.length === 0) return null;
-
-  if (!isEditing) {
-    return (
-      <FieldEditButton
-        onClick={() => setIsEditing(true)}
-        label="Person ändern"
-        testId="person-edit-button"
-      />
-    );
-  }
-
-  return (
-    <div className="relative">
-      <select
-        id={selectId}
-        name="review-person"
-        value={value ?? ""}
-        autoFocus
-        onChange={(e) => {
-          onChange(e.target.value || null);
-          setIsEditing(false);
-        }}
-        onBlur={() => setIsEditing(false)}
-        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
-        aria-label="Person wechseln"
-        data-testid="person-edit-select"
-      >
-        <option value="">Ohne Person</option>
-        {familyMembers.map((member) => (
-          <option key={member.id} value={member.id}>
-            {member.name}
-            {member.role ? ` (${member.role})` : ""}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
-        aria-hidden="true"
-      />
-    </div>
   );
 }
 

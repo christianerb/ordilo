@@ -38,13 +38,17 @@ import {
   ReviewFieldSection,
 } from "./helpers";
 import {
-  PersonEditControl,
   CategoryEditControl,
   DateEditControl,
   FactEditControl,
   TaskPriorityEditControl,
   TextEditControl,
+  FieldEditButton,
 } from "./edit-controls";
+import {
+  PersonPicker,
+  unmatchedPersonName,
+} from "@/components/ordilo/person-picker";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
   if (!type) return false;
@@ -213,46 +217,21 @@ export function ReviewCardContent({
         {/* Persons */}
         {analysis.family_members.length > 0 && (
           <ReviewFieldSection icon={User} title="Personen" testId="review-persons">
-            {analysis.family_members.map((member, i) => {
-              const edited = edits.persons.get(i);
-              const isEdited = Boolean(edited);
-              // An edit with an empty name = explicitly assigned to nobody.
-              const isNone = Boolean(edited) && edited!.name === "";
-              const displayName = isNone
-                ? member.name
-                : (edited?.name ?? member.name);
-              const isUnmatched =
-                !edited && !member.person_id && Boolean(onCreateMember);
-              return (
-                <FieldRow
-                  key={i}
-                  confidence={member.confidence}
-                  sourceText={member.name}
-                  onShowSource={onViewOriginal}
-                  isEdited={isEdited}
-                  editControl={
-                    <PersonEditControl
-                      value={edited?.personId ?? member.person_id ?? null}
-                      familyMembers={familyMembers}
-                      onChange={(memberId) => onEditPerson(i, memberId)}
-                    />
-                  }
-                >
-                  <span className="block truncate">{displayName}</span>
-                  {isNone && (
-                    <span className="block truncate font-normal text-muted-foreground">
-                      Wird keiner Person zugeordnet
-                    </span>
-                  )}
-                  {isUnmatched && (
-                    <CreateMemberButton
-                      name={member.name}
-                      onCreate={() => onCreateMember!(i, member.name)}
-                    />
-                  )}
-                </FieldRow>
-              );
-            })}
+            {analysis.family_members.map((member, i) => (
+              <PersonFieldRow
+                key={i}
+                member={member}
+                edited={edits.persons.get(i)}
+                familyMembers={familyMembers}
+                onEditPerson={(memberId) => onEditPerson(i, memberId)}
+                onCreateMember={
+                  onCreateMember
+                    ? (name) => onCreateMember(i, name)
+                    : undefined
+                }
+                onViewOriginal={onViewOriginal}
+              />
+            ))}
           </ReviewFieldSection>
         )}
 
@@ -625,6 +604,88 @@ export function ReviewCardContent({
     </div>
   );
 }
+/**
+ * One extracted person, with the assignment editor behind a pencil.
+ *
+ * The pencil reveals the same chip picker the review summary uses, so
+ * assigning is one tap in both places. It stays behind the pencil here
+ * because this view lists every field at once and always-on chip rows for
+ * each person would drown the "nothing to change" case.
+ */
+function PersonFieldRow({
+  member,
+  edited,
+  familyMembers,
+  onEditPerson,
+  onCreateMember,
+  onViewOriginal,
+}: {
+  member: DocumentAnalysis["family_members"][0];
+  edited: { name: string; personId: string | null } | undefined;
+  familyMembers: FamilyMemberOption[];
+  onEditPerson: (memberId: string | null) => void;
+  onCreateMember?: (name: string) => Promise<boolean>;
+  onViewOriginal?: (sourceText: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+
+  // An edit with an empty name means "explicitly assigned to nobody".
+  const isNone = Boolean(edited) && edited!.name === "";
+  const displayName = isNone ? member.name : (edited?.name ?? member.name);
+  // undefined = nothing assigned yet, so no chip is preselected.
+  const assignedId = edited
+    ? (isNone ? null : edited.personId)
+    : (member.person_id ?? undefined);
+  const createName = edited
+    ? null
+    : unmatchedPersonName(member.name, member.person_id, familyMembers);
+
+  return (
+    <FieldRow
+      confidence={member.confidence}
+      sourceText={member.name}
+      onShowSource={onViewOriginal}
+      isEdited={Boolean(edited)}
+      editControl={
+        isEditing || familyMembers.length === 0 ? undefined : (
+          <FieldEditButton
+            onClick={() => setIsEditing(true)}
+            label="Person ändern"
+            testId="person-edit-button"
+          />
+        )
+      }
+    >
+      <span className="block truncate">{displayName}</span>
+      {isNone && (
+        <span className="block truncate font-normal text-muted-foreground">
+          Wird keiner Person zugeordnet
+        </span>
+      )}
+      {isEditing ? (
+        <PersonPicker
+          className="mt-2"
+          familyMembers={familyMembers}
+          value={assignedId}
+          onChange={(memberId) => {
+            onEditPerson(memberId);
+            setIsEditing(false);
+          }}
+          testIdPrefix="person-edit"
+        />
+      ) : (
+        createName &&
+        onCreateMember && (
+          <CreateMemberButton
+            name={createName}
+            onCreate={() => onCreateMember(createName)}
+          />
+        )
+      )}
+    </FieldRow>
+  );
+}
+
 /**
  * Inline "create as family member" suggestion for an extracted person who
  * matched nobody in the family — the graph grows from the documents.

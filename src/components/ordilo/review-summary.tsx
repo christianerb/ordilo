@@ -1,10 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import {
   Check,
   Loader2,
-  Plus,
   AlertCircle,
   AlertTriangle,
   Pencil,
@@ -34,6 +32,10 @@ import {
   type DocumentType,
 } from "@/lib/schemas/extraction";
 import { buildHeadline } from "@/components/ordilo/review-card/helpers";
+import {
+  PersonPicker,
+  unmatchedPersonName,
+} from "@/components/ordilo/person-picker";
 import type { FamilyMemberOption } from "@/lib/analysis";
 
 // ---------------------------------------------------------------------------
@@ -191,27 +193,18 @@ export function ReviewSummary({
   const TypeIcon = DOCUMENT_TYPE_ICONS[analysis.document_type];
   const highlights = buildHighlights(analysis, familyMembers);
 
-  const [creatingPerson, setCreatingPerson] = useState(false);
-
   const topPerson = analysis.family_members[0];
-  // undefined = untouched (extraction applies); null = explicitly nobody.
+  // undefined = nothing assigned yet (an unlinked extraction must not look
+  // like a deliberate "nobody"); null = explicitly nobody.
   const currentPersonId =
     editedPersonId !== undefined
       ? editedPersonId
-      : (topPerson?.person_id ?? null);
-  const explicitNone = editedPersonId === null;
-  // The extracted name matches no family member and nothing was picked yet
-  // — offer to create them with one tap instead of a detour via /familie.
+      : (topPerson?.person_id ?? undefined);
+  // Offer to create the extracted person only while the assignment is
+  // still untouched — once the user picked, the offer is noise.
   const unknownPersonName =
-    editedPersonId === undefined &&
-    topPerson &&
-    !topPerson.person_id &&
-    topPerson.name.trim() &&
-    !familyMembers.some(
-      (m) => m.name.trim().toLocaleLowerCase("de") ===
-        topPerson.name.trim().toLocaleLowerCase("de"),
-    )
-      ? topPerson.name.trim()
+    editedPersonId === undefined
+      ? unmatchedPersonName(topPerson?.name, topPerson?.person_id, familyMembers)
       : null;
 
   return (
@@ -268,97 +261,14 @@ export function ReviewSummary({
                 />
                 <div className="min-w-0 flex-1">
                   {h.isPerson && onEditPerson && familyMembers.length > 0 ? (
-                    /* One tap instead of open-dropdown-then-pick: every
-                       family member is a visible chip, the assigned one is
-                       filled. Families are small — the options always fit. */
-                    <div
-                      role="group"
-                      aria-label="Person zuordnen"
-                      className="flex flex-wrap items-center gap-1.5"
-                      data-testid="review-summary-person-picker"
-                    >
-                      {familyMembers.map((m) => {
-                        const selected = m.id === currentPersonId;
-                        return (
-                          <button
-                            key={m.id}
-                            type="button"
-                            onClick={() => {
-                              if (!selected) onEditPerson(m.id);
-                            }}
-                            aria-pressed={selected}
-                            data-testid={`review-summary-person-chip-${m.id}`}
-                            className={cn(
-                              "inline-flex min-h-9 items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                              selected
-                                ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
-                                : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",
-                            )}
-                          >
-                            <span
-                              className={cn(
-                                "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
-                                selected
-                                  ? "bg-white/25 text-white"
-                                  : "bg-[var(--petrol)] text-white",
-                              )}
-                              aria-hidden="true"
-                            >
-                              {selected ? (
-                                <Check className="size-3.5" strokeWidth={3} />
-                              ) : (
-                                m.name.charAt(0).toUpperCase()
-                              )}
-                            </span>
-                            {m.name}
-                          </button>
-                        );
-                      })}
-                      {/* A document may belong to nobody — never force a
-                          wrong assignment just to get past the review. */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!explicitNone) onEditPerson(null);
-                        }}
-                        aria-pressed={explicitNone}
-                        data-testid="review-summary-person-chip-none"
-                        className={cn(
-                          "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          explicitNone
-                            ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
-                            : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-                        )}
-                      >
-                        {explicitNone && (
-                          <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
-                        )}
-                        Ohne Person
-                      </button>
-                      {/* Extracted person unknown to the family → create
-                          them right here instead of a detour via /familie. */}
-                      {unknownPersonName && onCreatePerson && (
-                        <button
-                          type="button"
-                          disabled={creatingPerson}
-                          onClick={() => {
-                            setCreatingPerson(true);
-                            void onCreatePerson(unknownPersonName).finally(() =>
-                              setCreatingPerson(false),
-                            );
-                          }}
-                          data-testid="review-summary-person-chip-create"
-                          className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
-                        >
-                          {creatingPerson ? (
-                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                          ) : (
-                            <Plus className="size-3.5" aria-hidden="true" />
-                          )}
-                          {unknownPersonName} anlegen
-                        </button>
-                      )}
-                    </div>
+                    <PersonPicker
+                      familyMembers={familyMembers}
+                      value={currentPersonId}
+                      onChange={onEditPerson}
+                      createName={unknownPersonName}
+                      onCreate={onCreatePerson}
+                      testIdPrefix="review-summary-person"
+                    />
                   ) : (
                     <>
                       <p className="truncate text-sm font-medium text-foreground">

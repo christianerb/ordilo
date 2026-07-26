@@ -847,7 +847,7 @@ describe("ReviewCard", () => {
   // Edit person flow
   // ---------------------------------------------------------------------------
 
-  it("renders a person edit dropdown with family members", async () => {
+  it("reveals a person chip for every family member plus 'Ohne Person'", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
     render(
@@ -859,14 +859,14 @@ describe("ReviewCard", () => {
     });
 
     fireEvent.click(screen.getByTestId("person-edit-button"));
-    const select = screen.getByTestId("person-edit-select");
-    expect(select).toBeDefined();
 
-    // Should have options for each family member.
-    const options = select.querySelectorAll("option");
-    const optionTexts = Array.from(options).map((o) => o.textContent);
-    expect(optionTexts).toContain("Emma (Kind)");
-    expect(optionTexts).toContain("Hanna (Kind)");
+    expect(screen.getByTestId("person-edit-chip-member-1")).toHaveTextContent(
+      "Emma",
+    );
+    expect(screen.getByTestId("person-edit-chip-member-2")).toHaveTextContent(
+      "Hanna",
+    );
+    expect(screen.getByTestId("person-edit-chip-none")).toBeDefined();
   });
 
   it("marks person as 'bearbeitet' after editing", async () => {
@@ -883,12 +883,9 @@ describe("ReviewCard", () => {
     // Initially no edited tag.
     expect(screen.queryAllByTestId("edited-tag").length).toBe(0);
 
-    // Reveal the editor, then change the person.
+    // Reveal the picker, then reassign with a single chip tap.
     fireEvent.click(screen.getByTestId("person-edit-button"));
-    const select = screen.getByTestId(
-      "person-edit-select",
-    ) as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: "member-2" } });
+    fireEvent.click(screen.getByTestId("person-edit-chip-member-2"));
 
     // Should now show the edited tag.
     await waitFor(() => {
