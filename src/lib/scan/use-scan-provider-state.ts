@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getFamilyId } from "@/lib/supabase/client-helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
@@ -47,6 +48,7 @@ const DOCUMENT_LIST_COLUMNS =
 
 export function useScanProviderState(): ScanProviderState {
   const supabase = createClient();
+  const router = useRouter();
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
@@ -118,7 +120,14 @@ export function useScanProviderState(): ScanProviderState {
     }
 
     const promise = getFamilyId(supabase).then((id) => {
-      familyIdResolvedRef.current = true;
+      // Only treat the id as resolved once we actually have one. getFamilyId
+      // returns null for a read error too, and caching that null poisoned
+      // every later upload in the session: handleFileUpload bailed out
+      // before reporting anything, leaving the wizard on an endless
+      // "Foto wird hochgeladen" spinner with no error and no retry.
+      if (id) {
+        familyIdResolvedRef.current = true;
+      }
       familyIdRef.current = id;
       setFamilyId(id);
       familyIdPromiseRef.current = null;
@@ -305,10 +314,18 @@ export function useScanProviderState(): ScanProviderState {
     async (
       file: File,
       onUploaded?: (documentId: string) => void,
-      onUploadError?: (message: string) => void,
+      onUploadError?: (message: string, retryable?: boolean) => void,
     ) => {
       const fid = familyIdRef.current ?? await ensureFamilyId();
-      if (!fid) return;
+      if (!fid) {
+        // Returning silently left the caller (and the wizard) waiting
+        // forever. Report it so the upload gets an error state and a retry.
+        onUploadError?.(
+          "Deine Familie konnte nicht geladen werden. Bitte Verbindung prüfen und erneut versuchen.",
+          true,
+        );
+        return;
+      }
 
       // Downscale large gallery/camera photos before upload — multi-MB
       // originals are the slowest part of the flow on mobile networks,
@@ -318,7 +335,9 @@ export function useScanProviderState(): ScanProviderState {
 
       const validation = validateFile(file.type, file.size);
       if (!validation.valid) {
-        onUploadError?.(validation.error);
+        // A rejected type or size can never succeed on a retry of the same
+        // file — the wizard must offer a different file instead.
+        onUploadError?.(validation.error, false);
         const uploadId = crypto.randomUUID();
         setUploads((prev) => [
           ...prev,
@@ -645,8 +664,17 @@ export function useScanProviderState(): ScanProviderState {
 
   const triggerAnalysis = useCallback(async (documentId: string) => {
     try {
-      await fetch(`/api/documents/${documentId}/analyze`, { method: "POST" });
-    } catch {}
+      const response = await fetch(`/api/documents/${documentId}/analyze`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error(String(response.status));
+    } catch {
+      // Release the "already triggered" marker so the polling loop can try
+      // again. Keeping it meant the document sat at ocr_done forever — the
+      // wizard spinning on "Inhalt wird verstanden", the list stuck on
+      // "Sortiert" — with no error state and nothing to retry.
+      triggeredAnalysisRef.current.delete(documentId);
+    }
     if (documentsLoadedRef.current) {
       await fetchDocumentsRef.current();
     }
@@ -781,7 +809,10 @@ export function useScanProviderState(): ScanProviderState {
             syncList: documentsLoadedRef.current,
           });
         },
-        (message) => setWizardUploadError(message),
+        (message, retryable = true) => {
+          setWizardUploadError(message);
+          if (!retryable) wizardFileRef.current = null;
+        },
       );
     },
     [handleFileUpload],
@@ -819,6 +850,10 @@ export function useScanProviderState(): ScanProviderState {
     if (file) {
       handleWizardCapture(file);
     } else {
+      // No retryable file (rejected type/size, or none captured): back to
+      // capture so the user can choose a different one.
+      wizardStepRef.current = "camera";
+      setWizardUploadError(null);
       setWizardStep("camera");
     }
   }, [handleRetryFailed, handleWizardCapture]);
@@ -830,7 +865,12 @@ export function useScanProviderState(): ScanProviderState {
     if (documentsLoadedRef.current) {
       void fetchDocumentsRef.current();
     }
-  }, []);
+    // Home and the other pages are server components whose first-visit and
+    // empty states come from props. Without this a brand-new family walked
+    // the whole golden path — scan, review, confirm — and landed back on
+    // "Scanne dein erstes Dokument", with no sign anything was saved.
+    router.refresh();
+  }, [router]);
 
   // After a confirmed document: reopen the camera fresh so a stack of
   // letters can be scanned one after another without reopening the

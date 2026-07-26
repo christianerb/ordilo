@@ -7,6 +7,7 @@ import { CameraStep } from "./camera-step";
 import { ScanProcessingStep } from "./processing-step";
 import { ScanReviewStep } from "./review-step";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { Button } from "@/components/ui/button";
 
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
@@ -140,6 +141,48 @@ export function ScanWizard({
                 confirmedCount={confirmedCount}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* The document can go missing while the wizard is on `review` — a
+          poll or realtime refresh that errors nulls it out. That used to
+          render this full-screen overlay completely empty, with Escape as
+          the only way out, which a phone does not have. */}
+      {step === "review" && !doc && (
+        <div
+          className="flex size-full flex-col items-center justify-center gap-3 p-6 text-center"
+          data-testid="review-step-missing-document"
+        >
+          <h2 className="text-base font-semibold text-foreground">
+            Dieses Dokument ist gerade nicht erreichbar
+          </h2>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            Es ist gespeichert — du findest es unter Dokumente. Du kannst das
+            Fenster schließen oder neu scannen.
+          </p>
+          <div className="mt-2 flex flex-col gap-2.5 sm:flex-row">
+            <Button
+              type="button"
+              size="lg"
+              onClick={onClose}
+              className="h-11 rounded-ordilo-md"
+              data-testid="review-missing-close-button"
+            >
+              <X className="size-4" aria-hidden="true" />
+              Schließen
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={onRetake}
+              className="h-11 rounded-ordilo-md"
+              data-testid="review-missing-retake-button"
+            >
+              <RefreshCw className="size-4" aria-hidden="true" />
+              Neu scannen
+            </Button>
           </div>
         </div>
       )}

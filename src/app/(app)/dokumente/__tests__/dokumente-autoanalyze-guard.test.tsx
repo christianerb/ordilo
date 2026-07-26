@@ -3,6 +3,18 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 
 // Mock the supabase browser client and the upload/ocr helpers so the
 // page can render without network calls.
+// The scan provider calls router.refresh() after a confirmed review so the
+// server components (home's first-visit state) pick the new document up.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+    refresh: vi.fn(),
+  }),
+  useSearchParams: () => new URLSearchParams(),
+  usePathname: () => "/dokumente",
+}));
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(),
 }));
