@@ -749,11 +749,20 @@ function makeCtxWithAmounts(
 
   return {
     client: {
-      from: vi.fn((table: string) =>
-        table === "extracted_entities"
-          ? builder({ data: amountsError ? null : amountRows, error: amountsError })
-          : builder({ data: documents, error: null }),
-      ),
+      from: vi.fn((table: string) => {
+        if (table === "extracted_entities") {
+          return builder({
+            data: amountsError ? null : amountRows,
+            error: amountsError,
+          });
+        }
+        // Mirror the real query: the executor asks for confirmed documents
+        // only, so the mock must not hand back drafts.
+        return builder({
+          data: documents.filter((d) => d.status === "confirmed"),
+          error: null,
+        });
+      }),
     } as unknown as ToolContext["client"],
     familyId: "fam-1",
     sources: [] as ChatSource[],
@@ -789,8 +798,47 @@ describe("query_payments", () => {
     const result = JSON.parse(await executeTool("query_payments", {}, ctx));
 
     expect(result.anzahl).toBe(2);
-    // 10,00 + 88,00 = 98,00 — computed here, handed over finished.
-    expect(result.summe).toEqual([{ currency: "EUR", wert: "98,00 EUR" }]);
+    // Never one number across kinds: 88,00 total + 10,00 paid is not
+    // 98,00 — that figure is neither the invoice nor the payment.
+    expect(result.summen).toEqual(
+      expect.arrayContaining([
+        { art: "Bereits gezahlt", currency: "EUR", wert: "10,00 EUR", anzahl: 1 },
+        { art: "Gesamtbetrag", currency: "EUR", wert: "88,00 EUR", anzahl: 1 },
+      ]),
+    );
+    expect(result.summen).toHaveLength(2);
+    // And the model is told not to add them.
+    expect(result.hinweis).toMatch(/NICHT/);
+  });
+
+  it("adds up several amounts of the SAME kind", async () => {
+    const instalments = [
+      { ...rows[0], amount_minor: 5000, value_date: "2026-06-01" },
+      { ...rows[0], amount_minor: 5000, value_date: "2026-07-01" },
+    ];
+    const ctx = makeCtxWithAmounts(instalments, documents);
+    const result = JSON.parse(
+      await executeTool("query_payments", { kind: "paid" }, ctx),
+    );
+
+    expect(result.summen).toEqual([
+      { art: "Bereits gezahlt", currency: "EUR", wert: "100,00 EUR", anzahl: 2 },
+    ]);
+    // One semantic group, so there is nothing to warn about.
+    expect(result.hinweis).toBeUndefined();
+  });
+
+  it("leaves unconfirmed documents out of money answers", async () => {
+    // The analyze step writes amount rows before the user reviews anything.
+    const draft = [
+      { id: "doc-2", title: "Noch nicht geprueft", category: "Kita", status: "analyzed" },
+    ];
+    const ctx = makeCtxWithAmounts(
+      [{ ...rows[0], document_id: "doc-2" }],
+      draft,
+    );
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+    expect(result.betraege).toEqual([]);
   });
 
   it("returns the payment date and meaning with each amount", async () => {
@@ -824,11 +872,11 @@ describe("query_payments", () => {
     const ctx = makeCtxWithAmounts(mixed, documents);
     const result = JSON.parse(await executeTool("query_payments", {}, ctx));
 
-    expect(result.summe).toHaveLength(2);
-    expect(result.summe).toEqual(
+    expect(result.summen).toHaveLength(2);
+    expect(result.summen).toEqual(
       expect.arrayContaining([
-        { currency: "EUR", wert: "10,00 EUR" },
-        { currency: "CHF", wert: "20,00 CHF" },
+        { art: "Bereits gezahlt", currency: "EUR", wert: "10,00 EUR", anzahl: 1 },
+        { art: "Bereits gezahlt", currency: "CHF", wert: "20,00 CHF", anzahl: 1 },
       ]),
     );
   });

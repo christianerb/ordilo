@@ -107,7 +107,17 @@ export function dedupeAmounts(
 ): DocumentAnalysis["amounts"] {
   return dedupeEntries(
     amounts,
-    (a) => `${a.amount.trim()}|${a.currency.trim().toLocaleUpperCase("de")}`,
+    // kind and value_date belong to the identity: two 50,00 EUR instalments
+    // both labelled "Rate" but paid on different dates are different
+    // transactions. Keying on value and currency alone collapsed them and
+    // permanently lost a payment before it was ever stored.
+    (a) =>
+      [
+        a.amount.trim(),
+        a.currency.trim().toLocaleUpperCase("de"),
+        a.kind,
+        a.value_date ?? "",
+      ].join("|"),
     (a) => meaningfulLabel(a.label, GENERIC_AMOUNT_LABELS),
     (a, label) => ({ ...a, label }),
   );

@@ -119,6 +119,39 @@ describe("dedupeAmounts", () => {
     expect(result).toHaveLength(2);
   });
 
+  it("keeps two identical instalments paid on different dates", () => {
+    // Same value, same label, different payment date = two transactions.
+    // Collapsing them lost a payment before it was ever stored, and made
+    // later date filtering and totals wrong.
+    const result = dedupeAmounts([
+      amount("50,00", "Rate", "EUR", { kind: "paid", value_date: "2026-06-01" }),
+      amount("50,00", "Rate", "EUR", { kind: "paid", value_date: "2026-07-01" }),
+    ]);
+    expect(result).toHaveLength(2);
+    expect(result.map((a) => a.value_date)).toEqual([
+      "2026-06-01",
+      "2026-07-01",
+    ]);
+  });
+
+  it("keeps the same amount when it means different things", () => {
+    // 88,00 as the invoice total and 88,00 as the amount paid are not the
+    // same row even without labels.
+    const result = dedupeAmounts([
+      amount("88,00", "", "EUR", { kind: "total" }),
+      amount("88,00", "", "EUR", { kind: "paid" }),
+    ]);
+    expect(result).toHaveLength(2);
+  });
+
+  it("still collapses a true duplicate", () => {
+    const result = dedupeAmounts([
+      amount("50,00", "Rate", "EUR", { kind: "paid", value_date: "2026-06-01" }),
+      amount("50,00", "Rate", "EUR", { kind: "paid", value_date: "2026-06-01" }),
+    ]);
+    expect(result).toHaveLength(1);
+  });
+
   it("keeps the same amount with different meaningful labels", () => {
     const result = dedupeAmounts([
       amount("88,00", "Gesamtbetrag"),

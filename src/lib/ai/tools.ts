@@ -91,8 +91,12 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         "was ist noch offen, wie viel insgesamt, in welchem Zeitraum. " +
         "Verwende dies IMMER fuer Fragen wie 'Wann habe ich was gezahlt?', " +
         "'Wie viel habe ich fuer die Kita bezahlt?' oder 'Was ist noch " +
-        "offen?'. Die Summe wird serverseitig berechnet — rechne NICHT " +
-        "selbst mit Zahlen aus Dokument-Auszuegen.",
+        "offen?'. Beruecksichtigt nur bestaetigte Dokumente. Die Summen " +
+        "werden serverseitig berechnet und sind nach Art und Waehrung " +
+        "GETRENNT ausgewiesen — uebernimm sie unveraendert, rechne NICHT " +
+        "selbst mit Zahlen aus Dokument-Auszuegen und addiere die Summen " +
+        "verschiedener Arten NICHT zusammen. Wenn du genau eine Summe " +
+        "brauchst, frage mit einem konkreten kind an.",
       parameters: {
         type: "object",
         properties: {
@@ -682,10 +686,19 @@ async function executeQueryPayments(
 
   // Resolve the documents so the answer can name them and filter by
   // collection. Only confirmed documents are part of the family book.
+  // Only confirmed documents. The analyze step writes amount rows before
+  // the user has reviewed anything, so accepting a row merely because its
+  // document exists let unreviewed drafts into money answers.
+  //
+  // Filter on the DOCUMENT status, not the entity's `confirmed` flag:
+  // re-analysing a confirmed document rewrites its entities with
+  // confirmed = false while the document goes straight back to status
+  // "confirmed", so the flag would hide real, reviewed amounts.
   const documentIds = [...new Set(rows.map((r) => r.document_id))];
   const { data: documents } = await ctx.client
     .from("documents")
     .select("id, title, category, status")
+    .eq("status", "confirmed")
     .in("id", documentIds);
 
   const byId = new Map(
@@ -705,11 +718,18 @@ async function executeQueryPayments(
     return JSON.stringify({ betraege: [] });
   }
 
-  // Sum per currency — mixing them into one number would be wrong.
+  // Sum per kind AND currency. Adding kinds together produces a number that
+  // is none of the real figures: an 88,00 EUR invoice with 10,00 EUR already
+  // paid would report 98,00 EUR, and the tool description tells the model to
+  // trust this value. Mixing currencies would be wrong for the same reason.
   const totals = new Map<string, number>();
   for (const row of matching) {
     const currency = row.currency ?? "EUR";
-    totals.set(currency, (totals.get(currency) ?? 0) + (row.amount_minor ?? 0));
+    const rowKind = (row.amount_kind as AmountKind) ?? "other";
+    totals.set(
+      `${rowKind}|${currency}`,
+      (totals.get(`${rowKind}|${currency}`) ?? 0) + (row.amount_minor ?? 0),
+    );
   }
 
   return JSON.stringify({
@@ -725,11 +745,28 @@ async function executeQueryPayments(
         document_id: row.document_id,
       };
     }),
-    // Server-computed, so the model never has to add anything up.
-    summe: [...totals.entries()].map(([currency, minor]) => ({
-      currency,
-      wert: `${formatMinorAsGerman(minor)} ${currency}`,
-    })),
+    // Server-computed, so the model never has to add anything up — but one
+    // sum per kind and currency, because a total, an already-paid part and
+    // an outstanding balance are not addable.
+    summen: [...totals.entries()].map(([key, minor]) => {
+      const [rowKind, currency] = key.split("|");
+      return {
+        art: AMOUNT_KIND_LABELS[rowKind as AmountKind],
+        currency,
+        wert: `${formatMinorAsGerman(minor)} ${currency}`,
+        anzahl: matching.filter(
+          (r) =>
+            ((r.amount_kind as AmountKind) ?? "other") === rowKind &&
+            (r.currency ?? "EUR") === currency,
+        ).length,
+      };
+    }),
+    hinweis:
+      kind === null && totals.size > 1
+        ? "Die Summen sind nach Art getrennt. Addiere sie NICHT: ein " +
+          "Gesamtbetrag, ein bereits gezahlter Teil und ein offener Rest " +
+          "gehoeren nicht zusammengerechnet."
+        : undefined,
     anzahl: matching.length,
   });
 }
