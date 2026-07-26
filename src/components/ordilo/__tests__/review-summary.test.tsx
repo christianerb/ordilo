@@ -263,6 +263,70 @@ describe("ReviewSummary", () => {
     ).toBeNull();
   });
 
+  it("offers the create chip even when the family has no members yet", () => {
+    // The empty family is exactly the case where creating is the only way
+    // forward, so the picker must still mount.
+    render(
+      <ReviewSummary
+        analysis={{
+          ...analysis,
+          family_members: [
+            { person_id: null, name: "Michelle", confidence: 0.5 },
+          ],
+        }}
+        familyMembers={[]}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        onCreatePerson={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("review-summary-person-chip-create")).toBeDefined();
+    expect(screen.getByTestId("review-summary-person-chip-none")).toBeDefined();
+  });
+
+  it("stops naming a person in the headline once assigned to nobody", () => {
+    const { rerender } = render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/Schule für Emma/i)).toBeDefined();
+
+    rerender(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        editedPersonId={null}
+      />,
+    );
+    // No longer the "assigned to" form; falls back to the document's title.
+    expect(screen.queryByText("Schule für Emma")).toBeNull();
+    expect(screen.getByText("Schule: Kita-Brief für Emma")).toBeDefined();
+  });
+
+  it("names the newly assigned person in the headline", () => {
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        editedPersonId="member-2"
+      />,
+    );
+    expect(screen.getByText(/Schule für Hanna/i)).toBeDefined();
+  });
+
   it("displays a confirm error message when provided", () => {
     render(
       <ReviewSummary

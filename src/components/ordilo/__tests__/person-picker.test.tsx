@@ -101,6 +101,53 @@ describe("PersonPicker", () => {
     await waitFor(() => expect(chip).not.toBeDisabled());
   });
 
+  it("offers no exit without onDismiss, and a tap on the assigned chip stays a no-op", () => {
+    const onChange = vi.fn();
+    renderPicker({ value: "m1", onChange });
+    expect(screen.queryByTestId("pp-chip-dismiss")).toBeNull();
+    fireEvent.click(screen.getByTestId("pp-chip-m1"));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("closes via the assigned chip, the Ohne-Person chip and Abbrechen", () => {
+    const onDismiss = vi.fn();
+    const onChange = vi.fn();
+    const { unmount } = renderPicker({ value: "m1", onDismiss, onChange });
+
+    // Confirming the current assignment reads as "yes, that one" → close.
+    fireEvent.click(screen.getByTestId("pp-chip-m1"));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId("pp-chip-dismiss"));
+    expect(onDismiss).toHaveBeenCalledTimes(2);
+    unmount();
+
+    // Same for an already-explicit "nobody".
+    const onDismiss2 = vi.fn();
+    renderPicker({ value: null, onDismiss: onDismiss2 });
+    fireEvent.click(screen.getByTestId("pp-chip-none"));
+    expect(onDismiss2).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports a failed creation instead of looking like a dead tap", async () => {
+    const onCreate = vi.fn().mockResolvedValue(false);
+    renderPicker({ createName: "Oma Ute", onCreate });
+
+    fireEvent.click(screen.getByTestId("pp-chip-create"));
+    expect(await screen.findByTestId("pp-create-error")).toHaveTextContent(
+      /nicht geklappt/i,
+    );
+  });
+
+  it("reports a rejected creation too", async () => {
+    const onCreate = vi.fn().mockRejectedValue(new Error("offline"));
+    renderPicker({ createName: "Oma Ute", onCreate });
+
+    fireEvent.click(screen.getByTestId("pp-chip-create"));
+    expect(await screen.findByTestId("pp-create-error")).toBeDefined();
+  });
+
   it("renders nothing without members and without a create offer", () => {
     const { container } = render(
       <PersonPicker

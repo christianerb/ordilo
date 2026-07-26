@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Check,
   RefreshCw,
@@ -628,6 +628,17 @@ function PersonFieldRow({
   onViewOriginal?: (sourceText: string) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
+  const pencilRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * Close the picker and put focus back on the pencil. Without the second
+   * part the trigger unmounts under the user's focus and a keyboard user
+   * lands on <body>, having to tab in from the top of the review again.
+   */
+  const closePicker = () => {
+    setIsEditing(false);
+    requestAnimationFrame(() => pencilRef.current?.focus());
+  };
 
   // An edit with an empty name means "explicitly assigned to nobody".
   const isNone = Boolean(edited) && edited!.name === "";
@@ -649,6 +660,7 @@ function PersonFieldRow({
       editControl={
         isEditing || familyMembers.length === 0 ? undefined : (
           <FieldEditButton
+            buttonRef={pencilRef}
             onClick={() => setIsEditing(true)}
             label="Person ändern"
             testId="person-edit-button"
@@ -669,8 +681,9 @@ function PersonFieldRow({
           value={assignedId}
           onChange={(memberId) => {
             onEditPerson(memberId);
-            setIsEditing(false);
+            closePicker();
           }}
+          onDismiss={closePicker}
           testIdPrefix="person-edit"
         />
       ) : (

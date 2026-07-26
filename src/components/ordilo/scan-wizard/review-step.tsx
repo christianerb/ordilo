@@ -19,6 +19,7 @@ import {
 } from "@/components/ordilo/review-card/helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ReviewSummary } from "@/components/ordilo/review-summary";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const EMPTY_EDITS: EditState = {
@@ -192,9 +193,20 @@ export function ScanReviewStep({
    * /familie plus re-review.
    */
   const handleCreatePerson = useCallback(async (name: string) => {
-    const { addFamilyMember } = await import("@/app/(app)/familie/actions");
-    const result = await addFamilyMember({ name });
-    if (!result.success) return false;
+    let result: Awaited<ReturnType<typeof import("@/app/(app)/familie/actions").addFamilyMember>>;
+    try {
+      const { addFamilyMember } = await import("@/app/(app)/familie/actions");
+      result = await addFamilyMember({ name });
+    } catch {
+      toast.error("Anlegen hat nicht geklappt — bitte Verbindung prüfen.");
+      return false;
+    }
+    if (!result.success) {
+      // Surface the server action's German reason (duplicate name, auth,
+      // validation) instead of dropping it and looking like a dead tap.
+      toast.error(result.error);
+      return false;
+    }
     const newMember = {
       id: result.data.id,
       name: result.data.name,

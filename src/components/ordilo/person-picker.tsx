@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2, Plus } from "lucide-react";
+import { Check, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FamilyMemberOption } from "@/lib/analysis";
 
@@ -23,6 +23,13 @@ export interface PersonPickerProps {
   createName?: string | null;
   /** Creates `createName` as a family member. Resolves false on failure. */
   onCreate?: (name: string) => Promise<boolean>;
+  /**
+   * Closes the picker without changing anything. When set, tapping the
+   * already-assigned chip also closes (it reads as "yes, that one") and an
+   * explicit Abbrechen chip is offered. Without this the picker has no exit
+   * for a user who opened it only to check.
+   */
+  onDismiss?: () => void;
   /**
    * Prefix for the chips' data-testids, e.g. "review-summary-person"
    * yields "review-summary-person-chip-<id>" / "-chip-none" / "-chip-create".
@@ -50,10 +57,12 @@ export function PersonPicker({
   onChange,
   createName,
   onCreate,
+  onDismiss,
   testIdPrefix,
   className,
 }: PersonPickerProps) {
   const [creating, setCreating] = useState(false);
+  const [createFailed, setCreateFailed] = useState(false);
 
   if (familyMembers.length === 0 && !(createName && onCreate)) return null;
 
@@ -73,12 +82,13 @@ export function PersonPicker({
             key={member.id}
             type="button"
             onClick={() => {
-              if (!selected) onChange(member.id);
+              if (selected) onDismiss?.();
+              else onChange(member.id);
             }}
             aria-pressed={selected}
             data-testid={`${testIdPrefix}-chip-${member.id}`}
             className={cn(
-              "inline-flex min-h-9 items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
               selected
                 ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
                 : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",
@@ -97,7 +107,7 @@ export function PersonPicker({
                 member.name.charAt(0).toUpperCase()
               )}
             </span>
-            {member.name}
+            <span className="min-w-0 truncate">{member.name}</span>
           </button>
         );
       })}
@@ -105,12 +115,13 @@ export function PersonPicker({
       <button
         type="button"
         onClick={() => {
-          if (!explicitNone) onChange(null);
+          if (explicitNone) onDismiss?.();
+          else onChange(null);
         }}
         aria-pressed={explicitNone}
         data-testid={`${testIdPrefix}-chip-none`}
         className={cn(
-          "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
           explicitNone
             ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
             : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
@@ -126,20 +137,48 @@ export function PersonPicker({
         <button
           type="button"
           disabled={creating}
-          onClick={() => {
+          aria-busy={creating}
+          onClick={async () => {
             setCreating(true);
-            void onCreate(createName).finally(() => setCreating(false));
+            setCreateFailed(false);
+            // A rejected promise here (offline, server action throw) used to
+            // become an unhandled rejection and the tap looked like a no-op.
+            const ok = await onCreate(createName).catch(() => false);
+            setCreating(false);
+            setCreateFailed(!ok);
           }}
           data-testid={`${testIdPrefix}-chip-create`}
-          className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
         >
           {creating ? (
-            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
           ) : (
-            <Plus className="size-3.5" aria-hidden="true" />
+            <Plus className="size-3.5 shrink-0" aria-hidden="true" />
           )}
-          {createName} anlegen
+          <span className="min-w-0 truncate">{createName} anlegen</span>
         </button>
+      )}
+
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          data-testid={`${testIdPrefix}-chip-dismiss`}
+          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <X className="size-3.5" aria-hidden="true" />
+          Abbrechen
+        </button>
+      )}
+
+      {createFailed && (
+        <p
+          role="status"
+          className="w-full text-xs text-destructive"
+          data-testid={`${testIdPrefix}-create-error`}
+        >
+          Das hat nicht geklappt. Bitte nochmal versuchen.
+        </p>
       )}
     </div>
   );

@@ -191,14 +191,29 @@ export function hasReviewEdits(edits: EditState): boolean {
  * - "Brief: Steuerunterlagen 2024"
  * - "Dokument"
  */
-export function buildHeadline(analysis: DocumentAnalysis): string {
+export function buildHeadline(
+  analysis: DocumentAnalysis,
+  /**
+   * The person the document is currently assigned to, when the user has
+   * changed it: a name, or null for "assigned to nobody". Pass undefined
+   * (or omit) to use the extracted person. Without this the headline keeps
+   * claiming "Brief für Michelle" after the user chose "Ohne Person".
+   */
+  assignedPersonName?: string | null,
+): string {
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type] || "Dokument";
 
-  if (analysis.family_members.length > 0) {
-    const member = analysis.family_members[0];
-    return `${typeLabel} für ${member.name}`;
+  const person =
+    assignedPersonName !== undefined
+      ? assignedPersonName
+      : (analysis.family_members[0]?.name ?? null);
+
+  if (person) {
+    return `${typeLabel} für ${person}`;
   }
 
+  // No person (none extracted, or assigned to nobody) — name the document
+  // by its own title instead.
   if (analysis.title && analysis.title.trim()) {
     return `${typeLabel}: ${analysis.title}`;
   }

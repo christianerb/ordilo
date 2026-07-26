@@ -188,7 +188,15 @@ export function ReviewSummary({
   onCreatePerson,
   className,
 }: ReviewSummaryProps) {
-  const headline = buildHeadline(analysis);
+  // The assignment the user actually made wins over the extracted person,
+  // so the headline cannot keep naming someone they just unassigned.
+  const assignedName =
+    editedPersonId === undefined
+      ? undefined
+      : editedPersonId === null
+        ? null
+        : (familyMembers.find((m) => m.id === editedPersonId)?.name ?? null);
+  const headline = buildHeadline(analysis, assignedName);
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type];
   const TypeIcon = DOCUMENT_TYPE_ICONS[analysis.document_type];
   const highlights = buildHighlights(analysis, familyMembers);
@@ -206,6 +214,11 @@ export function ReviewSummary({
     editedPersonId === undefined
       ? unmatchedPersonName(topPerson?.name, topPerson?.person_id, familyMembers)
       : null;
+  // Render the picker whenever it can offer anything at all. Gating on
+  // `familyMembers.length > 0` used to hide it for a family with no members
+  // yet — the one case where the "create" chip is the only way forward.
+  const showPersonPicker =
+    familyMembers.length > 0 || Boolean(unknownPersonName && onCreatePerson);
 
   return (
     <div data-testid="review-summary" className={cn("space-y-5", className)}>
@@ -260,7 +273,7 @@ export function ReviewSummary({
                   strokeWidth={1.75}
                 />
                 <div className="min-w-0 flex-1">
-                  {h.isPerson && onEditPerson && familyMembers.length > 0 ? (
+                  {h.isPerson && onEditPerson && showPersonPicker ? (
                     <PersonPicker
                       familyMembers={familyMembers}
                       value={currentPersonId}
@@ -289,7 +302,7 @@ export function ReviewSummary({
                 <span className="shrink-0 text-xs text-muted-foreground">
                   {/* With the chip picker the assignment can change to any
                       member, so a fixed role caption ("Kind") would lie. */}
-                  {h.isPerson && onEditPerson && familyMembers.length > 0
+                  {h.isPerson && onEditPerson && showPersonPicker
                     ? "Person"
                     : h.caption}
                 </span>

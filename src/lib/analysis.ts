@@ -71,7 +71,15 @@ export async function fetchFamilyMembers(): Promise<FamilyMemberOption[]> {
     .eq("family_id", familyId)
     .order("created_at", { ascending: true });
 
-  if (membersError || !members) return [];
+  // A read failure must NOT look like "this family has no members": the
+  // review screens render a person picker from this list, and an empty list
+  // silently removes every assignment affordance. Throwing lets the caller
+  // show its error state with a retry instead. An empty result for a family
+  // that genuinely has no members is not an error and returns [].
+  if (membersError) {
+    throw new Error("Familienmitglieder konnten nicht geladen werden.");
+  }
+  if (!members) return [];
 
   return members.map((m) => ({
     id: m.id,

@@ -20,13 +20,17 @@ export function FieldEditButton({
   onClick,
   label,
   testId,
+  buttonRef,
 }: {
   onClick: () => void;
   label: string;
   testId?: string;
+  /** Lets the caller return focus here after its editor closes. */
+  buttonRef?: React.Ref<HTMLButtonElement>;
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
