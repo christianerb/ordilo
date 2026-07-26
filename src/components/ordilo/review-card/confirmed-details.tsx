@@ -27,7 +27,12 @@ import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { FieldGroup, FieldRow, getPriorityLabel, getPriorityBadgeClasses } from "./helpers";
+import {
+  FieldRow,
+  ReviewFieldSection,
+  getPriorityLabel,
+  getPriorityBadgeClasses,
+} from "./helpers";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
   if (!type) return false;
@@ -39,6 +44,60 @@ function shouldShowOrganizationType(name: string, type?: string | null): boolean
     normalizedType !== "organisation" &&
     normalizedType !== normalize(name)
   );
+}
+
+// ---------------------------------------------------------------------------
+// Display-level cleanup for extracted dates/amounts
+// ---------------------------------------------------------------------------
+
+/**
+ * Sub-labels the extraction sometimes emits that merely restate what the
+ * section heading already says ("Datum" under a date, "Betrag" under an
+ * amount). Showing them adds a second, redundant "Datum" per row.
+ */
+const GENERIC_DATE_LABELS = new Set(["datum", "date", "termin"]);
+const GENERIC_AMOUNT_LABELS = new Set(["betrag", "beträge", "summe", "amount"]);
+
+function normalizeLabel(label: string | null | undefined): string {
+  return (label ?? "").trim().toLocaleLowerCase("de");
+}
+
+function meaningfulLabel(
+  label: string | null | undefined,
+  generic: Set<string>,
+): string | null {
+  const normalized = normalizeLabel(label);
+  if (!normalized || generic.has(normalized)) return null;
+  return (label as string).trim();
+}
+
+/**
+ * Collapse entries the extraction reported more than once. The same due
+ * date (or the same amount) often appears in several places of a letter,
+ * and each mention used to become its own identical row. One row per
+ * distinct value is enough; when duplicates carry different labels, the
+ * first meaningful (non-generic) label wins.
+ */
+function dedupeByKey<T>(
+  entries: T[],
+  keyOf: (entry: T) => string,
+  labelOf: (entry: T) => string | null,
+  withLabel: (entry: T, label: string) => T,
+): T[] {
+  const byKey = new Map<string, T>();
+  for (const entry of entries) {
+    const key = keyOf(entry);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, entry);
+      continue;
+    }
+    if (!labelOf(existing)) {
+      const label = labelOf(entry);
+      if (label) byKey.set(key, withLabel(existing, label));
+    }
+  }
+  return [...byKey.values()];
 }
 
 /**
@@ -87,6 +146,19 @@ export function ConfirmedAnalysisDetails({
 
   if (!hasAnyFields && !onViewOriginal) return null;
 
+  const dates = dedupeByKey(
+    analysis.dates,
+    (d) => d.date.trim(),
+    (d) => meaningfulLabel(d.label, GENERIC_DATE_LABELS),
+    (d, label) => ({ ...d, label }),
+  );
+  const amounts = dedupeByKey(
+    analysis.amounts,
+    (a) => `${a.amount.trim()}|${a.currency.trim()}`,
+    (a) => meaningfulLabel(a.label, GENERIC_AMOUNT_LABELS),
+    (a, label) => ({ ...a, label }),
+  );
+
   return (
     <div
       className={cn(
@@ -101,23 +173,27 @@ export function ConfirmedAnalysisDetails({
         </p>
       )}
 
-      <div className="divide-y divide-border/60">
+      <div>
         {analysis.family_members.length > 0 && (
-          <FieldGroup testId="confirmed-persons">
+          <ReviewFieldSection icon={User} title="Personen" testId="confirmed-persons">
             {analysis.family_members.map((member, i) => (
-              <FieldRow key={i} icon={User} label="Personen">
+              <FieldRow key={i}>
                 <span className="block truncate">{member.name}</span>
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {documentId && <EditableFactsSection documentId={documentId} />}
 
         {analysis.organizations.length > 0 && (
-          <FieldGroup testId="confirmed-organizations">
+          <ReviewFieldSection
+            icon={Building2}
+            title="Organisationen"
+            testId="confirmed-organizations"
+          >
             {analysis.organizations.map((org, i) => (
-              <FieldRow key={i} icon={Building2} label="Organisationen">
+              <FieldRow key={i}>
                 <span className="block truncate">{org.name}</span>
                 {shouldShowOrganizationType(org.name, org.type) && (
                   <span className="block truncate font-normal text-muted-foreground">
@@ -126,60 +202,58 @@ export function ConfirmedAnalysisDetails({
                 )}
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
-        {analysis.dates.length > 0 && (
-          <FieldGroup testId="confirmed-dates">
-            {analysis.dates.map((date, i) => (
-              <FieldRow
-                key={i}
-                icon={Calendar}
-                label="Datum"
-                onCompareOriginal={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {formatGermanDate(date.date) || date.date}
-                </span>
-                {date.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {date.label}
+        {dates.length > 0 && (
+          <ReviewFieldSection
+            icon={Calendar}
+            title="Wichtige Termine"
+            testId="confirmed-dates"
+          >
+            {dates.map((date, i) => {
+              const label = meaningfulLabel(date.label, GENERIC_DATE_LABELS);
+              return (
+                <FieldRow key={i}>
+                  <span className="block truncate">
+                    {formatGermanDate(date.date) || date.date}
                   </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
+                  {label && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {label}
+                    </span>
+                  )}
+                </FieldRow>
+              );
+            })}
+          </ReviewFieldSection>
         )}
 
-        {analysis.amounts.length > 0 && (
-          <FieldGroup testId="confirmed-amounts">
-            {analysis.amounts.map((amount, i) => (
-              <FieldRow
-                key={i}
-                icon={Euro}
-                label="Beträge"
-                onCompareOriginal={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {amount.amount} {amount.currency}
-                </span>
-                {amount.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {amount.label}
+        {amounts.length > 0 && (
+          <ReviewFieldSection icon={Euro} title="Beträge" testId="confirmed-amounts">
+            {amounts.map((amount, i) => {
+              const label = meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS);
+              return (
+                <FieldRow key={i}>
+                  <span className="block truncate">
+                    {amount.amount} {amount.currency}
                   </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
+                  {label && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {label}
+                    </span>
+                  )}
+                </FieldRow>
+              );
+            })}
+          </ReviewFieldSection>
         )}
 
         {analysis.tasks.length > 0 && (
-          <FieldGroup testId="confirmed-tasks">
+          <ReviewFieldSection icon={ListTodo} title="Aufgaben" testId="confirmed-tasks">
             {analysis.tasks.map((task, i) => (
               <FieldRow
                 key={i}
-                icon={ListTodo}
-                label="Aufgaben"
                 editControl={
                   <span
                     className={cn(
@@ -199,7 +273,7 @@ export function ConfirmedAnalysisDetails({
                 )}
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
@@ -318,12 +392,10 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
   };
 
   return (
-    <FieldGroup testId="confirmed-facts">
+    <ReviewFieldSection icon={Hash} title="Nummern & Kennungen" testId="confirmed-facts">
       {facts.map((fact) => (
         <FieldRow
           key={fact.id}
-          icon={Hash}
-          label="Nummern & Kennungen"
           editControl={
             editingId === fact.id ? undefined : (
               <button
@@ -460,6 +532,6 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           Nummer hinzufügen
         </button>
       )}
-    </FieldGroup>
+    </ReviewFieldSection>
   );
 }
