@@ -194,6 +194,69 @@ describe("documentAnalysisJsonSchema", () => {
     expect(documentAnalysisJsonSchema.additionalProperties).toBe(false);
   });
 
+  it("keeps the amount JSON schema in sync with the Zod schema", () => {
+    // OpenAI strict mode needs every property listed in `required` and
+    // additionalProperties: false. A field added to the Zod amount but not
+    // here (or vice versa) makes the model's response fail validation at
+    // runtime, which is invisible until a real extraction runs.
+    const amounts = (
+      documentAnalysisJsonSchema.properties as unknown as {
+        amounts: {
+          items: {
+            properties: Record<string, unknown>;
+            required: readonly string[];
+            additionalProperties: boolean;
+          };
+        };
+      }
+    ).amounts;
+
+    const properties = Object.keys(amounts.items.properties).sort();
+    expect(properties).toEqual([
+      "amount",
+      "confidence",
+      "currency",
+      "kind",
+      "label",
+      "value_date",
+    ]);
+    expect([...amounts.items.required].sort()).toEqual(properties);
+    expect(amounts.items.additionalProperties).toBe(false);
+
+    // A round trip proves the two agree on what a valid amount looks like.
+    const parsed = documentAnalysisSchema.safeParse({
+      ...validAnalysis(),
+      amounts: [
+        {
+          amount: "10,00",
+          currency: "EUR",
+          label: "Bereits gezahlt",
+          kind: "paid",
+          value_date: "2026-07-12",
+          confidence: 0.9,
+        },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects an unknown amount kind", () => {
+    const parsed = documentAnalysisSchema.safeParse({
+      ...validAnalysis(),
+      amounts: [
+        {
+          amount: "10,00",
+          currency: "EUR",
+          label: "x",
+          kind: "erfunden",
+          value_date: null,
+          confidence: 0.9,
+        },
+      ],
+    });
+    expect(parsed.success).toBe(false);
+  });
+
   it("lists all required fields", () => {
     const required = documentAnalysisJsonSchema.required;
     expect(required).toContain("document_type");
@@ -276,7 +339,7 @@ describe("computeNeedsUserReview", () => {
 
   it("returns true when an amount has low confidence", () => {
     const analysis = validAnalysis({
-      amounts: [{ amount: "50", currency: "EUR", label: "Unklar", confidence: 0.2 }],
+      amounts: [{ amount: "50", currency: "EUR", label: "Unklar", kind: "other" as const, value_date: null, confidence: 0.2 }],
     });
     expect(computeNeedsUserReview(analysis)).toBe(true);
   });

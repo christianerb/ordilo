@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useRef } from "react";
+import { createContext, useCallback, useContext, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type QueryHandler = (query: string) => void;
@@ -21,6 +21,15 @@ export interface ActiveSearchContextValue {
    * `/suche?q=...` (which auto-submits there on load).
    */
   submitQuery: (query: string) => void;
+  /**
+   * Whether an answer is currently streaming. The global composer reads
+   * this to disable itself: it used to look ready during a stream and
+   * silently drop a second question, because /suche's submit handler
+   * returns early while loading.
+   */
+  busy: boolean;
+  /** Reported by the /suche page as its request starts and finishes. */
+  setBusy: (busy: boolean) => void;
 }
 
 const ActiveSearchContext = createContext<ActiveSearchContextValue | null>(
@@ -41,6 +50,11 @@ export function ActiveSearchProvider({
 }) {
   const router = useRouter();
   const handlerRef = useRef<QueryHandler | null>(null);
+  const [busy, setBusyState] = useState(false);
+
+  const setBusy = useCallback((next: boolean) => {
+    setBusyState(next);
+  }, []);
 
   const setActiveHandler = useCallback((handler: QueryHandler | null) => {
     handlerRef.current = handler;
@@ -58,7 +72,9 @@ export function ActiveSearchProvider({
   );
 
   return (
-    <ActiveSearchContext.Provider value={{ setActiveHandler, submitQuery }}>
+    <ActiveSearchContext.Provider
+      value={{ setActiveHandler, submitQuery, busy, setBusy }}
+    >
       {children}
     </ActiveSearchContext.Provider>
   );

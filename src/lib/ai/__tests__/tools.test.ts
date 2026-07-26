@@ -723,3 +723,174 @@ describe("save_document_fact", () => {
     expect(JSON.parse(result).error).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// query_payments
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a context whose `extracted_entities` query resolves to the given
+ * amount rows and whose `documents` query resolves to the given documents.
+ */
+function makeCtxWithAmounts(
+  amountRows: Array<Record<string, unknown>>,
+  documents: Array<Record<string, unknown>>,
+  amountsError: unknown = null,
+) {
+  function builder(result: { data: unknown; error: unknown }) {
+    const chain: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "not", "gte", "lte", "in", "order", "limit"]) {
+      chain[m] = vi.fn(() => chain);
+    }
+    chain.then = (resolve: (v: unknown) => void) =>
+      Promise.resolve(result).then(resolve);
+    return chain;
+  }
+
+  return {
+    client: {
+      from: vi.fn((table: string) => {
+        if (table === "extracted_entities") {
+          return builder({
+            data: amountsError ? null : amountRows,
+            error: amountsError,
+          });
+        }
+        // Mirror the real query: the executor asks for confirmed documents
+        // only, so the mock must not hand back drafts.
+        return builder({
+          data: documents.filter((d) => d.status === "confirmed"),
+          error: null,
+        });
+      }),
+    } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  } as ToolContext;
+}
+
+describe("query_payments", () => {
+  const rows = [
+    {
+      document_id: "doc-1",
+      label: "Bereits gezahlt",
+      amount_minor: 1000,
+      currency: "EUR",
+      amount_kind: "paid",
+      value_date: "2026-07-12",
+    },
+    {
+      document_id: "doc-1",
+      label: "Gesamtbetrag",
+      amount_minor: 8800,
+      currency: "EUR",
+      amount_kind: "total",
+      value_date: null,
+    },
+  ];
+  const documents = [
+    { id: "doc-1", title: "Abschiedssammlung", category: "Kita", status: "confirmed" },
+  ];
+
+  it("sums server-side so the model never adds excerpt numbers itself", async () => {
+    const ctx = makeCtxWithAmounts(rows, documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+
+    expect(result.anzahl).toBe(2);
+    // Never one number across kinds: 88,00 total + 10,00 paid is not
+    // 98,00 — that figure is neither the invoice nor the payment.
+    expect(result.summen).toEqual(
+      expect.arrayContaining([
+        { art: "Bereits gezahlt", currency: "EUR", wert: "10,00 EUR", anzahl: 1 },
+        { art: "Gesamtbetrag", currency: "EUR", wert: "88,00 EUR", anzahl: 1 },
+      ]),
+    );
+    expect(result.summen).toHaveLength(2);
+    // And the model is told not to add them.
+    expect(result.hinweis).toMatch(/NICHT/);
+  });
+
+  it("adds up several amounts of the SAME kind", async () => {
+    const instalments = [
+      { ...rows[0], amount_minor: 5000, value_date: "2026-06-01" },
+      { ...rows[0], amount_minor: 5000, value_date: "2026-07-01" },
+    ];
+    const ctx = makeCtxWithAmounts(instalments, documents);
+    const result = JSON.parse(
+      await executeTool("query_payments", { kind: "paid" }, ctx),
+    );
+
+    expect(result.summen).toEqual([
+      { art: "Bereits gezahlt", currency: "EUR", wert: "100,00 EUR", anzahl: 2 },
+    ]);
+    // One semantic group, so there is nothing to warn about.
+    expect(result.hinweis).toBeUndefined();
+  });
+
+  it("leaves unconfirmed documents out of money answers", async () => {
+    // The analyze step writes amount rows before the user reviews anything.
+    const draft = [
+      { id: "doc-2", title: "Noch nicht geprueft", category: "Kita", status: "analyzed" },
+    ];
+    const ctx = makeCtxWithAmounts(
+      [{ ...rows[0], document_id: "doc-2" }],
+      draft,
+    );
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+    expect(result.betraege).toEqual([]);
+  });
+
+  it("returns the payment date and meaning with each amount", async () => {
+    const ctx = makeCtxWithAmounts(rows, documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+
+    const paid = result.betraege.find(
+      (b: { art: string }) => b.art === "Bereits gezahlt",
+    );
+    expect(paid).toMatchObject({
+      betrag: "10,00 EUR",
+      datum: "12.07.2026",
+      dokument: "Abschiedssammlung",
+      sammlung: "Kita",
+    });
+  });
+
+  it("filters by collection", async () => {
+    const ctx = makeCtxWithAmounts(rows, documents);
+    const result = JSON.parse(
+      await executeTool("query_payments", { category: "Versicherung" }, ctx),
+    );
+    expect(result.betraege).toEqual([]);
+  });
+
+  it("keeps currencies apart instead of adding them together", async () => {
+    const mixed = [
+      { ...rows[0], amount_minor: 1000, currency: "EUR" },
+      { ...rows[0], amount_minor: 2000, currency: "CHF" },
+    ];
+    const ctx = makeCtxWithAmounts(mixed, documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+
+    expect(result.summen).toHaveLength(2);
+    expect(result.summen).toEqual(
+      expect.arrayContaining([
+        { art: "Bereits gezahlt", currency: "EUR", wert: "10,00 EUR", anzahl: 1 },
+        { art: "Bereits gezahlt", currency: "CHF", wert: "20,00 CHF", anzahl: 1 },
+      ]),
+    );
+  });
+
+  it("explains an empty result instead of implying there were no payments", async () => {
+    const ctx = makeCtxWithAmounts([], documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+    expect(result.betraege).toEqual([]);
+    expect(result.hinweis).toMatch(/vor der Einfuehrung/);
+  });
+
+  it("reports a read failure rather than answering with nothing", async () => {
+    const ctx = makeCtxWithAmounts([], documents, { message: "boom" });
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+    expect(result.error).toBeDefined();
+  });
+});

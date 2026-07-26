@@ -226,14 +226,20 @@ export function ReviewCard({
     [onDirtyChange],
   );
 
-  /** Edit person: select a family member from the dropdown. */
+  /**
+   * Edit person: select a family member — or, with memberId null,
+   * explicitly assign the document to nobody (the extracted person is
+   * dropped on confirm). Both choices resolve a pending disambiguation.
+   */
   const handleEditPerson = useCallback(
     (entityIndex: number, memberId: string | null) => {
       const member = familyMembers.find((m) => m.id === memberId);
       updateEdits((prev) => {
         const newPersons = new Map(prev.persons);
         const original = analysis?.family_members[entityIndex];
-        if (
+        if (memberId === null) {
+          newPersons.set(entityIndex, { name: "", personId: null });
+        } else if (
           member &&
           (member.id !== original?.person_id || member.name !== original?.name)
         ) {
@@ -411,9 +417,9 @@ export function ReviewCard({
     });
   }, [updateEdits]);
 
-  /** Resolve disambiguation: select a person. */
+  /** Resolve disambiguation: select a person — or null for "nobody". */
   const handleResolveDisambiguation = useCallback(
-    (entityIndex: number, memberId: string) => {
+    (entityIndex: number, memberId: string | null) => {
       handleEditPerson(entityIndex, memberId);
     },
     [handleEditPerson],

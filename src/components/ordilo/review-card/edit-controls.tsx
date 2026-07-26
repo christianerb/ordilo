@@ -4,7 +4,6 @@ import { useId, useState } from "react";
 import { ChevronDown, Calendar, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDateInputValue } from "@/lib/format";
-import type { FamilyMemberOption } from "@/lib/analysis";
 import {
   TASK_PRIORITIES,
   type TaskPriority,
@@ -17,17 +16,21 @@ import {
  * pencil. This keeps the common "looks right, nothing to change" case calm
  * and readable instead of splitting every row into value + always-on editor.
  */
-function FieldEditButton({
+export function FieldEditButton({
   onClick,
   label,
   testId,
+  buttonRef,
 }: {
   onClick: () => void;
   label: string;
   testId?: string;
+  /** Lets the caller return focus here after its editor closes. */
+  buttonRef?: React.Ref<HTMLButtonElement>;
 }) {
   return (
     <button
+      ref={buttonRef}
       type="button"
       onClick={onClick}
       className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
@@ -37,66 +40,6 @@ function FieldEditButton({
     >
       <Pencil className="size-4" aria-hidden="true" />
     </button>
-  );
-}
-
-/**
- * Person edit control — a pencil that reveals a dropdown of family members.
- */
-export function PersonEditControl({
-  value,
-  familyMembers,
-  onChange,
-}: {
-  value: string | null;
-  familyMembers: FamilyMemberOption[];
-  onChange: (memberId: string | null) => void;
-}) {
-  const reactId = useId();
-  const selectId = `review-person-${reactId}`;
-  const [isEditing, setIsEditing] = useState(false);
-
-  if (familyMembers.length === 0) return null;
-
-  if (!isEditing) {
-    return (
-      <FieldEditButton
-        onClick={() => setIsEditing(true)}
-        label="Person ändern"
-        testId="person-edit-button"
-      />
-    );
-  }
-
-  return (
-    <div className="relative">
-      <select
-        id={selectId}
-        name="review-person"
-        value={value ?? ""}
-        autoFocus
-        onChange={(e) => {
-          onChange(e.target.value || null);
-          setIsEditing(false);
-        }}
-        onBlur={() => setIsEditing(false)}
-        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
-        aria-label="Person wechseln"
-        data-testid="person-edit-select"
-      >
-        <option value="">Person wählen …</option>
-        {familyMembers.map((member) => (
-          <option key={member.id} value={member.id}>
-            {member.name}
-            {member.role ? ` (${member.role})` : ""}
-          </option>
-        ))}
-      </select>
-      <ChevronDown
-        className="pointer-events-none absolute top-1/2 right-2 size-4 -translate-y-1/2 text-muted-foreground"
-        aria-hidden="true"
-      />
-    </div>
   );
 }
 
@@ -148,7 +91,7 @@ export function CategoryEditControl({
           }}
           onBlur={() => setIsEditing(false)}
           placeholder="Eigene Sammlung"
-          className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           aria-label="Sammlung eingeben"
           data-testid="category-edit-input"
         />
@@ -182,7 +125,7 @@ export function CategoryEditControl({
             setIsEditing(false);
           }
         }}
-        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
+        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
       aria-label="Sammlung wechseln"
         data-testid="category-edit-select"
       >
@@ -242,7 +185,7 @@ export function FactEditControl({
       onChange={(e) => onChange(e.target.value)}
       onBlur={() => setIsEditing(false)}
       autoFocus
-      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
       aria-label={label}
       data-testid="fact-edit-input"
     />
@@ -290,7 +233,7 @@ export function TextEditControl({
         }
       }}
       autoFocus
-      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
       aria-label={label}
       data-testid={`${testId}-input`}
     />
@@ -325,7 +268,7 @@ export function TaskPriorityEditControl({
         setIsEditing(false);
       }}
       onBlur={() => setIsEditing(false)}
-      className="rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       aria-label="Priorität wählen"
       data-testid="task-priority-edit-select"
     >
@@ -408,7 +351,7 @@ export function DateEditControl({
       onBlur={() => setIsEditing(false)}
       autoFocus={isEditing}
       className={cn(
-        "rounded-ordilo-sm border border-border bg-card px-2 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "rounded-ordilo-sm border border-border bg-card px-2 py-1 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
         compact ? "w-28" : "w-32",
       )}
       aria-label={label}

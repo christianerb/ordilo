@@ -840,7 +840,7 @@ describe("POST /api/documents/[id]/analyze", () => {
       family_members: [{ person_id: "m1", name: "Emma", confidence: 0.9 }],
       organizations: [{ name: "Kita Sonne", type: "Kita", confidence: 0.85 }],
       dates: [{ date: "2026-07-15", type: "event", label: "Termin", confidence: 0.8 }],
-      amounts: [{ amount: "25.00", currency: "EUR", label: "Gebühr", confidence: 0.9 }],
+      amounts: [{ amount: "25.00", currency: "EUR", label: "Gebühr", kind: "other" as const, value_date: null, confidence: 0.9 }],
       facts: [],
       suggested_category: "Kita",
       tags: ["Elternabend", "Kita"],

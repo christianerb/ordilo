@@ -262,12 +262,22 @@
   --mist-light: #D3CEC5;
   --mist: #9C978C;
   --mist-dark: #625D54;
+  /*
+   * Text-safe variants. --mist (2.91:1 on white) and --apricot (3.51:1)
+   * are below the 4.5:1 needed for body text, but both are also used for
+   * surfaces, borders, dots and the mascot, where darkening them would
+   * change the brand. So text uses these instead; they clear 4.5:1 on
+   * every light surface in the palette (white, sand, sand-light,
+   * sand-warm, wash-apricot).
+   */
+  --mist-text: #6E6859;
 
   /* Accents */
   --petrol: #305460;
   --petrol-dark: #285064;
   --petrol-darker: #193232;
   --apricot: #E46018;
+  --apricot-text: #B4430A;
   --apricot-light: #F0B4A0;
   --blue-soft: #E4F0FC;
 
@@ -353,6 +363,9 @@
   --border: #3C5050;
   --input: #3C5050;
   --ring: var(--apricot);
+  /* The light-mode text variants are dark ink — invert them here. */
+  --mist-text: #AEBDB8;
+  --apricot-text: #F0A070;
 }
 
 /* ---------------------------------------------------------------------------

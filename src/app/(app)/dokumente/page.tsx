@@ -8,6 +8,8 @@ import {
   X,
   Plus,
   Settings2,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
 import {
@@ -44,6 +46,7 @@ export default function DokumentePage() {
   const {
     documents,
     loadingDocs,
+    documentsError,
     loadDocuments,
     uploads,
     isDragOver,
@@ -199,6 +202,30 @@ export default function DokumentePage() {
         <div className="flex items-center justify-center py-8">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
+      ) : documentsError && !hasDocuments ? (
+        // A failed read must not masquerade as an empty family.
+        <div
+          className="flex flex-col items-center gap-3 rounded-ordilo-md border border-border bg-card p-8 text-center shadow-card"
+          data-testid="documents-load-error"
+        >
+          <AlertCircle className="size-7 text-destructive" aria-hidden="true" />
+          <h2 className="text-base font-semibold text-foreground">
+            Deine Dokumente konnten nicht geladen werden
+          </h2>
+          <p className="max-w-xs text-sm text-muted-foreground">
+            {documentsError}
+          </p>
+          <Button
+            type="button"
+            size="lg"
+            onClick={() => void loadDocuments()}
+            className="mt-1 h-11 rounded-ordilo-md"
+            data-testid="documents-load-retry"
+          >
+            <RefreshCw className="size-4" aria-hidden="true" />
+            Nochmal versuchen
+          </Button>
+        </div>
       ) : hasDocuments ? (
         <div className="space-y-3" data-testid="document-list">
           <DocumentsTable
@@ -264,10 +291,12 @@ export default function DokumentePage() {
               className="flex-1"
               onClick={async () => {
                 if (!deleteConfirmId) return;
-                await handleDeleteDocument(deleteConfirmId);
+                const deleted = await handleDeleteDocument(deleteConfirmId);
                 setDeleteConfirmId(null);
                 closeDocument();
-                toast.success("Dokument entfernt");
+                // On failure handleDeleteDocument restores the row and shows
+                // its own error toast — do not also claim success.
+                if (deleted) toast.success("Dokument entfernt");
               }}
               data-testid="confirm-delete-button"
             >

@@ -20,10 +20,8 @@ import {
   Landmark,
   FileText,
   RefreshCw,
-  ChevronDown,
   type LucideIcon,
 } from "lucide-react";
-import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
@@ -34,6 +32,10 @@ import {
   type DocumentType,
 } from "@/lib/schemas/extraction";
 import { buildHeadline } from "@/components/ordilo/review-card/helpers";
+import {
+  PersonPicker,
+  unmatchedPersonName,
+} from "@/components/ordilo/person-picker";
 import type { FamilyMemberOption } from "@/lib/analysis";
 
 // ---------------------------------------------------------------------------
@@ -143,10 +145,22 @@ export interface ReviewSummaryProps {
   onReanalyze?: () => void;
   documentId?: string;
   onViewOriginal?: () => void;
-  /** Inline person edit — called when the user picks a different person. */
+  /**
+   * Inline person edit — called when the user picks a different person.
+   * `null` means "explicitly assigned to nobody".
+   */
   onEditPerson?: (memberId: string | null) => void;
-  /** The currently edited person ID (for the inline select). */
+  /**
+   * The current person edit: a member ID, `null` for "explicitly assigned
+   * to nobody", or `undefined` when the user has not touched the
+   * assignment (the extracted person_id then applies).
+   */
   editedPersonId?: string | null;
+  /**
+   * Creates the extracted-but-unknown person as a new family member and
+   * assigns the document to them. Resolves to false on failure.
+   */
+  onCreatePerson?: (name: string) => Promise<boolean>;
   className?: string;
 }
 
@@ -171,15 +185,40 @@ export function ReviewSummary({
   onViewOriginal,
   onEditPerson,
   editedPersonId,
+  onCreatePerson,
   className,
 }: ReviewSummaryProps) {
-  const headline = buildHeadline(analysis);
+  // The assignment the user actually made wins over the extracted person,
+  // so the headline cannot keep naming someone they just unassigned.
+  const assignedName =
+    editedPersonId === undefined
+      ? undefined
+      : editedPersonId === null
+        ? null
+        : (familyMembers.find((m) => m.id === editedPersonId)?.name ?? null);
+  const headline = buildHeadline(analysis, assignedName);
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type];
   const TypeIcon = DOCUMENT_TYPE_ICONS[analysis.document_type];
   const highlights = buildHighlights(analysis, familyMembers);
 
-  const personSelectId = useId();
-  const currentPersonId = editedPersonId ?? analysis.family_members[0]?.person_id ?? null;
+  const topPerson = analysis.family_members[0];
+  // undefined = nothing assigned yet (an unlinked extraction must not look
+  // like a deliberate "nobody"); null = explicitly nobody.
+  const currentPersonId =
+    editedPersonId !== undefined
+      ? editedPersonId
+      : (topPerson?.person_id ?? undefined);
+  // Offer to create the extracted person only while the assignment is
+  // still untouched — once the user picked, the offer is noise.
+  const unknownPersonName =
+    editedPersonId === undefined
+      ? unmatchedPersonName(topPerson?.name, topPerson?.person_id, familyMembers)
+      : null;
+  // Render the picker whenever it can offer anything at all. Gating on
+  // `familyMembers.length > 0` used to hide it for a family with no members
+  // yet — the one case where the "create" chip is the only way forward.
+  const showPersonPicker =
+    familyMembers.length > 0 || Boolean(unknownPersonName && onCreatePerson);
 
   return (
     <div data-testid="review-summary" className={cn("space-y-5", className)}>
@@ -219,7 +258,7 @@ export function ReviewSummary({
       {/* Highlights */}
       {highlights.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist)]">
+          <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist-text)]">
             Ordilo hat erkannt
           </h3>
           <div className="space-y-1.5 stagger-children">
@@ -234,28 +273,15 @@ export function ReviewSummary({
                   strokeWidth={1.75}
                 />
                 <div className="min-w-0 flex-1">
-                  {h.isPerson && onEditPerson && familyMembers.length > 0 ? (
-                    <div className="relative">
-                      <select
-                        id={personSelectId}
-                        value={currentPersonId ?? ""}
-                        onChange={(e) => onEditPerson(e.target.value || null)}
-                        className="w-full min-w-0 appearance-none truncate rounded-ordilo-sm border border-border bg-card py-1 pl-2 pr-7 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        aria-label="Person wechseln"
-                        data-testid="review-summary-person-select"
-                      >
-                        <option value="">Person wählen …</option>
-                        {familyMembers.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}{m.role ? ` (${m.role})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                      />
-                    </div>
+                  {h.isPerson && onEditPerson && showPersonPicker ? (
+                    <PersonPicker
+                      familyMembers={familyMembers}
+                      value={currentPersonId}
+                      onChange={onEditPerson}
+                      createName={unknownPersonName}
+                      onCreate={onCreatePerson}
+                      testIdPrefix="review-summary-person"
+                    />
                   ) : (
                     <>
                       <p className="truncate text-sm font-medium text-foreground">
@@ -274,7 +300,11 @@ export function ReviewSummary({
                   )}
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {h.caption}
+                  {/* With the chip picker the assignment can change to any
+                      member, so a fixed role caption ("Kind") would lie. */}
+                  {h.isPerson && onEditPerson && showPersonPicker
+                    ? "Person"
+                    : h.caption}
                 </span>
               </div>
             ))}

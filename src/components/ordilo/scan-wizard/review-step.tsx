@@ -19,6 +19,7 @@ import {
 } from "@/components/ordilo/review-card/helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ReviewSummary } from "@/components/ordilo/review-summary";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 const EMPTY_EDITS: EditState = {
@@ -178,11 +179,47 @@ export function ScanReviewStep({
       if (member) {
         newPersons.set(0, { name: member.name, personId: member.id });
       } else {
-        newPersons.delete(0);
+        // Explicitly assigned to nobody — the extracted person is dropped
+        // on confirm, and a pending disambiguation counts as resolved.
+        newPersons.set(0, { name: "", personId: null });
       }
       return { ...prev, persons: newPersons };
     });
   }, [familyMembers]);
+
+  /**
+   * Create the extracted-but-unknown person as a real family member and
+   * assign the document to them — one tap instead of a detour via
+   * /familie plus re-review.
+   */
+  const handleCreatePerson = useCallback(async (name: string) => {
+    let result: Awaited<ReturnType<typeof import("@/app/(app)/familie/actions").addFamilyMember>>;
+    try {
+      const { addFamilyMember } = await import("@/app/(app)/familie/actions");
+      result = await addFamilyMember({ name });
+    } catch {
+      toast.error("Anlegen hat nicht geklappt — bitte Verbindung prüfen.");
+      return false;
+    }
+    if (!result.success) {
+      // Surface the server action's German reason (duplicate name, auth,
+      // validation) instead of dropping it and looking like a dead tap.
+      toast.error(result.error);
+      return false;
+    }
+    const newMember = {
+      id: result.data.id,
+      name: result.data.name,
+      role: result.data.role,
+    };
+    setFamilyMembers((prev) => [...prev, newMember]);
+    setEdits((prev) => {
+      const newPersons = new Map(prev.persons);
+      newPersons.set(0, { name: newMember.name, personId: newMember.id });
+      return { ...prev, persons: newPersons };
+    });
+    return true;
+  }, []);
 
   const handleReanalyze = useCallback(async () => {
     if (reanalyzing) return;
@@ -204,7 +241,9 @@ export function ScanReviewStep({
     }
   }, [documentId, reanalyzing]);
 
-  const editedPersonId = edits.persons.get(0)?.personId ?? null;
+  // undefined = untouched; null = explicitly assigned to nobody.
+  const personEdit = edits.persons.get(0);
+  const editedPersonId = personEdit ? personEdit.personId : undefined;
 
   // --- Milestone celebration ---
   // After this confirm, the total confirmed count becomes confirmedCount + 1.
@@ -466,6 +505,7 @@ export function ScanReviewStep({
         onReanalyze={handleReanalyze}
         onEditPerson={handleEditPerson}
         editedPersonId={editedPersonId}
+        onCreatePerson={handleCreatePerson}
         documentId={documentId}
         onViewOriginal={() => setOriginalPreviewOpen(true)}
         className={cn("lg:order-1", !originalPreviewOpen && "mx-auto max-w-md", className)}

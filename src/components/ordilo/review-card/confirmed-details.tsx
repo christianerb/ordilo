@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  AMOUNT_KIND_LABELS,
   FACT_TYPES,
   FACT_TYPE_LABELS,
   type DocumentAnalysis,
@@ -26,8 +27,20 @@ import {
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import {
+  GENERIC_AMOUNT_LABELS,
+  GENERIC_DATE_LABELS,
+  dedupeAmounts,
+  dedupeDates,
+  meaningfulLabel,
+} from "@/lib/analysis-cleanup";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { FieldGroup, FieldRow, getPriorityLabel, getPriorityBadgeClasses } from "./helpers";
+import {
+  FieldRow,
+  ReviewFieldSection,
+  getPriorityLabel,
+  getPriorityBadgeClasses,
+} from "./helpers";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
   if (!type) return false;
@@ -39,6 +52,15 @@ function shouldShowOrganizationType(name: string, type?: string | null): boolean
     normalizedType !== "organisation" &&
     normalizedType !== normalize(name)
   );
+}
+
+/**
+ * Pick the singular or plural section heading — "Betrag" over one amount,
+ * "Beträge" over several. A plural heading over a single row reads like
+ * something is missing.
+ */
+function countedTitle(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
 }
 
 /**
@@ -87,6 +109,9 @@ export function ConfirmedAnalysisDetails({
 
   if (!hasAnyFields && !onViewOriginal) return null;
 
+  const dates = dedupeDates(analysis.dates);
+  const amounts = dedupeAmounts(analysis.amounts);
+
   return (
     <div
       className={cn(
@@ -101,23 +126,27 @@ export function ConfirmedAnalysisDetails({
         </p>
       )}
 
-      <div className="divide-y divide-border/60">
+      <div>
         {analysis.family_members.length > 0 && (
-          <FieldGroup testId="confirmed-persons">
+          <ReviewFieldSection icon={User} title={countedTitle(analysis.family_members.length, "Person", "Personen")} testId="confirmed-persons">
             {analysis.family_members.map((member, i) => (
-              <FieldRow key={i} icon={User} label="Personen">
+              <FieldRow key={i}>
                 <span className="block truncate">{member.name}</span>
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         {documentId && <EditableFactsSection documentId={documentId} />}
 
         {analysis.organizations.length > 0 && (
-          <FieldGroup testId="confirmed-organizations">
+          <ReviewFieldSection
+            icon={Building2}
+            title={countedTitle(analysis.organizations.length, "Organisation", "Organisationen")}
+            testId="confirmed-organizations"
+          >
             {analysis.organizations.map((org, i) => (
-              <FieldRow key={i} icon={Building2} label="Organisationen">
+              <FieldRow key={i}>
                 <span className="block truncate">{org.name}</span>
                 {shouldShowOrganizationType(org.name, org.type) && (
                   <span className="block truncate font-normal text-muted-foreground">
@@ -126,60 +155,78 @@ export function ConfirmedAnalysisDetails({
                 )}
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
-        {analysis.dates.length > 0 && (
-          <FieldGroup testId="confirmed-dates">
-            {analysis.dates.map((date, i) => (
-              <FieldRow
-                key={i}
-                icon={Calendar}
-                label="Datum"
-                onCompareOriginal={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {formatGermanDate(date.date) || date.date}
-                </span>
-                {date.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {date.label}
+        {dates.length > 0 && (
+          <ReviewFieldSection
+            icon={Calendar}
+            title={countedTitle(dates.length, "Wichtiger Termin", "Wichtige Termine")}
+            testId="confirmed-dates"
+          >
+            {dates.map((date, i) => {
+              const label = meaningfulLabel(date.label, GENERIC_DATE_LABELS);
+              return (
+                <FieldRow key={i}>
+                  <span className="block truncate">
+                    {formatGermanDate(date.date) || date.date}
                   </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
+                  {label && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {label}
+                    </span>
+                  )}
+                </FieldRow>
+              );
+            })}
+          </ReviewFieldSection>
         )}
 
-        {analysis.amounts.length > 0 && (
-          <FieldGroup testId="confirmed-amounts">
-            {analysis.amounts.map((amount, i) => (
-              <FieldRow
-                key={i}
-                icon={Euro}
-                label="Beträge"
-                onCompareOriginal={onViewOriginal}
-              >
-                <span className="block truncate">
-                  {amount.amount} {amount.currency}
-                </span>
-                {amount.label && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {amount.label}
+        {amounts.length > 0 && (
+          <ReviewFieldSection icon={Euro} title={countedTitle(amounts.length, "Betrag", "Beträge")} testId="confirmed-amounts">
+            {amounts.map((amount, i) => {
+              const label = meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS);
+              // What the amount IS answers the question a bare number
+              // cannot: is this the total, or what we actually paid?
+              const kindLabel =
+                amount.kind && amount.kind !== "other"
+                  ? AMOUNT_KIND_LABELS[amount.kind]
+                  : null;
+              const paidOn =
+                amount.value_date
+                  ? formatGermanDate(amount.value_date) || amount.value_date
+                  : null;
+              const secondary = [kindLabel, label]
+                .filter((part): part is string => Boolean(part))
+                .join(" · ");
+              return (
+                <FieldRow key={i}>
+                  <span className="block truncate">
+                    {amount.amount} {amount.currency}
                   </span>
-                )}
-              </FieldRow>
-            ))}
-          </FieldGroup>
+                  {secondary && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {secondary}
+                    </span>
+                  )}
+                  {paidOn && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {amount.kind === "outstanding"
+                        ? `Fällig am ${paidOn}`
+                        : `Gezahlt am ${paidOn}`}
+                    </span>
+                  )}
+                </FieldRow>
+              );
+            })}
+          </ReviewFieldSection>
         )}
 
         {analysis.tasks.length > 0 && (
-          <FieldGroup testId="confirmed-tasks">
+          <ReviewFieldSection icon={ListTodo} title={countedTitle(analysis.tasks.length, "Aufgabe", "Aufgaben")} testId="confirmed-tasks">
             {analysis.tasks.map((task, i) => (
               <FieldRow
                 key={i}
-                icon={ListTodo}
-                label="Aufgaben"
                 editControl={
                   <span
                     className={cn(
@@ -199,7 +246,7 @@ export function ConfirmedAnalysisDetails({
                 )}
               </FieldRow>
             ))}
-          </FieldGroup>
+          </ReviewFieldSection>
         )}
 
         <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
@@ -318,12 +365,10 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
   };
 
   return (
-    <FieldGroup testId="confirmed-facts">
+    <ReviewFieldSection icon={Hash} title="Nummern & Kennungen" testId="confirmed-facts">
       {facts.map((fact) => (
         <FieldRow
           key={fact.id}
-          icon={Hash}
-          label="Nummern & Kennungen"
           editControl={
             editingId === fact.id ? undefined : (
               <button
@@ -356,14 +401,14 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 aria-label={`${fact.label} bearbeiten`}
                 maxLength={200}
                 autoFocus
-                className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 font-mono text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="confirmed-fact-edit-input"
               />
               <button
                 type="submit"
                 disabled={saving || !editValue.trim()}
                 aria-label="Speichern"
-                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
+                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
                 data-testid="confirmed-fact-save-button"
               >
                 {saving ? (
@@ -376,7 +421,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 type="button"
                 onClick={() => setEditingId(null)}
                 aria-label="Abbrechen"
-                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
+                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <X className="size-3.5" aria-hidden="true" />
               </button>
@@ -405,7 +450,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             value={newType}
             onChange={(e) => setNewType(e.target.value as FactType)}
             aria-label="Nummerntyp"
-            className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {FACT_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -421,14 +466,14 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             aria-label="Wert der Nummer"
             maxLength={200}
             autoFocus
-            className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-testid="confirmed-fact-add-input"
           />
           <button
             type="submit"
             disabled={saving || !newValue.trim()}
             aria-label="Nummer speichern"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
             data-testid="confirmed-fact-add-save"
           >
             {saving ? (
@@ -444,7 +489,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
               setNewValue("");
             }}
             aria-label="Abbrechen"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <X className="size-4" aria-hidden="true" />
           </button>
@@ -460,6 +505,6 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           Nummer hinzufügen
         </button>
       )}
-    </FieldGroup>
+    </ReviewFieldSection>
   );
 }

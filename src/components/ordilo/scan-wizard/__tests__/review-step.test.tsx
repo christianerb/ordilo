@@ -174,15 +174,55 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
 
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
 
-    fireEvent.change(
-      await screen.findByTestId("review-summary-person-select"),
-      { target: { value: "member-2" } },
+    fireEvent.click(
+      await screen.findByTestId("review-summary-person-chip-member-2"),
     );
     fireEvent.click(screen.getByTestId("review-summary-confirm-button"));
 
     await waitFor(() =>
       expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
     );
+    fetchSpy.mockRestore();
+  });
+
+  it("resolves an uncertain person as 'Ohne Person' and drops them from the payload", async () => {
+    const lowConfidenceAnalysis = {
+      ...uncertainAnalysis,
+      family_members: [
+        { person_id: null, name: "Michelle", confidence: 0.4 },
+      ],
+    };
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(lowConfidenceAnalysis);
+    vi.mocked(fetchFamilyMembers).mockResolvedValue([
+      ...familyMembers,
+      { id: "member-2", name: "Hanna", role: "Kind" },
+    ]);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    // Unresolved low-confidence person → confirm is gated.
+    expect(
+      await screen.findByTestId("review-summary-confirm-button"),
+    ).toHaveTextContent(/bitte person wählen/i);
+
+    // "Ohne Person" resolves the gate without forcing a wrong assignment.
+    fireEvent.click(screen.getByTestId("review-summary-person-chip-none"));
+    const confirmButton = screen.getByTestId("review-summary-confirm-button");
+    expect(confirmButton).not.toHaveTextContent(/bitte person wählen/i);
+
+    fireEvent.click(confirmButton);
+    await waitFor(() =>
+      expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
+    );
+
+    const confirmCall = fetchSpy.mock.calls.find((args) =>
+      String(args[0]).includes("/confirm"),
+    );
+    const body = JSON.parse(String(confirmCall?.[1]?.body));
+    expect(body.family_members).toEqual([]);
     fetchSpy.mockRestore();
   });
 });
@@ -259,14 +299,12 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     fireEvent.click(await screen.findByTestId("autofile-edit-button"));
     fireEvent.click(await screen.findByTestId("person-edit-button"));
-    fireEvent.change(await screen.findByTestId("person-edit-select"), {
-      target: { value: "member-2" },
-    });
+    fireEvent.click(await screen.findByTestId("person-edit-chip-member-2"));
     fireEvent.click(screen.getByTestId("review-back-button"));
 
     expect(
-      await screen.findByTestId("review-summary-person-select"),
-    ).toHaveValue("member-2");
+      await screen.findByTestId("review-summary-person-chip-member-2"),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps the ready-to-save card and shows the error inline when saving fails", async () => {

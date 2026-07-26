@@ -191,7 +191,7 @@ function CardContent({
             <span
               className={cn(
                 "tabular-nums",
-                isOverdue && "font-medium text-[var(--apricot)]",
+                isOverdue && "font-medium text-[var(--apricot-text)]",
               )}
               data-testid="task-due-date"
             >

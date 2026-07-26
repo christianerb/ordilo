@@ -37,6 +37,15 @@ import type {
 } from "@/types/database";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { normalizeFactValue } from "@/lib/schemas/extraction";
+import {
+  dedupeDates,
+  dedupeAmounts,
+  meaningfulLabel,
+  parseAmountToMinor,
+  toIsoDateOrNull,
+  GENERIC_DATE_LABELS,
+  GENERIC_AMOUNT_LABELS,
+} from "@/lib/analysis-cleanup";
 import { canonicalizeCategory } from "@/lib/categories";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
 
@@ -185,6 +194,13 @@ export async function POST(
   }
 
   const familyId = document.family_id;
+
+  // 6a. Clean up duplicate dates/amounts and generic labels. New analyses
+  //     arrive already cleaned by the analyze step; this covers payloads
+  //     built from analyses stored before the cleanup existed, so the
+  //     confirmed entities (search, detail views) are clean either way.
+  payload.dates = dedupeDates(payload.dates);
+  payload.amounts = dedupeAmounts(payload.amounts);
 
   // 6b. Canonicalize the category against the family's existing categories
   //     and collection names (documents.category === collection.name links
@@ -541,6 +557,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "person",
       entity_value: member.name,
       normalized_value: member.name.toLowerCase().trim(),
+      label: null,
       confidence: member.confidence,
       linked_object_id: member.person_id ?? null,
     });
@@ -552,6 +569,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "organization",
       entity_value: org.name,
       normalized_value: org.name.toLowerCase().trim(),
+      label: null,
       confidence: org.confidence,
       linked_object_id: null,
     });
@@ -563,6 +581,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "date",
       entity_value: date.date,
       normalized_value: date.date,
+      label: meaningfulLabel(date.label, GENERIC_DATE_LABELS),
       confidence: date.confidence,
       linked_object_id: null,
     });
@@ -574,6 +593,11 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "amount",
       entity_value: `${amount.amount} ${amount.currency}`.trim(),
       normalized_value: amount.amount,
+      label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
+      amount_minor: parseAmountToMinor(amount.amount),
+      currency: amount.currency.trim().toUpperCase() || "EUR",
+      amount_kind: amount.kind,
+      value_date: toIsoDateOrNull(amount.value_date),
       confidence: amount.confidence,
       linked_object_id: null,
     });
@@ -585,6 +609,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "category",
       entity_value: payload.suggested_category,
       normalized_value: payload.suggested_category.toLowerCase().trim(),
+      label: null,
       confidence: 1.0,
       linked_object_id: null,
     });
@@ -596,6 +621,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "tag",
       entity_value: tag,
       normalized_value: tag.toLowerCase().trim(),
+      label: null,
       confidence: 1.0,
       linked_object_id: null,
     });
@@ -614,7 +640,9 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
 function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
   return payload.tasks.map((task) => ({
     title: task.title,
-    due_date: task.due_date ?? null,
+    // Unsanitised, a value like "Montag" reaches a Postgres `date` column
+    // and rolls the whole confirm back as CONFIRM_RPC_FAILED.
+    due_date: toIsoDateOrNull(task.due_date),
     priority: task.priority,
     confidence: task.confidence,
   }));

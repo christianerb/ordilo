@@ -24,7 +24,11 @@ export interface EditedAnalysisPayload extends DocumentAnalysis {
  * Internal type for tracking which entities have been edited.
  */
 export interface EditState {
-  /** Edited person name (by entity index). */
+  /**
+   * Edited person name (by entity index). An entry with an empty name and
+   * null personId means "explicitly assigned to nobody" — the extracted
+   * person is dropped from the confirm payload.
+   */
   persons: Map<number, { name: string; personId: string | null }>;
   /** Edited category. */
   category: string | null;
@@ -88,18 +92,22 @@ export function buildConfirmPayload(
   analysis: DocumentAnalysis,
   edits: EditState,
 ): EditedAnalysisPayload {
-  // Apply person edits.
-  const familyMembers = analysis.family_members.map((m, i) => {
-    const edited = edits.persons.get(i);
-    if (edited) {
-      return {
-        ...m,
-        name: edited.name,
-        person_id: edited.personId,
-      };
-    }
-    return m;
-  });
+  // Apply person edits. An edit with an empty name means "assigned to
+  // nobody" — the extracted person is dropped entirely instead of being
+  // saved as an unlinked entity.
+  const familyMembers = analysis.family_members
+    .map((m, i) => {
+      const edited = edits.persons.get(i);
+      if (edited) {
+        return {
+          ...m,
+          name: edited.name,
+          person_id: edited.personId,
+        };
+      }
+      return m;
+    })
+    .filter((m) => m.name.trim().length > 0);
 
   // Apply category edit.
   const suggestedCategory = edits.category ?? analysis.suggested_category;
@@ -183,14 +191,29 @@ export function hasReviewEdits(edits: EditState): boolean {
  * - "Brief: Steuerunterlagen 2024"
  * - "Dokument"
  */
-export function buildHeadline(analysis: DocumentAnalysis): string {
+export function buildHeadline(
+  analysis: DocumentAnalysis,
+  /**
+   * The person the document is currently assigned to, when the user has
+   * changed it: a name, or null for "assigned to nobody". Pass undefined
+   * (or omit) to use the extracted person. Without this the headline keeps
+   * claiming "Brief für Michelle" after the user chose "Ohne Person".
+   */
+  assignedPersonName?: string | null,
+): string {
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type] || "Dokument";
 
-  if (analysis.family_members.length > 0) {
-    const member = analysis.family_members[0];
-    return `${typeLabel} für ${member.name}`;
+  const person =
+    assignedPersonName !== undefined
+      ? assignedPersonName
+      : (analysis.family_members[0]?.name ?? null);
+
+  if (person) {
+    return `${typeLabel} für ${person}`;
   }
 
+  // No person (none extracted, or assigned to nobody) — name the document
+  // by its own title instead.
   if (analysis.title && analysis.title.trim()) {
     return `${typeLabel}: ${analysis.title}`;
   }
@@ -426,7 +449,7 @@ export function DisambiguationPrompt({
 }: {
   lowConfidencePersons: { member: DocumentAnalysis["family_members"][0]; index: number }[];
   familyMembers: FamilyMemberOption[];
-  onResolve: (entityIndex: number, memberId: string) => void;
+  onResolve: (entityIndex: number, memberId: string | null) => void;
 }) {
   return (
     <div
@@ -472,6 +495,22 @@ export function DisambiguationPrompt({
             {member.name}
           </button>
         ))}
+        {/* The document may genuinely belong to nobody (a flyer, a letter
+            about someone outside the family) — forcing a wrong assignment
+            would poison the family book. */}
+        <button
+          type="button"
+          onClick={() => {
+            const first = lowConfidencePersons[0];
+            if (first) {
+              onResolve(first.index, null);
+            }
+          }}
+          className="inline-flex items-center gap-2 rounded-full border border-dashed border-border bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground transition-all hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          data-testid="disambiguation-option-none"
+        >
+          Gehört niemandem
+        </button>
       </div>
     </div>
   );

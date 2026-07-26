@@ -98,6 +98,11 @@ export function SucheClient({
       feedback: m.feedback ?? null,
     })),
   );
+  // Read here rather than next to setActiveHandler below: handleSubmit
+  // reports the streaming state through setBusy, so it must be in scope
+  // before that callback is defined.
+  const { setActiveHandler, setBusy } = useActiveSearch();
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
   const [rateLimitError, setRateLimitError] = useState(false);
@@ -334,6 +339,7 @@ export function SucheClient({
       setError(false);
       setRateLimitError(false);
       setIsLoading(true);
+      setBusy(true);
       lastQueryRef.current = query;
 
       const userMsg: ChatMessage = {
@@ -420,6 +426,29 @@ export function SucheClient({
                       : m,
                   ),
                 );
+              } else if (data.type === "tool") {
+                // Real tool activity, so the progress list can stop
+                // inventing steps on a timer.
+                const toolName = data.tool as string;
+                const state = data.state as "start" | "done" | "error";
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== aiMsgId) return m;
+                    const calls = [...(m.toolCalls ?? [])];
+                    if (state === "start") {
+                      calls.push({ toolName, state });
+                    } else {
+                      // Close the most recent open call for this tool.
+                      for (let i = calls.length - 1; i >= 0; i--) {
+                        if (calls[i].toolName === toolName && calls[i].state === "start") {
+                          calls[i] = { toolName, state };
+                          break;
+                        }
+                      }
+                    }
+                    return { ...m, toolCalls: calls };
+                  }),
+                );
               } else if (data.type === "card") {
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -474,9 +503,10 @@ export function SucheClient({
       } finally {
         setStreamingId(null);
         setIsLoading(false);
+        setBusy(false);
       }
     },
-    [familyId, isLoading, messages, activeConversationId, conversations],
+    [familyId, isLoading, messages, activeConversationId, conversations, setBusy],
   );
 
   // -------------------------------------------------------------------------
@@ -486,9 +516,12 @@ export function SucheClient({
   // write during render (Rule 4/5: mirrors handleSubmitRef below), cleared
   // on unmount so the topbar falls back to redirect-based search.
   // -------------------------------------------------------------------------
-  const { setActiveHandler } = useActiveSearch();
   setActiveHandler(handleSubmit);
-  useMountEffect(() => () => setActiveHandler(null));
+  useMountEffect(() => () => {
+    setActiveHandler(null);
+    setBusy(false);
+  });
+
 
   // -------------------------------------------------------------------------
   // Auto-submit initial query (Rule 4: mount-only external sync)
@@ -781,10 +814,13 @@ function ChatList({
                           e.stopPropagation();
                           onDelete(conv.id);
                         }}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground/20 opacity-0 transition-all hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                        // Visible and thumb-sized on touch; the old
+                        // opacity-0 + group-hover had no touch equivalent, so
+                        // deleting a chat was unreachable on a phone.
+                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-all hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:size-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                         aria-label="Chat löschen"
                       >
-                        <Trash2 className="size-3" aria-hidden="true" />
+                        <Trash2 className="size-4 sm:size-3" aria-hidden="true" />
                       </button>
                     </div>
                   );

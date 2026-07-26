@@ -50,6 +50,16 @@ export type ConfirmRpcEntity = {
   entity_type: string;
   entity_value: string;
   normalized_value: string | null;
+  /** What the value means ("Bereits gezahlt", "Zahlungsfrist"); null when generic. */
+  label: string | null;
+  /** Amount rows only: value in minor units (1000 = 10,00), so SUM() works. */
+  amount_minor?: number | null;
+  /** Amount rows only: ISO currency code. */
+  currency?: string | null;
+  /** Amount rows only: total | paid | outstanding | per_person | recurring | other. */
+  amount_kind?: string | null;
+  /** Amount rows only: ISO date this amount was paid or is due. */
+  value_date?: string | null;
   confidence: number;
   /** Family member UUID for person entities, or null. */
   linked_object_id: string | null;
@@ -476,6 +486,11 @@ export type Database = {
           entity_type: string;
           entity_value: string;
           normalized_value: string | null;
+          label: string | null;
+          amount_minor: number | null;
+          currency: string | null;
+          amount_kind: string | null;
+          value_date: string | null;
           confidence: number;
           confirmed: boolean;
           linked_object_id: string | null;
@@ -488,6 +503,11 @@ export type Database = {
           entity_type: string;
           entity_value: string;
           normalized_value?: string | null;
+          label?: string | null;
+          amount_minor?: number | null;
+          currency?: string | null;
+          amount_kind?: string | null;
+          value_date?: string | null;
           confidence?: number;
           confirmed?: boolean;
           linked_object_id?: string | null;
@@ -500,6 +520,11 @@ export type Database = {
           entity_type?: string;
           entity_value?: string;
           normalized_value?: string | null;
+          label?: string | null;
+          amount_minor?: number | null;
+          currency?: string | null;
+          amount_kind?: string | null;
+          value_date?: string | null;
           confidence?: number;
           confirmed?: boolean;
           linked_object_id?: string | null;

@@ -5,6 +5,8 @@ import {
   DOCUMENT_TYPES,
   TASK_PRIORITIES,
   FACT_TYPES,
+  AMOUNT_KINDS,
+  type AmountKind,
   type DocumentAnalysis,
   type DocumentType,
   type TaskPriority,
@@ -71,7 +73,15 @@ export async function fetchFamilyMembers(): Promise<FamilyMemberOption[]> {
     .eq("family_id", familyId)
     .order("created_at", { ascending: true });
 
-  if (membersError || !members) return [];
+  // A read failure must NOT look like "this family has no members": the
+  // review screens render a person picker from this list, and an empty list
+  // silently removes every assignment affordance. Throwing lets the caller
+  // show its error state with a retry instead. An empty result for a family
+  // that genuinely has no members is not an error and returns [].
+  if (membersError) {
+    throw new Error("Familienmitglieder konnten nicht geladen werden.");
+  }
+  if (!members) return [];
 
   return members.map((m) => ({
     id: m.id,
@@ -223,23 +233,29 @@ function reconstructAnalysis(
     confidence: o.confidence ?? 0,
   }));
 
-  // Reconstruct dates.
+  // Reconstruct dates. `label` carries what the date means ("Zahlungsfrist");
+  // it is null for rows stored before extracted_entities.label existed, and
+  // "" then simply renders no sub-label.
   const dateEntries = dates.map((d) => ({
     date: d.entity_value,
     type: "date",
-    label: "Datum",
+    label: d.label ?? "",
     confidence: d.confidence ?? 0,
   }));
 
-  // Reconstruct amounts — entity_value is stored as "amount currency".
+  // Reconstruct amounts. Newer rows carry typed columns (currency, kind,
+  // value_date); older ones only the "amount currency" display string, so
+  // fall back to splitting that.
   const amountEntries = amounts.map((a) => {
     const parts = a.entity_value.split(" ");
-    const currency = parts.length > 1 ? parts[parts.length - 1] : "EUR";
-    const amount = parts.slice(0, -1).join(" ") || a.entity_value;
+    const fallbackCurrency = parts.length > 1 ? parts[parts.length - 1] : "EUR";
+    const fallbackAmount = parts.slice(0, -1).join(" ") || a.entity_value;
     return {
-      amount,
-      currency,
-      label: "Betrag",
+      amount: a.normalized_value?.trim() || fallbackAmount,
+      currency: a.currency ?? fallbackCurrency,
+      label: a.label ?? "",
+      kind: isAmountKind(a.amount_kind) ? a.amount_kind : ("other" as const),
+      value_date: a.value_date ?? null,
       confidence: a.confidence ?? 0,
     };
   });
@@ -295,6 +311,12 @@ function isDocumentType(value: string | null | undefined): value is DocumentType
 /**
  * Type guard for FactType.
  */
+function isAmountKind(
+  value: string | null | undefined,
+): value is AmountKind {
+  return !!value && (AMOUNT_KINDS as readonly string[]).includes(value);
+}
+
 function isFactType(value: string | null | undefined): value is FactType {
   if (!value) return false;
   return (FACT_TYPES as readonly string[]).includes(value);

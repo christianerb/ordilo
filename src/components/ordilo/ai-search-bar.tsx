@@ -7,7 +7,7 @@ import {
   type KeyboardEvent,
 } from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { Sparkles, ArrowUp, Mic, MicOff } from "lucide-react";
+import { Sparkles, ArrowUp, Mic, MicOff, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
@@ -35,6 +35,18 @@ export interface AISearchBarProps {
   placeholder?: string;
   /** When true, the input and send button are disabled and no submit fires. */
   isLoading?: boolean;
+  /**
+   * Opens the scanner. When set, a camera button renders in the control row
+   * instead of sitting outside the bar, which is what freed the width the
+   * input now has.
+   */
+  onScan?: () => void;
+  /**
+   * "stacked" puts the text on its own full-width row with the controls
+   * beneath it (phone); "inline" keeps everything in one pill row (desktop,
+   * where there is width to spare). A grown textarea always stacks.
+   */
+  layout?: "inline" | "stacked";
   /** Optional additional className for the outer container. */
   className?: string;
 }
@@ -105,6 +117,8 @@ export function AISearchBar({
   onValueChange,
   placeholder = "Frage Ordilo oder suche nach Dokumenten…",
   isLoading = false,
+  onScan,
+  layout = "inline",
   className,
 }: AISearchBarProps) {
   // Controlled mode is active when the parent provides a `value` prop.
@@ -116,6 +130,14 @@ export function AISearchBar({
 
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
+  // Auto-resize the textarea up to a max height, and remember whether it
+  // outgrew a single line. On a phone the row is only ~209px wide once the
+  // mic, send and scan buttons have taken their share, so a normal German
+  // question wrapped every three or four words. Past one line the controls
+  // move below the text and it gets the full width.
+  const singleLineHeightRef = useRef<number | null>(null);
+  const [multiline, setMultiline] = useState(false);
+
   // Voice input state.
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [listening, setListening] = useState(false);
@@ -123,6 +145,10 @@ export function AISearchBar({
 
   useMountEffect(() => {
     setVoiceSupported(getSpeechRecognition() !== null);
+    const el = inputRef.current;
+    if (el && singleLineHeightRef.current === null) {
+      singleLineHeightRef.current = el.scrollHeight;
+    }
     return () => {
       recognitionRef.current?.abort();
     };
@@ -153,6 +179,7 @@ export function AISearchBar({
       if (inputRef.current) {
         inputRef.current.style.height = "auto";
       }
+      setMultiline(false);
     },
     [currentValue, isLoading, onSubmit, setValue],
   );
@@ -167,12 +194,20 @@ export function AISearchBar({
     [handleSubmit],
   );
 
-  // Auto-resize the textarea up to a max height.
+  // A grown textarea always stacks, even in the inline layout.
+  const stacked = layout === "stacked" || multiline;
+
   const handleInput = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+    const natural = el.scrollHeight;
+    if (singleLineHeightRef.current === null && !el.value) {
+      singleLineHeightRef.current = natural;
+    }
+    el.style.height = `${Math.min(natural, 120)}px`;
+    const oneLine = singleLineHeightRef.current;
+    setMultiline(oneLine !== null && natural > oneLine + 4);
   }, []);
 
   /** Start/stop German voice recognition. */
@@ -223,16 +258,24 @@ export function AISearchBar({
     <div
       data-testid="ai-search-bar"
       className={cn(
-        "flex items-end gap-2 rounded-full border bg-card py-2 pr-1.5 pl-3 shadow-card transition-shadow focus-within:shadow-card-hover",
+        "border bg-card shadow-card transition-shadow focus-within:shadow-card-hover",
+        // Single line: everything in one pill row. Multi-line: the text gets
+        // the full width and the controls sit underneath, so a long question
+        // is not squeezed into a ~24-character column.
+        stacked
+          ? "flex flex-col gap-1 rounded-ordilo-md px-3 py-2"
+          : "flex items-end gap-2 rounded-full py-2 pr-1.5 pl-3",
         isLoading ? "border-transparent opacity-70" : "border-border",
         className,
       )}
     >
-      <Sparkles
-        className="mb-1.5 size-5 shrink-0 animate-sparkle-pulse"
-        style={{ color: "var(--petrol)" }}
-        aria-hidden="true"
-      />
+      {!stacked && (
+        <Sparkles
+          className="mb-1.5 size-5 shrink-0 animate-sparkle-pulse"
+          style={{ color: "var(--petrol)" }}
+          aria-hidden="true"
+        />
+      )}
 
       {/* Textarea input (grows with content) */}
       <textarea
@@ -247,48 +290,83 @@ export function AISearchBar({
         placeholder={listening ? "Ich höre zu …" : placeholder}
         rows={1}
         aria-label="Such- und Chat-Eingabe"
-        className="max-h-[120px] flex-1 resize-none border-0 bg-transparent py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed"
+        className={cn(
+          "max-h-[120px] resize-none border-0 bg-transparent py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed",
+          stacked ? "w-full" : "flex-1",
+        )}
       />
 
-      {/* Voice input button (only when the browser supports it) */}
-      {voiceSupported && (
-        <button
-          type="button"
-          onClick={handleVoiceToggle}
-          disabled={isLoading}
-          aria-label={listening ? "Spracheingabe stoppen" : "Mit Sprache fragen"}
-          aria-pressed={listening}
-          data-testid="voice-search-button"
-          className={cn(
-            "mb-0.5 flex size-9 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            listening
-              ? "bg-[var(--petrol)] text-white animate-pulse"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          {listening ? (
-            <MicOff className="size-5" aria-hidden="true" />
-          ) : (
-            <Mic className="size-5" aria-hidden="true" />
-          )}
-        </button>
-      )}
-
-      {/* Send button */}
-      <button
-        type="button"
-        onClick={() => handleSubmit()}
-        disabled={isLoading || !currentValue.trim()}
-        aria-label="Senden"
+      <div
         className={cn(
-          "mb-0.5 flex size-9 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          isLoading || !currentValue.trim()
-            ? "bg-muted text-muted-foreground cursor-not-allowed"
-            : "bg-[var(--petrol)] text-white hover:bg-[var(--petrol-dark)]",
+          "flex shrink-0 items-center",
+          stacked ? "gap-1" : "gap-2",
         )}
       >
-        <ArrowUp className="size-5" aria-hidden="true" />
-      </button>
+        {onScan && (
+          <button
+            type="button"
+            onClick={onScan}
+            disabled={isLoading}
+            aria-label="Scannen"
+            data-testid="composer-scan-button"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          >
+            <Camera className="size-5" aria-hidden="true" />
+          </button>
+        )}
+
+        {stacked && !onScan && (
+          <Sparkles
+            className="size-5 shrink-0 animate-sparkle-pulse"
+            style={{ color: "var(--petrol)" }}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* Push the mic and send to the trailing edge (stacked only — in
+            the inline layout the row is content-sized). */}
+        {stacked && <span className="flex-1" aria-hidden="true" />}
+
+        {/* Voice input button (only when the browser supports it) */}
+        {voiceSupported && (
+          <button
+            type="button"
+            onClick={handleVoiceToggle}
+            disabled={isLoading}
+            aria-label={listening ? "Spracheingabe stoppen" : "Mit Sprache fragen"}
+            aria-pressed={listening}
+            data-testid="voice-search-button"
+            className={cn(
+              "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              listening
+                ? "bg-[var(--petrol)] text-white animate-pulse"
+                : "text-muted-foreground hover:bg-accent hover:text-foreground",
+            )}
+          >
+            {listening ? (
+              <MicOff className="size-5" aria-hidden="true" />
+            ) : (
+              <Mic className="size-5" aria-hidden="true" />
+            )}
+          </button>
+        )}
+
+        {/* Send button */}
+        <button
+          type="button"
+          onClick={() => handleSubmit()}
+          disabled={isLoading || !currentValue.trim()}
+          aria-label="Senden"
+          className={cn(
+            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            isLoading || !currentValue.trim()
+              ? "bg-muted text-muted-foreground cursor-not-allowed"
+              : "bg-[var(--petrol)] text-white hover:bg-[var(--petrol-dark)]",
+          )}
+        >
+          <ArrowUp className="size-5" aria-hidden="true" />
+        </button>
+      </div>
     </div>
   );
 }

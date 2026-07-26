@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Check,
   RefreshCw,
@@ -38,13 +38,17 @@ import {
   ReviewFieldSection,
 } from "./helpers";
 import {
-  PersonEditControl,
   CategoryEditControl,
   DateEditControl,
   FactEditControl,
   TaskPriorityEditControl,
   TextEditControl,
+  FieldEditButton,
 } from "./edit-controls";
+import {
+  PersonPicker,
+  unmatchedPersonName,
+} from "@/components/ordilo/person-picker";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
   if (!type) return false;
@@ -114,7 +118,7 @@ export function ReviewCardContent({
   onEditFact: (factIndex: number, value: string) => void;
   onDeleteTask: (taskIndex: number) => void;
   onUndoDeleteTask: () => void;
-  onResolveDisambiguation: (entityIndex: number, memberId: string) => void;
+  onResolveDisambiguation: (entityIndex: number, memberId: string | null) => void;
   onConfirm: () => void;
   onReanalyze: () => void;
   /** Document ID — when provided, enables original-file comparison. */
@@ -159,7 +163,7 @@ export function ReviewCardContent({
           {needsReview && (
             <span
               data-testid="review-needed-badge"
-              className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3 py-1 text-xs font-medium text-[var(--apricot)]"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3 py-1 text-xs font-medium text-[var(--apricot-text)]"
             >
               <AlertTriangle className="size-3.5" aria-hidden="true" />
               Überprüfung nötig
@@ -213,37 +217,21 @@ export function ReviewCardContent({
         {/* Persons */}
         {analysis.family_members.length > 0 && (
           <ReviewFieldSection icon={User} title="Personen" testId="review-persons">
-            {analysis.family_members.map((member, i) => {
-              const edited = edits.persons.get(i);
-              const isEdited = Boolean(edited);
-              const displayName = edited?.name ?? member.name;
-              const isUnmatched =
-                !edited && !member.person_id && Boolean(onCreateMember);
-              return (
-                <FieldRow
-                  key={i}
-                  confidence={member.confidence}
-                  sourceText={member.name}
-                  onShowSource={onViewOriginal}
-                  isEdited={isEdited}
-                  editControl={
-                    <PersonEditControl
-                      value={edited?.personId ?? member.person_id ?? null}
-                      familyMembers={familyMembers}
-                      onChange={(memberId) => onEditPerson(i, memberId)}
-                    />
-                  }
-                >
-                  <span className="block truncate">{displayName}</span>
-                  {isUnmatched && (
-                    <CreateMemberButton
-                      name={member.name}
-                      onCreate={() => onCreateMember!(i, member.name)}
-                    />
-                  )}
-                </FieldRow>
-              );
-            })}
+            {analysis.family_members.map((member, i) => (
+              <PersonFieldRow
+                key={i}
+                member={member}
+                edited={edits.persons.get(i)}
+                familyMembers={familyMembers}
+                onEditPerson={(memberId) => onEditPerson(i, memberId)}
+                onCreateMember={
+                  onCreateMember
+                    ? (name) => onCreateMember(i, name)
+                    : undefined
+                }
+                onViewOriginal={onViewOriginal}
+              />
+            ))}
           </ReviewFieldSection>
         )}
 
@@ -532,9 +520,14 @@ export function ReviewCardContent({
             One visible order: the category (= Sammlung) above. */}
       </div>
 
-      {/* Confirm error */}
+      {/* Confirm error — announced, because a failed confirm (including the
+          20s timeout) was completely silent to a screen reader. */}
       {confirmError && (
-        <div className="mt-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 p-3">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="mt-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 p-3"
+        >
           <p className="text-sm text-destructive">{confirmError}</p>
         </div>
       )}
@@ -616,6 +609,101 @@ export function ReviewCardContent({
     </div>
   );
 }
+/**
+ * One extracted person, with the assignment editor behind a pencil.
+ *
+ * The pencil reveals the same chip picker the review summary uses, so
+ * assigning is one tap in both places. It stays behind the pencil here
+ * because this view lists every field at once and always-on chip rows for
+ * each person would drown the "nothing to change" case.
+ */
+function PersonFieldRow({
+  member,
+  edited,
+  familyMembers,
+  onEditPerson,
+  onCreateMember,
+  onViewOriginal,
+}: {
+  member: DocumentAnalysis["family_members"][0];
+  edited: { name: string; personId: string | null } | undefined;
+  familyMembers: FamilyMemberOption[];
+  onEditPerson: (memberId: string | null) => void;
+  onCreateMember?: (name: string) => Promise<boolean>;
+  onViewOriginal?: (sourceText: string) => void;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const pencilRef = useRef<HTMLButtonElement>(null);
+
+  /**
+   * Close the picker and put focus back on the pencil. Without the second
+   * part the trigger unmounts under the user's focus and a keyboard user
+   * lands on <body>, having to tab in from the top of the review again.
+   */
+  const closePicker = () => {
+    setIsEditing(false);
+    requestAnimationFrame(() => pencilRef.current?.focus());
+  };
+
+  // An edit with an empty name means "explicitly assigned to nobody".
+  const isNone = Boolean(edited) && edited!.name === "";
+  const displayName = isNone ? member.name : (edited?.name ?? member.name);
+  // undefined = nothing assigned yet, so no chip is preselected.
+  const assignedId = edited
+    ? (isNone ? null : edited.personId)
+    : (member.person_id ?? undefined);
+  const createName = edited
+    ? null
+    : unmatchedPersonName(member.name, member.person_id, familyMembers);
+
+  return (
+    <FieldRow
+      confidence={member.confidence}
+      sourceText={member.name}
+      onShowSource={onViewOriginal}
+      isEdited={Boolean(edited)}
+      editControl={
+        isEditing || familyMembers.length === 0 ? undefined : (
+          <FieldEditButton
+            buttonRef={pencilRef}
+            onClick={() => setIsEditing(true)}
+            label="Person ändern"
+            testId="person-edit-button"
+          />
+        )
+      }
+    >
+      <span className="block truncate">{displayName}</span>
+      {isNone && (
+        <span className="block truncate font-normal text-muted-foreground">
+          Wird keiner Person zugeordnet
+        </span>
+      )}
+      {isEditing ? (
+        <PersonPicker
+          className="mt-2"
+          familyMembers={familyMembers}
+          value={assignedId}
+          onChange={(memberId) => {
+            onEditPerson(memberId);
+            closePicker();
+          }}
+          onDismiss={closePicker}
+          testIdPrefix="person-edit"
+        />
+      ) : (
+        createName &&
+        onCreateMember && (
+          <CreateMemberButton
+            name={createName}
+            onCreate={() => onCreateMember(createName)}
+          />
+        )
+      )}
+    </FieldRow>
+  );
+}
+
 /**
  * Inline "create as family member" suggestion for an extracted person who
  * matched nobody in the family — the graph grows from the documents.

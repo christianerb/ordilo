@@ -153,12 +153,49 @@ const dateSchema = z.object({
 });
 
 /**
+ * What an amount IS. Families ask "wann habe ich was gezahlt?", which is
+ * unanswerable from a bare number: 88,00 EUR as the total of a collection
+ * and 10,00 EUR already contributed have to be told apart, and the payment
+ * date has to hang off the amount rather than sit in the parallel `dates`
+ * array where only a matching label string would connect them.
+ */
+export const AMOUNT_KINDS = [
+  "total",
+  "paid",
+  "outstanding",
+  "per_person",
+  "recurring",
+  "other",
+] as const;
+
+export type AmountKind = (typeof AMOUNT_KINDS)[number];
+
+/** German labels for the amount kinds. */
+export const AMOUNT_KIND_LABELS: Record<AmountKind, string> = {
+  total: "Gesamtbetrag",
+  paid: "Bereits gezahlt",
+  outstanding: "Noch offen",
+  per_person: "Pro Person",
+  recurring: "Wiederkehrend",
+  other: "Betrag",
+};
+
+/**
  * Zod schema for a single extracted amount.
+ *
+ * `kind` and `value_date` have defaults so analyses stored before they
+ * existed still validate when a client reconstructs a confirm payload.
  */
 const amountSchema = z.object({
   amount: z.string(),
   currency: z.string(),
   label: z.string(),
+  kind: z.enum(AMOUNT_KINDS).default("other"),
+  /**
+   * ISO date this amount was paid (kind "paid") or is due (kind
+   * "outstanding"), when the document says so. Null otherwise.
+   */
+  value_date: z.string().nullable().default(null),
   confidence: z.number().min(0).max(1),
 });
 
@@ -285,9 +322,21 @@ export const documentAnalysisJsonSchema = {
           amount: { type: "string" },
           currency: { type: "string" },
           label: { type: "string" },
+          kind: {
+            type: "string",
+            enum: [...AMOUNT_KINDS],
+          },
+          value_date: { type: ["string", "null"] },
           confidence: { type: "number" },
         },
-        required: ["amount", "currency", "label", "confidence"],
+        required: [
+          "amount",
+          "currency",
+          "label",
+          "kind",
+          "value_date",
+          "confidence",
+        ],
         additionalProperties: false,
       },
     },

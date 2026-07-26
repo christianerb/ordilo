@@ -500,7 +500,7 @@ function InsightTile({
         <Icon
           className={cn(
             "size-4",
-            isUrgent ? "text-[var(--apricot)]" : "text-[var(--petrol)]",
+            isUrgent ? "text-[var(--apricot-text)]" : "text-[var(--petrol)]",
           )}
           strokeWidth={2}
         />

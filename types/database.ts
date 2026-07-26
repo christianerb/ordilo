@@ -194,6 +194,11 @@ export type Database = {
           entity_value: string
           family_id: string
           id: string
+          amount_kind: string | null
+          amount_minor: number | null
+          currency: string | null
+          label: string | null
+          value_date: string | null
           linked_object_id: string | null
           normalized_value: string | null
         }
@@ -206,6 +211,11 @@ export type Database = {
           entity_value: string
           family_id: string
           id?: string
+          amount_kind?: string | null
+          amount_minor?: number | null
+          currency?: string | null
+          label?: string | null
+          value_date?: string | null
           linked_object_id?: string | null
           normalized_value?: string | null
         }
@@ -218,6 +228,11 @@ export type Database = {
           entity_value?: string
           family_id?: string
           id?: string
+          amount_kind?: string | null
+          amount_minor?: number | null
+          currency?: string | null
+          label?: string | null
+          value_date?: string | null
           linked_object_id?: string | null
           normalized_value?: string | null
         }

@@ -11,11 +11,16 @@ import {
 } from "@/lib/ai/chat";
 import { matchesWordBoundary } from "@/lib/schemas/search";
 import {
+  AMOUNT_KINDS,
+  AMOUNT_KIND_LABELS,
   FACT_TYPES,
   FACT_TYPE_LABELS,
   normalizeFactValue,
+  type AmountKind,
   type FactType,
 } from "@/lib/schemas/extraction";
+import { formatMinorAsGerman } from "@/lib/analysis-cleanup";
+import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
 
@@ -74,6 +79,50 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_payments",
+      description:
+        "Beantwortet Geld-Fragen exakt: welche Betraege wurden gezahlt, " +
+        "was ist noch offen, wie viel insgesamt, in welchem Zeitraum. " +
+        "Verwende dies IMMER fuer Fragen wie 'Wann habe ich was gezahlt?', " +
+        "'Wie viel habe ich fuer die Kita bezahlt?' oder 'Was ist noch " +
+        "offen?'. Beruecksichtigt nur bestaetigte Dokumente. Die Summen " +
+        "werden serverseitig berechnet und sind nach Art und Waehrung " +
+        "GETRENNT ausgewiesen — uebernimm sie unveraendert, rechne NICHT " +
+        "selbst mit Zahlen aus Dokument-Auszuegen und addiere die Summen " +
+        "verschiedener Arten NICHT zusammen. Wenn du genau eine Summe " +
+        "brauchst, frage mit einem konkreten kind an.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: {
+            type: "string",
+            enum: [...AMOUNT_KINDS],
+            description:
+              "Art der Betraege: paid (gezahlt), outstanding (offen), " +
+              "total (Gesamtbetraege), per_person, recurring, other. " +
+              "Weglassen fuer alle.",
+          },
+          from: {
+            type: "string",
+            description: "Frueheste Datumsgrenze, ISO YYYY-MM-DD.",
+          },
+          to: {
+            type: "string",
+            description: "Spaeteste Datumsgrenze, ISO YYYY-MM-DD.",
+          },
+          category: {
+            type: "string",
+            description:
+              "Sammlung/Kategorie des Dokuments, z.B. 'Kita'. Weglassen fuer alle.",
+          },
+        },
+        required: [],
       },
     },
   },
@@ -456,6 +505,8 @@ export async function executeTool(
   switch (name) {
     case "search_documents":
       return executeSearchDocuments(args, ctx);
+    case "query_payments":
+      return executeQueryPayments(args, ctx);
     case "list_tasks":
       return executeListTasks(args, ctx);
     case "list_documents":
@@ -576,6 +627,150 @@ async function executeSearchDocuments(
 // list_tasks
 // ---------------------------------------------------------------------------
 // list_documents
+// ---------------------------------------------------------------------------
+// query_payments
+// ---------------------------------------------------------------------------
+
+/**
+ * Answer money questions from the typed amount columns instead of letting
+ * the model add up numbers it read in an OCR excerpt.
+ *
+ * Before this existed, "wie viel habe ich fuer die Kita bezahlt?" went
+ * through semantic search: the chunk contained both the total and the
+ * family's own contribution with nothing to tell them apart, so the model
+ * regularly answered with the wrong one. Amounts were also text, so no sum
+ * was possible at all.
+ *
+ * The total is computed here, server-side, and handed to the model as a
+ * finished number.
+ */
+async function executeQueryPayments(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const kind =
+    typeof args.kind === "string" &&
+    (AMOUNT_KINDS as readonly string[]).includes(args.kind)
+      ? (args.kind as AmountKind)
+      : null;
+  const from = typeof args.from === "string" ? args.from : null;
+  const to = typeof args.to === "string" ? args.to : null;
+  const category = typeof args.category === "string" ? args.category.trim() : "";
+
+  let query = ctx.client
+    .from("extracted_entities")
+    .select("document_id, label, amount_minor, currency, amount_kind, value_date")
+    .eq("family_id", ctx.familyId)
+    .eq("entity_type", "amount")
+    .not("amount_minor", "is", null);
+
+  if (kind) query = query.eq("amount_kind", kind);
+  if (from) query = query.gte("value_date", from);
+  if (to) query = query.lte("value_date", to);
+
+  const { data: rows, error } = await query;
+  if (error) {
+    return JSON.stringify({
+      error: "Betraege konnten nicht geladen werden.",
+    });
+  }
+  if (!rows || rows.length === 0) {
+    return JSON.stringify({
+      betraege: [],
+      hinweis:
+        "Keine Betraege gefunden, die dazu passen. Moeglich ist auch, dass " +
+        "die betroffenen Dokumente vor der Einfuehrung typisierter Betraege " +
+        "gescannt wurden.",
+    });
+  }
+
+  // Resolve the documents so the answer can name them and filter by
+  // collection. Only confirmed documents are part of the family book.
+  // Only confirmed documents. The analyze step writes amount rows before
+  // the user has reviewed anything, so accepting a row merely because its
+  // document exists let unreviewed drafts into money answers.
+  //
+  // Filter on the DOCUMENT status, not the entity's `confirmed` flag:
+  // re-analysing a confirmed document rewrites its entities with
+  // confirmed = false while the document goes straight back to status
+  // "confirmed", so the flag would hide real, reviewed amounts.
+  const documentIds = [...new Set(rows.map((r) => r.document_id))];
+  const { data: documents } = await ctx.client
+    .from("documents")
+    .select("id, title, category, status")
+    .eq("status", "confirmed")
+    .in("id", documentIds);
+
+  const byId = new Map(
+    (documents ?? []).map((d) => [d.id, d]),
+  );
+
+  const matching = rows.filter((row) => {
+    const doc = byId.get(row.document_id);
+    if (!doc) return false;
+    if (!category) return true;
+    return (doc.category ?? "").toLocaleLowerCase("de").includes(
+      category.toLocaleLowerCase("de"),
+    );
+  });
+
+  if (matching.length === 0) {
+    return JSON.stringify({ betraege: [] });
+  }
+
+  // Sum per kind AND currency. Adding kinds together produces a number that
+  // is none of the real figures: an 88,00 EUR invoice with 10,00 EUR already
+  // paid would report 98,00 EUR, and the tool description tells the model to
+  // trust this value. Mixing currencies would be wrong for the same reason.
+  const totals = new Map<string, number>();
+  for (const row of matching) {
+    const currency = row.currency ?? "EUR";
+    const rowKind = (row.amount_kind as AmountKind) ?? "other";
+    totals.set(
+      `${rowKind}|${currency}`,
+      (totals.get(`${rowKind}|${currency}`) ?? 0) + (row.amount_minor ?? 0),
+    );
+  }
+
+  return JSON.stringify({
+    betraege: matching.map((row) => {
+      const doc = byId.get(row.document_id);
+      return {
+        betrag: `${formatMinorAsGerman(row.amount_minor ?? 0)} ${row.currency ?? "EUR"}`,
+        art: AMOUNT_KIND_LABELS[(row.amount_kind as AmountKind) ?? "other"],
+        bezeichnung: row.label ?? null,
+        datum: row.value_date ? formatGermanDate(row.value_date) : null,
+        dokument: doc?.title ?? null,
+        sammlung: doc?.category ?? null,
+        document_id: row.document_id,
+      };
+    }),
+    // Server-computed, so the model never has to add anything up — but one
+    // sum per kind and currency, because a total, an already-paid part and
+    // an outstanding balance are not addable.
+    summen: [...totals.entries()].map(([key, minor]) => {
+      const [rowKind, currency] = key.split("|");
+      return {
+        art: AMOUNT_KIND_LABELS[rowKind as AmountKind],
+        currency,
+        wert: `${formatMinorAsGerman(minor)} ${currency}`,
+        anzahl: matching.filter(
+          (r) =>
+            ((r.amount_kind as AmountKind) ?? "other") === rowKind &&
+            (r.currency ?? "EUR") === currency,
+        ).length,
+      };
+    }),
+    hinweis:
+      kind === null && totals.size > 1
+        ? "Die Summen sind nach Art getrennt. Addiere sie NICHT: ein " +
+          "Gesamtbetrag, ein bereits gezahlter Teil und ein offener Rest " +
+          "gehoeren nicht zusammengerechnet."
+        : undefined,
+    anzahl: matching.length,
+  });
+}
+
 // ---------------------------------------------------------------------------
 
 /** Cap for complete document listings (a family library, not a data dump). */
