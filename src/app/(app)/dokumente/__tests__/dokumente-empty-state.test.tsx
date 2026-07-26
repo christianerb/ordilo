@@ -260,7 +260,9 @@ describe("DokumentePage empty state", () => {
     });
 
     expect(screen.getByTestId("document-list")).toBeDefined();
-    expect(screen.getByText("Rechnung in Arbeit")).toBeDefined();
+    // The phone card list and the table both render in jsdom, so the title
+    // legitimately appears twice.
+    expect(screen.getAllByText("Rechnung in Arbeit").length).toBeGreaterThan(0);
 
     await act(async () => {
       resolveBackgroundPoll?.({ data: [doc], error: null });

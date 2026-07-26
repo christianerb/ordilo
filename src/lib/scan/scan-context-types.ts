@@ -31,6 +31,12 @@ export interface DocumentViewerValue {
 export interface ScanContextValue extends ScanActionsValue, DocumentViewerValue {
   documents: DocumentRow[];
   loadingDocs: boolean;
+  /**
+   * Set when the document list could not be read. Without this a failed
+   * query was indistinguishable from an empty family, so a family with 200
+   * documents saw "Noch nichts gescannt".
+   */
+  documentsError: string | null;
   loadDocuments: () => Promise<void>;
   uploads: UploadState[];
   isDragOver: boolean;
@@ -48,7 +54,8 @@ export interface ScanContextValue extends ScanActionsValue, DocumentViewerValue 
   handleRetry: (uploadId: string) => void;
   dismissUpload: (uploadId: string) => void;
   handleRetryFailed: (documentId: string) => Promise<void>;
-  handleDeleteDocument: (documentId: string) => Promise<void>;
+  /** Resolves true when the document was really deleted, false on failure. */
+  handleDeleteDocument: (documentId: string) => Promise<boolean>;
   handleConfirmSuccess: () => void;
   handleReanalyzeSuccess: () => void;
 }

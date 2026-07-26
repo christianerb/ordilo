@@ -51,6 +51,15 @@ function buildDoc(overrides: Partial<DocRow> & { id: string }): DocRow {
   } as DocRow;
 }
 
+/**
+ * Both views render in jsdom because Tailwind breakpoints do not apply
+ * there: the card list (phone) and the table (sm and up). Table assertions
+ * therefore scope to the <table>, and the card list has its own block.
+ */
+function table() {
+  return within(screen.getByRole("table"));
+}
+
 describe("DocumentsTable", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -74,8 +83,8 @@ describe("DocumentsTable", () => {
       <DocumentsTable documents={docs} />,
     );
 
-    const row = await screen.findByText("Stromrechnung Juli");
-    const rowEl = row.closest("tr")!;
+    await screen.findByTestId("documents-table-row");
+    const rowEl = table().getByText("Stromrechnung Juli").closest("tr")!;
     expect(within(rowEl).getByText("Rechnung")).toBeDefined();
     expect(within(rowEl).getByText("Energie")).toBeDefined();
     // Uses the resolved document date (05.01.2026), not created_at.
@@ -90,8 +99,9 @@ describe("DocumentsTable", () => {
       <DocumentsTable documents={docs} />,
     );
 
-    const row = await screen.findByText("Ohne Datum");
-    expect(within(row.closest("tr")!).getByText("10.01.2026")).toBeDefined();
+    await screen.findByTestId("documents-table-row");
+    const rowEl = table().getByText("Ohne Datum").closest("tr")!;
+    expect(within(rowEl).getByText("10.01.2026")).toBeDefined();
   });
 
   it("filters rows by the free-text search input", async () => {
@@ -105,13 +115,13 @@ describe("DocumentsTable", () => {
       <DocumentsTable documents={docs} />,
     );
 
-    await screen.findByText("Stromrechnung");
+    await screen.findAllByTestId("documents-table-row");
     fireEvent.change(screen.getByTestId("documents-search-input"), {
       target: { value: "kita" },
     });
 
-    expect(screen.queryByText("Stromrechnung")).toBeNull();
-    expect(screen.getByText("Kita-Brief")).toBeDefined();
+    expect(table().queryByText("Stromrechnung")).toBeNull();
+    expect(table().getByText("Kita-Brief")).toBeDefined();
   });
 
   it("shows an empty-result message with a reset link when filters match nothing", async () => {
@@ -122,15 +132,17 @@ describe("DocumentsTable", () => {
       <DocumentsTable documents={docs} />,
     );
 
-    await screen.findByText("Dokument A");
+    await screen.findByTestId("documents-table-row");
     fireEvent.change(screen.getByTestId("documents-search-input"), {
       target: { value: "nichts-passt" },
     });
 
-    expect(await screen.findByText("Keine Dokumente gefunden.")).toBeDefined();
+    await waitFor(() =>
+      expect(table().getByText("Keine Dokumente gefunden.")).toBeDefined(),
+    );
 
     fireEvent.click(screen.getByTestId("documents-filter-reset"));
-    expect(await screen.findByText("Dokument A")).toBeDefined();
+    await waitFor(() => expect(table().getByText("Dokument A")).toBeDefined());
   });
 
   it("sorts by title when the column header is clicked", async () => {
@@ -144,7 +156,7 @@ describe("DocumentsTable", () => {
       <DocumentsTable documents={docs} />,
     );
 
-    await screen.findByText("Zebra");
+    await screen.findAllByTestId("documents-table-row");
     fireEvent.click(screen.getByTestId("sort-title"));
 
     const rows = screen.getAllByTestId("documents-table-row");
@@ -162,7 +174,7 @@ describe("DocumentsTable", () => {
       <DocumentsTable documents={docs} />,
     );
 
-    await screen.findByText("Dokument 00");
+    await screen.findAllByTestId("documents-table-row");
     expect(screen.getAllByTestId("documents-table-row")).toHaveLength(20);
     expect(screen.getByTestId("documents-table-page-info").textContent).toContain(
       "Seite 1 von 2",
@@ -184,10 +196,55 @@ describe("DocumentsTable", () => {
 
     render(<DocumentsTable documents={docs} />);
 
-    const row = await screen.findByText("Kita-Brief");
-    fireEvent.click(row.closest("tr")!);
+    await screen.findByTestId("documents-table-row");
+    fireEvent.click(table().getByText("Kita-Brief").closest("tr")!);
 
     expect(mockOpenDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("shows the same documents as a card list on a phone", async () => {
+    // The table needs 640px for Datum, Status and delete; on a 390px screen
+    // that meant scrolling sideways inside a vertically scrolling page.
+    const docs = [
+      buildDoc({
+        id: "doc-1",
+        title: "Stromrechnung Juli",
+        document_type: "invoice",
+        category: "Energie",
+      }),
+    ];
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    render(<DocumentsTable documents={docs} />);
+
+    const card = await screen.findByTestId("documents-card");
+    expect(within(card).getByText("Stromrechnung Juli")).toBeDefined();
+    // Type, collection and date collapse into one secondary line.
+    expect(within(card).getByText(/Rechnung/)).toBeDefined();
+    expect(within(card).getByText(/Energie/)).toBeDefined();
+  });
+
+  it("opens a document from its card", async () => {
+    const docs = [buildDoc({ id: "doc-1", title: "Kita-Brief" })];
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    render(<DocumentsTable documents={docs} />);
+
+    const card = await screen.findByTestId("documents-card");
+    fireEvent.click(within(card).getByRole("button", { name: /öffnen/i }));
+    expect(mockOpenDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("deletes from a card without opening the document", async () => {
+    const onDelete = vi.fn();
+    const docs = [buildDoc({ id: "doc-1", title: "Kita-Brief" })];
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    render(<DocumentsTable documents={docs} onDelete={onDelete} />);
+
+    fireEvent.click(await screen.findByTestId("documents-card-delete-doc-1"));
+    expect(onDelete).toHaveBeenCalledWith("doc-1");
+    expect(mockOpenDocument).not.toHaveBeenCalled();
   });
 
   it("opens the shared document sheet when a focused row is activated with Enter", async () => {

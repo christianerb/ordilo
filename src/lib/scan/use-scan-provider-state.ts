@@ -52,6 +52,7 @@ export function useScanProviderState(): ScanProviderState {
   const [familyId, setFamilyId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
+  const [documentsError, setDocumentsError] = useState<string | null>(null);
   const [uploads, setUploads] = useState<UploadState[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
@@ -161,7 +162,21 @@ export function useScanProviderState(): ScanProviderState {
     // `ocr_text`, which no list consumer reads.
     const data = listData as DocumentRow[] | null;
 
-    if (!error && data) {
+    if (error || !data) {
+      // Leave whatever is already on screen and report the failure, instead
+      // of falling through to an empty list that reads as "nothing scanned
+      // yet" and blocks every later refresh (documentsLoadedRef stays false).
+      setDocumentsError(
+        "Deine Dokumente konnten nicht geladen werden. Bitte Verbindung prüfen.",
+      );
+      initialDocumentsLoadedRef.current = true;
+      setLoadingDocs(false);
+      return;
+    }
+
+    setDocumentsError(null);
+
+    {
       if (!seededPreExistingRef.current) {
         for (const doc of data) {
           if (doc.status === "ocr_done") {
@@ -761,13 +776,22 @@ export function useScanProviderState(): ScanProviderState {
       // The API route removes the DB row AND the Storage file with the
       // service-role client (the private bucket rejects browser-client
       // removals, which used to orphan files).
+      // Report the outcome so callers stop announcing success regardless:
+      // the page used to fire toast.success right after this resolved, so a
+      // failed delete produced both an error and a success toast while the
+      // document was visibly back in the list.
       try {
         const response = await fetch(`/api/documents/${documentId}`, {
           method: "DELETE",
         });
-        if (!response.ok) restore();
+        if (!response.ok) {
+          restore();
+          return false;
+        }
+        return true;
       } catch {
         restore();
+        return false;
       }
     },
     [closeDocument],
@@ -1068,6 +1092,7 @@ export function useScanProviderState(): ScanProviderState {
     () => ({
       documents,
       loadingDocs,
+      documentsError,
       loadDocuments,
       uploads,
       isDragOver,
@@ -1098,6 +1123,7 @@ export function useScanProviderState(): ScanProviderState {
     [
       documents,
       loadingDocs,
+      documentsError,
       loadDocuments,
       uploads,
       isDragOver,

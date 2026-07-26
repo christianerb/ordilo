@@ -290,8 +290,89 @@ export function DocumentsTable({
         )}
       </div>
 
-      {/* Table */}
-      <div className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">
+      {/* Phone: a stacked card list. The table needs 640px to show Datum,
+          Status and the delete button, which on a 390px screen meant
+          scrolling sideways inside a vertically scrolling page. */}
+      <div className="space-y-2 sm:hidden" data-testid="documents-card-list">
+        {pageRows.length === 0 ? (
+          <div className="rounded-ordilo-md border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card">
+            <p>Keine Dokumente gefunden.</p>
+            {hasActiveFilters && (
+              <p className="mt-1 text-xs text-[var(--mist-dark)]">
+                Gerade passt nichts zu deiner Auswahl.{" "}
+                <button
+                  type="button"
+                  onClick={resetFilters}
+                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline"
+                >
+                  Alles wieder zeigen
+                </button>
+              </p>
+            )}
+          </div>
+        ) : (
+          pageRows.map((row) => {
+            const FileIcon = getFileIcon(row.doc.mime_type);
+            return (
+              <div
+                key={row.doc.id}
+                className="flex items-start gap-2 rounded-ordilo-md border border-border bg-card p-3 shadow-card"
+                data-testid="documents-card"
+              >
+                <button
+                  type="button"
+                  onClick={() => void openDocument(row.doc.id)}
+                  className="flex min-h-11 min-w-0 flex-1 items-start gap-2.5 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                  aria-label={`${row.displayTitle} öffnen`}
+                >
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)]">
+                    <FileIcon
+                      className="size-4 text-[var(--mist-dark)]"
+                      aria-hidden="true"
+                    />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium text-foreground">
+                      {row.displayTitle}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                      {[row.typeLabel, row.category, formatGermanDate(row.resolvedDate)]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                    <span
+                      className={cn(
+                        "mt-1.5 inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
+                        getStatusBadgeClasses(row.doc.status),
+                      )}
+                    >
+                      <span
+                        className={cn("size-1.5 rounded-full", getStatusDotClass(row.doc.status))}
+                        aria-hidden="true"
+                      />
+                      {getStatusLabel(row.doc.status)}
+                    </span>
+                  </span>
+                </button>
+                {onDelete && (
+                  <button
+                    type="button"
+                    onClick={() => onDelete(row.doc.id)}
+                    className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    aria-label={`${row.displayTitle} löschen`}
+                    data-testid={`documents-card-delete-${row.doc.id}`}
+                  >
+                    <Trash2 className="size-4" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Table — from sm up, where 640px fits without sideways scrolling */}
+      <div className="hidden overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card sm:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] table-fixed border-collapse text-sm">
             <colgroup>
