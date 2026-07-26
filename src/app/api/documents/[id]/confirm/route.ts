@@ -37,6 +37,7 @@ import type {
 } from "@/types/database";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { normalizeFactValue } from "@/lib/schemas/extraction";
+import { dedupeDates, dedupeAmounts } from "@/lib/analysis-cleanup";
 import { canonicalizeCategory } from "@/lib/categories";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
 
@@ -185,6 +186,13 @@ export async function POST(
   }
 
   const familyId = document.family_id;
+
+  // 6a. Clean up duplicate dates/amounts and generic labels. New analyses
+  //     arrive already cleaned by the analyze step; this covers payloads
+  //     built from analyses stored before the cleanup existed, so the
+  //     confirmed entities (search, detail views) are clean either way.
+  payload.dates = dedupeDates(payload.dates);
+  payload.amounts = dedupeAmounts(payload.amounts);
 
   // 6b. Canonicalize the category against the family's existing categories
   //     and collection names (documents.category === collection.name links

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { runExtraction } from "@/lib/ai/extraction";
+import { cleanupAnalysisEntities } from "@/lib/analysis-cleanup";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
   computeNeedsUserReview,
@@ -209,7 +210,12 @@ export async function performAnalyzeStep(
   const fullOcrText = await loadOcrText(client, document);
 
   const familyContext = await fetchFamilyContext(client, document.family_id);
-  const analysis = await runExtraction(fullOcrText, familyContext);
+  // Collapse duplicate dates/amounts and strip generic labels ("Datum",
+  // "Betrag") right after extraction, so stored results, the review card,
+  // and the confirm payload all see clean entities.
+  const analysis = cleanupAnalysisEntities(
+    await runExtraction(fullOcrText, familyContext),
+  );
 
   // Snap the suggested category to the family's canonical spelling —
   // prevents "Rechnung"/"Rechnungen" drift and keeps the collection link

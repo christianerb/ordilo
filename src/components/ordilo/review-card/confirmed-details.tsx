@@ -26,6 +26,13 @@ import {
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import {
+  GENERIC_AMOUNT_LABELS,
+  GENERIC_DATE_LABELS,
+  dedupeAmounts,
+  dedupeDates,
+  meaningfulLabel,
+} from "@/lib/analysis-cleanup";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
   FieldRow,
@@ -46,31 +53,6 @@ function shouldShowOrganizationType(name: string, type?: string | null): boolean
   );
 }
 
-// ---------------------------------------------------------------------------
-// Display-level cleanup for extracted dates/amounts
-// ---------------------------------------------------------------------------
-
-/**
- * Sub-labels the extraction sometimes emits that merely restate what the
- * section heading already says ("Datum" under a date, "Betrag" under an
- * amount). Showing them adds a second, redundant "Datum" per row.
- */
-const GENERIC_DATE_LABELS = new Set(["datum", "date", "termin"]);
-const GENERIC_AMOUNT_LABELS = new Set(["betrag", "beträge", "summe", "amount"]);
-
-function normalizeLabel(label: string | null | undefined): string {
-  return (label ?? "").trim().toLocaleLowerCase("de");
-}
-
-function meaningfulLabel(
-  label: string | null | undefined,
-  generic: Set<string>,
-): string | null {
-  const normalized = normalizeLabel(label);
-  if (!normalized || generic.has(normalized)) return null;
-  return (label as string).trim();
-}
-
 /**
  * Pick the singular or plural section heading — "Betrag" over one amount,
  * "Beträge" over several. A plural heading over a single row reads like
@@ -78,35 +60,6 @@ function meaningfulLabel(
  */
 function countedTitle(count: number, singular: string, plural: string): string {
   return count === 1 ? singular : plural;
-}
-
-/**
- * Collapse entries the extraction reported more than once. The same due
- * date (or the same amount) often appears in several places of a letter,
- * and each mention used to become its own identical row. One row per
- * distinct value is enough; when duplicates carry different labels, the
- * first meaningful (non-generic) label wins.
- */
-function dedupeByKey<T>(
-  entries: T[],
-  keyOf: (entry: T) => string,
-  labelOf: (entry: T) => string | null,
-  withLabel: (entry: T, label: string) => T,
-): T[] {
-  const byKey = new Map<string, T>();
-  for (const entry of entries) {
-    const key = keyOf(entry);
-    const existing = byKey.get(key);
-    if (!existing) {
-      byKey.set(key, entry);
-      continue;
-    }
-    if (!labelOf(existing)) {
-      const label = labelOf(entry);
-      if (label) byKey.set(key, withLabel(existing, label));
-    }
-  }
-  return [...byKey.values()];
 }
 
 /**
@@ -155,18 +108,8 @@ export function ConfirmedAnalysisDetails({
 
   if (!hasAnyFields && !onViewOriginal) return null;
 
-  const dates = dedupeByKey(
-    analysis.dates,
-    (d) => d.date.trim(),
-    (d) => meaningfulLabel(d.label, GENERIC_DATE_LABELS),
-    (d, label) => ({ ...d, label }),
-  );
-  const amounts = dedupeByKey(
-    analysis.amounts,
-    (a) => `${a.amount.trim()}|${a.currency.trim()}`,
-    (a) => meaningfulLabel(a.label, GENERIC_AMOUNT_LABELS),
-    (a, label) => ({ ...a, label }),
-  );
+  const dates = dedupeDates(analysis.dates);
+  const amounts = dedupeAmounts(analysis.amounts);
 
   return (
     <div
