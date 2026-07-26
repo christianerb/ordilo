@@ -20,10 +20,8 @@ import {
   Landmark,
   FileText,
   RefreshCw,
-  ChevronDown,
   type LucideIcon,
 } from "lucide-react";
-import { useId } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
@@ -178,7 +176,6 @@ export function ReviewSummary({
   const TypeIcon = DOCUMENT_TYPE_ICONS[analysis.document_type];
   const highlights = buildHighlights(analysis, familyMembers);
 
-  const personSelectId = useId();
   const currentPersonId = editedPersonId ?? analysis.family_members[0]?.person_id ?? null;
 
   return (
@@ -235,26 +232,52 @@ export function ReviewSummary({
                 />
                 <div className="min-w-0 flex-1">
                   {h.isPerson && onEditPerson && familyMembers.length > 0 ? (
-                    <div className="relative">
-                      <select
-                        id={personSelectId}
-                        value={currentPersonId ?? ""}
-                        onChange={(e) => onEditPerson(e.target.value || null)}
-                        className="w-full min-w-0 appearance-none truncate rounded-ordilo-sm border border-border bg-card py-1 pl-2 pr-7 text-sm font-medium text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        aria-label="Person wechseln"
-                        data-testid="review-summary-person-select"
-                      >
-                        <option value="">Person wählen …</option>
-                        {familyMembers.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}{m.role ? ` (${m.role})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        className="pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                      />
+                    /* One tap instead of open-dropdown-then-pick: every
+                       family member is a visible chip, the assigned one is
+                       filled. Families are small — the options always fit. */
+                    <div
+                      role="group"
+                      aria-label="Person zuordnen"
+                      className="flex flex-wrap items-center gap-1.5"
+                      data-testid="review-summary-person-picker"
+                    >
+                      {familyMembers.map((m) => {
+                        const selected = m.id === currentPersonId;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              if (!selected) onEditPerson(m.id);
+                            }}
+                            aria-pressed={selected}
+                            data-testid={`review-summary-person-chip-${m.id}`}
+                            className={cn(
+                              "inline-flex min-h-9 items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                              selected
+                                ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
+                                : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
+                                selected
+                                  ? "bg-white/25 text-white"
+                                  : "bg-[var(--petrol)] text-white",
+                              )}
+                              aria-hidden="true"
+                            >
+                              {selected ? (
+                                <Check className="size-3.5" strokeWidth={3} />
+                              ) : (
+                                m.name.charAt(0).toUpperCase()
+                              )}
+                            </span>
+                            {m.name}
+                          </button>
+                        );
+                      })}
                     </div>
                   ) : (
                     <>
@@ -274,7 +297,11 @@ export function ReviewSummary({
                   )}
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {h.caption}
+                  {/* With the chip picker the assignment can change to any
+                      member, so a fixed role caption ("Kind") would lie. */}
+                  {h.isPerson && onEditPerson && familyMembers.length > 0
+                    ? "Person"
+                    : h.caption}
                 </span>
               </div>
             ))}

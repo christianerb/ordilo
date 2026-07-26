@@ -160,6 +160,32 @@ describe("ReviewSummary", () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+  it("assigns a person with a single chip tap", () => {
+    const onEditPerson = vi.fn();
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={onEditPerson}
+      />,
+    );
+
+    // The recognized person's chip is marked as selected …
+    expect(
+      screen.getByTestId("review-summary-person-chip-member-1"),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    // … tapping it again is a no-op …
+    fireEvent.click(screen.getByTestId("review-summary-person-chip-member-1"));
+    expect(onEditPerson).not.toHaveBeenCalled();
+
+    // … and one tap on another chip reassigns.
+    fireEvent.click(screen.getByTestId("review-summary-person-chip-member-2"));
+    expect(onEditPerson).toHaveBeenCalledWith("member-2");
+  });
+
   it("displays a confirm error message when provided", () => {
     render(
       <ReviewSummary

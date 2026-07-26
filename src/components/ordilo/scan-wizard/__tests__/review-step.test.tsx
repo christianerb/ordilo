@@ -174,9 +174,8 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
 
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
 
-    fireEvent.change(
-      await screen.findByTestId("review-summary-person-select"),
-      { target: { value: "member-2" } },
+    fireEvent.click(
+      await screen.findByTestId("review-summary-person-chip-member-2"),
     );
     fireEvent.click(screen.getByTestId("review-summary-confirm-button"));
 
@@ -265,8 +264,8 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
     fireEvent.click(screen.getByTestId("review-back-button"));
 
     expect(
-      await screen.findByTestId("review-summary-person-select"),
-    ).toHaveValue("member-2");
+      await screen.findByTestId("review-summary-person-chip-member-2"),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps the ready-to-save card and shows the error inline when saving fails", async () => {
