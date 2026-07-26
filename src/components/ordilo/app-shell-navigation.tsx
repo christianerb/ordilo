@@ -134,21 +134,23 @@ export function MobileComposer({
       className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-[var(--surface-box)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
       style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
     >
-      <div className="mx-auto flex w-full max-w-md gap-2">
+      <div className="mx-auto flex w-full max-w-md items-end gap-2">
         <div className="min-w-0 flex-1">
           <AISearchBar
             onSubmit={onSearch}
-            placeholder="Frage Ordilo oder suche nach Dokumenten…"
+            placeholder="Frage Ordilo …"
           />
         </div>
+        {/* Icon-only on mobile: a labelled button would squeeze the input,
+            and stretching with the growing textarea looks broken. */}
         <Button
           type="button"
           variant="outline"
           onClick={onScan}
-          className="h-auto shrink-0 gap-1.5 rounded-full px-5"
+          aria-label="Scannen"
+          className="size-[52px] shrink-0 rounded-full p-0"
         >
-          <Camera className="size-4" aria-hidden="true" />
-          <span>Scannen</span>
+          <Camera className="size-5" aria-hidden="true" />
         </Button>
       </div>
     </div>
