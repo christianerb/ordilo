@@ -6,10 +6,11 @@ import {
   LogOut,
   Menu,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { logout } from "@/app/(app)/actions";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -124,12 +125,37 @@ export function Topbar({
 export function MobileComposer({
   onSearch,
   onScan,
+  isLoading = false,
 }: {
   onSearch: (query: string) => void;
   onScan: () => void;
+  /** True while an answer is streaming — the bar must not swallow a second question. */
+  isLoading?: boolean;
 }) {
+  // The composer is fixed to the bottom and its height changes with the
+  // textarea, so publish it: the scroll container pads by this value instead
+  // of a hardcoded guess that a multi-line query grows past.
+  const ref = useRef<HTMLDivElement>(null);
+  useMountEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const publish = () =>
+      document.documentElement.style.setProperty(
+        "--composer-height",
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      );
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--composer-height");
+    };
+  });
+
   return (
     <div
+      ref={ref}
       data-testid="mobile-composer"
       className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-[var(--surface-box)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
       style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
@@ -138,6 +164,7 @@ export function MobileComposer({
         <div className="min-w-0 flex-1">
           <AISearchBar
             onSubmit={onSearch}
+            isLoading={isLoading}
             placeholder="Frage Ordilo …"
           />
         </div>
@@ -161,10 +188,12 @@ export function DesktopBottomBar({
   collapsed,
   onSearch,
   onScan,
+  isLoading = false,
 }: {
   collapsed: boolean;
   onSearch: (query: string) => void;
   onScan: () => void;
+  isLoading?: boolean;
 }) {
   return (
     <div
@@ -181,8 +210,9 @@ export function DesktopBottomBar({
         <div className="min-w-0 flex-1">
           <AISearchBar
             onSubmit={onSearch}
+            isLoading={isLoading}
             placeholder="Frage Ordilo oder suche nach Dokumenten…"
-            className="h-12 py-1"
+            className="py-1"
           />
         </div>
         <Button

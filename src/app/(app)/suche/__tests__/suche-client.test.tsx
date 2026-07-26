@@ -34,12 +34,18 @@ vi.mock("next/navigation", () => ({
 // `setActiveHandler`. Capture it so tests can simulate the global
 // composer submitting a query, exactly like the real integration does.
 let activeHandler: ((query: string) => void) | null = null;
+let composerBusy = false;
+
 vi.mock("@/lib/search/active-search-context", () => ({
   useActiveSearch: () => ({
     setActiveHandler: (handler: ((query: string) => void) | null) => {
       activeHandler = handler;
     },
     submitQuery: (query: string) => activeHandler?.(query),
+    busy: composerBusy,
+    setBusy: (next: boolean) => {
+      composerBusy = next;
+    },
   }),
 }));
 

@@ -98,6 +98,11 @@ export function SucheClient({
       feedback: m.feedback ?? null,
     })),
   );
+  // Read here rather than next to setActiveHandler below: handleSubmit
+  // reports the streaming state through setBusy, so it must be in scope
+  // before that callback is defined.
+  const { setActiveHandler, setBusy } = useActiveSearch();
+
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
   const [rateLimitError, setRateLimitError] = useState(false);
@@ -334,6 +339,7 @@ export function SucheClient({
       setError(false);
       setRateLimitError(false);
       setIsLoading(true);
+      setBusy(true);
       lastQueryRef.current = query;
 
       const userMsg: ChatMessage = {
@@ -474,9 +480,10 @@ export function SucheClient({
       } finally {
         setStreamingId(null);
         setIsLoading(false);
+        setBusy(false);
       }
     },
-    [familyId, isLoading, messages, activeConversationId, conversations],
+    [familyId, isLoading, messages, activeConversationId, conversations, setBusy],
   );
 
   // -------------------------------------------------------------------------
@@ -486,9 +493,12 @@ export function SucheClient({
   // write during render (Rule 4/5: mirrors handleSubmitRef below), cleared
   // on unmount so the topbar falls back to redirect-based search.
   // -------------------------------------------------------------------------
-  const { setActiveHandler } = useActiveSearch();
   setActiveHandler(handleSubmit);
-  useMountEffect(() => () => setActiveHandler(null));
+  useMountEffect(() => () => {
+    setActiveHandler(null);
+    setBusy(false);
+  });
+
 
   // -------------------------------------------------------------------------
   // Auto-submit initial query (Rule 4: mount-only external sync)
