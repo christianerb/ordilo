@@ -114,7 +114,7 @@ export function ReviewCardContent({
   onEditFact: (factIndex: number, value: string) => void;
   onDeleteTask: (taskIndex: number) => void;
   onUndoDeleteTask: () => void;
-  onResolveDisambiguation: (entityIndex: number, memberId: string) => void;
+  onResolveDisambiguation: (entityIndex: number, memberId: string | null) => void;
   onConfirm: () => void;
   onReanalyze: () => void;
   /** Document ID — when provided, enables original-file comparison. */
@@ -216,7 +216,11 @@ export function ReviewCardContent({
             {analysis.family_members.map((member, i) => {
               const edited = edits.persons.get(i);
               const isEdited = Boolean(edited);
-              const displayName = edited?.name ?? member.name;
+              // An edit with an empty name = explicitly assigned to nobody.
+              const isNone = Boolean(edited) && edited!.name === "";
+              const displayName = isNone
+                ? member.name
+                : (edited?.name ?? member.name);
               const isUnmatched =
                 !edited && !member.person_id && Boolean(onCreateMember);
               return (
@@ -235,6 +239,11 @@ export function ReviewCardContent({
                   }
                 >
                   <span className="block truncate">{displayName}</span>
+                  {isNone && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      Wird keiner Person zugeordnet
+                    </span>
+                  )}
                   {isUnmatched && (
                     <CreateMemberButton
                       name={member.name}

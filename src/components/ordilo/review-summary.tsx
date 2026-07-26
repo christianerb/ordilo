@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import {
   Check,
   Loader2,
+  Plus,
   AlertCircle,
   AlertTriangle,
   Pencil,
@@ -141,10 +143,22 @@ export interface ReviewSummaryProps {
   onReanalyze?: () => void;
   documentId?: string;
   onViewOriginal?: () => void;
-  /** Inline person edit — called when the user picks a different person. */
+  /**
+   * Inline person edit — called when the user picks a different person.
+   * `null` means "explicitly assigned to nobody".
+   */
   onEditPerson?: (memberId: string | null) => void;
-  /** The currently edited person ID (for the inline select). */
+  /**
+   * The current person edit: a member ID, `null` for "explicitly assigned
+   * to nobody", or `undefined` when the user has not touched the
+   * assignment (the extracted person_id then applies).
+   */
   editedPersonId?: string | null;
+  /**
+   * Creates the extracted-but-unknown person as a new family member and
+   * assigns the document to them. Resolves to false on failure.
+   */
+  onCreatePerson?: (name: string) => Promise<boolean>;
   className?: string;
 }
 
@@ -169,6 +183,7 @@ export function ReviewSummary({
   onViewOriginal,
   onEditPerson,
   editedPersonId,
+  onCreatePerson,
   className,
 }: ReviewSummaryProps) {
   const headline = buildHeadline(analysis);
@@ -176,7 +191,28 @@ export function ReviewSummary({
   const TypeIcon = DOCUMENT_TYPE_ICONS[analysis.document_type];
   const highlights = buildHighlights(analysis, familyMembers);
 
-  const currentPersonId = editedPersonId ?? analysis.family_members[0]?.person_id ?? null;
+  const [creatingPerson, setCreatingPerson] = useState(false);
+
+  const topPerson = analysis.family_members[0];
+  // undefined = untouched (extraction applies); null = explicitly nobody.
+  const currentPersonId =
+    editedPersonId !== undefined
+      ? editedPersonId
+      : (topPerson?.person_id ?? null);
+  const explicitNone = editedPersonId === null;
+  // The extracted name matches no family member and nothing was picked yet
+  // — offer to create them with one tap instead of a detour via /familie.
+  const unknownPersonName =
+    editedPersonId === undefined &&
+    topPerson &&
+    !topPerson.person_id &&
+    topPerson.name.trim() &&
+    !familyMembers.some(
+      (m) => m.name.trim().toLocaleLowerCase("de") ===
+        topPerson.name.trim().toLocaleLowerCase("de"),
+    )
+      ? topPerson.name.trim()
+      : null;
 
   return (
     <div data-testid="review-summary" className={cn("space-y-5", className)}>
@@ -278,6 +314,50 @@ export function ReviewSummary({
                           </button>
                         );
                       })}
+                      {/* A document may belong to nobody — never force a
+                          wrong assignment just to get past the review. */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!explicitNone) onEditPerson(null);
+                        }}
+                        aria-pressed={explicitNone}
+                        data-testid="review-summary-person-chip-none"
+                        className={cn(
+                          "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                          explicitNone
+                            ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
+                            : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+                        )}
+                      >
+                        {explicitNone && (
+                          <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
+                        )}
+                        Ohne Person
+                      </button>
+                      {/* Extracted person unknown to the family → create
+                          them right here instead of a detour via /familie. */}
+                      {unknownPersonName && onCreatePerson && (
+                        <button
+                          type="button"
+                          disabled={creatingPerson}
+                          onClick={() => {
+                            setCreatingPerson(true);
+                            void onCreatePerson(unknownPersonName).finally(() =>
+                              setCreatingPerson(false),
+                            );
+                          }}
+                          data-testid="review-summary-person-chip-create"
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+                        >
+                          {creatingPerson ? (
+                            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <Plus className="size-3.5" aria-hidden="true" />
+                          )}
+                          {unknownPersonName} anlegen
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <>

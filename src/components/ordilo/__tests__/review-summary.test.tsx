@@ -186,6 +186,83 @@ describe("ReviewSummary", () => {
     expect(onEditPerson).toHaveBeenCalledWith("member-2");
   });
 
+  it("offers an explicit 'Ohne Person' chip", () => {
+    const onEditPerson = vi.fn();
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={onEditPerson}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("review-summary-person-chip-none"));
+    expect(onEditPerson).toHaveBeenCalledWith(null);
+  });
+
+  it("marks the 'Ohne Person' chip as selected when explicitly resolved", () => {
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        editedPersonId={null}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("review-summary-person-chip-none"),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByTestId("review-summary-person-chip-member-1"),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("offers to create an extracted person unknown to the family", async () => {
+    const onCreatePerson = vi.fn().mockResolvedValue(true);
+    render(
+      <ReviewSummary
+        analysis={{
+          ...analysis,
+          family_members: [
+            { person_id: null, name: "Oma Ute", confidence: 0.6 },
+          ],
+        }}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        onCreatePerson={onCreatePerson}
+      />,
+    );
+
+    const createChip = screen.getByTestId("review-summary-person-chip-create");
+    expect(createChip).toHaveTextContent("Oma Ute anlegen");
+    fireEvent.click(createChip);
+    expect(onCreatePerson).toHaveBeenCalledWith("Oma Ute");
+  });
+
+  it("hides the create chip when the extracted person matches a member", () => {
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        onCreatePerson={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByTestId("review-summary-person-chip-create"),
+    ).toBeNull();
+  });
+
   it("displays a confirm error message when provided", () => {
     render(
       <ReviewSummary

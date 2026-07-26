@@ -84,7 +84,7 @@ export function PersonEditControl({
         aria-label="Person wechseln"
         data-testid="person-edit-select"
       >
-        <option value="">Person wählen …</option>
+        <option value="">Ohne Person</option>
         {familyMembers.map((member) => (
           <option key={member.id} value={member.id}>
             {member.name}
