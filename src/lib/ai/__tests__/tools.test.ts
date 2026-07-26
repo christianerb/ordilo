@@ -723,3 +723,126 @@ describe("save_document_fact", () => {
     expect(JSON.parse(result).error).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// query_payments
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a context whose `extracted_entities` query resolves to the given
+ * amount rows and whose `documents` query resolves to the given documents.
+ */
+function makeCtxWithAmounts(
+  amountRows: Array<Record<string, unknown>>,
+  documents: Array<Record<string, unknown>>,
+  amountsError: unknown = null,
+) {
+  function builder(result: { data: unknown; error: unknown }) {
+    const chain: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "not", "gte", "lte", "in", "order", "limit"]) {
+      chain[m] = vi.fn(() => chain);
+    }
+    chain.then = (resolve: (v: unknown) => void) =>
+      Promise.resolve(result).then(resolve);
+    return chain;
+  }
+
+  return {
+    client: {
+      from: vi.fn((table: string) =>
+        table === "extracted_entities"
+          ? builder({ data: amountsError ? null : amountRows, error: amountsError })
+          : builder({ data: documents, error: null }),
+      ),
+    } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  } as ToolContext;
+}
+
+describe("query_payments", () => {
+  const rows = [
+    {
+      document_id: "doc-1",
+      label: "Bereits gezahlt",
+      amount_minor: 1000,
+      currency: "EUR",
+      amount_kind: "paid",
+      value_date: "2026-07-12",
+    },
+    {
+      document_id: "doc-1",
+      label: "Gesamtbetrag",
+      amount_minor: 8800,
+      currency: "EUR",
+      amount_kind: "total",
+      value_date: null,
+    },
+  ];
+  const documents = [
+    { id: "doc-1", title: "Abschiedssammlung", category: "Kita", status: "confirmed" },
+  ];
+
+  it("sums server-side so the model never adds excerpt numbers itself", async () => {
+    const ctx = makeCtxWithAmounts(rows, documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+
+    expect(result.anzahl).toBe(2);
+    // 10,00 + 88,00 = 98,00 — computed here, handed over finished.
+    expect(result.summe).toEqual([{ currency: "EUR", wert: "98,00 EUR" }]);
+  });
+
+  it("returns the payment date and meaning with each amount", async () => {
+    const ctx = makeCtxWithAmounts(rows, documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+
+    const paid = result.betraege.find(
+      (b: { art: string }) => b.art === "Bereits gezahlt",
+    );
+    expect(paid).toMatchObject({
+      betrag: "10,00 EUR",
+      datum: "12.07.2026",
+      dokument: "Abschiedssammlung",
+      sammlung: "Kita",
+    });
+  });
+
+  it("filters by collection", async () => {
+    const ctx = makeCtxWithAmounts(rows, documents);
+    const result = JSON.parse(
+      await executeTool("query_payments", { category: "Versicherung" }, ctx),
+    );
+    expect(result.betraege).toEqual([]);
+  });
+
+  it("keeps currencies apart instead of adding them together", async () => {
+    const mixed = [
+      { ...rows[0], amount_minor: 1000, currency: "EUR" },
+      { ...rows[0], amount_minor: 2000, currency: "CHF" },
+    ];
+    const ctx = makeCtxWithAmounts(mixed, documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+
+    expect(result.summe).toHaveLength(2);
+    expect(result.summe).toEqual(
+      expect.arrayContaining([
+        { currency: "EUR", wert: "10,00 EUR" },
+        { currency: "CHF", wert: "20,00 CHF" },
+      ]),
+    );
+  });
+
+  it("explains an empty result instead of implying there were no payments", async () => {
+    const ctx = makeCtxWithAmounts([], documents);
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+    expect(result.betraege).toEqual([]);
+    expect(result.hinweis).toMatch(/vor der Einfuehrung/);
+  });
+
+  it("reports a read failure rather than answering with nothing", async () => {
+    const ctx = makeCtxWithAmounts([], documents, { message: "boom" });
+    const result = JSON.parse(await executeTool("query_payments", {}, ctx));
+    expect(result.error).toBeDefined();
+  });
+});

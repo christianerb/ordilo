@@ -50,6 +50,18 @@ describe("extracted_entities.label", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("adds the typed amount columns", () => {
+    const adding = migrations.filter((m) =>
+      /alter\s+table\s+public\.extracted_entities[\s\S]{0,400}?amount_minor/i.test(
+        m.content,
+      ),
+    );
+    expect(
+      adding.length,
+      "no migration adds extracted_entities.amount_minor",
+    ).toBeGreaterThan(0);
+  });
+
   it("is written by the newest confirm_document definition", () => {
     const defining = migrations.filter((m) =>
       /create\s+or\s+replace\s+function\s+public\.confirm_document/i.test(
@@ -72,5 +84,14 @@ describe("extracted_entities.label", () => {
       `${latest.name} rewrote confirm_document without the label column — ` +
         "amount and date meanings would be silently dropped on confirm",
     ).toMatch(/\blabel\b/);
+
+    // Same trap for the typed amount columns: dropping them from a rewrite
+    // would silently make money unqueryable again.
+    for (const column of ["amount_minor", "currency", "amount_kind", "value_date"]) {
+      expect(
+        insert![1],
+        `${latest.name} rewrote confirm_document without ${column}`,
+      ).toMatch(new RegExp(`\\b${column}\\b`));
+    }
   });
 });

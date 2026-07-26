@@ -5,7 +5,10 @@ import {
   cleanupAnalysisEntities,
   dedupeAmounts,
   dedupeDates,
+  formatMinorAsGerman,
   meaningfulLabel,
+  parseAmountToMinor,
+  toIsoDateOrNull,
 } from "@/lib/analysis-cleanup";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
@@ -21,8 +24,17 @@ function amount(
   value: string,
   label = "",
   currency = "EUR",
+  overrides: Partial<DocumentAnalysis["amounts"][0]> = {},
 ): DocumentAnalysis["amounts"][0] {
-  return { amount: value, currency, label, confidence: 0.9 };
+  return {
+    amount: value,
+    currency,
+    label,
+    kind: "other",
+    value_date: null,
+    confidence: 0.9,
+    ...overrides,
+  };
 }
 
 describe("meaningfulLabel", () => {
@@ -157,5 +169,67 @@ describe("cleanupAnalysisEntities", () => {
     const result = cleanupAnalysisEntities(base);
     expect(result.title).toBe("Test");
     expect(result.tasks).toBe(base.tasks);
+  });
+});
+
+describe("parseAmountToMinor", () => {
+  it("parses German formatting", () => {
+    expect(parseAmountToMinor("88,00")).toBe(8800);
+    expect(parseAmountToMinor("1.234,56")).toBe(123456);
+    expect(parseAmountToMinor("10,5")).toBe(1050);
+    expect(parseAmountToMinor("5")).toBe(500);
+  });
+
+  it("ignores currency symbols and surrounding text", () => {
+    expect(parseAmountToMinor("88,00 EUR")).toBe(8800);
+    expect(parseAmountToMinor("€ 1.000,00")).toBe(100000);
+    expect(parseAmountToMinor("ca. 12,90 Euro")).toBe(1290);
+  });
+
+  it("parses plain and English formatting", () => {
+    expect(parseAmountToMinor("1234.56")).toBe(123456);
+    expect(parseAmountToMinor("1,234.56")).toBe(123456);
+  });
+
+  it("treats a separator as thousands when not followed by two digits", () => {
+    expect(parseAmountToMinor("1.234")).toBe(123400);
+    expect(parseAmountToMinor("1,234")).toBe(123400);
+  });
+
+  it("keeps a negative sign", () => {
+    expect(parseAmountToMinor("-45,30")).toBe(-4530);
+  });
+
+  it("returns null when there is no number", () => {
+    expect(parseAmountToMinor("")).toBeNull();
+    expect(parseAmountToMinor(null)).toBeNull();
+    expect(parseAmountToMinor("keine Angabe")).toBeNull();
+  });
+
+  it("round-trips through the German formatter", () => {
+    for (const raw of ["0,99", "88,00", "1.234,56", "1.000.000,00"]) {
+      expect(formatMinorAsGerman(parseAmountToMinor(raw)!)).toBe(raw);
+    }
+  });
+});
+
+describe("toIsoDateOrNull", () => {
+  it("passes ISO dates through", () => {
+    expect(toIsoDateOrNull("2026-07-24")).toBe("2026-07-24");
+    expect(toIsoDateOrNull("2026-07-24T10:00:00Z")).toBe("2026-07-24");
+  });
+
+  it("converts German dates", () => {
+    expect(toIsoDateOrNull("24.07.2026")).toBe("2026-07-24");
+    expect(toIsoDateOrNull("4.7.2026")).toBe("2026-07-04");
+    expect(toIsoDateOrNull("24.07.26")).toBe("2026-07-24");
+  });
+
+  it("returns null for values a Postgres date column would reject", () => {
+    // Unsanitised, these abort the whole confirm transaction.
+    expect(toIsoDateOrNull("Montag")).toBeNull();
+    expect(toIsoDateOrNull("nächste Woche")).toBeNull();
+    expect(toIsoDateOrNull("")).toBeNull();
+    expect(toIsoDateOrNull(null)).toBeNull();
   });
 });

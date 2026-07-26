@@ -133,3 +133,103 @@ export function cleanupAnalysisEntities(
     })),
   };
 }
+
+// ---------------------------------------------------------------------------
+// German amount parsing
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse a German-formatted amount into minor units (cents).
+ *
+ * Amounts arrive as display strings ("1.234,56", "88,00 EUR", "5"), which
+ * cannot be summed or compared. Storing minor units as an integer makes
+ * "wie viel habe ich insgesamt gezahlt?" a real query instead of the LLM
+ * adding numbers it read out of an OCR excerpt.
+ *
+ * Handles German (1.234,56) and plain/English (1234.56, 1,234.56) forms by
+ * treating the LAST separator as the decimal one when it is followed by
+ * exactly two digits. Returns null when nothing numeric can be found.
+ */
+export function parseAmountToMinor(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  // Keep digits and separators; drop currency symbols, spaces, letters.
+  const cleaned = raw.replace(/[^\d.,-]/g, "").trim();
+  if (!cleaned || !/\d/.test(cleaned)) return null;
+
+  const negative = cleaned.startsWith("-");
+  const body = cleaned.replace(/-/g, "");
+
+  const lastComma = body.lastIndexOf(",");
+  const lastDot = body.lastIndexOf(".");
+  const lastSep = Math.max(lastComma, lastDot);
+
+  let integerPart: string;
+  let fractionPart = "";
+
+  // A separator is decimal when one or two digits follow it ("10,5",
+  // "88,00"); three digits mean a thousands separator ("1.234", "1,234").
+  const digitsAfterSep = lastSep === -1 ? -1 : body.length - lastSep - 1;
+  if (digitsAfterSep === 1 || digitsAfterSep === 2) {
+    integerPart = body.slice(0, lastSep).replace(/[.,]/g, "");
+    fractionPart = body.slice(lastSep + 1);
+  } else {
+    integerPart = body.replace(/[.,]/g, "");
+  }
+
+  if (!integerPart && !fractionPart) return null;
+  const minor =
+    Number(integerPart || "0") * 100 + Number(fractionPart.padEnd(2, "0") || "0");
+  if (!Number.isFinite(minor)) return null;
+  return negative ? -minor : minor;
+}
+
+/** Format minor units back to German display form ("123456" → "1.234,56"). */
+export function formatMinorAsGerman(minor: number): string {
+  const negative = minor < 0;
+  const abs = Math.abs(minor);
+  const euros = Math.trunc(abs / 100);
+  const cents = String(abs % 100).padStart(2, "0");
+  const grouped = euros.toLocaleString("de-DE");
+  return `${negative ? "-" : ""}${grouped},${cents}`;
+}
+
+// ---------------------------------------------------------------------------
+// Date sanitising
+// ---------------------------------------------------------------------------
+
+/**
+ * Coerce an LLM-provided date into ISO `YYYY-MM-DD`, or null when it cannot
+ * be understood ("Montag", "nächste Woche", "").
+ *
+ * Postgres `date` columns reject anything else, so an unsanitised value
+ * aborts the whole confirm transaction and the user just sees
+ * CONFIRM_RPC_FAILED. The analyze path always sanitised; the confirm path
+ * passed task due dates straight through, which is why this lives here and
+ * is used by both.
+ */
+export function toIsoDateOrNull(value: string | null | undefined): string | null {
+  if (!value || !value.trim()) return null;
+  const raw = value.trim();
+
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+
+  // German DD.MM.YYYY, DD.MM.YY or DD.MM. (current year implied)
+  const german = raw.match(/^(\d{1,2})\.(\d{1,2})\.(\d{2,4})?/);
+  if (german) {
+    const day = german[1].padStart(2, "0");
+    const month = german[2].padStart(2, "0");
+    let year = german[3];
+    if (!year) {
+      year = String(new Date().getFullYear());
+    } else if (year.length === 2) {
+      year = `20${year}`;
+    }
+    return `${year}-${month}-${day}`;
+  }
+
+  const parsed = Date.parse(raw);
+  if (!Number.isNaN(parsed)) {
+    return new Date(parsed).toISOString().slice(0, 10);
+  }
+  return null;
+}

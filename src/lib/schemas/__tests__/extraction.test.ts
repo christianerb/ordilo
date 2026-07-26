@@ -276,7 +276,7 @@ describe("computeNeedsUserReview", () => {
 
   it("returns true when an amount has low confidence", () => {
     const analysis = validAnalysis({
-      amounts: [{ amount: "50", currency: "EUR", label: "Unklar", confidence: 0.2 }],
+      amounts: [{ amount: "50", currency: "EUR", label: "Unklar", kind: "other" as const, value_date: null, confidence: 0.2 }],
     });
     expect(computeNeedsUserReview(analysis)).toBe(true);
   });

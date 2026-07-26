@@ -4,6 +4,8 @@ import { runExtraction } from "@/lib/ai/extraction";
 import {
   cleanupAnalysisEntities,
   meaningfulLabel,
+  parseAmountToMinor,
+  toIsoDateOrNull,
   GENERIC_DATE_LABELS,
   GENERIC_AMOUNT_LABELS,
 } from "@/lib/analysis-cleanup";
@@ -18,36 +20,11 @@ import { canonicalizeCategory } from "@/lib/categories";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
 
 /**
- * Try to parse a date string from the LLM into ISO format (YYYY-MM-DD).
- * Returns null if the string cannot be parsed (e.g. "Montag", "nächste Woche").
- * Postgres `date` columns require ISO format; raw LLM output like "17.07."
- * or "Montag" would cause an insert error.
+ * Coerce an LLM date into ISO format for the Postgres `date` columns.
+ * Shared with the confirm route so both paths sanitise identically.
  */
 function sanitizeDate(value: string | null | undefined): string | null {
-  if (!value || !value.trim()) return null;
-  const s = value.trim();
-  // Already ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  // German format DD.MM.YYYY or DD.MM.
-  const german = s.match(/^(\d{1,2})\.(\d{1,2})\.(?:\d{2,4})?/);
-  if (german) {
-    const day = german[1].padStart(2, "0");
-    const month = german[2].padStart(2, "0");
-    let year = german[3];
-    if (!year) {
-      year = String(new Date().getFullYear());
-    } else if (year.length === 2) {
-      year = "20" + year;
-    }
-    return `${year}-${month}-${day}`;
-  }
-  // Try Date.parse as a last resort
-  const parsed = Date.parse(s);
-  if (!isNaN(parsed)) {
-    return new Date(parsed).toISOString().slice(0, 10);
-  }
-  // Unparseable (e.g. "Montag", "nächste Woche") — return null
-  return null;
+  return toIsoDateOrNull(value);
 }
 
 /**
@@ -428,6 +405,10 @@ export async function storeExtractionResults(
       entity_value: `${amount.amount} ${amount.currency}`.trim(),
       normalized_value: amount.amount,
       label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
+      amount_minor: parseAmountToMinor(amount.amount),
+      currency: amount.currency.trim().toUpperCase() || "EUR",
+      amount_kind: amount.kind,
+      value_date: sanitizeDate(amount.value_date),
       confidence: amount.confidence,
     });
   }

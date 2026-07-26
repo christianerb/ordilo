@@ -41,6 +41,8 @@ import {
   dedupeDates,
   dedupeAmounts,
   meaningfulLabel,
+  parseAmountToMinor,
+  toIsoDateOrNull,
   GENERIC_DATE_LABELS,
   GENERIC_AMOUNT_LABELS,
 } from "@/lib/analysis-cleanup";
@@ -592,6 +594,10 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_value: `${amount.amount} ${amount.currency}`.trim(),
       normalized_value: amount.amount,
       label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
+      amount_minor: parseAmountToMinor(amount.amount),
+      currency: amount.currency.trim().toUpperCase() || "EUR",
+      amount_kind: amount.kind,
+      value_date: toIsoDateOrNull(amount.value_date),
       confidence: amount.confidence,
       linked_object_id: null,
     });
@@ -634,7 +640,9 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
 function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
   return payload.tasks.map((task) => ({
     title: task.title,
-    due_date: task.due_date ?? null,
+    // Unsanitised, a value like "Montag" reaches a Postgres `date` column
+    // and rolls the whole confirm back as CONFIRM_RPC_FAILED.
+    due_date: toIsoDateOrNull(task.due_date),
     priority: task.priority,
     confidence: task.confidence,
   }));

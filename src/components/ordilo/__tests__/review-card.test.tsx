@@ -53,7 +53,7 @@ const fullAnalysis: DocumentAnalysis = {
     { date: "2026-08-15", type: "deadline", label: "Anmeldefrist", confidence: 0.88 },
   ],
   amounts: [
-    { amount: "150", currency: "EUR", label: "Anmeldegebühr", confidence: 0.82 },
+    { amount: "150", currency: "EUR", label: "Anmeldegebühr", kind: "other" as const, value_date: null, confidence: 0.82 },
   ],
   tasks: [
     {
@@ -108,8 +108,8 @@ const groupedAnalysis: DocumentAnalysis = {
     { date: "2026-08-01", type: "start_date", label: "Start der Betreuung", confidence: 0.91 },
   ],
   amounts: [
-    { amount: "150", currency: "EUR", label: "Anmeldegebühr", confidence: 0.82 },
-    { amount: "35", currency: "EUR", label: "Mittagessen", confidence: 0.86 },
+    { amount: "150", currency: "EUR", label: "Anmeldegebühr", kind: "other" as const, value_date: null, confidence: 0.82 },
+    { amount: "35", currency: "EUR", label: "Mittagessen", kind: "other" as const, value_date: null, confidence: 0.86 },
   ],
   tasks: [
     {

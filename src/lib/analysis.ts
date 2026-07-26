@@ -5,6 +5,8 @@ import {
   DOCUMENT_TYPES,
   TASK_PRIORITIES,
   FACT_TYPES,
+  AMOUNT_KINDS,
+  type AmountKind,
   type DocumentAnalysis,
   type DocumentType,
   type TaskPriority,
@@ -241,15 +243,19 @@ function reconstructAnalysis(
     confidence: d.confidence ?? 0,
   }));
 
-  // Reconstruct amounts — entity_value is stored as "amount currency".
+  // Reconstruct amounts. Newer rows carry typed columns (currency, kind,
+  // value_date); older ones only the "amount currency" display string, so
+  // fall back to splitting that.
   const amountEntries = amounts.map((a) => {
     const parts = a.entity_value.split(" ");
-    const currency = parts.length > 1 ? parts[parts.length - 1] : "EUR";
-    const amount = parts.slice(0, -1).join(" ") || a.entity_value;
+    const fallbackCurrency = parts.length > 1 ? parts[parts.length - 1] : "EUR";
+    const fallbackAmount = parts.slice(0, -1).join(" ") || a.entity_value;
     return {
-      amount,
-      currency,
+      amount: a.normalized_value?.trim() || fallbackAmount,
+      currency: a.currency ?? fallbackCurrency,
       label: a.label ?? "",
+      kind: isAmountKind(a.amount_kind) ? a.amount_kind : ("other" as const),
+      value_date: a.value_date ?? null,
       confidence: a.confidence ?? 0,
     };
   });
@@ -305,6 +311,12 @@ function isDocumentType(value: string | null | undefined): value is DocumentType
 /**
  * Type guard for FactType.
  */
+function isAmountKind(
+  value: string | null | undefined,
+): value is AmountKind {
+  return !!value && (AMOUNT_KINDS as readonly string[]).includes(value);
+}
+
 function isFactType(value: string | null | undefined): value is FactType {
   if (!value) return false;
   return (FACT_TYPES as readonly string[]).includes(value);

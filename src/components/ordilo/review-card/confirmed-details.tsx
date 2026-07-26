@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  AMOUNT_KIND_LABELS,
   FACT_TYPES,
   FACT_TYPE_LABELS,
   type DocumentAnalysis,
@@ -185,14 +186,34 @@ export function ConfirmedAnalysisDetails({
           <ReviewFieldSection icon={Euro} title={countedTitle(amounts.length, "Betrag", "Beträge")} testId="confirmed-amounts">
             {amounts.map((amount, i) => {
               const label = meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS);
+              // What the amount IS answers the question a bare number
+              // cannot: is this the total, or what we actually paid?
+              const kindLabel =
+                amount.kind && amount.kind !== "other"
+                  ? AMOUNT_KIND_LABELS[amount.kind]
+                  : null;
+              const paidOn =
+                amount.value_date
+                  ? formatGermanDate(amount.value_date) || amount.value_date
+                  : null;
+              const secondary = [kindLabel, label]
+                .filter((part): part is string => Boolean(part))
+                .join(" · ");
               return (
                 <FieldRow key={i}>
                   <span className="block truncate">
                     {amount.amount} {amount.currency}
                   </span>
-                  {label && (
+                  {secondary && (
                     <span className="block truncate font-normal text-muted-foreground">
-                      {label}
+                      {secondary}
+                    </span>
+                  )}
+                  {paidOn && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {amount.kind === "outstanding"
+                        ? `Fällig am ${paidOn}`
+                        : `Gezahlt am ${paidOn}`}
                     </span>
                   )}
                 </FieldRow>
