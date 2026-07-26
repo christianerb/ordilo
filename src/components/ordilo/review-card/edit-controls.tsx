@@ -91,7 +91,7 @@ export function CategoryEditControl({
           }}
           onBlur={() => setIsEditing(false)}
           placeholder="Eigene Sammlung"
-          className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           aria-label="Sammlung eingeben"
           data-testid="category-edit-input"
         />
@@ -125,7 +125,7 @@ export function CategoryEditControl({
             setIsEditing(false);
           }
         }}
-        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
+        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
       aria-label="Sammlung wechseln"
         data-testid="category-edit-select"
       >
@@ -185,7 +185,7 @@ export function FactEditControl({
       onChange={(e) => onChange(e.target.value)}
       onBlur={() => setIsEditing(false)}
       autoFocus
-      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
       aria-label={label}
       data-testid="fact-edit-input"
     />
@@ -233,7 +233,7 @@ export function TextEditControl({
         }
       }}
       autoFocus
-      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
       aria-label={label}
       data-testid={`${testId}-input`}
     />
@@ -268,7 +268,7 @@ export function TaskPriorityEditControl({
         setIsEditing(false);
       }}
       onBlur={() => setIsEditing(false)}
-      className="rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       aria-label="Priorität wählen"
       data-testid="task-priority-edit-select"
     >
@@ -351,7 +351,7 @@ export function DateEditControl({
       onBlur={() => setIsEditing(false)}
       autoFocus={isEditing}
       className={cn(
-        "rounded-ordilo-sm border border-border bg-card px-2 py-1 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "rounded-ordilo-sm border border-border bg-card px-2 py-1 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
         compact ? "w-28" : "w-32",
       )}
       aria-label={label}

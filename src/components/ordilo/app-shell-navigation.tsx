@@ -52,7 +52,7 @@ export function Topbar({
             type="button"
             onClick={() => setMenuOpen(true)}
             aria-label="Menü öffnen"
-            className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <Menu className="h-5 w-5" aria-hidden="true" />
           </button>

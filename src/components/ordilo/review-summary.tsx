@@ -258,7 +258,7 @@ export function ReviewSummary({
       {/* Highlights */}
       {highlights.length > 0 && (
         <div>
-          <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist)]">
+          <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist-text)]">
             Ordilo hat erkannt
           </h3>
           <div className="space-y-1.5 stagger-children">

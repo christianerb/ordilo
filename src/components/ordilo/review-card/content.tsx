@@ -163,7 +163,7 @@ export function ReviewCardContent({
           {needsReview && (
             <span
               data-testid="review-needed-badge"
-              className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3 py-1 text-xs font-medium text-[var(--apricot)]"
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/85 px-3 py-1 text-xs font-medium text-[var(--apricot-text)]"
             >
               <AlertTriangle className="size-3.5" aria-hidden="true" />
               Überprüfung nötig
@@ -520,9 +520,14 @@ export function ReviewCardContent({
             One visible order: the category (= Sammlung) above. */}
       </div>
 
-      {/* Confirm error */}
+      {/* Confirm error — announced, because a failed confirm (including the
+          20s timeout) was completely silent to a screen reader. */}
       {confirmError && (
-        <div className="mt-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 p-3">
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="mt-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 p-3"
+        >
           <p className="text-sm text-destructive">{confirmError}</p>
         </div>
       )}

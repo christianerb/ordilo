@@ -814,10 +814,13 @@ function ChatList({
                           e.stopPropagation();
                           onDelete(conv.id);
                         }}
-                        className="shrink-0 rounded p-0.5 text-muted-foreground/20 opacity-0 transition-all hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                        // Visible and thumb-sized on touch; the old
+                        // opacity-0 + group-hover had no touch equivalent, so
+                        // deleting a chat was unreachable on a phone.
+                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-all hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:size-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                         aria-label="Chat löschen"
                       >
-                        <Trash2 className="size-3" aria-hidden="true" />
+                        <Trash2 className="size-4 sm:size-3" aria-hidden="true" />
                       </button>
                     </div>
                   );

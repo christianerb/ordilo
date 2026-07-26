@@ -94,7 +94,7 @@ export function FamilyBanner({
                 ? "1 Person"
                 : `${members.length} Personen`}
             {upcomingBirthday && (
-              <span className="text-[var(--apricot)]">
+              <span className="text-[var(--apricot-text)]">
                 {" · "}
                 {upcomingBirthday}
               </span>

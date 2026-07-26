@@ -380,14 +380,14 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 aria-label={`${fact.label} bearbeiten`}
                 maxLength={200}
                 autoFocus
-                className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 font-mono text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="confirmed-fact-edit-input"
               />
               <button
                 type="submit"
                 disabled={saving || !editValue.trim()}
                 aria-label="Speichern"
-                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
+                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
                 data-testid="confirmed-fact-save-button"
               >
                 {saving ? (
@@ -400,7 +400,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 type="button"
                 onClick={() => setEditingId(null)}
                 aria-label="Abbrechen"
-                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
+                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <X className="size-3.5" aria-hidden="true" />
               </button>
@@ -429,7 +429,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             value={newType}
             onChange={(e) => setNewType(e.target.value as FactType)}
             aria-label="Nummerntyp"
-            className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             {FACT_TYPES.map((type) => (
               <option key={type} value={type}>
@@ -445,14 +445,14 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             aria-label="Wert der Nummer"
             maxLength={200}
             autoFocus
-            className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-testid="confirmed-fact-add-input"
           />
           <button
             type="submit"
             disabled={saving || !newValue.trim()}
             aria-label="Nummer speichern"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white disabled:opacity-50"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
             data-testid="confirmed-fact-add-save"
           >
             {saving ? (
@@ -468,7 +468,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
               setNewValue("");
             }}
             aria-label="Abbrechen"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground"
+            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             <X className="size-4" aria-hidden="true" />
           </button>
