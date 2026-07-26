@@ -4,8 +4,6 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import {
   Sparkles,
-  Search,
-  CheckCircle2,
   ListChecks,
   Users,
   FileText,
@@ -19,7 +17,10 @@ import { SourceMatchCard } from "@/components/ordilo/source-match-card";
 import { AnswerCard } from "@/components/ordilo/answer-card";
 import { cn } from "@/lib/utils";
 import type { ChatSource, AnswerCard as AnswerCardData } from "@/lib/schemas/chat";
-import { ProcessingChecklist } from "./processing-checklist";
+import {
+  ProcessingChecklist,
+  type ToolCallProgress,
+} from "./processing-checklist";
 
 // Lazy-load ChatMarkdown (react-markdown + remark-gfm) to keep the
 // /suche route chunk small. The markdown renderer is only needed when
@@ -40,7 +41,8 @@ export interface ChatMessage {
   /** Structured answer card, when the assistant chose to present one instead of plain text. */
   card?: AnswerCardData;
   /** Tool calls currently in progress (for status display). */
-  toolCalls?: Array<{ toolName: string; state: string }>;
+  /** Real tool activity reported by the stream, in order. */
+  toolCalls?: ToolCallProgress[];
   /** Persisted feedback: "positive" | "negative" | null. */
   feedback?: "positive" | "negative" | null;
 }
@@ -119,10 +121,6 @@ export function MessageBubble({
     );
   }
 
-  const activeToolCalls = message.toolCalls?.filter(
-    (tc) => tc.state === "input-streaming" || tc.state === "input-available",
-  );
-
   // Show the loading checklist while streaming but no answer (text or
   // card) has arrived yet.
   const showLoading = isStreaming && !message.content && !message.card;
@@ -136,17 +134,8 @@ export function MessageBubble({
         </div>
 
         <div className="max-w-[85%] rounded-ordilo-md rounded-tl-sm bg-card px-4 py-3 shadow-card lg:max-w-full">
-          {/* Tool-call status indicators */}
-          {activeToolCalls && activeToolCalls.length > 0 && (
-            <div className="mb-2 space-y-1">
-              {activeToolCalls.map((tc, i) => (
-                <ToolCallStatus key={i} toolName={tc.toolName} />
-              ))}
-            </div>
-          )}
-
           {showLoading ? (
-            <ProcessingChecklist />
+            <ProcessingChecklist toolCalls={message.toolCalls} />
           ) : message.card ? (
             <AnswerCard
               card={message.card}
@@ -463,38 +452,6 @@ function AnswerFeedback({ message }: { message: ChatMessage }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Tool-call status indicator (Phase 5)
-// ---------------------------------------------------------------------------
-
-const TOOL_LABELS: Record<string, { icon: typeof Search; label: string }> = {
-  search_documents: { icon: Search, label: "Durchsuche Dokumente…" },
-  list_documents: { icon: ListChecks, label: "Dokumente werden aufgelistet…" },
-  list_tasks: { icon: ListChecks, label: "Aufgaben werden geladen…" },
-  list_family_members: { icon: Users, label: "Familienmitglieder werden geladen…" },
-  mark_task_done: { icon: CheckCircle2, label: "Aufgabe wird erledigt…" },
-  save_document_fact: { icon: CheckCircle2, label: "Nummer wird gespeichert…" },
-  move_document_to_collection: { icon: ListChecks, label: "Dokument wird einsortiert…" },
-  add_document_tags: { icon: ListChecks, label: "Schlagworte werden ergänzt…" },
-};
-
-function ToolCallStatus({ toolName }: { toolName: string }) {
-  const config = TOOL_LABELS[toolName];
-  const Icon = config?.icon ?? Search;
-  const label = config?.label ?? "Arbeitet…";
-
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-1.5 text-xs text-muted-foreground",
-      )}
-    >
-      <Icon className="size-3 animate-pulse" aria-hidden="true" />
-      <span>{label}</span>
     </div>
   );
 }

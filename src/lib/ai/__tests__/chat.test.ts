@@ -1357,6 +1357,55 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     });
   });
 
+  it("reports each real tool call so progress is not invented client-side", async () => {
+    // The client used to tick steps off on a timer; it now renders exactly
+    // what these events say ran.
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "list_tasks",
+              argumentsChunk: "{}",
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Diese Woche steht nichts an." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Was muss ich diese Woche erledigen?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    const toolEvents = lines.filter((l) => l.type === "tool");
+    expect(toolEvents).toEqual([
+      { type: "tool", tool: "list_tasks", state: "start" },
+      { type: "tool", tool: "list_tasks", state: "done" },
+    ]);
+    // No event claims a tool that was never called.
+    expect(
+      toolEvents.some((e) => e.tool === "search_documents"),
+    ).toBe(false);
+  });
+
+  it("emits no tool events when the model answers without calling one", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Hallo! Wie kann ich helfen?" }]),
+    );
+
+    const stream = await streamAgenticAnswer("Hallo", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "tool")).toHaveLength(0);
+  });
+
   it("falls back to a text answer when the card arguments are invalid", async () => {
     mockCreate
       .mockResolvedValueOnce(

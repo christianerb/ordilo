@@ -426,6 +426,29 @@ export function SucheClient({
                       : m,
                   ),
                 );
+              } else if (data.type === "tool") {
+                // Real tool activity, so the progress list can stop
+                // inventing steps on a timer.
+                const toolName = data.tool as string;
+                const state = data.state as "start" | "done" | "error";
+                setMessages((prev) =>
+                  prev.map((m) => {
+                    if (m.id !== aiMsgId) return m;
+                    const calls = [...(m.toolCalls ?? [])];
+                    if (state === "start") {
+                      calls.push({ toolName, state });
+                    } else {
+                      // Close the most recent open call for this tool.
+                      for (let i = calls.length - 1; i >= 0; i--) {
+                        if (calls[i].toolName === toolName && calls[i].state === "start") {
+                          calls[i] = { toolName, state };
+                          break;
+                        }
+                      }
+                    }
+                    return { ...m, toolCalls: calls };
+                  }),
+                );
               } else if (data.type === "card") {
                 setMessages((prev) =>
                   prev.map((m) =>

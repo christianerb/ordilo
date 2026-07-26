@@ -1054,6 +1054,12 @@ export async function streamAgenticAnswer(
                 continue;
               }
 
+              // Tell the client what is actually happening. The old
+              // client-side checklist ticked steps off on a timer and picked
+              // its step set at random, so it claimed work ("Prüfe Aufgaben
+              // und Fristen ✓") that may never have run.
+              send({ type: "tool", tool: toolCall.function.name, state: "start" });
+
               let resultContent: string;
               try {
                 resultContent = await executeTool(
@@ -1061,7 +1067,17 @@ export async function streamAgenticAnswer(
                   args,
                   toolContext,
                 );
+                send({
+                  type: "tool",
+                  tool: toolCall.function.name,
+                  state: "done",
+                });
               } catch (err) {
+                send({
+                  type: "tool",
+                  tool: toolCall.function.name,
+                  state: "error",
+                });
                 resultContent = JSON.stringify({
                   error:
                     err instanceof Error

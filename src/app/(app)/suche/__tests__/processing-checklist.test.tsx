@@ -1,66 +1,80 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { act } from "react";
 
-import { ProcessingChecklist } from "@/app/(app)/suche/processing-checklist";
+import {
+  ProcessingChecklist,
+  type ToolCallProgress,
+} from "@/app/(app)/suche/processing-checklist";
 
+/**
+ * The checklist used to advance on a 700ms timer and pick its step set with
+ * Math.random(), so it ticked off work — "Prüfe Aufgaben und Fristen ✓" —
+ * that may never have run. These tests pin the replacement: every line
+ * corresponds to a tool call the server actually reported.
+ */
 describe("ProcessingChecklist", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.spyOn(Math, "random").mockReturnValue(0.5);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it("renders four steps", () => {
+  it("claims nothing beyond reading the question before any tool runs", () => {
     render(<ProcessingChecklist />);
-    expect(screen.getAllByTestId("processing-step")).toHaveLength(4);
-  });
 
-  it("starts with only the first step active and the rest pending", () => {
-    render(<ProcessingChecklist />);
     const steps = screen.getAllByTestId("processing-step");
+    expect(steps).toHaveLength(1);
     expect(steps[0].getAttribute("data-status")).toBe("active");
-    expect(steps[1].getAttribute("data-status")).toBe("pending");
-    expect(steps[2].getAttribute("data-status")).toBe("pending");
-    expect(steps[3].getAttribute("data-status")).toBe("pending");
+    expect(steps[0].textContent).toMatch(/Liest deine Frage/);
   });
 
-  it("advances to the next step over time, marking earlier steps done", () => {
-    render(<ProcessingChecklist />);
+  it("invents no steps for tools that were never called", () => {
+    render(
+      <ProcessingChecklist
+        toolCalls={[{ toolName: "search_documents", state: "start" }]}
+      />,
+    );
 
-    act(() => {
-      vi.advanceTimersByTime(1200);
-    });
+    expect(screen.getAllByTestId("processing-step")).toHaveLength(1);
+    expect(screen.queryByText(/Aufgaben und Fristen/)).toBeNull();
+  });
+
+  it("shows a running tool as active and a finished one as done", () => {
+    const calls: ToolCallProgress[] = [
+      { toolName: "search_documents", state: "done" },
+      { toolName: "list_tasks", state: "start" },
+    ];
+    render(<ProcessingChecklist toolCalls={calls} />);
 
     const steps = screen.getAllByTestId("processing-step");
+    expect(steps).toHaveLength(2);
     expect(steps[0].getAttribute("data-status")).toBe("done");
+    expect(steps[0].textContent).toMatch(/Durchsucht deine Dokumente/);
     expect(steps[1].getAttribute("data-status")).toBe("active");
+    expect(steps[1].textContent).toMatch(/Prüft Aufgaben und Fristen/);
   });
 
-  it("stops advancing once the last step is reached", () => {
-    render(<ProcessingChecklist />);
+  it("marks a failed tool instead of quietly ticking it off", () => {
+    render(
+      <ProcessingChecklist
+        toolCalls={[{ toolName: "search_documents", state: "error" }]}
+      />,
+    );
 
-    // Advance in separate act() blocks so useEffect re-runs and
-    // creates the next setTimeout between advances
-    for (let i = 0; i < 4; i++) {
-      act(() => {
-        vi.advanceTimersByTime(1000);
-      });
-    }
-
-    const steps = screen.getAllByTestId("processing-step");
-    expect(steps[0].getAttribute("data-status")).toBe("done");
-    expect(steps[1].getAttribute("data-status")).toBe("done");
-    expect(steps[2].getAttribute("data-status")).toBe("done");
-    expect(steps[3].getAttribute("data-status")).toBe("active");
+    const step = screen.getByTestId("processing-step");
+    expect(step.getAttribute("data-status")).toBe("error");
+    expect(step.textContent).toMatch(/hat nicht geklappt/);
   });
 
-  it("has an accessible status role for screen readers", () => {
+  it("falls back to a neutral label for an unknown tool", () => {
+    render(
+      <ProcessingChecklist
+        toolCalls={[{ toolName: "some_new_tool", state: "start" }]}
+      />,
+    );
+    expect(screen.getByTestId("processing-step").textContent).toMatch(
+      /Arbeitet/,
+    );
+  });
+
+  it("announces progress to assistive tech", () => {
     render(<ProcessingChecklist />);
-    expect(screen.getByRole("status")).toBeDefined();
+    const region = screen.getByTestId("processing-checklist");
+    expect(region.getAttribute("role")).toBe("status");
+    expect(region.getAttribute("aria-live")).toBe("polite");
   });
 });
