@@ -37,7 +37,13 @@ import type {
 } from "@/types/database";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { normalizeFactValue } from "@/lib/schemas/extraction";
-import { dedupeDates, dedupeAmounts } from "@/lib/analysis-cleanup";
+import {
+  dedupeDates,
+  dedupeAmounts,
+  meaningfulLabel,
+  GENERIC_DATE_LABELS,
+  GENERIC_AMOUNT_LABELS,
+} from "@/lib/analysis-cleanup";
 import { canonicalizeCategory } from "@/lib/categories";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
 
@@ -549,6 +555,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "person",
       entity_value: member.name,
       normalized_value: member.name.toLowerCase().trim(),
+      label: null,
       confidence: member.confidence,
       linked_object_id: member.person_id ?? null,
     });
@@ -560,6 +567,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "organization",
       entity_value: org.name,
       normalized_value: org.name.toLowerCase().trim(),
+      label: null,
       confidence: org.confidence,
       linked_object_id: null,
     });
@@ -571,6 +579,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "date",
       entity_value: date.date,
       normalized_value: date.date,
+      label: meaningfulLabel(date.label, GENERIC_DATE_LABELS),
       confidence: date.confidence,
       linked_object_id: null,
     });
@@ -582,6 +591,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "amount",
       entity_value: `${amount.amount} ${amount.currency}`.trim(),
       normalized_value: amount.amount,
+      label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
       confidence: amount.confidence,
       linked_object_id: null,
     });
@@ -593,6 +603,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "category",
       entity_value: payload.suggested_category,
       normalized_value: payload.suggested_category.toLowerCase().trim(),
+      label: null,
       confidence: 1.0,
       linked_object_id: null,
     });
@@ -604,6 +615,7 @@ function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
       entity_type: "tag",
       entity_value: tag,
       normalized_value: tag.toLowerCase().trim(),
+      label: null,
       confidence: 1.0,
       linked_object_id: null,
     });

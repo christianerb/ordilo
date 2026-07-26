@@ -50,6 +50,8 @@ export type ConfirmRpcEntity = {
   entity_type: string;
   entity_value: string;
   normalized_value: string | null;
+  /** What the value means ("Bereits gezahlt", "Zahlungsfrist"); null when generic. */
+  label: string | null;
   confidence: number;
   /** Family member UUID for person entities, or null. */
   linked_object_id: string | null;
@@ -476,6 +478,7 @@ export type Database = {
           entity_type: string;
           entity_value: string;
           normalized_value: string | null;
+          label: string | null;
           confidence: number;
           confirmed: boolean;
           linked_object_id: string | null;
@@ -488,6 +491,7 @@ export type Database = {
           entity_type: string;
           entity_value: string;
           normalized_value?: string | null;
+          label?: string | null;
           confidence?: number;
           confirmed?: boolean;
           linked_object_id?: string | null;
@@ -500,6 +504,7 @@ export type Database = {
           entity_type?: string;
           entity_value?: string;
           normalized_value?: string | null;
+          label?: string | null;
           confidence?: number;
           confirmed?: boolean;
           linked_object_id?: string | null;

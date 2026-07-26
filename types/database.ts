@@ -194,6 +194,7 @@ export type Database = {
           entity_value: string
           family_id: string
           id: string
+          label: string | null
           linked_object_id: string | null
           normalized_value: string | null
         }
@@ -206,6 +207,7 @@ export type Database = {
           entity_value: string
           family_id: string
           id?: string
+          label?: string | null
           linked_object_id?: string | null
           normalized_value?: string | null
         }
@@ -218,6 +220,7 @@ export type Database = {
           entity_value?: string
           family_id?: string
           id?: string
+          label?: string | null
           linked_object_id?: string | null
           normalized_value?: string | null
         }

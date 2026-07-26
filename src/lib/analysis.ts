@@ -223,11 +223,13 @@ function reconstructAnalysis(
     confidence: o.confidence ?? 0,
   }));
 
-  // Reconstruct dates.
+  // Reconstruct dates. `label` carries what the date means ("Zahlungsfrist");
+  // it is null for rows stored before extracted_entities.label existed, and
+  // "" then simply renders no sub-label.
   const dateEntries = dates.map((d) => ({
     date: d.entity_value,
     type: "date",
-    label: "Datum",
+    label: d.label ?? "",
     confidence: d.confidence ?? 0,
   }));
 
@@ -239,7 +241,7 @@ function reconstructAnalysis(
     return {
       amount,
       currency,
-      label: "Betrag",
+      label: a.label ?? "",
       confidence: a.confidence ?? 0,
     };
   });

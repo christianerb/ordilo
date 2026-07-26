@@ -1,7 +1,12 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { runExtraction } from "@/lib/ai/extraction";
-import { cleanupAnalysisEntities } from "@/lib/analysis-cleanup";
+import {
+  cleanupAnalysisEntities,
+  meaningfulLabel,
+  GENERIC_DATE_LABELS,
+  GENERIC_AMOUNT_LABELS,
+} from "@/lib/analysis-cleanup";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
   computeNeedsUserReview,
@@ -410,6 +415,7 @@ export async function storeExtractionResults(
       entity_type: "date",
       entity_value: date.date,
       normalized_value: date.date,
+      label: meaningfulLabel(date.label, GENERIC_DATE_LABELS),
       confidence: date.confidence,
     });
   }
@@ -421,6 +427,7 @@ export async function storeExtractionResults(
       entity_type: "amount",
       entity_value: `${amount.amount} ${amount.currency}`.trim(),
       normalized_value: amount.amount,
+      label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
       confidence: amount.confidence,
     });
   }
