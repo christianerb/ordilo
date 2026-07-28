@@ -6,7 +6,11 @@ import {
   type HistoryMessage,
 } from "@/lib/ai/chat";
 import type { ToolContext } from "@/lib/ai/tools";
-import type { ChatErrorResponse } from "@/lib/schemas/chat";
+import {
+  chatRequestSchema,
+  type ChatRequest,
+  type ChatErrorResponse,
+} from "@/lib/schemas/chat";
 import {
   getOrCreateConversation,
   loadConversationMessages,
@@ -32,12 +36,15 @@ import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
  *   {"type":"done"}                                  — stream complete
  *   {"type":"error","error":"...","code":"..."}      — error
  *
- * Input:  { message: string, family_id: string, history?: HistoryMessage[] }
+ * Input:  { message: string (max 4000 chars), family_id: string (UUID),
+ *           history?: HistoryMessage[], conversation_id?: string }
  *
- * Auth:   401 without session.
+ * Auth:   401 without session, 403 when the user is not a member of
+ *         the family identified by family_id.
  * Rate:   429 (RATE_LIMIT_EXCEEDED) when daily message limit is reached.
- * Errors: 400 (invalid input), 500 (server error) — returned as JSON
- *         before streaming begins. Stream-level errors are sent as NDJSON.
+ * Errors: 400 (invalid input), 403 (not a family member), 500 (server
+ *         error) — returned as JSON before streaming begins. Stream-level
+ *         errors are sent as NDJSON.
  */
 
 export async function POST(request: Request): Promise<Response> {
@@ -49,33 +56,21 @@ export async function POST(request: Request): Promise<Response> {
   }
   const user = auth.user;
 
-  // 2. Parse & validate
-  let message: string;
-  let familyId: string;
-  let clientHistory: HistoryMessage[] = [];
-  let conversationIdParam: string | undefined;
-
+  // 2. Parse & validate (Zod: non-empty message capped at
+  //    MAX_CHAT_MESSAGE_LENGTH, UUID family_id, optional history and
+  //    conversation_id)
+  let parsed: ChatRequest;
   try {
     const json = await request.json();
-    if (
-      !json?.message ||
-      typeof json.message !== "string" ||
-      !json.family_id
-    ) {
+    const result = chatRequestSchema.safeParse(json);
+    if (!result.success) {
       const body: ChatErrorResponse = {
         error: "Anfrage ungültig (message und family_id erforderlich).",
         code: "INVALID_CHAT_INPUT",
       };
       return Response.json(body, { status: 400 });
     }
-    message = json.message;
-    familyId = json.family_id;
-    if (json.history && Array.isArray(json.history)) {
-      clientHistory = json.history;
-    }
-    if (json.conversation_id && typeof json.conversation_id === "string") {
-      conversationIdParam = json.conversation_id;
-    }
+    parsed = result.data;
   } catch {
     const body: ChatErrorResponse = {
       error: "Anfrage konnte nicht gelesen werden.",
@@ -83,6 +78,11 @@ export async function POST(request: Request): Promise<Response> {
     };
     return Response.json(body, { status: 400 });
   }
+
+  const message = parsed.message;
+  const familyId = parsed.family_id;
+  const clientHistory: HistoryMessage[] = parsed.history;
+  const conversationIdParam = parsed.conversation_id;
 
   // 3. Dev-only failure simulation (header-controlled)
   if (request.headers.get("x-dev-simulate-failure") === "chat") {
@@ -96,7 +96,29 @@ export async function POST(request: Request): Promise<Response> {
   // 4. Build server client
   const serverClient = await createServerClient();
 
-  // 5. Rate limit check — prevent cost runaway per family
+  // 5. Verify family membership — the client-supplied family_id is
+  //    otherwise unverified: a non-member would pass the rate-limit check
+  //    below (RLS hides the chat_usage row, so "no row" reads as "under
+  //    the limit") and trigger OpenAI calls that recordUsage can never
+  //    attribute. The membership row is only visible under RLS when the
+  //    user belongs to the family, so "no row" means "no access" (for
+  //    both non-members and nonexistent families).
+  const { data: membership } = await serverClient
+    .from("family_memberships")
+    .select("family_id")
+    .eq("family_id", familyId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!membership) {
+    const body: ChatErrorResponse = {
+      error: "Kein Zugriff auf diese Familie.",
+      code: "FAMILY_ACCESS_DENIED",
+    };
+    return Response.json(body, { status: 403 });
+  }
+
+  // 6. Rate limit check — prevent cost runaway per family
   const rateLimit = await checkRateLimit(serverClient, familyId);
   if (!rateLimit.allowed) {
     const body: ChatErrorResponse = {
@@ -106,7 +128,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 429 });
   }
 
-  // 6. Load or create conversation for history persistence
+  // 7. Load or create conversation for history persistence
   let conversationId: string;
   let dbHistory: HistoryMessage[];
   let isNewConversation = false;
@@ -151,7 +173,7 @@ export async function POST(request: Request): Promise<Response> {
     dbHistory = clientHistory;
   }
 
-  // 7. Resolve speaker identity — look up the family member linked to
+  // 8. Resolve speaker identity — look up the family member linked to
   //    the current auth user. This lets the assistant know who it's
   //    talking to (e.g. "Du sprichst gerade mit: Emma").
   let speakerName: string | null = null;
@@ -168,12 +190,12 @@ export async function POST(request: Request): Promise<Response> {
     speakerName = null;
   }
 
-  // 8. Save the user message to the conversation (best-effort)
+  // 9. Save the user message to the conversation (best-effort)
   if (conversationId) {
     void saveUserMessage(serverClient, conversationId, familyId, message);
   }
 
-  // 9. Build tool context with speaker identity
+  // 10. Build tool context with speaker identity
   const toolContext: ToolContext = {
     client: serverClient,
     familyId,
@@ -181,7 +203,7 @@ export async function POST(request: Request): Promise<Response> {
     speakerName,
   };
 
-  // 10. Merge DB history with client history (client history takes
+  // 11. Merge DB history with client history (client history takes
   //     precedence as it may include the most recent exchanges not yet
   //     persisted). Use DB history if client history is empty.
   const effectiveHistory =
@@ -256,7 +278,7 @@ export async function POST(request: Request): Promise<Response> {
           reader.releaseLock();
         }
 
-        // 11. Persist the assistant message (best-effort, non-blocking)
+        // 12. Persist the assistant message (best-effort, non-blocking)
         if (conversationId && fullAnswer && !streamError) {
           void saveAssistantMessage(
             serverClient,
@@ -268,7 +290,7 @@ export async function POST(request: Request): Promise<Response> {
           );
         }
 
-        // 12. Record usage (best-effort, non-blocking)
+        // 13. Record usage (best-effort, non-blocking)
         void recordUsage(serverClient, familyId, 0);
 
         ctrl.close();
