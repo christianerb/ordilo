@@ -25,10 +25,11 @@ vi.mock("@/lib/ocr", () => ({
   triggerOcr: vi.fn(),
 }));
 
-import DokumentePage from "@/app/(app)/dokumente/page";
+import { DokumenteClient } from "@/app/(app)/dokumente/dokumente-client";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
+import type { DocumentRow } from "@/lib/scan/scan-context-types";
 
 const FAMILY_ID = "fam-empty-0000-0000-0000-000000000001";
 
@@ -97,7 +98,7 @@ describe("DokumentePage empty state", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -139,7 +140,7 @@ describe("DokumentePage empty state", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -160,7 +161,7 @@ describe("DokumentePage empty state", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -243,7 +244,7 @@ describe("DokumentePage empty state", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -270,5 +271,79 @@ describe("DokumentePage empty state", () => {
     });
 
     vi.useRealTimers();
+  });
+
+  it("renders server-provided initial documents immediately while the client load is in flight", async () => {
+    // Hybrid SSR: page.tsx fetches the documents server-side and passes
+    // them as initialDocuments; the client paints them instead of a
+    // spinner while the ScanProvider's own initial load is still running.
+    const ssrDoc = {
+      id: "doc-ssr",
+      family_id: FAMILY_ID,
+      uploaded_by: "user-1",
+      title: "SSR-Rechnung",
+      document_type: "invoice",
+      category: null,
+      status: "confirmed",
+      file_url: `${FAMILY_ID}/doc-ssr/rechnung.pdf`,
+      original_filename: "rechnung.pdf",
+      mime_type: "application/pdf",
+      page_count: null,
+      ocr_text: null,
+      summary: null,
+      error_message: null,
+      created_at: new Date().toISOString(),
+      confirmed_at: new Date().toISOString(),
+    } as unknown as DocumentRow;
+
+    // The browser client's documents query never resolves, so the
+    // provider stays in its initial-loading state for the whole test.
+    const documentsChain = {
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnValue(new Promise(() => {})),
+    };
+    const familiesChain = {
+      limit: vi.fn(() => ({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: { id: FAMILY_ID }, error: null }),
+      })),
+    };
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "families") {
+          return { select: vi.fn(() => familiesChain) };
+        }
+        if (table === "documents") {
+          return { select: vi.fn(() => documentsChain) };
+        }
+        if (table === "collections") {
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            })),
+          };
+        }
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    } as unknown as ReturnType<typeof createClient>);
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient initialDocuments={[ssrDoc]} />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    // Let the provider's mount effects (family resolution) settle.
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // No spinner, no empty state — the SSR document is on screen.
+    expect(screen.getByTestId("document-list")).toBeDefined();
+    expect(screen.getAllByText("SSR-Rechnung").length).toBeGreaterThan(0);
+    expect(screen.queryByTestId("empty-state")).toBeNull();
   });
 });

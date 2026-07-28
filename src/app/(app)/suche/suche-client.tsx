@@ -786,16 +786,33 @@ function ChatList({
               <div className="flex flex-col">
                 {group.items.map((conv) => {
                   const isActive = conv.id === activeId;
+                  const title = conv.title || "Neuer Chat";
                   return (
+                    // role="button" instead of a real <button> because the
+                    // row nests an actual delete <button> (invalid inside a
+                    // button) — same pattern as DocumentCard.
                     <div
                       key={conv.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Chat „${title}" öffnen`}
+                      aria-current={isActive ? "true" : undefined}
                       className={cn(
-                        "group flex items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors cursor-pointer",
+                        "group flex items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                         isActive
                           ? "bg-secondary/50"
                           : "hover:bg-secondary/20",
                       )}
                       onClick={() => onSelect(conv.id)}
+                      onKeyDown={(event) => {
+                        // The nested delete button activates itself; keys
+                        // bubbling up from it must not also select the chat.
+                        if (event.target !== event.currentTarget) return;
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onSelect(conv.id);
+                        }
+                      }}
                       data-testid={`chat-list-item-${conv.id}`}
                     >
                       <p
@@ -806,7 +823,7 @@ function ChatList({
                             : "text-muted-foreground",
                         )}
                       >
-                        {conv.title || "Neuer Chat"}
+                        {title}
                       </p>
                       <button
                         type="button"

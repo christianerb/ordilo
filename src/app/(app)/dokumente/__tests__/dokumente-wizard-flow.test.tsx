@@ -30,7 +30,7 @@ vi.mock("@/lib/analysis", () => ({
   fetchExistingCategories: vi.fn().mockResolvedValue([]),
 }));
 
-import DokumentePage from "@/app/(app)/dokumente/page";
+import { DokumenteClient } from "@/app/(app)/dokumente/dokumente-client";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
@@ -141,7 +141,7 @@ describe("DokumentePage — scan wizard flow", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -164,7 +164,7 @@ describe("DokumentePage — scan wizard flow", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -201,7 +201,7 @@ describe("DokumentePage — scan wizard flow", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );

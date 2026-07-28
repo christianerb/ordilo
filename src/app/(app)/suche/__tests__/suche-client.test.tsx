@@ -646,3 +646,62 @@ describe("SucheClient — Source Card Opening", () => {
     expect(mockOpenDocument).toHaveBeenCalledWith("doc-1");
   });
 });
+
+describe("SucheClient — Chat History Accessibility", () => {
+  const conversations = [
+    {
+      id: "c1",
+      title: "Alter Chat",
+      updated_at: new Date().toISOString(),
+    },
+  ];
+
+  function renderWithHistory() {
+    render(<SucheClient {...defaultProps} conversations={conversations} />);
+    fireEvent.click(screen.getByTestId("chat-history-toggle"));
+    return screen.getByTestId("chat-list-item-c1");
+  }
+
+  it("exposes chat history entries as focusable buttons", () => {
+    const item = renderWithHistory();
+    expect(item.getAttribute("role")).toBe("button");
+    expect(item.getAttribute("tabindex")).toBe("0");
+    expect(
+      screen.getByRole("button", { name: /Alter Chat.*öffnen/ }),
+    ).toBe(item);
+  });
+
+  it("selects a chat with Enter from the keyboard", () => {
+    const item = renderWithHistory();
+    fireEvent.keyDown(item, { key: "Enter" });
+    expect(mockPush).toHaveBeenCalledWith("/suche?chat=c1");
+  });
+
+  it("selects a chat with Space from the keyboard", () => {
+    const item = renderWithHistory();
+    fireEvent.keyDown(item, { key: " " });
+    expect(mockPush).toHaveBeenCalledWith("/suche?chat=c1");
+  });
+
+  it("does not select the chat when the nested delete button is activated", async () => {
+    const item = renderWithHistory();
+    const deleteButton = within(item).getByRole("button", {
+      name: "Chat löschen",
+    });
+
+    // Keys pressed on the nested button bubble to the row — they must not
+    // be mistaken for a row activation.
+    fireEvent.keyDown(deleteButton, { key: "Enter" });
+    expect(mockPush).not.toHaveBeenCalled();
+
+    // Clicking delete removes the conversation without opening it.
+    fireEvent.click(deleteButton);
+    expect(mockPush).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenCalledWith(
+        "/api/conversations/c1",
+        expect.objectContaining({ method: "DELETE" }),
+      );
+    });
+  });
+});

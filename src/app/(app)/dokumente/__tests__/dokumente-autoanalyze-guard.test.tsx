@@ -35,7 +35,7 @@ vi.mock("@/lib/documents-table", () => ({
   fetchDocumentsTableMeta: vi.fn().mockResolvedValue({}),
 }));
 
-import DokumentePage from "@/app/(app)/dokumente/page";
+import { DokumenteClient } from "@/app/(app)/dokumente/dokumente-client";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
@@ -159,7 +159,7 @@ describe("DokumentePage auto-analyze navigation guard", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -219,7 +219,7 @@ describe("DokumentePage auto-analyze navigation guard", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumentePage />
+        <DokumenteClient initialDocuments={[]} />
       </CollectionsProvider>
       </ScanProvider>,
     );

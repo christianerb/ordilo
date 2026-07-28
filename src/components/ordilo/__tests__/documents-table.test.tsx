@@ -273,4 +273,68 @@ describe("DocumentsTable", () => {
     expect(onDelete).toHaveBeenCalledWith("doc-1");
     expect(mockOpenDocument).not.toHaveBeenCalled();
   });
+
+  it("fetches metadata only for documents it has not loaded yet", async () => {
+    // The table used to be key-remounted by the page on every change to
+    // the document set, re-fetching ALL metadata on every poll. Now the
+    // table stays mounted and fetches only the IDs it has never seen.
+    const doc1 = buildDoc({ id: "doc-1", title: "Stromrechnung" });
+    const doc2 = buildDoc({ id: "doc-2", title: "Kita-Brief" });
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    const { rerender } = render(<DocumentsTable documents={[doc1]} />);
+    await screen.findByTestId("documents-table-row");
+
+    expect(fetchDocumentsTableMeta).toHaveBeenCalledTimes(1);
+    expect(fetchDocumentsTableMeta).toHaveBeenLastCalledWith(["doc-1"]);
+
+    // A new document appears (upload / realtime INSERT).
+    rerender(<DocumentsTable documents={[doc1, doc2]} />);
+    await waitFor(() =>
+      expect(fetchDocumentsTableMeta).toHaveBeenCalledTimes(2),
+    );
+    expect(fetchDocumentsTableMeta).toHaveBeenLastCalledWith(["doc-2"]);
+
+    // A status flip on an existing document (polling delta) fetches nothing.
+    rerender(
+      <DocumentsTable
+        documents={[{ ...doc1, status: "analyzed" }, doc2]}
+      />,
+    );
+    await waitFor(() => expect(table().getByText("Prüfen")).toBeDefined());
+    expect(fetchDocumentsTableMeta).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps filter and sort state when the document set changes", async () => {
+    const docs = [
+      buildDoc({ id: "doc-1", title: "Zebra" }),
+      buildDoc({ id: "doc-2", title: "Anton" }),
+    ];
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    const { rerender } = render(<DocumentsTable documents={docs} />);
+    await screen.findAllByTestId("documents-table-row");
+
+    // Sort by title and narrow by search.
+    fireEvent.click(screen.getByTestId("sort-title"));
+    fireEvent.change(screen.getByTestId("documents-search-input"), {
+      target: { value: "zeb" },
+    });
+    expect(table().queryByText("Anton")).toBeNull();
+
+    // Polling delivers a fresh list (same IDs + one new document).
+    rerender(
+      <DocumentsTable
+        documents={[...docs, buildDoc({ id: "doc-3", title: "Zebra Neu" })]}
+      />,
+    );
+
+    // The search input and the filtered view survive the update — a
+    // key-remount would have reset both.
+    expect(
+      (screen.getByTestId("documents-search-input") as HTMLInputElement).value,
+    ).toBe("zeb");
+    expect(table().queryByText("Anton")).toBeNull();
+    await waitFor(() => expect(table().getByText("Zebra Neu")).toBeDefined());
+  });
 });
