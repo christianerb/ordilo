@@ -986,6 +986,14 @@ export type Database = {
         Args: { p_limit?: number };
         Returns: Database["public"]["Tables"]["processing_jobs"]["Row"][];
       };
+      // reap_stale_processing_jobs — reset 'running' jobs that have been
+      // stuck longer than the stale interval back to 'pending' (or 'dead'
+      // when attempts are exhausted). Service-role only.
+      // See supabase/migrations/0041_reap_stale_processing_jobs.sql.
+      reap_stale_processing_jobs: {
+        Args: { p_stale_interval?: string };
+        Returns: { reaped_pending: number; marked_dead: number }[];
+      };
       // replace_document_embeddings — transactional embedding replacement
       // for the reindex job. Service-role only.
       // See supabase/migrations/0026_pipeline_versions.sql.
