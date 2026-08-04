@@ -324,17 +324,14 @@ describe("AppShell", () => {
     expect(screen.queryByRole("navigation")).toBeNull();
   });
 
-  it("hides the tab list in the drawer on /onboarding (no nav, but still exit)", () => {
+  it("hides the hamburger menu button entirely on /onboarding (drawer would be empty)", () => {
     renderShell("/onboarding");
-    openMobileMenu();
-    expect(screen.queryByRole("navigation")).toBeNull();
-    expect(screen.getByRole("button", { name: /abmelden/i })).toBeDefined();
+    expect(screen.queryByRole("button", { name: /menü öffnen/i })).toBeNull();
   });
 
-  it("hides the tab list in the drawer on nested onboarding routes", () => {
+  it("hides the hamburger menu button on nested onboarding routes", () => {
     renderShell("/onboarding/step-2");
-    openMobileMenu();
-    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.queryByRole("button", { name: /menü öffnen/i })).toBeNull();
   });
 
   it("renders a logout affordance", () => {
@@ -347,11 +344,10 @@ describe("AppShell", () => {
     expect(logoutButtons.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("logout affordance is also present on onboarding (no nav but still exit)", () => {
+  it("the mobile drawer's logout affordance is unreachable during onboarding (menu button hidden)", () => {
     renderShell("/onboarding");
-    openMobileMenu();
-    expect(screen.getByRole("button", { name: /abmelden/i })).toBeDefined();
-    expect(screen.queryByRole("navigation")).toBeNull();
+    expect(screen.queryByRole("button", { name: /menü öffnen/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /abmelden/i })).toBeNull();
   });
 
   // --- Global search + scan bottom bars (VAL-NAV) -------------------------
