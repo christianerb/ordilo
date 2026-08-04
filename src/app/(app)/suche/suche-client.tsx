@@ -7,7 +7,7 @@ import {
   useMemo,
 } from "react";
 import { useRouter } from "next/navigation";
-import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown, RefreshCw } from "lucide-react";
+import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown, RefreshCw, Reply, X } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
@@ -15,7 +15,7 @@ import type { ChatSource, AnswerCard as AnswerCardData } from "@/lib/schemas/cha
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
-import { MessageBubble, type ChatMessage } from "./message-bubble";
+import { MessageBubble, messageToPlainText, type ChatMessage } from "./message-bubble";
 import {
   FilterChips,
   type FilterType,
@@ -58,6 +58,18 @@ export interface SucheClientProps {
   conversationId?: string;
   initialMessages?: InitialMessage[];
   conversations?: ConversationSummary[];
+  /** Open the chat history dropdown immediately (from a `?history=1` deep link). */
+  initialShowHistory?: boolean;
+}
+
+/** Max length of a quoted excerpt shown in the composer preview and the reply bubble. */
+const QUOTE_EXCERPT_MAX_LENGTH = 200;
+
+function truncateQuote(text: string): string {
+  const trimmed = text.trim();
+  return trimmed.length > QUOTE_EXCERPT_MAX_LENGTH
+    ? `${trimmed.slice(0, QUOTE_EXCERPT_MAX_LENGTH)}…`
+    : trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +95,7 @@ export function SucheClient({
   initialMessages = [],
   conversationId: initialConversationId = "",
   conversations: initialConversations = [],
+  initialShowHistory = false,
 }: SucheClientProps) {
   const router = useRouter();
   const { openDocument } = useDocumentViewer();
@@ -109,7 +122,8 @@ export function SucheClient({
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState(initialConversationId);
   const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
-  const [showChatList, setShowChatList] = useState(false);
+  const [showChatList, setShowChatList] = useState(initialShowHistory);
+  const [quotedMessage, setQuotedMessage] = useState<{ text: string } | null>(null);
 
   // --- Last query for retry on error ---
   const lastQueryRef = useRef<string>("");
@@ -342,11 +356,16 @@ export function SucheClient({
       setBusy(true);
       lastQueryRef.current = query;
 
+      // Consume the pending quote (if any) — it applies to this one turn.
+      const quoted = quotedMessage;
+      setQuotedMessage(null);
+
       const userMsg: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "user",
         content: query,
         sources: [],
+        quotedText: quoted?.text,
       };
 
       const aiMsgId = `ai-${Date.now()}`;
@@ -375,12 +394,19 @@ export function SucheClient({
         return entry;
       });
 
+      // The model sees the quoted excerpt inline so a follow-up like "und
+      // welche Frist gilt dafür?" resolves against it — the chat bubble
+      // itself renders the quote and the plain query separately.
+      const messageForModel = quoted
+        ? `> ${quoted.text}\n\n${query}`
+        : query;
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            message: query,
+            message: messageForModel,
             family_id: familyId,
             history,
             conversation_id: activeConversationId || undefined,
@@ -506,7 +532,7 @@ export function SucheClient({
         setBusy(false);
       }
     },
-    [familyId, isLoading, messages, activeConversationId, conversations, setBusy],
+    [familyId, isLoading, messages, activeConversationId, conversations, setBusy, quotedMessage],
   );
 
   // -------------------------------------------------------------------------
@@ -546,6 +572,16 @@ export function SucheClient({
     },
     [openDocument],
   );
+
+  // -------------------------------------------------------------------------
+  // Quote a message — the excerpt shows above the composer until the next
+  // message is sent (or the user clears it), so a follow-up question can
+  // refer back to a specific earlier answer.
+  // -------------------------------------------------------------------------
+
+  const handleQuoteMessage = useCallback((message: ChatMessage) => {
+    setQuotedMessage({ text: truncateQuote(messageToPlainText(message)) });
+  }, []);
 
   // -------------------------------------------------------------------------
   // Example query click — submits straight away. The search bar itself now
@@ -661,6 +697,7 @@ export function SucheClient({
                   isStreaming={message.id === streamingId}
                   passesFilters={passesFilters}
                   onSourceCardClick={handleSourceCardClick}
+                  onQuote={handleQuoteMessage}
                 />
               ))}
 
@@ -710,6 +747,27 @@ export function SucheClient({
                       </p>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {quotedMessage && (
+                <div
+                  className="sticky bottom-0 flex items-start gap-2 rounded-ordilo-md border border-border bg-[var(--surface-story)] px-3 py-2 shadow-card animate-in fade-in-0 slide-in-from-bottom-1"
+                  data-testid="quoted-message-preview"
+                >
+                  <Reply className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <p className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                    {quotedMessage.text}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setQuotedMessage(null)}
+                    aria-label="Zitat entfernen"
+                    data-testid="quoted-message-clear"
+                    className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                  </button>
                 </div>
               )}
 

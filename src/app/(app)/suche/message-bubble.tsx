@@ -11,6 +11,7 @@ import {
   ThumbsDown,
   Copy,
   Check,
+  Reply,
 } from "lucide-react";
 import { SourceCard, type SourceCardKind } from "@/components/ordilo/source-card";
 import { SourceMatchCard } from "@/components/ordilo/source-match-card";
@@ -45,6 +46,8 @@ export interface ChatMessage {
   toolCalls?: ToolCallProgress[];
   /** Persisted feedback: "positive" | "negative" | null. */
   feedback?: "positive" | "negative" | null;
+  /** An excerpt of an earlier message the user quoted before asking this one. */
+  quotedText?: string;
 }
 
 /**
@@ -98,11 +101,14 @@ export function MessageBubble({
   isStreaming = false,
   passesFilters,
   onSourceCardClick,
+  onQuote,
 }: {
   message: ChatMessage;
   isStreaming?: boolean;
   passesFilters: (docId: string) => boolean;
   onSourceCardClick: (docId: string) => void;
+  /** Called with the message when the user taps "Zitieren" on an assistant answer. */
+  onQuote?: (message: ChatMessage) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -115,6 +121,16 @@ export function MessageBubble({
     return (
       <div className="flex justify-end animate-message-in">
         <div className="max-w-[85%] rounded-ordilo-md rounded-tr-sm bg-[var(--petrol)] px-4 py-3 text-white shadow-card lg:max-w-[70%]">
+          {message.quotedText && (
+            <div
+              className="mb-1.5 rounded-ordilo-sm border-l-2 border-white/50 bg-white/10 px-2 py-1"
+              data-testid="message-quoted-text"
+            >
+              <p className="line-clamp-2 text-xs text-white/80">
+                {message.quotedText}
+              </p>
+            </div>
+          )}
           <p className="text-sm leading-relaxed">{message.content}</p>
         </div>
       </div>
@@ -155,7 +171,7 @@ export function MessageBubble({
         </div>
       </div>
 
-      {hasAnswer && <AnswerFeedback message={message} />}
+      {hasAnswer && <AnswerFeedback message={message} onQuote={onQuote} />}
 
       {visibleSources.length > 0 && !isStreaming && (
         <div className="ml-10 w-[calc(100%_-_2.5rem)] space-y-1.5">
@@ -251,8 +267,8 @@ function RestSources({
 // Feedback icons (thumbs up/down + copy)
 // ---------------------------------------------------------------------------
 
-/** Build a plain-text representation of an assistant message for copying. */
-function messageToPlainText(message: ChatMessage): string {
+/** Build a plain-text representation of an assistant message for copying or quoting. */
+export function messageToPlainText(message: ChatMessage): string {
   if (message.card) {
     const lines = [message.card.title];
     if (message.card.subtitle) lines.push(message.card.subtitle);
@@ -271,7 +287,13 @@ const DOWN_REASONS = [
   { key: "unvollstaendig", label: "Unvollständig" },
 ] as const;
 
-function AnswerFeedback({ message }: { message: ChatMessage }) {
+function AnswerFeedback({
+  message,
+  onQuote,
+}: {
+  message: ChatMessage;
+  onQuote?: (message: ChatMessage) => void;
+}) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(
     message.feedback === "positive" ? "up" : message.feedback === "negative" ? "down" : null,
   );
@@ -392,6 +414,17 @@ function AnswerFeedback({ message }: { message: ChatMessage }) {
           <Copy className="size-3.5" aria-hidden="true" />
         )}
       </button>
+      {onQuote && (
+        <button
+          type="button"
+          onClick={() => onQuote(message)}
+          aria-label="Antwort zitieren"
+          data-testid="feedback-quote"
+          className="rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Reply className="size-3.5" aria-hidden="true" />
+        </button>
+      )}
         {thanked && (
           <span
             className="text-xs text-muted-foreground animate-message-in"

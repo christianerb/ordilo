@@ -16,10 +16,21 @@ describe("MobileComposer", () => {
 
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "Wann war der Elternabend?" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(screen.getByRole("button", { name: /senden/i }));
 
     expect(onSearch).toHaveBeenCalledWith("Wann war der Elternabend?");
     expect(input.value).toBe("");
+  });
+
+  it("does not submit on Enter — it only inserts a newline", () => {
+    const onSearch = vi.fn();
+    render(<MobileComposer onSearch={onSearch} onScan={vi.fn()} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Wann war der Elternabend?" } });
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+
+    expect(onSearch).not.toHaveBeenCalled();
   });
 
   it("refuses a second question while an answer is still streaming", () => {
@@ -31,7 +42,7 @@ describe("MobileComposer", () => {
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(input.disabled).toBe(true);
     fireEvent.change(input, { target: { value: "Und die Frist?" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(screen.getByRole("button", { name: /senden/i }));
     expect(onSearch).not.toHaveBeenCalled();
 
     expect(

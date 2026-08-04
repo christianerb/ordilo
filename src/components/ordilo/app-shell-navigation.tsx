@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   Camera,
+  History,
   LogOut,
   Menu,
 } from "lucide-react";
@@ -108,6 +109,17 @@ export function Topbar({
           )}
 
           <SheetFooter className="border-t border-border">
+            {showNav && (
+              <Link
+                href="/suche?history=1"
+                onClick={() => setMenuOpen(false)}
+                className="inline-flex w-full items-center gap-2 rounded-ordilo-sm px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                data-testid="topbar-chat-history-link"
+              >
+                <History className="size-4" aria-hidden="true" />
+                Chat-Verlauf
+              </Link>
+            )}
             <form action={logout}>
               <button
                 type="submit"

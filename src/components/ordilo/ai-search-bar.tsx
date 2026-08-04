@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useState,
-  useCallback,
-  useRef,
-  type KeyboardEvent,
-} from "react";
+import { useState, useCallback, useRef } from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { Sparkles, ArrowUp, Mic, MicOff, Camera } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,7 +9,7 @@ import { cn } from "@/lib/utils";
  * Props for the AISearchBar component.
  */
 export interface AISearchBarProps {
-  /** Called with the trimmed query when the user submits (Enter or button). */
+  /** Called with the trimmed query when the user submits (send button click). */
   onSubmit: (query: string) => void;
   /** Initial value for the input (e.g. pre-filled from home page). */
   initialValue?: string;
@@ -97,8 +92,8 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | null {
  * flow (combined search + LLM synthesis).
  *
  * Submit behaviour:
- *   - Enter (without Shift) → submit
- *   - Shift+Enter → newline (no submit)
+ *   - Enter always inserts a newline — it never submits, so a message can
+ *     be drafted across multiple lines without accidentally sending early.
  *   - Send button click → submit
  *   - Empty / whitespace-only input → no submit
  *
@@ -182,16 +177,6 @@ export function AISearchBar({
       setMultiline(false);
     },
     [currentValue, isLoading, onSubmit, setValue],
-  );
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleSubmit();
-      }
-    },
-    [handleSubmit],
   );
 
   // A grown textarea always stacks, even in the inline layout.
@@ -285,10 +270,12 @@ export function AISearchBar({
           setValue(e.target.value);
           handleInput();
         }}
-        onKeyDown={handleKeyDown}
         disabled={isLoading}
         placeholder={listening ? "Ich höre zu …" : placeholder}
-        rows={1}
+        // The stacked (mobile) layout starts at two visible rows so a
+        // multi-line message doesn't get cramped — inline (desktop) stays
+        // single-line since there's a whole pill row to grow into.
+        rows={layout === "stacked" ? 2 : 1}
         aria-label="Such- und Chat-Eingabe"
         className={cn(
           "max-h-[120px] resize-none border-0 bg-transparent py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed",

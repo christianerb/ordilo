@@ -350,6 +350,19 @@ describe("AppShell", () => {
     expect(screen.queryByRole("button", { name: /abmelden/i })).toBeNull();
   });
 
+  it("offers a direct link to the chat history from the mobile drawer, not just via the composer", () => {
+    renderShell("/home");
+    openMobileMenu();
+    const link = screen.getByTestId("topbar-chat-history-link");
+    expect(link.getAttribute("href")).toBe("/suche?history=1");
+  });
+
+  it("offers a direct link to the chat history from the desktop sidebar", () => {
+    renderShell("/home");
+    const link = screen.getByTestId("sidebar-chat-history-link");
+    expect(link.getAttribute("href")).toBe("/suche?history=1");
+  });
+
   // --- Global search + scan bottom bars (VAL-NAV) -------------------------
 
   it("renders both the mobile composer and the desktop bottom bar (search + scan) on every tab, including /suche", () => {
@@ -384,8 +397,9 @@ describe("AppShell", () => {
   it("navigates to /suche with the query when submitted from a non-suche tab", () => {
     renderShell("/dokumente");
     const [input] = screen.getAllByRole("textbox") as HTMLTextAreaElement[];
+    const [sendButton] = screen.getAllByRole("button", { name: /senden/i });
     fireEvent.change(input, { target: { value: "Zeig mir Rechnungen" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(sendButton);
 
     expect(mockPush).toHaveBeenCalledWith(
       expect.stringMatching(/^\/suche\?q=/),
@@ -399,8 +413,9 @@ describe("AppShell", () => {
   it("does not navigate when submitting an empty query", () => {
     renderShell("/home");
     const [input] = screen.getAllByRole("textbox") as HTMLTextAreaElement[];
+    const [sendButton] = screen.getAllByRole("button", { name: /senden/i });
     fireEvent.change(input, { target: { value: "   " } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(sendButton);
     expect(mockPush).not.toHaveBeenCalled();
   });
 

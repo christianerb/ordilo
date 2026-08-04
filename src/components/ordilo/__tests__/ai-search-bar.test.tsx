@@ -21,13 +21,13 @@ describe("AISearchBar", () => {
     expect(screen.getByRole("button", { name: /senden/i })).toBeDefined();
   });
 
-  it("calls onSubmit when Enter is pressed (without Shift)", () => {
+  it("does not call onSubmit when Enter is pressed (without Shift)", () => {
     const onSubmit = vi.fn();
     render(<AISearchBar onSubmit={onSubmit} />);
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "Zeig mir Dokumente" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-    expect(onSubmit).toHaveBeenCalledWith("Zeig mir Dokumente");
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 
   it("does not call onSubmit when Shift+Enter is pressed", () => {
@@ -53,16 +53,8 @@ describe("AISearchBar", () => {
     render(<AISearchBar onSubmit={onSubmit} />);
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "   " } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(screen.getByRole("button", { name: /senden/i }));
     expect(onSubmit).not.toHaveBeenCalled();
-  });
-
-  it("clears the input after successful submit via Enter", () => {
-    render(<AISearchBar onSubmit={vi.fn()} />);
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    fireEvent.change(input, { target: { value: "Test query" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
-    expect(input.value).toBe("");
   });
 
   it("clears the input after successful submit via button", () => {
@@ -94,8 +86,22 @@ describe("AISearchBar", () => {
     render(<AISearchBar onSubmit={onSubmit} isLoading={true} />);
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "Test" } });
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(
+      screen.getByRole("button", { name: /senden/i }),
+    );
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("renders one row by default (inline/desktop layout)", () => {
+    render(<AISearchBar onSubmit={vi.fn()} />);
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.rows).toBe(1);
+  });
+
+  it("renders two rows in stacked (mobile) layout", () => {
+    render(<AISearchBar onSubmit={vi.fn()} layout="stacked" />);
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(input.rows).toBe(2);
   });
 
   it("uses the provided placeholder text", () => {
@@ -146,8 +152,7 @@ describe("AISearchBar — Controlled mode", () => {
         onValueChange={vi.fn()}
       />,
     );
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(screen.getByRole("button", { name: /senden/i }));
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -161,8 +166,7 @@ describe("AISearchBar — Controlled mode", () => {
         onValueChange={onValueChange}
       />,
     );
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    fireEvent.keyDown(input, { key: "Enter", shiftKey: false });
+    fireEvent.click(screen.getByRole("button", { name: /senden/i }));
     expect(onSubmit).toHaveBeenCalledWith("Finde Rechnung");
     // After submit, the bar clears by notifying the parent.
     expect(onValueChange).toHaveBeenCalledWith("");

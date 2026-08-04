@@ -32,6 +32,7 @@ export default async function SuchePage({
     typeof params.q === "string" ? params.q.trim() : "";
   const chatId =
     typeof params.chat === "string" ? params.chat.trim() : "";
+  const showHistory = params.history === "1";
 
   // 1. Fetch the user's family (RLS-scoped).
   const { data: family } = await supabase
@@ -149,6 +150,7 @@ export default async function SuchePage({
         title: c.title,
         updated_at: c.updated_at,
       }))}
+      initialShowHistory={showHistory}
     />
   );
 }

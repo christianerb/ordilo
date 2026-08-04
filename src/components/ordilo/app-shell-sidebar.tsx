@@ -7,6 +7,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronsUpDown,
+  History,
   LogOut,
   Plus,
   Settings,
@@ -440,6 +441,27 @@ export function SidebarNav({
               </li>
             );
           })}
+          <li>
+            <Link
+              href="/suche?history=1"
+              title={collapsed ? "Chat-Verlauf" : undefined}
+              className={cn(
+                "flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground",
+                collapsed ? "justify-center" : "justify-start",
+              )}
+              data-testid="sidebar-chat-history-link"
+            >
+              <History className="size-5 shrink-0" aria-hidden="true" strokeWidth={1.75} />
+              <span
+                className={cn(
+                  "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
+                  collapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-[7rem] opacity-100",
+                )}
+              >
+                Chat-Verlauf
+              </span>
+            </Link>
+          </li>
         </ul>
 
         <SidebarCollections
