@@ -18,7 +18,7 @@ ohne Fristen bekommen nichts.
 | `CRON_SECRET` | ja | Vercel sendet es automatisch als Bearer-Token an Cron-Pfade. Beliebiger langer Zufallswert. |
 | `RESEND_API_KEY` | ja | API-Key von [resend.com](https://resend.com). Ohne Key: 503, kein Versand. |
 | `DIGEST_FROM_EMAIL` | empfohlen | Absender, z. B. `Ordilo <hallo@ordilo.de>` (Domain bei Resend verifizieren). Default ist Resends Sandbox-Absender. |
-| `APP_BASE_URL` | empfohlen | Absolute App-URL für Links in der Mail, z. B. `https://app.ordilo.de`. Fallback: Request-Origin. |
+| `APP_BASE_URL` | empfohlen | Absolute App-URL für Links in der Mail, z. B. `https://app.ordilo.de`. Fallback: Request-Origin. Wird auch für den Login-Link bei Familien-Einladungen genutzt (`/invite/[token]`) — dort schützt sie gegen Host-Header-Injection und sollte in Produktion gesetzt sein. |
 
 Hinweis: Läufe werden nicht dedupliziert — der Cron feuert 1×/Tag, ein
 manueller zweiter Aufruf verschickt den Digest erneut.

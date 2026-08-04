@@ -37,19 +37,13 @@ vi.mock("openai", () => {
 
 import {
   combineSearchResults,
-  buildChatSystemPrompt,
-  buildChatUserMessage,
   buildAgenticSystemPrompt,
-  generateChatAnswer,
   filterByRelevanceThreshold,
-  reconcileFallbackSources,
   streamAgenticAnswer,
   ChatError,
 } from "@/lib/ai/chat";
 import {
-  NO_RESULTS_FALLBACK,
   FAIL_CLOSED_HEDGING,
-  FAIL_CLOSED_CITATION,
   containsHedgingLanguage,
   type ChatSource,
 } from "@/lib/schemas/chat";
@@ -503,114 +497,6 @@ describe("combineSearchResults", () => {
 });
 
 // ---------------------------------------------------------------------------
-// reconcileFallbackSources
-// ---------------------------------------------------------------------------
-
-describe("reconcileFallbackSources", () => {
-  function sources(): ChatSource[] {
-    return [
-      {
-        document_id: "doc-1",
-        title: "Kita-Brief",
-        excerpt: "Einschulung am 15. August",
-        score: 0.85,
-      },
-      {
-        document_id: "doc-2",
-        title: "Stromrechnung",
-        excerpt: "Betrag: 45 EUR",
-        score: 0.8,
-      },
-    ];
-  }
-
-  it("empties sources when the answer is the no-results fallback", () => {
-    expect(reconcileFallbackSources(NO_RESULTS_FALLBACK, sources())).toEqual([]);
-  });
-
-  it("preserves sources when the answer is a normal cited answer", () => {
-    const srcs = sources();
-    expect(
-      reconcileFallbackSources(
-        "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
-        srcs,
-      ),
-    ).toEqual(srcs);
-  });
-
-  it("empties sources when the answer is the fallback with surrounding whitespace", () => {
-    expect(
-      reconcileFallbackSources(`  ${NO_RESULTS_FALLBACK}  `, sources()),
-    ).toEqual([]);
-  });
-
-  it("preserves sources when the answer is a fail-closed hedging message (not the fallback)", () => {
-    // Fail-closed messages are not the fallback — sources are preserved.
-    const srcs = sources();
-    expect(reconcileFallbackSources(FAIL_CLOSED_HEDGING, srcs)).toEqual(srcs);
-  });
-
-  it("preserves sources when the answer is a fail-closed citation message (not the fallback)", () => {
-    const srcs = sources();
-    expect(reconcileFallbackSources(FAIL_CLOSED_CITATION, srcs)).toEqual(srcs);
-  });
-
-  it("preserves sources when the answer is an empty string", () => {
-    const srcs = sources();
-    expect(reconcileFallbackSources("", srcs)).toEqual(srcs);
-  });
-
-  it("returns empty array when sources are already empty and answer is fallback", () => {
-    expect(reconcileFallbackSources(NO_RESULTS_FALLBACK, [])).toEqual([]);
-  });
-
-  it("returns the same array reference when sources are not reconciled", () => {
-    // No unnecessary copy when the answer is not the fallback.
-    const srcs = sources();
-    expect(reconcileFallbackSources("Laut dem Brief...", srcs)).toBe(srcs);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildChatSystemPrompt
-// ---------------------------------------------------------------------------
-
-describe("buildChatSystemPrompt", () => {
-  const prompt = buildChatSystemPrompt();
-
-  it("instructs to answer in German", () => {
-    expect(prompt).toContain("Deutsch");
-  });
-
-  it("instructs to use only provided sources", () => {
-    expect(prompt).toContain("NUR");
-    expect(prompt.toLowerCase()).toContain("quelle");
-  });
-
-  it("forbids hedging language explicitly", () => {
-    expect(prompt).toContain("Ich glaube");
-    expect(prompt).toContain("Vermutlich");
-    expect(prompt).toContain("Wahrscheinlich");
-    expect(prompt).toContain("Könnte sein");
-  });
-
-  it("includes the hallucination fallback instruction", () => {
-    expect(prompt).toContain(NO_RESULTS_FALLBACK);
-  });
-
-  it("forbids internal terminology", () => {
-    expect(prompt).toContain("Knowledge Graph");
-    expect(prompt).toContain("pgvector");
-    expect(prompt).toContain("embedding");
-  });
-
-  it("instructs to cite sources for factual claims", () => {
-    expect(prompt.toLowerCase()).toContain("quelle");
-    expect(prompt).toContain("sachliche Aussage");
-  });
-});
-
-// ---------------------------------------------------------------------------
 // buildAgenticSystemPrompt
 // ---------------------------------------------------------------------------
 
@@ -632,618 +518,6 @@ describe("buildAgenticSystemPrompt", () => {
 
   it("instructs to avoid mentioning the same document twice", () => {
     expect(prompt.toLowerCase()).toContain("nur einmal");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// buildChatUserMessage
-// ---------------------------------------------------------------------------
-
-describe("buildChatUserMessage", () => {
-  it("includes the user query", () => {
-    const message = buildChatUserMessage("Was muss ich erledigen?", [
-      {
-        document_id: "doc-1",
-        title: "Brief",
-        excerpt: "Inhalt",
-        score: 0.9,
-      },
-    ]);
-
-    expect(message).toContain("Was muss ich erledigen?");
-  });
-
-  it("includes the source title and excerpt", () => {
-    const message = buildChatUserMessage("Frage", [
-      {
-        document_id: "doc-1",
-        title: "Stromrechnung",
-        excerpt: "Betrag: 45 EUR",
-        score: 0.85,
-      },
-    ]);
-
-    expect(message).toContain("Stromrechnung");
-    expect(message).toContain("Betrag: 45 EUR");
-  });
-
-  it("includes the relevance score as percentage", () => {
-    const message = buildChatUserMessage("Frage", [
-      {
-        document_id: "doc-1",
-        title: "Brief",
-        excerpt: "Inhalt",
-        score: 0.856,
-      },
-    ]);
-
-    expect(message).toContain("86%");
-  });
-
-  it("handles multiple sources", () => {
-    const message = buildChatUserMessage("Frage", [
-      {
-        document_id: "doc-1",
-        title: "A",
-        excerpt: "text a",
-        score: 0.9,
-      },
-      {
-        document_id: "doc-2",
-        title: "B",
-        excerpt: "text b",
-        score: 0.8,
-      },
-    ]);
-
-    expect(message).toContain("[1]");
-    expect(message).toContain("[2]");
-    expect(message).toContain("text a");
-    expect(message).toContain("text b");
-  });
-
-  it("handles null title", () => {
-    const message = buildChatUserMessage("Frage", [
-      {
-        document_id: "doc-1",
-        title: null,
-        excerpt: "Inhalt",
-        score: 0.9,
-      },
-    ]);
-
-    expect(message).toContain("Ohne Titel");
-  });
-
-  it("handles umlauts and special characters", () => {
-    const message = buildChatUserMessage("Zeig mir Müller & Söhne", [
-      {
-        document_id: "doc-1",
-        title: "Rechnung Müller & Söhne",
-        excerpt: "Betrag: 45 € — äöü",
-        score: 0.9,
-      },
-    ]);
-
-    expect(message).toContain("Müller & Söhne");
-    expect(message).toContain("äöü");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// generateChatAnswer
-// ---------------------------------------------------------------------------
-
-describe("generateChatAnswer", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // mockReset clears the mockResolvedValueOnce queue so queued values
-    // from a previous test do not leak into the next test.
-    mockCreate.mockReset();
-    setApiKey();
-  });
-
-  it("calls OpenAI and returns the answer", async () => {
-    mockCreate.mockResolvedValue(
-      mockChatResponse(
-        "Laut dem Kita-Brief wird Emma am 15. August eingeschult.",
-      ),
-    );
-
-    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
-      {
-        document_id: "doc-1",
-        title: "Kita-Brief",
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe(
-      "Laut dem Kita-Brief wird Emma am 15. August eingeschult.",
-    );
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses gpt-5.4-mini model", async () => {
-    mockCreate.mockResolvedValue(
-      mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
-    );
-
-    await generateChatAnswer("Frage", [
-      { document_id: "d", title: "Testdokument", excerpt: "Inhalt", score: 0.9 },
-    ]);
-
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    const callArgs = mockCreate.mock.calls[0][0] as {
-      model: string;
-      messages: { role: string; content: string }[];
-    };
-    expect(callArgs.model).toBe("gpt-5.4-mini");
-  });
-
-  it("sends system and user messages", async () => {
-    mockCreate.mockResolvedValue(
-      mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
-    );
-
-    await generateChatAnswer("Testfrage", [
-      { document_id: "d", title: "Testdokument", excerpt: "Inhalt", score: 0.9 },
-    ]);
-
-    const callArgs = mockCreate.mock.calls[0][0] as {
-      messages: { role: string; content: string }[];
-    };
-    expect(callArgs.messages).toHaveLength(2);
-    expect(callArgs.messages[0].role).toBe("system");
-    expect(callArgs.messages[1].role).toBe("user");
-    expect(callArgs.messages[1].content).toContain("Testfrage");
-  });
-
-  it("retries once when the answer contains hedging language", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Ich glaube, das ist ein Brief."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Das Dokument ist ein Brief für Emma."),
-      );
-
-    const answer = await generateChatAnswer("Was ist das?", [
-      {
-        document_id: "doc-1",
-        title: "Brief",
-        excerpt: "Inhalt",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe("Das Dokument ist ein Brief für Emma.");
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not retry when the answer is clean", async () => {
-    mockCreate.mockResolvedValue(
-      mockChatResponse("Das Dokument ist ein Brief für Emma."),
-    );
-
-    await generateChatAnswer("Was ist das?", [
-      { document_id: "doc-1", title: "Brief", excerpt: "Inhalt", score: 0.9 },
-    ]);
-
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("throws ChatError when OPENAI_API_KEY is not set", async () => {
-    clearApiKey();
-
-    await expect(
-      generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]),
-    ).rejects.toThrow(ChatError);
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-    } catch (err) {
-      expect((err as ChatError).code).toBe("OPENAI_NOT_CONFIGURED");
-    }
-  });
-
-  it("throws ChatError on OpenAI API error (401)", async () => {
-    const { APIError } = await import("openai");
-    const MockErr = APIError as unknown as new (
-      msg: string,
-      status?: number,
-    ) => Error;
-    mockCreate.mockRejectedValue(new MockErr("Unauthorized", 401));
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-      throw new Error("Should have thrown ChatError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatError);
-      expect((err as ChatError).code).toBe("OPENAI_AUTH_ERROR");
-      expect((err as ChatError).statusCode).toBe(401);
-    }
-  });
-
-  it("throws ChatError on rate limit (429)", async () => {
-    const { APIError } = await import("openai");
-    const MockErr = APIError as unknown as new (
-      msg: string,
-      status?: number,
-    ) => Error;
-    mockCreate.mockRejectedValue(new MockErr("Rate limited", 429));
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-      throw new Error("Should have thrown ChatError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatError);
-      expect((err as ChatError).code).toBe("OPENAI_RATE_LIMITED");
-    }
-  });
-
-  it("throws ChatError on generic API error (500)", async () => {
-    const { APIError } = await import("openai");
-    const MockErr = APIError as unknown as new (
-      msg: string,
-      status?: number,
-    ) => Error;
-    mockCreate.mockRejectedValue(new MockErr("Server error", 500));
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-      throw new Error("Should have thrown ChatError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatError);
-      expect((err as ChatError).code).toBe("OPENAI_API_ERROR");
-      expect((err as ChatError).statusCode).toBe(500);
-    }
-  });
-
-  it("throws ChatError on empty response", async () => {
-    mockCreate.mockResolvedValue({
-      choices: [{ message: { content: null } }],
-    });
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-      throw new Error("Should have thrown ChatError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatError);
-      expect((err as ChatError).code).toBe("OPENAI_EMPTY_RESPONSE");
-    }
-  });
-
-  it("throws ChatError on whitespace-only response", async () => {
-    mockCreate.mockResolvedValue(
-      mockChatResponse("   "),
-    );
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-      throw new Error("Should have thrown ChatError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatError);
-      expect((err as ChatError).code).toBe("OPENAI_EMPTY_RESPONSE");
-    }
-  });
-
-  it("throws ChatError on network error (non-APIError)", async () => {
-    mockCreate.mockRejectedValue(new Error("Connection refused"));
-
-    try {
-      await generateChatAnswer("Frage", [
-        { document_id: "d", title: "T", excerpt: "E", score: 0.9 },
-      ]);
-      throw new Error("Should have thrown ChatError");
-    } catch (err) {
-      expect(err).toBeInstanceOf(ChatError);
-      expect((err as ChatError).code).toBe("OPENAI_NETWORK_ERROR");
-    }
-  });
-
-  it("does not expose the API key in the request content", async () => {
-    mockCreate.mockResolvedValue(
-      mockChatResponse("Laut dem Testdokument ist die Antwort 42."),
-    );
-
-    await generateChatAnswer("Frage", [
-      { document_id: "d", title: "Testdokument", excerpt: "Inhalt", score: 0.9 },
-    ]);
-
-    const callArgs = mockCreate.mock.calls[0][0] as {
-      messages: { content: string }[];
-    };
-    const allContent = callArgs.messages.map((m) => m.content).join(" ");
-    expect(allContent).not.toContain("test-openai-key");
-    expect(allContent).not.toContain("OPENAI_API_KEY");
-  });
-
-  // --- Hedging rejection: fail-closed when hedging persists (chat-api-guardrails) ---
-
-  it("returns fail-closed message when hedging persists after one regeneration", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Ich glaube, das ist ein Brief für Emma."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Vermutlich ist das ein Brief für Emma."),
-      );
-
-    const answer = await generateChatAnswer("Was ist das?", [
-      {
-        document_id: "doc-1",
-        title: "Brief",
-        excerpt: "Inhalt",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe(FAIL_CLOSED_HEDGING);
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not return a hedged answer under any circumstance", async () => {
-    // First answer hedged, second also hedged → must NOT return either.
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Wahrscheinlich ist das eine Rechnung."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Könnte sein, dass das für Emma ist."),
-      );
-
-    const answer = await generateChatAnswer("Frage", [
-      { document_id: "doc-1", title: "Brief", excerpt: "Inhalt", score: 0.9 },
-    ]);
-
-    expect(answer).toBe(FAIL_CLOSED_HEDGING);
-    expect(containsHedgingLanguage(answer)).toBe(false);
-  });
-
-  it("regenerates when first answer is hedged and second is clean", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Ich glaube, das ist ein Brief."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Das Dokument ist ein Brief für Emma."),
-      );
-
-    const answer = await generateChatAnswer("Was ist das?", [
-      {
-        document_id: "doc-1",
-        title: "Brief",
-        excerpt: "Inhalt",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe("Das Dokument ist ein Brief für Emma.");
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  // --- Missing-citation handling: regenerate or fail-closed (chat-api-guardrails) ---
-
-  it("regenerates when the answer does not cite any source (first uncited, second cited)", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        // Answer asserts a fact but never references the source title.
-        mockChatResponse("Die Einschulung findet am 15. August statt."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse(
-          "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
-        ),
-      );
-
-    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
-      {
-        document_id: "doc-1",
-        title: "Kita-Brief",
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe(
-      "Laut dem Kita-Brief findet die Einschulung am 15. August statt.",
-    );
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns fail-closed message when citation is missing after one regeneration", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Der Termin ist am 15. August."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Die Einschulung findet am 15. August statt."),
-      );
-
-    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
-      {
-        document_id: "doc-1",
-        title: "Kita-Brief",
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe(FAIL_CLOSED_CITATION);
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not return an uncited factual answer", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Die Rechnung beträgt 45 Euro."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Der Betrag wurde bereits bezahlt."),
-      );
-
-    const answer = await generateChatAnswer("Wie hoch ist die Rechnung?", [
-      {
-        document_id: "doc-1",
-        title: "Stromrechnung",
-        excerpt: "Betrag: 45 EUR",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe(FAIL_CLOSED_CITATION);
-    // The fail-closed message should not contain the uncited factual claim.
-    expect(answer).not.toContain("45 Euro");
-  });
-
-  it("does not trigger citation fail-closed when source titles are too short but the answer cites by content", async () => {
-    // Title "T" is shorter than MIN_CITATION_TITLE_LENGTH → title matching
-    // cannot fire, but the answer contains a distinctive content fragment
-    // from the excerpt → content-based citation passes, no fail-closed.
-    mockCreate.mockResolvedValueOnce(
-      mockChatResponse("Die Einschulung am 15. August ist bestätigt."),
-    );
-
-    const answer = await generateChatAnswer("Frage", [
-      {
-        document_id: "d",
-        title: "T",
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe("Die Einschulung am 15. August ist bestätigt.");
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("triggers citation fail-closed when source titles are short and the answer does not match content", async () => {
-    // Title "T" is too short and the answer does not contain a content
-    // fragment from the excerpt → uncited → regenerate → still uncited →
-    // fail-closed. The bypass is removed: short titles no longer get a
-    // free pass.
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Die Antwort ist 42."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Der Termin ist bald."),
-      );
-
-    const answer = await generateChatAnswer("Frage", [
-      {
-        document_id: "d",
-        title: "T",
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe(FAIL_CLOSED_CITATION);
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not trigger citation fail-closed when source titles are null but the answer cites by content", async () => {
-    // All titles are null → title matching cannot fire, but the answer
-    // contains a distinctive content fragment → content-based citation
-    // passes, no regeneration, no fail-closed.
-    mockCreate.mockResolvedValueOnce(
-      mockChatResponse("Die Einschulung am 15. August ist bestätigt."),
-    );
-
-    const answer = await generateChatAnswer("Frage", [
-      {
-        document_id: "d",
-        title: null,
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe("Die Einschulung am 15. August ist bestätigt.");
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not trigger citation fail-closed for the no-results fallback", async () => {
-    // The model may respond with the fallback even when sources exist.
-    mockCreate.mockResolvedValueOnce(
-      mockChatResponse(NO_RESULTS_FALLBACK),
-    );
-
-    const answer = await generateChatAnswer("Frage", [
-      { document_id: "doc-1", title: "Kita-Brief", excerpt: "Inhalt", score: 0.9 },
-    ]);
-
-    expect(answer).toBe(NO_RESULTS_FALLBACK);
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-  });
-
-  // --- Combined hedging + citation guardrails ---
-
-  it("regenerates once when both hedging and citation fail, then succeeds", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        // Hedged AND uncited.
-        mockChatResponse("Ich glaube, der Termin ist am 15. August."),
-      )
-      .mockResolvedValueOnce(
-        // Clean and cited.
-        mockChatResponse(
-          "Laut dem Kita-Brief ist der Termin am 15. August.",
-        ),
-      );
-
-    const answer = await generateChatAnswer("Wann wird Emma eingeschult?", [
-      {
-        document_id: "doc-1",
-        title: "Kita-Brief",
-        excerpt: "Einschulung am 15. August",
-        score: 0.9,
-      },
-    ]);
-
-    expect(answer).toBe("Laut dem Kita-Brief ist der Termin am 15. August.");
-    // Only ONE regeneration, not two.
-    expect(mockCreate).toHaveBeenCalledTimes(2);
-  });
-
-  it("returns hedging fail-closed when both hedging and citation persist after retry", async () => {
-    mockCreate
-      .mockResolvedValueOnce(
-        mockChatResponse("Ich glaube, der Termin ist bald."),
-      )
-      .mockResolvedValueOnce(
-        mockChatResponse("Vermutlich ist der Termin bald."),
-      );
-
-    const answer = await generateChatAnswer("Wann?", [
-      {
-        document_id: "doc-1",
-        title: "Kita-Brief",
-        excerpt: "Inhalt",
-        score: 0.9,
-      },
-    ]);
-
-    // Hedging takes priority for the fail-closed message.
-    expect(answer).toBe(FAIL_CLOSED_HEDGING);
-    expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -1468,5 +742,122 @@ describe("streamAgenticAnswer — present_answer_card", () => {
 
     expect(lines.some((l) => l.type === "card")).toBe(false);
     expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// streamAgenticAnswer — text buffering + final-answer guardrails
+// ---------------------------------------------------------------------------
+
+describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
+  beforeEach(() => {
+    setApiKey();
+    mockCreate.mockReset();
+  });
+
+  it("throws ChatError when OPENAI_API_KEY is not set", async () => {
+    clearApiKey();
+
+    await expect(
+      streamAgenticAnswer("Frage", [], makeToolContext()),
+    ).rejects.toThrow(ChatError);
+  });
+
+  it("discards intermediate text from a round that ends with tool calls", async () => {
+    // Text emitted alongside tool_calls in the same round is intermediate
+    // scratchpad — the client must never see it.
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: "Ich schaue kurz nach" },
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "list_tasks",
+              argumentsChunk: "{}",
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Diese Woche steht nichts an." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Was steht diese Woche an?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    const textEvents = lines.filter((l) => l.type === "text");
+    expect(textEvents).toEqual([
+      { type: "text", content: "Diese Woche steht nichts an." },
+    ]);
+  });
+
+  it("streams a clean final answer preserving the original chunk boundaries", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Hallo, " }, { content: "Emma!" }]),
+    );
+
+    const stream = await streamAgenticAnswer("Hi", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "text")).toEqual([
+      { type: "text", content: "Hallo, " },
+      { type: "text", content: "Emma!" },
+    ]);
+    expect(lines[lines.length - 1]).toEqual({ type: "done" });
+  });
+
+  it("sends only the corrected answer when the first final answer hedges", async () => {
+    // The hedged draft must never reach the client — only the regenerated
+    // clean answer is streamed (as a single chunk).
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: "Ich glaube, " },
+          { content: "die Frist ist bald." },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Die Frist ist der 15. August."),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Wann ist die Frist?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    const textEvents = lines.filter((l) => l.type === "text");
+    expect(textEvents).toEqual([
+      { type: "text", content: "Die Frist ist der 15. August." },
+    ]);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends only the fail-closed message when hedging persists after the retry", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Vermutlich ist die Frist bald." }]),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Wahrscheinlich ist die Frist bald."),
+      );
+
+    const stream = await streamAgenticAnswer("Wann?", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    const textEvents = lines.filter((l) => l.type === "text");
+    expect(textEvents).toEqual([
+      { type: "text", content: FAIL_CLOSED_HEDGING },
+    ]);
+    // Nothing hedged ever reached the client.
+    const streamedText = textEvents.map((e) => e.content).join("");
+    expect(containsHedgingLanguage(streamedText)).toBe(false);
   });
 });

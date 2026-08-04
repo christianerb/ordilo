@@ -18,6 +18,7 @@ vi.mock("@/lib/ai/chat", async (importOriginal) => {
 import { POST, GET } from "@/app/api/chat/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { streamAgenticAnswer, ChatError } from "@/lib/ai/chat";
+import { MAX_CHAT_MESSAGE_LENGTH } from "@/lib/schemas/chat";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -56,6 +57,13 @@ function validBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * Result of the family_memberships membership check, configurable per
+ * test. Defaults to "user is a member" (set in beforeEach) so the happy
+ * path passes the route's family-membership verification.
+ */
+let membershipResult: { data: unknown; error: unknown };
+
 function mockServerClient() {
   // Build a chainable mock that supports all query builder methods
   // used across the chat route (rate limit, conversation, messages,
@@ -78,13 +86,25 @@ function mockServerClient() {
     }),
   });
 
+  // Dedicated builder for the membership verification query so tests can
+  // control membership independently of the other .from() calls.
+  const membershipChain = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockImplementation(() =>
+      Promise.resolve(membershipResult),
+    ),
+  };
+
   (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue({
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: "user-1", email: "test@example.com" } },
       }),
     },
-    from: vi.fn(() => chainable),
+    from: vi.fn((table: string) =>
+      table === "family_memberships" ? membershipChain : chainable,
+    ),
     rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
   });
 }
@@ -116,7 +136,7 @@ vi.mock("@/lib/auth/require-user", () => ({
         json: { error: "Nicht authentifiziert.", code: "UNAUTHORIZED" },
       };
     }
-    return { status: null, json: null };
+    return { user: mockAuthUser, status: null, json: null };
   }),
 }));
 
@@ -127,6 +147,8 @@ vi.mock("@/lib/auth/require-user", () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mockAuthUser = { id: "user-1", email: "test@example.com" };
+  // Default: the user is a member of the family (happy path).
+  membershipResult = { data: { family_id: FAMILY_ID }, error: null };
   mockServerClient();
 });
 
@@ -172,6 +194,54 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(400);
     const body = await response.json();
     expect(body.code).toBe("INVALID_JSON");
+  });
+
+  it("returns 400 for a non-UUID family_id", async () => {
+    const response = await POST(
+      createRequest(validBody({ family_id: "not-a-uuid" })),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when the message exceeds the maximum length", async () => {
+    const response = await POST(
+      createRequest(
+        validBody({ message: "A".repeat(MAX_CHAT_MESSAGE_LENGTH + 1) }),
+      ),
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.code).toBe("INVALID_CHAT_INPUT");
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+  });
+
+  it("accepts a message at exactly the maximum length", async () => {
+    (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ndjsonStream([{ type: "done" }]),
+    );
+
+    const response = await POST(
+      createRequest(
+        validBody({ message: "A".repeat(MAX_CHAT_MESSAGE_LENGTH) }),
+      ),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("returns 403 when the user is not a member of the family", async () => {
+    // The membership row is invisible under RLS for non-members, so the
+    // verification query finds nothing → access denied before any
+    // rate-limit check or OpenAI call (cost protection).
+    membershipResult = { data: null, error: null };
+
+    const response = await POST(createRequest(validBody()));
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    expect(body.code).toBe("FAMILY_ACCESS_DENIED");
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
   });
 
   it("returns a streaming response with correct content type", async () => {

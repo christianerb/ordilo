@@ -32,10 +32,18 @@ const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
+ * Maximum chat message length (characters). Bounds prompt size and cost:
+ * without a cap, an authenticated user could send arbitrarily large
+ * messages to the LLM.
+ */
+export const MAX_CHAT_MESSAGE_LENGTH = 4000;
+
+/**
  * The chat request schema.
  *
  * Rejects:
  *   - Missing or empty message → 400 INVALID_CHAT_INPUT (VAL-CHAT-003)
+ *   - Message longer than MAX_CHAT_MESSAGE_LENGTH → 400 INVALID_CHAT_INPUT
  *   - Missing or non-UUID family_id → 400 INVALID_CHAT_INPUT (VAL-CHAT-003)
  *
  * The message is trimmed and must be at least 1 character. This handles
@@ -43,7 +51,14 @@ const UUID_REGEX =
  * validation is Unicode-safe and does not mangle UTF-8.
  */
 export const chatRequestSchema = z.object({
-  message: z.string().trim().min(1, "Nachricht darf nicht leer sein."),
+  message: z
+    .string()
+    .trim()
+    .min(1, "Nachricht darf nicht leer sein.")
+    .max(
+      MAX_CHAT_MESSAGE_LENGTH,
+      `Nachricht ist zu lang (maximal ${MAX_CHAT_MESSAGE_LENGTH} Zeichen).`,
+    ),
   family_id: z
     .string()
     .trim()
@@ -58,6 +73,7 @@ export const chatRequestSchema = z.object({
     )
     .optional()
     .default([]),
+  conversation_id: z.string().trim().min(1).optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

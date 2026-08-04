@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Search,
   ArrowUp,
@@ -21,7 +21,7 @@ import {
 } from "@/lib/schemas/document";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { fetchDocumentsTableMeta } from "@/lib/documents-table";
-import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import type { Database } from "@/types/database";
 
@@ -79,26 +79,46 @@ export function DocumentsTable({
   >({});
   const { openDocument } = useDocumentViewer();
 
-  useMountEffect(() => {
+  // Sorted so a pure re-ordering of the list doesn't retrigger the fetch.
+  const docIds = useMemo(() => documents.map((d) => d.id).sort(), [documents]);
+  const docIdsKey = docIds.join(",");
+
+  /**
+   * Document IDs whose metadata was already fetched. The table used to be
+   * key-remounted by the page whenever the document set changed — which
+   * reset filters/sort and re-fetched ALL metadata on every poll. Instead
+   * the table stays mounted and fetches metadata incrementally: only IDs
+   * it has never seen are requested, everything else is served from state.
+   */
+  const loadedMetaIdsRef = useRef<Set<string>>(new Set());
+
+  useChangeEffect(() => {
+    const missingIds = docIds.filter((id) => !loadedMetaIdsRef.current.has(id));
+    if (missingIds.length === 0) return;
     let cancelled = false;
     async function loadMeta() {
       try {
-        const result = await fetchDocumentsTableMeta(documents.map((d) => d.id));
-        if (!cancelled)
-          setMeta(
-            Object.fromEntries(
-              Object.entries(result).map(([id, m]) => [id, { documentDate: m.documentDate }]),
-            ),
-          );
+        const result = await fetchDocumentsTableMeta(missingIds);
+        if (cancelled) return;
+        for (const id of missingIds) loadedMetaIdsRef.current.add(id);
+        setMeta((prev) => ({
+          ...prev,
+          ...Object.fromEntries(
+            Object.entries(result).map(([id, m]) => [
+              id,
+              { documentDate: m.documentDate },
+            ]),
+          ),
+        }));
       } catch {
-        if (!cancelled) setMeta({});
+        // Leave the IDs unmarked so a later document-list change retries.
       }
     }
     loadMeta();
     return () => {
       cancelled = true;
     };
-  });
+  }, [docIdsKey]);
 
   // --- Filters ---
   const [search, setSearch] = useState("");

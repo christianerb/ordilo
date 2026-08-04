@@ -35,6 +35,12 @@ import {
  * (30s · 2^attempts) until max_attempts, then 'dead' (and the document is
  * marked 'failed' so the user can retry manually).
  *
+ * Crash recovery: a worker that dies after claiming leaves the job in
+ * 'running' forever, and the active-job unique index blocks re-enqueue.
+ * `reap_stale_processing_jobs` (migration 0041) resets such stuck jobs;
+ * runPendingJobs invokes it before every claim so recovery happens on the
+ * next scheduled run.
+ *
  * The worker runs with the service-role client (bypasses RLS) — it is only
  * ever invoked from `/api/jobs/run`, which requires JOBS_RUNNER_SECRET.
  */
@@ -46,6 +52,13 @@ export type JobType = "ocr" | "analyze" | "reindex";
 
 /** Base backoff delay in seconds (doubled per attempt). */
 const RETRY_BASE_DELAY_SECONDS = 30;
+
+/**
+ * A claimed job whose started_at is older than this is considered stuck
+ * (its worker crashed). 15 minutes is comfortably above the serverless
+ * function limit, so a live worker is never reaped mid-execution.
+ */
+const STALE_JOB_INTERVAL = "15 minutes";
 
 // ---------------------------------------------------------------------------
 // Enqueue
@@ -120,6 +133,49 @@ export interface RunJobsSummary {
   }>;
 }
 
+export interface ReapJobsSummary {
+  reaped_pending: number;
+  marked_dead: number;
+}
+
+/**
+ * Recover jobs stuck in 'running' because their worker crashed after
+ * claiming (serverless timeout, deploy mid-run, …).
+ *
+ * Stuck jobs are reset to 'pending' while attempts remain, otherwise marked
+ * 'dead' — the same max-attempts rule as markJobFailed. Resetting releases
+ * the (document, job_type) slot in the active-job unique index, so the
+ * document can be processed again instead of being stranded forever.
+ *
+ * Best-effort: a reaper failure is logged and swallowed so it never blocks
+ * the actual job run.
+ */
+export async function reapStaleProcessingJobs(
+  adminClient: Client,
+): Promise<ReapJobsSummary | null> {
+  const { data, error } = await adminClient.rpc("reap_stale_processing_jobs", {
+    p_stale_interval: STALE_JOB_INTERVAL,
+  });
+
+  if (error) {
+    console.error("reap_stale_processing_jobs failed:", error.message);
+    return null;
+  }
+
+  const row = data?.[0];
+  const summary: ReapJobsSummary = {
+    reaped_pending: row?.reaped_pending ?? 0,
+    marked_dead: row?.marked_dead ?? 0,
+  };
+  if (summary.reaped_pending > 0 || summary.marked_dead > 0) {
+    console.warn(
+      `Reaped ${summary.reaped_pending} stuck job(s) back to pending, ` +
+        `marked ${summary.marked_dead} dead.`,
+    );
+  }
+  return summary;
+}
+
 /**
  * Claim and process up to `limit` due jobs.
  *
@@ -130,6 +186,9 @@ export async function runPendingJobs(
   adminClient: Client,
   limit = 5,
 ): Promise<RunJobsSummary> {
+  // Recover jobs orphaned by crashed workers before claiming new ones.
+  await reapStaleProcessingJobs(adminClient);
+
   const { data: jobs, error } = await adminClient.rpc("claim_processing_jobs", {
     p_limit: limit,
   });

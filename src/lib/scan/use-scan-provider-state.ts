@@ -1,1092 +1,162 @@
 "use client";
 
-import {
-  type ChangeEvent,
-  type DragEvent,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { getFamilyId } from "@/lib/supabase/client-helpers";
-import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { triggerOcr } from "@/lib/ocr";
-import { toast } from "sonner";
+import { useScanPipelineRefs } from "@/lib/scan/scan-pipeline-refs";
+import { useFamilyId } from "@/lib/scan/use-family-id";
+import { useDocumentList } from "@/lib/scan/use-document-list";
+import { useUploadQueue } from "@/lib/scan/use-upload-queue";
+import { useDocumentActions } from "@/lib/scan/use-document-actions";
 import {
-  getFailedStage,
-  isProcessingStatus,
-  validateFile,
-} from "@/lib/schemas/document";
-import { uploadFile } from "@/lib/upload";
-import { prepareImageForUpload } from "@/lib/image-compress";
-import { createNote } from "@/lib/notes";
-import { retryFailedDocument } from "@/lib/document-retry";
-import type { DocumentType } from "@/lib/schemas/extraction";
+  useScanWizardHandlers,
+  useScanWizardState,
+} from "@/lib/scan/use-scan-wizard-state";
 import type {
-  DocumentRow,
   ScanContextValue,
   ScanProviderState,
 } from "@/lib/scan/scan-context-types";
-import type { ScanWizardStep } from "@/components/ordilo/scan-wizard/scan-wizard";
-import type { UploadState } from "@/components/ordilo/scan-wizard/upload-progress";
 
 /**
- * Every documents column EXCEPT `ocr_text`. The list/detail polling runs
- * every 1.5s while anything is processing, and `ocr_text` is by far the
- * heaviest column (full document markdown, often tens of KB per row) —
- * pulling it for every document on every poll saturates mobile
- * connections. No client component renders `ocr_text`; the one consumer
- * (failed-stage retry routing) fetches it on demand in `handleRetryFailed`.
+ * Composition root for the scan feature's shared state.
+ *
+ * The work lives in cohesive sub-hooks (see the imports above); this hook
+ * wires them together. The sub-hooks call into each other in a cycle — an
+ * upload refetches the list, a list fetch can advance the wizard, the
+ * wizard starts uploads — so they communicate through the stable
+ * callback refs from {@link useScanPipelineRefs} instead of direct
+ * dependencies (see that module for the rationale).
+ *
+ * Composition order matters within a render:
+ *   1. family id + shared pipeline refs + wizard state slice
+ *   2. document list (fills the fetch refs, syncs the wizard slice)
+ *   3. upload queue (consumes the fetch refs)
+ *   4. document actions (consumes list + wizard slice)
+ *   5. wizard handlers (consume the upload queue + actions)
+ * Refs filled during step 2 are only CALLED at event/poll time, so every
+ * consumer always reaches the latest closure.
  */
-const DOCUMENT_LIST_COLUMNS =
-  "id, family_id, uploaded_by, title, document_type, category, status, " +
-  "file_url, original_filename, mime_type, page_count, summary, " +
-  "error_message, failure_stage, failure_code, failed_at, created_at, " +
-  "confirmed_at, tags, source, extraction_version";
-
 export function useScanProviderState(): ScanProviderState {
   const supabase = createClient();
   const router = useRouter();
-  const [familyId, setFamilyId] = useState<string | null>(null);
-  const [documents, setDocuments] = useState<DocumentRow[]>([]);
-  const [loadingDocs, setLoadingDocs] = useState(true);
-  const [documentsError, setDocumentsError] = useState<string | null>(null);
-  const [uploads, setUploads] = useState<UploadState[]>([]);
-  const [isDragOver, setIsDragOver] = useState(false);
-  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
-  const [expandedDocument, setExpandedDocument] = useState<DocumentRow | null>(null);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardStep, setWizardStep] = useState<ScanWizardStep>("camera");
-  const [wizardDocId, setWizardDocId] = useState<string | null>(null);
-  const [wizardDocument, setWizardDocument] = useState<DocumentRow | null>(null);
-  const [wizardUploadError, setWizardUploadError] = useState<string | null>(null);
-  const [createNoteOpen, setCreateNoteOpen] = useState(false);
 
-  const triggeredAnalysisRef = useRef<Set<string>>(new Set());
-  /** Document IDs whose pipeline is handled server-side (skip client triggers). */
-  const serverPipelineRef = useRef<Set<string>>(new Set());
-  const seededPreExistingRef = useRef(false);
-  const initialDocumentsLoadedRef = useRef(false);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
-  const pdfInputRef = useRef<HTMLInputElement>(null);
-  const wizardGalleryInputRef = useRef<HTMLInputElement>(null);
-  const dropZoneRef = useRef<HTMLDivElement>(null);
-  const wizardFileRef = useRef<File | null>(null);
+  const { familyIdRef, ensureFamilyId } = useFamilyId(supabase);
+  const {
+    fetchDocumentsRef,
+    fetchDocumentByIdRef,
+    triggeredAnalysisRef,
+    serverPipelineRef,
+    documentsLoadedRef,
+  } = useScanPipelineRefs();
 
-  const fetchDocumentsRef = useRef<(familyIdOverride?: string) => Promise<void>>(
-    () => Promise.resolve(),
-  );
-  const fetchDocumentByIdRef = useRef<
-    (
-      documentId: string,
-      options?: {
-        syncExpanded?: boolean;
-        syncWizard?: boolean;
-        syncList?: boolean;
-        allowAutoAnalyze?: boolean;
-      },
-    ) => Promise<DocumentRow | null>
-  >(() => Promise.resolve(null));
-  const triggerAnalysisRef = useRef<(documentId: string) => Promise<void>>(
-    () => Promise.resolve(),
-  );
-  const familyIdRef = useRef(familyId);
-  familyIdRef.current = familyId;
-  const familyIdResolvedRef = useRef(false);
-  const familyIdPromiseRef = useRef<Promise<string | null> | null>(null);
-  const wizardOpenRef = useRef(wizardOpen);
-  wizardOpenRef.current = wizardOpen;
-  const wizardStepRef = useRef(wizardStep);
-  wizardStepRef.current = wizardStep;
-  const wizardDocIdRef = useRef(wizardDocId);
-  wizardDocIdRef.current = wizardDocId;
-  const wizardDocumentRef = useRef(wizardDocument);
-  wizardDocumentRef.current = wizardDocument;
-  const documentsRef = useRef(documents);
-  documentsRef.current = documents;
-  const expandedDocIdRef = useRef(expandedDocId);
-  expandedDocIdRef.current = expandedDocId;
-  const expandedDocumentRef = useRef(expandedDocument);
-  expandedDocumentRef.current = expandedDocument;
-  const documentsLoadedRef = useRef(false);
+  const wizard = useScanWizardState();
 
-  const ensureFamilyId = useCallback(async () => {
-    if (familyIdResolvedRef.current) {
-      return familyIdRef.current;
-    }
-    if (familyIdPromiseRef.current) {
-      return familyIdPromiseRef.current;
-    }
-
-    const promise = getFamilyId(supabase).then((id) => {
-      // Only treat the id as resolved once we actually have one. getFamilyId
-      // returns null for a read error too, and caching that null poisoned
-      // every later upload in the session: handleFileUpload bailed out
-      // before reporting anything, leaving the wizard on an endless
-      // "Foto wird hochgeladen" spinner with no error and no retry.
-      if (id) {
-        familyIdResolvedRef.current = true;
-      }
-      familyIdRef.current = id;
-      setFamilyId(id);
-      familyIdPromiseRef.current = null;
-      return id;
-    });
-
-    familyIdPromiseRef.current = promise;
-    return promise;
-  }, [supabase]);
-
-  const fetchDocuments = useCallback(async (familyIdOverride?: string) => {
-    const fid = familyIdOverride ?? familyIdRef.current ?? await ensureFamilyId();
-    if (!fid) {
-      documentsLoadedRef.current = true;
-      initialDocumentsLoadedRef.current = true;
-      setDocuments([]);
-      setLoadingDocs(false);
-      return;
-    }
-
-    if (!initialDocumentsLoadedRef.current) {
-      setLoadingDocs(true);
-    }
-
-    const { data: listData, error } = await supabase
-      .from("documents")
-      .select(DOCUMENT_LIST_COLUMNS)
-      .eq("family_id", fid)
-      .order("created_at", { ascending: false });
-    // The trimmed selection carries every column except the heavy
-    // `ocr_text`, which no list consumer reads.
-    const data = listData as DocumentRow[] | null;
-
-    if (error || !data) {
-      // Leave whatever is already on screen and report the failure, instead
-      // of falling through to an empty list that reads as "nothing scanned
-      // yet" and blocks every later refresh (documentsLoadedRef stays false).
-      setDocumentsError(
-        "Deine Dokumente konnten nicht geladen werden. Bitte Verbindung prüfen.",
-      );
-      initialDocumentsLoadedRef.current = true;
-      setLoadingDocs(false);
-      return;
-    }
-
-    setDocumentsError(null);
-
-    {
-      if (!seededPreExistingRef.current) {
-        for (const doc of data) {
-          if (doc.status === "ocr_done") {
-            triggeredAnalysisRef.current.add(doc.id);
-          }
-        }
-        seededPreExistingRef.current = true;
-      }
-
-      setDocuments(data);
-      documentsLoadedRef.current = true;
-
-      if (expandedDocIdRef.current) {
-        setExpandedDocument(
-          data.find((doc) => doc.id === expandedDocIdRef.current) ?? null,
-        );
-      }
-      if (wizardDocIdRef.current) {
-        // Only overwrite when the row is actually in the fetched list.
-        // A list fetch that races the insert (or momentarily misses the
-        // row) must not null out the wizard document — that blanked the
-        // review step mid-flow.
-        const wizardDoc = data.find((doc) => doc.id === wizardDocIdRef.current);
-        if (wizardDoc) setWizardDocument(wizardDoc);
-      }
-
-      for (const doc of data) {
-        if (doc.status === "ocr_done" && !triggeredAnalysisRef.current.has(doc.id)) {
-          triggeredAnalysisRef.current.add(doc.id);
-          setDocuments((prev) =>
-            prev.map((current) =>
-              current.id === doc.id
-                ? { ...current, status: "analyzing", error_message: null }
-                : current,
-            ),
-          );
-          triggerAnalysisRef.current(doc.id);
-        }
-      }
-
-      if (
-        wizardOpenRef.current &&
-        wizardStepRef.current === "processing" &&
-        wizardDocIdRef.current
-      ) {
-        const currentWizardDoc = data.find((doc) => doc.id === wizardDocIdRef.current);
-        if (currentWizardDoc?.status === "analyzed") {
-          setWizardStep("review");
-        }
-      }
-    }
-
-    initialDocumentsLoadedRef.current = true;
-    setLoadingDocs(false);
-  }, [ensureFamilyId, supabase]);
-  fetchDocumentsRef.current = fetchDocuments;
-
-  const fetchDocumentById = useCallback(
-    async (
-      documentId: string,
-      options?: {
-        syncExpanded?: boolean;
-        syncWizard?: boolean;
-        syncList?: boolean;
-        allowAutoAnalyze?: boolean;
-      },
-    ) => {
-      const { data, error } = await supabase
-        .from("documents")
-        .select(DOCUMENT_LIST_COLUMNS)
-        .eq("id", documentId)
-        .order("created_at", { ascending: false });
-
-      const document = ((data as DocumentRow[] | null)?.[0]) ?? null;
-
-      if (error || !document) {
-        if (options?.syncExpanded && expandedDocIdRef.current === documentId) {
-          setExpandedDocument(null);
-        }
-        if (options?.syncWizard && wizardDocIdRef.current === documentId) {
-          setWizardDocument(null);
-        }
-        return null;
-      }
-
-      if (options?.syncList && documentsLoadedRef.current) {
-        setDocuments((prev) => {
-          const next = prev.some((doc) => doc.id === document.id)
-            ? prev.map((doc) => (doc.id === document.id ? document : doc))
-            : [document, ...prev];
-          return next.sort((a, b) => b.created_at.localeCompare(a.created_at));
-        });
-      }
-
-      if (options?.syncExpanded && expandedDocIdRef.current === documentId) {
-        setExpandedDocument(document);
-      }
-      if (options?.syncWizard && wizardDocIdRef.current === documentId) {
-        setWizardDocument(document);
-      }
-
-      if (
-        options?.allowAutoAnalyze &&
-        document.status === "ocr_done" &&
-        !triggeredAnalysisRef.current.has(document.id)
-      ) {
-        triggeredAnalysisRef.current.add(document.id);
-        const optimisticDoc = {
-          ...document,
-          status: "analyzing" as DocumentRow["status"],
-          error_message: null,
-        };
-
-        if (options.syncList && documentsLoadedRef.current) {
-          setDocuments((prev) =>
-            prev.map((doc) => (doc.id === document.id ? optimisticDoc : doc)),
-          );
-        }
-        if (options.syncExpanded && expandedDocIdRef.current === documentId) {
-          setExpandedDocument(optimisticDoc);
-        }
-        if (options.syncWizard && wizardDocIdRef.current === documentId) {
-          setWizardDocument(optimisticDoc);
-        }
-        void triggerAnalysisRef.current(document.id);
-        return optimisticDoc;
-      }
-
-      if (
-        options?.syncWizard &&
-        wizardOpenRef.current &&
-        wizardStepRef.current === "processing" &&
-        wizardDocIdRef.current === documentId &&
-        document.status === "analyzed"
-      ) {
-        setWizardStep("review");
-      }
-
-      return document;
-    },
-    [supabase],
-  );
-  fetchDocumentByIdRef.current = fetchDocumentById;
-
-  const loadDocuments = useCallback(async () => {
-    await fetchDocumentsRef.current();
-  }, []);
-
-  const handleFileUpload = useCallback(
-    async (
-      file: File,
-      onUploaded?: (documentId: string) => void,
-      onUploadError?: (message: string, retryable?: boolean) => void,
-    ) => {
-      const fid = familyIdRef.current ?? await ensureFamilyId();
-      if (!fid) {
-        // Returning silently left the caller (and the wizard) waiting
-        // forever. Report it so the upload gets an error state and a retry.
-        onUploadError?.(
-          "Deine Familie konnte nicht geladen werden. Bitte Verbindung prüfen und erneut versuchen.",
-          true,
-        );
-        return;
-      }
-
-      // Downscale large gallery/camera photos before upload — multi-MB
-      // originals are the slowest part of the flow on mobile networks,
-      // and OCR reads a ~2000px JPEG just as well. Best-effort: on any
-      // failure the original file is used unchanged.
-      file = await prepareImageForUpload(file);
-
-      const validation = validateFile(file.type, file.size);
-      if (!validation.valid) {
-        // A rejected type or size can never succeed on a retry of the same
-        // file — the wizard must offer a different file instead.
-        onUploadError?.(validation.error, false);
-        const uploadId = crypto.randomUUID();
-        setUploads((prev) => [
-          ...prev,
-          { id: uploadId, file, progress: 0, phase: "error", error: validation.error },
-        ]);
-        return;
-      }
-
-      const uploadId = crypto.randomUUID();
-      setUploads((prev) => [
-        ...prev,
-        { id: uploadId, file, progress: 0, phase: "uploading" },
-      ]);
-
-      try {
-        const result = await uploadFile(file, fid, (percent) => {
-          setUploads((prev) =>
-            prev.map((upload) =>
-              upload.id === uploadId ? { ...upload, progress: percent } : upload,
-            ),
-          );
-        });
-
-        onUploaded?.(result.document_id);
-
-        // When the server-side pipeline is active, it handles OCR + analyze
-        // via the job queue (drained in next/server after()). The client
-        // skips triggerOcr and auto-analyze to avoid 409 race conditions —
-        // realtime/polling update the UI as the server progresses.
-        if (result.server_pipeline) {
-          serverPipelineRef.current.add(result.document_id);
-          triggeredAnalysisRef.current.add(result.document_id);
-        }
-
-        if (documentsLoadedRef.current) {
-          await fetchDocumentsRef.current(fid);
-        }
-
-        setUploads((prev) =>
-          prev.map((upload) =>
-            upload.id === uploadId
-              ? { ...upload, phase: "processing", progress: 100 }
-              : upload,
-          ),
-        );
-
-        setTimeout(() => {
-          setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
-        }, 1200);
-
-        // Only trigger OCR from the client when the server pipeline is NOT
-        // active (PIPELINE_MODE=sync). Otherwise the server's job queue
-        // handles it, and both racing on the same document caused 409s.
-        if (!result.server_pipeline) {
-          triggerOcr(result.document_id)
-            .then(() => {
-              // OCR finished — kick the analysis immediately instead of
-              // waiting for the next poll tick to notice `ocr_done`.
-              void fetchDocumentByIdRef.current(result.document_id, {
-                syncWizard: Boolean(onUploaded),
-                syncList: documentsLoadedRef.current,
-                allowAutoAnalyze: true,
-              });
-            })
-            .catch(() => {
-              if (documentsLoadedRef.current) {
-                void fetchDocumentsRef.current(fid);
-              }
-            });
-        }
-
-        void fetchDocumentByIdRef.current(result.document_id, {
-          syncWizard: Boolean(onUploaded),
-          syncList: documentsLoadedRef.current,
-          allowAutoAnalyze: false,
-        });
-
-        setTimeout(() => {
-          if (documentsLoadedRef.current) {
-            void fetchDocumentsRef.current(fid);
-          }
-          if (onUploaded && !result.server_pipeline) {
-            void fetchDocumentByIdRef.current(result.document_id, {
-              syncWizard: true,
-              syncList: documentsLoadedRef.current,
-              allowAutoAnalyze: true,
-            });
-          }
-        }, 1500);
-      } catch (error) {
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Upload hat nicht geklappt. Bitte nochmal versuchen.";
-        onUploadError?.(message);
-        setUploads((prev) =>
-          prev.map((upload) =>
-            upload.id === uploadId
-              ? { ...upload, phase: "error", error: message }
-              : upload,
-          ),
-        );
-      }
-    },
-    [ensureFamilyId],
-  );
-
-  const handleRetry = useCallback(
-    (uploadId: string) => {
-      setUploads((prev) => {
-        const upload = prev.find((current) => current.id === uploadId);
-        if (upload) {
-          handleFileUpload(upload.file);
-        }
-        return prev.filter((current) => current.id !== uploadId);
-      });
-    },
-    [handleFileUpload],
-  );
-
-  const dismissUpload = useCallback((uploadId: string) => {
-    setUploads((prev) => prev.filter((upload) => upload.id !== uploadId));
-  }, []);
-
-  const updateTrackedDocument = useCallback(
-    (documentId: string, updater: (doc: DocumentRow) => DocumentRow) => {
-      if (documentsLoadedRef.current) {
-        setDocuments((prev) =>
-          prev.map((doc) => (doc.id === documentId ? updater(doc) : doc)),
-        );
-      }
-      if (expandedDocumentRef.current?.id === documentId) {
-        setExpandedDocument((prev) => (prev ? updater(prev) : prev));
-      }
-      if (wizardDocumentRef.current?.id === documentId) {
-        setWizardDocument((prev) => (prev ? updater(prev) : prev));
-      }
-    },
-    [],
-  );
-
-  const hasProcessingDocs = documents.some((doc) => isProcessingStatus(doc.status));
-  const hasProcessingDocsRef = useRef(hasProcessingDocs);
-  hasProcessingDocsRef.current = hasProcessingDocs;
-
-  // --- Realtime: push-based status updates for the family's documents. ---
-  // Every pipeline transition (uploaded → ocr_processing → … → analyzed)
-  // arrives as a postgres_changes event; the handler refetches just that
-  // one document (trimmed columns) and reuses the existing sync logic —
-  // including the wizard's processing → review transition and the
-  // auto-analyze trigger. Polling below stays as a safety net but drops
-  // to a slow heartbeat while the subscription is live.
-  const realtimeReadyRef = useRef(false);
-  const pollTickRef = useRef(0);
-
-  useMountEffect(() => {
-    let cancelled = false;
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-
-    void (async () => {
-      // The family id is resolved once per session and never changes, so
-      // a mount-only subscription is sufficient.
-      const fid = await ensureFamilyId();
-      if (cancelled || !fid) return;
-      // Defensive: test mocks (and any non-realtime client) don't
-      // implement channel(); the 1.5s polling keeps working unchanged.
-      if (typeof supabase.channel !== "function") return;
-
-      const handleChange = (payload: { new?: { id?: string } | null }) => {
-        const documentId = payload.new?.id;
-        if (!documentId) return;
-        void fetchDocumentByIdRef.current(documentId, {
-          syncWizard: wizardDocIdRef.current === documentId,
-          syncExpanded: expandedDocIdRef.current === documentId,
-          syncList: documentsLoadedRef.current,
-          allowAutoAnalyze: true,
-        });
-      };
-
-      channel = supabase
-        .channel(`documents-changes-${fid}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "documents",
-            filter: `family_id=eq.${fid}`,
-          },
-          handleChange,
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "UPDATE",
-            schema: "public",
-            table: "documents",
-            filter: `family_id=eq.${fid}`,
-          },
-          handleChange,
-        )
-        .subscribe((status) => {
-          if (!cancelled) {
-            realtimeReadyRef.current = status === "SUBSCRIBED";
-          }
-        });
-    })();
-
-    return () => {
-      cancelled = true;
-      realtimeReadyRef.current = false;
-      if (channel) void supabase.removeChannel(channel);
-    };
+  const {
+    documents,
+    setDocuments,
+    documentsRef,
+    loadingDocs,
+    documentsError,
+    expandedDocId,
+    setExpandedDocId,
+    expandedDocument,
+    expandedDocIdRef,
+    loadDocuments,
+    updateTrackedDocument,
+    openDocument,
+    closeDocument,
+    handleConfirmSuccess,
+    handleReanalyzeSuccess,
+  } = useDocumentList({
+    supabase,
+    ensureFamilyId,
+    familyIdRef,
+    fetchDocumentsRef,
+    fetchDocumentByIdRef,
+    triggeredAnalysisRef,
+    documentsLoadedRef,
+    wizardOpenRef: wizard.wizardOpenRef,
+    wizardStepRef: wizard.wizardStepRef,
+    wizardDocIdRef: wizard.wizardDocIdRef,
+    wizardDocumentRef: wizard.wizardDocumentRef,
+    setWizardDocument: wizard.setWizardDocument,
+    setWizardStep: wizard.setWizardStep,
   });
 
-  useMountEffect(() => {
-    const interval = setInterval(() => {
-      // With a live realtime subscription, polling is only a safety net —
-      // heartbeat every 15s instead of every 1.5s.
-      pollTickRef.current += 1;
-      if (realtimeReadyRef.current && pollTickRef.current % 10 !== 0) {
-        return;
-      }
-      if (documentsLoadedRef.current && hasProcessingDocsRef.current) {
-        void fetchDocumentsRef.current();
-      }
-      if (
-        expandedDocIdRef.current &&
-        expandedDocumentRef.current &&
-        isProcessingStatus(expandedDocumentRef.current.status)
-      ) {
-        void fetchDocumentByIdRef.current(expandedDocIdRef.current, {
-          syncExpanded: true,
-        });
-      }
-      if (
-        wizardOpenRef.current &&
-        wizardStepRef.current === "processing" &&
-        wizardDocIdRef.current &&
-        (!wizardDocumentRef.current ||
-          wizardDocumentRef.current.status === "ocr_done" ||
-          isProcessingStatus(wizardDocumentRef.current.status))
-      ) {
-        void fetchDocumentByIdRef.current(wizardDocIdRef.current, {
-          syncWizard: true,
-          syncList: documentsLoadedRef.current,
-          allowAutoAnalyze: true,
-        });
-      }
-    }, 1500);
-    return () => clearInterval(interval);
+  const {
+    uploads,
+    isDragOver,
+    cameraInputRef,
+    pdfInputRef,
+    dropZoneRef,
+    handleFileUpload,
+    handleRetry,
+    dismissUpload,
+    handleCameraSelect,
+    handlePdfSelect,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+  } = useUploadQueue({
+    ensureFamilyId,
+    familyIdRef,
+    fetchDocumentsRef,
+    fetchDocumentByIdRef,
+    documentsLoadedRef,
+    triggeredAnalysisRef,
+    serverPipelineRef,
   });
 
-  const handleRetryFailed = useCallback(
-    async (documentId: string) => {
-      // Failed-stage routing needs `ocr_text`/`page_count`, which the
-      // trimmed list fetch intentionally no longer carries — read the two
-      // fields directly for this one document.
-      const { data: stageRow, error: stageError } = await supabase
-        .from("documents")
-        .select("ocr_text, page_count, failure_stage")
-        .eq("id", documentId)
-        .maybeSingle();
-      if (stageError || !stageRow) {
-        toast.error("Fehlerdetails konnten nicht geladen werden.");
-        return;
-      }
+  const {
+    handleRetryFailed,
+    handleDeleteDocument,
+    createNoteOpen,
+    openCreateNote,
+    closeCreateNote,
+    handleCreateNote,
+  } = useDocumentActions({
+    supabase,
+    ensureFamilyId,
+    familyIdRef,
+    fetchDocumentsRef,
+    fetchDocumentByIdRef,
+    documentsLoadedRef,
+    triggeredAnalysisRef,
+    serverPipelineRef,
+    documentsRef,
+    setDocuments,
+    expandedDocIdRef,
+    updateTrackedDocument,
+    closeDocument,
+    wizardDocIdRef: wizard.wizardDocIdRef,
+    setWizardDocId: wizard.setWizardDocId,
+    setWizardDocument: wizard.setWizardDocument,
+  });
 
-      const stage = getFailedStage(stageRow);
-      let retryError: string | null = null;
-
-      // Clear the server-pipeline and analysis-triggered flags so the
-      // retry path can re-trigger analysis after OCR completes.
-      serverPipelineRef.current.delete(documentId);
-      triggeredAnalysisRef.current.delete(documentId);
-
-      if (stage === "ocr") {
-        updateTrackedDocument(documentId, (current) => ({
-          ...current,
-          status: "ocr_processing",
-          error_message: null,
-          failure_stage: null,
-          failure_code: null,
-          failed_at: null,
-        }));
-        try {
-          await retryFailedDocument(documentId, stage);
-        } catch (error) {
-          retryError =
-            error instanceof Error ? error.message : "OCR konnte nicht neu gestartet werden.";
-        }
-      } else {
-        updateTrackedDocument(documentId, (current) => ({
-          ...current,
-          status: "analyzing",
-          error_message: null,
-          failure_stage: null,
-          failure_code: null,
-          failed_at: null,
-        }));
-        try {
-          await retryFailedDocument(documentId, stage);
-        } catch (error) {
-          retryError =
-            error instanceof Error
-              ? error.message
-              : "Analyse konnte nicht neu gestartet werden.";
-        }
-      }
-
-      if (documentsLoadedRef.current) {
-        await fetchDocumentsRef.current();
-      }
-      await fetchDocumentByIdRef.current(documentId, {
-        syncExpanded: expandedDocIdRef.current === documentId,
-        syncWizard: wizardDocIdRef.current === documentId,
-        syncList: documentsLoadedRef.current,
-        allowAutoAnalyze: stage === "ocr",
-      });
-      if (retryError) toast.error(retryError);
-    },
-    [supabase, updateTrackedDocument],
-  );
-
-  const triggerAnalysis = useCallback(async (documentId: string) => {
-    try {
-      const response = await fetch(`/api/documents/${documentId}/analyze`, {
-        method: "POST",
-      });
-      if (!response.ok) throw new Error(String(response.status));
-    } catch {
-      // Release the "already triggered" marker so the polling loop can try
-      // again. Keeping it meant the document sat at ocr_done forever — the
-      // wizard spinning on "Inhalt wird verstanden", the list stuck on
-      // "Sortiert" — with no error state and nothing to retry.
-      triggeredAnalysisRef.current.delete(documentId);
-    }
-    if (documentsLoadedRef.current) {
-      await fetchDocumentsRef.current();
-    }
-    await fetchDocumentByIdRef.current(documentId, {
-      syncExpanded: expandedDocIdRef.current === documentId,
-      syncWizard: wizardDocIdRef.current === documentId,
-      syncList: documentsLoadedRef.current,
-    });
-  }, []);
-  triggerAnalysisRef.current = triggerAnalysis;
-
-  const handleConfirmSuccess = useCallback(() => {
-    if (documentsLoadedRef.current) {
-      void fetchDocumentsRef.current();
-      return;
-    }
-    if (expandedDocIdRef.current) {
-      void fetchDocumentByIdRef.current(expandedDocIdRef.current, {
-        syncExpanded: true,
-      });
-    }
-  }, []);
-
-  const handleReanalyzeSuccess = useCallback(() => {
-    if (documentsLoadedRef.current) {
-      void fetchDocumentsRef.current();
-    }
-    if (expandedDocIdRef.current) {
-      void fetchDocumentByIdRef.current(expandedDocIdRef.current, {
-        syncExpanded: true,
-        syncList: documentsLoadedRef.current,
-      });
-    }
-  }, []);
-
-  const openDocument = useCallback(async (documentId: string) => {
-    const existing = documentsRef.current.find((doc) => doc.id === documentId);
-    if (existing) {
-      setExpandedDocument(existing);
-      setExpandedDocId(documentId);
-      return;
-    }
-    const document = await fetchDocumentByIdRef.current(documentId);
-    if (document) {
-      setExpandedDocument(document);
-      setExpandedDocId(documentId);
-    }
-  }, []);
-
-  const closeDocument = useCallback(() => {
-    setExpandedDocId(null);
-    setExpandedDocument(null);
-  }, []);
-
-  const handleDeleteDocument = useCallback(
-    async (documentId: string) => {
-      // Optimistic delete: the document disappears immediately (list +
-      // open sheets), the server call runs in the background, and a
-      // failure restores the document with a German toast. No full-list
-      // refetch, no jank.
-      const removed = documentsRef.current.find(
-        (doc) => doc.id === documentId,
-      );
-      setDocuments((prev) =>
-        prev.filter((current) => current.id !== documentId),
-      );
-      if (expandedDocIdRef.current === documentId) {
-        closeDocument();
-      }
-      if (wizardDocIdRef.current === documentId) {
-        setWizardDocId(null);
-        setWizardDocument(null);
-      }
-
-      const restore = () => {
-        if (removed) {
-          setDocuments((prev) =>
-            prev.some((d) => d.id === documentId) ? prev : [removed, ...prev],
-          );
-        }
-        toast.error("Löschen hat nicht geklappt. Bitte nochmal versuchen.");
-      };
-
-      // The API route removes the DB row AND the Storage file with the
-      // service-role client (the private bucket rejects browser-client
-      // removals, which used to orphan files).
-      // Report the outcome so callers stop announcing success regardless:
-      // the page used to fire toast.success right after this resolved, so a
-      // failed delete produced both an error and a success toast while the
-      // document was visibly back in the list.
-      try {
-        const response = await fetch(`/api/documents/${documentId}`, {
-          method: "DELETE",
-        });
-        if (!response.ok) {
-          restore();
-          return false;
-        }
-        return true;
-      } catch {
-        restore();
-        return false;
-      }
-    },
-    [closeDocument],
-  );
-
-  const openWizard = useCallback(() => {
-    wizardStepRef.current = "camera";
-    setWizardStep("camera");
-    wizardDocIdRef.current = null;
-    setWizardDocId(null);
-    setWizardDocument(null);
-    setWizardUploadError(null);
-    wizardFileRef.current = null;
-    setWizardOpen(true);
-  }, []);
-
-  const closeWizard = useCallback(() => {
-    setWizardOpen(false);
-    setWizardDocument(null);
-    setWizardUploadError(null);
-  }, []);
-
-  const handleWizardCapture = useCallback(
-    (file: File) => {
-      wizardFileRef.current = file;
-      wizardStepRef.current = "processing";
-      setWizardStep("processing");
-      wizardDocIdRef.current = null;
-      setWizardDocId(null);
-      setWizardDocument(null);
-      setWizardUploadError(null);
-      handleFileUpload(
-        file,
-        (documentId) => {
-          wizardDocIdRef.current = documentId;
-          setWizardDocId(documentId);
-          void fetchDocumentByIdRef.current(documentId, {
-            syncWizard: true,
-            syncList: documentsLoadedRef.current,
-          });
-        },
-        (message, retryable = true) => {
-          setWizardUploadError(message);
-          if (!retryable) wizardFileRef.current = null;
-        },
-      );
-    },
-    [handleFileUpload],
-  );
-
-  const handleWizardUseGallery = useCallback(() => {
-    wizardGalleryInputRef.current?.click();
-  }, []);
-
-  const handleWizardGallerySelect = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      if (files.length === 0) return;
-      const [first, ...rest] = files;
-      // The first file is followed through the wizard's guided flow; any
-      // extras upload in the background and appear as progress cards on
-      // the Dokumente page once the wizard closes.
-      handleWizardCapture(first);
-      for (const extra of rest) {
-        handleFileUpload(extra);
-      }
-      if (wizardGalleryInputRef.current) {
-        wizardGalleryInputRef.current.value = "";
-      }
-    },
-    [handleWizardCapture, handleFileUpload],
-  );
-
-  const handleWizardRetryUpload = useCallback(() => {
-    if (wizardDocIdRef.current && wizardDocumentRef.current?.status === "failed") {
-      void handleRetryFailed(wizardDocIdRef.current);
-      return;
-    }
-    const file = wizardFileRef.current;
-    if (file) {
-      handleWizardCapture(file);
-    } else {
-      // No retryable file (rejected type/size, or none captured): back to
-      // capture so the user can choose a different one.
-      wizardStepRef.current = "camera";
-      setWizardUploadError(null);
-      setWizardStep("camera");
-    }
-  }, [handleRetryFailed, handleWizardCapture]);
-
-  const handleWizardReviewDone = useCallback(() => {
-    setWizardOpen(false);
-    setWizardDocId(null);
-    setWizardDocument(null);
-    if (documentsLoadedRef.current) {
-      void fetchDocumentsRef.current();
-    }
-    // Home and the other pages are server components whose first-visit and
-    // empty states come from props. Without this a brand-new family walked
-    // the whole golden path — scan, review, confirm — and landed back on
-    // "Scanne dein erstes Dokument", with no sign anything was saved.
-    router.refresh();
-  }, [router]);
-
-  // After a confirmed document: reopen the camera fresh so a stack of
-  // letters can be scanned one after another without reopening the
-  // wizard each time. The confirmed document stays in the family book.
-  const handleWizardScanNext = useCallback(() => {
-    wizardStepRef.current = "camera";
-    setWizardStep("camera");
-    wizardDocIdRef.current = null;
-    setWizardDocId(null);
-    setWizardDocument(null);
-    wizardFileRef.current = null;
-    setWizardUploadError(null);
-    setWizardOpen(true);
-    if (documentsLoadedRef.current) {
-      void fetchDocumentsRef.current();
-    }
-  }, []);
-
-  // Discard the current (unconfirmed) document and re-capture: deletes
-  // the server-side row + file so nothing orphaned remains, then reopens
-  // the camera. Used when the scan/photo turned out bad and the user
-  // wants to try again instead of confirming a bad document.
-  //
-  // Mirrors the document-delete pattern: optimistic remove, server DELETE,
-  // and restore-on-failure with a toast so a silent DELETE error never
-  // leaves the user thinking a document is gone when it isn't. The
-  // concurrent OCR/analyze race is handled server-side (the analyze route
-  // 404s on a missing row before writing anything).
-  const handleWizardRetake = useCallback(async () => {
-    const docId = wizardDocIdRef.current;
-    const removed =
-      documentsRef.current.find((doc) => doc.id === docId) ?? null;
-
-    // Optimistic: drop from list + reset wizard to camera immediately.
-    wizardDocIdRef.current = null;
-    setWizardDocId(null);
-    setWizardDocument(null);
-    if (docId && documentsLoadedRef.current) {
-      setDocuments((prev) => prev.filter((d) => d.id !== docId));
-    }
-    wizardStepRef.current = "camera";
-    setWizardStep("camera");
-    wizardFileRef.current = null;
-    setWizardUploadError(null);
-    setWizardOpen(true);
-
-    if (!docId) return;
-
-    try {
-      const response = await fetch(`/api/documents/${docId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) throw new Error();
-    } catch {
-      // Restore the document so the user knows it wasn't discarded.
-      if (removed && documentsLoadedRef.current) {
-        setDocuments((prev) =>
-          prev.some((d) => d.id === docId) ? prev : [removed, ...prev],
-        );
-      }
-      toast.error("Verwerfen hat nicht geklappt — das Dokument ist noch da.");
-    }
-  }, []);
-
-  const openCreateNote = useCallback(() => {
-    setCreateNoteOpen(true);
-  }, []);
-
-  // From the camera step: switch to writing a note — close the wizard and
-  // open the note sheet in one tap (the camera is the app's add-hub).
-  const handleWizardCreateNote = useCallback(() => {
-    closeWizard();
-    openCreateNote();
-  }, [closeWizard, openCreateNote]);
-
-  const closeCreateNote = useCallback(() => {
-    setCreateNoteOpen(false);
-  }, []);
-
-  const handleCreateNote = useCallback(
-    async (params: {
-      title: string;
-      content: string;
-      documentType: DocumentType;
-      file: File | null;
-    }) => {
-      const fid = familyIdRef.current ?? await ensureFamilyId();
-      if (!fid) return;
-
-      const result = await createNote({
-        title: params.title,
-        content: params.content,
-        documentType: params.documentType,
-        familyId: fid,
-        file: params.file,
-      });
-
-      // Pre-mark as triggered so fetchDocuments doesn't auto-trigger
-      // analyze in parallel with the direct call below (409 race).
-      triggeredAnalysisRef.current.add(result.document_id);
-
-      // Refresh the document list so the new note appears.
-      if (documentsLoadedRef.current) {
-        await fetchDocumentsRef.current(fid);
-      }
-
-      // Trigger analysis (same as the scan pipeline does after OCR).
-      // The scan context's polling will pick up the "analyzing" → "analyzed"
-      // transition and the document will appear in the review queue.
-      try {
-        const response = await fetch(`/api/documents/${result.document_id}/analyze`, {
-          method: "POST",
-        });
-        if (!response.ok) {
-          triggeredAnalysisRef.current.delete(result.document_id);
-        }
-      } catch {
-        // Analysis trigger failed — the document is still in "ocr_done"
-        // and the polling loop will retry automatically.
-        triggeredAnalysisRef.current.delete(result.document_id);
-      }
-
-      // Fetch the updated document to reflect the "analyzing" status.
-      if (documentsLoadedRef.current) {
-        await fetchDocumentsRef.current(fid);
-      }
-    },
-    [ensureFamilyId],
-  );
-
-  const handleCameraSelect = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (file) {
-        handleFileUpload(file);
-      }
-      if (cameraInputRef.current) {
-        cameraInputRef.current.value = "";
-      }
-    },
-    [handleFileUpload],
-  );
-
-  const handlePdfSelect = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0];
-      if (file) {
-        handleFileUpload(file);
-      }
-      if (pdfInputRef.current) {
-        pdfInputRef.current.value = "";
-      }
-    },
-    [handleFileUpload],
-  );
-
-  const handleDragEnter = useCallback((event: DragEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer.types?.includes("Files")) {
-      setIsDragOver(true);
-    }
-  }, []);
-
-  const handleDragOver = useCallback((event: DragEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer.types?.includes("Files")) {
-      setIsDragOver(true);
-    }
-  }, []);
-
-  const handleDragLeave = useCallback((event: DragEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.currentTarget === event.target) {
-      setIsDragOver(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    (event: DragEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      setIsDragOver(false);
-      const files = Array.from(event.dataTransfer.files);
-      for (const file of files) {
-        handleFileUpload(file);
-      }
-    },
-    [handleFileUpload],
-  );
+  const {
+    openWizard,
+    closeWizard,
+    handleWizardCapture,
+    handleWizardUseGallery,
+    handleWizardGallerySelect,
+    handleWizardRetryUpload,
+    handleWizardReviewDone,
+    handleWizardScanNext,
+    handleWizardRetake,
+    handleWizardCreateNote,
+  } = useScanWizardHandlers({
+    wizard,
+    router,
+    handleFileUpload,
+    handleRetryFailed,
+    fetchDocumentsRef,
+    fetchDocumentByIdRef,
+    documentsLoadedRef,
+    documentsRef,
+    setDocuments,
+    openCreateNote,
+  });
 
   const value = useMemo<ScanContextValue>(
     () => ({
@@ -1130,6 +200,10 @@ export function useScanProviderState(): ScanProviderState {
       expandedDocId,
       openDocument,
       closeDocument,
+      setExpandedDocId,
+      cameraInputRef,
+      pdfInputRef,
+      dropZoneRef,
       handleCameraSelect,
       handlePdfSelect,
       handleDragEnter,
@@ -1163,11 +237,11 @@ export function useScanProviderState(): ScanProviderState {
     scanActionsValue,
     documentViewerValue,
     expandedDocument,
-    wizardDocument,
-    wizardOpen,
-    wizardStep,
-    wizardUploadError,
-    wizardGalleryInputRef,
+    wizardDocument: wizard.wizardDocument,
+    wizardOpen: wizard.wizardOpen,
+    wizardStep: wizard.wizardStep,
+    wizardUploadError: wizard.wizardUploadError,
+    wizardGalleryInputRef: wizard.wizardGalleryInputRef,
     closeDocument,
     closeWizard,
     handleConfirmSuccess,

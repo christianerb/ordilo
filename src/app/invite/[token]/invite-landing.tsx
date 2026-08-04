@@ -19,7 +19,7 @@ import { createClient } from "@/lib/supabase/client";
 import { EMAIL_OTP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth/constants";
 import { validateLoginEmail } from "@/lib/auth/validation";
 import { webmailFor } from "@/lib/auth/webmail";
-import { requestInviteSignIn } from "../actions";
+import { acceptInvite, requestInviteSignIn } from "../actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -32,6 +32,9 @@ import { AuthShell } from "@/components/ordilo/auth-shell";
  *   - "valid": shows the family name + a one-field email form. Submitting
  *     sends a login code; after verification the invite page joins the user
  *     directly to the family.
+ *   - "confirm": signed-in user — asks for an explicit "Familie beitreten"
+ *     click before the invite is accepted (a shared link must never join
+ *     someone silently).
  *   - "invalid": expired/revoked/unknown token.
  *   - "already_in_family": the signed-in user already belongs to another
  *     family (one family per account for now).
@@ -46,7 +49,7 @@ export function InviteLanding({
 }: {
   token: string;
   familyName: string | null;
-  state: "valid" | "invalid" | "already_in_family";
+  state: "valid" | "confirm" | "invalid" | "already_in_family";
 }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -58,6 +61,13 @@ export function InviteLanding({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resending, setResending] = useState(false);
+  // Confirm flow (signed-in user): the invite is accepted only after an
+  // explicit click. A failure that maps to a dedicated screen
+  // (invalid / already_in_family) replaces the confirmation screen.
+  const [accepting, setAccepting] = useState(false);
+  const [joinFailure, setJoinFailure] = useState<
+    "invalid" | "already_in_family" | null
+  >(null);
   const loginRequestInFlightRef = useRef(false);
   const resendRequestInFlightRef = useRef(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -198,6 +208,26 @@ export function InviteLanding({
     setErrorMessage(null);
   }, []);
 
+  async function handleAccept() {
+    if (accepting) return;
+    setAccepting(true);
+    setErrorMessage(null);
+
+    const result = await acceptInvite(token);
+    if (result.success) {
+      // Full reload so every screen starts from fresh server data.
+      window.location.assign("/home");
+      return;
+    }
+
+    setAccepting(false);
+    if (result.reason === "already_in_family" || result.reason === "invalid") {
+      setJoinFailure(result.reason);
+      return;
+    }
+    setErrorMessage(result.error);
+  }
+
   function handleEmailChange(event: React.ChangeEvent<HTMLInputElement>) {
     setEmail(event.target.value);
     if (validationError) setValidationError(null);
@@ -205,9 +235,9 @@ export function InviteLanding({
   }
 
   // ---------------------------------------------------------------------------
-  // Invalid token
+  // Invalid token (also shown when the accept click finds the invite expired)
   // ---------------------------------------------------------------------------
-  if (state === "invalid") {
+  if (state === "invalid" || joinFailure === "invalid") {
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-invalid">
@@ -241,9 +271,9 @@ export function InviteLanding({
   }
 
   // ---------------------------------------------------------------------------
-  // Already in a family
+  // Already in a family (also shown when the accept click reports this)
   // ---------------------------------------------------------------------------
-  if (state === "already_in_family") {
+  if (state === "already_in_family" || joinFailure === "already_in_family") {
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-already-in-family">
@@ -272,6 +302,82 @@ export function InviteLanding({
           >
             <Link href="/home">Zurück zu meiner Familie</Link>
           </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Signed in — explicit confirmation before joining
+  // ---------------------------------------------------------------------------
+  if (state === "confirm") {
+    return (
+      <AuthShell compact>
+        <div className="space-y-6 text-center" data-testid="invite-confirm">
+          <div className="flex justify-center animate-card-in">
+            <div className="flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
+              <UserPlus className="size-7" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+          </div>
+
+          <div className="space-y-3 animate-card-in [animation-delay:40ms]">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
+              Familie beitreten?
+            </h1>
+            <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
+              {familyName ? (
+                <>
+                  Du bist eingeladen zu{" "}
+                  <span className="font-semibold text-foreground">
+                    „{familyName}“
+                  </span>
+                  . Willst du dieser Familie beitreten?
+                </>
+              ) : (
+                "Willst du dieser Familie beitreten?"
+              )}
+            </p>
+          </div>
+
+          {errorMessage && (
+            <p
+              role="alert"
+              className="rounded-ordilo-sm bg-destructive/5 px-3 py-2 text-center text-sm font-medium text-destructive animate-card-in"
+            >
+              {errorMessage}
+            </p>
+          )}
+
+          <div className="space-y-3 animate-card-in [animation-delay:80ms]">
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleAccept}
+              disabled={accepting}
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
+              data-testid="accept-invite-button"
+            >
+              {accepting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Wird beigetreten…
+                </>
+              ) : (
+                <>
+                  Familie beitreten
+                  <ArrowRight className="size-5" aria-hidden="true" />
+                </>
+              )}
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              size="lg"
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
+            >
+              <Link href="/home">Abbrechen</Link>
+            </Button>
+          </div>
         </div>
       </AuthShell>
     );

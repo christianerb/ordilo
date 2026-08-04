@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   chatRequestSchema,
+  MAX_CHAT_MESSAGE_LENGTH,
   NO_RESULTS_FALLBACK,
   FORBIDDEN_HEDGING_PHRASES,
   containsHedgingLanguage,
@@ -126,14 +127,35 @@ describe("chatRequestSchema", () => {
     }
   });
 
-  it("accepts a long message", () => {
-    const longMessage = "A".repeat(10000);
+  it("accepts a message at exactly the maximum length", () => {
     const result = chatRequestSchema.safeParse({
-      message: longMessage,
+      message: "A".repeat(MAX_CHAT_MESSAGE_LENGTH),
       family_id: VALID_FAMILY_ID,
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it("rejects a message longer than the maximum length", () => {
+    const result = chatRequestSchema.safeParse({
+      message: "A".repeat(MAX_CHAT_MESSAGE_LENGTH + 1),
+      family_id: VALID_FAMILY_ID,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts an optional conversation_id", () => {
+    const result = chatRequestSchema.safeParse({
+      message: "Hallo",
+      family_id: VALID_FAMILY_ID,
+      conversation_id: "conv-123",
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.conversation_id).toBe("conv-123");
+    }
   });
 });
 

@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { cookieDelete, cookieSet, signInWithOtp } = vi.hoisted(() => ({
-  cookieDelete: vi.fn(),
-  cookieSet: vi.fn(),
-  signInWithOtp: vi.fn(),
-}));
+const { headerValues, cookieDelete, cookieSet, signInWithOtp, rpc } =
+  vi.hoisted(() => ({
+    // Mutable so each test can shape the incoming request headers.
+    headerValues: new Map<string, string>(),
+    cookieDelete: vi.fn(),
+    cookieSet: vi.fn(),
+    signInWithOtp: vi.fn(),
+    rpc: vi.fn(),
+  }));
 
 vi.mock("next/headers", () => ({
   cookies: vi.fn(async () => ({
@@ -14,9 +18,7 @@ vi.mock("next/headers", () => ({
   })),
   headers: vi.fn(async () => {
     const values = new Headers();
-    values.set("host", "app.ordilo.de");
-    values.set("x-forwarded-host", "app.ordilo.de");
-    values.set("x-forwarded-proto", "https");
+    for (const [name, value] of headerValues) values.set(name, value);
     return values;
   }),
 }));
@@ -24,10 +26,11 @@ vi.mock("next/headers", () => ({
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(async () => ({
     auth: { signInWithOtp },
+    rpc,
   })),
 }));
 
-import { requestInviteSignIn } from "../actions";
+import { acceptInvite, requestInviteSignIn } from "../actions";
 import { INVITE_COOKIE } from "@/lib/invite";
 
 const TOKEN = "0123456789abcdef";
@@ -35,10 +38,33 @@ const TOKEN = "0123456789abcdef";
 describe("requestInviteSignIn", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.unstubAllEnvs();
     signInWithOtp.mockResolvedValue({ error: null });
+    // Default request: hostile host headers (host-header injection attempt),
+    // trustworthy browser Origin header.
+    headerValues.clear();
+    headerValues.set("host", "evil.example");
+    headerValues.set("x-forwarded-host", "evil.example");
+    headerValues.set("origin", "https://app.ordilo.de");
+  });
+
+  it("builds the auth callback from APP_BASE_URL, ignoring host and origin headers", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://ordilo.example");
+
+    const result = await requestInviteSignIn(" Familie@Example.com ", TOKEN);
+
+    expect(result).toEqual({ success: true });
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      email: "familie@example.com",
+      options: {
+        emailRedirectTo: "https://ordilo.example/auth/callback",
+      },
+    });
   });
 
   it("keeps the invite across the same-site auth callback", async () => {
+    vi.stubEnv("APP_BASE_URL", "https://app.ordilo.de");
+
     const result = await requestInviteSignIn(" Familie@Example.com ", TOKEN);
 
     expect(result).toEqual({ success: true });
@@ -60,6 +86,51 @@ describe("requestInviteSignIn", () => {
     });
   });
 
+  it("falls back to the request Origin header when no base URL is configured", async () => {
+    const result = await requestInviteSignIn("familie@example.com", TOKEN);
+
+    expect(result).toEqual({ success: true });
+    // Spoofed host/x-forwarded-host headers must not leak into the link.
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      email: "familie@example.com",
+      options: {
+        emailRedirectTo: "https://app.ordilo.de/auth/callback",
+      },
+    });
+  });
+
+  it("marks the invite cookie insecure for a plain-http origin", async () => {
+    headerValues.set("origin", "http://localhost:3000");
+
+    const result = await requestInviteSignIn("familie@example.com", TOKEN);
+
+    expect(result).toEqual({ success: true });
+    expect(cookieSet).toHaveBeenCalledWith(
+      INVITE_COOKIE,
+      TOKEN,
+      expect.objectContaining({ secure: false }),
+    );
+    expect(signInWithOtp).toHaveBeenCalledWith({
+      email: "familie@example.com",
+      options: {
+        emailRedirectTo: "http://localhost:3000/auth/callback",
+      },
+    });
+  });
+
+  it("fails without sending an email when no base URL can be determined", async () => {
+    headerValues.delete("origin");
+
+    const result = await requestInviteSignIn("familie@example.com", TOKEN);
+
+    expect(result).toEqual({
+      success: false,
+      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    });
+    expect(signInWithOtp).not.toHaveBeenCalled();
+    expect(cookieSet).not.toHaveBeenCalled();
+  });
+
   it("removes the invite cookie when sending fails", async () => {
     signInWithOtp.mockResolvedValue({ error: new Error("send failed") });
 
@@ -77,5 +148,82 @@ describe("requestInviteSignIn", () => {
       error: "Die Einladung ist ungültig.",
     });
     expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe("acceptInvite", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("joins the family for a valid token", async () => {
+    rpc.mockResolvedValue({ data: { status: "joined" }, error: null });
+
+    const result = await acceptInvite(TOKEN);
+
+    expect(result).toEqual({ success: true });
+    expect(rpc).toHaveBeenCalledWith("accept_family_invite", {
+      p_token: TOKEN,
+    });
+  });
+
+  it("rejects a malformed token before calling the RPC", async () => {
+    const result = await acceptInvite("invalid");
+
+    expect(result).toEqual({
+      success: false,
+      reason: "invalid",
+      error: "Die Einladung ist ungültig.",
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("reports an expired or unknown invite", async () => {
+    rpc.mockResolvedValue({ data: { status: "invalid" }, error: null });
+
+    const result = await acceptInvite(TOKEN);
+
+    expect(result).toEqual({
+      success: false,
+      reason: "invalid",
+      error: "Diese Einladung ist nicht mehr gültig.",
+    });
+  });
+
+  it("reports when the user already belongs to another family", async () => {
+    rpc.mockResolvedValue({
+      data: { status: "already_in_family" },
+      error: null,
+    });
+
+    const result = await acceptInvite(TOKEN);
+
+    expect(result).toEqual({
+      success: false,
+      reason: "already_in_family",
+      error: "Du bist schon in einer Familie.",
+    });
+  });
+
+  it("asks for a reload when the session has expired", async () => {
+    rpc.mockResolvedValue({ data: { status: "unauthenticated" }, error: null });
+
+    const result = await acceptInvite(TOKEN);
+
+    expect(result).toEqual({
+      success: false,
+      error: "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.",
+    });
+  });
+
+  it("returns a friendly error when the RPC fails", async () => {
+    rpc.mockResolvedValue({ data: null, error: new Error("rpc failed") });
+
+    const result = await acceptInvite(TOKEN);
+
+    expect(result).toEqual({
+      success: false,
+      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    });
   });
 });
