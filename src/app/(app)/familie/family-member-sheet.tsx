@@ -1,7 +1,11 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import { MemberForm, type MemberFormValues } from "@/components/ordilo/member-form";
+import {
+  MemberForm,
+  type MemberFormValues,
+  type MemberOption,
+} from "@/components/ordilo/member-form";
 import {
   Sheet,
   SheetContent,
@@ -9,9 +13,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { Database } from "@/types/database";
-
-type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
 export function FamilyMemberSheet({
   open,
@@ -43,7 +44,7 @@ export function FamilyMemberSheet({
   serverError: string | null;
   onClearValidationError: () => void;
   onClearServerError: () => void;
-  otherMembers: MemberRow[];
+  otherMembers: MemberOption[];
   initialValues?: MemberFormValues;
   memberId?: string;
   photoUrl?: string | null;

@@ -81,6 +81,14 @@ export default async function PersonProfilePage({
         .then((res) => res.data?.name ?? null)
     : Promise.resolve(null);
 
+  // Other members of the same family, for the edit form's "Beziehung zu" select.
+  const otherMembersPromise = supabase
+    .from("family_members")
+    .select("id, name")
+    .eq("family_id", typedMember.family_id)
+    .neq("id", typedMember.id)
+    .then((res) => res.data ?? []);
+
   // 2. Fetch confirmed person entities linked to this member.
   // These give us the document IDs of documents assigned to this person.
   const { data: personEntities } = await supabase
@@ -115,9 +123,10 @@ export default async function PersonProfilePage({
     };
   });
 
-  const [photoUrl, relatedMemberName] = await Promise.all([
+  const [photoUrl, relatedMemberName, otherMembers] = await Promise.all([
     photoUrlPromise,
     relatedMemberPromise,
+    otherMembersPromise,
   ]);
 
   if (documentIds.length === 0) {
@@ -130,6 +139,7 @@ export default async function PersonProfilePage({
         inventoryItems={inventoryItems}
         photoUrl={photoUrl}
         relatedMemberName={relatedMemberName}
+        otherMembers={otherMembers}
       />
     );
   }
@@ -240,6 +250,7 @@ export default async function PersonProfilePage({
       inventoryItems={inventoryItems}
       photoUrl={photoUrl}
       relatedMemberName={relatedMemberName}
+      otherMembers={otherMembers}
     />
   );
 }

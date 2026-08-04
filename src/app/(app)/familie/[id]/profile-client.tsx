@@ -1,15 +1,19 @@
 "use client";
 
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   Cake,
   Package,
+  Pencil,
 } from "lucide-react";
+import { toast } from "sonner";
 import type { Database } from "@/types/database";
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { TimelineItem } from "@/components/ordilo/timeline-item";
+import type { MemberFormValues, MemberOption } from "@/components/ordilo/member-form";
 import {
   buildTimelineEvents,
   sortTimelineEvents,
@@ -24,6 +28,8 @@ import {
 } from "@/lib/schemas/extraction";
 import { getPriorityLabel } from "@/lib/task-utils";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
+import { updateFamilyMember } from "../actions";
+import { FamilyMemberSheet } from "../family-member-sheet";
 import type { ProfileInventoryItem } from "./page";
 import { INVENTORY_ICONS, INVENTORY_LABELS } from "../inventory-shared";
 
@@ -40,19 +46,64 @@ export interface ProfileClientProps {
   photoUrl?: string | null;
   /** The name of the member referenced by related_member_id, if any. */
   relatedMemberName?: string | null;
+  /** Other members of the same family, for the edit form's "Beziehung zu" select. */
+  otherMembers?: MemberOption[];
 }
 
 export function ProfileClient({
-  member,
+  member: initialMember,
   documents,
   tasks,
   dateEntities,
   documentTitles,
   inventoryItems = [],
-  photoUrl,
-  relatedMemberName,
+  photoUrl: initialPhotoUrl,
+  relatedMemberName: initialRelatedMemberName,
+  otherMembers = [],
 }: ProfileClientProps) {
   const { openDocument } = useDocumentViewer();
+
+  const [member, setMember] = useState(initialMember);
+  const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
+  const [relatedMemberName, setRelatedMemberName] = useState(initialRelatedMemberName);
+  const [editSheetOpen, setEditSheetOpen] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleEditSubmit = useCallback(
+    async (values: MemberFormValues) => {
+      setValidationError(null);
+      setServerError(null);
+      if (!values.name.trim()) {
+        setValidationError("Bitte einen Namen eingeben");
+        return;
+      }
+      setIsSubmitting(true);
+      const result = await updateFamilyMember(member.id, {
+        name: values.name,
+        role: values.role || undefined,
+        birthdate: values.birthdate || undefined,
+        avatar_color: values.avatar_color || undefined,
+        related_member_id: values.related_member_id || undefined,
+        relationship_label: values.relationship_label || undefined,
+      });
+      setIsSubmitting(false);
+      if (!result.success) {
+        setServerError(result.error);
+        return;
+      }
+      setMember(result.data);
+      setRelatedMemberName(
+        result.data.related_member_id
+          ? otherMembers.find((m) => m.id === result.data.related_member_id)?.name ?? null
+          : null,
+      );
+      setEditSheetOpen(false);
+      toast.success("Gespeichert");
+    },
+    [member.id, otherMembers],
+  );
 
   const formattedBirthdate = formatGermanDate(member.birthdate);
   const avatarColor = member.avatar_color ?? "#305460";
@@ -122,14 +173,29 @@ export function ProfileClient({
 
   return (
     <div className="app-page-stack">
-      {/* Back link */}
-      <Link
-        href="/familie"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Zurück
-      </Link>
+      {/* Back link + edit */}
+      <div className="flex items-center justify-between">
+        <Link
+          href="/familie"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Zurück
+        </Link>
+        <button
+          type="button"
+          onClick={() => {
+            setValidationError(null);
+            setServerError(null);
+            setEditSheetOpen(true);
+          }}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          data-testid="profile-edit-button"
+        >
+          <Pencil className="h-4 w-4" />
+          Bearbeiten
+        </button>
+      </div>
 
       {/* Birthday banner */}
       {(birthdayToday || birthdaySoon) && (
@@ -317,6 +383,32 @@ export function ProfileClient({
           </div>
         </section>
       )}
+
+      <FamilyMemberSheet
+        open={editSheetOpen}
+        onOpenChange={setEditSheetOpen}
+        title="Bearbeiten"
+        description="Ändere die Angaben dieser Person."
+        submitLabel="Speichern"
+        onSubmit={handleEditSubmit}
+        isSubmitting={isSubmitting}
+        validationError={validationError}
+        serverError={serverError}
+        onClearValidationError={() => setValidationError(null)}
+        onClearServerError={() => setServerError(null)}
+        otherMembers={otherMembers}
+        initialValues={{
+          name: member.name,
+          role: member.role ?? "",
+          birthdate: member.birthdate ?? "",
+          avatar_color: member.avatar_color ?? "",
+          related_member_id: member.related_member_id ?? "",
+          relationship_label: member.relationship_label ?? "",
+        }}
+        memberId={member.id}
+        photoUrl={photoUrl}
+        onPhotoChange={(url) => setPhotoUrl(url)}
+      />
     </div>
   );
 }
