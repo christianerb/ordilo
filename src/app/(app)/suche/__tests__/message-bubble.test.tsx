@@ -450,3 +450,60 @@ describe("MessageBubble — feedback icons", () => {
     });
   });
 });
+
+describe("MessageBubble — quoting", () => {
+  it("does not show a quote button when onQuote is not provided", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({ content: "Antwort" })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("feedback-quote")).toBeNull();
+  });
+
+  it("calls onQuote with the message when the quote button is clicked", () => {
+    const onQuote = vi.fn();
+    const message = buildMessage({ content: "Die Frist ist der 12. Juli." });
+    render(
+      <MessageBubble
+        message={message}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+        onQuote={onQuote}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("feedback-quote"));
+    expect(onQuote).toHaveBeenCalledWith(message);
+  });
+
+  it("renders a quoted excerpt above a user message that has one", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          role: "user",
+          content: "Und wann genau?",
+          quotedText: "Die Frist ist der 12. Juli.",
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("message-quoted-text").textContent).toBe(
+      "Die Frist ist der 12. Juli.",
+    );
+    expect(screen.getByText("Und wann genau?")).toBeDefined();
+  });
+
+  it("does not render a quoted excerpt when the user message has none", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({ role: "user", content: "Frage ohne Zitat" })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("message-quoted-text")).toBeNull();
+  });
+});

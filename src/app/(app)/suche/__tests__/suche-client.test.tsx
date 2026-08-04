@@ -357,6 +357,102 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
   });
 });
 
+describe("SucheClient — Quoting a message", () => {
+  it("shows a quote preview above the composer after tapping quote on an answer", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        { type: "text", content: "Die Frist ist der 12. Juli." },
+        { type: "sources", sources: [] },
+        { type: "done" },
+      ]),
+    );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Wann ist die Frist?");
+    await waitFor(() => {
+      expect(screen.getByText("Die Frist ist der 12. Juli.")).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByTestId("feedback-quote"));
+
+    const preview = screen.getByTestId("quoted-message-preview");
+    expect(within(preview).getByText("Die Frist ist der 12. Juli.")).toBeDefined();
+  });
+
+  it("clears the quote preview when its remove button is clicked", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        { type: "text", content: "Die Frist ist der 12. Juli." },
+        { type: "sources", sources: [] },
+        { type: "done" },
+      ]),
+    );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Wann ist die Frist?");
+    await waitFor(() => screen.getByTestId("feedback-quote"));
+    fireEvent.click(screen.getByTestId("feedback-quote"));
+    expect(screen.getByTestId("quoted-message-preview")).toBeDefined();
+
+    fireEvent.click(screen.getByTestId("quoted-message-clear"));
+    expect(screen.queryByTestId("quoted-message-preview")).toBeNull();
+  });
+
+  it("sends the quoted excerpt to the API and clears the preview after the next message", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        { type: "text", content: "Die Frist ist der 12. Juli." },
+        { type: "sources", sources: [] },
+        { type: "done" },
+      ]),
+    );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Wann ist die Frist?");
+    await waitFor(() => screen.getByTestId("feedback-quote"));
+    fireEvent.click(screen.getByTestId("feedback-quote"));
+
+    await act(async () => {
+      activeHandler?.("Und für Hanna auch?");
+    });
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenLastCalledWith(
+        "/api/chat",
+        expect.objectContaining({
+          body: expect.stringContaining("Die Frist ist der 12. Juli."),
+        }),
+      );
+    });
+    expect(screen.queryByTestId("quoted-message-preview")).toBeNull();
+  });
+
+  it("shows the quoted excerpt above the new user message it was attached to", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        { type: "text", content: "Die Frist ist der 12. Juli." },
+        { type: "sources", sources: [] },
+        { type: "done" },
+      ]),
+    );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Wann ist die Frist?");
+    await waitFor(() => screen.getByTestId("feedback-quote"));
+    fireEvent.click(screen.getByTestId("feedback-quote"));
+
+    await act(async () => {
+      activeHandler?.("Und für Hanna auch?");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("message-quoted-text").textContent).toBe(
+        "Die Frist ist der 12. Juli.",
+      );
+    });
+  });
+});
+
 describe("SucheClient — Filter Chips", () => {
   it("does not render filter chips before any results exist", () => {
     render(<SucheClient {...defaultProps} />);
@@ -703,5 +799,22 @@ describe("SucheClient — Chat History Accessibility", () => {
         expect.objectContaining({ method: "DELETE" }),
       );
     });
+  });
+
+  it("opens the chat history dropdown immediately when initialShowHistory is set (deep link)", () => {
+    render(
+      <SucheClient
+        {...defaultProps}
+        conversations={conversations}
+        initialShowHistory
+      />,
+    );
+    expect(screen.getByTestId("chat-list-dropdown")).toBeDefined();
+    expect(screen.getByTestId("chat-list-item-c1")).toBeDefined();
+  });
+
+  it("does not open the chat history dropdown by default", () => {
+    render(<SucheClient {...defaultProps} conversations={conversations} />);
+    expect(screen.queryByTestId("chat-list-dropdown")).toBeNull();
   });
 });
