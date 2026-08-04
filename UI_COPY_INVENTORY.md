@@ -148,7 +148,7 @@ Legend: `→` = context.
 | 3.40 | `"Keine Aufgaben offen"` / `"Aufgabe offen"` / `"Aufgaben offen"` | `src/app/(app)/home/home-client.tsx` | Stat-tile subtitle (0/1/n) |
 | 3.41 | `"Familienname"` | `src/app/(app)/onboarding/onboarding-flow.tsx` | Field label |
 | 3.42 | `"Name"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Member-name field label |
-| 3.43 | `"Rolle"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Optional member-role field label |
+| 3.43 | `"Rolle"` / `"Rolle wählen"` | `src/components/ordilo/member-form.tsx` + `src/components/ordilo/role-chips.tsx` | Member-role chip group label (form) / aria-label (onboarding) |
 | 3.44 | `"Geburtsdatum"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Optional member-birthdate field label |
 | 3.45 | `"Farbe"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Avatar color picker label |
 | 3.46 | `"Daten konnten nicht geladen werden"` | `src/app/(app)/onboarding/onboarding-error.tsx` | Onboarding error heading |

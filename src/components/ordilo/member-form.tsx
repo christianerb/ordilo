@@ -7,23 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
 import { ACCEPTED_AVATAR_FILE_EXTENSIONS } from "@/lib/schemas/avatar";
+import { RoleChipGroup } from "@/components/ordilo/role-chips";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-
-/**
- * Common relationship/role suggestions offered via a datalist. Free text
- * is still accepted — these are just discoverable starting points.
- */
-const ROLE_SUGGESTIONS = [
-  "Vater",
-  "Mutter",
-  "Kind",
-  "Partner:in",
-  "Großvater",
-  "Großmutter",
-  "Bruder",
-  "Schwester",
-];
 
 /**
  * The form values for a member (add or edit).
@@ -229,26 +215,16 @@ export function MemberForm({
         )}
       </div>
 
-      {/* Rolle (optional, but always visible — not tucked behind a toggle) */}
+      {/* Rolle (optional, but always visible — not tucked behind a toggle).
+          Same one-tap chips as in onboarding — no free text. */}
       <div className="space-y-2">
-        <Label htmlFor="member-role">Rolle</Label>
-        <Input
-          id="member-role"
-          type="text"
-          autoComplete="off"
-          list="member-role-suggestions"
-          placeholder="z. B. Vater, Mutter, Kind"
-          maxLength={50}
+        <Label>Rolle</Label>
+        <RoleChipGroup
           value={role}
-          onChange={(e) => setRole(e.target.value)}
+          onChange={setRole}
           disabled={isSubmitting}
-          className="h-11 rounded-ordilo-md"
+          aria-label="Rolle"
         />
-        <datalist id="member-role-suggestions">
-          {ROLE_SUGGESTIONS.map((suggestion) => (
-            <option key={suggestion} value={suggestion} />
-          ))}
-        </datalist>
       </div>
 
       {/* Optional fields toggle */}
