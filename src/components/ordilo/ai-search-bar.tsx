@@ -272,10 +272,7 @@ export function AISearchBar({
         }}
         disabled={isLoading}
         placeholder={listening ? "Ich höre zu …" : placeholder}
-        // The stacked (mobile) layout starts at two visible rows so a
-        // multi-line message doesn't get cramped — inline (desktop) stays
-        // single-line since there's a whole pill row to grow into.
-        rows={layout === "stacked" ? 2 : 1}
+        rows={1}
         aria-label="Such- und Chat-Eingabe"
         className={cn(
           "max-h-[120px] resize-none border-0 bg-transparent py-1.5 text-base text-foreground placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed",

@@ -92,16 +92,13 @@ describe("AISearchBar", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("renders one row by default (inline/desktop layout)", () => {
-    render(<AISearchBar onSubmit={vi.fn()} />);
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    expect(input.rows).toBe(1);
-  });
+  it("renders a single row regardless of layout", () => {
+    const { unmount } = render(<AISearchBar onSubmit={vi.fn()} />);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(1);
+    unmount();
 
-  it("renders two rows in stacked (mobile) layout", () => {
     render(<AISearchBar onSubmit={vi.fn()} layout="stacked" />);
-    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
-    expect(input.rows).toBe(2);
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).rows).toBe(1);
   });
 
   it("uses the provided placeholder text", () => {
