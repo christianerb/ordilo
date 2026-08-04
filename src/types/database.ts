@@ -159,9 +159,9 @@ export type Database = {
           linked_user_id: string | null;
           /** Storage path of the member's uploaded profile photo. See migration 0022. */
           photo_url: string | null;
-          /** Another family member this person has a relationship to. See migration 0022. */
-          related_member_id: string | null;
-          /** Free-text label describing the relationship to related_member_id, e.g. "Ehepartner". */
+          /** Other family members this person has the same relationship to. See migration 0042. */
+          related_member_ids: string[];
+          /** Free-text label describing the relationship to related_member_ids, e.g. "Elternteil". */
           relationship_label: string | null;
         };
         Insert: {
@@ -174,7 +174,7 @@ export type Database = {
           created_at?: string;
           linked_user_id?: string | null;
           photo_url?: string | null;
-          related_member_id?: string | null;
+          related_member_ids?: string[];
           relationship_label?: string | null;
         };
         Update: {
@@ -187,7 +187,7 @@ export type Database = {
           created_at?: string;
           linked_user_id?: string | null;
           photo_url?: string | null;
-          related_member_id?: string | null;
+          related_member_ids?: string[];
           relationship_label?: string | null;
         };
         Relationships: [

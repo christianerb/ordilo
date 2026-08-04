@@ -33,7 +33,7 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     created_at: "2026-07-04T10:00:00Z",
     linked_user_id: null,
     photo_url: null,
-    related_member_id: null,
+    related_member_ids: [],
     relationship_label: null,
     ...overrides,
   };

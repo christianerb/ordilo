@@ -158,7 +158,7 @@ export function FamilieClient({
         role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_id: values.related_member_id || undefined,
+        related_member_ids: values.related_member_ids,
         relationship_label: values.relationship_label || undefined,
       });
       setIsSubmitting(false);
@@ -202,7 +202,7 @@ export function FamilieClient({
         role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_id: values.related_member_id || undefined,
+        related_member_ids: values.related_member_ids,
         relationship_label: values.relationship_label || undefined,
       });
       setIsSubmitting(false);
@@ -282,16 +282,13 @@ export function FamilieClient({
         >
           {memberList.map((member) => {
             const docCount = documentCounts[member.id] ?? 0;
-            const relatedMember = member.related_member_id
-              ? memberList.find((m) => m.id === member.related_member_id)
-              : null;
-            const relationship =
-              relatedMember && member.relationship_label
-                ? `${member.relationship_label} von ${relatedMember.name}`
-                : null;
+            // The relationship (who this person is related to, e.g. "von
+            // Emma, Hanna") stays on the profile page, which has room for
+            // it — squeezed into this compact row it made the line too
+            // crowded, so only the relationship label itself shows here.
             const meta = [
               member.role,
-              relationship,
+              member.relationship_label,
               docCount > 0
                 ? docCount === 1
                   ? "1 Dokument"
@@ -426,7 +423,7 @@ export function FamilieClient({
             role: editTarget.role ?? "",
             birthdate: editTarget.birthdate ?? "",
             avatar_color: editTarget.avatar_color ?? "",
-            related_member_id: editTarget.related_member_id ?? "",
+            related_member_ids: editTarget.related_member_ids ?? [],
             relationship_label: editTarget.relationship_label ?? "",
           }}
           memberId={editTarget.id}

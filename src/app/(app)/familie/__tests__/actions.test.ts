@@ -37,11 +37,9 @@ function mockSupabase(options: {
     // For update/remove: whether the member exists and belongs to the family.
     existing?: { id: string; family_id: string } | null;
     existingError?: unknown;
-    // For the related-member ownership check (verifyRelatedMember). Defaults
-    // to `existing` when not set, since most tests only care about one of
-    // the two `family_members` select calls.
-    relatedMember?: { id: string; family_id: string } | null;
-    relatedMemberError?: unknown;
+    // For the related-members ownership check (verifyRelatedMembers).
+    relatedMembers?: { id: string; family_id: string }[];
+    relatedMembersError?: unknown;
   };
   familyNameUpdate?: {
     updated?: { name: string };
@@ -69,33 +67,20 @@ function mockSupabase(options: {
     }),
   };
 
-  // family_members select chain (for finding a member by id within the
-  // family). `updateFamilyMember` calls this twice — once to verify the
-  // member being edited, once (via verifyRelatedMember) to verify a
-  // referenced related member — while `addFamilyMember` only ever calls
-  // it once (the related-member check, no pre-existing member to verify).
-  // When the test explicitly sets `existing`, the first call returns it
-  // and any later call returns `relatedMember` (falling back to
-  // `existing`); otherwise every call returns `relatedMember` directly.
-  let membersSelectCallCount = 0;
-  const hasExisting = Object.prototype.hasOwnProperty.call(
-    options.members ?? {},
-    "existing",
-  );
+  // family_members select chain. `.eq(...).maybeSingle()` verifies the
+  // member being edited (updateFamilyMember only); `.in(...)` is the
+  // related-members ownership check (verifyRelatedMembers), called by both
+  // addFamilyMember and updateFamilyMember whenever related_member_ids is
+  // non-empty.
   const membersSelectChain = {
     eq: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn(() => {
-      membersSelectCallCount += 1;
-      if (hasExisting && membersSelectCallCount === 1) {
-        return Promise.resolve({
-          data: options.members?.existing ?? null,
-          error: options.members?.existingError ?? null,
-        });
-      }
-      return Promise.resolve({
-        data: options.members?.relatedMember ?? options.members?.existing ?? null,
-        error: options.members?.relatedMemberError ?? null,
-      });
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: options.members?.existing ?? null,
+      error: options.members?.existingError ?? null,
+    }),
+    in: vi.fn().mockResolvedValue({
+      data: options.members?.relatedMembers ?? [],
+      error: options.members?.relatedMembersError ?? null,
     }),
   };
 
@@ -280,14 +265,14 @@ describe("addFamilyMember", () => {
     }
   });
 
-  it("creates a member with a related member and relationship label", async () => {
+  it("creates a member with related members and a relationship label", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const relatedId = "11111111-1111-4111-8111-111111111111";
     const inserted: Partial<MemberRow> = {
       id: "mem-3",
       family_id: "fam-1",
       name: "Anna",
-      related_member_id: relatedId,
+      related_member_ids: [relatedId],
       relationship_label: "Ehepartner",
     };
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -295,19 +280,19 @@ describe("addFamilyMember", () => {
         family,
         members: {
           inserted,
-          relatedMember: { id: relatedId, family_id: "fam-1" },
+          relatedMembers: [{ id: relatedId, family_id: "fam-1" }],
         },
       }),
     );
 
     const result = await addFamilyMember({
       name: "Anna",
-      related_member_id: relatedId,
+      related_member_ids: [relatedId],
       relationship_label: "Ehepartner",
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.related_member_id).toBe(relatedId);
+      expect(result.data.related_member_ids).toEqual([relatedId]);
       expect(result.data.relationship_label).toBe("Ehepartner");
     }
   });
@@ -319,14 +304,14 @@ describe("addFamilyMember", () => {
       mockSupabase({
         family,
         members: {
-          relatedMember: { id: relatedId, family_id: "fam-other" },
+          relatedMembers: [{ id: relatedId, family_id: "fam-other" }],
         },
       }),
     );
 
     const result = await addFamilyMember({
       name: "Anna",
-      related_member_id: relatedId,
+      related_member_ids: [relatedId],
       relationship_label: "Ehepartner",
     });
     expect(result.success).toBe(false);
@@ -340,13 +325,13 @@ describe("addFamilyMember", () => {
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({
         family,
-        members: { relatedMember: null },
+        members: { relatedMembers: [] },
       }),
     );
 
     const result = await addFamilyMember({
       name: "Anna",
-      related_member_id: "33333333-3333-4333-8333-333333333333",
+      related_member_ids: ["33333333-3333-4333-8333-333333333333"],
     });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -527,7 +512,7 @@ describe("updateFamilyMember", () => {
 
     const result = await updateFamilyMember(selfId, {
       name: "Emma",
-      related_member_id: selfId,
+      related_member_ids: [selfId],
     });
     expect(result.success).toBe(false);
     if (!result.success) {
@@ -535,14 +520,14 @@ describe("updateFamilyMember", () => {
     }
   });
 
-  it("updates a member with a related member and relationship label", async () => {
+  it("updates a member with related members and a relationship label", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const relatedId = "22222222-2222-4222-8222-222222222222";
     const updated: Partial<MemberRow> = {
       id: "mem-1",
       family_id: "fam-1",
       name: "Emma",
-      related_member_id: relatedId,
+      related_member_ids: [relatedId],
       relationship_label: "Schwester",
     };
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -550,7 +535,7 @@ describe("updateFamilyMember", () => {
         family,
         members: {
           existing: { id: "mem-1", family_id: "fam-1" },
-          relatedMember: { id: relatedId, family_id: "fam-1" },
+          relatedMembers: [{ id: relatedId, family_id: "fam-1" }],
           updated,
         },
       }),
@@ -558,12 +543,12 @@ describe("updateFamilyMember", () => {
 
     const result = await updateFamilyMember("mem-1", {
       name: "Emma",
-      related_member_id: relatedId,
+      related_member_ids: [relatedId],
       relationship_label: "Schwester",
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.related_member_id).toBe(relatedId);
+      expect(result.data.related_member_ids).toEqual([relatedId]);
       expect(result.data.relationship_label).toBe("Schwester");
     }
   });
@@ -576,14 +561,14 @@ describe("updateFamilyMember", () => {
         family,
         members: {
           existing: { id: "mem-1", family_id: "fam-1" },
-          relatedMember: { id: relatedId, family_id: "fam-other" },
+          relatedMembers: [{ id: relatedId, family_id: "fam-other" }],
         },
       }),
     );
 
     const result = await updateFamilyMember("mem-1", {
       name: "Emma",
-      related_member_id: relatedId,
+      related_member_ids: [relatedId],
     });
     expect(result.success).toBe(false);
     if (!result.success) {

@@ -176,35 +176,43 @@ describe("MemberForm", () => {
     fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
     expect(screen.queryByTestId("member-relationship-label")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Beziehung zu"), {
-      target: { value: "mem-2" },
-    });
+    // jsdom has no native PointerEvent, so the Radix trigger's pointerdown
+    // handler can't be exercised reliably here — use its Enter-key handler
+    // instead, which opens the menu the same way for keyboard users.
+    fireEvent.keyDown(screen.getByLabelText("Beziehung zu"), { key: "Enter" });
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Anna" }));
     expect(screen.getByTestId("member-relationship-label")).toBeInTheDocument();
   });
 
-  it("submits the related member and relationship label", () => {
+  it("submits the selected related members and relationship label", () => {
     const onSubmit = vi.fn();
     render(
       <MemberForm
         submitLabel="Hinzufügen"
         onSubmit={onSubmit}
-        otherMembers={[{ id: "mem-2", name: "Anna" }]}
+        otherMembers={[
+          { id: "mem-2", name: "Anna" },
+          { id: "mem-3", name: "Clara" },
+        ]}
       />,
     );
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ben" } });
     fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
-    fireEvent.change(screen.getByLabelText("Beziehung zu"), {
-      target: { value: "mem-2" },
-    });
+    fireEvent.keyDown(screen.getByLabelText("Beziehung zu"), { key: "Enter" });
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Anna" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Clara" }));
+    // Close the menu (Escape) — while it's open, Radix marks the rest of
+    // the page aria-hidden, so the submit button below is unreachable.
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     fireEvent.change(screen.getByTestId("member-relationship-label"), {
-      target: { value: "Ehepartner" },
+      target: { value: "Geschwister" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
-        related_member_id: "mem-2",
-        relationship_label: "Ehepartner",
+        related_member_ids: ["mem-2", "mem-3"],
+        relationship_label: "Geschwister",
       }),
     );
   });
@@ -222,10 +230,9 @@ describe("MemberForm", () => {
       />,
     );
     fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
-    const select = screen.getByLabelText("Beziehung zu") as HTMLSelectElement;
-    const optionLabels = Array.from(select.options).map((o) => o.textContent);
-    expect(optionLabels).not.toContain("Emma");
-    expect(optionLabels).toContain("Anna");
+    fireEvent.keyDown(screen.getByLabelText("Beziehung zu"), { key: "Enter" });
+    expect(screen.queryByRole("menuitemcheckbox", { name: "Emma" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menuitemcheckbox", { name: "Anna" })).toBeInTheDocument();
   });
 });
 
