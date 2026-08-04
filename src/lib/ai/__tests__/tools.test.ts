@@ -338,6 +338,118 @@ describe("add_family_member confirmation gate", () => {
 });
 
 // ---------------------------------------------------------------------------
+// add_task confirmation gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for add_task: `.from("family_members")` resolves the optional
+ * assignee lookup, `.from("tasks")` supports `.insert().select().single()`.
+ */
+function makeAddTaskCtx({
+  member = null,
+  insertedTask = null,
+  insertError = null,
+}: {
+  member?: { id: string } | null;
+  insertedTask?: { id: string; title: string } | null;
+  insertError?: unknown;
+} = {}): ToolContext {
+  const from = vi.fn((table: string) => {
+    if (table === "family_members") {
+      return makeThenableChain(member);
+    }
+    if (table === "tasks") {
+      const chain: Record<string, unknown> = {};
+      chain.insert = vi.fn(() => chain);
+      chain.select = vi.fn(() => chain);
+      chain.single = vi
+        .fn()
+        .mockResolvedValue({ data: insertedTask, error: insertError });
+      return chain;
+    }
+    return makeThenableChain(null);
+  });
+
+  return {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+}
+
+describe("add_task confirmation gate", () => {
+  it("includes 'add_task' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("add_task")).toBe(true);
+  });
+
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const ctx = makeAddTaskCtx();
+    const result = await executeTool(
+      "add_task",
+      { title: "Kita-Ausflug", due_date: "2026-09-12" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.task_title).toBe("Kita-Ausflug");
+    expect(parsed.due_date).toBe("2026-09-12");
+    expect(ctx.client.from).not.toHaveBeenCalledWith("tasks");
+  });
+
+  it("returns error when title is empty", async () => {
+    const ctx = makeAddTaskCtx();
+    const result = await executeTool("add_task", { title: "  ", confirmed: true }, ctx);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Kein Titel angegeben.");
+  });
+
+  it("inserts the task and returns success when confirmed is true", async () => {
+    const ctx = makeAddTaskCtx({
+      insertedTask: { id: "task-9", title: "Kita-Ausflug" },
+    });
+    const result = await executeTool(
+      "add_task",
+      { title: "Kita-Ausflug", due_date: "2026-09-12", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.task_id).toBe("task-9");
+    expect(parsed.titel).toBe("Kita-Ausflug");
+  });
+
+  it("resolves assignee_name to a family member id before inserting", async () => {
+    const ctx = makeAddTaskCtx({
+      member: { id: "member-5" },
+      insertedTask: { id: "task-9", title: "Kita-Ausflug" },
+    });
+    await executeTool(
+      "add_task",
+      { title: "Kita-Ausflug", assignee_name: "Emma", confirmed: true },
+      ctx,
+    );
+
+    expect(ctx.client.from).toHaveBeenCalledWith("family_members");
+  });
+
+  it("returns error when the insert fails", async () => {
+    const ctx = makeAddTaskCtx({ insertError: { message: "db error" } });
+    const result = await executeTool(
+      "add_task",
+      { title: "Kita-Ausflug", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Aufgabe konnte nicht angelegt werden.");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // move_document_to_collection confirmation gate
 // ---------------------------------------------------------------------------
 

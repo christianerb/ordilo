@@ -36,6 +36,7 @@ const TOOL_STEPS: Record<string, { icon: LucideIcon; label: string }> = {
   search_documents: { icon: Search, label: "Durchsucht deine Dokumente" },
   list_documents: { icon: ListChecks, label: "Sieht die Dokumentenliste durch" },
   list_tasks: { icon: ListChecks, label: "Prüft Aufgaben und Fristen" },
+  add_task: { icon: CheckCircle2, label: "Legt die Aufgabe an" },
   list_family_members: { icon: Users, label: "Schaut, wer zur Familie gehört" },
   graph_query: { icon: Network, label: "Verfolgt Zusammenhänge" },
   mark_task_done: { icon: CheckCircle2, label: "Erledigt die Aufgabe" },
