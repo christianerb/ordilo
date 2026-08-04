@@ -47,7 +47,7 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     created_at: "2026-06-01T00:00:00Z",
     linked_user_id: null,
     photo_url: null,
-    related_member_id: null,
+    related_member_ids: [],
     relationship_label: null,
     ...overrides,
   };
@@ -215,5 +215,66 @@ describe("ProfileClient — Bearbeiten", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Emma Neu" })).toBeInTheDocument();
     });
+  });
+});
+
+describe("ProfileClient — Beziehungen (multiple related members)", () => {
+  it("lists every related member's name, joined, in its own line", () => {
+    render(
+      <ProfileClient
+        member={makeMember({
+          role: "Elternteil",
+          relationship_label: "Elternteil",
+          related_member_ids: ["mem-2", "mem-3"],
+        })}
+        documents={[]}
+        tasks={[]}
+        dateEntities={emptyDateEntities}
+        relatedMemberNames={["Hanna", "Ben"]}
+        otherMembers={[
+          { id: "mem-2", name: "Hanna" },
+          { id: "mem-3", name: "Ben" },
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("profile-relationship").textContent).toBe(
+      "Elternteil von Hanna, Ben",
+    );
+  });
+
+  it("does not crowd the role/birthdate line with the relationship detail", () => {
+    render(
+      <ProfileClient
+        member={makeMember({
+          role: "Elternteil",
+          birthdate: "1985-06-15",
+          relationship_label: "Elternteil",
+          related_member_ids: ["mem-2"],
+        })}
+        documents={[]}
+        tasks={emptyTasks}
+        dateEntities={emptyDateEntities}
+        relatedMemberNames={["Hanna"]}
+      />,
+    );
+    // Role + birthdate stay compact on their own line …
+    expect(screen.getByText("Elternteil · 15.06.1985")).toBeInTheDocument();
+    // … the relationship detail renders separately, not appended to it.
+    expect(screen.queryByText(/Elternteil · 15\.06\.1985 ·/)).not.toBeInTheDocument();
+    expect(screen.getByTestId("profile-relationship")).toHaveTextContent(
+      "Elternteil von Hanna",
+    );
+  });
+
+  it("shows no relationship line when the member has no related members", () => {
+    render(
+      <ProfileClient
+        member={makeMember()}
+        documents={[]}
+        tasks={emptyTasks}
+        dateEntities={emptyDateEntities}
+      />,
+    );
+    expect(screen.queryByTestId("profile-relationship")).not.toBeInTheDocument();
   });
 });

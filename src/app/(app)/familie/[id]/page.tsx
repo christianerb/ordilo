@@ -72,14 +72,13 @@ export default async function PersonProfilePage({
         .then((res) => res.data?.signedUrl ?? null)
     : Promise.resolve(null);
 
-  const relatedMemberPromise = typedMember.related_member_id
+  const relatedMemberNamesPromise = typedMember.related_member_ids.length > 0
     ? supabase
         .from("family_members")
         .select("name")
-        .eq("id", typedMember.related_member_id)
-        .maybeSingle()
-        .then((res) => res.data?.name ?? null)
-    : Promise.resolve(null);
+        .in("id", typedMember.related_member_ids)
+        .then((res) => (res.data ?? []).map((m) => m.name))
+    : Promise.resolve([] as string[]);
 
   // Other members of the same family, for the edit form's "Beziehung zu" select.
   const otherMembersPromise = supabase
@@ -123,9 +122,9 @@ export default async function PersonProfilePage({
     };
   });
 
-  const [photoUrl, relatedMemberName, otherMembers] = await Promise.all([
+  const [photoUrl, relatedMemberNames, otherMembers] = await Promise.all([
     photoUrlPromise,
-    relatedMemberPromise,
+    relatedMemberNamesPromise,
     otherMembersPromise,
   ]);
 
@@ -138,7 +137,7 @@ export default async function PersonProfilePage({
         dateEntities={[]}
         inventoryItems={inventoryItems}
         photoUrl={photoUrl}
-        relatedMemberName={relatedMemberName}
+        relatedMemberNames={relatedMemberNames}
         otherMembers={otherMembers}
       />
     );
@@ -249,7 +248,7 @@ export default async function PersonProfilePage({
       documentTitles={docTitleMap}
       inventoryItems={inventoryItems}
       photoUrl={photoUrl}
-      relatedMemberName={relatedMemberName}
+      relatedMemberNames={relatedMemberNames}
       otherMembers={otherMembers}
     />
   );

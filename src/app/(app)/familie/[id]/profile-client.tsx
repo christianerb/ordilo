@@ -44,8 +44,8 @@ export interface ProfileClientProps {
   inventoryItems?: ProfileInventoryItem[];
   /** A short-lived signed URL for the member's uploaded photo, if any. */
   photoUrl?: string | null;
-  /** The name of the member referenced by related_member_id, if any. */
-  relatedMemberName?: string | null;
+  /** Names of the members referenced by related_member_ids, if any. */
+  relatedMemberNames?: string[];
   /** Other members of the same family, for the edit form's "Beziehung zu" select. */
   otherMembers?: MemberOption[];
 }
@@ -58,14 +58,14 @@ export function ProfileClient({
   documentTitles,
   inventoryItems = [],
   photoUrl: initialPhotoUrl,
-  relatedMemberName: initialRelatedMemberName,
+  relatedMemberNames: initialRelatedMemberNames = [],
   otherMembers = [],
 }: ProfileClientProps) {
   const { openDocument } = useDocumentViewer();
 
   const [member, setMember] = useState(initialMember);
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
-  const [relatedMemberName, setRelatedMemberName] = useState(initialRelatedMemberName);
+  const [relatedMemberNames, setRelatedMemberNames] = useState(initialRelatedMemberNames);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -85,7 +85,7 @@ export function ProfileClient({
         role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_id: values.related_member_id || undefined,
+        related_member_ids: values.related_member_ids,
         relationship_label: values.relationship_label || undefined,
       });
       setIsSubmitting(false);
@@ -94,10 +94,10 @@ export function ProfileClient({
         return;
       }
       setMember(result.data);
-      setRelatedMemberName(
-        result.data.related_member_id
-          ? otherMembers.find((m) => m.id === result.data.related_member_id)?.name ?? null
-          : null,
+      setRelatedMemberNames(
+        otherMembers
+          .filter((m) => result.data.related_member_ids.includes(m.id))
+          .map((m) => m.name),
       );
       setEditSheetOpen(false);
       toast.success("Gespeichert");
@@ -108,9 +108,12 @@ export function ProfileClient({
   const formattedBirthdate = formatGermanDate(member.birthdate);
   const avatarColor = member.avatar_color ?? "#305460";
   const initial = member.name.charAt(0).toUpperCase() || "?";
+  // Kept separate from the compact role/birthdate meta line below — with
+  // several related members this can get long, and the profile page (unlike
+  // the crowded family list row) has room to give it its own line.
   const relationship =
-    relatedMemberName && member.relationship_label
-      ? `${member.relationship_label} von ${relatedMemberName}`
+    relatedMemberNames.length > 0 && member.relationship_label
+      ? `${member.relationship_label} von ${relatedMemberNames.join(", ")}`
       : null;
 
   const docTypeMap = new Map<string, string | null>();
@@ -247,10 +250,13 @@ export function ProfileClient({
               {member.name}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {[member.role, formattedBirthdate, relationship]
-                .filter(Boolean)
-                .join(" · ")}
+              {[member.role, formattedBirthdate].filter(Boolean).join(" · ")}
             </p>
+            {relationship && (
+              <p className="mt-0.5 text-sm text-muted-foreground" data-testid="profile-relationship">
+                {relationship}
+              </p>
+            )}
             {/* Quick stats */}
             <div className="mt-2 flex gap-3 text-xs text-muted-foreground">
               <span>{documents.length} Dokumente</span>
@@ -402,7 +408,7 @@ export function ProfileClient({
           role: member.role ?? "",
           birthdate: member.birthdate ?? "",
           avatar_color: member.avatar_color ?? "",
-          related_member_id: member.related_member_id ?? "",
+          related_member_ids: member.related_member_ids,
           relationship_label: member.relationship_label ?? "",
         }}
         memberId={member.id}

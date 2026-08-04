@@ -33,26 +33,28 @@ export interface MemberInput {
   role?: string;
   birthdate?: string;
   avatar_color?: string;
-  related_member_id?: string;
+  related_member_ids?: string[];
   relationship_label?: string;
 }
 
 /**
- * Verify that `relatedMemberId` refers to an existing member of `familyId`.
- * Prevents cross-family references (a user could otherwise reference any
- * UUID, including members of other families).
+ * Verify that every id in `relatedMemberIds` refers to an existing member of
+ * `familyId`. Prevents cross-family references (a user could otherwise
+ * reference any UUID, including members of other families).
  */
-async function verifyRelatedMember(
+async function verifyRelatedMembers(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  relatedMemberId: string,
+  relatedMemberIds: string[],
   familyId: string,
 ): Promise<boolean> {
+  if (relatedMemberIds.length === 0) return true;
   const { data, error } = await supabase
     .from("family_members")
     .select("id, family_id")
-    .eq("id", relatedMemberId)
-    .maybeSingle();
-  return !error && !!data && data.family_id === familyId;
+    .in("id", relatedMemberIds);
+  if (error || !data) return false;
+  const found = new Set(data.filter((m) => m.family_id === familyId).map((m) => m.id));
+  return relatedMemberIds.every((id) => found.has(id));
 }
 
 /**
@@ -91,7 +93,7 @@ export async function addFamilyMember(
     role: input.role ?? "",
     birthdate: input.birthdate ?? "",
     avatar_color: input.avatar_color ?? "",
-    related_member_id: input.related_member_id ?? "",
+    related_member_ids: input.related_member_ids ?? [],
     relationship_label: input.relationship_label ?? "",
   });
   if (!validation.success) {
@@ -114,11 +116,8 @@ export async function addFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  // A related member reference must belong to the same family.
-  if (
-    validation.data.related_member_id &&
-    !(await verifyRelatedMember(supabase, validation.data.related_member_id, family.id))
-  ) {
+  // Every related member reference must belong to the same family.
+  if (!(await verifyRelatedMembers(supabase, validation.data.related_member_ids, family.id))) {
     return { success: false, error: FRIENDLY_ERROR };
   }
 
@@ -131,7 +130,7 @@ export async function addFamilyMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
-      related_member_id: validation.data.related_member_id,
+      related_member_ids: validation.data.related_member_ids,
       relationship_label: validation.data.relationship_label,
     })
     .select("*")
@@ -165,7 +164,7 @@ export async function updateFamilyMember(
     role: input.role ?? "",
     birthdate: input.birthdate ?? "",
     avatar_color: input.avatar_color ?? "",
-    related_member_id: input.related_member_id ?? "",
+    related_member_ids: input.related_member_ids ?? [],
     relationship_label: input.relationship_label ?? "",
   });
   if (!validation.success) {
@@ -173,7 +172,7 @@ export async function updateFamilyMember(
   }
 
   // A member cannot be related to itself.
-  if (validation.data.related_member_id === memberId) {
+  if (validation.data.related_member_ids.includes(memberId)) {
     return { success: false, error: FRIENDLY_ERROR };
   }
 
@@ -204,11 +203,8 @@ export async function updateFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  // A related member reference must belong to the same family.
-  if (
-    validation.data.related_member_id &&
-    !(await verifyRelatedMember(supabase, validation.data.related_member_id, family.id))
-  ) {
+  // Every related member reference must belong to the same family.
+  if (!(await verifyRelatedMembers(supabase, validation.data.related_member_ids, family.id))) {
     return { success: false, error: FRIENDLY_ERROR };
   }
 
@@ -220,7 +216,7 @@ export async function updateFamilyMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
-      related_member_id: validation.data.related_member_id,
+      related_member_ids: validation.data.related_member_ids,
       relationship_label: validation.data.relationship_label,
     })
     .eq("id", memberId)

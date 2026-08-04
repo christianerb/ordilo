@@ -8,6 +8,13 @@ import { Label } from "@/components/ui/label";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
 import { ACCEPTED_AVATAR_FILE_EXTENSIONS } from "@/lib/schemas/avatar";
 import { RoleChipGroup } from "@/components/ordilo/role-chips";
+import { DateInput } from "@/components/ordilo/date-input";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { PhotoCropDialog } from "@/components/ordilo/photo-crop-dialog";
@@ -20,11 +27,12 @@ export interface MemberFormValues {
   role: string;
   birthdate: string;
   avatar_color: string;
-  related_member_id: string;
+  /** Other members this one shares `relationship_label` with (e.g. all children, if the label is "Elternteil"). */
+  related_member_ids: string[];
   relationship_label: string;
 }
 
-/** A minimal reference to another family member, for the "Beziehung zu" select. */
+/** A minimal reference to another family member, for the "Beziehung zu" multi-select. */
 export interface MemberOption {
   id: string;
   name: string;
@@ -96,8 +104,8 @@ export function MemberForm({
   const [avatarColor, setAvatarColor] = useState(
     initialValues?.avatar_color ?? "",
   );
-  const [relatedMemberId, setRelatedMemberId] = useState(
-    initialValues?.related_member_id ?? "",
+  const [relatedMemberIds, setRelatedMemberIds] = useState<string[]>(
+    initialValues?.related_member_ids ?? [],
   );
   const [relationshipLabel, setRelationshipLabel] = useState(
     initialValues?.relationship_label ?? "",
@@ -107,7 +115,7 @@ export function MemberForm({
     return Boolean(
       initialValues?.birthdate ||
         initialValues?.avatar_color ||
-        initialValues?.related_member_id ||
+        (initialValues?.related_member_ids?.length ?? 0) > 0 ||
         initialValues?.relationship_label,
     );
   });
@@ -131,9 +139,15 @@ export function MemberForm({
       role,
       birthdate,
       avatar_color: avatarColor,
-      related_member_id: relatedMemberId,
+      related_member_ids: relatedMemberIds,
       relationship_label: relationshipLabel,
     });
+  };
+
+  const toggleRelatedMember = (id: string) => {
+    setRelatedMemberIds((prev) =>
+      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
+    );
   };
 
   const handleNameChange = (value: string) => {
@@ -320,42 +334,64 @@ export function MemberForm({
             </div>
           )}
 
-          {/* Birthdate */}
+          {/* Birthdate — a text field (TT.MM.JJJJ) with a calendar popover,
+              instead of the native date picker (inconsistent across
+              browsers/OS and, on some platforms, no visible calendar at all). */}
           <div className="space-y-2">
             <Label htmlFor="member-birthdate">Geburtsdatum</Label>
-            <Input
+            <DateInput
               id="member-birthdate"
-              type="date"
               value={birthdate}
-              onChange={(e) => setBirthdate(e.target.value)}
+              onChange={setBirthdate}
               disabled={isSubmitting}
-              className="h-11 rounded-ordilo-md"
+              aria-label="Geburtsdatum"
             />
           </div>
 
-          {/* Beziehung — reference to another family member */}
+          {/* Beziehung — one relationship label applying to any number of
+              other members (e.g. "Elternteil" of both Emma and Hanna). */}
           {relatableMembers.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="member-related">Beziehung zu</Label>
-              <select
-                id="member-related"
-                value={relatedMemberId}
-                onChange={(e) => setRelatedMemberId(e.target.value)}
-                disabled={isSubmitting}
-                className="h-11 w-full appearance-none rounded-ordilo-md border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <option value="">Keine Auswahl</option>
-                {relatableMembers.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-              {relatedMemberId && (
+              <Label id="member-related-label">Beziehung zu</Label>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    aria-labelledby="member-related-label"
+                    data-testid="member-related-trigger"
+                    className="flex h-11 w-full items-center justify-between rounded-ordilo-md border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span className="truncate text-left">
+                      {relatedMemberIds.length > 0
+                        ? relatableMembers
+                            .filter((m) => relatedMemberIds.includes(m.id))
+                            .map((m) => m.name)
+                            .join(", ")
+                        : "Keine Auswahl"}
+                    </span>
+                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="min-w-[14rem]">
+                  {relatableMembers.map((m) => (
+                    <DropdownMenuCheckboxItem
+                      key={m.id}
+                      checked={relatedMemberIds.includes(m.id)}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={() => toggleRelatedMember(m.id)}
+                      data-testid={`member-related-option-${m.id}`}
+                    >
+                      {m.name}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {relatedMemberIds.length > 0 && (
                 <Input
                   type="text"
                   autoComplete="off"
-                  placeholder="Art der Beziehung, z. B. Ehepartner, Bruder"
+                  placeholder="Art der Beziehung, z. B. Elternteil, Geschwister"
                   maxLength={50}
                   value={relationshipLabel}
                   onChange={(e) => setRelationshipLabel(e.target.value)}

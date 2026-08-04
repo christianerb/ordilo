@@ -32,7 +32,7 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     created_at: "2026-07-04T10:00:00Z",
     linked_user_id: null,
     photo_url: null,
-    related_member_id: null,
+    related_member_ids: [],
     relationship_label: null,
     ...overrides,
   };
@@ -125,16 +125,20 @@ describe("FamilieClient — member list", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("shows the relationship label alongside the related member's name", () => {
+  it("shows the relationship label in the row, without the crowded 'von X' detail", () => {
+    // The full "Ehepartner von Anna" phrasing lives on the profile page —
+    // squeezed into this compact list row it made the line too crowded, so
+    // only the label itself shows here (VAL-FAMILY: declutter overview).
     const anna = makeMember({ id: "mem-1", name: "Anna", role: "Mutter" });
     const ben = makeMember({
       id: "mem-2",
       name: "Ben",
       role: "Vater",
-      related_member_id: "mem-1",
+      related_member_ids: ["mem-1"],
       relationship_label: "Ehepartner",
     });
     render(<FamilieClient familyName="Testfamilie" members={[anna, ben]} />);
-    expect(screen.getByText(/Ehepartner von Anna/)).toBeInTheDocument();
+    expect(screen.getByText(/Ehepartner/)).toBeInTheDocument();
+    expect(screen.queryByText(/von Anna/)).not.toBeInTheDocument();
   });
 });

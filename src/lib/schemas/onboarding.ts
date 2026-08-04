@@ -70,12 +70,9 @@ export const memberSchema = z.object({
     .string()
     .optional()
     .or(z.literal("")),
-  related_member_id: z
-    .string()
-    .trim()
-    .uuid("Ungültige Auswahl")
-    .optional()
-    .or(z.literal("")),
+  related_member_ids: z
+    .array(z.string().trim().uuid("Ungültige Auswahl"))
+    .optional(),
   relationship_label: z
     .string()
     .trim()
@@ -95,7 +92,7 @@ export type NormalizedMemberInput = {
   role: string | null;
   birthdate: string | null;
   avatar_color: string | null;
-  related_member_id: string | null;
+  related_member_ids: string[];
   relationship_label: string | null;
 };
 
@@ -148,10 +145,7 @@ export function validateMember(
         data.avatar_color && data.avatar_color.trim() !== ""
           ? data.avatar_color.trim()
           : null,
-      related_member_id:
-        data.related_member_id && data.related_member_id.trim() !== ""
-          ? data.related_member_id.trim()
-          : null,
+      related_member_ids: [...new Set(data.related_member_ids ?? [])],
       relationship_label:
         data.relationship_label && data.relationship_label.trim() !== ""
           ? data.relationship_label.trim()
