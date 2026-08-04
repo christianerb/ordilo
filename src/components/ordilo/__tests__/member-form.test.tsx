@@ -7,20 +7,48 @@ describe("MemberForm", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the Rolle field without needing to open 'Weitere Angaben'", () => {
+  it("shows the Rolle chips without needing to open 'Weitere Angaben'", () => {
     render(<MemberForm submitLabel="Hinzufügen" onSubmit={vi.fn()} />);
-    expect(screen.getByLabelText("Rolle")).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Rolle" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Kind" })).toBeInTheDocument();
   });
 
-  it("submits name and role", () => {
+  it("submits name and the role picked via chip", () => {
     const onSubmit = vi.fn();
     render(<MemberForm submitLabel="Hinzufügen" onSubmit={onSubmit} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Emma" } });
-    fireEvent.change(screen.getByLabelText("Rolle"), { target: { value: "Tochter" } });
+    fireEvent.click(screen.getByRole("button", { name: "Kind" }));
     fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
     expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Emma", role: "Tochter" }),
+      expect.objectContaining({ name: "Emma", role: "Kind" }),
     );
+  });
+
+  it("clears the role when the selected chip is tapped again", () => {
+    const onSubmit = vi.fn();
+    render(<MemberForm submitLabel="Hinzufügen" onSubmit={onSubmit} />);
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Emma" } });
+    const chip = screen.getByRole("button", { name: "Kind" });
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(chip);
+    expect(chip).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "Emma", role: "" }),
+    );
+  });
+
+  it("shows a pre-existing custom role as an extra selected chip (edit mode)", () => {
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={vi.fn()}
+        initialValues={{ name: "Emma", role: "Tante" }}
+      />,
+    );
+    const customChip = screen.getByRole("button", { name: "Tante" });
+    expect(customChip).toHaveAttribute("aria-pressed", "true");
   });
 
   it("does not show the photo section without a memberId (add mode)", () => {

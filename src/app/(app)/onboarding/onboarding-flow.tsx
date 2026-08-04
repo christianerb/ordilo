@@ -14,8 +14,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PersonCard } from "@/components/ordilo/person-card";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { RoleChipGroup } from "@/components/ordilo/role-chips";
 import { createFamily, addMember, completeOnboarding } from "./actions";
-import { cn } from "@/lib/utils";
 
 /**
  * The onboarding step the user is currently on.
@@ -59,9 +59,6 @@ export interface OnboardingState {
  * actions.ts so handled and unhandled failures look identical to the user.
  */
 const NETWORK_ERROR = "Das hat nicht geklappt. Bitte versuch's nochmal.";
-
-/** One-tap role suggestions for the quick-add step. */
-const ROLE_CHIPS = ["Partner:in", "Kind", "Oma", "Opa"] as const;
 
 /**
  * Onboarding flow — two steps, then straight into the product.
@@ -390,25 +387,11 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                   </div>
 
                   {/* One-tap role chips — no dropdown, no extra screen */}
-                  <div className="flex flex-wrap gap-2" role="group" aria-label="Rolle wählen">
-                    {ROLE_CHIPS.map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        onClick={() => setMemberRole(memberRole === role ? "" : role)}
-                        disabled={isSubmitting}
-                        aria-pressed={memberRole === role}
-                        className={cn(
-                          "rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          memberRole === role
-                            ? "bg-[var(--petrol)] text-white"
-                            : "bg-secondary text-muted-foreground hover:text-foreground",
-                        )}
-                      >
-                        {role}
-                      </button>
-                    ))}
-                  </div>
+                  <RoleChipGroup
+                    value={memberRole}
+                    onChange={setMemberRole}
+                    disabled={isSubmitting}
+                  />
 
                   {serverError && <ErrorBanner message={serverError} />}
 
