@@ -9,6 +9,7 @@ import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
 import { ACCEPTED_AVATAR_FILE_EXTENSIONS } from "@/lib/schemas/avatar";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { PhotoCropDialog } from "@/components/ordilo/photo-crop-dialog";
 
 /**
  * Common relationship/role suggestions offered via a datalist. Free text
@@ -127,6 +128,7 @@ export function MemberForm({
 
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -309,7 +311,7 @@ export function MemberForm({
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       e.target.value = "";
-                      if (file) void handlePhotoSelected(file);
+                      if (file) setPendingPhotoFile(file);
                     }}
                   />
                 </div>
@@ -331,6 +333,14 @@ export function MemberForm({
                   {photoError}
                 </p>
               )}
+              <PhotoCropDialog
+                file={pendingPhotoFile}
+                onCancel={() => setPendingPhotoFile(null)}
+                onConfirm={(croppedFile) => {
+                  setPendingPhotoFile(null);
+                  void handlePhotoSelected(croppedFile);
+                }}
+              />
             </div>
           )}
 

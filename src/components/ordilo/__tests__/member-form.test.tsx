@@ -37,12 +37,13 @@ describe("MemberForm", () => {
     expect(screen.getByTestId("member-photo-button")).toBeInTheDocument();
   });
 
-  it("uploads a photo and calls onPhotoChange with the returned URL", async () => {
+  it("opens a crop dialog after selecting a photo, then uploads the cropped result", async () => {
     const onPhotoChange = vi.fn();
     global.fetch = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ url: "https://cdn.example.com/photo.jpg" }),
     });
+    stubCanvasAndObjectUrls();
     render(
       <MemberForm
         submitLabel="Speichern"
@@ -56,6 +57,18 @@ describe("MemberForm", () => {
     const file = new File(["x"], "photo.jpg", { type: "image/jpeg" });
     const input = screen.getByTestId("member-photo-input");
     fireEvent.change(input, { target: { files: [file] } });
+
+    // Upload hasn't happened yet — the crop dialog is shown first.
+    const cropImage = await screen.findByTestId("photo-crop-image");
+    expect(global.fetch).not.toHaveBeenCalled();
+
+    Object.defineProperties(cropImage, {
+      naturalWidth: { value: 800, configurable: true },
+      naturalHeight: { value: 600, configurable: true },
+    });
+    fireEvent.load(cropImage);
+
+    fireEvent.click(screen.getByTestId("photo-crop-confirm"));
 
     await waitFor(() => {
       expect(onPhotoChange).toHaveBeenCalledWith("https://cdn.example.com/photo.jpg");
@@ -71,6 +84,7 @@ describe("MemberForm", () => {
       ok: false,
       json: async () => ({ error: "Datei zu groß." }),
     });
+    stubCanvasAndObjectUrls();
     render(
       <MemberForm submitLabel="Speichern" onSubmit={vi.fn()} memberId="mem-1" />,
     );
@@ -79,6 +93,14 @@ describe("MemberForm", () => {
     const file = new File(["x"], "photo.jpg", { type: "image/jpeg" });
     const input = screen.getByTestId("member-photo-input");
     fireEvent.change(input, { target: { files: [file] } });
+
+    const cropImage = await screen.findByTestId("photo-crop-image");
+    Object.defineProperties(cropImage, {
+      naturalWidth: { value: 800, configurable: true },
+      naturalHeight: { value: 600, configurable: true },
+    });
+    fireEvent.load(cropImage);
+    fireEvent.click(screen.getByTestId("photo-crop-confirm"));
 
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Datei zu groß.");
@@ -178,3 +200,29 @@ describe("MemberForm", () => {
     expect(optionLabels).toContain("Anna");
   });
 });
+
+/**
+ * jsdom does not implement canvas rendering or object URLs. Stub just
+ * enough of the crop dialog's canvas + toBlob pipeline for the "confirm
+ * crop" path to run in tests.
+ */
+function stubCanvasAndObjectUrls() {
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    drawImage: vi.fn(),
+  } as unknown as CanvasRenderingContext2D);
+  vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation(
+    (callback: BlobCallback) => {
+      callback(new Blob(["fake-jpeg"], { type: "image/jpeg" }));
+    },
+  );
+  if (typeof URL.createObjectURL !== "function") {
+    Object.defineProperty(URL, "createObjectURL", {
+      value: () => "blob:mock",
+      configurable: true,
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: () => {},
+      configurable: true,
+    });
+  }
+}
