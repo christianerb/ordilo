@@ -48,14 +48,16 @@ export function Topbar({
           className="flex items-center gap-3 pt-3"
           style={{ paddingTop: "max(0.75rem, env(safe-area-inset-top))" }}
         >
-          <button
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            aria-label="Menü öffnen"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            <Menu className="h-5 w-5" aria-hidden="true" />
-          </button>
+          {showNav && (
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Menü öffnen"
+              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <Menu className="h-5 w-5" aria-hidden="true" />
+            </button>
+          )}
           <Link
             href="/home"
             className="flex items-center gap-2 rounded-ordilo-sm text-sm font-semibold tracking-tight text-foreground transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
