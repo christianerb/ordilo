@@ -32,6 +32,7 @@ import {
   getPriorityLabel,
   getPriorityBadgeClasses,
   shouldRenderSummary,
+  resolveAssignedPersonId,
   FieldRow,
   EditedTag,
   DisambiguationPrompt,
@@ -214,8 +215,11 @@ export function ReviewCardContent({
       </div>
 
       <div>
-        {/* Persons */}
-        {analysis.family_members.length > 0 && (
+        {/* Persons — the section still renders when extraction found nobody,
+            as long as the family has members to assign to. Otherwise a
+            document with no recognized person had no "Person zuordnen"
+            affordance anywhere in the full edit view either. */}
+        {(analysis.family_members.length > 0 || familyMembers.length > 0) && (
           <ReviewFieldSection icon={User} title="Personen" testId="review-persons">
             {analysis.family_members.map((member, i) => (
               <PersonFieldRow
@@ -232,6 +236,13 @@ export function ReviewCardContent({
                 onViewOriginal={onViewOriginal}
               />
             ))}
+            {analysis.family_members.length === 0 && (
+              <AddPersonRow
+                familyMembers={familyMembers}
+                edited={edits.persons.get(0)}
+                onAdd={(memberId) => onEditPerson(0, memberId)}
+              />
+            )}
           </ReviewFieldSection>
         )}
 
@@ -610,6 +621,36 @@ export function ReviewCardContent({
   );
 }
 /**
+ * A person row for when extraction found nobody to name, but the family
+ * has members to assign to. Unlike `PersonFieldRow` the picker is always
+ * visible (there is no name to hide it behind a pencil for).
+ */
+function AddPersonRow({
+  familyMembers,
+  edited,
+  onAdd,
+}: {
+  familyMembers: FamilyMemberOption[];
+  edited: { name: string; personId: string | null } | undefined;
+  onAdd: (memberId: string | null) => void;
+}) {
+  if (familyMembers.length === 0) return null;
+  const assignedId = resolveAssignedPersonId(edited, undefined);
+  const isNone = Boolean(edited) && assignedId === null;
+
+  return (
+    <FieldRow testId="review-person-add" isEdited={Boolean(edited) && !isNone}>
+      <PersonPicker
+        familyMembers={familyMembers}
+        value={assignedId}
+        onChange={onAdd}
+        testIdPrefix="review-person-add"
+      />
+    </FieldRow>
+  );
+}
+
+/**
  * One extracted person, with the assignment editor behind a pencil.
  *
  * The pencil reveals the same chip picker the review summary uses, so
@@ -645,13 +686,11 @@ function PersonFieldRow({
     requestAnimationFrame(() => pencilRef.current?.focus());
   };
 
-  // An edit with an empty name means "explicitly assigned to nobody".
-  const isNone = Boolean(edited) && edited!.name === "";
-  const displayName = isNone ? member.name : (edited?.name ?? member.name);
   // undefined = nothing assigned yet, so no chip is preselected.
-  const assignedId = edited
-    ? (isNone ? null : edited.personId)
-    : (member.person_id ?? undefined);
+  const assignedId = resolveAssignedPersonId(edited, member.person_id);
+  // An edit with an empty name means "explicitly assigned to nobody".
+  const isNone = Boolean(edited) && assignedId === null;
+  const displayName = isNone ? member.name : (edited?.name ?? member.name);
   const createName = edited
     ? null
     : unmatchedPersonName(member.name, member.person_id, familyMembers);

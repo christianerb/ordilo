@@ -391,6 +391,46 @@ describe("ReviewCard", () => {
     expect(within(details).queryByTestId("confirmed-tags")).toBeNull();
   });
 
+  it("allows reassigning a person on an already-confirmed document", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "ok", persons: [] }), {
+        status: 200,
+      }),
+    );
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    const details = await screen.findByTestId("confirmed-details");
+    const persons = within(details).getByTestId("confirmed-persons");
+    expect(within(persons).getByText("Emma")).toBeDefined();
+
+    fireEvent.click(within(persons).getByTestId("confirmed-person-edit-button"));
+    const picker = await within(persons).findByTestId(
+      "confirmed-person-edit-picker",
+    );
+    fireEvent.click(
+      within(picker).getByTestId("confirmed-person-edit-chip-member-2"),
+    );
+
+    await waitFor(() => {
+      const call = fetchSpy.mock.calls.find(
+        ([url]) =>
+          typeof url === "string" && url.includes("/api/documents/doc-1/person"),
+      );
+      expect(call).toBeDefined();
+      expect((call![1] as RequestInit).method).toBe("PATCH");
+      const body = JSON.parse((call![1] as RequestInit).body as string);
+      expect(body.persons).toEqual([{ name: "Hanna", person_id: "member-2" }]);
+    });
+
+    // The section reflects the saved reassignment without a page reload.
+    expect(within(persons).getByText("Hanna")).toBeDefined();
+    expect(within(persons).queryByText("Emma")).toBeNull();
+
+    fetchSpy.mockRestore();
+  });
+
   it("does not render confirmed-details when the analysis has no data", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(null);
 
@@ -1130,14 +1170,65 @@ describe("ReviewCard", () => {
     expect(screen.getByTestId("confirm-button")).toBeDefined();
     expect(screen.queryByTestId("review-headline")).toBeNull();
 
-    // Should not render empty field sections.
-    expect(screen.queryByTestId("review-persons")).toBeNull();
+    // The family has members (mockFamilyMembers), so the Personen section
+    // still renders an assignment picker even though extraction found
+    // nobody to name — that affordance must never disappear just because
+    // there was nothing to auto-recognize.
+    expect(screen.getByTestId("review-persons")).toBeDefined();
+    await screen.findByTestId("review-person-add-picker");
+
+    // Should not render other empty field sections.
     expect(screen.queryByTestId("review-organizations")).toBeNull();
     expect(screen.queryByTestId("review-tasks")).toBeNull();
     expect(screen.queryByTestId("review-tags")).toBeNull();
 
     // Category is always shown.
     expect(screen.getByTestId("review-category")).toBeDefined();
+  });
+
+  it("hides the Personen section when the family itself has no members", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(emptyAnalysis);
+    vi.mocked(fetchFamilyMembers).mockResolvedValue([]);
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("review-card")).toBeDefined();
+    });
+
+    expect(screen.queryByTestId("review-persons")).toBeNull();
+  });
+
+  it("assigns a person via the empty-extraction add row and includes it on confirm", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(emptyAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    const picker = await screen.findByTestId("review-person-add-picker");
+    fireEvent.click(within(picker).getByTestId("review-person-add-chip-member-2"));
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      const confirmCall = fetchSpy.mock.calls.find(
+        ([url]) => typeof url === "string" && url.includes("/confirm"),
+      );
+      expect(confirmCall).toBeDefined();
+      const body = JSON.parse(
+        (confirmCall![1] as RequestInit).body as string,
+      );
+      // The extraction found nobody, but the manually-assigned member
+      // still reaches the confirm payload instead of being silently
+      // dropped for having no matching original entity.
+      expect(body.family_members).toHaveLength(1);
+      expect(body.family_members[0].name).toBe("Hanna");
+      expect(body.family_members[0].person_id).toBe("member-2");
+    });
+
+    fetchSpy.mockRestore();
   });
 
   it("does not render the summary section when summary is empty", async () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import { ReviewSummary } from "@/components/ordilo/review-summary";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
@@ -93,6 +93,32 @@ describe("ReviewSummary", () => {
     );
 
     expect(screen.queryByText("Ordilo hat erkannt")).toBeNull();
+  });
+
+  it("still offers the person picker when extraction found nobody but the family has members", () => {
+    // This is the reported bug: a document with no recognized person had no
+    // "Person zuordnen" affordance at all, even though the family has
+    // members to assign it to. The picker must render regardless.
+    const onEditPerson = vi.fn();
+    render(
+      <ReviewSummary
+        analysis={{ ...analysis, family_members: [] }}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={onEditPerson}
+      />,
+    );
+
+    const picker = screen.getByTestId("review-summary-person-picker");
+    expect(
+      within(picker).getByTestId("review-summary-person-chip-member-1"),
+    ).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(
+      within(picker).getByTestId("review-summary-person-chip-member-2"),
+    );
+    expect(onEditPerson).toHaveBeenCalledWith("member-2");
   });
 
   it("shows the uncertainty notice only when needs_user_review is true", () => {

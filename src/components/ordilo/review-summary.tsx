@@ -82,6 +82,18 @@ function buildHighlights(
       caption: role || "Person",
       isPerson: true,
     });
+  } else if (familyMembers.length > 0) {
+    // Extraction found no person to name, but the family has members to
+    // assign to — the picker still needs a highlight row to render in.
+    // Without this, a document with no recognized person had no
+    // "Person zuordnen" affordance anywhere (VAL-REVIEW bug: the picker
+    // silently disappeared instead of offering an empty pick).
+    highlights.push({
+      icon: User,
+      value: "",
+      caption: "Person zuordnen",
+      isPerson: true,
+    });
   }
 
   const topOrg = analysis.organizations[0];

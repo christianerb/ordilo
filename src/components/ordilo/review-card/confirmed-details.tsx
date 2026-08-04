@@ -35,6 +35,8 @@ import {
   meaningfulLabel,
 } from "@/lib/analysis-cleanup";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { fetchFamilyMembers, type FamilyMemberOption } from "@/lib/analysis";
+import { PersonPicker } from "@/components/ordilo/person-picker";
 import {
   FieldRow,
   ReviewFieldSection,
@@ -127,14 +129,21 @@ export function ConfirmedAnalysisDetails({
       )}
 
       <div>
-        {analysis.family_members.length > 0 && (
-          <ReviewFieldSection icon={User} title={countedTitle(analysis.family_members.length, "Person", "Personen")} testId="confirmed-persons">
-            {analysis.family_members.map((member, i) => (
-              <FieldRow key={i}>
-                <span className="block truncate">{member.name}</span>
-              </FieldRow>
-            ))}
-          </ReviewFieldSection>
+        {documentId ? (
+          <ConfirmedPersonsSection
+            documentId={documentId}
+            initialPersons={analysis.family_members}
+          />
+        ) : (
+          analysis.family_members.length > 0 && (
+            <ReviewFieldSection icon={User} title={countedTitle(analysis.family_members.length, "Person", "Personen")} testId="confirmed-persons">
+              {analysis.family_members.map((member, i) => (
+                <FieldRow key={i}>
+                  <span className="block truncate">{member.name}</span>
+                </FieldRow>
+              ))}
+            </ReviewFieldSection>
+          )
         )}
 
         {documentId && <EditableFactsSection documentId={documentId} />}
@@ -266,6 +275,163 @@ export function ConfirmedAnalysisDetails({
         </button>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Editable persons — assign/reassign after confirmation
+// ---------------------------------------------------------------------------
+
+type ConfirmedPerson = DocumentAnalysis["family_members"][number];
+
+/**
+ * The person assignment for a confirmed document, editable via
+ * `/api/documents/[id]/person`. Before this existed, a confirmed document's
+ * assignment was frozen — the only way to touch it again was a full
+ * re-analyze, which discards every other edit too. Mirrors the
+ * `EditableFactsSection` pattern below: reads and writes go straight to
+ * the backing table, no reindex or reload needed.
+ */
+function ConfirmedPersonsSection({
+  documentId,
+  initialPersons,
+}: {
+  documentId: string;
+  initialPersons: ConfirmedPerson[];
+}) {
+  const [persons, setPersons] = useState<ConfirmedPerson[]>(initialPersons);
+  const [familyMembers, setFamilyMembers] = useState<FamilyMemberOption[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useMountEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const members = await fetchFamilyMembers();
+        if (!cancelled) setFamilyMembers(members);
+      } catch {
+        // The section still shows the confirmed names read-only if the
+        // family roster fails to load — editing just offers no chips.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  });
+
+  if (persons.length === 0 && familyMembers.length === 0) return null;
+
+  const savePersons = async (next: ConfirmedPerson[]) => {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/documents/${documentId}/person`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          persons: next.map((p) => ({ name: p.name, person_id: p.person_id })),
+        }),
+      });
+      if (!response.ok) throw new Error();
+      setPersons(next);
+      setEditingIndex(null);
+      setAdding(false);
+      toast.success("Zuordnung gespeichert");
+    } catch {
+      toast.error("Speichern hat nicht geklappt — bitte nochmal versuchen");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ReviewFieldSection
+      icon={User}
+      title={countedTitle(persons.length, "Person", "Personen")}
+      testId="confirmed-persons"
+    >
+      {persons.map((member, i) => (
+        <FieldRow
+          key={i}
+          editControl={
+            editingIndex === i ? undefined : (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setEditingIndex(i)}
+                aria-label="Person ändern"
+                className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+                data-testid="confirmed-person-edit-button"
+              >
+                <Pencil className="size-4" aria-hidden="true" />
+              </button>
+            )
+          }
+        >
+          <span className="block truncate">{member.name}</span>
+          {editingIndex === i && (
+            <PersonPicker
+              className="mt-2"
+              familyMembers={familyMembers}
+              value={member.person_id ?? undefined}
+              onChange={(memberId) => {
+                if (memberId === null) {
+                  void savePersons(persons.filter((_, idx) => idx !== i));
+                  return;
+                }
+                const chosen = familyMembers.find((m) => m.id === memberId);
+                if (!chosen) return;
+                void savePersons(
+                  persons.map((p, idx) =>
+                    idx === i
+                      ? { ...p, name: chosen.name, person_id: chosen.id }
+                      : p,
+                  ),
+                );
+              }}
+              onDismiss={() => setEditingIndex(null)}
+              testIdPrefix="confirmed-person-edit"
+            />
+          )}
+        </FieldRow>
+      ))}
+
+      {adding ? (
+        <FieldRow testId="confirmed-person-add">
+          <PersonPicker
+            familyMembers={familyMembers}
+            value={undefined}
+            onChange={(memberId) => {
+              const chosen = familyMembers.find((m) => m.id === memberId);
+              if (!chosen) {
+                setAdding(false);
+                return;
+              }
+              void savePersons([
+                ...persons,
+                { name: chosen.name, person_id: chosen.id, confidence: 1 },
+              ]);
+            }}
+            onDismiss={() => setAdding(false)}
+            testIdPrefix="confirmed-person-add"
+          />
+        </FieldRow>
+      ) : (
+        familyMembers.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            disabled={saving}
+            className="flex w-full items-center gap-2 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+            data-testid="confirmed-person-add-button"
+          >
+            <Plus className="size-4 shrink-0" aria-hidden="true" />
+            Person hinzufügen
+          </button>
+        )
+      )}
+    </ReviewFieldSection>
   );
 }
 

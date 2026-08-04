@@ -95,8 +95,17 @@ export function buildConfirmPayload(
   // Apply person edits. An edit with an empty name means "assigned to
   // nobody" — the extracted person is dropped entirely instead of being
   // saved as an unlinked entity.
-  const familyMembers = analysis.family_members
-    .map((m, i) => {
+  //
+  // An edit can also target an index past the end of `family_members`
+  // (e.g. assigning a person when extraction found nobody, at index 0 of
+  // an empty array) — those must be appended, not silently dropped, or a
+  // just-made assignment never reaches the confirm payload at all.
+  const editedExtraIndices = [...edits.persons.keys()]
+    .filter((i) => i >= analysis.family_members.length)
+    .sort((a, b) => a - b);
+
+  const familyMembers = [
+    ...analysis.family_members.map((m, i) => {
       const edited = edits.persons.get(i);
       if (edited) {
         return {
@@ -106,8 +115,16 @@ export function buildConfirmPayload(
         };
       }
       return m;
-    })
-    .filter((m) => m.name.trim().length > 0);
+    }),
+    ...editedExtraIndices.map((i) => {
+      const edited = edits.persons.get(i)!;
+      return {
+        name: edited.name,
+        person_id: edited.personId,
+        confidence: 1,
+      };
+    }),
+  ].filter((m) => m.name.trim().length > 0);
 
   // Apply category edit.
   const suggestedCategory = edits.category ?? analysis.suggested_category;
@@ -166,6 +183,21 @@ export function buildConfirmPayload(
     facts,
     deletedTaskIndices: [...edits.deletedTasks],
   };
+}
+
+/**
+ * Resolve the currently-assigned person id for a field row from its edit
+ * state relative to the extracted value: `undefined` (untouched — nothing
+ * preselected), `null` (explicitly "Ohne Person"), or a member id. This
+ * three-state derivation used to be re-implemented at every call site
+ * (review summary, review card, scan wizard), each subtly differently.
+ */
+export function resolveAssignedPersonId(
+  edited: { name: string; personId: string | null } | undefined,
+  extractedPersonId: string | null | undefined,
+): string | null | undefined {
+  if (!edited) return extractedPersonId ?? undefined;
+  return edited.name === "" ? null : edited.personId;
 }
 
 export function hasReviewEdits(edits: EditState): boolean {
