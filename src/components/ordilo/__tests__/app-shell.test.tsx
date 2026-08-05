@@ -365,7 +365,7 @@ describe("AppShell", () => {
 
   // --- Global search + scan bottom bars (VAL-NAV) -------------------------
 
-  it("renders both the mobile composer and the desktop bottom bar (search + scan) on every tab, including /suche", () => {
+  it("renders both the mobile composer and the desktop bottom bar (search + actions) on every tab, including /suche", () => {
     for (const pathname of ["/home", "/dokumente", "/suche", "/familie", "/aufgaben"]) {
       // Mobile composer + desktop bottom bar both exist in jsdom (only
       // Tailwind breakpoints hide one or the other visually). /suche shares
@@ -375,7 +375,9 @@ describe("AppShell", () => {
       expect(screen.getByTestId("mobile-composer")).toBeDefined();
       expect(screen.getByTestId("desktop-bottom-bar")).toBeDefined();
       expect(screen.getAllByTestId("ai-search-bar")).toHaveLength(2);
-      expect(screen.getAllByRole("button", { name: /scannen/i })).toHaveLength(2);
+      // Scanning now lives behind the shared + action sheet instead of an
+      // inline button — one + per surface (mobile pill, desktop dock).
+      expect(screen.getAllByRole("button", { name: /^aktionen$/i })).toHaveLength(2);
       unmount();
     }
   });
@@ -388,10 +390,10 @@ describe("AppShell", () => {
     expect(screen.queryByTestId("desktop-shell-elbow")).toBeNull();
   });
 
-  it("does not render the search+scan row on /onboarding", () => {
+  it("does not render the search+actions row on /onboarding", () => {
     renderShell("/onboarding");
     expect(screen.queryByTestId("ai-search-bar")).toBeNull();
-    expect(screen.queryByRole("button", { name: /^scannen$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^aktionen$/i })).toBeNull();
   });
 
   it("navigates to /suche with the query when submitted from a non-suche tab", () => {
@@ -419,13 +421,38 @@ describe("AppShell", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("opens the scan wizard overlay when the Scannen button is clicked", async () => {
+  it("opens the scan wizard overlay via the + action sheet", async () => {
     renderShell("/dokumente");
-    const [scanButton] = screen.getAllByRole("button", { name: /scannen/i });
-    fireEvent.click(scanButton);
+    const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
+    fireEvent.click(actionsButton);
+    const scanAction = await screen.findByTestId("composer-action-scan");
+    fireEvent.click(scanAction);
     await waitFor(() => {
       expect(screen.getByTestId("scan-wizard")).toBeDefined();
     });
+  });
+
+  it("opens the create-note sheet via the + action sheet", async () => {
+    renderShell("/dokumente");
+    const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
+    fireEvent.click(actionsButton);
+    const noteAction = await screen.findByTestId("composer-action-note");
+    fireEvent.click(noteAction);
+    await waitFor(() => {
+      expect(screen.getByTestId("create-note-sheet")).toBeDefined();
+    });
+  });
+
+  it("swaps the + action sheet to the collection form for 'Neue Sammlung'", async () => {
+    renderShell("/dokumente");
+    const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
+    fireEvent.click(actionsButton);
+    const collectionAction = await screen.findByTestId("composer-action-collection");
+    fireEvent.click(collectionAction);
+    expect(
+      screen.getByText("Gib der Sammlung einen Namen, ein Icon und eine Farbe."),
+    ).toBeDefined();
+    expect(await screen.findByLabelText("Name")).toBeDefined();
   });
 
   // --- Navigation performance (no remount on route change) ---------------

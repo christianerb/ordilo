@@ -4,14 +4,16 @@ import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { Topbar, MobileComposer, DesktopBottomBar } from "@/components/ordilo/app-shell-navigation";
 import { SidebarNav } from "@/components/ordilo/app-shell-sidebar";
+import { ComposerActionSheet } from "@/components/ordilo/composer-action-sheet";
 import {
+  getProfileDisplayName,
   readCollapsedPreference,
   shouldShowNav,
   type SidebarProfile,
   writeCollapsedPreference,
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { ScanProvider, useScanActions } from "@/lib/scan/scan-context";
+import { ScanProvider } from "@/lib/scan/scan-context";
 import {
   CollectionsProvider,
   type CollectionInfo,
@@ -38,6 +40,7 @@ export function AppShell({
   children,
   profile,
   initialCollections,
+  recentQueries,
 }: {
   children: React.ReactNode;
   /**
@@ -53,13 +56,23 @@ export function AppShell({
    * client-fetch fallback.
    */
   initialCollections?: CollectionInfo[];
+  /**
+   * Recent conversation titles (newest first), resolved by the server
+   * layout — surfaced as suggestion chips in the mobile composer's
+   * zoomed-in overlay. Omitted when there is no family yet (onboarding).
+   */
+  recentQueries?: string[];
 }) {
   const hasServerData = initialCollections !== undefined;
   return (
     <ActiveSearchProvider>
       <ScanProvider>
         <CollectionsProvider initialCollections={initialCollections}>
-          <AppShellContent profile={profile} hasServerData={hasServerData}>
+          <AppShellContent
+            profile={profile}
+            hasServerData={hasServerData}
+            recentQueries={recentQueries ?? []}
+          >
             {children}
           </AppShellContent>
         </CollectionsProvider>
@@ -72,16 +85,18 @@ function AppShellContent({
   children,
   profile: initialProfile,
   hasServerData,
+  recentQueries,
 }: {
   children: React.ReactNode;
   profile?: SidebarProfile;
   hasServerData: boolean;
+  recentQueries: string[];
 }) {
   const pathname = usePathname();
   const showNav = shouldShowNav(pathname);
-  const { openWizard } = useScanActions();
   const { submitQuery, busy } = useActiveSearch();
   const [collapsed, setCollapsed] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   // The server layout hands the profile over as a prop (fetched in
   // parallel with the page's own queries) — no client-side Supabase
@@ -210,15 +225,18 @@ function AppShellContent({
         <>
           <MobileComposer
             onSearch={submitQuery}
-            onScan={openWizard}
+            onOpenActions={() => setActionsOpen(true)}
             isLoading={busy}
+            recentQueries={recentQueries}
+            greetingName={profile ? getProfileDisplayName(profile) : undefined}
           />
           <DesktopBottomBar
             collapsed={collapsed}
             onSearch={submitQuery}
-            onScan={openWizard}
+            onOpenActions={() => setActionsOpen(true)}
             isLoading={busy}
           />
+          <ComposerActionSheet open={actionsOpen} onOpenChange={setActionsOpen} />
         </>
       )}
     </div>

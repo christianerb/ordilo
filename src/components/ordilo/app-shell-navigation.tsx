@@ -2,17 +2,17 @@
 
 import Link from "next/link";
 import {
-  Camera,
   History,
   LogOut,
   Menu,
+  Plus,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { logout } from "@/app/(app)/actions";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
+import { ComposerOverlay } from "@/components/ordilo/composer-overlay";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { Button } from "@/components/ui/button";
 import {
   Sheet,
   SheetContent,
@@ -138,13 +138,20 @@ export function Topbar({
 
 export function MobileComposer({
   onSearch,
-  onScan,
+  onOpenActions,
   isLoading = false,
+  recentQueries = [],
+  greetingName,
 }: {
   onSearch: (query: string) => void;
-  onScan: () => void;
+  /** Opens the shared + action sheet (Scannen / Notiz / Sammlung). */
+  onOpenActions: () => void;
   /** True while an answer is streaming — the bar must not swallow a second question. */
   isLoading?: boolean;
+  /** Recent chat titles, newest first — surfaced as suggestions once zoomed in. */
+  recentQueries?: string[];
+  /** Family/display name for the zoomed-in greeting, when known. */
+  greetingName?: string;
 }) {
   // The composer is fixed to the bottom and its height changes with the
   // textarea, so publish it: the scroll container pads by this value instead
@@ -167,39 +174,73 @@ export function MobileComposer({
     };
   });
 
+  // Shared between the collapsed pill and the fullscreen overlay so a draft
+  // survives zooming in and back out. Submitting from either place clears it
+  // (AISearchBar's own controlled-mode contract).
+  const [value, setValue] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
   return (
-    <div
-      ref={ref}
-      data-testid="mobile-composer"
-      className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-[var(--surface-box)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
-      style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
-    >
-      {/* Scanning lives inside the bar, next to the mic, and the text gets
-          its own full-width row above the controls. A button beside the bar
-          cost ~60px of the 393px a phone has, which is why a normal German
-          question used to wrap every three words. */}
-      <div className="mx-auto w-full max-w-md">
-        <AISearchBar
-          onSubmit={onSearch}
-          onScan={onScan}
-          layout="stacked"
-          isLoading={isLoading}
-          placeholder="Frage Ordilo …"
-        />
+    <>
+      <div
+        ref={ref}
+        data-testid="mobile-composer"
+        className="fixed inset-x-0 bottom-0 z-30 border-t border-white/80 bg-[var(--surface-box)] px-4 pt-3 shadow-[0_-2px_8px_rgba(36,36,36,0.06)] lg:hidden"
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+      >
+        {/* Collapsed: a plain "Ask anything" pill plus a separate + circle
+            for everything else (scan, note, collection) — Granola-style.
+            Focusing the pill zooms into the fullscreen overlay below instead
+            of growing in place. */}
+        <div className="mx-auto flex w-full max-w-md items-end gap-2">
+          <div className="min-w-0 flex-1">
+            <AISearchBar
+              value={value}
+              onValueChange={setValue}
+              onSubmit={onSearch}
+              onFocus={() => setExpanded(true)}
+              isLoading={isLoading}
+              placeholder="Frage Ordilo …"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onOpenActions}
+            disabled={isLoading}
+            aria-label="Aktionen"
+            data-testid="composer-actions-button"
+            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white shadow-card transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          >
+            <Plus className="size-5" aria-hidden="true" />
+          </button>
+        </div>
       </div>
-    </div>
+
+      {expanded && (
+        <ComposerOverlay
+          value={value}
+          onValueChange={setValue}
+          onSubmit={onSearch}
+          isLoading={isLoading}
+          onClose={() => setExpanded(false)}
+          recentQueries={recentQueries}
+          greetingName={greetingName}
+        />
+      )}
+    </>
   );
 }
 
 export function DesktopBottomBar({
   collapsed,
   onSearch,
-  onScan,
+  onOpenActions,
   isLoading = false,
 }: {
   collapsed: boolean;
   onSearch: (query: string) => void;
-  onScan: () => void;
+  /** Opens the shared + action sheet (Scannen / Notiz / Sammlung). */
+  onOpenActions: () => void;
   isLoading?: boolean;
 }) {
   return (
@@ -222,15 +263,16 @@ export function DesktopBottomBar({
             className="py-1"
           />
         </div>
-        <Button
+        <button
           type="button"
-          variant="outline"
-          onClick={onScan}
-          className="h-12 shrink-0 gap-1.5 rounded-full px-5"
+          onClick={onOpenActions}
+          disabled={isLoading}
+          aria-label="Aktionen"
+          data-testid="composer-actions-button"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
         >
-          <Camera className="size-4" aria-hidden="true" />
-          <span>Scannen</span>
-        </Button>
+          <Plus className="size-5" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
