@@ -1,6 +1,7 @@
 import { AppShell } from "@/components/ordilo/app-shell";
 import type { SidebarProfile } from "@/components/ordilo/app-shell-shared";
 import type { CollectionInfo } from "@/lib/collections/collections-context";
+import { listConversations } from "@/lib/ai/chat-history";
 import {
   createClient,
   getMiddlewareFamily,
@@ -53,12 +54,15 @@ export default async function AppLayout({
 
   // RLS scopes the query to the user's family; without a family (e.g.
   // mid-onboarding) there are no collections and the query is skipped.
-  const { data: collectionRows } = familyId
-    ? await supabase
-        .from("collections")
-        .select("id, name, icon, color")
-        .order("sort_order", { ascending: true })
-    : { data: null };
+  const [{ data: collectionRows }, conversations] = await Promise.all([
+    familyId
+      ? supabase
+          .from("collections")
+          .select("id, name, icon, color")
+          .order("sort_order", { ascending: true })
+      : Promise.resolve({ data: null }),
+    familyId ? listConversations(supabase, familyId).catch(() => []) : Promise.resolve([]),
+  ]);
 
   const initialCollections: CollectionInfo[] = (collectionRows ?? []).map(
     (row) => ({
@@ -69,8 +73,21 @@ export default async function AppLayout({
     }),
   );
 
+  // The composer's zoomed-in overlay surfaces recent questions as tappable
+  // suggestions (titles are auto-generated from each conversation's first
+  // message — see /api/chat). Newest first, capped to what the chip row can
+  // reasonably hold.
+  const recentQueries = conversations
+    .map((c) => c.title)
+    .filter((title): title is string => Boolean(title))
+    .slice(0, 4);
+
   return (
-    <AppShell profile={profile} initialCollections={initialCollections}>
+    <AppShell
+      profile={profile}
+      initialCollections={initialCollections}
+      recentQueries={recentQueries}
+    >
       {children}
     </AppShell>
   );
