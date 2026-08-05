@@ -4,6 +4,7 @@ import type { Database } from "@/types/database";
 import {
   FAMILY_ID_HEADER,
   FAMILY_NAME_HEADER,
+  USER_EMAIL_HEADER,
 } from "@/lib/supabase/family-context";
 
 /**
@@ -69,4 +70,22 @@ export async function getMiddlewareFamily(): Promise<{
     // Malformed encoding — fall back to the raw header value.
   }
   return { id, name };
+}
+
+/**
+ * Read the authenticated user's email as forwarded by the middleware, if
+ * any. Only set on full page loads when a family was found (same branch
+ * as the family headers); absent on RSC navigations. Returns null when
+ * the header is missing or empty.
+ */
+export async function getMiddlewareUserEmail(): Promise<string | null> {
+  const headerList = await headers();
+  const encoded = headerList.get(USER_EMAIL_HEADER);
+  if (!encoded) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    // Malformed encoding — fall back to the raw header value.
+    return encoded;
+  }
 }

@@ -83,13 +83,24 @@ export default async function FamiliePage() {
     redirect("/onboarding");
   }
 
-  // Fetch all members for the family, ordered by creation time.
-  // Capture the error so a transient failure is not masked as "no members".
-  const { data: memberData, error: memberError } = await supabase
-    .from("family_members")
-    .select("*")
-    .eq("family_id", family.id)
-    .order("created_at", { ascending: true });
+  // Members and inventory items only depend on the family id, not on each
+  // other — fetch them concurrently instead of as a sequential waterfall.
+  // Capture the member error so a transient failure is not masked as
+  // "no members".
+  const [memberResult, inventoryResult] = await Promise.all([
+    supabase
+      .from("family_members")
+      .select("*")
+      .eq("family_id", family.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("family_inventory_items")
+      .select("id, name, item_type, tags, linked_member_id, status")
+      .eq("family_id", family.id)
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const { data: memberData, error: memberError } = memberResult;
 
   // Member query error → render the error state (NOT the empty state).
   if (memberError) {
@@ -104,44 +115,40 @@ export default async function FamiliePage() {
 
   const members: MemberRow[] = memberData ?? [];
 
-  // Fetch document counts per member — how many confirmed documents are
-  // attributed to each person via the extracted_entities table. Failures
-  // here are non-critical (the page still renders; counts simply omit),
-  // so we don't surface a separate error state for this.
-  const documentCounts: Record<string, number> = {};
-  if (members.length > 0) {
-    const { data: personEntities } = await supabase
-      .from("extracted_entities")
-      .select("linked_object_id, document_id")
-      .eq("entity_type", "person")
-      .eq("confirmed", true)
-      .in(
-        "linked_object_id",
-        members.map((m) => m.id),
-      );
+  // Document counts per member and signed photo URLs both depend only on
+  // the member list — run them concurrently. Failures are non-critical
+  // (the page still renders; counts simply omit, photos fall back to the
+  // colored-initial avatar), so we don't surface error states for these.
+  const [{ data: personEntities }, photoUrls] = await Promise.all([
+    members.length > 0
+      ? supabase
+          .from("extracted_entities")
+          .select("linked_object_id, document_id")
+          .eq("entity_type", "person")
+          .eq("confirmed", true)
+          .in(
+            "linked_object_id",
+            members.map((m) => m.id),
+          )
+      : Promise.resolve({ data: null }),
+    resolvePhotoUrls(members),
+  ]);
 
-    // Count unique documents per member (a member can appear on the same
-    // document via multiple entity rows — dedupe by document_id).
-    const docIdsByMember = new Map<string, Set<string>>();
-    for (const entity of personEntities ?? []) {
-      if (!entity.linked_object_id) continue;
-      const set = docIdsByMember.get(entity.linked_object_id) ?? new Set();
-      set.add(entity.document_id);
-      docIdsByMember.set(entity.linked_object_id, set);
-    }
-    for (const [memberId, docIds] of docIdsByMember) {
-      documentCounts[memberId] = docIds.size;
-    }
+  // Count unique documents per member (a member can appear on the same
+  // document via multiple entity rows — dedupe by document_id).
+  const documentCounts: Record<string, number> = {};
+  const docIdsByMember = new Map<string, Set<string>>();
+  for (const entity of personEntities ?? []) {
+    if (!entity.linked_object_id) continue;
+    const set = docIdsByMember.get(entity.linked_object_id) ?? new Set();
+    set.add(entity.document_id);
+    docIdsByMember.set(entity.linked_object_id, set);
+  }
+  for (const [memberId, docIds] of docIdsByMember) {
+    documentCounts[memberId] = docIds.size;
   }
 
-  // Fetch inventory items for the family.
-  const { data: inventoryData } = await supabase
-    .from("family_inventory_items")
-    .select("id, name, item_type, tags, linked_member_id, status")
-    .eq("family_id", family.id)
-    .order("created_at", { ascending: false });
-
-  const inventoryItems = (inventoryData ?? []).map((i) => ({
+  const inventoryItems = (inventoryResult.data ?? []).map((i) => ({
     id: i.id as string,
     name: i.name as string,
     item_type: i.item_type as string,
@@ -149,8 +156,6 @@ export default async function FamiliePage() {
     linked_member_id: i.linked_member_id as string | null,
     status: i.status as string,
   }));
-
-  const photoUrls = await resolvePhotoUrls(members);
 
   return (
     <FamilieClient

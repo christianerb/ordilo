@@ -786,3 +786,66 @@ describe("AppShell sidebar personality touches", () => {
     expect(currentLinks[0]?.textContent).toContain("Rechnungen");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Server-provided shell data (profile + collections from the server layout)
+// ---------------------------------------------------------------------------
+
+describe("AppShell server-provided data", () => {
+  const serverCollections = [
+    { id: "col-1", name: "Rechnungen", icon: "receipt", color: "petrol" },
+    { id: "col-2", name: "Schule", icon: "graduation-cap", color: "apricot" },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockUsePathname.mockReturnValue("/home");
+    mockSupabaseData();
+  });
+
+  it("renders the server-provided profile and collections immediately", () => {
+    render(
+      <AppShell
+        profile={{ familyName: "Familie Server", email: "server@example.com" }}
+        initialCollections={serverCollections}
+      >
+        <div>content</div>
+      </AppShell>,
+    );
+    // No async fetch needed — the data is there on first render.
+    expect(screen.getAllByText("Familie Server").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole("link", { name: /Rechnungen/i })).toBeDefined();
+    expect(screen.getByRole("link", { name: /Schule/i })).toBeDefined();
+  });
+
+  it("skips the client-side profile and collections fetches when server data is given", async () => {
+    render(
+      <AppShell
+        profile={{ familyName: "Familie Server", email: "server@example.com" }}
+        initialCollections={serverCollections}
+      >
+        <div>content</div>
+      </AppShell>,
+    );
+    await screen.findAllByText("Familie Server");
+    // The profile fetch (auth.getUser) and the collections query must not
+    // fire — the server layout already resolved both. (ScanProvider still
+    // resolves the family id via from("families"), which is fine.)
+    expect(mockAuthGetUser).not.toHaveBeenCalled();
+    const queriedTables = mockFrom.mock.calls.map((call) => call[0]);
+    expect(queriedTables).not.toContain("collections");
+  });
+
+  it("does not fall back to a client fetch when the server profile is undefined (no family)", async () => {
+    render(
+      <AppShell profile={undefined} initialCollections={[]}>
+        <div>content</div>
+      </AppShell>,
+    );
+    // Server-data mode is active (initialCollections given, empty): the
+    // client fetch must stay off even though there is no profile.
+    expect(mockAuthGetUser).not.toHaveBeenCalled();
+    const queriedTables = mockFrom.mock.calls.map((call) => call[0]);
+    expect(queriedTables).not.toContain("collections");
+  });
+});

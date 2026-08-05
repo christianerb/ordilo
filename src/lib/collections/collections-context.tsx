@@ -48,11 +48,36 @@ function toInfo(row: Pick<CollectionRow, "id" | "name" | "icon" | "color">): Col
  * Familienbuch folder list), so their state lives in ONE provider: a
  * single fetch per app mount, and a create from either surface updates
  * both immediately — no duplicate queries, no stale sibling view.
+ *
+ * When the server layout hands over `initialCollections` the client-side
+ * mount fetch is skipped entirely (one less Supabase round-trip after
+ * hydration). A router.refresh() re-renders the layout with a fresh
+ * array, which the provider adopts via render-time state adjustment.
  */
-export function CollectionsProvider({ children }: { children: React.ReactNode }) {
-  const [collections, setCollections] = useState<CollectionInfo[]>([]);
+export function CollectionsProvider({
+  children,
+  initialCollections,
+}: {
+  children: React.ReactNode;
+  initialCollections?: CollectionInfo[];
+}) {
+  const [collections, setCollections] = useState<CollectionInfo[]>(
+    initialCollections ?? [],
+  );
+
+  // Adopt refreshed server data without an effect (official render-time
+  // adjustment pattern): router.refresh() re-renders the layout with a
+  // new array reference, which replaces the local state. Local additions
+  // are preserved between refreshes because the server data then already
+  // includes them.
+  const [prevInitial, setPrevInitial] = useState(initialCollections);
+  if (initialCollections !== undefined && initialCollections !== prevInitial) {
+    setPrevInitial(initialCollections);
+    setCollections(initialCollections);
+  }
 
   useMountEffect(() => {
+    if (initialCollections !== undefined) return; // seeded by the server layout
     let cancelled = false;
     void (async () => {
       // RLS scopes the query to the user's family; unauthenticated

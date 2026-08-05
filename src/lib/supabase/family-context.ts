@@ -14,3 +14,11 @@
  */
 export const FAMILY_ID_HEADER = "x-ordilo-family-id";
 export const FAMILY_NAME_HEADER = "x-ordilo-family-name";
+
+/**
+ * The authenticated user's email, forwarded alongside the family headers
+ * (the middleware already resolved the user via auth.getUser()). Lets the
+ * app layout build the sidebar profile without its own auth round-trip.
+ * Only set when a family was found; stripped from incoming requests.
+ */
+export const USER_EMAIL_HEADER = "x-ordilo-user-email";
