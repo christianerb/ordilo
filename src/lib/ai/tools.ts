@@ -154,6 +154,60 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "add_task",
+      description:
+        "Legt eine neue Aufgabe oder Erinnerung an. " +
+        "Verwende dies, wenn der Nutzer dich bittet, sich etwas zu merken " +
+        "oder eine Aufgabe/Erinnerung/Frist einzutragen (z.B. 'Erinnere mich " +
+        "an den Kita-Ausflug am 12.9.' oder 'Leg eine Aufgabe an: " +
+        "Steuererklaerung einreichen'). " +
+        "Setze confirmed erst auf true, wenn der Nutzer die genaue Formulierung " +
+        "(Titel, ggf. Frist) klar und eindeutig bestaetigt hat (z.B. 'Ja, leg " +
+        "an' oder 'Passt so'). Wenn der Nutzer nur fragt oder unklar ist, setze " +
+        "confirmed auf false — nenne dann in deiner Antwort DIREKT den " +
+        "vorgeschlagenen Titel (und Frist/Prioritaet falls vorhanden) und " +
+        "frage kurz, ob das so passt. Erfinde niemals, die Aufgabe sei bereits " +
+        "angelegt, bevor du dieses Tool mit confirmed=true aufgerufen hast.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "Kurzer, konkreter Titel der Aufgabe.",
+          },
+          description: {
+            type: "string",
+            description: "Optionale zusaetzliche Details.",
+          },
+          due_date: {
+            type: "string",
+            description: "Optionale Frist im Format YYYY-MM-DD.",
+          },
+          priority: {
+            type: "string",
+            enum: ["high", "medium", "low"],
+            description: "Prioritaet. Standard: 'medium'.",
+          },
+          assignee_name: {
+            type: "string",
+            description:
+              "Optional: Name des Familienmitglieds, dem die Aufgabe " +
+              "zugeordnet wird.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur wenn der Nutzer die Aktion eindeutig bestaetigt " +
+              "hat. false (Standard) fordert eine Bestaetigung an.",
+          },
+        },
+        required: ["title"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "list_documents",
       description:
         "Listet Dokumente der Familie VOLLSTAENDIG und deterministisch auf — " +
@@ -509,6 +563,8 @@ export async function executeTool(
       return executeQueryPayments(args, ctx);
     case "list_tasks":
       return executeListTasks(args, ctx);
+    case "add_task":
+      return executeAddTask(args, ctx);
     case "list_documents":
       return executeListDocuments(args, ctx);
     case "list_family_members":
@@ -993,6 +1049,82 @@ async function executeListFamilyMembers(ctx: ToolContext): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// add_task (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+async function executeAddTask(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const title = String(args.title ?? "").trim();
+  if (!title) return JSON.stringify({ error: "Kein Titel angegeben." });
+
+  const description =
+    typeof args.description === "string" && args.description.trim()
+      ? args.description.trim()
+      : null;
+  const dueDate =
+    typeof args.due_date === "string" && args.due_date.trim()
+      ? args.due_date.trim()
+      : null;
+  const priority = ["high", "medium", "low"].includes(args.priority as string)
+    ? (args.priority as string)
+    : "medium";
+  const assigneeName =
+    typeof args.assignee_name === "string" ? args.assignee_name.trim() : "";
+
+  const confirmed = args.confirmed === true;
+  if (!confirmed) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      task_title: title,
+      due_date: dueDate,
+      priority,
+      message: `Bitte bestaetige: Soll ich die Aufgabe '${title}'${dueDate ? ` (faellig ${dueDate})` : ""} anlegen?`,
+    });
+  }
+
+  let assignedTo: string | null = null;
+  if (assigneeName) {
+    const { data: member } = await ctx.client
+      .from("family_members")
+      .select("id")
+      .eq("family_id", ctx.familyId)
+      .ilike("name", assigneeName)
+      .maybeSingle();
+    assignedTo = member?.id ?? null;
+  }
+
+  const { data: task, error } = await ctx.client
+    .from("tasks")
+    .insert({
+      family_id: ctx.familyId,
+      title,
+      description,
+      due_date: dueDate,
+      priority,
+      status: "open",
+      confidence: 1.0,
+      confirmed: true,
+      tags: [],
+      assigned_to: assignedTo,
+    })
+    .select("id, title")
+    .single();
+
+  if (error || !task) {
+    return JSON.stringify({ error: "Aufgabe konnte nicht angelegt werden." });
+  }
+
+  return JSON.stringify({
+    success: true,
+    task_id: task.id,
+    titel: task.title,
+    message: `Aufgabe '${task.title}' wurde angelegt.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // mark_task_done (with confirmation gate)
 // ---------------------------------------------------------------------------
 
@@ -1005,6 +1137,7 @@ async function executeListFamilyMembers(ctx: ToolContext): Promise<string> {
  * tags something) belongs in this set.
  */
 export const CONFIRMATION_TOOLS = new Set([
+  "add_task",
   "mark_task_done",
   "add_family_member",
   "move_document_to_collection",
