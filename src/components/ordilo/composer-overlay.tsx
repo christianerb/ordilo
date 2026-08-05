@@ -59,15 +59,40 @@ export function ComposerOverlay({
   return (
     <div
       data-testid="composer-overlay"
-      className="fixed inset-0 z-40 flex flex-col lg:hidden"
+      // h-dvh (not inset-0's implicit 100%) so this tracks the *visual*
+      // viewport on iOS Safari: with a plain 100%-of-viewport height, the
+      // keyboard doesn't shrink it — the browser instead pans the whole
+      // page to keep the focused input visible, shoving the close/history
+      // buttons above the top edge. dvh + interactiveWidget:resizes-content
+      // (root layout viewport) together keep this actually full-height.
+      className="fixed inset-x-0 top-0 z-40 flex h-dvh flex-col lg:hidden"
     >
-      {/* Backdrop — the page behind stays visible but blurred, so the
-          overlay reads as "focus", not "navigate away". */}
+      {/* Backdrop — a self-contained soft-glow scene (not just a blur of
+          whatever happens to be behind, which is often too plain to read
+          as "blurred" at all) plus a blur of the real page for depth. */}
+      <div className="absolute inset-0 overflow-hidden">
+        <div
+          className="absolute -right-10 -top-16 h-80 w-80 rounded-full bg-[var(--wash-sage)]"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute -left-24 top-1/4 size-72 rounded-full bg-[var(--apricot-light)]"
+          aria-hidden="true"
+        />
+        <div
+          className="absolute bottom-0 right-[6%] h-72 w-72 rounded-full bg-[var(--wash-blue)]"
+          aria-hidden="true"
+        />
+        {/* The blur lives on this layer, not the blobs themselves — a blur
+            filter on the blob plus a backdrop-blur above it double-softens
+            into near-nothing. One blur pass keeps the color visible. */}
+        <div className="absolute inset-0 bg-[var(--canvas-warm)]/25 backdrop-blur-2xl" />
+      </div>
       <button
         type="button"
         aria-label="Schließen"
         onClick={onClose}
-        className="absolute inset-0 bg-[var(--canvas-warm)]/70 backdrop-blur-xl"
+        className="absolute inset-0"
       />
 
       <div className="relative flex h-full flex-col">
@@ -94,7 +119,7 @@ export function ComposerOverlay({
           </Link>
         </div>
 
-        <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto px-6 text-center">
           <p className="font-serif text-3xl text-foreground">
             {getGreeting(new Date())}
             {greetingName ? <>, {greetingName}</> : null}
