@@ -11,7 +11,7 @@ import { useRef, useState } from "react";
 import { logout } from "@/app/(app)/actions";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
-import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useMountLayoutEffect } from "@/lib/hooks/use-mount-effect";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -148,9 +148,12 @@ export function MobileComposer({
 }) {
   // The composer is fixed to the bottom and its height changes with the
   // textarea, so publish it: the scroll container pads by this value instead
-  // of a hardcoded guess that a multi-line query grows past.
+  // of a hardcoded guess that a multi-line query grows past. This runs as a
+  // LAYOUT effect so the variable is set before the first paint — a
+  // paint-time effect rendered one frame with the fallback padding and
+  // snapped afterwards, a visible layout shift (CLS).
   const ref = useRef<HTMLDivElement>(null);
-  useMountEffect(() => {
+  useMountLayoutEffect(() => {
     const el = ref.current;
     if (!el || typeof ResizeObserver === "undefined") return;
     const publish = () =>

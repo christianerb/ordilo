@@ -808,6 +808,7 @@ describe("AppShell server-provided data", () => {
       <AppShell
         profile={{ familyName: "Familie Server", email: "server@example.com" }}
         initialCollections={serverCollections}
+        familyId="fam-1"
       >
         <div>content</div>
       </AppShell>,
@@ -818,22 +819,23 @@ describe("AppShell server-provided data", () => {
     expect(screen.getByRole("link", { name: /Schule/i })).toBeDefined();
   });
 
-  it("skips the client-side profile and collections fetches when server data is given", async () => {
+  it("skips every client-side setup fetch when the server provides all data", async () => {
     render(
       <AppShell
         profile={{ familyName: "Familie Server", email: "server@example.com" }}
         initialCollections={serverCollections}
+        familyId="fam-1"
       >
         <div>content</div>
       </AppShell>,
     );
     await screen.findAllByText("Familie Server");
-    // The profile fetch (auth.getUser) and the collections query must not
-    // fire — the server layout already resolved both. (ScanProvider still
-    // resolves the family id via from("families"), which is fine.)
+    // Profile fetch (auth.getUser), collections query AND the ScanProvider's
+    // family-id lookup must all stay off — the server layout resolved them.
     expect(mockAuthGetUser).not.toHaveBeenCalled();
     const queriedTables = mockFrom.mock.calls.map((call) => call[0]);
     expect(queriedTables).not.toContain("collections");
+    expect(queriedTables).not.toContain("families");
   });
 
   it("does not fall back to a client fetch when the server profile is undefined (no family)", async () => {

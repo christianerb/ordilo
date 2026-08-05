@@ -70,7 +70,11 @@ export default async function AppLayout({
   );
 
   return (
-    <AppShell profile={profile} initialCollections={initialCollections}>
+    <AppShell
+      profile={profile}
+      initialCollections={initialCollections}
+      familyId={familyId}
+    >
       {children}
     </AppShell>
   );

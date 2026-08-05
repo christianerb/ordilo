@@ -429,7 +429,25 @@ export function useDocumentList({
         }
       }
       if (documentsLoadedRef.current && hasProcessingDocsRef.current) {
-        void fetchDocumentsRef.current();
+        // Delta refresh: refetch only the documents currently moving
+        // through the pipeline (usually 0–2 rows), never the whole table.
+        // The full-list refetch ran on every heartbeat as long as ANY doc
+        // sat in a processing status — one stuck row meant downloading
+        // every document (summaries included) every 15s forever.
+        // ocr_done is watched too: analysis is triggered client-side, so
+        // a missed trigger needs the safety net (fetchDocumentById with
+        // allowAutoAnalyze re-fires it).
+        for (const doc of documentsRef.current) {
+          if (!isProcessingStatus(doc.status) && doc.status !== "ocr_done") {
+            continue;
+          }
+          void fetchDocumentByIdRef.current(doc.id, {
+            syncList: true,
+            syncExpanded: expandedDocIdRef.current === doc.id,
+            syncWizard: wizardDocIdRef.current === doc.id,
+            allowAutoAnalyze: true,
+          });
+        }
       }
       if (
         expandedDocIdRef.current &&
