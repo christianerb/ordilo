@@ -38,6 +38,7 @@ export function AppShell({
   children,
   profile,
   initialCollections,
+  familyId,
 }: {
   children: React.ReactNode;
   /**
@@ -53,11 +54,16 @@ export function AppShell({
    * client-fetch fallback.
    */
   initialCollections?: CollectionInfo[];
+  /**
+   * Family id resolved by the server layout — the ScanProvider skips its
+   * client-side families query on mount when this is set.
+   */
+  familyId?: string | null;
 }) {
   const hasServerData = initialCollections !== undefined;
   return (
     <ActiveSearchProvider>
-      <ScanProvider>
+      <ScanProvider initialFamilyId={familyId}>
         <CollectionsProvider initialCollections={initialCollections}>
           <AppShellContent profile={profile} hasServerData={hasServerData}>
             {children}

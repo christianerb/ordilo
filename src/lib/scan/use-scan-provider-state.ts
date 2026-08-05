@@ -36,11 +36,13 @@ import type {
  * Refs filled during step 2 are only CALLED at event/poll time, so every
  * consumer always reaches the latest closure.
  */
-export function useScanProviderState(): ScanProviderState {
+export function useScanProviderState(
+  initialFamilyId?: string | null,
+): ScanProviderState {
   const supabase = createClient();
   const router = useRouter();
 
-  const { familyIdRef, ensureFamilyId } = useFamilyId(supabase);
+  const { familyIdRef, ensureFamilyId } = useFamilyId(supabase, initialFamilyId);
   const {
     fetchDocumentsRef,
     fetchDocumentByIdRef,
