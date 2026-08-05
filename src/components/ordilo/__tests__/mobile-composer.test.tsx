@@ -87,6 +87,20 @@ describe("MobileComposer", () => {
     expect(screen.getByTestId("composer-overlay")).toBeDefined();
   });
 
+  it("does not zoom when enableOverlay is false (already inside /suche)", () => {
+    // Zooming into "ask anything" makes no sense while already inside the
+    // fullscreen /suche conversation — the pill stays a plain composer.
+    render(
+      <MobileComposer
+        onSearch={vi.fn()}
+        onOpenActions={vi.fn()}
+        enableOverlay={false}
+      />,
+    );
+    fireEvent.focus(screen.getByRole("textbox"));
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+  });
+
   it("closes the overlay again without losing the draft", () => {
     render(<MobileComposer onSearch={vi.fn()} onOpenActions={vi.fn()} />);
 
