@@ -32,25 +32,30 @@ async function loadInitialData(): Promise<{
     return { tasks: [], members: [], familyId: null, error: null };
   }
 
-  // Load family members for assignee picker
-  const { data: memberRows } = await supabase
-    .from("family_members")
-    .select("id, name, role")
-    .eq("family_id", family.id)
-    .order("created_at", { ascending: true });
+  // Members (assignee picker) and tasks only depend on the family id, not
+  // on each other — fetch them concurrently instead of sequentially.
+  const [memberResult, taskResult] = await Promise.all([
+    supabase
+      .from("family_members")
+      .select("id, name, role")
+      .eq("family_id", family.id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("tasks")
+      .select("*")
+      .eq("family_id", family.id)
+      .eq("confirmed", true)
+      .order("created_at", { ascending: false }),
+  ]);
+
+  const { data: memberRows } = memberResult;
+  const { data: taskRows, error: tasksError } = taskResult;
 
   const members: AssigneeOption[] = (memberRows as MemberRow[] | null) ?? [];
   const memberNameMap = new Map<string, string>();
   for (const m of members) {
     memberNameMap.set(m.id, m.name);
   }
-
-  const { data: taskRows, error: tasksError } = await supabase
-    .from("tasks")
-    .select("*")
-    .eq("family_id", family.id)
-    .eq("confirmed", true)
-    .order("created_at", { ascending: false });
 
   if (tasksError) {
     return {

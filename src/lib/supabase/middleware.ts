@@ -4,6 +4,7 @@ import type { Database } from "@/types/database";
 import {
   FAMILY_ID_HEADER,
   FAMILY_NAME_HEADER,
+  USER_EMAIL_HEADER,
 } from "@/lib/supabase/family-context";
 
 /**
@@ -30,6 +31,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // NextResponse.next() call, which snapshots the request headers.
   request.headers.delete(FAMILY_ID_HEADER);
   request.headers.delete(FAMILY_NAME_HEADER);
+  request.headers.delete(USER_EMAIL_HEADER);
 
   let supabaseResponse = NextResponse.next({ request });
 
@@ -123,6 +125,10 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       // rebuilt now, preserving any refreshed auth cookies.
       request.headers.set(FAMILY_ID_HEADER, family.id);
       request.headers.set(FAMILY_NAME_HEADER, encodeURIComponent(family.name));
+      // The layout builds the sidebar profile from these headers — the
+      // email comes from the already-resolved user, saving an auth
+      // round-trip per full page load.
+      request.headers.set(USER_EMAIL_HEADER, encodeURIComponent(user.email ?? ""));
       supabaseResponse = rebuildWithRequestHeaders(request, supabaseResponse);
     }
 

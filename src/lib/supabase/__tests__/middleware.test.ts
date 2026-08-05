@@ -524,12 +524,25 @@ describe("updateSession — family context headers", () => {
     expect(decodeURIComponent(forwardedName)).toBe("Familie Müller");
   });
 
+  it("forwards the authenticated user's email alongside the family headers", async () => {
+    setupMock({ familyData: NAMED_FAMILY });
+
+    const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    const forwardedEmail =
+      response.headers.get("x-middleware-request-x-ordilo-user-email") ?? "";
+    expect(decodeURIComponent(forwardedEmail)).toBe("test@ordilo.test");
+  });
+
   it("overwrites spoofed family headers with the verified values", async () => {
     setupMock({ familyData: NAMED_FAMILY });
 
     const request = createMockRequest("/home");
     request.headers.set("x-ordilo-family-id", "spoofed-family");
     request.headers.set("x-ordilo-family-name", "spoofed");
+    request.headers.set("x-ordilo-user-email", "attacker@example.com");
 
     const response = await updateSession(request);
 
@@ -537,6 +550,9 @@ describe("updateSession — family context headers", () => {
     expect(
       response.headers.get("x-middleware-request-x-ordilo-family-id"),
     ).toBe("fam-1");
+    const forwardedEmail =
+      response.headers.get("x-middleware-request-x-ordilo-user-email") ?? "";
+    expect(decodeURIComponent(forwardedEmail)).toBe("test@ordilo.test");
   });
 
   it("strips spoofed family headers without re-setting them on RSC navigations", async () => {
@@ -544,6 +560,7 @@ describe("updateSession — family context headers", () => {
 
     const request = createMockRequest("/home");
     request.headers.set("x-ordilo-family-id", "spoofed-family");
+    request.headers.set("x-ordilo-user-email", "attacker@example.com");
     // SPA navigations skip the onboarding check, so no verified family is
     // forwarded — and the spoofed value must be gone.
     request.headers.set("RSC", "1");
@@ -553,6 +570,9 @@ describe("updateSession — family context headers", () => {
     expect(response.status).toBe(200);
     expect(
       response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBeNull();
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-user-email"),
     ).toBeNull();
   });
 
@@ -565,6 +585,9 @@ describe("updateSession — family context headers", () => {
     expect(response.status).toBe(200);
     expect(
       response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBeNull();
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-user-email"),
     ).toBeNull();
   });
 

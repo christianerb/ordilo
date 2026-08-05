@@ -12,7 +12,10 @@ import {
 } from "@/components/ordilo/app-shell-shared";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ScanProvider, useScanActions } from "@/lib/scan/scan-context";
-import { CollectionsProvider } from "@/lib/collections/collections-context";
+import {
+  CollectionsProvider,
+  type CollectionInfo,
+} from "@/lib/collections/collections-context";
 import { ActiveSearchProvider, useActiveSearch } from "@/lib/search/active-search-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -33,14 +36,32 @@ export { isTabActive, shouldShowNav } from "@/components/ordilo/app-shell-shared
  */
 export function AppShell({
   children,
+  profile,
+  initialCollections,
 }: {
   children: React.ReactNode;
+  /**
+   * Sidebar profile resolved by the server layout. When server data is
+   * provided (see `initialCollections`), the client-side profile fetch is
+   * skipped — even when this is undefined (no family yet).
+   */
+  profile?: SidebarProfile;
+  /**
+   * Collections resolved by the server layout. Its mere presence (even an
+   * empty array) marks server-data mode: the providers skip their
+   * client-side mount fetches. Omitted in unit tests, which exercise the
+   * client-fetch fallback.
+   */
+  initialCollections?: CollectionInfo[];
 }) {
+  const hasServerData = initialCollections !== undefined;
   return (
     <ActiveSearchProvider>
       <ScanProvider>
-        <CollectionsProvider>
-          <AppShellContent>{children}</AppShellContent>
+        <CollectionsProvider initialCollections={initialCollections}>
+          <AppShellContent profile={profile} hasServerData={hasServerData}>
+            {children}
+          </AppShellContent>
         </CollectionsProvider>
       </ScanProvider>
     </ActiveSearchProvider>
@@ -49,8 +70,12 @@ export function AppShell({
 
 function AppShellContent({
   children,
+  profile: initialProfile,
+  hasServerData,
 }: {
   children: React.ReactNode;
+  profile?: SidebarProfile;
+  hasServerData: boolean;
 }) {
   const pathname = usePathname();
   const showNav = shouldShowNav(pathname);
@@ -58,13 +83,22 @@ function AppShellContent({
   const { submitQuery, busy } = useActiveSearch();
   const [collapsed, setCollapsed] = useState(false);
 
-  // Profile is fetched client-side (once on mount) instead of in the
-  // server layout — the layout stays a static pass-through and route
-  // transitions stay fast. Collections live in CollectionsProvider
-  // (shared with the Familienbuch folder list).
-  const [profile, setProfile] = useState<SidebarProfile | undefined>(undefined);
+  // The server layout hands the profile over as a prop (fetched in
+  // parallel with the page's own queries) — no client-side Supabase
+  // round-trips after hydration. Without server data (unit tests) the
+  // client-side mount fetch below is the fallback.
+  const [profile, setProfile] = useState<SidebarProfile | undefined>(initialProfile);
+
+  // Adopt a refreshed server profile without an effect (render-time
+  // adjustment): router.refresh() re-renders the layout with a new object.
+  const [prevInitialProfile, setPrevInitialProfile] = useState(initialProfile);
+  if (hasServerData && initialProfile !== prevInitialProfile) {
+    setPrevInitialProfile(initialProfile);
+    setProfile(initialProfile);
+  }
 
   useMountEffect(() => {
+    if (hasServerData) return; // profile came from the server layout
     const supabase = createClient();
     (async () => {
       // auth.getUser() and the families query don't depend on each
