@@ -146,7 +146,10 @@ export function AISearchBar({
     if (el && singleLineHeightRef.current === null) {
       singleLineHeightRef.current = el.scrollHeight;
     }
-    if (autoFocus) el?.focus();
+    // preventScroll: iOS Safari's default focus behavior pans the whole
+    // visual viewport to reveal the input, which — inside a fullscreen
+    // fixed overlay — shoves everything above it off-screen.
+    if (autoFocus) el?.focus({ preventScroll: true });
     return () => {
       recognitionRef.current?.abort();
     };
