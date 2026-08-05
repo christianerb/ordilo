@@ -140,7 +140,7 @@ describe("DokumentePage empty state", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumenteClient initialDocuments={[]} />
+        <DokumenteClient initialDocuments={[doc as unknown as DocumentRow]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -244,7 +244,7 @@ describe("DokumentePage empty state", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumenteClient initialDocuments={[]} />
+        <DokumenteClient initialDocuments={[doc as unknown as DocumentRow]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -253,10 +253,14 @@ describe("DokumentePage empty state", () => {
       await Promise.resolve();
     });
 
+    // Seeded from the server-rendered list — visible without any fetch.
     expect(screen.getByTestId("document-list")).toBeDefined();
 
+    // The first background poll fires after 4.5s: realtime is unavailable
+    // with this mock client, so the safety-net heartbeat runs at the
+    // 3-tick cadence (3 × 1.5s) instead of the old every-tick polling.
     await act(async () => {
-      vi.advanceTimersByTime(1500);
+      vi.advanceTimersByTime(4500);
       await Promise.resolve();
     });
 
@@ -265,18 +269,29 @@ describe("DokumentePage empty state", () => {
     // legitimately appears twice.
     expect(screen.getAllByText("Rechnung in Arbeit").length).toBeGreaterThan(0);
 
+    // The next poll stays in flight — the list must not unmount while a
+    // background refresh is pending.
+    await act(async () => {
+      vi.advanceTimersByTime(4500);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId("document-list")).toBeDefined();
+
     await act(async () => {
       resolveBackgroundPoll?.({ data: [doc], error: null });
       await Promise.resolve();
     });
 
+    expect(screen.getByTestId("document-list")).toBeDefined();
+
     vi.useRealTimers();
   });
 
-  it("renders server-provided initial documents immediately while the client load is in flight", async () => {
+  it("renders server-provided initial documents immediately without refetching the table", async () => {
     // Hybrid SSR: page.tsx fetches the documents server-side and passes
-    // them as initialDocuments; the client paints them instead of a
-    // spinner while the ScanProvider's own initial load is still running.
+    // them as initialDocuments; the client seeds the ScanProvider with
+    // them instead of running the identical full-table query again.
     const ssrDoc = {
       id: "doc-ssr",
       family_id: FAMILY_ID,
@@ -296,11 +311,15 @@ describe("DokumentePage empty state", () => {
       confirmed_at: new Date().toISOString(),
     } as unknown as DocumentRow;
 
-    // The browser client's documents query never resolves, so the
-    // provider stays in its initial-loading state for the whole test.
+    // If the client refetched on mount, this query would be called — the
+    // never-resolving promise would also keep the provider "loading"
+    // forever, so both signals guard against the double-fetch regression.
+    const documentsOrderSpy = vi
+      .fn()
+      .mockReturnValue(new Promise(() => {}));
     const documentsChain = {
       eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnValue(new Promise(() => {})),
+      order: documentsOrderSpy,
     };
     const familiesChain = {
       limit: vi.fn(() => ({
@@ -345,5 +364,8 @@ describe("DokumentePage empty state", () => {
     expect(screen.getByTestId("document-list")).toBeDefined();
     expect(screen.getAllByText("SSR-Rechnung").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("empty-state")).toBeNull();
+
+    // The duplicate full-table fetch must NOT have fired.
+    expect(documentsOrderSpy).not.toHaveBeenCalled();
   });
 });

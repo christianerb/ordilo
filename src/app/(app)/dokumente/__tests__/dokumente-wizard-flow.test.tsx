@@ -182,13 +182,12 @@ describe("DokumentePage — scan wizard flow", () => {
   });
 
   it("routes the camera fallback's gallery pick through the wizard's tracked upload, all the way to the auto-file card", async () => {
-    let callCount = 0;
     const docId = "doc-wizard-1";
+    // The provider seeds from the (empty) server-rendered list, so the
+    // first client-side documents query is the upload-driven one — it
+    // already returns the analyzed document.
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
-      mockSupabaseClient(() => {
-        callCount++;
-        return callCount === 1 ? [] : [analyzedDoc(docId)];
-      }),
+      mockSupabaseClient(() => [analyzedDoc(docId)]),
     );
     vi.mocked(uploadFile).mockResolvedValue({
       document_id: docId,

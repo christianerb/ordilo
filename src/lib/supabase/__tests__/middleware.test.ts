@@ -26,7 +26,11 @@ function createMockRequest(pathname: string, method = "GET"): NextRequest {
  */
 function mockSupabaseClient(options: {
   user?: { id: string; email: string } | null;
-  familyData?: { id: string; onboarding_completed_at: string | null } | null;
+  familyData?: {
+    id: string;
+    name?: string;
+    onboarding_completed_at: string | null;
+  } | null;
   familyError?: unknown;
 }) {
   const {
@@ -484,5 +488,120 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
 
     expect(response.status).toBe(200);
     expect(response.headers.get("location")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Family context headers: the middleware forwards its verified family to
+// page renders so they can skip re-running the identical families query.
+// NextResponse.next() exposes forwarded request headers on the response as
+// `x-middleware-request-<name>`.
+// ---------------------------------------------------------------------------
+
+describe("updateSession — family context headers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  const NAMED_FAMILY = {
+    id: "fam-1",
+    name: "Familie Müller",
+    onboarding_completed_at: "2026-07-04T10:00:00Z",
+  };
+
+  it("forwards the verified family via request headers on app page loads", async () => {
+    setupMock({ familyData: NAMED_FAMILY });
+
+    const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBe("fam-1");
+    const forwardedName =
+      response.headers.get("x-middleware-request-x-ordilo-family-name") ?? "";
+    expect(decodeURIComponent(forwardedName)).toBe("Familie Müller");
+  });
+
+  it("overwrites spoofed family headers with the verified values", async () => {
+    setupMock({ familyData: NAMED_FAMILY });
+
+    const request = createMockRequest("/home");
+    request.headers.set("x-ordilo-family-id", "spoofed-family");
+    request.headers.set("x-ordilo-family-name", "spoofed");
+
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBe("fam-1");
+  });
+
+  it("strips spoofed family headers without re-setting them on RSC navigations", async () => {
+    setupMock({ familyData: NAMED_FAMILY });
+
+    const request = createMockRequest("/home");
+    request.headers.set("x-ordilo-family-id", "spoofed-family");
+    // SPA navigations skip the onboarding check, so no verified family is
+    // forwarded — and the spoofed value must be gone.
+    request.headers.set("RSC", "1");
+
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBeNull();
+  });
+
+  it("does not forward family headers when there is no family", async () => {
+    setupMock({ familyData: null });
+
+    const request = createMockRequest("/onboarding");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBeNull();
+  });
+
+  it("preserves refreshed auth cookies when forwarding family headers", async () => {
+    setupMockWithCookies({
+      familyData: NAMED_FAMILY,
+      refreshCookies: [
+        {
+          name: "sb-test-auth-token",
+          value: "new-token-value",
+          options: {
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax",
+            path: "/",
+            maxAge: 3600,
+          },
+        },
+      ],
+    });
+
+    const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBe("fam-1");
+
+    const cookies = response.cookies.getAll();
+    const authCookie = cookies.find((c) => c.name === "sb-test-auth-token");
+    expect(authCookie).toBeDefined();
+    expect(authCookie?.value).toBe("new-token-value");
+    expect(authCookie?.httpOnly).toBe(true);
+    expect(authCookie?.secure).toBe(true);
+    expect(authCookie?.sameSite).toBe("lax");
+    expect(authCookie?.path).toBe("/");
+    expect(authCookie?.maxAge).toBe(3600);
   });
 });

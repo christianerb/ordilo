@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { FamilieClient } from "./familie-client";
 import type { Database } from "@/types/database";
@@ -55,11 +55,22 @@ export default async function FamiliePage() {
   // Fetch the user's family (RLS-scoped — only returns the family created_by
   // the authenticated user). Capture the error so we can distinguish a
   // transient backend failure from a legitimate "no family yet" state.
-  const { data: family, error: familyError } = await supabase
-    .from("families")
-    .select("id, name")
-    .limit(1)
-    .maybeSingle();
+  // On full page loads the middleware already ran this query for the
+  // onboarding gate and hands the verified result over via request headers
+  // (no error possible on that path) — only RSC navigations need the
+  // fallback query.
+  const middlewareFamily = await getMiddlewareFamily();
+  let family: { id: string; name: string } | null = middlewareFamily;
+  let familyError = false;
+  if (!family) {
+    const result = await supabase
+      .from("families")
+      .select("id, name")
+      .limit(1)
+      .maybeSingle();
+    family = result.data;
+    familyError = !!result.error;
+  }
 
   // Query error → render the error state (NOT onboarding redirect).
   // A transient backend/auth failure should not be masked as "no family".

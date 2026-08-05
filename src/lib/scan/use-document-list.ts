@@ -286,6 +286,38 @@ export function useDocumentList({
     await fetchDocumentsRef.current();
   }, [fetchDocumentsRef]);
 
+  /**
+   * Seed the list with server-rendered documents instead of refetching.
+   *
+   * /dokumente's server component already fetched the exact same column
+   * set, so seeding skips the duplicate full-table fetch on mount while
+   * still marking the list as loaded — realtime/polling delta sync takes
+   * over from there. Mirrors fetchDocuments' first-load seeding:
+   * pre-existing ocr_done docs are recorded as already-triggered so they
+   * don't re-fire analysis.
+   */
+  const seedDocuments = useCallback(
+    (initialDocuments: DocumentRow[]) => {
+      // The provider persists across SPA navigations — once a live load
+      // happened, its fresher data wins and seeding would clobber it.
+      if (documentsLoadedRef.current) return;
+
+      for (const doc of initialDocuments) {
+        if (doc.status === "ocr_done") {
+          triggeredAnalysisRef.current.add(doc.id);
+        }
+      }
+      seededPreExistingRef.current = true;
+
+      setDocuments(initialDocuments);
+      setDocumentsError(null);
+      documentsLoadedRef.current = true;
+      initialDocumentsLoadedRef.current = true;
+      setLoadingDocs(false);
+    },
+    [documentsLoadedRef, triggeredAnalysisRef],
+  );
+
   const updateTrackedDocument = useCallback(
     (documentId: string, updater: (doc: DocumentRow) => DocumentRow) => {
       if (documentsLoadedRef.current) {
@@ -379,11 +411,22 @@ export function useDocumentList({
 
   useMountEffect(() => {
     const interval = setInterval(() => {
-      // With a live realtime subscription, polling is only a safety net —
-      // heartbeat every 15s instead of every 1.5s.
       pollTickRef.current += 1;
-      if (realtimeReadyRef.current && pollTickRef.current % 10 !== 0) {
-        return;
+      // Fast 1.5s polling only while the wizard shows the processing step —
+      // the one moment someone is actively watching a document move through
+      // the pipeline. Everything else rides on the realtime subscription,
+      // with polling as a safety net only (15s while realtime is live, 4.5s
+      // when the subscription is down) so background pages don't refetch
+      // the full document list every 1.5s.
+      const wizardProcessing =
+        wizardOpenRef.current &&
+        wizardStepRef.current === "processing" &&
+        !!wizardDocIdRef.current;
+      if (!wizardProcessing) {
+        const heartbeatTicks = realtimeReadyRef.current ? 10 : 3;
+        if (pollTickRef.current % heartbeatTicks !== 0) {
+          return;
+        }
       }
       if (documentsLoadedRef.current && hasProcessingDocsRef.current) {
         void fetchDocumentsRef.current();
@@ -507,6 +550,7 @@ export function useDocumentList({
     expandedDocIdRef,
     expandedDocumentRef,
     loadDocuments,
+    seedDocuments,
     updateTrackedDocument,
     openDocument,
     closeDocument,

@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/types/database";
+import {
+  FAMILY_ID_HEADER,
+  FAMILY_NAME_HEADER,
+} from "@/lib/supabase/family-context";
 
 /**
  * Refresh the Supabase auth session on every matched request and protect
@@ -19,6 +23,14 @@ import type { Database } from "@/types/database";
  * propagate to the browser.
  */
 export async function updateSession(request: NextRequest): Promise<NextResponse> {
+  // Pages may read the verified family from request headers (set below) to
+  // skip re-running this middleware's families query. Never trust incoming
+  // values — a client could spoof them to impersonate another family
+  // context. Strip them unconditionally BEFORE the first
+  // NextResponse.next() call, which snapshots the request headers.
+  request.headers.delete(FAMILY_ID_HEADER);
+  request.headers.delete(FAMILY_NAME_HEADER);
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient<Database>(
@@ -90,7 +102,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // RLS ensures only the user's own family is visible.
     const { data: family, error: familyError } = await supabase
       .from("families")
-      .select("id, onboarding_completed_at")
+      .select("id, name, onboarding_completed_at")
       .limit(1)
       .maybeSingle();
 
@@ -100,6 +112,18 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // bounced back to onboarding because the DB was briefly unreachable).
     if (familyError) {
       return supabaseResponse;
+    }
+
+    if (family) {
+      // Hand the verified family to the page render so it can skip its own
+      // identical families query (one less Supabase round-trip per full
+      // page load). NextResponse.next() snapshots request headers at
+      // construction time — and the last construction happened during
+      // getUser()'s cookie refresh — so the pass-through response must be
+      // rebuilt now, preserving any refreshed auth cookies.
+      request.headers.set(FAMILY_ID_HEADER, family.id);
+      request.headers.set(FAMILY_NAME_HEADER, encodeURIComponent(family.name));
+      supabaseResponse = rebuildWithRequestHeaders(request, supabaseResponse);
     }
 
     // onboarding_complete = family exists AND onboarding_completed_at is set.
@@ -128,6 +152,25 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   }
 
   return supabaseResponse;
+}
+
+/**
+ * Rebuild the pass-through response so it picks up request headers that
+ * were set after the last NextResponse.next() call (which snapshots the
+ * request headers at construction time). All refreshed auth cookies are
+ * copied over with their FULL attributes — same rules as
+ * redirectWithCookies.
+ */
+function rebuildWithRequestHeaders(
+  request: NextRequest,
+  supabaseResponse: NextResponse,
+): NextResponse {
+  const rebuilt = NextResponse.next({ request });
+  supabaseResponse.cookies.getAll().forEach((cookie) => {
+    const { name, value, ...options } = cookie;
+    rebuilt.cookies.set(name, value, options);
+  });
+  return rebuilt;
 }
 
 /**
