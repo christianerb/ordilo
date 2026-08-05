@@ -38,6 +38,11 @@ export interface ScanContextValue extends ScanActionsValue, DocumentViewerValue 
    */
   documentsError: string | null;
   loadDocuments: () => Promise<void>;
+  /**
+   * Seed the list with server-rendered documents instead of refetching on
+   * mount. No-op once the provider holds live data (SPA navigations).
+   */
+  seedDocuments: (initialDocuments: DocumentRow[]) => void;
   uploads: UploadState[];
   isDragOver: boolean;
   expandedDocId: string | null;

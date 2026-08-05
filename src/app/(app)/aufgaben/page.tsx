@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import type { Database } from "@/types/database";
 import { AufgabenClient } from "./aufgaben-client";
@@ -14,11 +14,19 @@ async function loadInitialData(): Promise<{
   error: string | null;
 }> {
   const supabase = await createClient();
-  const { data: family } = await supabase
-    .from("families")
-    .select("id")
-    .limit(1)
-    .maybeSingle();
+  // On full page loads the middleware already ran this query for the
+  // onboarding gate and hands the result over via request headers — only
+  // RSC navigations need the fallback query.
+  const middlewareFamily = await getMiddlewareFamily();
+  let family: { id: string } | null = middlewareFamily;
+  if (!family) {
+    const { data } = await supabase
+      .from("families")
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    family = data;
+  }
 
   if (!family) {
     return { tasks: [], members: [], familyId: null, error: null };

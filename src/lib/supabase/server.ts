@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import type { Database } from "@/types/database";
+import {
+  FAMILY_ID_HEADER,
+  FAMILY_NAME_HEADER,
+} from "@/lib/supabase/family-context";
 
 /**
  * Server-side Supabase client for use in Server Components, Route Handlers,
@@ -35,4 +39,34 @@ export async function createClient() {
       },
     },
   );
+}
+
+/**
+ * Read the family the middleware already verified for this request, if any.
+ *
+ * On full page loads of app routes the middleware runs a `families` query
+ * for the onboarding gate and forwards the result via request headers, so
+ * pages can skip re-running the identical query. On RSC navigations (SPA
+ * tab switches) the middleware skips its check, the headers are absent,
+ * and callers must fall back to their own query.
+ *
+ * Returns null when the headers are absent — never trust them otherwise:
+ * the middleware strips spoofed incoming values before setting its own.
+ */
+export async function getMiddlewareFamily(): Promise<{
+  id: string;
+  name: string;
+} | null> {
+  const headerList = await headers();
+  const id = headerList.get(FAMILY_ID_HEADER);
+  if (!id) return null;
+
+  const encodedName = headerList.get(FAMILY_NAME_HEADER) ?? "";
+  let name = encodedName;
+  try {
+    name = decodeURIComponent(encodedName);
+  } catch {
+    // Malformed encoding — fall back to the raw header value.
+  }
+  return { id, name };
 }

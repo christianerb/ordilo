@@ -13,9 +13,12 @@ const { mockRedirect, mockRouterRefresh, mockRouterPush } = vi.hoisted(() => ({
   mockRouterPush: vi.fn(),
 }));
 
-// Mock the supabase server client.
+// Mock the supabase server client. getMiddlewareFamily returns null so
+// the page falls back to its own (mocked) families query — the path these
+// tests exercise.
 vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
+  getMiddlewareFamily: vi.fn().mockResolvedValue(null),
 }));
 
 // Mock next/navigation redirect — it must NOT be called on query errors.

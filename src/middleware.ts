@@ -15,14 +15,17 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
+     * - api (route handlers authenticate themselves via requireUser() —
+     *   running the middleware's auth.getUser() on top added a full
+     *   Supabase Auth round-trip to every single API call)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - public assets (svg, png, jpg, etc.)
      *
-     * Auth callback and API routes are included so the session is refreshed
-     * before they run. Static assets are excluded for performance.
+     * The auth callback (/auth/callback) is NOT under /api, so it stays
+     * matched and the session is still refreshed before it runs.
      */
-    "/((?!_next/static|_next/image|favicon.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
   ],
 };

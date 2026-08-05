@@ -60,6 +60,7 @@ export function DokumenteClient({
     loadingDocs,
     documentsError,
     loadDocuments,
+    seedDocuments,
     uploads,
     isDragOver,
     openDocument,
@@ -82,11 +83,14 @@ export function DokumenteClient({
   const { collections, addCollection } = useCollections();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  // The provider's own load must still run: it wires up polling/realtime
-  // sync and the auto-analyze seeding, not just the list itself.
+  // Seed the provider from the server-rendered list instead of refetching
+  // the full table — the server component already ran the exact same
+  // query, and realtime/polling (wired up by the provider itself) takes
+  // over from there. Seeding is a no-op when the provider already holds
+  // live data from an earlier page in this session.
   useMountEffect(() => {
     if (typeof window === "undefined") return;
-    void loadDocuments();
+    seedDocuments(initialDocuments);
     const params = new URLSearchParams(window.location.search);
     const docId = params.get("doc");
     if (docId) {

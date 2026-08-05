@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import {
   loadConversationMessages,
   listConversations,
@@ -34,12 +34,20 @@ export default async function SuchePage({
     typeof params.chat === "string" ? params.chat.trim() : "";
   const showHistory = params.history === "1";
 
-  // 1. Fetch the user's family (RLS-scoped).
-  const { data: family } = await supabase
-    .from("families")
-    .select("id, name")
-    .limit(1)
-    .maybeSingle();
+  // 1. Fetch the user's family (RLS-scoped). On full page loads the
+  //    middleware already ran this exact query for the onboarding gate and
+  //    hands the result over via request headers — only RSC navigations
+  //    (SPA tab switches) need the fallback query.
+  const middlewareFamily = await getMiddlewareFamily();
+  let family = middlewareFamily;
+  if (!family) {
+    const { data } = await supabase
+      .from("families")
+      .select("id, name")
+      .limit(1)
+      .maybeSingle();
+    family = data;
+  }
 
   if (!family) {
     redirect("/onboarding");

@@ -41,6 +41,7 @@ import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
 import { uploadFile } from "@/lib/upload";
 import { triggerOcr } from "@/lib/ocr";
+import type { DocumentRow } from "@/lib/scan/scan-context-types";
 
 const FAMILY_ID = "fam-auto-0000-0000-0000-000000000001";
 
@@ -159,7 +160,7 @@ describe("DokumentePage auto-analyze navigation guard", () => {
     render(
       <ScanProvider>
         <CollectionsProvider>
-        <DokumenteClient initialDocuments={[]} />
+        <DokumenteClient initialDocuments={[doc as unknown as DocumentRow]} />
       </CollectionsProvider>
       </ScanProvider>,
     );
@@ -180,22 +181,19 @@ describe("DokumentePage auto-analyze navigation guard", () => {
   });
 
   it("auto-analyzes a document that reaches ocr_done after an in-session upload", async () => {
-    // Simulate: initial load shows no documents. After the user uploads
-    // a file, fetchDocuments is called again and the mock returns the
-    // freshly-OCR'd document at ocr_done. The auto-analyze effect should
-    // fire for this doc because it was NOT in ocr_done during the initial
-    // load (it reached ocr_done during the session).
-    let callCount = 0;
+    // Simulate: the server-rendered list is empty, so the provider seeds
+    // with no documents. After the user uploads a file, fetchDocuments is
+    // called and the mock returns the freshly-OCR'd document at ocr_done.
+    // The auto-analyze effect should fire for this doc because it was NOT
+    // in ocr_done during the initial seed (it reached ocr_done during the
+    // session).
     const freshDoc = ocrDoneDoc("doc-fresh-1", {
       ocr_text: "Echter OCR-Text",
       page_count: 1,
     });
 
     (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
-      mockSupabaseClient(() => {
-        callCount++;
-        return callCount <= 1 ? [] : [freshDoc];
-      }),
+      mockSupabaseClient(() => [freshDoc]),
     );
 
     vi.mocked(uploadFile).mockResolvedValue({
