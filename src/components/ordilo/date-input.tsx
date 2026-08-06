@@ -91,6 +91,9 @@ export interface DateInputProps {
   onChange: (value: string) => void;
   disabled?: boolean;
   "aria-label"?: string;
+  /** Extra classes merged onto the text input (e.g. to match adjacent field height). */
+  className?: string;
+  "data-testid"?: string;
 }
 
 /**
@@ -104,6 +107,7 @@ export function DateInput({
   value,
   onChange,
   disabled,
+  className,
   ...rest
 }: DateInputProps) {
   const [text, setText] = useState(() => (value ? toGermanDateText(value) : ""));
@@ -187,7 +191,7 @@ export function DateInput({
           value={text}
           onChange={(e) => handleTextChange(e.target.value)}
           disabled={disabled}
-          className="h-11 rounded-ordilo-md pr-11"
+          className={cn("h-11 rounded-ordilo-md pr-11", className)}
           {...rest}
         />
         <PopoverTrigger asChild>

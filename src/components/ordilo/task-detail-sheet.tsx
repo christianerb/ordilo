@@ -8,7 +8,6 @@ import {
   Trash2,
   RotateCcw,
   Loader2,
-  Calendar,
   User,
   ChevronDown,
 } from "lucide-react";
@@ -20,6 +19,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -243,21 +243,14 @@ export function TaskDetailSheet({
                     >
                       Fällig am
                     </label>
-                    <div className="flex h-12 items-center gap-2 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] px-3 transition-colors focus-within:border-[var(--petrol)] focus-within:ring-[3px] focus-within:ring-ring/20">
-                      <Calendar
-                        className="size-4 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                        strokeWidth={1.5}
-                      />
-                      <input
-                        id="task-detail-due-date"
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none focus:ring-0"
-                        data-testid="task-detail-due-date"
-                      />
-                    </div>
+                    <DateInput
+                      id="task-detail-due-date"
+                      value={dueDate}
+                      onChange={setDueDate}
+                      className="h-12"
+                      aria-label="Fällig am"
+                      data-testid="task-detail-due-date"
+                    />
                   </div>
 
                   <fieldset>
