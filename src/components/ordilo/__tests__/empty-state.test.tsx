@@ -88,4 +88,38 @@ describe("EmptyState", () => {
     const container = screen.getByTestId("empty-state");
     expect(container.className).toContain("custom-class");
   });
+
+  it("renders a secondary action when both secondary props are provided", () => {
+    const onSecondaryAction = vi.fn();
+    render(
+      <EmptyState
+        title="Leer"
+        actionLabel="Dokument scannen"
+        onAction={vi.fn()}
+        secondaryActionLabel="Notiz schreiben"
+        onSecondaryAction={onSecondaryAction}
+      />,
+    );
+    expect(
+      screen.getByTestId("empty-state-secondary-action"),
+    ).toBeDefined();
+  });
+
+  it("calls onSecondaryAction when the secondary action is clicked", () => {
+    const onSecondaryAction = vi.fn();
+    render(
+      <EmptyState
+        title="Leer"
+        secondaryActionLabel="Notiz schreiben"
+        onSecondaryAction={onSecondaryAction}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("empty-state-secondary-action"));
+    expect(onSecondaryAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not render a secondary action when onSecondaryAction is missing", () => {
+    render(<EmptyState title="Leer" secondaryActionLabel="Notiz schreiben" />);
+    expect(screen.queryByTestId("empty-state-secondary-action")).toBeNull();
+  });
 });

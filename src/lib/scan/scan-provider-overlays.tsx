@@ -23,6 +23,7 @@ export function ScanProviderOverlays({
   wizardUploadError,
   wizardGalleryInputRef,
   createNoteOpen,
+  createNoteCategory,
   closeDocument,
   closeWizard,
   handleConfirmSuccess,
@@ -48,6 +49,7 @@ export function ScanProviderOverlays({
   | "wizardUploadError"
   | "wizardGalleryInputRef"
   | "createNoteOpen"
+  | "createNoteCategory"
   | "closeDocument"
   | "closeWizard"
   | "handleConfirmSuccess"
@@ -107,6 +109,7 @@ export function ScanProviderOverlays({
 
       <CreateNoteSheet
         open={createNoteOpen}
+        collectionName={createNoteCategory ?? undefined}
         onOpenChange={(open) => {
           if (!open) closeCreateNote();
         }}

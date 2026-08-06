@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import {
   Camera,
+  Folder,
   Images,
   Loader2,
   FileText,
@@ -34,6 +35,11 @@ export interface CreateNoteSheetProps {
   open: boolean;
   /** Called when the sheet should close. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * When set, the note is filed into this collection (its name becomes the
+   * note's category) and a hint is shown so the user knows where it lands.
+   */
+  collectionName?: string;
   /** Called when the user submits the note. */
   onSubmit: (params: {
     title: string;
@@ -107,6 +113,7 @@ function DocumentTypeSelector({
 export function CreateNoteSheet({
   open,
   onOpenChange,
+  collectionName,
   onSubmit,
 }: CreateNoteSheetProps) {
   const [title, setTitle] = useState("");
@@ -217,6 +224,17 @@ export function CreateNoteSheet({
 
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
           <div className="space-y-4">
+            {/* Collection hint — shown when the note is filed into a collection */}
+            {collectionName && (
+              <div
+                className="flex items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)]/10 px-3 py-2 text-xs font-medium text-[var(--petrol)]"
+                data-testid="note-collection-hint"
+              >
+                <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+                Wird in „{collectionName}“ abgelegt
+              </div>
+            )}
+
             {/* Title */}
             <div className="space-y-1.5">
               <Label htmlFor="note-title">Titel</Label>

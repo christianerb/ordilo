@@ -149,6 +149,7 @@ export async function POST(
       id: documentId,
       family_id: document.family_id,
       ocr_text: document.ocr_text,
+      category: document.category,
       wasConfirmed,
     });
   } catch (err) {
