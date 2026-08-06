@@ -39,6 +39,41 @@ function toGermanDateText(iso: string): string {
   return `${day}.${month}.${year}`;
 }
 
+/**
+ * Mask typed input as TT.MM.JJJJ. Walks the input filling day/month/year
+ * segments (caps 2/2/4): an explicit dot moves to the next segment, and
+ * digits beyond a segment's cap roll into the next one. Both entry
+ * styles converge on valid text — "06082026" (numeric mobile keypads
+ * have no dot key) becomes "06.08.2026", while "6.8.2026" keeps its
+ * explicit separators and stays parseable.
+ */
+function maskGermanDateText(raw: string): string {
+  const trimmed = raw.trim();
+  // Pasted ISO dates (yyyy-mm-dd) convert straight to German text.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return toGermanDateText(trimmed);
+  const SEGMENT_CAPS = [2, 2, 4];
+  const segments: string[] = [];
+  let current = "";
+  for (const ch of raw) {
+    if (segments.length >= 3) break;
+    if (ch === ".") {
+      segments.push(current);
+      current = "";
+    } else if (/\d/.test(ch)) {
+      if (current.length >= SEGMENT_CAPS[segments.length]) {
+        // Segment full: roll over into the next one.
+        segments.push(current);
+        current = ch;
+      } else {
+        current += ch;
+      }
+    }
+    // Other characters are dropped.
+  }
+  if (segments.length < 3) segments.push(current);
+  return segments.join(".");
+}
+
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -84,12 +119,13 @@ export function DateInput({
   });
 
   const handleTextChange = (next: string) => {
-    setText(next);
-    if (next.trim() === "") {
+    const masked = maskGermanDateText(next);
+    setText(masked);
+    if (masked.trim() === "") {
       onChange("");
       return;
     }
-    const parsed = parseGermanDate(next);
+    const parsed = parseGermanDate(masked);
     if (parsed) onChange(parsed);
   };
 

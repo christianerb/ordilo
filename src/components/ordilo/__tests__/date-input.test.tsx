@@ -41,6 +41,70 @@ describe("DateInput", () => {
     expect(onChange).toHaveBeenCalledWith("");
   });
 
+  it("inserts dots automatically when only digits are typed (numeric keypad)", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "06082026" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.2026");
+    expect(onChange).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("masks partial digit input while typing", () => {
+    render(<DateInput value="" onChange={vi.fn()} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "0608" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08");
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "06.08.2" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.2");
+  });
+
+  it("does not call onChange for incomplete digit input", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "0608202" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.202");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("ignores extra digits beyond TT.MM.JJJJ", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "06082026999" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.2026");
+    expect(onChange).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("converts a pasted ISO date (yyyy-mm-dd) to German text", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "2026-08-06" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.2026");
+    expect(onChange).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("keeps one-digit dotted dates parseable (6.8.2026)", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "6.8.2026" } });
+    expect(screen.getByRole("textbox")).toHaveValue("6.8.2026");
+    expect(onChange).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("rolls overflow digits into the next segment (06.082026)", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "06.082026" } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.2026");
+    expect(onChange).toHaveBeenCalledWith("2026-08-06");
+  });
+
+  it("keeps a trailing dot while typing (06.08.)", () => {
+    const onChange = vi.fn();
+    render(<DateInput value="" onChange={onChange} aria-label="Geburtsdatum" />);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "06.08." } });
+    expect(screen.getByRole("textbox")).toHaveValue("06.08.");
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it("opens the calendar popover showing the selected date's month", () => {
     render(<DateInput value="1985-06-15" onChange={vi.fn()} aria-label="Geburtsdatum" />);
     fireEvent.click(screen.getByTestId("date-input-calendar-trigger"));
