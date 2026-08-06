@@ -1,9 +1,10 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ChevronDown, Calendar, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDateInputValue } from "@/lib/format";
+import { DateInput } from "@/components/ordilo/date-input";
 import {
   TASK_PRIORITIES,
   type TaskPriority,
@@ -306,6 +307,9 @@ export function DateEditControl({
   const reactId = useId();
   const inputId = `review-date-${reactId}`;
   const [isEditing, setIsEditing] = useState(false);
+  // Tracks whether the calendar popover is open, so a blur caused by focus
+  // moving INTO the (portaled) calendar doesn't close the editor.
+  const calendarOpenRef = useRef(false);
 
   if (showAddButton && !isEditing) {
     return (
@@ -342,20 +346,39 @@ export function DateEditControl({
   }
 
   return (
-    <input
-      id={inputId}
-      name="review-date"
-      type="date"
-      value={toDateInputValue(value)}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={() => setIsEditing(false)}
-      autoFocus={isEditing}
-      className={cn(
-        "rounded-ordilo-sm border border-border bg-card px-2 py-1 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        compact ? "w-28" : "w-32",
-      )}
-      aria-label={label}
-      data-testid="date-edit-input"
-    />
+    <div
+      className={cn("inline-block", compact ? "w-28" : "w-32")}
+      onBlur={(e) => {
+        // Focus stayed inside the field (e.g. moved to the calendar trigger).
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        // Defer past the click so a calendar day-pick's onChange fires before
+        // we unmount; only close when the calendar isn't open (a real tap-away).
+        setTimeout(() => {
+          if (!calendarOpenRef.current) setIsEditing(false);
+        }, 0);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !calendarOpenRef.current) {
+          setIsEditing(false);
+        }
+      }}
+    >
+      <DateInput
+        id={inputId}
+        value={toDateInputValue(value)}
+        onChange={(iso) => {
+          onChange(iso);
+          // A complete date (typed in full or picked) finishes the edit.
+          if (iso) setIsEditing(false);
+        }}
+        onOpenChange={(open) => {
+          calendarOpenRef.current = open;
+        }}
+        autoFocus
+        aria-label={label}
+        data-testid="date-edit-input"
+        className="h-9"
+      />
+    </div>
   );
 }
