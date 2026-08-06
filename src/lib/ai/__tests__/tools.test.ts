@@ -19,10 +19,6 @@ vi.mock("@/app/(app)/familie/actions", () => ({
   addFamilyMember: vi.fn(),
 }));
 
-vi.mock("@/app/(app)/sammlungen/actions", () => ({
-  createCollection: vi.fn(),
-}));
-
 vi.mock("@/lib/pipeline/analyze-step", () => ({
   performAnalyzeStep: vi.fn().mockResolvedValue({}),
 }));
@@ -35,7 +31,6 @@ import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
-import { createCollection } from "@/app/(app)/sammlungen/actions";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
 import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
@@ -1234,6 +1229,48 @@ describe("update_task confirmation gate", () => {
 // create_collection confirmation gate
 // ---------------------------------------------------------------------------
 
+/**
+ * Ctx for create_collection: `.from("collections")` captures the insert
+ * payload and resolves the select/single chain.
+ */
+function makeCollectionCtx({
+  inserted = null,
+  insertError = null,
+}: {
+  inserted?: { id: string; name: string } | null;
+  insertError?: { code?: string; message?: string } | null;
+} = {}) {
+  let capturedInsert: Record<string, unknown> | null = null;
+
+  const from = vi.fn((table: string) => {
+    if (table === "collections") {
+      return {
+        insert: vi.fn((payload: Record<string, unknown>) => {
+          capturedInsert = payload;
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: insertError ? null : inserted,
+                error: insertError,
+              }),
+            })),
+          };
+        }),
+      };
+    }
+    return makeThenableChain(null);
+  });
+
+  const ctx = {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+
+  return { ctx, getInsert: () => capturedInsert };
+}
+
 describe("create_collection confirmation gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -1243,8 +1280,8 @@ describe("create_collection confirmation gate", () => {
     expect(CONFIRMATION_TOOLS.has("create_collection")).toBe(true);
   });
 
-  it("returns needs_confirmation when confirmed is missing, without creating", async () => {
-    const ctx = makeCtx();
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const { ctx, getInsert } = makeCollectionCtx();
     const result = await executeTool(
       "create_collection",
       { name: "Steuer 2026" },
@@ -1254,11 +1291,11 @@ describe("create_collection confirmation gate", () => {
 
     expect(parsed.needs_confirmation).toBe(true);
     expect(parsed.collection_name).toBe("Steuer 2026");
-    expect(createCollection).not.toHaveBeenCalled();
+    expect(getInsert()).toBeNull();
   });
 
   it("returns error when name is empty", async () => {
-    const ctx = makeCtx();
+    const { ctx, getInsert } = makeCollectionCtx();
     const result = await executeTool(
       "create_collection",
       { name: "  ", confirmed: true },
@@ -1267,15 +1304,13 @@ describe("create_collection confirmation gate", () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.error).toBe("Kein Name angegeben.");
-    expect(createCollection).not.toHaveBeenCalled();
+    expect(getInsert()).toBeNull();
   });
 
-  it("calls createCollection with defaults when confirmed", async () => {
-    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: true,
-      data: { id: "col-1", name: "Steuer 2026" },
+  it("inserts into the ACTIVE chat family with default icon and color", async () => {
+    const { ctx, getInsert } = makeCollectionCtx({
+      inserted: { id: "col-1", name: "Steuer 2026" },
     });
-    const ctx = makeCtx();
     const result = await executeTool(
       "create_collection",
       { name: "Steuer 2026", confirmed: true },
@@ -1283,7 +1318,10 @@ describe("create_collection confirmation gate", () => {
     );
     const parsed = JSON.parse(result);
 
-    expect(createCollection).toHaveBeenCalledWith({
+    // The family binding is the P1 regression guard: the collection must
+    // land in ctx.familyId, not in an arbitrary RLS-visible family.
+    expect(getInsert()).toEqual({
+      family_id: "fam-1",
       name: "Steuer 2026",
       icon: "file-text",
       color: "petrol",
@@ -1293,30 +1331,35 @@ describe("create_collection confirmation gate", () => {
   });
 
   it("passes a chosen icon and color through", async () => {
-    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: true,
-      data: { id: "col-2", name: "Finanzen" },
+    const { ctx, getInsert } = makeCollectionCtx({
+      inserted: { id: "col-2", name: "Finanzen" },
     });
-    const ctx = makeCtx();
     await executeTool(
       "create_collection",
       { name: "Finanzen", icon: "wallet", color: "apricot", confirmed: true },
       ctx,
     );
 
-    expect(createCollection).toHaveBeenCalledWith({
-      name: "Finanzen",
-      icon: "wallet",
-      color: "apricot",
-    });
+    expect(getInsert()).toMatchObject({ icon: "wallet", color: "apricot" });
   });
 
-  it("returns the action error (e.g. duplicate name)", async () => {
-    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: false,
-      error: "Diese Sammlung gibt es schon.",
+  it("rejects an invalid icon via the shared validation", async () => {
+    const { ctx, getInsert } = makeCollectionCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "Finanzen", icon: "rocket", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Ungültiges Icon");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("returns a friendly error on duplicate name (unique violation)", async () => {
+    const { ctx } = makeCollectionCtx({
+      insertError: { code: "23505", message: "duplicate key" },
     });
-    const ctx = makeCtx();
     const result = await executeTool(
       "create_collection",
       { name: "Rechnungen", confirmed: true },
@@ -1325,6 +1368,20 @@ describe("create_collection confirmation gate", () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.error).toBe("Diese Sammlung gibt es schon.");
+  });
+
+  it("returns a generic error on other insert failures", async () => {
+    const { ctx } = makeCollectionCtx({
+      insertError: { message: "RLS denied" },
+    });
+    const result = await executeTool(
+      "create_collection",
+      { name: "Rechnungen", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Sammlung konnte nicht angelegt werden.");
   });
 });
 

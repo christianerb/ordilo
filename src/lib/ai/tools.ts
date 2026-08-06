@@ -24,8 +24,8 @@ import { formatMinorAsGerman } from "@/lib/analysis-cleanup";
 import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
 import { getPriorityLabel } from "@/lib/task-utils";
+import { validateCollectionInput } from "@/lib/schemas/collections";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
-import { createCollection } from "@/app/(app)/sammlungen/actions";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
 import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
@@ -751,7 +751,7 @@ export async function executeTool(
     case "update_task":
       return executeUpdateTask(args, ctx);
     case "create_collection":
-      return executeCreateCollection(args);
+      return executeCreateCollection(args, ctx);
     case "create_note":
       return executeCreateNote(args, ctx);
     default:
@@ -2067,13 +2067,18 @@ async function executeUpdateTask(
 // ---------------------------------------------------------------------------
 
 /**
- * Create a new collection via chat. Reuses the `createCollection` server
- * action (same validation, duplicate handling, and ownership checks as
- * the /sammlungen UI) — the tool only adds the confirmation gate and
- * sensible defaults for icon and color.
+ * Create a new collection via chat.
+ *
+ * Inserts directly against `ctx.familyId` — deliberately NOT via the
+ * `createCollection` server action: its `getUserFamily()` picks an
+ * arbitrary RLS-visible family (`.limit(1)`), which for accounts with
+ * multiple family memberships (0024_family_memberships) could be a
+ * different family than the one this chat is authorized for. Validation
+ * (name/icon/color) is shared with the UI via `validateCollectionInput`.
  */
 async function executeCreateCollection(
   args: Record<string, unknown>,
+  ctx: ToolContext,
 ): Promise<string> {
   const name = String(args.name ?? "").trim();
   if (!name) return JSON.stringify({ error: "Kein Name angegeben." });
@@ -2087,22 +2092,40 @@ async function executeCreateCollection(
     });
   }
 
-  const result = await createCollection({
+  const validation = validateCollectionInput({
     name,
     icon: typeof args.icon === "string" ? args.icon : "file-text",
     color: typeof args.color === "string" ? args.color : "petrol",
   });
+  if (!validation.success) {
+    return JSON.stringify({ error: validation.error });
+  }
 
-  if (!result.success) {
-    return JSON.stringify({ error: result.error });
+  const { data: collection, error: insertError } = await ctx.client
+    .from("collections")
+    .insert({
+      family_id: ctx.familyId,
+      name: validation.data.name,
+      icon: validation.data.icon,
+      color: validation.data.color,
+    })
+    .select("id, name")
+    .single();
+
+  if (insertError || !collection) {
+    // Unique violation → a collection with this name already exists.
+    if (insertError?.code === "23505") {
+      return JSON.stringify({ error: "Diese Sammlung gibt es schon." });
+    }
+    return JSON.stringify({ error: "Sammlung konnte nicht angelegt werden." });
   }
 
   return JSON.stringify({
     success: true,
-    collection_id: result.data.id,
-    name: result.data.name,
+    collection_id: collection.id,
+    name: collection.name,
     message:
-      `Die Sammlung '${result.data.name}' wurde angelegt. ` +
+      `Die Sammlung '${collection.name}' wurde angelegt. ` +
       "Du kannst jetzt Dokumente hineinlegen.",
   });
 }
