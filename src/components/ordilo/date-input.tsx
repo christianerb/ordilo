@@ -39,6 +39,23 @@ function toGermanDateText(iso: string): string {
   return `${day}.${month}.${year}`;
 }
 
+/**
+ * Mask typed input as TT.MM.JJJJ. Numeric mobile keypads
+ * (inputMode="numeric") have no dot key, so dots are inserted
+ * automatically: typing "06082026" yields "06.08.2026". Explicitly typed
+ * dots are stripped and re-inserted at the right positions, so both
+ * entry styles converge on the same masked text.
+ */
+function maskGermanDateText(raw: string): string {
+  const trimmed = raw.trim();
+  // Pasted ISO dates (yyyy-mm-dd) convert straight to German text.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return toGermanDateText(trimmed);
+  const digits = raw.replace(/\D/g, "").slice(0, 8);
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return `${digits.slice(0, 2)}.${digits.slice(2)}`;
+  return `${digits.slice(0, 2)}.${digits.slice(2, 4)}.${digits.slice(4)}`;
+}
+
 function daysInMonth(year: number, month: number): number {
   return new Date(year, month + 1, 0).getDate();
 }
@@ -84,12 +101,13 @@ export function DateInput({
   });
 
   const handleTextChange = (next: string) => {
-    setText(next);
-    if (next.trim() === "") {
+    const masked = maskGermanDateText(next);
+    setText(masked);
+    if (masked.trim() === "") {
       onChange("");
       return;
     }
-    const parsed = parseGermanDate(next);
+    const parsed = parseGermanDate(masked);
     if (parsed) onChange(parsed);
   };
 
