@@ -15,7 +15,7 @@ import {
   CONFIRMATION_TOOLS,
   type ToolContext,
 } from "@/lib/ai/tools";
-import { CHAT_MODEL } from "@/lib/ai/models";
+import { CHAT_MODEL, CHAT_REASONING_EFFORT } from "@/lib/ai/models";
 import { truncateHistory } from "@/lib/ai/chat-history";
 
 /**
@@ -31,11 +31,16 @@ import { truncateHistory } from "@/lib/ai/chat-history";
  * Hallucination protection:
  *   - The system prompt enforces German answers and forbids hedging
  *     language (VAL-CHAT-006).
- *   - Text is buffered per round: text from rounds that end with tool
- *     calls is intermediate scratchpad and never reaches the client.
- *   - The final answer is checked for hedging BEFORE it is sent; if
- *     hedging persists after one regeneration, a deterministic
- *     fail-closed message is sent instead.
+ *   - Text streams to the client as it is generated, guarded by a rolling
+ *     hedging check: every chunk is validated together with the tail of
+ *     the already-released text, so a forbidden phrase split across chunk
+ *     boundaries is caught before its final character is shown. If
+ *     hedging is detected mid-stream, the partial answer is replaced with
+ *     a regenerated one (a `replace` event); if the regeneration still
+ *     hedges, a deterministic fail-closed message is sent instead.
+ *   - Text from rounds that end with tool calls is intermediate
+ *     scratchpad: if any of it was already streamed, it is retracted
+ *     (a `replace` event with empty content) before the tools run.
  *   - Sources only include confirmed documents (enforced by the search
  *     functions which filter documents.status = 'confirmed').
  *
@@ -247,6 +252,27 @@ export interface HistoryMessage {
 const MAX_TOOL_ROUNDS = 5;
 
 /**
+ * Number of already-released characters re-checked with every new text
+ * chunk: the length of the longest forbidden hedging phrase minus one.
+ * Any forbidden phrase that ends within a newly streamed chunk is then
+ * guaranteed to be fully contained in `tail + chunk`, so the rolling
+ * check catches phrases split across chunk boundaries before their final
+ * character reaches the client.
+ */
+const HEDGE_TAIL_LENGTH =
+  Math.max(...FORBIDDEN_HEDGING_PHRASES.map((p) => p.length)) - 1;
+
+/**
+ * Characters held back at the start of each model round before text is
+ * released to the client. Short preambles on the way to a tool call
+ * ("Ich schaue kurz nach …") stay below this and are discarded silently
+ * when the tool call arrives — they never flash on screen. Real answers
+ * pass the threshold within the first few tokens and then stream piece
+ * by piece, so the delay is imperceptible.
+ */
+const FIRST_RELEASE_THRESHOLD = 48;
+
+/**
  * Build the system prompt for the agentic assistant.
  *
  * Unlike the RAG-only prompt, this describes Ordilo as a family assistant
@@ -335,6 +361,8 @@ STRENGE REGELN:
 4. Wenn du Dokumente durchsucht hast, beziehe dich auf das Dokument (z.B. "Laut dem Kita-Brief..." oder "Das Dokument 'Stromrechnung' zeigt...").
 5. Wenn du Aufgaben auflistest, nenne Titel, Frist (falls vorhanden) und Prioritaet.
 6. Bei allgemeinen Fragen (Begruessung, Dank, Smalltalk) antworte natuerlich und freundlich, ohne Tools aufzurufen.
+6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
+6b. Rufe so wenige Tools wie moeglich auf — in der Regel GENAU EINS pro Frage. Mehrere Tools nur, wenn die Frage klar verschiedene Informationsarten verlangt (z.B. Dokumenteninhalt UND Aufgabenstatus).
 7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, mark_task_done, add_family_member, move_document_to_collection, add_document_tags, save_document_fact), rufe das Tool zuerst mit confirmed=false auf. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen willst (z.B. "Soll ich die Aufgabe 'Kita-Ausflug' (faellig 12.9.) anlegen?", "Soll ich '<aufgabentitel>' als erledigt markieren?", "Soll ich '<name>' als neues Familienmitglied hinzufuegen?"). Erst wenn der Nutzer eindeutig zustimmt ("Ja", "Erledigt", "Mach das", "Passt so"), rufe das Tool erneut mit confirmed=true auf. Rufe niemals eine dieser Aktionen ohne vorherige, explizite Bestaetigung des Nutzers aus.
 7a. move_document_to_collection und add_document_tags brauchen eine document_id — hole diese immer zuerst ueber search_documents oder graph_query, bevor du eines der beiden Tools aufrufst.
 7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast, ohne dass das entsprechende Tool tatsaechlich mit confirmed=true aufgerufen wurde und einen Erfolg zurueckgegeben hat. Sag niemals "Ich lege das fuer dich an" oder Aehnliches, ohne im selben oder naechsten Schritt das passende Tool aufzurufen — frage stattdessen direkt nach der Bestaetigung (siehe Regel 7).
@@ -359,21 +387,28 @@ STRENGE REGELN:
  * and emits NDJSON lines:
  *
  *   {"type":"text","content":"chunk"}\n
+ *   {"type":"replace","content":"..."}\n
  *   {"type":"card","card":{...}}\n
  *   {"type":"sources","sources":[...]}\n
  *   {"type":"done"}\n
  *
- * Text is buffered per round and only released to the client when a round
- * completes WITHOUT tool calls (the final answer round): text from rounds
- * that end with tool calls is intermediate scratchpad and is discarded.
- * The final answer is additionally checked for hedging language BEFORE
- * any of its text is sent — if hedging is detected, one non-streaming
- * regeneration runs, and only the corrected answer (or a deterministic
- * fail-closed message) is released.
+ * Text streams to the client as it is generated so the answer feels
+ * immediate. Two guardrails ride along:
  *
- * Tool-call rounds are NOT streamed (tools execute silently, apart from
- * `tool` progress events). Only when the model produces a content answer
- * (the final round) are text chunks emitted.
+ *   - Rolling hedging check: every chunk is validated together with the
+ *     tail of the already-released text (see HEDGE_TAIL_LENGTH), so a
+ *     forbidden phrase split across chunks is caught before its final
+ *     character is shown. On detection, one non-streaming regeneration
+ *     runs and the corrected answer REPLACES whatever was streamed (or
+ *     the deterministic fail-closed message does).
+ *   - Scratchpad retraction: if a round that already streamed text turns
+ *     out to end with tool calls, that text was intermediate preamble —
+ *     it is retracted with an empty `replace` event before the tools run.
+ *
+ * Independent tool calls within the same round execute in parallel (the
+ * model cannot express dependencies between same-round calls — results
+ * only become visible in the next round — so parallel execution is safe
+ * and cuts the wait to the slowest single call).
  *
  * `present_answer_card` is a terminal tool: when the model calls it with
  * valid arguments (see `parseAnswerCardArgs`), a single `"card"` event is
@@ -480,6 +515,7 @@ export async function streamAgenticAnswer(
             messages,
             tools: TOOL_DEFINITIONS,
             stream: true,
+            reasoning_effort: CHAT_REASONING_EFFORT,
           });
 
           const contentChunks: string[] = [];
@@ -491,6 +527,18 @@ export async function streamAgenticAnswer(
               function: { name: string; arguments: string };
             }
           >();
+
+          // Rolling hedging-guardrail state for this round. Every text
+          // piece is checked together with the tail of the text already
+          // released, so a forbidden phrase split across chunks is caught
+          // before its final character reaches the client.
+          let releasedTail = "";
+          let releasedThisRound = false;
+          let hedgingDetected = false;
+          // First characters of the round, held back until the release
+          // threshold (see FIRST_RELEASE_THRESHOLD) — short preambles on
+          // the way to a tool call never flash on screen.
+          let pendingRelease = "";
 
           for await (const chunk of openaiStream) {
             const delta = chunk.choices[0]?.delta;
@@ -514,13 +562,30 @@ export async function streamAgenticAnswer(
               }
             }
 
-            // Buffer text chunks instead of streaming them right away.
-            // If this round still ends with tool calls, the text is
-            // intermediate scratchpad that must be discarded; the final
-            // answer round is guardrail-checked before anything reaches
-            // the client (see below).
+            // Release text as soon as the round proves to be a real
+            // answer (threshold passed) — the rolling check above
+            // guarantees nothing unchecked reaches the client. If the
+            // round still ends with tool calls, released text is
+            // retracted below; text still in the hold-back buffer is
+            // discarded silently and never appears at all.
             if (delta.content) {
-              contentChunks.push(delta.content);
+              pendingRelease += delta.content;
+              if (
+                releasedThisRound ||
+                pendingRelease.length >= FIRST_RELEASE_THRESHOLD
+              ) {
+                if (containsHedgingLanguage(releasedTail + pendingRelease)) {
+                  hedgingDetected = true;
+                  break;
+                }
+                contentChunks.push(pendingRelease);
+                send({ type: "text", content: pendingRelease });
+                releasedTail = (releasedTail + pendingRelease).slice(
+                  -HEDGE_TAIL_LENGTH,
+                );
+                releasedThisRound = true;
+                pendingRelease = "";
+              }
             }
           }
 
@@ -529,15 +594,25 @@ export async function streamAgenticAnswer(
             .map(([, v]) => v);
 
           // If we got tool calls, execute them and continue the loop.
-          // Any buffered text from this round is intermediate — it stays
-          // in the assistant message for model context but is never sent
-          // to the client.
-          if (toolCalls.length > 0 && toolCalls.some((tc) => tc.id)) {
+          // Any text streamed this round was preamble on the way to the
+          // tool calls — it stays in the assistant message for model
+          // context but is retracted from the client before the tools run.
+          // (Skipped when the round was stopped early by the hedging
+          // guardrail — then the regeneration path below handles it.)
+          if (!hedgingDetected && toolCalls.length > 0 && toolCalls.some((tc) => tc.id)) {
+            // The model's preamble (released parts AND the held-back
+            // buffer) stays in its message for context — but only the
+            // released part was ever visible, so only that needs
+            // retraction; the buffer simply disappears.
             messages.push({
               role: "assistant",
               tool_calls: toolCalls,
-              content: contentChunks.join("") || null,
+              content: [...contentChunks, pendingRelease].join("") || null,
             });
+
+            if (releasedThisRound) {
+              send({ type: "replace", content: "" });
+            }
 
             // `present_answer_card` is a terminal action, not a data-fetch
             // tool: when the model calls it with valid arguments, the
@@ -553,7 +628,18 @@ export async function streamAgenticAnswer(
             // this stays a loose record rather than a per-tool union.
             let confirmationToSend: Record<string, unknown> | null = null;
 
-            for (const toolCall of toolCalls) {
+            // Results aligned with the toolCalls order — tool messages
+            // must be fed back in the order the model emitted the calls,
+            // regardless of which parallel execution finished first.
+            const results: (string | null)[] = toolCalls.map(() => null);
+            const executable: {
+              index: number;
+              name: string;
+              args: Record<string, unknown>;
+            }[] = [];
+
+            for (let i = 0; i < toolCalls.length; i++) {
+              const toolCall = toolCalls[i];
               if (toolCall.type !== "function") continue;
               let args: Record<string, unknown>;
               try {
@@ -578,55 +664,53 @@ export async function streamAgenticAnswer(
                         ? card.actionDocumentId
                         : null,
                   };
-                  messages.push({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: JSON.stringify({ success: true }),
-                  });
+                  results[i] = JSON.stringify({ success: true });
                 } else {
-                  messages.push({
-                    role: "tool",
-                    tool_call_id: toolCall.id,
-                    content: JSON.stringify({
-                      error:
-                        "Ungueltiges Kartenformat. Antworte stattdessen in normalem Text.",
-                    }),
+                  results[i] = JSON.stringify({
+                    error:
+                      "Ungueltiges Kartenformat. Antworte stattdessen in normalem Text.",
                   });
                 }
                 continue;
               }
 
-              // Tell the client what is actually happening. The old
-              // client-side checklist ticked steps off on a timer and picked
-              // its step set at random, so it claimed work ("Prüfe Aufgaben
-              // und Fristen ✓") that may never have run.
-              send({ type: "tool", tool: toolCall.function.name, state: "start" });
+              executable.push({ index: i, name: toolCall.function.name, args });
+            }
 
-              let resultContent: string;
-              try {
-                resultContent = await executeTool(
-                  toolCall.function.name,
-                  args,
-                  toolContext,
-                );
-                send({
-                  type: "tool",
-                  tool: toolCall.function.name,
-                  state: "done",
-                });
-              } catch (err) {
-                send({
-                  type: "tool",
-                  tool: toolCall.function.name,
-                  state: "error",
-                });
-                resultContent = JSON.stringify({
-                  error:
-                    err instanceof Error
-                      ? err.message
-                      : "Tool-Ausfuehrung fehlgeschlagen.",
-                });
-              }
+            // Independent calls from the same round run in parallel: the
+            // model cannot express dependencies between same-round calls
+            // (a result only becomes visible in the NEXT round), so this
+            // is safe and cuts the wait to the slowest single call.
+            for (const e of executable) {
+              send({ type: "tool", tool: e.name, state: "start" });
+            }
+            await Promise.all(
+              executable.map(async (e) => {
+                try {
+                  results[e.index] = await executeTool(
+                    e.name,
+                    e.args,
+                    toolContext,
+                  );
+                  send({ type: "tool", tool: e.name, state: "done" });
+                } catch (err) {
+                  send({ type: "tool", tool: e.name, state: "error" });
+                  results[e.index] = JSON.stringify({
+                    error:
+                      err instanceof Error
+                        ? err.message
+                        : "Tool-Ausfuehrung fehlgeschlagen.",
+                  });
+                }
+              }),
+            );
+
+            for (let i = 0; i < toolCalls.length; i++) {
+              const toolCall = toolCalls[i];
+              if (toolCall.type !== "function") continue;
+              const resultContent =
+                results[i] ??
+                JSON.stringify({ error: "Tool-Ausfuehrung fehlgeschlagen." });
 
               // Check if the tool result is a confirmation request (the
               // tool was called with confirmed=false). If so, emit a
@@ -674,17 +758,31 @@ export async function streamAgenticAnswer(
             continue;
           }
 
-          // No tool calls — this is the final answer round. The buffered
-          // text has NOT been sent to the client yet: the hedging
-          // guardrail runs first, so nothing unchecked ever reaches the
-          // client.
+          // No tool calls — this is the final answer round. Flush the
+          // hold-back buffer (short answers never reach the threshold
+          // mid-round); the same rolling check applies before release.
+          if (!hedgingDetected && pendingRelease.length > 0) {
+            if (containsHedgingLanguage(releasedTail + pendingRelease)) {
+              hedgingDetected = true;
+            } else {
+              contentChunks.push(pendingRelease);
+              send({ type: "text", content: pendingRelease });
+              releasedThisRound = true;
+            }
+          }
+
+          // The answer text has streamed piece by piece, each release
+          // cleared by the rolling hedging check. The joined re-check
+          // below is a safety net that should never trigger (the rolling
+          // check catches every phrase the moment its last character
+          // arrives).
           const fullAnswer = contentChunks.join("").trim();
 
-          if (containsHedgingLanguage(fullAnswer)) {
+          if (hedgingDetected || containsHedgingLanguage(fullAnswer)) {
             // Hedging detected — retry once (non-streaming) with a stricter
-            // instruction. Only the corrected answer (or the deterministic
-            // fail-closed message) is sent; the hedged draft never leaves
-            // the server.
+            // instruction. If part of the hedged draft already reached the
+            // client, the corrected answer REPLACES it; the remainder of
+            // the draft never left the server.
             messages.push({
               role: "user",
               content:
@@ -696,27 +794,26 @@ export async function streamAgenticAnswer(
               model: CHAT_MODEL,
               messages,
               tools: TOOL_DEFINITIONS,
+              reasoning_effort: CHAT_REASONING_EFFORT,
             });
 
             const retryContent =
               retryResponse.choices[0]?.message?.content;
-            if (
+            const finalText =
               retryContent &&
               retryContent.trim() &&
               !containsHedgingLanguage(retryContent)
-            ) {
-              // Send the corrected answer as a single chunk.
-              send({ type: "text", content: retryContent.trim() });
+                ? retryContent.trim()
+                : FAIL_CLOSED_HEDGING;
+
+            if (releasedThisRound) {
+              send({ type: "replace", content: finalText });
             } else {
-              send({ type: "text", content: FAIL_CLOSED_HEDGING });
-            }
-          } else {
-            // Guardrail passed — release the buffered answer to the
-            // client, preserving the original chunk boundaries.
-            for (const textChunk of contentChunks) {
-              send({ type: "text", content: textChunk });
+              send({ type: "text", content: finalText });
             }
           }
+          // Otherwise the clean answer has already streamed — nothing
+          // left to do for this round.
 
           // Send accumulated sources and done signal.
           send({ type: "sources", sources: toolContext.sources });

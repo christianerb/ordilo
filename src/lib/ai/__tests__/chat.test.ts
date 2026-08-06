@@ -519,6 +519,15 @@ describe("buildAgenticSystemPrompt", () => {
   it("instructs to avoid mentioning the same document twice", () => {
     expect(prompt.toLowerCase()).toContain("nur einmal");
   });
+
+  it("instructs to answer directly without tools when the context already has the answer", () => {
+    expect(prompt).toContain("DIREKT ohne Tool-Aufruf");
+    expect(prompt).toContain("NICHT erneut");
+  });
+
+  it("instructs to call as few tools as possible per question", () => {
+    expect(prompt).toContain("GENAU EINS pro Frage");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -763,9 +772,10 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     ).rejects.toThrow(ChatError);
   });
 
-  it("discards intermediate text from a round that ends with tool calls", async () => {
-    // Text emitted alongside tool_calls in the same round is intermediate
-    // scratchpad — the client must never see it.
+  it("never shows a short preamble on the way to a tool call", async () => {
+    // Text below the release threshold stays in the hold-back buffer —
+    // when the round ends with tool calls it is discarded silently, so
+    // short preambles never flash on screen at all.
     mockCreate
       .mockResolvedValueOnce(
         fakeOpenAIStream([
@@ -791,13 +801,133 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     );
     const lines = await readNdjsonStream(stream);
 
-    const textEvents = lines.filter((l) => l.type === "text");
-    expect(textEvents).toEqual([
-      { type: "text", content: "Diese Woche steht nichts an." },
-    ]);
+    expect(
+      lines.some(
+        (l) => l.type === "text" && String(l.content).includes("schaue"),
+      ),
+    ).toBe(false);
+    expect(lines.some((l) => l.type === "replace")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "text",
+      content: "Diese Woche steht nichts an.",
+    });
   });
 
-  it("streams a clean final answer preserving the original chunk boundaries", async () => {
+  it("retracts a long preamble once the round turns out to call tools", async () => {
+    // A preamble past the release threshold already streamed (it looked
+    // like a real answer). When the tool call arrives, it must be
+    // retracted so only the final answer remains visible.
+    const longPreamble =
+      "Ich schaue kurz in deinen Dokumenten und Aufgaben nach.";
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: longPreamble },
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "list_tasks",
+              argumentsChunk: "{}",
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Diese Woche steht nichts an." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Was steht diese Woche an?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    // The preamble streamed live, then was retracted when the tool call
+    // arrived, then the final answer streamed.
+    expect(lines).toContainEqual({ type: "text", content: longPreamble });
+    expect(lines).toContainEqual({ type: "replace", content: "" });
+
+    // Applying the events in order (text appends, replace overwrites)
+    // leaves only the final answer visible.
+    let visible = "";
+    for (const line of lines) {
+      if (line.type === "text") visible += line.content as string;
+      if (line.type === "replace") visible = line.content as string;
+    }
+    expect(visible).toBe("Diese Woche steht nichts an.");
+  });
+
+  it("runs independent tool calls from the same round in parallel", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "list_tasks",
+              argumentsChunk: "{}",
+            },
+          },
+          {
+            toolCall: {
+              index: 1,
+              id: "call_2",
+              name: "list_family_members",
+              argumentsChunk: "{}",
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Alles im Blick." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Wer gehört zur Familie und was steht an?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    const toolEvents = lines.filter((l) => l.type === "tool");
+    // Both tools start before either finishes — sequential execution
+    // would interleave start/done pairs instead.
+    expect(toolEvents.slice(0, 2)).toEqual([
+      { type: "tool", tool: "list_tasks", state: "start" },
+      { type: "tool", tool: "list_family_members", state: "start" },
+    ]);
+    expect(toolEvents.filter((e) => e.state === "done")).toHaveLength(2);
+    expect(lines).toContainEqual({ type: "text", content: "Alles im Blick." });
+  });
+
+  it("streams a long final answer incrementally once past the release threshold", async () => {
+    const firstChunk =
+      "Das ist eine ausführliche Antwort, die mehr als achtundvierzig Zeichen hat, ";
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: firstChunk },
+        { content: "und sie geht noch weiter." },
+      ]),
+    );
+
+    const stream = await streamAgenticAnswer("Hi", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    // The first chunk crosses the release threshold and streams
+    // immediately; everything after streams piece by piece.
+    expect(lines.filter((l) => l.type === "text")).toEqual([
+      { type: "text", content: firstChunk },
+      { type: "text", content: "und sie geht noch weiter." },
+    ]);
+    expect(lines[lines.length - 1]).toEqual({ type: "done" });
+  });
+
+  it("flushes a short final answer in one piece at the end of the round", async () => {
+    // Answers below the release threshold are held back while the round
+    // streams and flushed once the round proves to be tool-free.
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([{ content: "Hallo, " }, { content: "Emma!" }]),
     );
@@ -806,10 +936,21 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     const lines = await readNdjsonStream(stream);
 
     expect(lines.filter((l) => l.type === "text")).toEqual([
-      { type: "text", content: "Hallo, " },
-      { type: "text", content: "Emma!" },
+      { type: "text", content: "Hallo, Emma!" },
     ]);
-    expect(lines[lines.length - 1]).toEqual({ type: "done" });
+  });
+
+  it("calls the model with low reasoning effort for snappy answers", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Hallo!" }]),
+    );
+
+    const stream = await streamAgenticAnswer("Hi", [], makeToolContext());
+    await readNdjsonStream(stream);
+
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ reasoning_effort: "low" }),
+    );
   });
 
   it("sends only the corrected answer when the first final answer hedges", async () => {
@@ -859,5 +1000,75 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     // Nothing hedged ever reached the client.
     const streamedText = textEvents.map((e) => e.content).join("");
     expect(containsHedgingLanguage(streamedText)).toBe(false);
+  });
+
+  it("replaces the partial answer when hedging is detected mid-stream", async () => {
+    // The first chunk is past the release threshold and streams live; the
+    // hedging phrase only completes in a later chunk. The already-visible
+    // partial answer must be replaced by the regenerated one — the client
+    // never keeps a mix.
+    const cleanChunk =
+      "Die Frist für das Kita-Formular läuft schon sehr bald ab, ";
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: cleanChunk },
+          { content: "vermutlich sogar morgen." },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Die Frist ist der 15. August."),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Wann ist die Frist?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toContainEqual({ type: "text", content: cleanChunk });
+    expect(lines.filter((l) => l.type === "replace")).toEqual([
+      { type: "replace", content: "Die Frist ist der 15. August." },
+    ]);
+
+    // Reconstruct what the client shows: partial text, then replacement.
+    let visible = "";
+    for (const line of lines) {
+      if (line.type === "text") visible += line.content as string;
+      if (line.type === "replace") visible = line.content as string;
+    }
+    expect(visible).toBe("Die Frist ist der 15. August.");
+    expect(containsHedgingLanguage(visible)).toBe(false);
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("catches a hedging phrase split across chunk boundaries", async () => {
+    // The first chunk ends with "Ich gla" and streams out (not yet a
+    // forbidden phrase); the completing "ube, …" must be caught by the
+    // rolling tail check before it shows.
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: "Zum Thema Frist in deinen ganzen Unterlagen: Ich gla" },
+          { content: "ube, die Frist ist bald." },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockChatResponse("Die Frist ist der 15. August."),
+      );
+
+    const stream = await streamAgenticAnswer("Wann?", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "replace")).toEqual([
+      { type: "replace", content: "Die Frist ist der 15. August." },
+    ]);
+    // The completing chunk never reached the client as text.
+    expect(
+      lines.some(
+        (l) => l.type === "text" && String(l.content).includes("ube"),
+      ),
+    ).toBe(false);
   });
 });

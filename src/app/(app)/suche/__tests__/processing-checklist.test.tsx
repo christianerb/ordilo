@@ -7,48 +7,51 @@ import {
 } from "@/app/(app)/suche/processing-checklist";
 
 /**
- * The checklist used to advance on a 700ms timer and pick its step set with
- * Math.random(), so it ticked off work — "Prüfe Aufgaben und Fristen ✓" —
- * that may never have run. These tests pin the replacement: every line
- * corresponds to a tool call the server actually reported.
+ * The status display used to be an accumulating checklist — one line per
+ * tool call, so a multi-search question read like a four-step protocol.
+ * These tests pin the replacement: a single live status line that shows
+ * only what is happening right now. Every label still corresponds to a
+ * tool call the server actually reported — nothing is invented.
  */
 describe("ProcessingChecklist", () => {
-  it("claims nothing beyond reading the question before any tool runs", () => {
+  it("shows a single thinking line before any tool runs", () => {
     render(<ProcessingChecklist />);
 
     const steps = screen.getAllByTestId("processing-step");
     expect(steps).toHaveLength(1);
     expect(steps[0].getAttribute("data-status")).toBe("active");
-    expect(steps[0].textContent).toMatch(/Liest deine Frage/);
+    expect(steps[0].textContent).toMatch(/Ordilo denkt nach/);
   });
 
-  it("invents no steps for tools that were never called", () => {
-    render(
-      <ProcessingChecklist
-        toolCalls={[{ toolName: "search_documents", state: "start" }]}
-      />,
-    );
-
-    expect(screen.getAllByTestId("processing-step")).toHaveLength(1);
-    expect(screen.queryByText(/Aufgaben und Fristen/)).toBeNull();
-  });
-
-  it("shows a running tool as active and a finished one as done", () => {
+  it("shows only the current step, even when several tools already ran", () => {
     const calls: ToolCallProgress[] = [
       { toolName: "search_documents", state: "done" },
       { toolName: "list_tasks", state: "start" },
     ];
     render(<ProcessingChecklist toolCalls={calls} />);
 
+    // One line, not a checklist — the finished search collapsed into the
+    // currently running step.
     const steps = screen.getAllByTestId("processing-step");
-    expect(steps).toHaveLength(2);
-    expect(steps[0].getAttribute("data-status")).toBe("done");
-    expect(steps[0].textContent).toMatch(/Durchsucht deine Dokumente/);
-    expect(steps[1].getAttribute("data-status")).toBe("active");
-    expect(steps[1].textContent).toMatch(/Prüft Aufgaben und Fristen/);
+    expect(steps).toHaveLength(1);
+    expect(steps[0].getAttribute("data-status")).toBe("active");
+    expect(steps[0].textContent).toMatch(/Prüft Aufgaben und Fristen/);
+    expect(screen.queryByText(/Durchsucht deine Dokumente/)).toBeNull();
   });
 
-  it("marks a failed tool instead of quietly ticking it off", () => {
+  it("switches to writing the answer once all tools are done", () => {
+    render(
+      <ProcessingChecklist
+        toolCalls={[{ toolName: "search_documents", state: "done" }]}
+      />,
+    );
+
+    const step = screen.getByTestId("processing-step");
+    expect(step.getAttribute("data-status")).toBe("done");
+    expect(step.textContent).toMatch(/Schreibt die Antwort/);
+  });
+
+  it("marks a failed tool instead of quietly moving on", () => {
     render(
       <ProcessingChecklist
         toolCalls={[{ toolName: "search_documents", state: "error" }]}
