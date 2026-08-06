@@ -7,6 +7,7 @@ import { formatGermanDate } from "@/lib/format";
 import type { TaskRow } from "@/lib/task-utils";
 import { CardActions } from "@/components/ordilo/card-actions";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
+import { vibrate } from "@/lib/haptics";
 
 export interface TaskCardData extends Omit<TaskRow, "document_id"> {
   document_id: string | null;
@@ -67,6 +68,7 @@ export function TaskCard({
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (!isDone) vibrate(10);
     onToggleDone?.(isDone ? "open" : "done");
   };
 

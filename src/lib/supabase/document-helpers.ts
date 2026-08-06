@@ -82,6 +82,7 @@ export async function markDocumentFailed(
         failure_stage: options.stage,
         failure_code: options.code,
         failed_at: new Date().toISOString(),
+        partial_analysis: null,
         ...(options.clearConfirmedAt ? { confirmed_at: null } : {}),
       })
       .eq("id", documentId);

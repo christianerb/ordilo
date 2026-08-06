@@ -11,6 +11,10 @@ import {
   getFailedStageCopy,
   getPipelineStepsCompleted,
 } from "@/lib/schemas/document";
+import {
+  extractPartialPreview,
+  type PartialAnalysisPreview,
+} from "@/lib/ai/partial-json";
 import type { Database } from "@/types/database";
 
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
@@ -83,6 +87,55 @@ function completedSteps(doc: DocumentRow | null): number {
   return getPipelineStepsCompleted(doc.status);
 }
 
+/**
+ * Live preview of whatever the LLM extraction has recognized so far
+ * (title, category, persons, first date/task) — streamed in via
+ * `documents.partial_analysis` while status is "analyzing". Explicitly
+ * labeled as preliminary: this is real, already-produced model output,
+ * just not yet the final, reviewed result, and it is replaced entirely
+ * once the review step loads the complete analysis.
+ */
+function AnalysisPreview({ preview }: { preview: PartialAnalysisPreview }) {
+  const chips: string[] = [];
+  if (preview.suggested_category) chips.push(preview.suggested_category);
+  preview.family_members?.forEach((m) => chips.push(m.name));
+  if (preview.dates?.[0]) chips.push(preview.dates[0].label);
+  if (preview.tasks?.[0]) chips.push(preview.tasks[0].title);
+
+  if (!preview.title && chips.length === 0) return null;
+
+  return (
+    <div
+      className="mt-3 flex max-w-xs flex-col items-center gap-2"
+      data-testid="processing-partial-preview"
+    >
+      {preview.title && (
+        <p
+          key={preview.title}
+          className="animate-message-in text-center text-sm font-medium text-foreground"
+        >
+          „{preview.title}“
+        </p>
+      )}
+      {chips.length > 0 && (
+        <div className="flex flex-wrap items-center justify-center gap-1.5">
+          {chips.map((chip, i) => (
+            <span
+              key={`${chip}-${i}`}
+              className="animate-check-pop rounded-full bg-[var(--petrol)]/10 px-2.5 py-1 text-xs text-[var(--petrol)]"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+      <p className="text-[11px] text-muted-foreground">
+        Vorläufig — wird noch geprüft
+      </p>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -116,6 +169,10 @@ export function ScanProcessingStep({
 }: ScanProcessingStepProps) {
   const failed = Boolean(uploadError) || doc?.status === "failed";
   const done = completedSteps(doc);
+  const analysisPreview =
+    doc?.status === "analyzing" && doc.partial_analysis
+      ? extractPartialPreview(doc.partial_analysis)
+      : null;
 
   return (
     <div
@@ -186,9 +243,13 @@ export function ScanProcessingStep({
             <h2 className="mt-4 text-base font-semibold text-foreground">
               Ordilo schaut sich das an …
             </h2>
-            <StageNarration
-              stageKey={STEPS[Math.min(done, STEPS.length - 1)].key}
-            />
+            {analysisPreview ? (
+              <AnalysisPreview preview={analysisPreview} />
+            ) : (
+              <StageNarration
+                stageKey={STEPS[Math.min(done, STEPS.length - 1)].key}
+              />
+            )}
 
             <div
               className="mt-6 w-full max-w-xs"

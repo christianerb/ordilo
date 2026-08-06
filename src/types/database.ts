@@ -398,6 +398,8 @@ export type Database = {
           source: string;
           /** Pipeline version that produced the current extraction (see 0026). */
           extraction_version: number | null;
+          /** Best-effort in-progress extraction preview while status = analyzing (see 0043). */
+          partial_analysis: Record<string, unknown> | null;
         };
         Insert: {
           id?: string;
@@ -422,6 +424,7 @@ export type Database = {
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
+          partial_analysis?: Record<string, unknown> | null;
         };
         Update: {
           id?: string;
@@ -446,6 +449,7 @@ export type Database = {
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
+          partial_analysis?: Record<string, unknown> | null;
         };
         Relationships: [];
       };

@@ -18,6 +18,41 @@ import {
 } from "@/lib/schemas/extraction";
 import { canonicalizeCategory } from "@/lib/categories";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
+import {
+  previewFieldCount,
+  type PartialAnalysisPreview,
+} from "@/lib/ai/partial-json";
+
+/** Minimum time between `partial_analysis` writes — keeps the realtime/
+ * polling load down to a couple of updates per document instead of one
+ * per streamed token. */
+const PARTIAL_ANALYSIS_WRITE_INTERVAL_MS = 700;
+
+/**
+ * Throttled writer for the in-progress extraction preview: only persists
+ * when the preview has grown (more fields recognized) and at most once
+ * per interval. Best-effort — a failed write never fails the pipeline,
+ * since this column is cosmetic (a live preview), not authoritative data.
+ */
+function makePartialAnalysisWriter(client: Client, documentId: string) {
+  let lastWriteAt = 0;
+  let lastFieldCount = 0;
+  return (preview: PartialAnalysisPreview) => {
+    const fieldCount = previewFieldCount(preview);
+    if (fieldCount <= lastFieldCount) return;
+    const now = Date.now();
+    if (now - lastWriteAt < PARTIAL_ANALYSIS_WRITE_INTERVAL_MS) return;
+    lastWriteAt = now;
+    lastFieldCount = fieldCount;
+    void client
+      .from("documents")
+      .update({ partial_analysis: preview as Record<string, unknown> })
+      .eq("id", documentId)
+      .then(() => {
+        // Best-effort — nothing to do either way.
+      });
+  };
+}
 
 /**
  * Coerce an LLM date into ISO format for the Postgres `date` columns.
@@ -202,7 +237,11 @@ export async function performAnalyzeStep(
   // "Betrag") right after extraction, so stored results, the review card,
   // and the confirm payload all see clean entities.
   const analysis = cleanupAnalysisEntities(
-    await runExtraction(fullOcrText, familyContext),
+    await runExtraction(
+      fullOcrText,
+      familyContext,
+      makePartialAnalysisWriter(client, document.id),
+    ),
   );
 
   // Snap the suggested category to the family's canonical spelling —
@@ -279,6 +318,7 @@ export async function performAnalyzeStep(
         tags: analysis.tags,
         extraction_version: PIPELINE_VERSION,
         error_message: null,
+        partial_analysis: null,
       })
       .eq("id", document.id);
 
@@ -302,6 +342,7 @@ export async function performAnalyzeStep(
       category: analysis.suggested_category,
       extraction_version: PIPELINE_VERSION,
       error_message: null,
+      partial_analysis: null,
     })
     .eq("id", document.id);
 

@@ -121,7 +121,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
       />,
     );
     expect(screen.getByText("Passende Dokumente")).toBeDefined();
-    expect(screen.getByText("2")).toBeDefined();
+    expect(screen.getByTestId("source-count-badge").textContent).toBe("2");
   });
 
   it("labels a source with an 'Aufgabe: ' excerpt prefix as Aufgaben-Suche", () => {

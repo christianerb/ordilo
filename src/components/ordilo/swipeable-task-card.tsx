@@ -4,6 +4,7 @@ import { useRef, useState, useCallback, type TouchEvent } from "react";
 import { Check, X } from "lucide-react";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { cn } from "@/lib/utils";
+import { vibrate } from "@/lib/haptics";
 
 /**
  * SwipeableTaskCard — wraps a TaskCard with touch swipe gestures and
@@ -53,6 +54,9 @@ export function SwipeableTaskCard({
   const startY = useRef(0);
   const swiping = useRef(false);
   const moved = useRef(false);
+  /** 0 = not armed, 1/-1 = armed past the threshold in that direction —
+   * used to fire the "armed" tick exactly once per crossing. */
+  const armed = useRef<0 | 1 | -1>(0);
   const [offset, setOffset] = useState(0);
   const [phase, setPhase] = useState<"live" | "snap" | "slide-off">("snap");
   const [isDragging, setIsDragging] = useState(false);
@@ -62,6 +66,7 @@ export function SwipeableTaskCard({
     startY.current = e.touches[0].clientY;
     swiping.current = true;
     moved.current = false;
+    armed.current = 0;
     setPhase("live");
   }, []);
 
@@ -73,6 +78,17 @@ export function SwipeableTaskCard({
       moved.current = true;
     }
     setOffset(Math.max(-150, Math.min(150, dx)));
+
+    // A light tick the instant the swipe first crosses the commit
+    // threshold in either direction — like iOS's rubber-band tick when an
+    // action becomes armed. Fires once per crossing, resets on release.
+    const direction = dx > SWIPE_THRESHOLD ? 1 : dx < -SWIPE_THRESHOLD ? -1 : 0;
+    if (direction !== 0 && armed.current !== direction) {
+      armed.current = direction;
+      vibrate(8);
+    } else if (direction === 0) {
+      armed.current = 0;
+    }
   }, []);
 
   const handleTouchEnd = useCallback(() => {
@@ -80,10 +96,12 @@ export function SwipeableTaskCard({
     swiping.current = false;
 
     if (offset > SWIPE_THRESHOLD) {
+      vibrate(14);
       setPhase("slide-off");
       setOffset(SLIDE_OFF_DISTANCE);
       window.setTimeout(() => onToggleDone("done"), SLIDE_OFF_DURATION);
     } else if (offset < -SWIPE_THRESHOLD) {
+      vibrate(14);
       setPhase("slide-off");
       setOffset(-SLIDE_OFF_DISTANCE);
       window.setTimeout(() => onDismiss(), SLIDE_OFF_DURATION);

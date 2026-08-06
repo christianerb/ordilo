@@ -20,6 +20,14 @@ export interface SourceMatchCardProps {
   kind: SourceCardKind;
   /** Highlights the strongest match without turning it into a larger card. */
   isBestMatch?: boolean;
+  /**
+   * 1-based citation number, when this card is also referenced inline in
+   * the answer text (see `ChatMarkdown`'s "[N]" markers). Shown as a small
+   * chip so the two stay visually tied together.
+   */
+  citationIndex?: number;
+  /** DOM id — set so an inline citation marker can scroll this card into view. */
+  id?: string;
   /** Click handler — when provided, the card is interactive (navigates to document). */
   onClick?: () => void;
   className?: string;
@@ -50,6 +58,8 @@ export function SourceMatchCard({
   excerpt,
   kind,
   isBestMatch = false,
+  citationIndex,
+  id,
   onClick,
   className,
   style,
@@ -65,6 +75,7 @@ export function SourceMatchCard({
 
   return (
     <div
+      id={id}
       data-testid="source-card"
       data-relevance={relevanceLabel}
       role={isInteractive ? "button" : undefined}
@@ -97,6 +108,15 @@ export function SourceMatchCard({
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
+          {citationIndex !== undefined && (
+            <span
+              className="flex size-4 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]/10 text-[10px] font-semibold text-[var(--petrol)]"
+              aria-hidden="true"
+              data-testid="source-citation-index"
+            >
+              {citationIndex}
+            </span>
+          )}
           <p className="truncate text-sm font-medium text-foreground">
             {displayTitle}
           </p>
