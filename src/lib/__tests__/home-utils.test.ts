@@ -4,6 +4,7 @@ import {
   filterFristen,
   filterUeberfaellig,
   filterRecentDocuments,
+  mergeJournalDocuments,
   formatGermanTimestamp,
   type HomeTask,
   type HomeDocument,
@@ -347,5 +348,57 @@ describe("formatGermanTimestamp", () => {
 
   it("returns null for invalid date string", () => {
     expect(formatGermanTimestamp("not-a-date")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeJournalDocuments
+// ---------------------------------------------------------------------------
+
+describe("mergeJournalDocuments", () => {
+  it("puts documents awaiting confirmation first, then recent ones", () => {
+    const analyzed = [makeDoc({ id: "a1", status: "analyzed" })];
+    const recent = [
+      makeDoc({ id: "r1", status: "confirmed" }),
+      makeDoc({ id: "r2", status: "confirmed" }),
+    ];
+    const result = mergeJournalDocuments(analyzed, recent);
+    expect(result.map((d) => d.id)).toEqual(["a1", "r1", "r2"]);
+  });
+
+  it("deduplicates documents that appear in both inputs", () => {
+    const analyzed = [makeDoc({ id: "a1", status: "analyzed" })];
+    const recent = [
+      makeDoc({ id: "a1", status: "analyzed" }),
+      makeDoc({ id: "r1", status: "confirmed" }),
+    ];
+    const result = mergeJournalDocuments(analyzed, recent);
+    expect(result.map((d) => d.id)).toEqual(["a1", "r1"]);
+  });
+
+  it("excludes failed documents (VAL-CROSS-013)", () => {
+    const analyzed = [makeDoc({ id: "a1", status: "analyzed" })];
+    const recent = [
+      makeDoc({ id: "f1", status: "failed" }),
+      makeDoc({ id: "r1", status: "confirmed" }),
+    ];
+    const result = mergeJournalDocuments(analyzed, recent);
+    expect(result.map((d) => d.id)).toEqual(["a1", "r1"]);
+  });
+
+  it("respects the limit", () => {
+    const analyzed = Array.from({ length: 4 }, (_, i) =>
+      makeDoc({ id: `a${i}`, status: "analyzed" }),
+    );
+    const recent = Array.from({ length: 4 }, (_, i) =>
+      makeDoc({ id: `r${i}`, status: "confirmed" }),
+    );
+    const result = mergeJournalDocuments(analyzed, recent, 6);
+    expect(result).toHaveLength(6);
+    expect(result.map((d) => d.id)).toEqual(["a0", "a1", "a2", "a3", "r0", "r1"]);
+  });
+
+  it("returns an empty array when there are no documents", () => {
+    expect(mergeJournalDocuments([], [])).toEqual([]);
   });
 });
