@@ -12,17 +12,18 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * What Ordilo is actually doing while an answer is being produced.
+ * Single live status line shown while Ordilo works on an answer.
  *
- * This used to be theatre: steps advanced on a 700ms timer, the step set
- * and the header phrase were picked with Math.random(), and it ticked off
- * "Prüfe Aufgaben und Fristen ✓" for work that may never have run — the
- * model can answer without calling a single tool. It also finished in
- * ~2.1s and then froze, so long answers got no feedback at all.
+ * This used to be an accumulating checklist — one line per tool call, so
+ * a question that triggered three searches read like a four-step protocol
+ * and felt slower than it was. Now only the activity happening RIGHT NOW
+ * is shown: the current tool call, or a plain "thinking" line when the
+ * model is reading or writing. Finished steps collapse into the next one
+ * instead of piling up, and the whole line disappears the moment the
+ * answer starts streaming.
  *
- * Now every line corresponds to a tool call the server actually reported.
- * Until the first one arrives there is one honest line ("Ordilo liest deine
- * Frage"), because that is genuinely all that is happening yet.
+ * Every label still corresponds to a tool call the server actually
+ * reported — nothing is invented on a timer.
  */
 
 export type ToolCallState = "start" | "done" | "error";
@@ -59,80 +60,67 @@ export function ProcessingChecklist({
   /** Tool activity reported by the stream, in the order it happened. */
   toolCalls?: ToolCallProgress[];
 }) {
+  // Only the latest activity matters — earlier steps are already done and
+  // would just be noise.
+  const latest = toolCalls[toolCalls.length - 1];
+
+  let status: "active" | "done" | "error";
+  let Icon: LucideIcon;
+  let label: string;
+
+  if (!latest) {
+    // No tool reported yet — the model is reading the question.
+    status = "active";
+    Icon = Sparkles;
+    label = "Ordilo denkt nach";
+  } else if (latest.state === "start") {
+    status = "active";
+    ({ icon: Icon, label } = stepFor(latest.toolName));
+  } else if (latest.state === "error") {
+    status = "error";
+    ({ icon: Icon, label } = stepFor(latest.toolName));
+    label = `${label} — hat nicht geklappt`;
+  } else {
+    // All reported tools finished, the answer is being written now.
+    status = "done";
+    Icon = Sparkles;
+    label = "Schreibt die Antwort";
+  }
+
   return (
     <div
       data-testid="processing-checklist"
-      className="space-y-2.5"
+      className="flex items-center gap-2"
       role="status"
       aria-live="polite"
       aria-label="Ordilo arbeitet an deiner Antwort"
     >
-      <div className="flex items-center gap-2">
-        <Sparkles
-          className="size-3.5 shrink-0 animate-pulse"
-          style={{ color: "var(--petrol)" }}
-          aria-hidden="true"
-        />
-        <span className="text-sm font-medium text-foreground">
-          Ordilo denkt nach …
-        </span>
-      </div>
-
-      <div className="ml-5 space-y-1.5 border-l border-border/40 pl-3">
-        {toolCalls.length === 0 ? (
-          <div
-            className="flex items-center gap-2 text-sm text-foreground"
-            data-testid="processing-step"
-            data-status="active"
-          >
-            <span
-              className="size-1.5 shrink-0 rounded-full bg-[var(--petrol)] animate-pulse"
-              aria-hidden="true"
-            />
-            <span className="font-medium">Liest deine Frage</span>
-          </div>
-        ) : (
-          toolCalls.map((call, i) => {
-            const { icon: Icon, label } = stepFor(call.toolName);
-            const done = call.state === "done";
-            const failed = call.state === "error";
-            return (
-              <div
-                key={`${call.toolName}-${i}`}
-                data-testid="processing-step"
-                data-status={failed ? "error" : done ? "done" : "active"}
-                className={cn(
-                  "flex items-center gap-2 text-sm transition-all duration-300",
-                  failed && "text-destructive",
-                  done && !failed && "text-muted-foreground/60",
-                  !done && !failed && "text-foreground",
-                )}
-              >
-                {done && !failed ? (
-                  <CheckCircle2
-                    className="size-3.5 shrink-0"
-                    style={{ color: "var(--petrol)" }}
-                    strokeWidth={1.5}
-                    aria-hidden="true"
-                  />
-                ) : (
-                  <Icon
-                    className={cn(
-                      "size-3.5 shrink-0",
-                      !failed && "animate-pulse",
-                    )}
-                    aria-hidden="true"
-                  />
-                )}
-                <span className={!done && !failed ? "font-medium" : ""}>
-                  {label}
-                  {failed && " — hat nicht geklappt"}
-                </span>
-              </div>
-            );
-          })
+      <Icon
+        className={cn(
+          "size-3.5 shrink-0",
+          status === "active" && "animate-pulse",
         )}
-      </div>
+        style={{
+          color: status === "error" ? "var(--destructive)" : "var(--petrol)",
+        }}
+        aria-hidden="true"
+      />
+      <span
+        // Re-key on label change so the fade replays when the activity
+        // switches — a quiet state transition, not decoration.
+        key={label}
+        data-testid="processing-step"
+        data-status={status}
+        className={cn(
+          "text-sm animate-in fade-in-0 duration-200",
+          status === "error" && "text-destructive",
+          status === "active" && "font-medium text-foreground",
+          status === "done" && "text-muted-foreground",
+        )}
+      >
+        {label}
+        {status !== "error" ? " …" : ""}
+      </span>
     </div>
   );
 }

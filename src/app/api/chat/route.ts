@@ -29,6 +29,9 @@ import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
  *
  * Stream events:
  *   {"type":"text","content":"chunk"}               — answer text chunk
+ *   {"type":"replace","content":"..."}              — replaces the text streamed so far
+ *                                                     (guardrail correction or scratchpad
+ *                                                     retraction before tool calls)
  *   {"type":"card","card":{...}}                     — structured answer card
  *   {"type":"sources","sources":[...]}              — accumulated document sources
  *   {"type":"confirmation_request",...}             — destructive action needs confirmation
@@ -48,6 +51,10 @@ import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
  */
 
 export async function POST(request: Request): Promise<Response> {
+  // Wall-clock start for the chat_metrics log — time-to-first-word is
+  // measured from the user's perspective, auth and validation included.
+  const requestStartedAt = Date.now();
+
   // 1. Authenticate
   const auth = await requireUser();
   if (auth.status) {
@@ -96,20 +103,96 @@ export async function POST(request: Request): Promise<Response> {
   // 4. Build server client
   const serverClient = await createServerClient();
 
-  // 5. Verify family membership — the client-supplied family_id is
-  //    otherwise unverified: a non-member would pass the rate-limit check
-  //    below (RLS hides the chat_usage row, so "no row" reads as "under
-  //    the limit") and trigger OpenAI calls that recordUsage can never
-  //    attribute. The membership row is only visible under RLS when the
-  //    user belongs to the family, so "no row" means "no access" (for
-  //    both non-members and nonexistent families).
-  const { data: membership } = await serverClient
-    .from("family_memberships")
-    .select("family_id")
-    .eq("family_id", familyId)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  // 5-8. Membership check, rate limit, conversation history, and speaker
+  //      identity are independent of each other — all of them only need
+  //      the validated input — so they run concurrently instead of
+  //      stacking sequential database round-trips onto every message's
+  //      time-to-first-word.
+  const [membershipResult, rateLimit, conversation, speakerName] =
+    await Promise.all([
+      // Membership: the client-supplied family_id is otherwise unverified:
+      // a non-member would pass the rate-limit check (RLS hides the
+      // chat_usage row, so "no row" reads as "under the limit") and
+      // trigger OpenAI calls that recordUsage can never attribute. The
+      // membership row is only visible under RLS when the user belongs to
+      // the family, so "no row" means "no access" (for both non-members
+      // and nonexistent families).
+      serverClient
+        .from("family_memberships")
+        .select("family_id")
+        .eq("family_id", familyId)
+        .eq("user_id", user.id)
+        .maybeSingle(),
+      // Rate limit check — prevent cost runaway per family.
+      checkRateLimit(serverClient, familyId),
+      // Conversation history (falls back to client history on failure).
+      (async (): Promise<{
+        conversationId: string;
+        dbHistory: HistoryMessage[];
+      }> => {
+        try {
+          let conversationId: string;
+          let isNewConversation = false;
 
+          const existingId = conversationIdParam;
+          if (existingId) {
+            const { data: conv } = await serverClient
+              .from("chat_conversations")
+              .select("id, title")
+              .eq("id", existingId)
+              .eq("family_id", familyId)
+              .maybeSingle();
+
+            if (conv) {
+              conversationId = conv.id;
+              // If the conversation has no title, we'll auto-generate one from this message
+              if (!conv.title) {
+                isNewConversation = true;
+              }
+            } else {
+              conversationId = await getOrCreateConversation(serverClient, familyId);
+              isNewConversation = true;
+            }
+          } else {
+            conversationId = await getOrCreateConversation(serverClient, familyId);
+            isNewConversation = true;
+          }
+
+          const rows = await loadConversationMessages(serverClient, conversationId);
+          const dbHistory = rowsToHistory(rows);
+
+          // If this is the first message, auto-generate a title
+          if (isNewConversation && dbHistory.length === 0) {
+            const title = autoGenerateTitle(message);
+            void updateConversationTitle(serverClient, conversationId, title);
+          }
+
+          return { conversationId, dbHistory };
+        } catch {
+          // If persistence fails, fall back to client-provided history so
+          // the chat still works. The conversation just won't be persisted.
+          return { conversationId: "", dbHistory: clientHistory };
+        }
+      })(),
+      // Speaker identity — the family member linked to the current auth
+      // user, so the assistant knows who it's talking to.
+      (async (): Promise<string | null> => {
+        try {
+          const { data: linkedMember } = await serverClient
+            .from("family_members")
+            .select("name")
+            .eq("family_id", familyId)
+            .eq("linked_user_id", user.id)
+            .maybeSingle();
+
+          return linkedMember?.name ?? null;
+        } catch {
+          return null;
+        }
+      })(),
+    ]);
+
+  const { data: membership } = membershipResult;
   if (!membership) {
     const body: ChatErrorResponse = {
       error: "Kein Zugriff auf diese Familie.",
@@ -118,8 +201,6 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 403 });
   }
 
-  // 6. Rate limit check — prevent cost runaway per family
-  const rateLimit = await checkRateLimit(serverClient, familyId);
   if (!rateLimit.allowed) {
     const body: ChatErrorResponse = {
       error: `Tageslimit erreicht (${rateLimit.used} Nachrichten heute). Bitte morgen erneut versuchen.`,
@@ -128,67 +209,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 429 });
   }
 
-  // 7. Load or create conversation for history persistence
-  let conversationId: string;
-  let dbHistory: HistoryMessage[];
-  let isNewConversation = false;
-  try {
-    // Check if conversation already has messages
-    const existingId = conversationIdParam;
-    if (existingId) {
-      const { data: conv } = await serverClient
-        .from("chat_conversations")
-        .select("id, title")
-        .eq("id", existingId)
-        .eq("family_id", familyId)
-        .maybeSingle();
-
-      if (conv) {
-        conversationId = conv.id;
-        // If the conversation has no title, we'll auto-generate one from this message
-        if (!conv.title) {
-          isNewConversation = true;
-        }
-      } else {
-        conversationId = await getOrCreateConversation(serverClient, familyId);
-        isNewConversation = true;
-      }
-    } else {
-      conversationId = await getOrCreateConversation(serverClient, familyId);
-      isNewConversation = true;
-    }
-
-    const rows = await loadConversationMessages(serverClient, conversationId);
-    dbHistory = rowsToHistory(rows);
-
-    // If this is the first message, auto-generate a title
-    if (isNewConversation && dbHistory.length === 0) {
-      const title = autoGenerateTitle(message);
-      void updateConversationTitle(serverClient, conversationId, title);
-    }
-  } catch {
-    // If persistence fails, fall back to client-provided history so the
-    // chat still works. The conversation just won't be persisted.
-    conversationId = "";
-    dbHistory = clientHistory;
-  }
-
-  // 8. Resolve speaker identity — look up the family member linked to
-  //    the current auth user. This lets the assistant know who it's
-  //    talking to (e.g. "Du sprichst gerade mit: Emma").
-  let speakerName: string | null = null;
-  try {
-    const { data: linkedMember } = await serverClient
-      .from("family_members")
-      .select("name")
-      .eq("family_id", familyId)
-      .eq("linked_user_id", user.id)
-      .maybeSingle();
-
-    speakerName = linkedMember?.name ?? null;
-  } catch {
-    speakerName = null;
-  }
+  const { conversationId, dbHistory } = conversation;
 
   // 9. Save the user message to the conversation (best-effort)
   if (conversationId) {
@@ -236,6 +257,11 @@ export async function POST(request: Request): Promise<Response> {
         let fullAnswer = "";
         let answerCard = null;
         let streamError = false;
+        // Latency/activity metrics, logged once per request so chat speed
+        // is measurable instead of guessed (time-to-first-visible-word
+        // from the user's perspective, tool calls per answer).
+        let firstVisibleAt: number | null = null;
+        let toolCallCount = 0;
 
         const reader = stream.getReader();
         const decoder = new TextDecoder();
@@ -259,8 +285,17 @@ export async function POST(request: Request): Promise<Response> {
                 const data = JSON.parse(line);
                 if (data.type === "text") {
                   fullAnswer += data.content;
+                  firstVisibleAt ??= Date.now();
+                } else if (data.type === "replace") {
+                  // Guardrail correction or scratchpad retraction — the
+                  // persisted answer mirrors what the client ends up seeing.
+                  fullAnswer =
+                    typeof data.content === "string" ? data.content : "";
                 } else if (data.type === "card") {
                   answerCard = data.card;
+                  firstVisibleAt ??= Date.now();
+                } else if (data.type === "tool" && data.state === "start") {
+                  toolCallCount += 1;
                 } else if (data.type === "error") {
                   streamError = true;
                 }
@@ -292,6 +327,24 @@ export async function POST(request: Request): Promise<Response> {
 
         // 13. Record usage (best-effort, non-blocking)
         void recordUsage(serverClient, familyId, 0);
+
+        // 14. One structured metrics line per request — queryable in the
+        //     log drain for p50/p95 time-to-first-word and tool-call rate.
+        console.info(
+          JSON.stringify({
+            event: "chat_metrics",
+            family_id: familyId,
+            conversation_id: conversationId || null,
+            ttft_ms:
+              firstVisibleAt === null
+                ? null
+                : firstVisibleAt - requestStartedAt,
+            total_ms: Date.now() - requestStartedAt,
+            tool_calls: toolCallCount,
+            answer_type: answerCard ? "card" : "text",
+            error: streamError,
+          }),
+        );
 
         ctrl.close();
       },
