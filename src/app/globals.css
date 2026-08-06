@@ -583,6 +583,12 @@
     transform: translateY(-2px);
     box-shadow: var(--shadow-card-hover);
   }
+  /* Press feedback on click — settle back down with a tiny scale so the
+     card acknowledges the tap instead of freezing in the hover-lift state. */
+  .card-lift:active {
+    transform: translateY(0) scale(0.99);
+    transition-duration: 0.1s;
+  }
 }
 
 /* Coarse pointer (touch): no hover lift, use active scale for feedback */
