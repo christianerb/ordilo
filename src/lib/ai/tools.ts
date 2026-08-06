@@ -1,4 +1,5 @@
 import type OpenAI from "openai";
+import type { Database } from "@/types/database";
 import type { ChatSource } from "@/lib/schemas/chat";
 import { redactPII } from "@/lib/ai/pii-redact";
 import {
@@ -22,7 +23,11 @@ import {
 import { formatMinorAsGerman } from "@/lib/analysis-cleanup";
 import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
+import { getPriorityLabel } from "@/lib/task-utils";
+import { validateCollectionInput } from "@/lib/schemas/collections";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
+import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -537,6 +542,168 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         required: ["document_id", "fact_type", "value"],
       },
     },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_task",
+      description:
+        "Aendert eine bestehende Aufgabe: Titel, Beschreibung, Frist, " +
+        "Prioritaet, zustaendige Person oder Status. " +
+        "Verwende dies fuer 'Verschieb die Frist auf naechste Woche', " +
+        "'Mach die Steuererklaerung hochprior' oder 'Das war doch noch " +
+        "nicht erledigt' (status 'open' oeffnet wieder). " +
+        "Die Aufgaben-ID muss aus einem vorherigen list_tasks- oder " +
+        "graph_query-Aufruf stammen — hole sie dort, wenn du sie noch " +
+        "nicht hast. " +
+        "Setze confirmed erst auf true, wenn der Nutzer die Aenderung " +
+        "klar bestaetigt hat. Nenne in der Bestaetigungsfrage die " +
+        "konkreten neuen Werte.",
+      parameters: {
+        type: "object",
+        properties: {
+          task_id: {
+            type: "string",
+            description: "Die ID der Aufgabe (aus list_tasks/graph_query).",
+          },
+          title: {
+            type: "string",
+            description: "Neuer Titel. Optional.",
+          },
+          description: {
+            type: "string",
+            description:
+              "Neue Beschreibung. Optional. Leerer String entfernt sie.",
+          },
+          due_date: {
+            type: "string",
+            description:
+              "Neue Frist im Format YYYY-MM-DD. Optional. " +
+              "Leerer String entfernt die Frist.",
+          },
+          priority: {
+            type: "string",
+            enum: ["high", "medium", "low"],
+            description: "Neue Prioritaet. Optional.",
+          },
+          assignee_name: {
+            type: "string",
+            description:
+              "Name des Familienmitglieds, das die Aufgabe uebernehmen " +
+              "soll. Optional. Leerer String entfernt die Zuordnung.",
+          },
+          status: {
+            type: "string",
+            enum: ["open", "done"],
+            description:
+              "Neuer Status. Optional. 'open' oeffnet eine erledigte " +
+              "Aufgabe wieder, 'done' erledigt sie.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur wenn der Nutzer die Aenderung eindeutig " +
+              "bestaetigt hat. false (Standard) fordert eine " +
+              "Bestaetigung an.",
+          },
+        },
+        required: ["task_id"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_collection",
+      description:
+        "Legt eine neue Sammlung (Ablage-Ordner fuer Dokumente) an. " +
+        "Verwende dies, wenn der Nutzer eine neue Sammlung moechte " +
+        "(z.B. 'Leg eine Sammlung Steuer 2026 an'). Anschliessend kannst " +
+        "du Dokumente mit move_document_to_collection hineinlegen. " +
+        "Setze confirmed erst auf true, wenn der Nutzer das Anlegen " +
+        "klar bestaetigt hat.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Name der Sammlung, z.B. 'Steuer 2026'.",
+          },
+          icon: {
+            type: "string",
+            enum: [
+              "file-text",
+              "receipt",
+              "building",
+              "shield",
+              "heart",
+              "graduation-cap",
+              "car",
+              "home",
+              "briefcase",
+              "wallet",
+            ],
+            description:
+              "Optionales Icon, passend zum Thema (z.B. 'wallet' fuer " +
+              "Finanzen, 'graduation-cap' fuer Schule). " +
+              "Standard: 'file-text'.",
+          },
+          color: {
+            type: "string",
+            enum: [
+              "petrol",
+              "apricot",
+              "destructive",
+              "blue-soft",
+              "mist",
+              "apricot-light",
+            ],
+            description: "Optionale Farbe. Standard: 'petrol'.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur wenn der Nutzer die Aktion eindeutig bestaetigt " +
+              "hat. false (Standard) fordert eine Bestaetigung an.",
+          },
+        },
+        required: ["name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_note",
+      description:
+        "Speichert eine Notiz als neues Dokument — fuer freien Text, zu " +
+        "dem es kein eingescanntes Dokument gibt (z.B. 'Notier dir: das " +
+        "WLAN-Passwort haengt am Kuehlschrank' oder 'Merk dir die Nummer " +
+        "vom Kita-Traeger'). Die Notiz wird automatisch analysiert und " +
+        "liegt danach in den Dokumenten zur Bestaetigung bereit. " +
+        "Setze confirmed erst auf true, wenn der Nutzer die Notiz klar " +
+        "bestaetigt hat — nenne in der Bestaetigungsfrage Titel und Inhalt.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: {
+            type: "string",
+            description: "Kurzer Titel der Notiz.",
+          },
+          content: {
+            type: "string",
+            description: "Der eigentliche Notiztext.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur wenn der Nutzer die Aktion eindeutig bestaetigt " +
+              "hat. false (Standard) fordert eine Bestaetigung an.",
+          },
+        },
+        required: ["title", "content"],
+      },
+    },
   }
 ];
 
@@ -581,6 +748,12 @@ export async function executeTool(
       return executeAddDocumentTags(args, ctx);
     case "save_document_fact":
       return executeSaveDocumentFact(args, ctx);
+    case "update_task":
+      return executeUpdateTask(args, ctx);
+    case "create_collection":
+      return executeCreateCollection(args, ctx);
+    case "create_note":
+      return executeCreateNote(args, ctx);
     default:
       return JSON.stringify({ error: `Unbekanntes Tool: ${name}` });
   }
@@ -1138,8 +1311,11 @@ async function executeAddTask(
  */
 export const CONFIRMATION_TOOLS = new Set([
   "add_task",
+  "update_task",
   "mark_task_done",
   "add_family_member",
+  "create_collection",
+  "create_note",
   "move_document_to_collection",
   "add_document_tags",
   "save_document_fact",
@@ -1751,5 +1927,354 @@ async function executeSaveDocumentFact(
     document_id: doc.id,
     document_title: documentTitle,
     message: `Die ${typeLabel} '${value}' wurde bei '${documentTitle}' hinterlegt.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// update_task (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Update an existing task's fields — the chat counterpart of the task
+ * detail sheet (title, description, due date, priority, assignee) plus
+ * reopening a done task. Only provided fields are changed; an empty
+ * string for due_date / description / assignee_name CLEARS the value,
+ * so "die Frist kann weg" works as well as "neue Frist".
+ */
+async function executeUpdateTask(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const taskId = String(args.task_id ?? "").trim();
+  if (!taskId) {
+    return JSON.stringify({ error: "Keine Aufgaben-ID angegeben." });
+  }
+
+  const { data: task, error: fetchError } = await ctx.client
+    .from("tasks")
+    .select("id, title, status")
+    .eq("id", taskId)
+    .eq("family_id", ctx.familyId)
+    .maybeSingle();
+
+  if (fetchError || !task) {
+    return JSON.stringify({ error: "Aufgabe nicht gefunden." });
+  }
+
+  // Collect the requested changes (only provided fields).
+  const updates: Database["public"]["Tables"]["tasks"]["Update"] = {};
+  const changes: string[] = [];
+
+  if (typeof args.title === "string" && args.title.trim()) {
+    updates.title = args.title.trim();
+    changes.push(`Titel: '${updates.title}'`);
+  }
+  if (typeof args.description === "string") {
+    const description = args.description.trim();
+    updates.description = description || null;
+    changes.push(description ? "Beschreibung geaendert" : "Beschreibung entfernt");
+  }
+  if (typeof args.due_date === "string") {
+    const dueDate = args.due_date.trim();
+    updates.due_date = dueDate || null;
+    changes.push(dueDate ? `Frist: ${dueDate}` : "Frist entfernt");
+  }
+  if (
+    typeof args.priority === "string" &&
+    ["high", "medium", "low"].includes(args.priority)
+  ) {
+    updates.priority = args.priority;
+    changes.push(`Prioritaet: ${getPriorityLabel(args.priority)}`);
+  }
+  if (
+    typeof args.status === "string" &&
+    ["open", "done"].includes(args.status)
+  ) {
+    updates.status = args.status;
+    changes.push(
+      args.status === "done" ? "als erledigt markiert" : "wieder geoeffnet",
+    );
+  }
+
+  // The assignee resolves to a family member id. An unknown name is an
+  // error — silently storing null would CLEAR the assignment, the exact
+  // opposite of what the user asked for.
+  if (typeof args.assignee_name === "string") {
+    const assigneeName = args.assignee_name.trim();
+    if (assigneeName) {
+      const { data: member } = await ctx.client
+        .from("family_members")
+        .select("id, name")
+        .eq("family_id", ctx.familyId)
+        .ilike("name", assigneeName)
+        .maybeSingle();
+      if (!member) {
+        return JSON.stringify({
+          error: `Kein Familienmitglied namens '${assigneeName}' gefunden.`,
+        });
+      }
+      updates.assigned_to = member.id;
+      changes.push(`zustaendig: ${member.name}`);
+    } else {
+      updates.assigned_to = null;
+      changes.push("Zuordnung entfernt");
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return JSON.stringify({
+      error:
+        "Keine Aenderung angegeben. Nenne mindestens ein Feld " +
+        "(Titel, Beschreibung, Frist, Prioritaet, Person oder Status).",
+    });
+  }
+
+  const confirmed = args.confirmed === true;
+  if (!confirmed) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      task_id: task.id,
+      task_title: task.title,
+      aenderungen: changes,
+      message: `Bitte bestaetige: Soll ich die Aufgabe '${task.title}' aendern (${changes.join(", ")})?`,
+    });
+  }
+
+  const { error: updateError } = await ctx.client
+    .from("tasks")
+    .update(updates)
+    .eq("id", task.id)
+    .eq("family_id", ctx.familyId);
+
+  if (updateError) {
+    return JSON.stringify({
+      error: "Aufgabe konnte nicht aktualisiert werden.",
+    });
+  }
+
+  const newTitle = updates.title ?? task.title;
+  return JSON.stringify({
+    success: true,
+    task_id: task.id,
+    titel: newTitle,
+    aenderungen: changes,
+    message: `Aufgabe '${newTitle}' wurde aktualisiert (${changes.join(", ")}).`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// create_collection (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Create a new collection via chat.
+ *
+ * Inserts directly against `ctx.familyId` — deliberately NOT via the
+ * `createCollection` server action: its `getUserFamily()` picks an
+ * arbitrary RLS-visible family (`.limit(1)`), which for accounts with
+ * multiple family memberships (0024_family_memberships) could be a
+ * different family than the one this chat is authorized for. Validation
+ * (name/icon/color) is shared with the UI via `validateCollectionInput`.
+ */
+async function executeCreateCollection(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const name = String(args.name ?? "").trim();
+  if (!name) return JSON.stringify({ error: "Kein Name angegeben." });
+
+  const confirmed = args.confirmed === true;
+  if (!confirmed) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      collection_name: name,
+      message: `Bitte bestaetige: Soll ich die Sammlung '${name}' anlegen?`,
+    });
+  }
+
+  const validation = validateCollectionInput({
+    name,
+    icon: typeof args.icon === "string" ? args.icon : "file-text",
+    color: typeof args.color === "string" ? args.color : "petrol",
+  });
+  if (!validation.success) {
+    return JSON.stringify({ error: validation.error });
+  }
+
+  const { data: collection, error: insertError } = await ctx.client
+    .from("collections")
+    .insert({
+      family_id: ctx.familyId,
+      name: validation.data.name,
+      icon: validation.data.icon,
+      color: validation.data.color,
+    })
+    .select("id, name")
+    .single();
+
+  if (insertError || !collection) {
+    // Unique violation → a collection with this name already exists.
+    if (insertError?.code === "23505") {
+      return JSON.stringify({ error: "Diese Sammlung gibt es schon." });
+    }
+    return JSON.stringify({ error: "Sammlung konnte nicht angelegt werden." });
+  }
+
+  return JSON.stringify({
+    success: true,
+    collection_id: collection.id,
+    name: collection.name,
+    message:
+      `Die Sammlung '${collection.name}' wurde angelegt. ` +
+      "Du kannst jetzt Dokumente hineinlegen.",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// create_note (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+/** Caps mirror the noteSchema in POST /api/documents/notes. */
+const NOTE_TITLE_MAX = 200;
+const NOTE_CONTENT_MAX = 10_000;
+
+/**
+ * Save a free-text note as a manual document — the agentic path for
+ * "Notier dir: …". Mirrors the note editor flow: insert with status
+ * "ocr_done" (the text already exists, no OCR needed), then run the
+ * shared analyze step right away so the note lands in the review queue
+ * instead of waiting for the user to open Dokumente.
+ *
+ * The note is NOT auto-confirmed: like every other document it goes
+ * through the review step, and the tool result says so — the model must
+ * not promise the note is already searchable.
+ */
+async function executeCreateNote(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const title = String(args.title ?? "").trim();
+  const content = String(args.content ?? "").trim();
+  if (!title) return JSON.stringify({ error: "Kein Titel angegeben." });
+  if (!content) return JSON.stringify({ error: "Kein Notiztext angegeben." });
+  if (title.length > NOTE_TITLE_MAX) {
+    return JSON.stringify({
+      error: `Titel ist zu lang (max. ${NOTE_TITLE_MAX} Zeichen).`,
+    });
+  }
+  if (content.length > NOTE_CONTENT_MAX) {
+    return JSON.stringify({
+      error: `Notiz ist zu lang (max. ${NOTE_CONTENT_MAX} Zeichen).`,
+    });
+  }
+
+  const confirmed = args.confirmed === true;
+  if (!confirmed) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      note_title: title,
+      message: `Bitte bestaetige: Soll ich die Notiz '${title}' speichern?`,
+    });
+  }
+
+  // uploaded_by comes from the same session the chat route authenticated.
+  const {
+    data: { user },
+  } = await ctx.client.auth.getUser();
+  if (!user) {
+    return JSON.stringify({ error: "Notiz konnte nicht gespeichert werden." });
+  }
+
+  // Same insert as POST /api/documents/notes (minus the optional image
+  // attachment, which chat cannot provide).
+  const documentId = crypto.randomUUID();
+  const { data: docRow, error: insertError } = await ctx.client
+    .from("documents")
+    .insert({
+      id: documentId,
+      family_id: ctx.familyId,
+      uploaded_by: user.id,
+      status: "ocr_done",
+      source: "manual",
+      title,
+      document_type: "other",
+      ocr_text: content,
+      page_count: 1,
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !docRow) {
+    return JSON.stringify({ error: "Notiz konnte nicht gespeichert werden." });
+  }
+
+  // Page row so the analysis reads the text (it falls back to ocr_text).
+  await ctx.client.from("document_pages").insert({
+    document_id: documentId,
+    page_number: 1,
+    ocr_markdown: content,
+  });
+
+  // Transition to analyzing and run the shared analyze step, exactly like
+  // the note editor does via POST /api/documents/[id]/analyze.
+  const { data: transitioned } = await ctx.client
+    .from("documents")
+    .update({ status: "analyzing" })
+    .eq("id", documentId)
+    .eq("status", "ocr_done")
+    .select("id")
+    .maybeSingle();
+
+  if (!transitioned) {
+    // Unexpected right after insert — the note still exists.
+    return JSON.stringify({
+      success: true,
+      document_id: documentId,
+      titel: title,
+      analysiert: false,
+      message: `Notiz '${title}' wurde gespeichert.`,
+    });
+  }
+
+  try {
+    await performAnalyzeStep(ctx.client, {
+      id: documentId,
+      family_id: ctx.familyId,
+      ocr_text: content,
+      wasConfirmed: false,
+    });
+  } catch (err) {
+    await markDocumentFailed(
+      ctx.client,
+      documentId,
+      err instanceof Error ? err.message : "Analyse ist fehlgeschlagen.",
+      {
+        stage: "analysis",
+        code: "ANALYSIS_FAILED",
+        cause: err,
+        familyId: ctx.familyId,
+      },
+    );
+    return JSON.stringify({
+      success: true,
+      document_id: documentId,
+      titel: title,
+      analysiert: false,
+      message:
+        `Notiz '${title}' wurde gespeichert, aber die automatische ` +
+        "Analyse hat nicht geklappt. Du findest die Notiz in den " +
+        "Dokumenten und kannst die Analyse dort erneut starten.",
+    });
+  }
+
+  return JSON.stringify({
+    success: true,
+    document_id: documentId,
+    titel: title,
+    analysiert: true,
+    message:
+      `Notiz '${title}' wurde gespeichert und analysiert. Sie liegt in ` +
+      "den Dokumenten zur Bestaetigung bereit — erst danach ist sie " +
+      "durchsuchbar und ihre Aufgaben und Fristen aktiv.",
   });
 }
