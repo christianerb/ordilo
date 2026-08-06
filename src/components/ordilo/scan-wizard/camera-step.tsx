@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { combinePagesToFile } from "@/lib/images-to-pdf";
+import { vibrate } from "@/lib/haptics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -327,13 +328,7 @@ export function CameraStep({
     if (!video || video.videoWidth === 0 || finishingRef.current) return;
 
     // Taptic feedback on supporting mobile devices.
-    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
-      try {
-        navigator.vibrate?.(10);
-      } catch {
-        // Vibration not allowed or unsupported — silently ignore.
-      }
-    }
+    vibrate(10);
 
     const viewportWidth = video.clientWidth;
     const viewportHeight = video.clientHeight;

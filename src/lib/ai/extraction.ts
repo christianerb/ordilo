@@ -6,6 +6,11 @@ import {
   type FamilyContext,
 } from "@/lib/schemas/extraction";
 import { EXTRACTION_MODEL } from "@/lib/ai/models";
+import {
+  extractPartialPreview,
+  repairPartialJson,
+  type PartialAnalysisPreview,
+} from "@/lib/ai/partial-json";
 
 /**
  * OpenAI structured output extraction client.
@@ -155,84 +160,39 @@ function getOpenAIClient(): OpenAI {
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Run the LLM extraction on a document's OCR text.
- *
- * Calls OpenAI GPT-4.1 Mini with `response_format: json_schema` (strict
- * mode) using the `document_analysis` schema. The response is validated
- * against the Zod schema before being returned.
- *
- * @param ocrMarkdown - The full OCR markdown text of the document.
- * @param familyContext - The family's members, categories, and knowledge nodes.
- * @returns The validated document analysis.
- * @throws {ExtractionError} if the API call fails, times out, or the
- *         response fails Zod validation.
- */
-export async function runExtraction(
-  ocrMarkdown: string,
-  familyContext: FamilyContext,
-): Promise<DocumentAnalysis> {
-  const client = getOpenAIClient();
-  const systemPrompt = buildSystemPrompt(familyContext);
-
-  let response: OpenAI.Chat.Completions.ChatCompletion;
-  try {
-    response = await client.chat.completions.create({
-      model: EXTRACTION_MODEL,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: ocrMarkdown },
-      ],
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: "document_analysis",
-          strict: true,
-          schema: documentAnalysisJsonSchema as Record<string, unknown>,
-        },
-      },
-    });
-  } catch (err) {
-    // Distinguish known OpenAI API errors from network errors.
-    if (err instanceof OpenAI.APIError) {
-      const status = err.status ?? undefined;
-      if (status === 401 || status === 403) {
-        throw new ExtractionError(
-          "OpenAI: Authentifizierung fehlgeschlagen.",
-          "OPENAI_AUTH_ERROR",
-          status,
-        );
-      }
-      if (status === 429) {
-        throw new ExtractionError(
-          "OpenAI: Rate-Limit erreicht. Bitte später erneut versuchen.",
-          "OPENAI_RATE_LIMITED",
-          status,
-        );
-      }
-      throw new ExtractionError(
-        `OpenAI: API-Fehler${err.message ? ` (${err.message})` : ""}.`,
-        "OPENAI_API_ERROR",
+/** Maps a raw OpenAI call failure to the typed `ExtractionError`. */
+function toExtractionError(err: unknown): ExtractionError {
+  if (err instanceof OpenAI.APIError) {
+    const status = err.status ?? undefined;
+    if (status === 401 || status === 403) {
+      return new ExtractionError(
+        "OpenAI: Authentifizierung fehlgeschlagen.",
+        "OPENAI_AUTH_ERROR",
         status,
       );
     }
-    // Network error or unknown error.
-    throw new ExtractionError(
-      "Netzwerkfehler beim Kontaktieren von OpenAI.",
-      "OPENAI_NETWORK_ERROR",
+    if (status === 429) {
+      return new ExtractionError(
+        "OpenAI: Rate-Limit erreicht. Bitte später erneut versuchen.",
+        "OPENAI_RATE_LIMITED",
+        status,
+      );
+    }
+    return new ExtractionError(
+      `OpenAI: API-Fehler${err.message ? ` (${err.message})` : ""}.`,
+      "OPENAI_API_ERROR",
+      status,
     );
   }
+  // Network error or unknown error.
+  return new ExtractionError(
+    "Netzwerkfehler beim Kontaktieren von OpenAI.",
+    "OPENAI_NETWORK_ERROR",
+  );
+}
 
-  // Extract the JSON content from the response.
-  const content = response.choices[0]?.message?.content;
-  if (!content) {
-    throw new ExtractionError(
-      "OpenAI: Leere Antwort erhalten.",
-      "OPENAI_EMPTY_RESPONSE",
-    );
-  }
-
-  // Parse the JSON content.
+/** Parses and Zod-validates the final (complete) extraction JSON. */
+function parseAndValidate(content: string): DocumentAnalysis {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -243,7 +203,6 @@ export async function runExtraction(
     );
   }
 
-  // Validate against the Zod schema.
   const result = documentAnalysisSchema.safeParse(parsed);
   if (!result.success) {
     const issue = result.error.issues[0];
@@ -257,4 +216,114 @@ export async function runExtraction(
   }
 
   return result.data;
+}
+
+/**
+ * Run the LLM extraction on a document's OCR text.
+ *
+ * Calls OpenAI (see `EXTRACTION_MODEL`) with `response_format: json_schema`
+ * (strict mode) using the `document_analysis` schema. The response is
+ * validated against the Zod schema before being returned.
+ *
+ * When `onPartial` is given, the completion streams instead: raw content
+ * deltas are accumulated and best-effort parsed (see `partial-json.ts`) so
+ * the caller can show a live "still reviewing" preview. The preview is
+ * never authoritative — the full response is still parsed and Zod-
+ * validated in full once the stream ends, exactly as in the non-streaming
+ * path.
+ *
+ * @param ocrMarkdown - The full OCR markdown text of the document.
+ * @param familyContext - The family's members, categories, and knowledge nodes.
+ * @param onPartial - Optional callback invoked with whatever fields have
+ *        streamed in so far. Best-effort only; skipped ticks are fine.
+ * @returns The validated document analysis.
+ * @throws {ExtractionError} if the API call fails, times out, or the
+ *         response fails Zod validation.
+ */
+export async function runExtraction(
+  ocrMarkdown: string,
+  familyContext: FamilyContext,
+  onPartial?: (preview: PartialAnalysisPreview) => void,
+): Promise<DocumentAnalysis> {
+  const client = getOpenAIClient();
+  const systemPrompt = buildSystemPrompt(familyContext);
+
+  const responseFormat = {
+    type: "json_schema" as const,
+    json_schema: {
+      name: "document_analysis",
+      strict: true,
+      schema: documentAnalysisJsonSchema as Record<string, unknown>,
+    },
+  };
+  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: ocrMarkdown },
+  ];
+
+  if (!onPartial) {
+    let response: OpenAI.Chat.Completions.ChatCompletion;
+    try {
+      response = await client.chat.completions.create({
+        model: EXTRACTION_MODEL,
+        messages,
+        response_format: responseFormat,
+      });
+    } catch (err) {
+      throw toExtractionError(err);
+    }
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) {
+      throw new ExtractionError(
+        "OpenAI: Leere Antwort erhalten.",
+        "OPENAI_EMPTY_RESPONSE",
+      );
+    }
+    return parseAndValidate(content);
+  }
+
+  // --- Streaming path: same call, incrementally previewed. ---
+  let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+  try {
+    stream = await client.chat.completions.create({
+      model: EXTRACTION_MODEL,
+      messages,
+      response_format: responseFormat,
+      stream: true,
+    });
+  } catch (err) {
+    throw toExtractionError(err);
+  }
+
+  let buffer = "";
+  let lastPreviewSize = 0;
+  try {
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (!delta) continue;
+      buffer += delta;
+
+      const repaired = repairPartialJson(buffer);
+      if (repaired === null) continue;
+      const preview = extractPartialPreview(repaired);
+      const size = JSON.stringify(preview).length;
+      // Only notify when the preview actually grew — a repaired parse of
+      // the same buffer position produces an identical object otherwise.
+      if (size > lastPreviewSize) {
+        lastPreviewSize = size;
+        onPartial(preview);
+      }
+    }
+  } catch (err) {
+    throw toExtractionError(err);
+  }
+
+  if (!buffer) {
+    throw new ExtractionError(
+      "OpenAI: Leere Antwort erhalten.",
+      "OPENAI_EMPTY_RESPONSE",
+    );
+  }
+  return parseAndValidate(buffer);
 }

@@ -21,6 +21,7 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ReviewSummary } from "@/components/ordilo/review-summary";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { vibrate } from "@/lib/haptics";
 
 const EMPTY_EDITS: EditState = {
   persons: new Map(),
@@ -149,6 +150,12 @@ export function ScanReviewStep({
     if (!analysis || confirming) return;
     setConfirming(true);
     setConfirmError(null);
+
+    // Optimistic: the user's own tap, not a fabricated AI result — play
+    // the success state immediately and roll back if the save fails.
+    setConfirmed(true);
+    vibrate(10);
+
     try {
       const payload = buildConfirmPayload(analysis, edits);
       const response = await postConfirm(documentId, payload);
@@ -163,10 +170,10 @@ export function ScanReviewStep({
           errorBody.error || "Bestätigen hat nicht geklappt. Bitte nochmal versuchen.",
         );
       }
-      setConfirmed(true);
     } catch (err) {
+      setConfirmed(false);
       setConfirmError(
-        err instanceof Error ? err.message : "Bestätigung fehlgeschlagen. Bitte erneut versuchen.",
+        err instanceof Error ? err.message : "Bestätigung fehlgeschlagen. Bitte nochmal versuchen.",
       );
     } finally {
       setConfirming(false);

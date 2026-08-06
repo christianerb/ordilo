@@ -251,7 +251,7 @@ export function AufgabenClient({
       );
       const ok = await toggleDone(taskId, newStatus);
       if (ok) {
-        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet");
+        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet — kein Problem");
       }
     },
     [toggleDone],
@@ -295,7 +295,7 @@ export function AufgabenClient({
       );
       const ok = await toggleDone(taskId, newStatus);
       if (ok) {
-        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet");
+        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet — kein Problem");
       }
     },
     [tasks, toggleDone],

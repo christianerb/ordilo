@@ -405,6 +405,95 @@ describe("runExtraction", () => {
 });
 
 // ---------------------------------------------------------------------------
+// runExtraction — streaming (onPartial)
+// ---------------------------------------------------------------------------
+
+/** A minimal async-iterable mimicking OpenAI's ChatCompletionChunk stream. */
+function fakeChunkStream(deltas: string[]) {
+  return {
+    [Symbol.asyncIterator]: async function* () {
+      for (const delta of deltas) {
+        yield { choices: [{ delta: { content: delta } }] };
+      }
+    },
+  };
+}
+
+/** Splits a string into small fixed-size pieces, simulating token deltas. */
+function toDeltas(content: string, size = 12): string[] {
+  const deltas: string[] = [];
+  for (let i = 0; i < content.length; i += size) {
+    deltas.push(content.slice(i, i + size));
+  }
+  return deltas;
+}
+
+describe("runExtraction — streaming (onPartial)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setApiKey();
+  });
+
+  it("still returns the full validated analysis once the stream ends", async () => {
+    const analysis = validAnalysis();
+    mockCreate.mockResolvedValueOnce(
+      fakeChunkStream(toDeltas(JSON.stringify(analysis))),
+    );
+
+    const onPartial = vi.fn();
+    const result = await runExtraction("OCR text", validFamilyContext(), onPartial);
+
+    expect(result.title).toBe("Einladung zum Elternabend");
+    expect(result.family_members).toHaveLength(1);
+  });
+
+  it("requests the completion with stream: true", async () => {
+    const analysis = validAnalysis();
+    mockCreate.mockResolvedValueOnce(
+      fakeChunkStream(toDeltas(JSON.stringify(analysis))),
+    );
+
+    await runExtraction("OCR text", validFamilyContext(), vi.fn());
+
+    expect(mockCreate.mock.calls[0][0].stream).toBe(true);
+  });
+
+  it("calls onPartial with a growing preview as fields become recognizable", async () => {
+    const analysis = validAnalysis();
+    mockCreate.mockResolvedValueOnce(
+      fakeChunkStream(toDeltas(JSON.stringify(analysis))),
+    );
+
+    const onPartial = vi.fn();
+    await runExtraction("OCR text", validFamilyContext(), onPartial);
+
+    expect(onPartial).toHaveBeenCalled();
+    const previews = onPartial.mock.calls.map((call) => call[0]);
+    // Every notified preview should be at least as large as the previous
+    // one — onPartial is only ever called when the preview grew.
+    const sizes = previews.map((p) => JSON.stringify(p).length);
+    for (let i = 1; i < sizes.length; i++) {
+      expect(sizes[i]).toBeGreaterThan(sizes[i - 1]);
+    }
+    // By the last call, the title should have streamed in fully.
+    expect(previews.at(-1)?.title).toBe("Einladung zum Elternabend");
+  });
+
+  it("propagates a stream error as ExtractionError", async () => {
+    mockCreate.mockResolvedValueOnce({
+      [Symbol.asyncIterator]: async function* () {
+        yield { choices: [{ delta: { content: '{"title":"x"' } }] };
+        throw new Error("stream broke");
+      },
+    });
+
+    await expect(
+      runExtraction("OCR text", validFamilyContext(), vi.fn()),
+    ).rejects.toBeInstanceOf(ExtractionError);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // ExtractionError
 // ---------------------------------------------------------------------------
 

@@ -67,6 +67,18 @@
     }
   }
 
+  /* Citation jump — brief highlight when a chat citation marker scrolls
+     its source card into view, so the "which one did I just click" link
+     between text and card grid stays visible even after the scroll. */
+  @keyframes citation-flash {
+    0% {
+      background-color: var(--wash-sage-soft);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
   /* Chat message entrance — fade + slide up */
   @keyframes message-in {
     from {
@@ -480,6 +492,9 @@
   .animate-check-pop {
     animation: check-pop 0.2s var(--ease-out-quart);
   }
+  .animate-citation-flash {
+    animation: citation-flash 900ms var(--ease-out-quart);
+  }
 
   /* Task completion celebration */
   .animate-task-done {
@@ -625,7 +640,8 @@
   .ordilo-mascot-bounce,
   .ordilo-mascot-ear-wiggle,
   .animate-banner-glow,
-  .animate-avatar-pop {
+  .animate-avatar-pop,
+  .animate-citation-flash {
     animation: none;
   }
 

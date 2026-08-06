@@ -238,7 +238,7 @@ export function FamilieClient({
     setMemberList((prev) => prev.filter((m) => m.id !== removeTarget.id));
     setRemoveDialogOpen(false);
     setRemoveTarget(null);
-    toast.success(`${removeTarget.name} wurde entfernt`);
+    toast.success(`${removeTarget.name} ist nicht mehr dabei`);
   }, [removeTarget]);
 
   if (fetchError) {

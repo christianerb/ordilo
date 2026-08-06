@@ -33,6 +33,7 @@ import {
 import type { EditState, EditedAnalysisPayload } from "./helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
+import { vibrate } from "@/lib/haptics";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -443,6 +444,12 @@ export function ReviewCard({
     setConfirming(true);
     setConfirmError(null);
 
+    // Optimistic: this is the user's own explicit action (not fabricated
+    // AI output), so the celebration plays immediately instead of after a
+    // round trip. Rolled back below if the request actually fails.
+    setConfirmed(true);
+    vibrate(10);
+
     try {
       // Build the edited payload.
       const payload = buildConfirmPayload(
@@ -465,7 +472,6 @@ export function ReviewCard({
         );
       }
 
-      setConfirmed(true);
       onDirtyChange?.(false);
       onConfirmSuccess?.();
 
@@ -474,10 +480,12 @@ export function ReviewCard({
       // still held in local state.
       await loadAnalysis();
     } catch (err) {
+      // Roll back the optimistic transition so the user can retry.
+      setConfirmed(false);
       setConfirmError(
         err instanceof Error
           ? err.message
-          : "Bestätigung fehlgeschlagen. Bitte erneut versuchen.",
+          : "Bestätigung fehlgeschlagen. Bitte nochmal versuchen.",
       );
     } finally {
       setConfirming(false);
@@ -542,7 +550,7 @@ export function ReviewCard({
           ? "Das neue Lesen dauert gerade zu lange. Bitte versuche es erneut."
           : err instanceof Error
           ? err.message
-          : "Analyse fehlgeschlagen. Bitte erneut versuchen.",
+          : "Analyse fehlgeschlagen. Bitte nochmal versuchen.",
       );
     } finally {
       setReanalyzing(false);
