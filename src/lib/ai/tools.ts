@@ -25,7 +25,7 @@ import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
 import { getPriorityLabel } from "@/lib/task-utils";
 import { validateCollectionInput } from "@/lib/schemas/collections";
-import { addFamilyMember } from "@/app/(app)/familie/actions";
+import { validateMember } from "@/lib/schemas/onboarding";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
 import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
@@ -741,7 +741,7 @@ export async function executeTool(
     case "graph_query":
       return executeGraphQuery(args, ctx);
     case "add_family_member":
-      return executeAddFamilyMember(args);
+      return executeAddFamilyMember(args, ctx);
     case "move_document_to_collection":
       return executeMoveDocumentToCollection(args, ctx);
     case "add_document_tags":
@@ -1628,12 +1628,20 @@ async function executeGraphQuery(
 // ---------------------------------------------------------------------------
 
 /**
- * Add a new family member via chat. Reuses the existing `addFamilyMember`
- * server action so validation, error messages, and ownership checks stay
- * in one place — the same action the /familie UI form calls.
+ * Add a new family member via chat.
+ *
+ * Inserts directly against `ctx.familyId` — deliberately NOT via the
+ * `addFamilyMember` server action: its family resolution picks an
+ * arbitrary RLS-visible family, which for accounts with multiple family
+ * memberships (0024_family_memberships) could be a different family than
+ * the one this chat is authorized for. Validation stays shared with the
+ * /familie UI via `validateMember` (same schema, same German errors).
+ * The insert is RLS-protected (user_belongs_to_family), so a member can
+ * only write to their own family.
  */
 async function executeAddFamilyMember(
   args: Record<string, unknown>,
+  ctx: ToolContext,
 ): Promise<string> {
   const name = String(args.name ?? "").trim();
   if (!name) return JSON.stringify({ error: "Kein Name angegeben." });
@@ -1647,21 +1655,41 @@ async function executeAddFamilyMember(
     });
   }
 
-  const result = await addFamilyMember({
+  const validation = validateMember({
     name,
-    role: typeof args.role === "string" ? args.role : undefined,
-    birthdate: typeof args.birthdate === "string" ? args.birthdate : undefined,
+    role: typeof args.role === "string" ? args.role : "",
+    birthdate: typeof args.birthdate === "string" ? args.birthdate : "",
+    avatar_color: "",
   });
+  if (!validation.success) {
+    return JSON.stringify({ error: validation.error });
+  }
 
-  if (!result.success) {
-    return JSON.stringify({ error: result.error });
+  const { data: member, error: insertError } = await ctx.client
+    .from("family_members")
+    .insert({
+      family_id: ctx.familyId,
+      name: validation.data.name,
+      role: validation.data.role,
+      birthdate: validation.data.birthdate,
+      avatar_color: validation.data.avatar_color,
+      related_member_ids: validation.data.related_member_ids,
+      relationship_label: validation.data.relationship_label,
+    })
+    .select("id, name")
+    .single();
+
+  if (insertError || !member) {
+    return JSON.stringify({
+      error: "Familienmitglied konnte nicht angelegt werden.",
+    });
   }
 
   return JSON.stringify({
     success: true,
-    member_id: result.data.id,
-    name: result.data.name,
-    message: `'${result.data.name}' wurde als Familienmitglied hinzugefuegt.`,
+    member_id: member.id,
+    name: member.name,
+    message: `'${member.name}' wurde als Familienmitglied hinzugefuegt.`,
   });
 }
 
