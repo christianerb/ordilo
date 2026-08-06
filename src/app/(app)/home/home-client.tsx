@@ -21,11 +21,20 @@ import {
 import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { SuggestionChipsRegistrar } from "@/lib/search/suggestion-chips-context";
 import {
   filterRecentDocuments,
+  mergeJournalDocuments,
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
+import {
+  deriveBriefingFacts,
+  composeBriefing,
+  selectHomeHero,
+  deriveSuggestionChips,
+} from "@/lib/home-briefing";
+import { TodayHero } from "./today-hero";
 import type { HomeInsight } from "@/lib/ai/insights";
 
 // ---------------------------------------------------------------------------
@@ -44,26 +53,28 @@ export interface HomeClientProps {
   familyName: string;
   members: HomeMember[];
   analyzedDocuments: HomeDocument[];
+  /** Exact count of documents awaiting confirmation (the analyzedDocuments
+      array itself is capped for display). */
+  unconfirmedDocCount: number;
   upcomingTasks: HomeTask[];
   recentDocuments: HomeDocument[];
+  /** Signed thumbnail URLs keyed by document id (image documents only). */
+  thumbUrls: Record<string, string>;
   insights: HomeInsight[];
   /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
   autoOpenScan?: boolean;
 }
 
-/** Heute shows at most this many tasks — the screen answers "was brennt?" */
+/** "Als Nächstes" shows at most this many tasks below the hero. */
 const HOME_TASK_LIMIT = 3;
 
 // ---------------------------------------------------------------------------
-// Status dot color mapping for BentoDocTile
+// Status dot color mapping for JournalDocTile
 // ---------------------------------------------------------------------------
 
-// "analyzed" intentionally avoids apricot here: the "Zu bestätigen" grid
-// already consists entirely of analyzed documents (the dot would be
-// redundant there — see showStatusDot below), and "Zuletzt gescannt" can
-// mix statuses, where a second apricot source would violate the Apricot
-// Scarcity Rule (apricot is reserved for priority badges and urgent
-// insights elsewhere on this page).
+// "analyzed" intentionally avoids apricot here: analyzed documents get a
+// "Bitte bestätigen" chip instead of a dot, and apricot on home belongs to
+// the "Heute" hero alone (Apricot Scarcity Rule).
 const STATUS_DOT_COLORS: Record<string, string> = {
   confirmed: "bg-[var(--petrol)]",
   analyzed: "bg-[var(--petrol)]/50",
@@ -93,8 +104,10 @@ export function HomeClient({
   familyName,
   members,
   analyzedDocuments,
+  unconfirmedDocCount,
   upcomingTasks,
   recentDocuments,
+  thumbUrls,
   insights,
   autoOpenScan = false,
 }: HomeClientProps) {
@@ -166,12 +179,38 @@ export function HomeClient({
     .filter((t) => t.status === "open" && t.confirmed && t.due_date !== null)
     .sort((a, b) => a.due_date!.localeCompare(b.due_date!));
   const totalTasks = datedOpenTasks.length;
-  const hasTasks = totalTasks > 0;
-  const nextTasks = datedOpenTasks.slice(0, HOME_TASK_LIMIT);
-  const hiddenTaskCount = totalTasks - nextTasks.length;
+
+  // The daily briefing and the "Heute" hero are two views of the same
+  // facts — the sentence under the greeting and the big card below it
+  // always agree with each other and with the task list.
+  const facts = deriveBriefingFacts(localTasks, unconfirmedDocCount);
+  const briefing = composeBriefing(facts);
+  const hero = selectHomeHero(facts, insights);
+  const heroTaskId = hero.kind === "task" ? hero.task.id : null;
+  const heroInsightId = hero.kind === "insight" ? hero.insight.id : null;
+  // When the hero already carries apricot (overdue), urgent insight rows
+  // render in petrol — one apricot element per view (Scarcity Rule).
+  const suppressUrgentInsights =
+    hero.kind === "task" && hero.urgency === "overdue";
+  const visibleInsights = insights.filter((i) => i.id !== heroInsightId);
+
+  // Contextual questions for the composer chips — same facts, so a chip
+  // never asks about something the screen contradicts.
+  const suggestionChips = deriveSuggestionChips(facts);
+
+  // "Als Nächstes" starts AFTER the task the hero already shows.
+  const nextTasks = datedOpenTasks
+    .filter((t) => t.id !== heroTaskId)
+    .slice(0, HOME_TASK_LIMIT);
+  const hiddenTaskCount =
+    totalTasks - (heroTaskId ? 1 : 0) - nextTasks.length;
+
+  // The journal merges the two former document sections: awaiting
+  // confirmation first (with a chip), then the most recent scans.
+  const journalDocs = mergeJournalDocuments(analyzedDocuments, visibleRecentDocs);
 
   const isFirstVisit =
-    !hasTasks &&
+    totalTasks === 0 &&
     analyzedDocuments.length === 0 &&
     visibleRecentDocs.length === 0;
 
@@ -210,79 +249,74 @@ export function HomeClient({
         />
       ) : (
         <>
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,2fr)_minmax(10rem,1fr)] lg:gap-4">
-            <div
-              className="flex items-center justify-between rounded-ordilo-md bg-[var(--sand-warm)] p-4"
-            >
-              <div>
-                <h1 className="text-lg font-semibold text-foreground">
-                  {greeting}
-                </h1>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  {familyName}
-                </p>
-              </div>
-              {members.length > 0 && (
-                <Link
-                  href="/familie"
-                  className="flex -space-x-2 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-full"
-                  data-testid="member-list"
-                  aria-label="Familie"
-                >
-                  {members.slice(0, 5).map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold text-white"
-                      style={{
-                        backgroundColor: m.avatar_color ?? "var(--petrol)",
-                      }}
-                      title={m.name}
-                      aria-label={m.name}
-                    >
-                      {m.name.charAt(0).toUpperCase()}
-                    </div>
-                  ))}
-                  {members.length > 5 && (
-                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
-                      +{members.length - 5}
-                    </div>
-                  )}
-                </Link>
-              )}
-            </div>
+          {/* Keyed registrar: chip changes remount it, and the sanctioned
+              mount effect re-registers the new questions (no useEffect
+              dependency arrays in this codebase). */}
+          <SuggestionChipsRegistrar
+            key={suggestionChips.join("\n")}
+            chips={suggestionChips}
+          />
 
-            <Link
-              href="/aufgaben"
-              data-testid="home-stat-tasks"
-              className="flex flex-col justify-center gap-1 rounded-ordilo-md border border-[var(--petrol)]/15 bg-[var(--petrol)]/[0.06] p-4 card-lift press-scale hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              <CalendarClock
-                className="size-4 text-[var(--petrol)]"
-                strokeWidth={2}
-                aria-hidden="true"
-              />
-              <span className="text-2xl font-semibold tabular-nums text-foreground animate-count-up">
-                {totalTasks}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                {totalTasks === 0
-                  ? "Keine Aufgaben offen"
-                  : totalTasks === 1
-                    ? "Aufgabe offen"
-                    : "Aufgaben offen"}
-              </span>
-            </Link>
+          {/* Greeting + one-sentence daily briefing */}
+          <div className="flex items-center justify-between rounded-ordilo-md bg-[var(--sand-warm)] p-4">
+            <div className="min-w-0">
+              <h1 className="text-lg font-semibold text-foreground">
+                {greeting}
+              </h1>
+              <p
+                className="mt-0.5 text-sm text-muted-foreground"
+                data-testid="home-briefing"
+              >
+                {briefing}
+              </p>
+            </div>
+            {members.length > 0 && (
+              <Link
+                href="/familie"
+                className="flex shrink-0 -space-x-2 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-full"
+                data-testid="member-list"
+                aria-label={`Familie ${familyName}`}
+              >
+                {members.slice(0, 5).map((m) => (
+                  <div
+                    key={m.id}
+                    className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold text-white"
+                    style={{
+                      backgroundColor: m.avatar_color ?? "var(--petrol)",
+                    }}
+                    title={m.name}
+                    aria-label={m.name}
+                  >
+                    {m.name.charAt(0).toUpperCase()}
+                  </div>
+                ))}
+                {members.length > 5 && (
+                  <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
+                    +{members.length - 5}
+                  </div>
+                )}
+              </Link>
+            )}
           </div>
 
-          {/* Proactive insights from the knowledge graph */}
-          {insights.length > 0 && (
+          {/* The "Heute" hero — the single most important thing right now */}
+          <TodayHero
+            state={hero}
+            onMarkDone={(taskId) => void handleToggleDone(taskId, "done")}
+          />
+
+          {/* Proactive insights from the knowledge graph — one grouped
+              surface with dividers instead of floating cards (the insight
+              the hero already shows is filtered out). */}
+          {visibleInsights.length > 0 && (
             <section data-testid="home-section-insights" className="space-y-2">
               <h2 className="text-base font-semibold text-foreground">Hinweise</h2>
-              <div className="space-y-2 stagger-children">
-                {insights.map((insight) => (
-                  <InsightTile
+              <div className="divide-y divide-[var(--mist-light)]/60 rounded-ordilo-md border border-border bg-card shadow-card">
+                {visibleInsights.map((insight) => (
+                  <InsightRow
                     key={insight.id}
                     insight={insight}
+                    suppressUrgent={suppressUrgentInsights}
                     onOpenDocument={openDocument}
                   />
                 ))}
@@ -290,10 +324,9 @@ export function HomeClient({
             </section>
           )}
 
-          {/* Aufgaben — the screen answers ONE question: "was brennt?"
-              Only the next few deadlines appear (overdue first); the full
-              list lives one tap away on /aufgaben. */}
-          {hasTasks && (
+          {/* Aufgaben — starts after the task the hero already covers;
+              the full list lives one tap away on /aufgaben. */}
+          {nextTasks.length > 0 && (
             <section data-testid="home-section-aufgaben" className="space-y-3">
               <h2 className="text-base font-semibold text-foreground">Als Nächstes</h2>
               <div className="space-y-2 stagger-children" data-testid="home-tasks-next">
@@ -321,43 +354,29 @@ export function HomeClient({
             </section>
           )}
 
-          {/* Zu bestätigen — bento grid of compact document tiles */}
-          <section data-testid="home-section-review-docs" className="space-y-3">
-            <h2 className="text-base font-semibold text-foreground">Zum Durchsehen</h2>
-            {analyzedDocuments.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
-                {analyzedDocuments.map((doc) => (
-                  <BentoDocTile
-                    key={doc.id}
-                    doc={doc}
-                    showStatusDot={false}
-                    onOpenDocument={openDocument}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 py-1">
-                <p className="text-sm text-muted-foreground">Alles durchgesehen — fein</p>
-                <button
-                  type="button"
-                  onClick={openWizard}
-                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          {/* Deine Dokumente — the journal: awaiting confirmation first
+              (with a chip), then the most recent scans, thumbnail-first. */}
+          <section data-testid="home-section-journal" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-foreground">
+                Deine Dokumente
+              </h2>
+              {journalDocs.length > 0 && (
+                <Link
+                  href="/dokumente"
+                  className="text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
                 >
-                  Dokument scannen
-                </button>
-              </div>
-            )}
-          </section>
-
-          {/* Zuletzt gescannt — bento grid of compact document tiles */}
-          <section data-testid="home-section-recent-docs" className="space-y-3">
-            <h2 className="text-base font-semibold text-foreground">Zuletzt gescannt</h2>
-            {visibleRecentDocs.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4">
-                {visibleRecentDocs.map((doc) => (
-                  <BentoDocTile
+                  Alle anzeigen
+                </Link>
+              )}
+            </div>
+            {journalDocs.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4 stagger-children">
+                {journalDocs.map((doc) => (
+                  <JournalDocTile
                     key={doc.id}
                     doc={doc}
+                    thumbUrl={thumbUrls[doc.id] ?? null}
                     onOpenDocument={openDocument}
                   />
                 ))}
@@ -386,26 +405,31 @@ export function HomeClient({
 // ---------------------------------------------------------------------------
 
 /**
- * Compact vertical document tile for the bento grid.
- * Shows file icon, status dot + label (2 lines), and relative time.
- *
- * `showStatusDot` defaults to true but is set to false by the "Zu
- * bestätigen" grid, where every tile has status "analyzed" — the dot
- * would carry no information there.
+ * Journal tile — thumbnail-first (a real scan preview when available,
+ * the generic file icon as fallback), title and relative time below.
+ * Documents awaiting confirmation wear a "Bitte bestätigen" chip instead
+ * of the status dot; other statuses keep the quiet dot + label.
  */
-function BentoDocTile({
+function JournalDocTile({
   doc,
-  showStatusDot = true,
+  thumbUrl,
   onOpenDocument,
 }: {
   doc: HomeDocument;
-  showStatusDot?: boolean;
+  thumbUrl: string | null;
   onOpenDocument: (documentId: string) => Promise<void>;
 }) {
   const FileIcon = getFileIcon(doc.mime_type);
   const displayTitle = doc.title?.trim() || doc.original_filename || "Dokument";
   const relativeTime = formatRelativeTime(doc.created_at, true);
   const statusLabel = getStatusLabel(doc.status);
+  const needsConfirmation = doc.status === "analyzed";
+
+  // A signed thumbnail URL that fails to load (expired, transform not
+  // available on the plan, ...) falls back to the icon variant — the tile
+  // never renders a broken image.
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const showThumb = thumbUrl !== null && !thumbFailed;
 
   return (
     <Link
@@ -416,20 +440,43 @@ function BentoDocTile({
       }}
       className="flex flex-col gap-2 rounded-ordilo-sm border border-border bg-card p-3 shadow-card card-lift cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
-      <div className="flex items-center justify-between">
+      {showThumb ? (
+        // Signed URLs are already resized by Supabase image transforms;
+        // the Next.js optimizer would only add latency here.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbUrl}
+          alt=""
+          loading="lazy"
+          onError={() => setThumbFailed(true)}
+          className="aspect-[3/4] w-full rounded-ordilo-sm border border-[var(--mist-light)] object-cover"
+        />
+      ) : (
         <div
-          className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm"
+          className="flex aspect-[3/4] w-full items-center justify-center rounded-ordilo-sm"
           style={{ backgroundColor: "var(--secondary)" }}
           aria-hidden="true"
         >
           <FileIcon
-            className="size-4"
+            className="size-6"
             style={{ color: "var(--mist-dark)" }}
             strokeWidth={1.5}
           />
         </div>
-        {showStatusDot && (
-          <span className="flex items-center gap-1">
+      )}
+      <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+        {displayTitle}
+      </p>
+      <div className="flex items-center justify-between gap-2">
+        {relativeTime && (
+          <p className="text-xs tabular-nums text-muted-foreground">{relativeTime}</p>
+        )}
+        {needsConfirmation ? (
+          <span className="shrink-0 rounded-full bg-[var(--petrol)]/10 px-2 py-0.5 text-xs font-medium text-[var(--petrol)]">
+            Bitte bestätigen
+          </span>
+        ) : (
+          <span className="flex shrink-0 items-center gap-1">
             <span
               className={cn("size-2 rounded-full", getStatusDotClass(doc.status))}
               aria-hidden="true"
@@ -440,18 +487,12 @@ function BentoDocTile({
           </span>
         )}
       </div>
-      <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
-        {displayTitle}
-      </p>
-      {relativeTime && (
-        <p className="text-xs tabular-nums text-muted-foreground">{relativeTime}</p>
-      )}
     </Link>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Insight tile — proactive intelligence from the knowledge graph
+// Insight row — one line inside the grouped Hinweise surface
 // ---------------------------------------------------------------------------
 
 const INSIGHT_ICONS: Record<HomeInsight["icon"], LucideIcon> = {
@@ -461,15 +502,19 @@ const INSIGHT_ICONS: Record<HomeInsight["icon"], LucideIcon> = {
   calendar: CalendarClock,
 };
 
-function InsightTile({
+function InsightRow({
   insight,
+  suppressUrgent,
   onOpenDocument,
 }: {
   insight: HomeInsight;
+  /** True while the hero already carries apricot — urgent rows then
+      render in petrol so the view keeps exactly one apricot element. */
+  suppressUrgent: boolean;
   onOpenDocument: (documentId: string) => Promise<void>;
 }) {
   const Icon = INSIGHT_ICONS[insight.icon] ?? AlertCircle;
-  const isUrgent = insight.tone === "urgent";
+  const isUrgent = insight.tone === "urgent" && !suppressUrgent;
   const documentId = getDocumentIdFromHref(insight.href);
 
   return (
@@ -481,12 +526,7 @@ function InsightTile({
         void onOpenDocument(documentId);
       }}
       data-testid="insight-tile"
-      className={cn(
-        "flex items-center gap-3 rounded-ordilo-sm border bg-card p-3 shadow-card card-lift cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        isUrgent
-          ? "border-[var(--apricot)]/30"
-          : "border-[var(--petrol)]/15",
-      )}
+      className="flex items-center gap-3 p-3 cursor-pointer transition-colors hover:bg-[var(--sand-warm)]/60 first:rounded-t-ordilo-md last:rounded-b-ordilo-md focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       <div
         className={cn(

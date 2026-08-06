@@ -17,6 +17,7 @@ import {
   type CollectionInfo,
 } from "@/lib/collections/collections-context";
 import { ActiveSearchProvider, useActiveSearch } from "@/lib/search/active-search-context";
+import { SuggestionChipsProvider } from "@/lib/search/suggestion-chips-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -65,9 +66,11 @@ export function AppShell({
     <ActiveSearchProvider>
       <ScanProvider initialFamilyId={familyId}>
         <CollectionsProvider initialCollections={initialCollections}>
-          <AppShellContent profile={profile} hasServerData={hasServerData}>
-            {children}
-          </AppShellContent>
+          <SuggestionChipsProvider>
+            <AppShellContent profile={profile} hasServerData={hasServerData}>
+              {children}
+            </AppShellContent>
+          </SuggestionChipsProvider>
         </CollectionsProvider>
       </ScanProvider>
     </ActiveSearchProvider>
