@@ -60,9 +60,14 @@ export function ProcessingChecklist({
   /** Tool activity reported by the stream, in the order it happened. */
   toolCalls?: ToolCallProgress[];
 }) {
-  // Only the latest activity matters — earlier steps are already done and
-  // would just be noise.
-  const latest = toolCalls[toolCalls.length - 1];
+  // A still-running tool is always the current status: with parallel
+  // tool calls the last-started one can finish before an earlier one, so
+  // the final array entry alone does not tell the truth. Only when no
+  // call is running does the latest settled entry decide between the
+  // writing state and an error. Earlier finished steps are noise either
+  // way — only one line shows.
+  const active = [...toolCalls].reverse().find((c) => c.state === "start");
+  const latest = active ?? toolCalls[toolCalls.length - 1];
 
   let status: "active" | "done" | "error";
   let Icon: LucideIcon;

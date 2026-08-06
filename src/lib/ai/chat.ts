@@ -508,6 +508,13 @@ export async function streamAgenticAnswer(
     async start(ctrl) {
       controller = ctrl;
 
+      // Whether unretracted answer text is currently visible on the
+      // client. Tracked across rounds so the error path can retract a
+      // partial answer instead of leaving a truncated, potentially
+      // misleading bubble behind (the route only persists complete
+      // answers, so a partial one would be wrong AND unpersisted).
+      let answerTextVisible = false;
+
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
           const openaiStream = await client.chat.completions.create({
@@ -533,7 +540,6 @@ export async function streamAgenticAnswer(
           // released, so a forbidden phrase split across chunks is caught
           // before its final character reaches the client.
           let releasedTail = "";
-          let releasedThisRound = false;
           let hedgingDetected = false;
           // First characters of the round, held back until the release
           // threshold (see FIRST_RELEASE_THRESHOLD) — short preambles on
@@ -571,7 +577,7 @@ export async function streamAgenticAnswer(
             if (delta.content) {
               pendingRelease += delta.content;
               if (
-                releasedThisRound ||
+                answerTextVisible ||
                 pendingRelease.length >= FIRST_RELEASE_THRESHOLD
               ) {
                 if (containsHedgingLanguage(releasedTail + pendingRelease)) {
@@ -583,7 +589,7 @@ export async function streamAgenticAnswer(
                 releasedTail = (releasedTail + pendingRelease).slice(
                   -HEDGE_TAIL_LENGTH,
                 );
-                releasedThisRound = true;
+                answerTextVisible = true;
                 pendingRelease = "";
               }
             }
@@ -610,8 +616,9 @@ export async function streamAgenticAnswer(
               content: [...contentChunks, pendingRelease].join("") || null,
             });
 
-            if (releasedThisRound) {
+            if (answerTextVisible) {
               send({ type: "replace", content: "" });
+              answerTextVisible = false;
             }
 
             // `present_answer_card` is a terminal action, not a data-fetch
@@ -767,7 +774,7 @@ export async function streamAgenticAnswer(
             } else {
               contentChunks.push(pendingRelease);
               send({ type: "text", content: pendingRelease });
-              releasedThisRound = true;
+              answerTextVisible = true;
             }
           }
 
@@ -806,10 +813,11 @@ export async function streamAgenticAnswer(
                 ? retryContent.trim()
                 : FAIL_CLOSED_HEDGING;
 
-            if (releasedThisRound) {
+            if (answerTextVisible) {
               send({ type: "replace", content: finalText });
             } else {
               send({ type: "text", content: finalText });
+              answerTextVisible = true;
             }
           }
           // Otherwise the clean answer has already streamed — nothing
@@ -830,6 +838,12 @@ export async function streamAgenticAnswer(
         });
         controller.close();
       } catch (err) {
+        // Retract any partial answer already streamed — leaving it would
+        // show a truncated, potentially misleading message next to the
+        // error, and it is never persisted.
+        if (answerTextVisible) {
+          send({ type: "replace", content: "" });
+        }
         if (err instanceof ChatError) {
           send({ type: "error", error: err.message, code: err.code });
         } else {

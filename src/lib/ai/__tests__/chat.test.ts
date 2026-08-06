@@ -165,6 +165,18 @@ function fakeOpenAIStream(chunks: FakeStreamChunk[]) {
   return generator();
 }
 
+/**
+ * Variant of fakeOpenAIStream that throws after yielding the given
+ * chunks — simulates a dropped OpenAI connection mid-answer.
+ */
+function fakeOpenAIStreamThenThrow(chunks: FakeStreamChunk[], error: Error) {
+  async function* generator() {
+    yield* fakeOpenAIStream(chunks);
+    throw error;
+  }
+  return generator();
+}
+
 /** Consume a ReadableStream<Uint8Array> of NDJSON lines into parsed objects. */
 async function readNdjsonStream(
   stream: ReadableStream<Uint8Array>,
@@ -1070,5 +1082,54 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         (l) => l.type === "text" && String(l.content).includes("ube"),
       ),
     ).toBe(false);
+  });
+
+  it("retracts the partial answer when the model stream fails mid-answer", async () => {
+    // The connection drops after text already streamed — the partial,
+    // unpersisted answer must not stay on screen next to the error.
+    const cleanChunk =
+      "Die Frist für das Kita-Formular läuft schon sehr bald ab, ";
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStreamThenThrow(
+        [{ content: cleanChunk }],
+        new Error("connection reset"),
+      ),
+    );
+
+    const stream = await streamAgenticAnswer("Wann?", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toContainEqual({ type: "text", content: cleanChunk });
+    expect(lines).toContainEqual({ type: "replace", content: "" });
+    expect(lines[lines.length - 1]).toMatchObject({
+      type: "error",
+      code: "CHAT_FAILED",
+    });
+
+    // Reconstructing the client view ends with an empty bubble.
+    let visible = "";
+    for (const line of lines) {
+      if (line.type === "text") visible += line.content as string;
+      if (line.type === "replace") visible = line.content as string;
+    }
+    expect(visible).toBe("");
+  });
+
+  it("emits no retraction when the stream fails before any text was released", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStreamThenThrow(
+        [{ content: "kurz" }],
+        new Error("connection reset"),
+      ),
+    );
+
+    const stream = await streamAgenticAnswer("Wann?", [], makeToolContext());
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((l) => l.type === "replace")).toBe(false);
+    expect(lines[lines.length - 1]).toMatchObject({
+      type: "error",
+      code: "CHAT_FAILED",
+    });
   });
 });

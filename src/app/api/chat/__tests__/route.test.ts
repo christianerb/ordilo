@@ -19,6 +19,7 @@ import { POST, GET } from "@/app/api/chat/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { streamAgenticAnswer, ChatError } from "@/lib/ai/chat";
 import { MAX_CHAT_MESSAGE_LENGTH } from "@/lib/schemas/chat";
+import { DAILY_MESSAGE_LIMIT } from "@/lib/ai/rate-limit";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -64,6 +65,17 @@ function validBody(overrides: Record<string, unknown> = {}) {
  */
 let membershipResult: { data: unknown; error: unknown };
 
+/**
+ * Result of the chat_usage rate-limit query, configurable per test.
+ * Defaults to "no row" (= 0 messages used today) so the happy path
+ * passes the rate-limit check.
+ */
+let chatUsageResult: { data: unknown; error: unknown };
+
+/** The mocked .from() of the server client — lets tests assert which
+ * tables a request touched (e.g. that a 429 creates no conversation). */
+let fromMock: ReturnType<typeof vi.fn>;
+
 function mockServerClient() {
   // Build a chainable mock that supports all query builder methods
   // used across the chat route (rate limit, conversation, messages,
@@ -96,15 +108,34 @@ function mockServerClient() {
     ),
   };
 
+  // Dedicated builder for the chat_usage rate-limit query so tests can
+  // simulate an exhausted daily limit. insert/update are needed too:
+  // recordUsage fires (void) after a successful answer.
+  const usageChain = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    insert: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockImplementation(() =>
+      Promise.resolve(chatUsageResult),
+    ),
+  };
+
+  fromMock = vi.fn((table: string) =>
+    table === "family_memberships"
+      ? membershipChain
+      : table === "chat_usage"
+        ? usageChain
+        : chainable,
+  );
+
   (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue({
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user: { id: "user-1", email: "test@example.com" } },
       }),
     },
-    from: vi.fn((table: string) =>
-      table === "family_memberships" ? membershipChain : chainable,
-    ),
+    from: fromMock,
     rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
   });
 }
@@ -149,6 +180,8 @@ beforeEach(() => {
   mockAuthUser = { id: "user-1", email: "test@example.com" };
   // Default: the user is a member of the family (happy path).
   membershipResult = { data: { family_id: FAMILY_ID }, error: null };
+  // Default: no usage row → 0 messages used today (under the limit).
+  chatUsageResult = { data: null, error: null };
   mockServerClient();
 });
 
@@ -311,6 +344,25 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.code).toBe("OPENAI_API_ERROR");
+  });
+
+  it("returns 429 and creates no conversation when the daily limit is reached", async () => {
+    chatUsageResult = {
+      data: { message_count: DAILY_MESSAGE_LIMIT },
+      error: null,
+    };
+
+    const response = await POST(createRequest(validBody()));
+    expect(response.status).toBe(429);
+    const body = await response.json();
+    expect(body.code).toBe("RATE_LIMIT_EXCEEDED");
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+
+    // The rejected request must not leave an empty conversation behind —
+    // creation is deferred until after membership + rate-limit approval.
+    expect(
+      fromMock.mock.calls.some(([table]) => table === "chat_conversations"),
+    ).toBe(false);
   });
 });
 
