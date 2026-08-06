@@ -6,6 +6,7 @@ import {
   filterRecentDocuments,
   mergeJournalDocuments,
   formatGermanTimestamp,
+  JOURNAL_DOCS_LIMIT,
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
@@ -400,5 +401,28 @@ describe("mergeJournalDocuments", () => {
 
   it("returns an empty array when there are no documents", () => {
     expect(mergeJournalDocuments([], [])).toEqual([]);
+  });
+
+  it("fills the journal even when the analyzed docs are the newest docs overall", () => {
+    // Regression test for the review finding: when the 3 analyzed
+    // documents are also the 3 newest documents, deduplication must not
+    // leave the 6-tile grid half empty — the caller fetches/filters with
+    // JOURNAL_DOCS_LIMIT so older confirmed docs fill the gap.
+    const analyzed = [
+      makeDoc({ id: "a1", status: "analyzed" }),
+      makeDoc({ id: "a2", status: "analyzed" }),
+      makeDoc({ id: "a3", status: "analyzed" }),
+    ];
+    const recent = filterRecentDocuments(
+      [
+        ...analyzed.map((d) => ({ ...d })), // the same three, newest overall
+        makeDoc({ id: "r4", status: "confirmed" }),
+        makeDoc({ id: "r5", status: "confirmed" }),
+        makeDoc({ id: "r6", status: "confirmed" }),
+      ],
+      JOURNAL_DOCS_LIMIT,
+    );
+    const journal = mergeJournalDocuments(analyzed, recent);
+    expect(journal.map((d) => d.id)).toEqual(["a1", "a2", "a3", "r4", "r5", "r6"]);
   });
 });

@@ -25,6 +25,7 @@ import { SuggestionChipsRegistrar } from "@/lib/search/suggestion-chips-context"
 import {
   filterRecentDocuments,
   mergeJournalDocuments,
+  JOURNAL_DOCS_LIMIT,
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
@@ -168,7 +169,14 @@ export function HomeClient({
   // Derived data
   // -------------------------------------------------------------------------
 
-  const visibleRecentDocs = filterRecentDocuments(recentDocuments);
+  // JOURNAL_DOCS_LIMIT (not the old RECENT_DOCS_LIMIT default): the
+  // journal merge dedupes against the analyzed documents, and the grid
+  // should still fill up when the newest confirmed docs ARE the analyzed
+  // ones.
+  const visibleRecentDocs = filterRecentDocuments(
+    recentDocuments,
+    JOURNAL_DOCS_LIMIT,
+  );
 
   // ONE priority list: open, confirmed, dated tasks sorted by due date —
   // overdue lands first by construction. totalTasks counts the WHOLE
