@@ -659,10 +659,13 @@ export function SucheClient({
         </button>
       </div>
 
-      {/* Chat history dropdown — floating panel */}
+      {/* Chat history dropdown — floating panel. Bounded by top AND bottom
+          (not just a max-height guess) so it can never grow past its own
+          container and overlap the fixed composer bar below it — its own
+          scrollbar takes over once the list doesn't fit. */}
       {showChatList && (
         <div
-          className="absolute left-2 right-2 top-10 z-50 rounded-ordilo-sm border border-border/60 bg-background shadow-lg animate-in fade-in-0 slide-in-from-top-1"
+          className="absolute inset-x-2 top-10 bottom-2 z-50 overflow-y-auto rounded-ordilo-sm border border-border/60 bg-background shadow-lg animate-in fade-in-0 slide-in-from-top-1"
           data-testid="chat-list-dropdown"
         >
           {/* Click-outside overlay */}

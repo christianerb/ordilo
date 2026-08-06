@@ -142,6 +142,7 @@ export function MobileComposer({
   isLoading = false,
   recentQueries = [],
   greetingName,
+  enableOverlay = true,
 }: {
   onSearch: (query: string) => void;
   /** Opens the shared + action sheet (Scannen / Notiz / Sammlung). */
@@ -152,6 +153,13 @@ export function MobileComposer({
   recentQueries?: string[];
   /** Family/display name for the zoomed-in greeting, when known. */
   greetingName?: string;
+  /**
+   * Zooming into "ask anything" makes sense as a global entry point, but
+   * not while already inside the fullscreen /suche conversation — there
+   * the pill should just behave like a plain inline composer. Set false
+   * on /suche.
+   */
+  enableOverlay?: boolean;
 }) {
   // The composer is fixed to the bottom and its height changes with the
   // textarea, so publish it: the scroll container pads by this value instead
@@ -198,7 +206,7 @@ export function MobileComposer({
               value={value}
               onValueChange={setValue}
               onSubmit={onSearch}
-              onFocus={() => setExpanded(true)}
+              onFocus={enableOverlay ? () => setExpanded(true) : undefined}
               isLoading={isLoading}
               placeholder="Frage Ordilo …"
             />
@@ -216,7 +224,7 @@ export function MobileComposer({
         </div>
       </div>
 
-      {expanded && (
+      {enableOverlay && expanded && (
         <ComposerOverlay
           value={value}
           onValueChange={setValue}

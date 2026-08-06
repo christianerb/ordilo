@@ -229,6 +229,10 @@ function AppShellContent({
             isLoading={busy}
             recentQueries={recentQueries}
             greetingName={profile ? getProfileDisplayName(profile) : undefined}
+            // Zooming into "ask anything" makes no sense while already
+            // inside the fullscreen /suche conversation — keep the pill a
+            // plain inline composer there instead.
+            enableOverlay={pathname !== "/suche"}
           />
           <DesktopBottomBar
             collapsed={collapsed}

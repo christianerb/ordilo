@@ -382,6 +382,20 @@ describe("AppShell", () => {
     }
   });
 
+  it("does not zoom into the fullscreen overlay on /suche (already inside the chat)", () => {
+    renderShell("/suche");
+    const [pill] = screen.getAllByRole("textbox");
+    fireEvent.focus(pill);
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+  });
+
+  it("still zooms into the fullscreen overlay on other tabs", () => {
+    renderShell("/home");
+    const [pill] = screen.getAllByRole("textbox");
+    fireEvent.focus(pill);
+    expect(screen.getByTestId("composer-overlay")).toBeDefined();
+  });
+
   it("renders the desktop composer as a rounded floating dock", () => {
     renderShell("/home");
     const dock = screen.getByTestId("desktop-floating-dock");
