@@ -49,13 +49,25 @@ function mockSupabase(options: {
   const { user = { id: "user-1", email: "test@ordilo.test" } } = options;
 
   // families chain (for fetching the user's family): resolveUserFamily
-  // selects all RLS-visible families ordered by created_at and picks
-  // deterministically (owned first, then oldest membership).
+  // looks up the OWNED family first (created_by = user, at most one row)
+  // and falls back to the oldest membership for invite-only accounts.
   const familiesSelectChain = {
-    order: vi.fn().mockResolvedValue({
-      data: options.family ? [options.family] : [],
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: options.family ?? null,
       error: options.familyError ?? null,
     }),
+  };
+
+  // Invite-only fallback — the actions tests always exercise the owned
+  // path, so this resolves null.
+  const membershipsSelectChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   };
 
   // families update chain (for renaming the family)
@@ -115,6 +127,11 @@ function mockSupabase(options: {
       return {
         select: vi.fn(() => familiesSelectChain),
         update: vi.fn(() => familiesUpdateChain),
+      };
+    }
+    if (table === "family_memberships") {
+      return {
+        select: vi.fn(() => membershipsSelectChain),
       };
     }
     if (table === "family_members") {

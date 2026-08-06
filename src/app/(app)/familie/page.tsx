@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 import { FamilieClient } from "./familie-client";
 import type { Database } from "@/types/database";
 
@@ -52,22 +53,21 @@ async function resolvePhotoUrls(
 export default async function FamiliePage() {
   const supabase = await createClient();
 
-  // Fetch the user's family (RLS-scoped — only returns the family created_by
-  // the authenticated user). Capture the error so we can distinguish a
-  // transient backend failure from a legitimate "no family yet" state.
-  // On full page loads the middleware already ran this query for the
+  // Resolve the user's family. Since migration 0024 the families SELECT
+  // policy exposes EVERY family the user belongs to, so this must use the
+  // same deterministic rule the middleware and the server actions use —
+  // an arbitrary limit(1) pick could display one family while mutations
+  // land in another. Capture the error so we can distinguish a transient
+  // backend failure from a legitimate "no family yet" state.
+  // On full page loads the middleware already resolved the family for the
   // onboarding gate and hands the verified result over via request headers
   // (no error possible on that path) — only RSC navigations need the
-  // fallback query.
+  // fallback resolution.
   const middlewareFamily = await getMiddlewareFamily();
   let family: { id: string; name: string } | null = middlewareFamily;
   let familyError = false;
   if (!family) {
-    const result = await supabase
-      .from("families")
-      .select("id, name")
-      .limit(1)
-      .maybeSingle();
+    const result = await resolveUserFamily(supabase);
     family = result.data;
     familyError = !!result.error;
   }

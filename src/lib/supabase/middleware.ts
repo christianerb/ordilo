@@ -6,6 +6,7 @@ import {
   FAMILY_NAME_HEADER,
   USER_EMAIL_HEADER,
 } from "@/lib/supabase/family-context";
+import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 
 /**
  * Refresh the Supabase auth session on every matched request and protect
@@ -101,12 +102,14 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     //     bypass stays closed).
     //   - A user with no family at all → redirected to /onboarding to start.
     //
-    // RLS ensures only the user's own family is visible.
-    const { data: family, error: familyError } = await supabase
-      .from("families")
-      .select("id, name, onboarding_completed_at")
-      .limit(1)
-      .maybeSingle();
+    // Resolve the family with the SAME deterministic rule the server
+    // actions write to (owned first, then oldest membership). An
+    // arbitrary limit(1) pick here would DISPLAY one family while
+    // mutations land in another for multi-membership accounts.
+    const { data: family, error: familyError } = await resolveUserFamily(
+      supabase,
+      user.id,
+    );
 
     // On query error: fail safe — let the request pass through so the page
     // can surface a German error state. Redirecting to /onboarding on a
