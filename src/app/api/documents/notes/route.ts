@@ -62,6 +62,15 @@ const noteSchema = z.object({
     .max(10_000, "Notiz ist zu lang (max. 10 000 Zeichen)."),
   document_type: z.enum(DOCUMENT_TYPES),
   family_id: z.string().uuid("Ungültige Familien-ID."),
+  // Optional: pin the note to a collection by setting its category to the
+  // collection's name (collections are backed by documents.category). The
+  // analyze step preserves a pre-set category on first analysis.
+  category: z
+    .string()
+    .trim()
+    .min(1, "Kategorie darf nicht leer sein.")
+    .max(100, "Kategorie ist zu lang (max. 100 Zeichen).")
+    .optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -89,6 +98,7 @@ export async function POST(request: Request): Promise<Response> {
   const content = formData.get("content");
   const documentType = formData.get("document_type");
   const familyIdRaw = formData.get("family_id");
+  const categoryRaw = formData.get("category");
   const file = formData.get("file");
 
   const parsed = noteSchema.safeParse({
@@ -96,6 +106,10 @@ export async function POST(request: Request): Promise<Response> {
     content: typeof content === "string" ? content : "",
     document_type: typeof documentType === "string" ? documentType : "",
     family_id: typeof familyIdRaw === "string" ? familyIdRaw : "",
+    category:
+      typeof categoryRaw === "string" && categoryRaw.trim()
+        ? categoryRaw.trim()
+        : undefined,
   });
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
@@ -106,7 +120,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 400 });
   }
 
-  const { title: validTitle, content: validContent, document_type: validType, family_id: familyId } = parsed.data;
+  const { title: validTitle, content: validContent, document_type: validType, family_id: familyId, category: validCategory } = parsed.data;
 
   // 3. Verify family ownership (RLS) --------------------------------------
   const serverClient = await createServerClient();
@@ -194,6 +208,7 @@ export async function POST(request: Request): Promise<Response> {
     source: "manual",
     title: validTitle,
     document_type: validType,
+    category: validCategory ?? null,
     ocr_text: validContent,
     mime_type: mimeType,
     original_filename: originalFilename,

@@ -46,6 +46,12 @@ export interface AnalyzeStepDocument {
   id: string;
   family_id: string;
   ocr_text: string | null;
+  /**
+   * The document's current category, if any. A note created inside a
+   * collection is pinned to that collection's category at creation time
+   * (before analysis runs) — see the preservation guard below.
+   */
+  category?: string | null;
   /** Whether the document was previously confirmed (re-analyze support). */
   wasConfirmed: boolean;
 }
@@ -207,6 +213,17 @@ export async function performAnalyzeStep(
     familyContext.categories,
     familyContext.collections ?? [],
   );
+
+  // A note created inside a collection is pinned to that collection's
+  // category at creation time (documents.category is set before analysis
+  // runs). Preserve it on the first analysis instead of letting the LLM
+  // file the note somewhere else — the user explicitly chose the
+  // collection. Scanned documents have no category before their first
+  // analysis, so this guard only ever fires for pinned manual notes.
+  // Re-analysis of a confirmed document may still re-categorize.
+  if (!document.wasConfirmed && document.category) {
+    analysis.suggested_category = document.category;
+  }
 
   // Override the LLM's self-assessment with the deterministic threshold.
   analysis.needs_user_review = computeNeedsUserReview(analysis);

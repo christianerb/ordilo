@@ -30,12 +30,19 @@ export async function createNote({
   content,
   documentType,
   familyId,
+  category,
   file,
 }: {
   title: string;
   content: string;
   documentType: DocumentType;
   familyId: string;
+  /**
+   * Optional collection name to file the note into. Stored as the
+   * document's category (collections are backed by documents.category) and
+   * preserved by the analyze step, so the note appears in that collection.
+   */
+  category?: string;
   file?: File | null;
 }): Promise<NoteSuccessResponse> {
   const formData = new FormData();
@@ -43,6 +50,9 @@ export async function createNote({
   formData.append("content", content);
   formData.append("document_type", documentType);
   formData.append("family_id", familyId);
+  if (category) {
+    formData.append("category", category);
+  }
   if (file) {
     formData.append("file", file);
   }

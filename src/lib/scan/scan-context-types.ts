@@ -13,7 +13,11 @@ export type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 export interface ScanActionsValue {
   openWizard: () => void;
-  openCreateNote: () => void;
+  /**
+   * Open the create-note sheet. Pass `{ category }` to file the note into a
+   * collection (the collection's name becomes the note's category).
+   */
+  openCreateNote: (options?: { category?: string }) => void;
   closeCreateNote: () => void;
   handleCreateNote: (params: {
     title: string;
@@ -89,8 +93,10 @@ export interface ScanProviderState {
   handleWizardScanNext: () => void;
   handleWizardRetake: () => void;
   handleWizardCreateNote: () => void;
-  openCreateNote: () => void;
+  openCreateNote: (options?: { category?: string }) => void;
   closeCreateNote: () => void;
+  /** The collection category the note is being filed into, if any. */
+  createNoteCategory: string | null;
   handleCreateNote: (params: {
     title: string;
     content: string;

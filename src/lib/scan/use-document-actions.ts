@@ -7,6 +7,7 @@ import {
   type RefObject,
   type SetStateAction,
 } from "react";
+import { useRouter } from "next/navigation";
 import type { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { getFailedStage } from "@/lib/schemas/document";
@@ -63,7 +64,10 @@ export function useDocumentActions({
   setWizardDocId: Dispatch<SetStateAction<string | null>>;
   setWizardDocument: Dispatch<SetStateAction<DocumentRow | null>>;
 }) {
+  const router = useRouter();
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
+  // The collection category the note is filed into, set by openCreateNote.
+  const [createNoteCategory, setCreateNoteCategory] = useState<string | null>(null);
 
   const handleRetryFailed = useCallback(
     async (documentId: string) => {
@@ -207,12 +211,14 @@ export function useDocumentActions({
     ],
   );
 
-  const openCreateNote = useCallback(() => {
+  const openCreateNote = useCallback((options?: { category?: string }) => {
+    setCreateNoteCategory(options?.category ?? null);
     setCreateNoteOpen(true);
   }, []);
 
   const closeCreateNote = useCallback(() => {
     setCreateNoteOpen(false);
+    setCreateNoteCategory(null);
   }, []);
 
   const handleCreateNote = useCallback(
@@ -230,12 +236,19 @@ export function useDocumentActions({
         content: params.content,
         documentType: params.documentType,
         familyId: fid,
+        category: createNoteCategory ?? undefined,
         file: params.file,
       });
 
       // Pre-mark as triggered so fetchDocuments doesn't auto-trigger
       // analyze in parallel with the direct call below (409 race).
       triggeredAnalysisRef.current.add(result.document_id);
+
+      // Refresh server components so pages that fetch their own documents
+      // (e.g. the collection detail page) show the new note immediately —
+      // its category is already set at creation, so it files itself into
+      // the collection before analysis even runs.
+      router.refresh();
 
       // Refresh the document list so the new note appears.
       if (documentsLoadedRef.current) {
@@ -269,6 +282,8 @@ export function useDocumentActions({
       triggeredAnalysisRef,
       documentsLoadedRef,
       fetchDocumentsRef,
+      createNoteCategory,
+      router,
     ],
   );
 
@@ -276,6 +291,7 @@ export function useDocumentActions({
     handleRetryFailed,
     handleDeleteDocument,
     createNoteOpen,
+    createNoteCategory,
     openCreateNote,
     closeCreateNote,
     handleCreateNote,
