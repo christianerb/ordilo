@@ -50,6 +50,14 @@ function mockSupabaseClient(options: {
 
   return {
     auth: {
+      // The middleware verifies the JWT locally via getClaims() — a
+      // verified session surfaces as claims, anything else as null data.
+      getClaims: vi.fn().mockResolvedValue({
+        data: user ? { claims: { sub: user.id, email: user.email } } : null,
+        error: null,
+      }),
+      // Kept as a spy: the middleware must NOT fall back to a server
+      // round-trip per request.
       getUser: vi.fn().mockResolvedValue({ data: { user } }),
     },
     from: vi.fn((table: string) => {
@@ -312,6 +320,37 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
     setupMock({ user: null });
 
     const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/login");
+  });
+
+  // -------------------------------------------------------------------------
+  // Local JWT verification: the middleware must verify via getClaims()
+  // (WebCrypto + cached JWKS) and never round-trip to the Auth server per
+  // request.
+  // -------------------------------------------------------------------------
+
+  it("verifies the session locally via getClaims without calling getUser", async () => {
+    setupMock({ familyData: COMPLETED_FAMILY });
+
+    const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    const client = (createServerClient as ReturnType<typeof vi.fn>).mock
+      .results[0].value as {
+      auth: { getClaims: ReturnType<typeof vi.fn>; getUser: ReturnType<typeof vi.fn> };
+    };
+    expect(client.auth.getClaims).toHaveBeenCalledTimes(1);
+    expect(client.auth.getUser).not.toHaveBeenCalled();
+  });
+
+  it("redirects to /login when the JWT is invalid or expired (claims null)", async () => {
+    setupMock({ user: null });
+
+    const request = createMockRequest("/dokumente");
     const response = await updateSession(request);
 
     expect(response.status).toBe(307);
