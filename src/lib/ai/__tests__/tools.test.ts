@@ -19,10 +19,25 @@ vi.mock("@/app/(app)/familie/actions", () => ({
   addFamilyMember: vi.fn(),
 }));
 
+vi.mock("@/app/(app)/sammlungen/actions", () => ({
+  createCollection: vi.fn(),
+}));
+
+vi.mock("@/lib/pipeline/analyze-step", () => ({
+  performAnalyzeStep: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("@/lib/supabase/document-helpers", () => ({
+  markDocumentFailed: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
 import { addFamilyMember } from "@/app/(app)/familie/actions";
+import { createCollection } from "@/app/(app)/sammlungen/actions";
+import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1004,5 +1019,482 @@ describe("query_payments", () => {
     const ctx = makeCtxWithAmounts([], documents, { message: "boom" });
     const result = JSON.parse(await executeTool("query_payments", {}, ctx));
     expect(result.error).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// update_task confirmation gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for update_task: `.from("tasks")` resolves the task lookup and
+ * captures the update payload, `.from("family_members")` resolves the
+ * optional assignee lookup.
+ */
+function makeUpdateTaskCtx({
+  task = null,
+  member = null,
+  updateError = null,
+}: {
+  task?: { id: string; title: string; status?: string } | null;
+  member?: { id: string; name: string } | null;
+  updateError?: unknown;
+} = {}) {
+  let capturedUpdate: Record<string, unknown> | null = null;
+
+  const updateThenable: {
+    eq: ReturnType<typeof vi.fn>;
+    then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => Promise<unknown>;
+  } = {
+    eq: vi.fn(),
+    then: (resolve: (v: unknown) => void) =>
+      Promise.resolve({ data: null, error: updateError }).then(resolve),
+  };
+  updateThenable.eq.mockReturnValue(updateThenable);
+
+  const from = vi.fn((table: string) => {
+    if (table === "tasks") {
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
+        update: vi.fn((payload: Record<string, unknown>) => {
+          capturedUpdate = payload;
+          return { eq: vi.fn().mockReturnValue(updateThenable) };
+        }),
+      };
+    }
+    if (table === "family_members") {
+      return makeThenableChain(member);
+    }
+    return makeThenableChain(null);
+  });
+
+  const ctx = {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+
+  return { ctx, getUpdate: () => capturedUpdate };
+}
+
+describe("update_task confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("includes 'update_task' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("update_task")).toBe(true);
+  });
+
+  it("returns needs_confirmation with the planned changes when unconfirmed", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Steuererklaerung" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", due_date: "2026-09-01", priority: "high" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.task_title).toBe("Steuererklaerung");
+    expect(parsed.aenderungen).toEqual(["Frist: 2026-09-01", "Prioritaet: Hoch"]);
+    expect(getUpdate()).toBeNull();
+  });
+
+  it("returns error when the task is not found", async () => {
+    const { ctx } = makeUpdateTaskCtx({ task: null });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "nope", due_date: "2026-09-01", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Aufgabe nicht gefunden.");
+  });
+
+  it("returns error when task_id is empty", async () => {
+    const { ctx } = makeUpdateTaskCtx();
+    const result = await executeTool("update_task", { task_id: "" }, ctx);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Keine Aufgaben-ID angegeben.");
+  });
+
+  it("returns error when no field to change is given", async () => {
+    const { ctx } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toContain("Keine Aenderung angegeben");
+  });
+
+  it("applies only the provided fields when confirmed", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Steuererklaerung" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", due_date: "2026-09-01", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(getUpdate()).toEqual({ due_date: "2026-09-01" });
+  });
+
+  it("clears the due date when due_date is an empty string", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+    });
+    await executeTool(
+      "update_task",
+      { task_id: "task-1", due_date: "", confirmed: true },
+      ctx,
+    );
+
+    expect(getUpdate()).toEqual({ due_date: null });
+  });
+
+  it("reopens a done task via status 'open'", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test", status: "done" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", status: "open", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(getUpdate()).toEqual({ status: "open" });
+    expect(parsed.aenderungen).toEqual(["wieder geoeffnet"]);
+  });
+
+  it("resolves assignee_name to the member id", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+      member: { id: "member-5", name: "Emma" },
+    });
+    await executeTool(
+      "update_task",
+      { task_id: "task-1", assignee_name: "Emma", confirmed: true },
+      ctx,
+    );
+
+    expect(getUpdate()).toEqual({ assigned_to: "member-5" });
+  });
+
+  it("returns error for an unknown assignee instead of clearing it", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+      member: null,
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", assignee_name: "Unbekannt", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toContain("Unbekannt");
+    expect(getUpdate()).toBeNull();
+  });
+
+  it("returns error on update failure", async () => {
+    const { ctx } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+      updateError: { message: "RLS denied" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", priority: "low", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Aufgabe konnte nicht aktualisiert werden.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// create_collection confirmation gate
+// ---------------------------------------------------------------------------
+
+describe("create_collection confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("includes 'create_collection' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("create_collection")).toBe(true);
+  });
+
+  it("returns needs_confirmation when confirmed is missing, without creating", async () => {
+    const ctx = makeCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "Steuer 2026" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.collection_name).toBe("Steuer 2026");
+    expect(createCollection).not.toHaveBeenCalled();
+  });
+
+  it("returns error when name is empty", async () => {
+    const ctx = makeCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "  ", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Kein Name angegeben.");
+    expect(createCollection).not.toHaveBeenCalled();
+  });
+
+  it("calls createCollection with defaults when confirmed", async () => {
+    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { id: "col-1", name: "Steuer 2026" },
+    });
+    const ctx = makeCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "Steuer 2026", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(createCollection).toHaveBeenCalledWith({
+      name: "Steuer 2026",
+      icon: "file-text",
+      color: "petrol",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.collection_id).toBe("col-1");
+  });
+
+  it("passes a chosen icon and color through", async () => {
+    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { id: "col-2", name: "Finanzen" },
+    });
+    const ctx = makeCtx();
+    await executeTool(
+      "create_collection",
+      { name: "Finanzen", icon: "wallet", color: "apricot", confirmed: true },
+      ctx,
+    );
+
+    expect(createCollection).toHaveBeenCalledWith({
+      name: "Finanzen",
+      icon: "wallet",
+      color: "apricot",
+    });
+  });
+
+  it("returns the action error (e.g. duplicate name)", async () => {
+    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: false,
+      error: "Diese Sammlung gibt es schon.",
+    });
+    const ctx = makeCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "Rechnungen", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Diese Sammlung gibt es schon.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// create_note confirmation gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for create_note: the client carries `auth.getUser`, `.from("documents")`
+ * supports the insert (select/single) and the analyzing transition
+ * (update/eq/eq/select/maybeSingle), `.from("document_pages")` the page insert.
+ */
+function makeNoteCtx({
+  user = { id: "user-1" } as { id: string } | null,
+  insertError = null,
+}: {
+  user?: { id: string } | null;
+  insertError?: unknown;
+} = {}): ToolContext {
+  const from = vi.fn((table: string) => {
+    if (table === "documents") {
+      return {
+        insert: vi.fn(() => ({
+          select: vi.fn(() => ({
+            single: vi.fn().mockResolvedValue({
+              data: insertError ? null : { id: "note-1" },
+              error: insertError,
+            }),
+          })),
+        })),
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle: vi
+                  .fn()
+                  .mockResolvedValue({ data: { id: "note-1" }, error: null }),
+              })),
+            })),
+          })),
+        })),
+      };
+    }
+    if (table === "document_pages") {
+      return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
+    }
+    return makeThenableChain(null);
+  });
+
+  return {
+    client: {
+      from,
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
+      },
+    } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+}
+
+describe("create_note confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockResolvedValue({});
+  });
+
+  it("includes 'create_note' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("create_note")).toBe(true);
+  });
+
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Passwort haengt am Kuehlschrank" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.note_title).toBe("WLAN");
+    expect(ctx.client.from).not.toHaveBeenCalled();
+  });
+
+  it("returns error when title or content is empty", async () => {
+    const ctx = makeNoteCtx();
+    const noTitle = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: " ", content: "Text", confirmed: true },
+        ctx,
+      ),
+    );
+    const noContent = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "Titel", content: " ", confirmed: true },
+        ctx,
+      ),
+    );
+
+    expect(noTitle.error).toBe("Kein Titel angegeben.");
+    expect(noContent.error).toBe("Kein Notiztext angegeben.");
+  });
+
+  it("rejects an over-long title", async () => {
+    const ctx = makeNoteCtx();
+    const result = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "x".repeat(201), content: "Text", confirmed: true },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toContain("zu lang");
+  });
+
+  it("inserts the note and runs the analysis when confirmed", async () => {
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Passwort haengt am Kuehlschrank", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(true);
+    expect(ctx.client.from).toHaveBeenCalledWith("documents");
+    expect(ctx.client.from).toHaveBeenCalledWith("document_pages");
+    expect(performAnalyzeStep).toHaveBeenCalledWith(
+      ctx.client,
+      expect.objectContaining({
+        family_id: "fam-1",
+        ocr_text: "Passwort haengt am Kuehlschrank",
+        wasConfirmed: false,
+      }),
+    );
+  });
+
+  it("still reports success when the analysis fails, and marks the document failed", async () => {
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("OpenAI down"),
+    );
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(false);
+    expect(markDocumentFailed).toHaveBeenCalled();
+  });
+
+  it("returns error when the insert fails", async () => {
+    const ctx = makeNoteCtx({ insertError: { message: "db error" } });
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Notiz konnte nicht gespeichert werden.");
+    expect(performAnalyzeStep).not.toHaveBeenCalled();
   });
 });
