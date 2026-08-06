@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 import { validateMember, validateFamilyName } from "@/lib/schemas/onboarding";
 import type { Database } from "@/types/database";
 
@@ -58,24 +59,19 @@ async function verifyRelatedMembers(
 }
 
 /**
- * Fetch the authenticated user's family (RLS-scoped — only returns the
- * family created_by the current user).
+ * Fetch the authenticated user's family.
+ *
+ * Delegates to the shared `resolveUserFamily` helper, which resolves
+ * deterministically (oldest owned family first, then oldest membership)
+ * instead of an arbitrary `.limit(1)` row — relevant since migration 0024
+ * exposes every family the user belongs to via RLS.
  *
  * @returns The family row, or null if the user has no family.
  */
 async function getUserFamily(
   supabase: Awaited<ReturnType<typeof createClient>>,
 ): Promise<{ data: Pick<FamilyRow, "id" | "name"> | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from("families")
-    .select("id, name")
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { data: null, error: FRIENDLY_ERROR };
-  }
-  return { data, error: null };
+  return resolveUserFamily(supabase);
 }
 
 /**

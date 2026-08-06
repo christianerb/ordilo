@@ -39,10 +39,11 @@ function mockSupabase(options: {
 }) {
   const { user = { id: "user-1", email: "test@ordilo.test" } } = options;
 
+  // resolveUserFamily selects all RLS-visible families ordered by
+  // created_at and picks deterministically (owned first, then oldest).
   const familiesSelectChain = {
-    limit: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({
-      data: options.family ?? null,
+    order: vi.fn().mockResolvedValue({
+      data: options.family ? [options.family] : [],
       error: options.familyError ?? null,
     }),
   };

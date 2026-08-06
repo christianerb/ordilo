@@ -15,10 +15,6 @@ vi.mock("@/lib/ai/chat", () => ({
   combineSearchResults: vi.fn(() => []),
 }));
 
-vi.mock("@/app/(app)/familie/actions", () => ({
-  addFamilyMember: vi.fn(),
-}));
-
 vi.mock("@/lib/pipeline/analyze-step", () => ({
   performAnalyzeStep: vi.fn().mockResolvedValue({}),
 }));
@@ -30,7 +26,6 @@ vi.mock("@/lib/supabase/document-helpers", () => ({
 import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
-import { addFamilyMember } from "@/app/(app)/familie/actions";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
 import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
@@ -280,6 +275,48 @@ describe("mark_task_done confirmation gate", () => {
 // add_family_member confirmation gate
 // ---------------------------------------------------------------------------
 
+/**
+ * Ctx for add_family_member: `.from("family_members")` captures the insert
+ * payload and resolves the select/single chain.
+ */
+function makeMemberCtx({
+  inserted = null,
+  insertError = null,
+}: {
+  inserted?: { id: string; name: string } | null;
+  insertError?: unknown;
+} = {}) {
+  let capturedInsert: Record<string, unknown> | null = null;
+
+  const from = vi.fn((table: string) => {
+    if (table === "family_members") {
+      return {
+        insert: vi.fn((payload: Record<string, unknown>) => {
+          capturedInsert = payload;
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: insertError ? null : inserted,
+                error: insertError,
+              }),
+            })),
+          };
+        }),
+      };
+    }
+    return makeThenableChain(null);
+  });
+
+  const ctx = {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+
+  return { ctx, getInsert: () => capturedInsert };
+}
+
 describe("add_family_member confirmation gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -289,53 +326,29 @@ describe("add_family_member confirmation gate", () => {
     expect(CONFIRMATION_TOOLS.has("add_family_member")).toBe(true);
   });
 
-  it("returns needs_confirmation when confirmed is missing", async () => {
-    const ctx = makeCtx();
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const { ctx, getInsert } = makeMemberCtx();
     const result = await executeTool("add_family_member", { name: "Emma" }, ctx);
     const parsed = JSON.parse(result);
 
     expect(parsed.needs_confirmation).toBe(true);
     expect(parsed.member_name).toBe("Emma");
-    expect(addFamilyMember).not.toHaveBeenCalled();
+    expect(getInsert()).toBeNull();
   });
 
   it("returns error when name is empty", async () => {
-    const ctx = makeCtx();
+    const { ctx, getInsert } = makeMemberCtx();
     const result = await executeTool("add_family_member", { name: "  " }, ctx);
     const parsed = JSON.parse(result);
 
     expect(parsed.error).toBe("Kein Name angegeben.");
-    expect(addFamilyMember).not.toHaveBeenCalled();
+    expect(getInsert()).toBeNull();
   });
 
-  it("calls addFamilyMember and returns success when confirmed is true", async () => {
-    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: true,
-      data: { id: "member-1", name: "Emma" },
+  it("inserts into the ACTIVE chat family with normalized optional fields", async () => {
+    const { ctx, getInsert } = makeMemberCtx({
+      inserted: { id: "member-1", name: "Emma" },
     });
-    const ctx = makeCtx();
-    const result = await executeTool(
-      "add_family_member",
-      { name: "Emma", role: "Kind", confirmed: true },
-      ctx,
-    );
-    const parsed = JSON.parse(result);
-
-    expect(addFamilyMember).toHaveBeenCalledWith({
-      name: "Emma",
-      role: "Kind",
-      birthdate: undefined,
-    });
-    expect(parsed.success).toBe(true);
-    expect(parsed.member_id).toBe("member-1");
-  });
-
-  it("returns error when addFamilyMember fails", async () => {
-    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: false,
-      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
-    });
-    const ctx = makeCtx();
     const result = await executeTool(
       "add_family_member",
       { name: "Emma", confirmed: true },
@@ -343,7 +356,57 @@ describe("add_family_member confirmation gate", () => {
     );
     const parsed = JSON.parse(result);
 
-    expect(parsed.error).toBe("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
+    // The family binding is the regression guard: the member must land in
+    // ctx.familyId, not in an arbitrary RLS-visible family.
+    expect(getInsert()).toEqual({
+      family_id: "fam-1",
+      name: "Emma",
+      role: null,
+      birthdate: null,
+      avatar_color: null,
+      related_member_ids: [],
+      relationship_label: null,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.member_id).toBe("member-1");
+  });
+
+  it("passes role and birthdate through the shared validation", async () => {
+    const { ctx, getInsert } = makeMemberCtx({
+      inserted: { id: "member-2", name: "Emma" },
+    });
+    await executeTool(
+      "add_family_member",
+      { name: "Emma", role: "Kind", birthdate: "2020-04-03", confirmed: true },
+      ctx,
+    );
+
+    expect(getInsert()).toMatchObject({ role: "Kind", birthdate: "2020-04-03" });
+  });
+
+  it("returns the shared validation error for an invalid birthdate", async () => {
+    const { ctx, getInsert } = makeMemberCtx();
+    const result = await executeTool(
+      "add_family_member",
+      { name: "Emma", birthdate: "3.4.2020", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Bitte ein gültiges Geburtsdatum eingeben");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("returns error when the insert fails", async () => {
+    const { ctx } = makeMemberCtx({ insertError: { message: "RLS denied" } });
+    const result = await executeTool(
+      "add_family_member",
+      { name: "Emma", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Familienmitglied konnte nicht angelegt werden.");
   });
 });
 
