@@ -51,6 +51,21 @@ describe("ProcessingChecklist", () => {
     expect(step.textContent).toMatch(/Schreibt die Antwort/);
   });
 
+  it("keeps a still-running tool as the status when a parallel one finished first", () => {
+    // With parallel tool calls the last-started tool can finish before an
+    // earlier one — the writing state must wait until ALL have settled.
+    const calls: ToolCallProgress[] = [
+      { toolName: "search_documents", state: "start" },
+      { toolName: "list_tasks", state: "done" },
+    ];
+    render(<ProcessingChecklist toolCalls={calls} />);
+
+    const step = screen.getByTestId("processing-step");
+    expect(step.getAttribute("data-status")).toBe("active");
+    expect(step.textContent).toMatch(/Durchsucht deine Dokumente/);
+    expect(screen.queryByText(/Schreibt die Antwort/)).toBeNull();
+  });
+
   it("marks a failed tool instead of quietly moving on", () => {
     render(
       <ProcessingChecklist

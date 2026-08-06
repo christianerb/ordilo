@@ -125,53 +125,46 @@ export async function POST(request: Request): Promise<Response> {
         .maybeSingle(),
       // Rate limit check — prevent cost runaway per family.
       checkRateLimit(serverClient, familyId),
-      // Conversation history (falls back to client history on failure).
-      (async (): Promise<{
-        conversationId: string;
-        dbHistory: HistoryMessage[];
-      }> => {
+      // Conversation LOOKUP (read-only): finds an existing conversation
+      // and its history. Creating a new conversation is deferred until
+      // the request is authorized (membership + rate limit below) —
+      // otherwise rejected submissions would populate the chat history
+      // with empty conversations.
+      (async (): Promise<
+        | {
+            kind: "existing";
+            conversationId: string;
+            dbHistory: HistoryMessage[];
+            needsTitle: boolean;
+          }
+        | { kind: "create" }
+        | { kind: "fallback"; dbHistory: HistoryMessage[] }
+      > => {
         try {
-          let conversationId: string;
-          let isNewConversation = false;
+          if (!conversationIdParam) return { kind: "create" };
 
-          const existingId = conversationIdParam;
-          if (existingId) {
-            const { data: conv } = await serverClient
-              .from("chat_conversations")
-              .select("id, title")
-              .eq("id", existingId)
-              .eq("family_id", familyId)
-              .maybeSingle();
+          const { data: conv } = await serverClient
+            .from("chat_conversations")
+            .select("id, title")
+            .eq("id", conversationIdParam)
+            .eq("family_id", familyId)
+            .maybeSingle();
 
-            if (conv) {
-              conversationId = conv.id;
-              // If the conversation has no title, we'll auto-generate one from this message
-              if (!conv.title) {
-                isNewConversation = true;
-              }
-            } else {
-              conversationId = await getOrCreateConversation(serverClient, familyId);
-              isNewConversation = true;
-            }
-          } else {
-            conversationId = await getOrCreateConversation(serverClient, familyId);
-            isNewConversation = true;
-          }
+          if (!conv) return { kind: "create" };
 
-          const rows = await loadConversationMessages(serverClient, conversationId);
-          const dbHistory = rowsToHistory(rows);
-
-          // If this is the first message, auto-generate a title
-          if (isNewConversation && dbHistory.length === 0) {
-            const title = autoGenerateTitle(message);
-            void updateConversationTitle(serverClient, conversationId, title);
-          }
-
-          return { conversationId, dbHistory };
+          const rows = await loadConversationMessages(serverClient, conv.id);
+          return {
+            kind: "existing",
+            conversationId: conv.id,
+            dbHistory: rowsToHistory(rows),
+            // If the conversation has no title, we'll auto-generate one
+            // from this message.
+            needsTitle: !conv.title,
+          };
         } catch {
           // If persistence fails, fall back to client-provided history so
           // the chat still works. The conversation just won't be persisted.
-          return { conversationId: "", dbHistory: clientHistory };
+          return { kind: "fallback", dbHistory: clientHistory };
         }
       })(),
       // Speaker identity — the family member linked to the current auth
@@ -209,7 +202,38 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: 429 });
   }
 
-  const { conversationId, dbHistory } = conversation;
+  // 8b. Resolve the conversation now that the request is authorized.
+  //     Only this step may CREATE one — a rejected request (403/429
+  //     above) never leaves an empty conversation behind.
+  let conversationId = "";
+  let dbHistory: HistoryMessage[];
+  let needsTitle = false;
+
+  if (conversation.kind === "existing") {
+    conversationId = conversation.conversationId;
+    dbHistory = conversation.dbHistory;
+    needsTitle = conversation.needsTitle;
+  } else if (conversation.kind === "create") {
+    try {
+      conversationId = await getOrCreateConversation(serverClient, familyId);
+      // A freshly created conversation has no messages yet.
+      dbHistory = [];
+      needsTitle = true;
+    } catch {
+      // Persistence failure must not break the chat — fall back to the
+      // client-provided history, the turn just won't be saved.
+      dbHistory = clientHistory;
+    }
+  } else {
+    dbHistory = conversation.dbHistory;
+  }
+
+  // Auto-generate a title for a new/untitled conversation once this is
+  // its first message.
+  if (conversationId && needsTitle && dbHistory.length === 0) {
+    const title = autoGenerateTitle(message);
+    void updateConversationTitle(serverClient, conversationId, title);
+  }
 
   // 9. Save the user message to the conversation (best-effort)
   if (conversationId) {
