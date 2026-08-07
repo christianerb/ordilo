@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatGermanDate } from "@/lib/format";
-import { updateFamilyName, deleteFamilyAccount } from "../actions";
+import { updateFamilyName } from "../actions";
 
 /**
  * Props for the FamilySettingsClient component.
@@ -70,12 +70,33 @@ export function FamilySettingsClient({
     if (!canConfirmDelete || isDeleting) return;
     setDeleteError(null);
     setIsDeleting(true);
-    const result = await deleteFamilyAccount(confirmName.trim());
-    if (!result.success) {
+
+    // The deletion is privileged, so it runs in an authenticated API route
+    // (the service-role client is not allowed in server actions / the client).
+    let res: Response;
+    try {
+      res = await fetch("/api/family", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmName: confirmName.trim() }),
+      });
+    } catch {
       setIsDeleting(false);
-      setDeleteError(result.error);
+      setDeleteError("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
       return;
     }
+
+    if (!res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      setIsDeleting(false);
+      setDeleteError(
+        body?.error ?? "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      );
+      return;
+    }
+
     // Account + data are gone — a full navigation clears all client state and
     // the now-invalid session, landing on the login screen.
     window.location.href = "/login";

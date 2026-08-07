@@ -6,7 +6,7 @@ type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 /** The family fields callers need (the middleware also reads the onboarding marker). */
 export type ResolvedFamily = Pick<
   FamilyRow,
-  "id" | "name" | "onboarding_completed_at"
+  "id" | "name" | "onboarding_completed_at" | "created_at"
 >;
 
 const QUERY_ERROR_MESSAGE =
@@ -65,7 +65,7 @@ export async function resolveUserFamily(
   // Owned family first (at most one row — created_by is unique).
   const { data: owned, error: ownedError } = await supabase
     .from("families")
-    .select("id, name, onboarding_completed_at")
+    .select("id, name, onboarding_completed_at, created_at")
     .eq("created_by", uid)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -84,7 +84,7 @@ export async function resolveUserFamily(
   // longest, regardless of when the user became a member.
   const { data: membership, error: membershipError } = await supabase
     .from("family_memberships")
-    .select("families(id, name, onboarding_completed_at)")
+    .select("families(id, name, onboarding_completed_at, created_at)")
     .eq("user_id", uid)
     .order("created_at", { ascending: true })
     .limit(1)

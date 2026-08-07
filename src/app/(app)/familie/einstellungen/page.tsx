@@ -1,22 +1,23 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 import { FamilySettingsClient } from "./settings-client";
 
 /**
  * Family settings page (`/familie/einstellungen`, server component).
  *
- * Fetches the user's family (RLS-scoped) and member count, then renders
- * the interactive client component. Mirrors the /familie page's outcome
- * handling: query error → error state, no family → onboarding redirect.
+ * Resolves the user's family with the shared owned-first rule (the same rule
+ * the rename action and the DELETE /api/family route use) and the member
+ * count, then renders the interactive client component. Using the shared
+ * resolver keeps the displayed family — whose name confirms the deletion —
+ * consistent with the family that actually gets deleted. Mirrors the
+ * /familie page's outcome handling: query error → error state, no family →
+ * onboarding redirect.
  */
 export default async function FamilySettingsPage() {
   const supabase = await createClient();
 
-  const { data: family, error: familyError } = await supabase
-    .from("families")
-    .select("id, name, created_at")
-    .limit(1)
-    .maybeSingle();
+  const { data: family, error: familyError } = await resolveUserFamily(supabase);
 
   if (familyError) {
     return <FamilySettingsClient fetchError={true} />;

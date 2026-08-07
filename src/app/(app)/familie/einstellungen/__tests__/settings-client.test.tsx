@@ -1,13 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-const { mockRefresh, mockUpdateFamilyName, mockDeleteFamilyAccount } = vi.hoisted(
-  () => ({
-    mockRefresh: vi.fn(),
-    mockUpdateFamilyName: vi.fn(),
-    mockDeleteFamilyAccount: vi.fn(),
-  }),
-);
+const { mockRefresh, mockUpdateFamilyName } = vi.hoisted(() => ({
+  mockRefresh: vi.fn(),
+  mockUpdateFamilyName: vi.fn(),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -19,14 +16,22 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/app/(app)/familie/actions", () => ({
   updateFamilyName: mockUpdateFamilyName,
-  deleteFamilyAccount: mockDeleteFamilyAccount,
 }));
 
 import { FamilySettingsClient } from "@/app/(app)/familie/einstellungen/settings-client";
 
+// The deletion runs in the authenticated DELETE /api/family route; the client
+// calls it via fetch, so the tests stub global.fetch.
+const mockFetch = vi.fn();
+
 describe("FamilySettingsClient", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("fetch", mockFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("renders the family name, member count, and creation date", () => {
@@ -181,8 +186,11 @@ describe("FamilySettingsClient", () => {
     expect(confirmButton).not.toBeDisabled();
   });
 
-  it("calls deleteFamilyAccount and redirects to /login on success", async () => {
-    mockDeleteFamilyAccount.mockResolvedValue({ success: true, data: null });
+  it("calls the delete API and redirects to /login on success", async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: "deleted" }),
+    });
 
     const originalLocation = window.location;
     // @ts-expect-error - jsdom allows deleting window.location for mocking
@@ -201,7 +209,11 @@ describe("FamilySettingsClient", () => {
     fireEvent.click(screen.getByRole("button", { name: "Endgültig löschen" }));
 
     await waitFor(() => {
-      expect(mockDeleteFamilyAccount).toHaveBeenCalledWith("Familie Müller");
+      expect(mockFetch).toHaveBeenCalledWith("/api/family", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmName: "Familie Müller" }),
+      });
     });
     await waitFor(() => {
       expect(window.location.href).toBe("/login");
@@ -212,9 +224,11 @@ describe("FamilySettingsClient", () => {
   });
 
   it("shows a German error when deletion fails", async () => {
-    mockDeleteFamilyAccount.mockResolvedValue({
-      success: false,
-      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    mockFetch.mockResolvedValue({
+      ok: false,
+      json: async () => ({
+        error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      }),
     });
 
     render(
