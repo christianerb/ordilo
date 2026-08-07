@@ -366,11 +366,13 @@ export function DateEditControl({
       <DateInput
         id={inputId}
         value={toDateInputValue(value)}
-        onChange={(iso) => {
-          onChange(iso);
-          // A complete date (typed in full or picked) finishes the edit.
-          if (iso) setIsEditing(false);
-        }}
+        // Typing updates the value live but keeps the editor open: parseGermanDate
+        // accepts one-digit segments, so replacing a single day/month digit would
+        // otherwise close the field before the second digit is typed.
+        onChange={(iso) => onChange(iso)}
+        // Only a deliberate calendar pick completes the edit (text edits close
+        // via tap-away blur or Escape, like the other inline edit controls).
+        onPickDate={() => setIsEditing(false)}
         onOpenChange={(open) => {
           calendarOpenRef.current = open;
         }}

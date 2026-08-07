@@ -30,7 +30,7 @@ describe("DateEditControl", () => {
     expect(screen.getByTestId("edit-date-button")).toBeInTheDocument();
   });
 
-  it("calls onChange and closes once a full date is typed", () => {
+  it("updates the date live while typing but keeps the editor open for correction", () => {
     const onChange = vi.fn();
     render(<DateEditControl value="2026-08-06" label="Datum" onChange={onChange} />);
 
@@ -40,7 +40,30 @@ describe("DateEditControl", () => {
     });
 
     expect(onChange).toHaveBeenCalledWith("2026-08-10");
-    expect(screen.getByTestId("edit-date-button")).toBeInTheDocument();
+    // Typing must NOT close the editor — the user may still be correcting.
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("keeps the editor open while replacing a single date segment (P2 regression)", () => {
+    const onChange = vi.fn();
+    render(<DateEditControl value="2026-08-06" label="Datum" onChange={onChange} />);
+
+    fireEvent.click(screen.getByTestId("edit-date-button"));
+
+    // Replacing the day "06" with "10": the first keystroke yields the
+    // parseable "1.08.2026" — this must not close the editor before the
+    // second digit is typed.
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "1.08.2026" },
+    });
+    expect(onChange).toHaveBeenCalledWith("2026-08-01");
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "10.08.2026" },
+    });
+    expect(onChange).toHaveBeenCalledWith("2026-08-10");
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("closes on Escape without calling onChange", () => {

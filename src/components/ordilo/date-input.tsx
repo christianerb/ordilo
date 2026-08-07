@@ -94,6 +94,13 @@ export interface DateInputProps {
   autoFocus?: boolean;
   /** Called when the calendar popover opens or closes. */
   onOpenChange?: (open: boolean) => void;
+  /**
+   * Called only when a day is deliberately picked from the calendar — unlike
+   * `onChange`, which also fires for partial keystrokes while typing. Inline
+   * editors use this as the "done" signal so typing corrections don't close
+   * the field early.
+   */
+  onPickDate?: (iso: string) => void;
   "aria-label"?: string;
   /** Extra classes merged onto the text input (e.g. to match adjacent field height). */
   className?: string;
@@ -113,6 +120,7 @@ export function DateInput({
   disabled,
   autoFocus,
   onOpenChange,
+  onPickDate,
   className,
   ...rest
 }: DateInputProps) {
@@ -174,6 +182,7 @@ export function DateInput({
   const handlePickDay = (day: number) => {
     const iso = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     onChange(iso);
+    onPickDate?.(iso);
     setText(toGermanDateText(iso));
     setOpen(false);
   };
