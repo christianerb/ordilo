@@ -29,8 +29,8 @@ Legend: `→` = context.
 | 1.15 | `"Noch niemand hier. Füge die erste Person hinzu — Ordilo erkennt sie dann automatisch auf deinen Dokumenten."` | `src/app/(app)/familie/familie-client.tsx` | Empty hint when family has zero members |
 | 1.16 | `"Schön, dass du da bist"` | `src/app/(app)/home/home-client.tsx` | First-visit empty state heading |
 | 1.17 | `"Scanne dein erstes Dokument und Ordilo bringt Ordnung in deine Papierkram."` | `src/app/(app)/home/home-client.tsx` | First-visit empty state description |
-| 1.18 | `"Alles durchgesehen"` | `src/app/(app)/home/home-client.tsx` | Empty state when no analyzed docs ("Zum Durchsehen" section) |
-| 1.19 | `"Noch keine Dokumente"` | `src/app/(app)/home/home-client.tsx` | Empty state when no recent docs ("Zuletzt gescannt" section) |
+| 1.18 | `"Alles im grünen Bereich"` / `"Keine Fristen heute oder morgen."` | `src/app/(app)/home/today-hero.tsx` | Calm "Heute" hero (nothing due, no urgent insights) |
+| 1.19 | `"Noch keine Dokumente"` | `src/app/(app)/home/home-client.tsx` | Empty state ("Deine Dokumente" journal section) |
 | 1.20 | `"Noch keine Dokumente hier"` | `src/app/(app)/sammlungen/[id]/collection-client.tsx` | Empty state (collection, no documents) |
 | 1.21 | `"Dokumente landen hier automatisch, sobald ihre Kategorie zu dieser Sammlung passt."` | `src/app/(app)/sammlungen/[id]/collection-client.tsx` | Empty state description (collection) |
 | 1.22 | `"Keine Dokumente gefunden."` | `src/components/ordilo/documents-table.tsx` | Table empty state (no rows match filters/search) |
@@ -138,14 +138,14 @@ Legend: `→` = context.
 | 3.30 | `"Bearbeiten"` | `src/app/(app)/familie/familie-client.tsx` | Edit-member sheet title |
 | 3.31 | `"Person entfernen"` | `src/app/(app)/familie/familie-client.tsx` | Remove-member dialog title |
 | 3.32 | `"Hinweise"` | `src/app/(app)/home/home-client.tsx` | Insights section heading |
-| 3.33 | `"Aufgaben"` | `src/app/(app)/home/home-client.tsx` | Aufgaben section heading |
-| 3.34 | `"Überfällig"` | `src/app/(app)/home/home-client.tsx` | Task subgroup label (home) |
-| 3.35 | `"Diese Woche"` | `src/app/(app)/home/home-client.tsx` | Task subgroup label (home) |
-| 3.36 | `"Später"` | `src/app/(app)/home/home-client.tsx` | Task subgroup label (home) |
-| 3.37 | `"Zum Durchsehen"` | `src/app/(app)/home/home-client.tsx` | Section heading (analyzed docs) |
-| 3.38 | `"Zuletzt gescannt"` | `src/app/(app)/home/home-client.tsx` | Section heading (recent docs) |
-| 3.39 | `"Neues Dokument"` | `src/app/(app)/home/home-client.tsx` | Scan tile subtitle |
-| 3.40 | `"Keine Aufgaben offen"` / `"Aufgabe offen"` / `"Aufgaben offen"` | `src/app/(app)/home/home-client.tsx` | Stat-tile subtitle (0/1/n) |
+| 3.33 | `"Als Nächstes"` | `src/app/(app)/home/home-client.tsx` | Aufgaben section heading (starts after the hero task) |
+| 3.34 | `"Überfällig"` | `src/app/(app)/home/today-hero.tsx` | "Heute" hero label (overdue task, apricot) |
+| 3.35 | `"Heute fällig"` | `src/app/(app)/home/today-hero.tsx` | "Heute" hero label (task due today) |
+| 3.36 | `"Morgen fällig"` | `src/app/(app)/home/today-hero.tsx` | "Heute" hero label (task due tomorrow) |
+| 3.37 | `"Deine Dokumente"` | `src/app/(app)/home/home-client.tsx` | Journal section heading (merged doc grid) |
+| 3.38 | `"Bitte bestätigen"` | `src/app/(app)/home/home-client.tsx` | Chip on journal tiles awaiting confirmation |
+| 3.39 | `"Alle anzeigen"` | `src/app/(app)/home/home-client.tsx` | Link to /dokumente (journal section header) |
+| 3.40 | Daily briefing sentences + suggestion chips (e.g. `"Heute ist „X“ fällig."`, `"Was steht diese Woche an?"`) | `src/lib/home-briefing.ts` | Composed one-sentence briefing under the greeting + contextual composer chips (deterministic, several states) |
 | 3.41 | `"Familienname"` | `src/app/(app)/onboarding/onboarding-flow.tsx` | Field label |
 | 3.42 | `"Name"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Member-name field label |
 | 3.43 | `"Rolle"` / `"Rolle wählen"` | `src/components/ordilo/member-form.tsx` + `src/components/ordilo/role-chips.tsx` | Member-role chip group label (form) / aria-label (onboarding) |

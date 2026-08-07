@@ -45,7 +45,7 @@ export interface HomeDocument {
  * Get a Date as a YYYY-MM-DD string using local time components.
  * Avoids UTC timezone shifting the day.
  */
-function toLocalDateStr(date: Date): string {
+export function toLocalDateStr(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -188,22 +188,63 @@ export function filterFristen(
 }
 
 /**
- * Filter recent documents for the "Zuletzt gescannt" section.
+ * Filter recent documents for the home journal grid.
  *
  * Excludes documents with status='failed' (VAL-CROSS-013: failed documents
  * must remain visible only on /dokumente and must NOT surface downstream on /home).
  * Preserves the input order (the DB query already sorts by created_at desc).
- * Limited to RECENT_DOCS_LIMIT items.
  *
  * @param documents - Recent documents fetched from the DB (any status).
- * @returns Filtered documents with failed ones excluded, limited to RECENT_DOCS_LIMIT.
+ * @param limit - Maximum items (default RECENT_DOCS_LIMIT; the journal
+ *   passes JOURNAL_DOCS_LIMIT so deduplication against the analyzed
+ *   documents cannot under-fill the grid).
+ * @returns Filtered documents with failed ones excluded.
  */
 export function filterRecentDocuments(
   documents: HomeDocument[],
+  limit = RECENT_DOCS_LIMIT,
 ): HomeDocument[] {
   return documents
     .filter((d) => d.status !== "failed")
-    .slice(0, RECENT_DOCS_LIMIT);
+    .slice(0, limit);
+}
+
+/** Maximum items to show in the merged "Deine Dokumente" journal grid. */
+export const JOURNAL_DOCS_LIMIT = 6;
+
+/**
+ * Merge the two former home document sections ("Zum Durchsehen" and
+ * "Zuletzt gescannt") into one journal list.
+ *
+ * Documents awaiting confirmation (status 'analyzed') come first — they
+ * are the actionable ones — followed by the most recent documents, with
+ * duplicates removed (a freshly analyzed document appears in both inputs)
+ * and failed documents excluded (VAL-CROSS-013). Both inputs are expected
+ * to be pre-sorted by created_at desc; the merge preserves that order
+ * within each group.
+ *
+ * @param analyzed - Documents with status 'analyzed' (awaiting review).
+ * @param recent - Most recent documents (any status, failed excluded).
+ * @param limit - Maximum total items (default JOURNAL_DOCS_LIMIT).
+ * @returns The merged, deduplicated journal list.
+ */
+export function mergeJournalDocuments(
+  analyzed: HomeDocument[],
+  recent: HomeDocument[],
+  limit = JOURNAL_DOCS_LIMIT,
+): HomeDocument[] {
+  const seen = new Set<string>();
+  const merged: HomeDocument[] = [];
+
+  for (const doc of [...analyzed, ...recent]) {
+    if (doc.status === "failed") continue;
+    if (seen.has(doc.id)) continue;
+    seen.add(doc.id);
+    merged.push(doc);
+    if (merged.length >= limit) break;
+  }
+
+  return merged;
 }
 
 /**

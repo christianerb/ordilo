@@ -12,6 +12,7 @@ import { logout } from "@/app/(app)/actions";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import { ComposerOverlay } from "@/components/ordilo/composer-overlay";
+import { useSuggestionChips } from "@/lib/search/suggestion-chips-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
   Sheet,
@@ -136,6 +137,37 @@ export function Topbar({
   );
 }
 
+/**
+ * Contextual suggestion chips above the composer input. Pages register
+ * them via SuggestionChipsProvider (currently /home, derived from the
+ * daily briefing). Tapping a chip submits it like a typed question.
+ */
+function SuggestionChipsRow({
+  onSelect,
+}: {
+  onSelect: (query: string) => void;
+}) {
+  const chips = useSuggestionChips();
+  if (chips.length === 0) return null;
+  return (
+    <div
+      data-testid="suggestion-chips"
+      className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    >
+      {chips.map((chip) => (
+        <button
+          key={chip}
+          type="button"
+          onClick={() => onSelect(chip)}
+          className="shrink-0 rounded-full bg-[var(--sand-warm)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--mist-light)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          {chip}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function MobileComposer({
   onSearch,
   onOpenActions,
@@ -200,6 +232,9 @@ export function MobileComposer({
             for everything else (scan, note, collection) — Granola-style.
             Focusing the pill zooms into the fullscreen overlay below instead
             of growing in place. */}
+        <div className="mx-auto w-full max-w-md">
+          <SuggestionChipsRow onSelect={onSearch} />
+        </div>
         <div className="mx-auto flex w-full max-w-md items-end gap-2">
           <div className="min-w-0 flex-1">
             <AISearchBar
@@ -261,26 +296,29 @@ export function DesktopBottomBar({
     >
       <div
         data-testid="desktop-floating-dock"
-        className="pointer-events-auto mx-auto flex w-full max-w-6xl gap-2 rounded-ordilo-md border border-white/80 bg-[var(--sand-light)] p-2 shadow-card-hover"
+        className="pointer-events-auto mx-auto flex w-full max-w-6xl flex-col gap-1 rounded-ordilo-md border border-white/80 bg-[var(--sand-light)] p-2 shadow-card-hover"
       >
-        <div className="min-w-0 flex-1">
-          <AISearchBar
-            onSubmit={onSearch}
-            isLoading={isLoading}
-            placeholder="Frage Ordilo oder suche nach Dokumenten…"
-            className="py-1"
-          />
+        <SuggestionChipsRow onSelect={onSearch} />
+        <div className="flex w-full gap-2">
+          <div className="min-w-0 flex-1">
+            <AISearchBar
+              onSubmit={onSearch}
+              isLoading={isLoading}
+              placeholder="Frage Ordilo oder suche nach Dokumenten…"
+              className="py-1"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={onOpenActions}
+            disabled={isLoading}
+            aria-label="Aktionen"
+            data-testid="composer-actions-button"
+            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          >
+            <Plus className="size-5" aria-hidden="true" />
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onOpenActions}
-          disabled={isLoading}
-          aria-label="Aktionen"
-          data-testid="composer-actions-button"
-          className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-        >
-          <Plus className="size-5" aria-hidden="true" />
-        </button>
       </div>
     </div>
   );
