@@ -225,6 +225,9 @@ export function ScanReviewStep({
       newPersons.set(0, { name: newMember.name, personId: newMember.id });
       return { ...prev, persons: newPersons };
     });
+    // The family just grew mid-review — worth a warm word, not a silent
+    // state change.
+    toast.success(`${newMember.name} ist jetzt Teil der Familie.`);
     return true;
   }, []);
 

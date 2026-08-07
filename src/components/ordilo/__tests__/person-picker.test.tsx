@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 
 import {
   PersonPicker,
@@ -172,6 +178,110 @@ describe("PersonPicker", () => {
       />,
     );
     expect(screen.getByTestId("pp-chip-create")).toBeDefined();
+  });
+});
+
+describe("PersonPicker — free-text create", () => {
+  it("always offers a 'Neue Person' chip when creation is possible", () => {
+    renderPicker({ onCreate: vi.fn() });
+    expect(screen.getByTestId("pp-chip-new")).toBeDefined();
+  });
+
+  it("offers no 'Neue Person' chip without an onCreate handler", () => {
+    renderPicker();
+    expect(screen.queryByTestId("pp-chip-new")).toBeNull();
+  });
+
+  it("creates a member with the typed name and closes the form", async () => {
+    const onCreate = vi.fn().mockResolvedValue(true);
+    renderPicker({ onCreate });
+
+    fireEvent.click(screen.getByTestId("pp-chip-new"));
+    fireEvent.change(screen.getByTestId("pp-create-input"), {
+      target: { value: "  Oma Ute  " },
+    });
+    // The submit resolves a promise, so its state updates land outside
+    // the sync event — wrap in async act to flush them.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("pp-create-submit"));
+    });
+
+    expect(onCreate).toHaveBeenCalledWith("Oma Ute");
+    expect(screen.queryByTestId("pp-create-form")).toBeNull();
+    // The trigger chip is back for creating another person.
+    expect(screen.getByTestId("pp-chip-new")).toBeDefined();
+  });
+
+  it("submits via the form (Enter key) too", async () => {
+    const onCreate = vi.fn().mockResolvedValue(true);
+    renderPicker({ onCreate });
+
+    fireEvent.click(screen.getByTestId("pp-chip-new"));
+    fireEvent.change(screen.getByTestId("pp-create-input"), {
+      target: { value: "Opa Karl" },
+    });
+    await act(async () => {
+      fireEvent.submit(screen.getByTestId("pp-create-form"));
+    });
+
+    expect(onCreate).toHaveBeenCalledWith("Opa Karl");
+  });
+
+  it("closes on Escape without creating", () => {
+    const onCreate = vi.fn().mockResolvedValue(true);
+    renderPicker({ onCreate });
+
+    fireEvent.click(screen.getByTestId("pp-chip-new"));
+    fireEvent.change(screen.getByTestId("pp-create-input"), {
+      target: { value: "Oma Ute" },
+    });
+    fireEvent.keyDown(screen.getByTestId("pp-create-input"), {
+      key: "Escape",
+    });
+
+    expect(screen.queryByTestId("pp-create-form")).toBeNull();
+    expect(onCreate).not.toHaveBeenCalled();
+    expect(screen.getByTestId("pp-chip-new")).toBeDefined();
+  });
+
+  it("keeps the submit disabled while the name is blank", () => {
+    renderPicker({ onCreate: vi.fn() });
+
+    fireEvent.click(screen.getByTestId("pp-chip-new"));
+
+    expect(screen.getByTestId("pp-create-submit")).toBeDisabled();
+  });
+
+  it("shows an error and keeps the form open when creation fails", async () => {
+    const onCreate = vi.fn().mockResolvedValue(false);
+    renderPicker({ onCreate });
+
+    fireEvent.click(screen.getByTestId("pp-chip-new"));
+    fireEvent.change(screen.getByTestId("pp-create-input"), {
+      target: { value: "Oma Ute" },
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("pp-create-submit"));
+    });
+
+    expect(screen.getByTestId("pp-create-error")).toHaveTextContent(
+      /nicht geklappt/i,
+    );
+    expect(screen.getByTestId("pp-create-form")).toBeDefined();
+  });
+
+  it("offers 'Neue Person' even when the family has no members yet", () => {
+    render(
+      <PersonPicker
+        familyMembers={[]}
+        value={undefined}
+        onChange={vi.fn()}
+        onCreate={vi.fn()}
+        testIdPrefix="pp"
+      />,
+    );
+    expect(screen.getByTestId("pp-chip-new")).toBeDefined();
+    expect(screen.getByTestId("pp-chip-none")).toBeDefined();
   });
 });
 

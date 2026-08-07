@@ -27,6 +27,14 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({})),
 }));
 
+// Mock the family server actions (dynamically imported by the ReviewCard
+// when a new member is created from the person picker).
+vi.mock("@/app/(app)/familie/actions", () => ({
+  addFamilyMember: vi.fn(),
+}));
+
+import { addFamilyMember } from "@/app/(app)/familie/actions";
+
 // ---------------------------------------------------------------------------
 // Test fixtures
 // ---------------------------------------------------------------------------
@@ -658,7 +666,7 @@ describe("ReviewCard", () => {
     ).not.toBeNull();
 
     // Resolve the disambiguation by picking a family member.
-    fireEvent.click(screen.getByTestId("disambiguation-option-member-2"));
+    fireEvent.click(screen.getByTestId("disambiguation-chip-member-2"));
 
     // Button should now be enabled.
     await waitFor(() => {
@@ -684,7 +692,7 @@ describe("ReviewCard", () => {
     });
 
     // Resolve the disambiguation by picking "Hanna" (member-2).
-    fireEvent.click(screen.getByTestId("disambiguation-option-member-2"));
+    fireEvent.click(screen.getByTestId("disambiguation-chip-member-2"));
 
     // Wait for the button to become enabled.
     await waitFor(() => {
@@ -822,10 +830,10 @@ describe("ReviewCard", () => {
 
     // Should show candidate family member options
     expect(
-      screen.getByTestId("disambiguation-option-member-1"),
+      screen.getByTestId("disambiguation-chip-member-1"),
     ).toBeDefined();
     expect(
-      screen.getByTestId("disambiguation-option-member-2"),
+      screen.getByTestId("disambiguation-chip-member-2"),
     ).toBeDefined();
   });
 
@@ -1130,14 +1138,101 @@ describe("ReviewCard", () => {
     expect(screen.getByTestId("confirm-button")).toBeDefined();
     expect(screen.queryByTestId("review-headline")).toBeNull();
 
-    // Should not render empty field sections.
-    expect(screen.queryByTestId("review-persons")).toBeNull();
+    // The persons section is NOT empty: with no recognized person it
+    // offers assigning or creating one instead of rendering nothing.
+    expect(screen.getByTestId("review-person-add")).toBeDefined();
+
+    // Should not render other empty field sections.
     expect(screen.queryByTestId("review-organizations")).toBeNull();
     expect(screen.queryByTestId("review-tasks")).toBeNull();
     expect(screen.queryByTestId("review-tags")).toBeNull();
 
     // Category is always shown.
     expect(screen.getByTestId("review-category")).toBeDefined();
+  });
+
+  it("assigns a person when none was extracted and sends them on confirm", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(emptyAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "confirmed" }), { status: 200 }),
+    );
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    // One tap assigns Hanna although the extraction found nobody.
+    fireEvent.click(await screen.findByTestId("person-add-chip-member-2"));
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    await waitFor(() => {
+      const confirmCall = fetchSpy.mock.calls.find(
+        ([url]) => typeof url === "string" && url.includes("/confirm"),
+      );
+      expect(confirmCall).toBeDefined();
+      const body = JSON.parse(
+        (confirmCall![1] as RequestInit).body as string,
+      );
+      // The assigned person is appended to the payload — previously this
+      // assignment was a silent no-op.
+      expect(body.family_members).toHaveLength(1);
+      expect(body.family_members[0].name).toBe("Hanna");
+      expect(body.family_members[0].person_id).toBe("member-2");
+    });
+
+    fetchSpy.mockRestore();
+  });
+
+  it("creates a brand-new person from the picker without leaving the review", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(emptyAnalysis);
+    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { id: "member-9", name: "Oma Ute", role: null },
+    });
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    // Open the free-text create form and type a name the family — and
+    // the extraction — did not know.
+    fireEvent.click(await screen.findByTestId("person-add-chip-new"));
+    fireEvent.change(screen.getByTestId("person-add-create-input"), {
+      target: { value: "Oma Ute" },
+    });
+    fireEvent.click(screen.getByTestId("person-add-create-submit"));
+
+    // The new member appears as a selected chip…
+    const newChip = await screen.findByTestId("person-add-chip-member-9");
+    expect(addFamilyMember).toHaveBeenCalledWith({ name: "Oma Ute" });
+    expect(newChip).toHaveAttribute("aria-pressed", "true");
+    // …and the form closed again.
+    expect(screen.queryByTestId("person-add-create-form")).toBeNull();
+  });
+
+  it("creates a new person from the edit-view picker of an extracted person", async () => {
+    // The extraction found "Michelle", but the family knows nobody — the
+    // user creates the right person instead of accepting a wrong name.
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...fullAnalysis,
+      family_members: [{ person_id: null, name: "Michelle", confidence: 0.9 }],
+    });
+    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { id: "member-9", name: "Oma Ute", role: null },
+    });
+
+    render(<ReviewCard documentId="doc-1" status="analyzed" />);
+
+    fireEvent.click(await screen.findByTestId("person-edit-button"));
+    fireEvent.click(screen.getByTestId("person-edit-chip-new"));
+    fireEvent.change(screen.getByTestId("person-edit-create-input"), {
+      target: { value: "Oma Ute" },
+    });
+    fireEvent.click(screen.getByTestId("person-edit-create-submit"));
+
+    await waitFor(() =>
+      expect(addFamilyMember).toHaveBeenCalledWith({ name: "Oma Ute" }),
+    );
+    // The row now shows the created member, marked as edited.
+    expect(await screen.findByText("Oma Ute")).toBeDefined();
+    expect(screen.getByTestId("edited-tag")).toBeDefined();
   });
 
   it("does not render the summary section when summary is empty", async () => {

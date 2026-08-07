@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { FamilyMemberOption } from "@/lib/analysis";
@@ -18,10 +18,11 @@ export interface PersonPickerProps {
   onChange: (memberId: string | null) => void;
   /**
    * Name of an extracted person who matches no family member. When set
-   * together with `onCreate`, a "<name> anlegen" chip is offered.
+   * together with `onCreate`, a one-tap "<name> anlegen" suggestion chip
+   * is offered alongside the always-available free-text create form.
    */
   createName?: string | null;
-  /** Creates `createName` as a family member. Resolves false on failure. */
+  /** Creates a family member with the given name. Resolves false on failure. */
   onCreate?: (name: string) => Promise<boolean>;
   /**
    * Closes the picker without changing anything. When set, tapping the
@@ -43,13 +44,17 @@ export interface PersonPickerProps {
  * open first. Families are small enough that every option fits on screen,
  * which is what makes the single tap possible.
  *
- * Three kinds of chip, because a document does not always belong to a
+ * Four kinds of chip, because a document does not always belong to a
  * known family member:
  *   - one per family member (the assigned one is filled with a check)
  *   - "Ohne Person" for documents that belong to nobody — forcing a wrong
  *     assignment just to get past the review would poison the family book
  *   - "<name> anlegen" when the extraction found a person the family does
- *     not have yet, so the member can be created without leaving the review
+ *     not have yet — one tap and they exist
+ *   - "Neue Person" for everyone else: opens a small inline name field so
+ *     any person can join the family without leaving the review (the old
+ *     dead end: "die Person gibt es noch nicht, also komme ich nicht
+ *     weiter")
  */
 export function PersonPicker({
   familyMembers,
@@ -63,118 +68,241 @@ export function PersonPicker({
 }: PersonPickerProps) {
   const [creating, setCreating] = useState(false);
   const [createFailed, setCreateFailed] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const newPersonChipRef = useRef<HTMLButtonElement>(null);
 
-  if (familyMembers.length === 0 && !(createName && onCreate)) return null;
+  /**
+   * IDs present on first render. A chip whose ID appears later (i.e. the
+   * member was just created from this picker) enters with a gentle
+   * card-in animation — the small "welcome to the family" moment.
+   * Chips present at mount never animate, so reopening the picker does
+   * not replay anything.
+   */
+  const initialIdsRef = useRef<Set<string> | null>(null);
+  if (initialIdsRef.current === null) {
+    initialIdsRef.current = new Set(familyMembers.map((m) => m.id));
+  }
+  const initialIds = initialIdsRef.current;
+
+  // Without members and without any way to create one there is nothing
+  // to offer — render nothing rather than an empty group.
+  if (familyMembers.length === 0 && !onCreate) return null;
 
   const explicitNone = value === null;
+
+  const closeForm = () => {
+    setFormOpen(false);
+    setDraftName("");
+    setCreateFailed(false);
+    // The trigger unmounts the form under the user's focus — return it to
+    // the "Neue Person" chip so keyboard users are not dropped on <body>.
+    requestAnimationFrame(() => newPersonChipRef.current?.focus());
+  };
+
+  const submitCreate = async () => {
+    const name = draftName.trim();
+    if (!name || submitting || !onCreate) return;
+    setSubmitting(true);
+    setCreateFailed(false);
+    // A rejected promise here (offline, server action throw) must not
+    // become an unhandled rejection — the tap would look like a no-op.
+    const ok = await onCreate(name).catch(() => false);
+    setSubmitting(false);
+    if (ok) {
+      closeForm();
+    } else {
+      setCreateFailed(true);
+    }
+  };
 
   return (
     <div
       role="group"
       aria-label="Person zuordnen"
-      className={cn("flex flex-wrap items-center gap-1.5", className)}
+      className={cn("flex flex-col gap-2", className)}
       data-testid={`${testIdPrefix}-picker`}
     >
-      {familyMembers.map((member) => {
-        const selected = member.id === value;
-        return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        {familyMembers.map((member) => {
+          const selected = member.id === value;
+          return (
+            <button
+              key={member.id}
+              type="button"
+              onClick={() => {
+                if (selected) onDismiss?.();
+                else onChange(member.id);
+              }}
+              aria-pressed={selected}
+              data-testid={`${testIdPrefix}-chip-${member.id}`}
+              className={cn(
+                "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                // Freshly created members get a one-time entrance.
+                !initialIds.has(member.id) && "animate-card-in",
+                selected
+                  ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
+                  : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
+                  selected ? "bg-white/25 text-white" : "bg-[var(--petrol)] text-white",
+                )}
+                aria-hidden="true"
+              >
+                {selected ? (
+                  // Mounts on selection, so the pop plays exactly once per
+                  // assignment — a quiet "noted" instead of a fanfare.
+                  <Check className="size-3.5 animate-check-pop" strokeWidth={3} />
+                ) : (
+                  member.name.charAt(0).toUpperCase()
+                )}
+              </span>
+              <span className="min-w-0 truncate">{member.name}</span>
+            </button>
+          );
+        })}
+
+        <button
+          type="button"
+          onClick={() => {
+            if (explicitNone) onDismiss?.();
+            else onChange(null);
+          }}
+          aria-pressed={explicitNone}
+          data-testid={`${testIdPrefix}-chip-none`}
+          className={cn(
+            "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            explicitNone
+              ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
+              : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
+          )}
+        >
+          {explicitNone && (
+            <Check
+              className="size-3.5 animate-check-pop"
+              strokeWidth={3}
+              aria-hidden="true"
+            />
+          )}
+          Ohne Person
+        </button>
+
+        {createName && onCreate && (
           <button
-            key={member.id}
+            type="button"
+            disabled={creating}
+            aria-busy={creating}
+            onClick={async () => {
+              setCreating(true);
+              setCreateFailed(false);
+              const ok = await onCreate(createName).catch(() => false);
+              setCreating(false);
+              setCreateFailed(!ok);
+            }}
+            data-testid={`${testIdPrefix}-chip-create`}
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+          >
+            {creating ? (
+              <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
+            ) : (
+              <Plus className="size-3.5 shrink-0" aria-hidden="true" />
+            )}
+            <span className="min-w-0 truncate">{createName} anlegen</span>
+          </button>
+        )}
+
+        {onCreate && !formOpen && (
+          <button
+            ref={newPersonChipRef}
             type="button"
             onClick={() => {
-              if (selected) onDismiss?.();
-              else onChange(member.id);
+              setCreateFailed(false);
+              setFormOpen(true);
             }}
-            aria-pressed={selected}
-            data-testid={`${testIdPrefix}-chip-${member.id}`}
-            className={cn(
-              "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              selected
-                ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
-                : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",
-            )}
+            data-testid={`${testIdPrefix}-chip-new`}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-3 py-1 text-sm font-medium text-muted-foreground transition-all hover:border-[var(--petrol)]/50 hover:text-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            <span
-              className={cn(
-                "flex size-6 items-center justify-center rounded-full text-xs font-semibold",
-                selected ? "bg-white/25 text-white" : "bg-[var(--petrol)] text-white",
-              )}
-              aria-hidden="true"
-            >
-              {selected ? (
-                <Check className="size-3.5" strokeWidth={3} />
-              ) : (
-                member.name.charAt(0).toUpperCase()
-              )}
-            </span>
-            <span className="min-w-0 truncate">{member.name}</span>
-          </button>
-        );
-      })}
-
-      <button
-        type="button"
-        onClick={() => {
-          if (explicitNone) onDismiss?.();
-          else onChange(null);
-        }}
-        aria-pressed={explicitNone}
-        data-testid={`${testIdPrefix}-chip-none`}
-        className={cn(
-          "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          explicitNone
-            ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
-            : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
-        )}
-      >
-        {explicitNone && (
-          <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
-        )}
-        Ohne Person
-      </button>
-
-      {createName && onCreate && (
-        <button
-          type="button"
-          disabled={creating}
-          aria-busy={creating}
-          onClick={async () => {
-            setCreating(true);
-            setCreateFailed(false);
-            // A rejected promise here (offline, server action throw) used to
-            // become an unhandled rejection and the tap looked like a no-op.
-            const ok = await onCreate(createName).catch(() => false);
-            setCreating(false);
-            setCreateFailed(!ok);
-          }}
-          data-testid={`${testIdPrefix}-chip-create`}
-          className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
-        >
-          {creating ? (
-            <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
-          ) : (
             <Plus className="size-3.5 shrink-0" aria-hidden="true" />
-          )}
-          <span className="min-w-0 truncate">{createName} anlegen</span>
-        </button>
-      )}
+            Neue Person
+          </button>
+        )}
 
-      {onDismiss && (
-        <button
-          type="button"
-          onClick={onDismiss}
-          data-testid={`${testIdPrefix}-chip-dismiss`}
-          className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            data-testid={`${testIdPrefix}-chip-dismiss`}
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <X className="size-3.5" aria-hidden="true" />
+            Abbrechen
+          </button>
+        )}
+      </div>
+
+      {formOpen && onCreate && (
+        <form
+          className="flex w-full animate-card-in items-center gap-1.5"
+          data-testid={`${testIdPrefix}-create-form`}
+          onSubmit={(e) => {
+            e.preventDefault();
+            void submitCreate();
+          }}
         >
-          <X className="size-3.5" aria-hidden="true" />
-          Abbrechen
-        </button>
+          <input
+            type="text"
+            value={draftName}
+            autoFocus
+            onChange={(e) => setDraftName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                closeForm();
+              }
+            }}
+            placeholder="Name der Person"
+            aria-label="Name der neuen Person"
+            maxLength={100}
+            enterKeyHint="done"
+            autoComplete="off"
+            disabled={submitting}
+            data-testid={`${testIdPrefix}-create-input`}
+            className="h-11 min-w-0 flex-1 rounded-full border border-[var(--petrol)]/50 bg-card px-4 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60 sm:text-sm"
+          />
+          <button
+            type="submit"
+            disabled={!draftName.trim() || submitting}
+            aria-busy={submitting}
+            data-testid={`${testIdPrefix}-create-submit`}
+            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          >
+            {submitting ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Check className="size-3.5" strokeWidth={3} aria-hidden="true" />
+            )}
+            Anlegen
+          </button>
+          <button
+            type="button"
+            onClick={closeForm}
+            aria-label="Anlegen abbrechen"
+            data-testid={`${testIdPrefix}-create-cancel`}
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </form>
       )}
 
       {createFailed && (
         <p
           role="status"
-          className="w-full text-xs text-destructive"
+          className="text-xs text-destructive"
           data-testid={`${testIdPrefix}-create-error`}
         >
           Das hat nicht geklappt. Bitte nochmal versuchen.
