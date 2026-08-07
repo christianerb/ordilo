@@ -1,10 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-const { mockRefresh, mockUpdateFamilyName } = vi.hoisted(() => ({
-  mockRefresh: vi.fn(),
-  mockUpdateFamilyName: vi.fn(),
-}));
+const { mockRefresh, mockUpdateFamilyName, mockDeleteFamilyAccount } = vi.hoisted(
+  () => ({
+    mockRefresh: vi.fn(),
+    mockUpdateFamilyName: vi.fn(),
+    mockDeleteFamilyAccount: vi.fn(),
+  }),
+);
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -16,6 +19,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/app/(app)/familie/actions", () => ({
   updateFamilyName: mockUpdateFamilyName,
+  deleteFamilyAccount: mockDeleteFamilyAccount,
 }));
 
 import { FamilySettingsClient } from "@/app/(app)/familie/einstellungen/settings-client";
@@ -143,5 +147,90 @@ describe("FamilySettingsClient", () => {
       "href",
       "/familie",
     );
+  });
+
+  it("renders the delete danger zone", () => {
+    render(
+      <FamilySettingsClient familyName="Familie Müller" memberCount={2} />,
+    );
+    expect(
+      screen.getByRole("button", { name: /Familie löschen/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("enables the final delete button only when the exact family name is typed", () => {
+    render(
+      <FamilySettingsClient familyName="Familie Müller" memberCount={2} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Familie löschen/ }));
+
+    const confirmButton = screen.getByRole("button", {
+      name: "Endgültig löschen",
+    });
+    expect(confirmButton).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("family-delete-confirm"), {
+      target: { value: "Familie" },
+    });
+    expect(confirmButton).toBeDisabled();
+
+    fireEvent.change(screen.getByTestId("family-delete-confirm"), {
+      target: { value: "Familie Müller" },
+    });
+    expect(confirmButton).not.toBeDisabled();
+  });
+
+  it("calls deleteFamilyAccount and redirects to /login on success", async () => {
+    mockDeleteFamilyAccount.mockResolvedValue({ success: true, data: null });
+
+    const originalLocation = window.location;
+    // @ts-expect-error - jsdom allows deleting window.location for mocking
+    delete window.location;
+    // @ts-expect-error - minimal location mock (no real navigation)
+    window.location = { href: "" };
+
+    render(
+      <FamilySettingsClient familyName="Familie Müller" memberCount={2} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Familie löschen/ }));
+    fireEvent.change(screen.getByTestId("family-delete-confirm"), {
+      target: { value: "Familie Müller" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Endgültig löschen" }));
+
+    await waitFor(() => {
+      expect(mockDeleteFamilyAccount).toHaveBeenCalledWith("Familie Müller");
+    });
+    await waitFor(() => {
+      expect(window.location.href).toBe("/login");
+    });
+
+    // @ts-expect-error - restore the real location
+    window.location = originalLocation;
+  });
+
+  it("shows a German error when deletion fails", async () => {
+    mockDeleteFamilyAccount.mockResolvedValue({
+      success: false,
+      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    });
+
+    render(
+      <FamilySettingsClient familyName="Familie Müller" memberCount={2} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Familie löschen/ }));
+    fireEvent.change(screen.getByTestId("family-delete-confirm"), {
+      target: { value: "Familie Müller" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Endgültig löschen" }));
+
+    expect(
+      await screen.findByText(
+        "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+      ),
+    ).toBeInTheDocument();
   });
 });
