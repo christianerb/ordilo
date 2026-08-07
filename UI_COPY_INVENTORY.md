@@ -99,6 +99,9 @@ Legend: `→` = context.
 | 2.53 | `"Filter löschen"` | `src/app/(app)/dokumente/page.tsx` | Clear filters link (folder view) |
 | 2.54 | `"Zurücksetzen"` | `src/app/(app)/suche/filter-chips.tsx` | Clear all filter chips button |
 | 2.55 | `"Neu"` | `src/app/(app)/suche/suche-client.tsx` | New chat button (sm+ label) |
+| 2.56 | `"Neue Person"` | `src/components/ordilo/person-picker.tsx` | Chip opening the inline free-text create form |
+| 2.57 | `"Anlegen"` | `src/components/ordilo/person-picker.tsx` | Inline create-form submit button |
+| 2.58 | `"{name} anlegen"` (template) | `src/components/ordilo/person-picker.tsx` | One-tap create chip for an extracted-but-unknown person |
 
 ---
 
@@ -187,6 +190,7 @@ Legend: `→` = context.
 | 3.79 | `"Relevanz"` (aria) | `src/components/ordilo/source-card.tsx` | aria-label prefix for source-card score |
 | 3.80 | `"Quellen"` | `src/app/(app)/suche/message-bubble.tsx` | Sources section label above citations |
 | 3.81 | `"Weitere mögliche Dokumente"` | `src/app/(app)/suche/message-bubble.tsx` | Sub-label below top sources |
+| 3.82 | `"Wem gehört das Dokument?"` | `src/components/ordilo/review-summary.tsx` | Person-assignment section heading (review summary) |
 
 ---
 
@@ -207,6 +211,7 @@ Legend: `→` = context.
 | 4.11 | `"Tag hinzufügen…"` | `src/components/ordilo/task-detail-sheet.tsx` | Task detail tag-input placeholder |
 | 4.12 | `"Eigene Kategorie"` | `src/components/ordilo/review-card/edit-controls.tsx` | Category free-text input placeholder |
 | 4.13 | `"Person wählen …"` | `src/components/ordilo/review-card/edit-controls.tsx` | Person-edit select placeholder option |
+| 4.14 | `"Name der Person"` | `src/components/ordilo/person-picker.tsx` | Inline create-form name input placeholder |
 
 ---
 
@@ -239,6 +244,7 @@ Legend: `→` = context.
 | 5.23 | `"Bitte wähle die richtige Person:"` | `src/components/ordilo/review-card/helpers.tsx` | Disambiguation prompt helper text |
 | 5.24 | `"Überprüfung nötig"` | `src/components/ordilo/review-card/content.tsx` | needs_user_review badge label |
 | 5.25 | `"Alle Aufgaben wurden entfernt."` | `src/components/ordilo/review-card/content.tsx` | Empty-tasks note (all deleted in review) |
+| 5.26 | `"Keine Person erkannt — gehört das Dokument zu jemandem?"` | `src/components/ordilo/review-card/content.tsx` | Person section hint when the extraction found no person |
 
 ---
 
@@ -300,6 +306,7 @@ Legend: `→` = context.
 | 7.8 | `"Änderungen gespeichert"` | `src/app/(app)/familie/familie-client.tsx` | Toast: member edited |
 | 7.9 | `"{name} wurde entfernt"` (template) | `src/app/(app)/familie/familie-client.tsx` | Toast: member removed |
 | 7.10 | `"Gespeichert"` | `src/app/(app)/familie/einstellungen/settings-client.tsx` | Inline save-success indicator (family name) |
+| 7.11 | `"{name} ist jetzt Teil der Familie."` (template) | `src/components/ordilo/review-card/index.tsx` + `src/components/ordilo/scan-wizard/review-step.tsx` | Toast: member created inline from the review person picker |
 
 ---
 

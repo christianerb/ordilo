@@ -34,6 +34,7 @@ import type { EditState, EditedAnalysisPayload } from "./helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
 import { vibrate } from "@/lib/haptics";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -265,8 +266,8 @@ export function ReviewCard({
   const handleCreateMember = useCallback(
     async (entityIndex: number, name: string) => {
       const { addFamilyMember } = await import("@/app/(app)/familie/actions");
-      const result = await addFamilyMember({ name });
-      if (!result.success) return false;
+      const result = await addFamilyMember({ name }).catch(() => null);
+      if (!result || !result.success) return false;
 
       const newMember = {
         id: result.data.id,
@@ -282,6 +283,9 @@ export function ReviewCard({
         });
         return { ...prev, persons: newPersons };
       });
+      // The family just grew mid-review — worth a warm word, not a silent
+      // state change.
+      toast.success(`${newMember.name} ist jetzt Teil der Familie.`);
       return true;
     },
     [updateEdits],

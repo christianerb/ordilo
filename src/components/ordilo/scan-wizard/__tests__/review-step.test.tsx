@@ -20,6 +20,14 @@ vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({})),
 }));
 
+// Mock the family server actions (dynamically imported when a new member
+// is created from the person picker).
+vi.mock("@/app/(app)/familie/actions", () => ({
+  addFamilyMember: vi.fn(),
+}));
+
+import { addFamilyMember } from "@/app/(app)/familie/actions";
+
 /** A clean analysis — nothing flagged, high-confidence person match. */
 const cleanAnalysis: DocumentAnalysis = {
   document_type: "school",
@@ -223,6 +231,56 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
     );
     const body = JSON.parse(String(confirmCall?.[1]?.body));
     expect(body.family_members).toEqual([]);
+    fetchSpy.mockRestore();
+  });
+
+  it("creates a brand-new person inline and sends them on confirm", async () => {
+    // The extraction found no person at all, and the family member the
+    // document belongs to does not exist yet — the old dead end.
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...uncertainAnalysis,
+      family_members: [],
+    });
+    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { id: "member-9", name: "Oma Ute", role: null },
+    });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    // The person section offers free-text create even with no extracted
+    // person: open it, type the name, done.
+    fireEvent.click(
+      await screen.findByTestId("review-summary-person-chip-new"),
+    );
+    fireEvent.change(
+      screen.getByTestId("review-summary-person-create-input"),
+      { target: { value: "Oma Ute" } },
+    );
+    fireEvent.click(screen.getByTestId("review-summary-person-create-submit"));
+
+    // The new member joins the chip row, already selected.
+    const newChip = await screen.findByTestId(
+      "review-summary-person-chip-member-9",
+    );
+    expect(addFamilyMember).toHaveBeenCalledWith({ name: "Oma Ute" });
+    expect(newChip).toHaveAttribute("aria-pressed", "true");
+
+    // Confirming sends the created person with the document.
+    fireEvent.click(screen.getByTestId("review-summary-confirm-button"));
+    await waitFor(() =>
+      expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
+    );
+    const confirmCall = fetchSpy.mock.calls.find((args) =>
+      String(args[0]).includes("/confirm"),
+    );
+    const body = JSON.parse(String(confirmCall?.[1]?.body));
+    expect(body.family_members).toHaveLength(1);
+    expect(body.family_members[0].name).toBe("Oma Ute");
+    expect(body.family_members[0].person_id).toBe("member-9");
     fetchSpy.mockRestore();
   });
 });
