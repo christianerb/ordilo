@@ -180,19 +180,33 @@ export function EventSheet({
         const toAdd = [...after].filter((id) => !before.has(id));
 
         if (toRemove.length > 0) {
-          await supabase
+          const { error: removeError } = await supabase
             .from("calendar_event_attendees")
             .delete()
             .eq("event_id", event.id)
             .in("family_member_id", toRemove);
+          if (removeError) {
+            setFormError(
+              "Die Teilnehmer konnten nicht gespeichert werden. Bitte versuch es nochmal.",
+            );
+            return;
+          }
         }
         if (toAdd.length > 0) {
-          await supabase.from("calendar_event_attendees").insert(
-            toAdd.map((memberId) => ({
-              event_id: event.id,
-              family_member_id: memberId,
-            })),
-          );
+          const { error: addError } = await supabase
+            .from("calendar_event_attendees")
+            .insert(
+              toAdd.map((memberId) => ({
+                event_id: event.id,
+                family_member_id: memberId,
+              })),
+            );
+          if (addError) {
+            setFormError(
+              "Die Teilnehmer konnten nicht gespeichert werden. Bitte versuch es nochmal.",
+            );
+            return;
+          }
         }
 
         onSaved(
@@ -214,12 +228,23 @@ export function EventSheet({
         }
 
         if (attendeeIds.length > 0) {
-          await supabase.from("calendar_event_attendees").insert(
-            attendeeIds.map((memberId) => ({
-              event_id: data.id,
-              family_member_id: memberId,
-            })),
-          );
+          const { error: attendeesError } = await supabase
+            .from("calendar_event_attendees")
+            .insert(
+              attendeeIds.map((memberId) => ({
+                event_id: data.id,
+                family_member_id: memberId,
+              })),
+            );
+          if (attendeesError) {
+            // Roll back the event so a retry cannot create a duplicate.
+            await supabase
+              .from("calendar_events")
+              .delete()
+              .eq("id", data.id);
+            setFormError("Speichern hat nicht geklappt.");
+            return;
+          }
         }
 
         onSaved(

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /**
  * Browser voice capture over OpenAI Realtime WebRTC.
@@ -73,6 +74,12 @@ export function useRealtimeTranscription({
   const inputTranscriptRef = useRef("");
   /** Set once a final transcript was delivered — guards double delivery. */
   const deliveredRef = useRef(false);
+  /**
+   * Bumped by cancel() and unmount so an in-flight start() notices the
+   * abort after each awaited setup step instead of opening the microphone
+   * "invisibly" after the UI already went back to idle.
+   */
+  const generationRef = useRef(0);
 
   // Latest-callback refs (plain writes during render, same pattern as the
   // rest of the codebase) so peer-connection handlers never go stale.
@@ -159,6 +166,8 @@ export function useRealtimeTranscription({
 
   const start = useCallback(async () => {
     if (pcRef.current) return; // already running
+    const generation = ++generationRef.current;
+    const aborted = () => generationRef.current !== generation;
     deliveredRef.current = false;
     inputTranscriptRef.current = "";
     setStatus("connecting");
@@ -185,6 +194,9 @@ export function useRealtimeTranscription({
       onErrorRef.current("Spracheingabe konnte nicht gestartet werden.");
       return;
     }
+    // The user cancelled while the session request was in flight — the UI
+    // is already idle, so continue with nothing.
+    if (aborted()) return;
 
     // 2. Microphone.
     let mic: MediaStream;
@@ -197,6 +209,12 @@ export function useRealtimeTranscription({
       onErrorRef.current(
         "Kein Zugriff auf das Mikrofon. Bitte erlaube den Zugriff.",
       );
+      return;
+    }
+    // Cancelled during the permission prompt: release the just-acquired
+    // tracks immediately so no audio streams after the UI went idle.
+    if (aborted()) {
+      for (const track of mic.getTracks()) track.stop();
       return;
     }
     micRef.current = mic;
@@ -243,7 +261,17 @@ export function useRealtimeTranscription({
         sdp: await sdpResponse.text(),
       });
     } catch {
+      if (aborted()) {
+        cleanup();
+        return;
+      }
       fail("Die Verbindung hat nicht geklappt.");
+      return;
+    }
+    // Cancelled mid-handshake: tear down whatever was set up so the
+    // connection does not stream invisibly.
+    if (aborted()) {
+      cleanup();
       return;
     }
 
@@ -268,10 +296,20 @@ export function useRealtimeTranscription({
   }, []);
 
   const cancel = useCallback(() => {
+    generationRef.current += 1; // abort any in-flight start()
     deliveredRef.current = true; // swallow any in-flight final event
     cleanup();
     setStatus("idle");
   }, [cleanup]);
+
+  // Navigating away or closing the voice UI mid-session must not leave
+  // the microphone streaming (and billing) in the background.
+  useMountEffect(() => {
+    return () => {
+      generationRef.current += 1;
+      cleanup();
+    };
+  });
 
   return { status, start, stop, cancel };
 }

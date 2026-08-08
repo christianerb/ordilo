@@ -220,4 +220,88 @@ describe("useRealtimeTranscription", () => {
     );
     expect(result.current.status).toBe("idle");
   });
+
+  it("aborts setup when cancelled while the session request is in flight", async () => {
+    let resolveSession: ((response: Response) => void) | null = null;
+    mockFetch.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveSession = resolve;
+        }),
+    );
+    const { result, onError } = setup();
+
+    let startPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      startPromise = result.current.start();
+    });
+    expect(result.current.status).toBe("connecting");
+
+    act(() => {
+      result.current.cancel();
+    });
+    expect(result.current.status).toBe("idle");
+
+    await act(async () => {
+      resolveSession?.(
+        new Response(
+          JSON.stringify({ client_secret: "secret-1", model: "m" }),
+          { status: 200 },
+        ),
+      );
+      await startPromise;
+    });
+
+    // The cancelled start must not continue acquiring resources.
+    expect(mockGetUserMedia).not.toHaveBeenCalled();
+    expect(MockRTCPeerConnection.instance).toBeNull();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("releases the microphone when cancelled during the permission prompt", async () => {
+    let resolveMic: ((stream: MediaStream) => void) | null = null;
+    mockGetUserMedia.mockImplementationOnce(
+      () =>
+        new Promise<MediaStream>((resolve) => {
+          resolveMic = resolve;
+        }),
+    );
+    const { result } = setup();
+
+    let startPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      startPromise = result.current.start();
+    });
+    // Let the session fetch resolve so start() reaches the mic prompt.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(mockGetUserMedia).toHaveBeenCalled();
+
+    act(() => {
+      result.current.cancel();
+    });
+
+    await act(async () => {
+      resolveMic?.({
+        getTracks: () => [mockTrack],
+      } as unknown as MediaStream);
+      await startPromise;
+    });
+
+    // Tracks acquired after the cancellation are stopped immediately.
+    expect(mockTrack.stop).toHaveBeenCalled();
+    expect(MockRTCPeerConnection.instance).toBeNull();
+  });
+
+  it("cleans up the microphone and connection when the hook unmounts", async () => {
+    const { result, unmount } = setup();
+    const pc = await startSession(result);
+    expect(result.current.status).toBe("listening");
+
+    unmount();
+
+    expect(pc.close).toHaveBeenCalled();
+    expect(mockTrack.stop).toHaveBeenCalled();
+  });
 });

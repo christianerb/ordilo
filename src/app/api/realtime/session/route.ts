@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 import { requireUser } from "@/lib/auth/require-user";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
 
 const REALTIME_MODEL = "gpt-realtime-2.1";
 
@@ -29,7 +31,11 @@ function sessionFailed(): Response {
  * planner writes still go through the authenticated chat tools and their
  * confirmation gate.
  *
- * Auth:   401 without session.
+ * Auth:   401 without session, 403 without a family.
+ * Rate:   429 (RATE_LIMIT_EXCEEDED) when the family's daily budget is
+ *         used up — a minted secret permits direct Realtime connections
+ *         that bypass the /api/chat cost guard, so minting itself
+ *         consumes one unit of the daily budget.
  * Errors: 503 (no API key configured), 502 (OpenAI session failed).
  */
 export async function POST(): Promise<Response> {
@@ -39,6 +45,35 @@ export async function POST(): Promise<Response> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return sessionUnavailable();
+  }
+
+  // Resolve the user's family (RLS: only own memberships are visible).
+  const supabase = await createServerClient();
+  const { data: membership } = await supabase
+    .from("family_memberships")
+    .select("family_id")
+    .eq("user_id", auth.user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (!membership) {
+    return Response.json(
+      { error: "Keine Familie gefunden.", code: "NO_FAMILY" },
+      { status: 403 },
+    );
+  }
+
+  // Cost guard: without this, any authenticated client could mint
+  // unlimited secrets and stream audio directly against OpenAI.
+  const rateLimit = await checkRateLimit(supabase, membership.family_id);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      {
+        error: "Tageslimit erreicht. Bitte morgen erneut versuchen.",
+        code: "RATE_LIMIT_EXCEEDED",
+      },
+      { status: 429 },
+    );
   }
 
   const safetyIdentifier = createHash("sha256")
@@ -88,6 +123,10 @@ export async function POST(): Promise<Response> {
     if (!value) {
       return sessionFailed();
     }
+
+    // Count the minted session against the family's daily budget (token
+    // count is unknown for realtime audio; the unit is what matters).
+    await recordUsage(supabase, membership.family_id, 0);
 
     return Response.json({
       client_secret: value,

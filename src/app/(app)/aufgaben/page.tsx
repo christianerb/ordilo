@@ -67,18 +67,10 @@ async function loadInitialData(): Promise<{
     memberNameMap.set(m.id, m.name);
   }
 
-  if (tasksError) {
-    return {
-      tasks: [],
-      members,
-      events: [],
-      familyId: family.id,
-      error: "Aufgaben konnten nicht geladen werden. Bitte versuche es später nochmal.",
-    };
-  }
-
   // Calendar failures degrade to an empty calendar instead of breaking
   // the whole page (e.g. while the events migration is not applied yet).
+  // Processed before the tasksError branch below so a task loading error
+  // does not silently discard successfully loaded events on ?tab=planer.
   const rawEvents = eventRows ?? [];
   const eventIds = rawEvents.map((event) => event.id);
   const { data: attendeeRows } = eventIds.length
@@ -102,6 +94,16 @@ async function loadInitialData(): Promise<{
     recurrence_exceptions: event.recurrence_exceptions ?? [],
     attendees: attendeesByEvent.get(event.id) ?? [],
   }));
+
+  if (tasksError) {
+    return {
+      tasks: [],
+      members,
+      events,
+      familyId: family.id,
+      error: "Aufgaben konnten nicht geladen werden. Bitte versuche es später nochmal.",
+    };
+  }
 
   if (!taskRows || taskRows.length === 0) {
     return { tasks: [], members, events, familyId: family.id, error: null };

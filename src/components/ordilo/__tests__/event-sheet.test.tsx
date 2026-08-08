@@ -11,11 +11,13 @@ const mockAttendeeInsert = vi.fn();
 const mockAttendeeDeleteIn = vi.fn();
 const mockAttendeeDeleteEq = vi.fn(() => ({ in: mockAttendeeDeleteIn }));
 const mockAttendeeDelete = vi.fn(() => ({ eq: mockAttendeeDeleteEq }));
+const mockEventDeleteEq = vi.fn();
+const mockEventDelete = vi.fn(() => ({ eq: mockEventDeleteEq }));
 
 const mockFrom = vi.fn((table: string) =>
   table === "calendar_event_attendees"
     ? { insert: mockAttendeeInsert, delete: mockAttendeeDelete }
-    : { insert: mockInsert, update: mockUpdate },
+    : { insert: mockInsert, update: mockUpdate, delete: mockEventDelete },
 );
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -72,6 +74,7 @@ beforeEach(() => {
   mockUpdateEq.mockResolvedValue({ error: null });
   mockAttendeeInsert.mockResolvedValue({ error: null });
   mockAttendeeDeleteIn.mockResolvedValue({ error: null });
+  mockEventDeleteEq.mockResolvedValue({ error: null });
 });
 
 describe("EventSheet", () => {
@@ -206,6 +209,58 @@ describe("EventSheet", () => {
       }),
       "updated",
     );
+  });
+
+  it("rolls back the event and shows an error when attendee saving fails on create", async () => {
+    const { onSaved } = renderSheet();
+    mockSingle.mockResolvedValueOnce({
+      data: {
+        id: "event-9",
+        title: "Judo",
+        note: null,
+        starts_on: TODAY,
+        ends_on: TODAY,
+        all_day: true,
+        starts_time: null,
+        ends_time: null,
+        recurrence: "none",
+        recurrence_until: null,
+        recurrence_exceptions: [],
+      },
+      error: null,
+    });
+    mockAttendeeInsert.mockResolvedValueOnce({
+      error: { message: "row-level security" },
+    });
+
+    fireEvent.change(screen.getByLabelText("Was ist geplant?"), {
+      target: { value: "Judo" },
+    });
+    fireEvent.click(screen.getByTestId("event-attendee-chip-m-2"));
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Speichern hat nicht geklappt.",
+    );
+    // The just-created event is deleted again so a retry cannot duplicate it.
+    expect(mockEventDeleteEq).toHaveBeenCalledWith("id", "event-9");
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("shows an error instead of reporting success when the attendee update fails on edit", async () => {
+    const { onSaved } = renderSheet({ event: makeEvent() });
+    mockAttendeeInsert.mockResolvedValueOnce({
+      error: { message: "row-level security" },
+    });
+
+    // Keep Emma, additionally check Jonas → one attendee insert, which fails.
+    fireEvent.click(screen.getByTestId("event-attendee-chip-m-2"));
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Die Teilnehmer konnten nicht gespeichert werden.",
+    );
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it("offers delete only in edit mode", () => {
