@@ -585,6 +585,74 @@ export type Database = {
         };
         Relationships: [];
       };
+      // calendar_events ----------------------------------------------------
+      calendar_events: {
+        Row: {
+          id: string;
+          family_id: string;
+          title: string;
+          note: string | null;
+          starts_on: string;
+          ends_on: string;
+          all_day: boolean;
+          starts_time: string | null;
+          ends_time: string | null;
+          recurrence: string;
+          recurrence_until: string | null;
+          recurrence_exceptions: string[];
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          title: string;
+          note?: string | null;
+          starts_on: string;
+          ends_on?: string;
+          all_day?: boolean;
+          starts_time?: string | null;
+          ends_time?: string | null;
+          recurrence?: string;
+          recurrence_until?: string | null;
+          recurrence_exceptions?: string[];
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          title?: string;
+          note?: string | null;
+          starts_on?: string;
+          ends_on?: string;
+          all_day?: boolean;
+          starts_time?: string | null;
+          ends_time?: string | null;
+          recurrence?: string;
+          recurrence_until?: string | null;
+          recurrence_exceptions?: string[];
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_event_attendees -----------------------------------------
+      calendar_event_attendees: {
+        Row: {
+          event_id: string;
+          family_member_id: string;
+          created_at: string;
+        };
+        Insert: {
+          event_id: string;
+          family_member_id: string;
+          created_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          family_member_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       // task_documents ----------------------------------------------
       task_documents: {
         Row: {

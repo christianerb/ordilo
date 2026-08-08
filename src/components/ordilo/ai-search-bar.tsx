@@ -255,14 +255,14 @@ export function AISearchBar({
         // is not squeezed into a ~24-character column.
         stacked
           ? "flex flex-col gap-1 rounded-ordilo-md px-3 py-2"
-          : "flex items-end gap-2 rounded-full py-2 pr-1.5 pl-3",
+          : "flex items-center gap-2 rounded-full py-2 pr-1.5 pl-3",
         isLoading ? "border-transparent opacity-70" : "border-border",
         className,
       )}
     >
       {!stacked && (
         <Sparkles
-          className="mb-1.5 size-5 shrink-0 animate-sparkle-pulse"
+          className="size-5 shrink-0 animate-sparkle-pulse"
           style={{ color: "var(--petrol)" }}
           aria-hidden="true"
         />

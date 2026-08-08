@@ -70,6 +70,28 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "add_calendar_event",
+      description: "Schlägt einen Familienkalender-Termin vor und legt ihn erst nach eindeutiger Bestätigung an.",
+      parameters: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          starts_on: { type: "string", description: "YYYY-MM-DD" },
+          ends_on: { type: "string", description: "YYYY-MM-DD" },
+          all_day: { type: "boolean" },
+          starts_time: { type: "string", description: "HH:MM, nur bei Uhrzeit-Terminen" },
+          ends_time: { type: "string", description: "HH:MM, nur bei Uhrzeit-Terminen" },
+          recurrence: { type: "string", enum: ["none", "weekly", "monthly", "yearly"] },
+          attendee_names: { type: "array", items: { type: "string" } },
+          confirmed: { type: "boolean" },
+        },
+        required: ["title", "starts_on"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_documents",
       description:
         "Durchsucht alle Familien-Dokumente semantisch und nach Stichworten. " +
@@ -724,6 +746,8 @@ export async function executeTool(
   ctx: ToolContext,
 ): Promise<string> {
   switch (name) {
+    case "add_calendar_event":
+      return executeAddCalendarEvent(args, ctx);
     case "search_documents":
       return executeSearchDocuments(args, ctx);
     case "query_payments":
@@ -1298,6 +1322,76 @@ async function executeAddTask(
 }
 
 // ---------------------------------------------------------------------------
+// add_calendar_event (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+const TIME_PATTERN = /^\d{2}:\d{2}(:\d{2})?$/;
+
+async function executeAddCalendarEvent(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const title = String(args.title ?? "").trim();
+  const startsOn = String(args.starts_on ?? "").trim();
+  const endsOn = String(args.ends_on ?? startsOn).trim();
+  if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || endsOn < startsOn) {
+    return JSON.stringify({ error: "Terminangaben sind unvollständig." });
+  }
+  const allDay = args.all_day !== false;
+  const startsTime =
+    typeof args.starts_time === "string" && TIME_PATTERN.test(args.starts_time)
+      ? args.starts_time.slice(0, 5)
+      : null;
+  const endsTime =
+    typeof args.ends_time === "string" && TIME_PATTERN.test(args.ends_time)
+      ? args.ends_time.slice(0, 5)
+      : null;
+  // The table requires both times when the event is not all-day — asking
+  // again beats inserting a row the check constraint would reject.
+  if (!allDay && (!startsTime || !endsTime)) {
+    return JSON.stringify({
+      error:
+        "Für einen Termin mit Uhrzeit brauche ich Beginn und Ende (HH:MM).",
+    });
+  }
+  const recurrence = ["none", "weekly", "monthly", "yearly"].includes(String(args.recurrence))
+    ? String(args.recurrence)
+    : "none";
+  const attendees = Array.isArray(args.attendee_names)
+    ? args.attendee_names.filter((name): name is string => typeof name === "string").map((name) => name.trim()).filter(Boolean)
+    : [];
+  if (args.confirmed !== true) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      event_title: title,
+      // The full proposal travels with the confirmation request so the
+      // client can render a confirmation card without parsing the message
+      // text — and a confirm click can write exactly what was shown.
+      starts_on: startsOn,
+      ends_on: endsOn,
+      all_day: allDay,
+      starts_time: allDay ? null : startsTime,
+      ends_time: allDay ? null : endsTime,
+      recurrence,
+      attendee_names: attendees,
+      message: `Bitte bestätige: Soll ich '${title}' am ${startsOn}${endsOn !== startsOn ? ` bis ${endsOn}` : ""} eintragen?`,
+    });
+  }
+  const { data: event, error } = await ctx.client.from("calendar_events").insert({
+    family_id: ctx.familyId, title, starts_on: startsOn, ends_on: endsOn,
+    all_day: allDay, starts_time: allDay ? null : startsTime,
+    ends_time: allDay ? null : endsTime,
+    recurrence, recurrence_exceptions: [],
+  }).select("id, title").single();
+  if (error || !event) return JSON.stringify({ error: "Termin konnte nicht angelegt werden." });
+  if (attendees.length) {
+    const { data: members } = await ctx.client.from("family_members").select("id, name").eq("family_id", ctx.familyId).in("name", attendees);
+    if (members?.length) await ctx.client.from("calendar_event_attendees").insert(members.map((member) => ({ event_id: event.id, family_member_id: member.id })));
+  }
+  return JSON.stringify({ success: true, event_id: event.id, message: `Termin '${event.title}' wurde eingetragen.` });
+}
+
+// ---------------------------------------------------------------------------
 // mark_task_done (with confirmation gate)
 // ---------------------------------------------------------------------------
 
@@ -1310,6 +1404,7 @@ async function executeAddTask(
  * tags something) belongs in this set.
  */
 export const CONFIRMATION_TOOLS = new Set([
+  "add_calendar_event",
   "add_task",
   "update_task",
   "mark_task_done",
