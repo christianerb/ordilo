@@ -1,7 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  ChevronsLeft,
+  CircleCheck,
   History,
   LogOut,
   Menu,
@@ -16,6 +22,7 @@ import { useSuggestionChips } from "@/lib/search/suggestion-chips-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
   SheetFooter,
@@ -24,9 +31,11 @@ import {
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import {
+  isSubItemActive,
   isTabActive,
   NAV_TABS,
 } from "./app-shell-shared";
+import { SidebarCollections } from "./app-shell-sidebar";
 
 export function Topbar({
   showNav,
@@ -36,6 +45,7 @@ export function Topbar({
   pathname: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const currentTab = useSearchParams().get("tab");
 
   return (
     <header
@@ -72,55 +82,105 @@ export function Topbar({
       </div>
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-        <SheetContent side="left" className="flex w-72 max-w-[80vw] flex-col p-0 lg:hidden">
-          <SheetHeader className="border-b border-border">
+        <SheetContent
+          side="left"
+          showCloseButton={false}
+          className="!inset-y-2 !left-2 !h-auto !w-[calc(100vw-1rem)] !max-w-[28rem] rounded-ordilo-xl border border-white/80 bg-[var(--surface-box)] p-0 shadow-card lg:hidden"
+        >
+          <SheetHeader className="relative px-5 pb-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
             <SheetTitle className="flex items-center gap-2">
-              <Link href="/home" className="flex items-center gap-2 transition-opacity hover:opacity-70" aria-label="Ordilo Startseite">
-                <OrdiloMascot size={22} style={{ color: "var(--petrol)" }} />
+              <Link href="/home" className="flex items-center gap-2.5 rounded-ordilo-sm text-base transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label="Ordilo Startseite">
+                <OrdiloMascot size={28} style={{ color: "var(--petrol)" }} />
                 Ordilo
               </Link>
             </SheetTitle>
             <SheetDescription className="sr-only">Hauptmenü</SheetDescription>
+            <SheetClose
+              aria-label="Menü schließen"
+              className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] flex size-10 items-center justify-center rounded-full bg-[var(--sand)] text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <ChevronsLeft className="size-4" aria-hidden="true" />
+            </SheetClose>
           </SheetHeader>
 
           {showNav && (
-            <nav aria-label="Hauptnavigation" className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
+            <nav aria-label="Hauptnavigation" className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
               {NAV_TABS.map((tab) => {
                 const active = isTabActive(tab, pathname);
                 const Icon = tab.icon;
                 return (
-                  <Link
-                    key={tab.href}
-                    href={tab.href}
-                    aria-current={active ? "page" : undefined}
-                    onClick={() => setMenuOpen(false)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-ordilo-sm px-3 py-2.5 text-sm font-medium transition-colors",
-                      active
-                        ? "bg-accent text-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  <div key={tab.href}>
+                    <Link
+                      href={tab.href}
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => setMenuOpen(false)}
+                      className={cn(
+                        "flex min-h-12 items-center gap-3 rounded-ordilo-sm px-3 text-sm font-medium transition-colors",
+                        active
+                          ? "bg-[color-mix(in_srgb,var(--petrol)_6%,var(--sand-light))] text-[var(--petrol)]"
+                          : "text-foreground hover:bg-[var(--sand-warm)]",
+                      )}
+                    >
+                      <NavIcon label={tab.label} active={active}>
+                        <Icon className="size-5" aria-hidden="true" strokeWidth={active ? 2.2 : 1.8} />
+                      </NavIcon>
+                      <span className="flex-1">{tab.label}</span>
+                      {tab.children ? (
+                        <ChevronDown className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
+                      ) : active ? (
+                        <span className="size-1.5 rounded-full bg-[var(--apricot)]" aria-hidden="true" />
+                      ) : (
+                        <ChevronRight className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
+                      )}
+                    </Link>
+                    {tab.children && (
+                      <div className="ml-10 mt-1 space-y-0.5 rounded-ordilo-sm bg-[var(--surface-story)] px-2 py-1">
+                        {tab.children.map((child) => {
+                          const childActive = isSubItemActive(child, pathname, currentTab);
+                          return (
+                            <Link
+                              key={child.href}
+                              href={child.href}
+                              onClick={() => setMenuOpen(false)}
+                              className={cn(
+                                "flex min-h-10 items-center gap-3 rounded-ordilo-sm px-2 text-sm transition-colors",
+                                childActive
+                                  ? "font-medium text-[var(--petrol)]"
+                                  : "text-foreground hover:bg-[var(--sand-warm)]",
+                              )}
+                            >
+                              {child.label === "Aufgaben" ? (
+                                <CircleCheck className="size-4 text-[var(--petrol)]" aria-hidden="true" />
+                              ) : (
+                                <CalendarDays className="size-4 text-[var(--petrol)]" aria-hidden="true" />
+                              )}
+                              {child.label}
+                            </Link>
+                          );
+                        })}
+                      </div>
                     )}
-                  >
-                    <Icon className="size-5" aria-hidden="true" strokeWidth={active ? 2.4 : 2} />
-                    {tab.label}
-                  </Link>
+                  </div>
                 );
               })}
-            </nav>
-          )}
-
-          <SheetFooter className="border-t border-border">
-            {showNav && (
               <Link
                 href="/suche?history=1"
                 onClick={() => setMenuOpen(false)}
-                className="inline-flex w-full items-center gap-2 rounded-ordilo-sm px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex min-h-12 items-center gap-3 rounded-ordilo-sm px-3 text-sm font-medium text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="topbar-chat-history-link"
               >
-                <History className="size-4" aria-hidden="true" />
-                Chat-Verlauf
+                <NavIcon label="Chat-Verlauf" active={false}>
+                  <History className="size-5" aria-hidden="true" strokeWidth={1.8} />
+                </NavIcon>
+                <span className="flex-1">Chat-Verlauf</span>
+                <ChevronRight className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
               </Link>
-            )}
+              <div className="my-2 border-t border-border/70" />
+              <SidebarCollections activePathname={pathname} collapsed={false} />
+            </nav>
+          )}
+
+          <SheetFooter className="border-t border-border/70 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
             <form action={logout}>
               <button
                 type="submit"
@@ -134,6 +194,52 @@ export function Topbar({
         </SheetContent>
       </Sheet>
     </header>
+  );
+}
+
+function NavIcon({
+  label,
+  active,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  children: React.ReactNode;
+}) {
+  const colors: Record<string, { backgroundColor: string; color: string }> = {
+    Heute: {
+      backgroundColor: "color-mix(in srgb, var(--petrol) 8%, var(--warm-white))",
+      color: "var(--petrol)",
+    },
+    Dokumente: {
+      backgroundColor: "var(--wash-blue)",
+      color: "var(--petrol)",
+    },
+    Familienplaner: {
+      backgroundColor: "var(--wash-sage)",
+      color: "var(--petrol)",
+    },
+    Familie: {
+      backgroundColor: "var(--wash-apricot)",
+      color: "var(--apricot-text)",
+    },
+    "Chat-Verlauf": {
+      backgroundColor: "var(--wash-blue)",
+      color: "var(--petrol)",
+    },
+  };
+
+  return (
+    <span
+      className={cn(
+        "flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm transition-transform",
+        active && "scale-[1.03]",
+      )}
+      style={colors[label] ?? colors.Heute}
+      aria-hidden="true"
+    >
+      {children}
+    </span>
   );
 }
 

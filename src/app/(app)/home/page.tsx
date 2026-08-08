@@ -1,78 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { HomeClient, type HomeMember } from "./home-client";
-import {
-  filterRecentDocuments,
-  JOURNAL_DOCS_LIMIT,
-  type HomeTask,
-  type HomeDocument,
-} from "@/lib/home-utils";
+import { type HomeTask, type HomeDocument } from "@/lib/home-utils";
 import { computeInsights } from "@/lib/ai/insights";
-
-/** How long journal thumbnail signed URLs stay valid, in seconds. */
-const THUMB_SIGNED_URL_TTL_SECONDS = 300;
-
-/** Thumbnail render size via Supabase image transforms (3:4 journal tile). */
-const THUMB_TRANSFORM = { width: 480, height: 640, resize: "cover" } as const;
-
-type ServerClient = Awaited<ReturnType<typeof createClient>>;
-
-interface DocRowWithFile {
-  id: string;
-  mime_type: string | null;
-  file_url: string | null;
-}
-
-/**
- * Resolve short-lived signed thumbnail URLs for image documents shown in
- * the home journal grid. PDFs and failures get no entry — the tile falls
- * back to its file-icon variant. Image transforms resize server-side; if
- * the plan does not support them, the tile's onError fallback catches it.
- *
- * Signs with the RLS-scoped server client (the service-role admin client
- * is reserved for API routes — AGENTS.md) and additionally guards the
- * path itself: only `file_url`s inside the current family's storage
- * folder (`{family_id}/...`) are ever signed, so a tampered row can never
- * turn this page into a signing oracle for another family's files.
- */
-async function resolveThumbUrls(
-  serverClient: ServerClient,
-  familyId: string,
-  docs: DocRowWithFile[],
-): Promise<Record<string, string>> {
-  const imageDocs = docs.filter(
-    (d) =>
-      d.file_url &&
-      d.file_url.startsWith(`${familyId}/`) &&
-      d.mime_type?.startsWith("image/"),
-  );
-  if (imageDocs.length === 0) return {};
-
-  try {
-    // Single createSignedUrl calls: only they support image transforms —
-    // the batch createSignedUrls variant silently ignores them (it builds
-    // plain /object/ URLs; the render/image path only exists per-file).
-    const results = await Promise.all(
-      imageDocs.map((d) =>
-        serverClient.storage
-          .from("documents")
-          .createSignedUrl(d.file_url as string, THUMB_SIGNED_URL_TTL_SECONDS, {
-            transform: THUMB_TRANSFORM,
-          }),
-      ),
-    );
-
-    const urls: Record<string, string> = {};
-    for (let i = 0; i < imageDocs.length; i++) {
-      const signedUrl = results[i].data?.signedUrl;
-      if (signedUrl) urls[imageDocs[i].id] = signedUrl;
-    }
-    return urls;
-  } catch {
-    // Thumbnails are an enhancement, never a blocker for the page.
-    return {};
-  }
-}
 
 /**
  * Compute a warm German time-of-day greeting (server-side to avoid
@@ -95,9 +25,9 @@ function getGreeting(date = new Date()): string {
  * Supabase client) and renders the interactive client component:
  *
  * - Family + members (for greeting and family display)
- * - Documents with status='analyzed' (for "Neue Dokumente zur Bestätigung")
- * - Confirmed open tasks with due dates (for "Heute wichtig" and "Fristen")
- * - Recent documents by created_at desc (for "Zuletzt gescannt")
+ * - Documents with status='analyzed' (for the review queue)
+ * - Confirmed open tasks with due dates (for the three-day cockpit)
+ * - A document count to distinguish a new family from a quiet one
  *
  * If the user has no family, they are redirected to onboarding.
  *
@@ -117,10 +47,8 @@ export default async function HomePage({
 
   const supabase = await createClient();
 
-  // 1. Fetch the user's family (RLS-scoped). On full page loads the
-  //    middleware already ran this exact query for the onboarding gate and
-  //    hands the result over via request headers — only RSC navigations
-  //    (SPA tab switches) need the fallback query.
+  // 1. Resolve the user's family. The middleware provides it on full page
+  // loads; RSC navigations use the RLS-scoped fallback query.
   const middlewareFamily = await getMiddlewareFamily();
   let family = middlewareFamily;
   if (!family) {
@@ -136,15 +64,14 @@ export default async function HomePage({
     redirect("/onboarding");
   }
 
-  // 2-4 + 6-7 only depend on family.id, not on each other's results, so
-  // they run concurrently instead of as a sequential waterfall — this is
-  // the single biggest lever for server-render latency on this page.
+  // These requests only depend on family.id, so they run concurrently
+  // instead of as a sequential waterfall.
   const [
     { data: memberRows },
     { data: analyzedRows },
     { count: unconfirmedDocCount },
     { data: taskRows },
-    { data: recentRows },
+    { count: documentCount },
     insights,
   ] = await Promise.all([
     // 2. Fetch family members (for greeting area).
@@ -153,12 +80,11 @@ export default async function HomePage({
       .select("id, name, role, avatar_color")
       .eq("family_id", family.id)
       .order("created_at", { ascending: true }),
-    // 3. Fetch analyzed documents (awaiting user confirmation). Capped for
-    //    the journal grid; the exact count comes from the head query below
-    //    so the briefing sentence never underreports.
+    // 3. Fetch the compact review queue. The exact count comes from the
+    //    head query below, so the briefing sentence never underreports.
     supabase
       .from("documents")
-      .select("id, title, original_filename, mime_type, status, created_at, file_url")
+      .select("id, title, original_filename, mime_type, status, created_at")
       .eq("family_id", family.id)
       .eq("status", "analyzed")
       .order("created_at", { ascending: false })
@@ -170,9 +96,8 @@ export default async function HomePage({
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
       .eq("status", "analyzed"),
-    // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
-    //    "Fristen"). We fetch all confirmed open tasks and let the client
-    //    component filter them into the two sections.
+    // 4. Fetch confirmed open tasks. The client chooses the immediate
+    //    three-day horizon and keeps the rest on /aufgaben.
     supabase
       .from("tasks")
       .select(
@@ -182,21 +107,12 @@ export default async function HomePage({
       .eq("confirmed", true)
       .eq("status", "open")
       .order("created_at", { ascending: false }),
-    // 6. Fetch recent documents (by created_at desc, excluding failed).
-    //    VAL-CROSS-013: failed documents must NOT surface on /home — they
-    //    remain visible only on /dokumente. The DB query excludes them
-    //    here, and filterRecentDocuments provides a second layer of
-    //    defense.
-    // Fetch enough recent rows that the journal grid still fills up after
-    // mergeJournalDocuments removes the overlap with the analyzed
-    // documents (the newest confirmed docs often ARE the analyzed ones).
+    // 6. Just enough information for the first-visit decision. Existing
+    //    documents stay on /dokumente unless they need a confirmation.
     supabase
       .from("documents")
-      .select("id, title, original_filename, mime_type, status, created_at, file_url")
-      .eq("family_id", family.id)
-      .neq("status", "failed")
-      .order("created_at", { ascending: false })
-      .limit(JOURNAL_DOCS_LIMIT),
+      .select("id", { count: "exact", head: true })
+      .eq("family_id", family.id),
     // 7. Fetch proactive insights from the knowledge graph.
     computeInsights(supabase, family.id),
   ]);
@@ -254,25 +170,6 @@ export default async function HomePage({
     document_title: t.document_id ? docTitleMap.get(t.document_id) ?? null : null,
   }));
 
-  const recentDocuments: HomeDocument[] = filterRecentDocuments(
-    (recentRows ?? []).map((d) => ({
-      id: d.id,
-      title: d.title,
-      original_filename: d.original_filename,
-      mime_type: d.mime_type,
-      status: d.status,
-      created_at: d.created_at,
-    })),
-    JOURNAL_DOCS_LIMIT,
-  );
-
-  // 8. Resolve journal thumbnails for image documents (best-effort — a
-  //    failure just means the icon fallback renders).
-  const thumbUrls = await resolveThumbUrls(supabase, family.id, [
-    ...(analyzedRows ?? []),
-    ...(recentRows ?? []),
-  ]);
-
   return (
     <HomeClient
       greeting={getGreeting()}
@@ -281,8 +178,7 @@ export default async function HomePage({
       analyzedDocuments={analyzedDocuments}
       unconfirmedDocCount={unconfirmedDocCount ?? 0}
       upcomingTasks={upcomingTasks}
-      recentDocuments={recentDocuments}
-      thumbUrls={thumbUrls}
+      hasDocuments={(documentCount ?? 0) > 0}
       insights={insights}
       autoOpenScan={autoOpenScan}
     />
