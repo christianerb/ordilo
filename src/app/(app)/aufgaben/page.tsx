@@ -1,7 +1,10 @@
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
+import type { CalendarEvent } from "@/lib/calendar";
 import type { Database } from "@/types/database";
 import { AufgabenClient } from "./aufgaben-client";
+import { CalendarClient } from "./calendar-client";
+import { PlannerView } from "./planner-view";
 
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
@@ -10,6 +13,7 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 async function loadInitialData(): Promise<{
   tasks: TaskCardData[];
   members: AssigneeOption[];
+  events: CalendarEvent[];
   familyId: string | null;
   error: string | null;
 }> {
@@ -29,12 +33,12 @@ async function loadInitialData(): Promise<{
   }
 
   if (!family) {
-    return { tasks: [], members: [], familyId: null, error: null };
+    return { tasks: [], members: [], events: [], familyId: null, error: null };
   }
 
-  // Members (assignee picker) and tasks only depend on the family id, not
-  // on each other — fetch them concurrently instead of sequentially.
-  const [memberResult, taskResult] = await Promise.all([
+  // Planner data only depends on the family id, not on other results —
+  // fetch members, tasks, and calendar events concurrently.
+  const [memberResult, taskResult, eventResult] = await Promise.all([
     supabase
       .from("family_members")
       .select("id, name, role")
@@ -46,10 +50,16 @@ async function loadInitialData(): Promise<{
       .eq("family_id", family.id)
       .eq("confirmed", true)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("calendar_events")
+      .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions")
+      .eq("family_id", family.id)
+      .order("starts_on", { ascending: true }),
   ]);
 
   const { data: memberRows } = memberResult;
   const { data: taskRows, error: tasksError } = taskResult;
+  const { data: eventRows } = eventResult;
 
   const members: AssigneeOption[] = (memberRows as MemberRow[] | null) ?? [];
   const memberNameMap = new Map<string, string>();
@@ -61,13 +71,40 @@ async function loadInitialData(): Promise<{
     return {
       tasks: [],
       members,
+      events: [],
       familyId: family.id,
       error: "Aufgaben konnten nicht geladen werden. Bitte versuche es später nochmal.",
     };
   }
 
+  // Calendar failures degrade to an empty calendar instead of breaking
+  // the whole page (e.g. while the events migration is not applied yet).
+  const rawEvents = eventRows ?? [];
+  const eventIds = rawEvents.map((event) => event.id);
+  const { data: attendeeRows } = eventIds.length
+    ? await supabase
+      .from("calendar_event_attendees")
+      .select("event_id, family_member_id")
+      .in("event_id", eventIds)
+    : { data: [] };
+  const attendeesByEvent = new Map<string, { id: string; name: string }[]>();
+  for (const attendee of attendeeRows ?? []) {
+    const existing = attendeesByEvent.get(attendee.event_id) ?? [];
+    existing.push({
+      id: attendee.family_member_id,
+      name: memberNameMap.get(attendee.family_member_id) ?? "Familienmitglied",
+    });
+    attendeesByEvent.set(attendee.event_id, existing);
+  }
+  const events: CalendarEvent[] = rawEvents.map((event) => ({
+    ...event,
+    recurrence: event.recurrence as CalendarEvent["recurrence"],
+    recurrence_exceptions: event.recurrence_exceptions ?? [],
+    attendees: attendeesByEvent.get(event.id) ?? [],
+  }));
+
   if (!taskRows || taskRows.length === 0) {
-    return { tasks: [], members, familyId: family.id, error: null };
+    return { tasks: [], members, events, familyId: family.id, error: null };
   }
 
   const taskIds = taskRows.map((task) => task.id);
@@ -112,11 +149,17 @@ async function loadInitialData(): Promise<{
     assigned_member_name: task.assigned_to ? memberNameMap.get(task.assigned_to) ?? null : null,
   }));
 
-  return { tasks, members, familyId: family.id, error: null };
+  return { tasks, members, events, familyId: family.id, error: null };
 }
 
 export default async function AufgabenPage() {
-  const { tasks: initialTasks, members, familyId, error } = await loadInitialData();
+  const {
+    tasks: initialTasks,
+    members,
+    events,
+    familyId,
+    error,
+  } = await loadInitialData();
   const taskKey = initialTasks
     .map((task) =>
       `${task.id}:${task.status}:${task.title}:${task.description ?? ""}:${task.due_date ?? ""}:${task.priority}:${(task.tags ?? []).join(",")}:${task.linked_documents?.length ?? 0}:${task.assigned_to ?? ""}`,
@@ -124,12 +167,26 @@ export default async function AufgabenPage() {
     .join("|");
 
   return (
-    <AufgabenClient
-      key={taskKey || `empty:${error ?? "ok"}`}
-      initialTasks={initialTasks}
-      members={members}
-      familyId={familyId}
-      initialError={error}
-    />
+    <div className="app-page-stack">
+      <PlannerView
+        familyId={familyId}
+        tasks={
+          <AufgabenClient
+            key={taskKey || `empty:${error ?? "ok"}`}
+            initialTasks={initialTasks}
+            members={members}
+            familyId={familyId}
+            initialError={error}
+          />
+        }
+        calendar={
+          <CalendarClient
+            initialEvents={events}
+            familyId={familyId}
+            members={members}
+          />
+        }
+      />
+    </div>
   );
 }

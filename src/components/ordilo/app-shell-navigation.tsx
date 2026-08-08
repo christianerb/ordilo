@@ -341,7 +341,7 @@ export function MobileComposer({
         <div className="mx-auto w-full max-w-md">
           <SuggestionChipsRow onSelect={onSearch} />
         </div>
-        <div className="mx-auto flex w-full max-w-md items-end gap-2">
+        <div className="mx-auto flex w-full max-w-md items-center gap-2">
           <div className="min-w-0 flex-1">
             <AISearchBar
               value={value}
@@ -405,7 +405,7 @@ export function DesktopBottomBar({
         className="pointer-events-auto mx-auto flex w-full max-w-6xl flex-col gap-1 rounded-ordilo-md border border-white/80 bg-[var(--sand-light)] p-2 shadow-card-hover"
       >
         <SuggestionChipsRow onSelect={onSearch} />
-        <div className="flex w-full gap-2">
+        <div className="flex w-full items-center gap-2">
           <div className="min-w-0 flex-1">
             <AISearchBar
               onSubmit={onSearch}

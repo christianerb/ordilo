@@ -223,7 +223,7 @@ Legend: `→` = context.
 | 5.2 | `"${documents.length} Dokumente · ${reviewDocs.length} zum Durchsehen · ${confirmedDocs.length} im Familienbuch"` (template) | `src/app/(app)/dokumente/page.tsx` | Page subtitle (with documents) |
 | 5.3 | `"oder Datei hierher ziehen"` | `src/app/(app)/dokumente/page.tsx` | Drag-hint next to "PDF hochladen" |
 | 5.4 | `"Datei hier ablegen"` | `src/app/(app)/dokumente/page.tsx` | Drag-overlay heading |
-| 5.5 | `"${visibleTasks.filter(open).length} offen · ${visibleTasks.filter(done).length} erledigt"` (template) | `src/app/(app)/aufgaben/page.tsx` | Aufgaben header count summary |
+| 5.5 | `"Neue Aufgabe"` / `"Termin"` (view-dependent) | `src/app/(app)/aufgaben/planner-view.tsx` | Familienplaner header create button |
 | 5.6 | `"Gib einen Namen ein. Weitere Angaben sind optional."` | `src/app/(app)/familie/familie-client.tsx` | Add-member sheet description |
 | 5.7 | `"Ändere die Angaben dieser Person."` | `src/app/(app)/familie/familie-client.tsx` | Edit-member sheet description |
 | 5.8 | `"Möchtest du {name} wirklich entfernen?"` (template) | `src/app/(app)/familie/familie-client.tsx` | Remove-member dialog description |

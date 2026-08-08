@@ -9,7 +9,8 @@ import { TaskDetailSheet } from "@/components/ordilo/task-detail-sheet";
 import { TaskCreateSheet } from "@/components/ordilo/task-create-sheet";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { usePlannerActionsOptional } from "./planner-actions-context";
 import {
   Sheet,
   SheetContent,
@@ -184,6 +185,16 @@ export function AufgabenClient({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
 
+  // The page header's "Neue Aufgabe" button opens this view's create sheet
+  // via the planner actions context (registered on mount, cleared on
+  // unmount — only one tab view is mounted at a time).
+  const plannerActions = usePlannerActionsOptional();
+  useMountEffect(() => {
+    if (!familyId) return;
+    plannerActions?.setCreateHandler(() => setCreateSheetOpen(true));
+    return () => plannerActions?.setCreateHandler(null);
+  });
+
   // Fresh "today" on every render so overdue/this-week buckets stay
   // correct across long sessions (module-level dates would freeze).
   const nowStr = new Date().toISOString().split("T")[0];
@@ -318,28 +329,6 @@ export function AufgabenClient({
 
   return (
     <div className="app-page-stack">
-      <div className="app-page-heading">
-        <h1 className="text-lg font-semibold text-foreground">Aufgaben</h1>
-        <div className="flex items-center gap-2">
-          {visibleTasks.length > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {visibleTasks.filter((t) => t.status === "open").length} offen · {visibleTasks.filter((t) => t.status === "done").length} erledigt
-            </span>
-          )}
-          {familyId && (
-            <Button
-              size="sm"
-              className="h-7 gap-1 px-2.5 text-xs"
-              onClick={() => setCreateSheetOpen(true)}
-              data-testid="task-create-button"
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-              Neue Aufgabe
-            </Button>
-          )}
-        </div>
-      </div>
-
       {error && (
         <div
           className="rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"

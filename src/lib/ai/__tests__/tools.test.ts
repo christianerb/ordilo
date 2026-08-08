@@ -1618,3 +1618,139 @@ describe("create_note confirmation gate", () => {
     expect(performAnalyzeStep).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// add_calendar_event
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for add_calendar_event: `.from("calendar_events")` supports the
+ * insert → select → single chain, `.from("family_members")` resolves the
+ * attendee name lookup, `.from("calendar_event_attendees")` captures the
+ * attendee insert.
+ */
+function makeCalendarCtx({
+  insertedEvent,
+  members = [],
+}: {
+  insertedEvent: { id: string; title: string } | null;
+  members?: Array<{ id: string; name: string }>;
+}) {
+  const single = vi.fn().mockResolvedValue({
+    data: insertedEvent,
+    error: insertedEvent ? null : { message: "insert failed" },
+  });
+  const insert = vi.fn(() => ({ select: vi.fn(() => ({ single })) }));
+  const attendeesInsert = vi.fn().mockResolvedValue({ error: null });
+
+  const from = vi.fn((table: string) => {
+    if (table === "calendar_events") return { insert };
+    if (table === "family_members") return makeThenableChain(members);
+    if (table === "calendar_event_attendees") return { insert: attendeesInsert };
+    return makeThenableChain(null);
+  });
+
+  return {
+    ctx: {
+      client: { from } as unknown as ToolContext["client"],
+      familyId: "fam-1",
+      sources: [] as ChatSource[],
+      speakerName: null,
+    } as ToolContext,
+    insert,
+    attendeesInsert,
+  };
+}
+
+describe("add_calendar_event", () => {
+  it("carries the full proposal in the confirmation payload", async () => {
+    const { ctx, insert } = makeCalendarCtx({ insertedEvent: null });
+    const result = JSON.parse(
+      await executeTool(
+        "add_calendar_event",
+        {
+          title: "Zahnarzt Emma",
+          starts_on: "2026-08-12",
+          ends_on: "2026-08-12",
+          all_day: false,
+          starts_time: "15:00",
+          ends_time: "15:30",
+          recurrence: "weekly",
+          attendee_names: ["Emma"],
+          confirmed: false,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      needs_confirmation: true,
+      event_title: "Zahnarzt Emma",
+      starts_on: "2026-08-12",
+      ends_on: "2026-08-12",
+      all_day: false,
+      starts_time: "15:00",
+      ends_time: "15:30",
+      recurrence: "weekly",
+      attendee_names: ["Emma"],
+    });
+    // Nothing is written before confirmation.
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a timed event without both times instead of inserting garbage", async () => {
+    const { ctx, insert } = makeCalendarCtx({ insertedEvent: null });
+    const result = JSON.parse(
+      await executeTool(
+        "add_calendar_event",
+        {
+          title: "Zahnarzt",
+          starts_on: "2026-08-12",
+          all_day: false,
+          confirmed: true,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toMatch(/Uhrzeit/);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("inserts an all-day event with null times and writes attendees", async () => {
+    const { ctx, insert, attendeesInsert } = makeCalendarCtx({
+      insertedEvent: { id: "ev-1", title: "Herbstferien" },
+      members: [{ id: "m-1", name: "Emma" }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "add_calendar_event",
+        {
+          title: "Herbstferien",
+          starts_on: "2026-10-12",
+          ends_on: "2026-10-18",
+          attendee_names: ["Emma"],
+          confirmed: true,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.success).toBe(true);
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        family_id: "fam-1",
+        title: "Herbstferien",
+        starts_on: "2026-10-12",
+        ends_on: "2026-10-18",
+        all_day: true,
+        starts_time: null,
+        ends_time: null,
+        recurrence: "none",
+      }),
+    );
+    expect(attendeesInsert).toHaveBeenCalledWith([
+      { event_id: "ev-1", family_member_id: "m-1" },
+    ]);
+  });
+});
