@@ -3,16 +3,15 @@
 import Link from "next/link";
 import {
   AlertCircle,
-  Building2,
   CalendarClock,
   Check,
-  Receipt,
   type LucideIcon,
 } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { cn } from "@/lib/utils";
+import { formatGermanDate } from "@/lib/format";
 import type { HomeHeroState } from "@/lib/home-briefing";
-import type { HomeInsight } from "@/lib/ai/insights";
+import { INSIGHT_ICONS } from "./insight-icons";
 
 /**
  * The "Heute" hero — the one big card on /home that answers "was brennt
@@ -28,20 +27,6 @@ import type { HomeInsight } from "@/lib/ai/insights";
  * The card never competes with the sections below it: when the hero shows
  * a task, the "Als Nächstes" list starts with the NEXT task.
  */
-
-const INSIGHT_ICONS: Record<HomeInsight["icon"], LucideIcon> = {
-  alert: AlertCircle,
-  receipt: Receipt,
-  building: Building2,
-  calendar: CalendarClock,
-};
-
-/** Format a YYYY-MM-DD due date as DD.MM.YYYY (German). */
-function formatDueDate(dueDate: string): string {
-  const [year, month, day] = dueDate.split("-");
-  if (!year || !month || !day) return dueDate;
-  return `${day}.${month}.${year}`;
-}
 
 export function TodayHero({
   state,
@@ -134,7 +119,9 @@ export function TodayHero({
         {task.title}
       </p>
       <p className="mt-0.5 text-sm text-muted-foreground">
-        {task.due_date ? `Fällig ${formatDueDate(task.due_date)}` : null}
+        {task.due_date
+          ? `Fällig ${formatGermanDate(task.due_date) ?? task.due_date}`
+          : null}
         {task.due_date && task.document_title ? " · " : null}
         {task.document_title ?? null}
       </p>

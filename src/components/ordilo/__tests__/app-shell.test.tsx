@@ -6,10 +6,12 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 // `next/navigation` must be mocked so we can control the pathname per test.
 const mockUsePathname = vi.fn<() => string>();
+const mockSearchParamsGet = vi.fn<(key: string) => string | null>(() => null);
 const mockPush = vi.fn();
 const mockRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
   usePathname: () => mockUsePathname(),
+  useSearchParams: () => ({ get: mockSearchParamsGet }),
   useRouter: () => ({
     push: mockPush,
     replace: vi.fn(),
@@ -137,7 +139,7 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly four tabs (Heute, Dokumente, Aufgaben, Familie)", () => {
+  it("exports exactly four tabs (Heute, Dokumente, Familienplaner, Familie)", () => {
     expect(NAV_TABS).toHaveLength(4);
   });
 
@@ -145,7 +147,7 @@ describe("NAV_TABS", () => {
     const expected = [
       { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
-      { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Familienplaner", href: "/aufgaben" },
       { label: "Familie", href: "/familie" },
     ];
     expect(NAV_TABS.map((t) => ({ label: t.label, href: t.href }))).toEqual(
@@ -158,12 +160,22 @@ describe("NAV_TABS", () => {
     const uniqueIcons = new Set(icons);
     expect(uniqueIcons.size).toBe(4);
   });
+
+  it("nests Aufgaben and Planer under Familienplaner", () => {
+    const planner = NAV_TABS.find((tab) => tab.label === "Familienplaner");
+    expect(planner?.children).toEqual([
+      { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Planer", href: "/aufgaben?tab=planer" },
+    ]);
+  });
 });
 
 describe("AppShell", () => {
   beforeEach(() => {
     mockUsePathname.mockReset();
     mockUsePathname.mockReturnValue("/home");
+    mockSearchParamsGet.mockReset();
+    mockSearchParamsGet.mockReturnValue(null);
     mockPush.mockClear();
     mockSupabaseData();
     // Pretend prefers-reduced-motion is active so the CameraStep's
@@ -196,12 +208,12 @@ describe("AppShell", () => {
     expect(surface.className).not.toContain("border");
   });
 
-  it("renders a nav drawer with exactly four tab links", () => {
+  it("renders a nav drawer with the primary links, planner sub-items, and chat history", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(7);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -221,8 +233,11 @@ describe("AppShell", () => {
     const expected = [
       { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
+      { label: "Familienplaner", href: "/aufgaben" },
       { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Planer", href: "/aufgaben?tab=planer" },
       { label: "Familie", href: "/familie" },
+      { label: "Chat-Verlauf", href: "/suche?history=1" },
     ];
 
     links.forEach((link, i) => {
@@ -297,14 +312,14 @@ describe("AppShell", () => {
     unmount();
   });
 
-  it("marks only Aufgaben active on /aufgaben", () => {
+  it("marks Familienplaner active on /aufgaben", () => {
     renderShell("/aufgaben");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
     const heuteLink = within(nav).getByText("Heute").closest("a");
-    const aufgabenLink = within(nav).getByText("Aufgaben").closest("a");
+    const plannerLink = within(nav).getByText("Familienplaner").closest("a");
     expect(heuteLink?.getAttribute("aria-current")).toBeNull();
-    expect(aufgabenLink?.getAttribute("aria-current")).toBe("page");
+    expect(plannerLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("marks no tab active on /suche (fullscreen answer mode, not a place)", () => {

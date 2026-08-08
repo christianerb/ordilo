@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ChevronsLeft,
   ChevronsRight,
@@ -37,6 +37,7 @@ import {
   DESKTOP_SHELL_SURFACE_STYLE,
   getGreeting,
   getProfileDisplayName,
+  isSubItemActive,
   isTabActive,
   NAV_TABS,
   type SidebarProfile,
@@ -47,7 +48,7 @@ const CollectionForm = dynamic(() =>
   import("@/components/ordilo/collection-form").then((m) => m.CollectionForm),
 );
 
-function SidebarCollections({
+export function SidebarCollections({
   activePathname,
   collapsed,
 }: {
@@ -327,6 +328,7 @@ export function SidebarNav({
 
   const displayName = profile ? getProfileDisplayName(profile) : null;
   const hasActiveCollection = pathname.startsWith("/sammlungen/");
+  const currentTab = useSearchParams().get("tab");
 
   return (
     <aside
@@ -438,6 +440,30 @@ export function SidebarNav({
                     />
                   )}
                 </Link>
+                {tab.children && !collapsed && (
+                  <ul className="mt-px space-y-px">
+                    {tab.children.map((child) => {
+                      const childActive =
+                        selected &&
+                        isSubItemActive(child, pathname, currentTab);
+                      return (
+                        <li key={child.href}>
+                          <Link
+                            href={child.href}
+                            className={cn(
+                              "flex min-h-9 items-center rounded-ordilo-sm py-1.5 pl-11 pr-3 text-sm transition-colors duration-150",
+                              childActive
+                                ? "font-medium text-[var(--petrol)]"
+                                : "text-muted-foreground hover:bg-[var(--sand-warm)] hover:text-foreground",
+                            )}
+                          >
+                            {child.label}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </li>
             );
           })}
