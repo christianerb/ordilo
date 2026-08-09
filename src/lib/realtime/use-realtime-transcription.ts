@@ -28,6 +28,69 @@ export type VoiceStatus =
 /** Hard cap so a forgotten open mic cannot stream (and bill) forever. */
 const MAX_SESSION_MS = 60_000;
 
+/** How many recent samples the waveform meter keeps on screen. */
+const LEVEL_HISTORY_LENGTH = 24;
+/** Minimum spacing between pushed samples — caps meter re-renders at ~14/s. */
+const LEVEL_PUSH_INTERVAL_MS = 70;
+/** Exponential-smoothing weight for the raw reading (higher = calmer). */
+const LEVEL_SMOOTHING = 0.65;
+/** Compresses the normally-quiet mic signal so speech is clearly visible. */
+const LEVEL_GAIN = 4;
+
+/**
+ * RMS amplitude of a Web Audio time-domain buffer, sqrt-compressed so
+ * normal speech doesn't need to be loud to move the meter. Pure function —
+ * no AudioContext needed — so the math is unit-testable on its own.
+ */
+export function computeAudioLevel(data: Uint8Array): number {
+  let sumSquares = 0;
+  for (let i = 0; i < data.length; i++) {
+    const normalized = (data[i] - 128) / 128;
+    sumSquares += normalized * normalized;
+  }
+  const rms = Math.sqrt(sumSquares / data.length);
+  return Math.min(1, Math.sqrt(rms * LEVEL_GAIN));
+}
+
+/**
+ * Turns a stream of analyser readings into a throttled, smoothed waveform
+ * history. Kept free of Web Audio/DOM APIs (unlike the AnalyserNode wiring
+ * around it) so the throttling and smoothing behavior can be unit tested
+ * with synthetic samples and timestamps.
+ */
+export function createLevelTracker(
+  {
+    historyLength = LEVEL_HISTORY_LENGTH,
+    pushIntervalMs = LEVEL_PUSH_INTERVAL_MS,
+    smoothing = LEVEL_SMOOTHING,
+  }: {
+    historyLength?: number;
+    pushIntervalMs?: number;
+    smoothing?: number;
+  } = {},
+) {
+  let history = new Array(historyLength).fill(0) as number[];
+  let smoothedLevel = 0;
+  let lastPush = -Infinity;
+  return {
+    /** Feed one reading; returns a new history snapshot only when pushed. */
+    sample(data: Uint8Array, now: number): number[] | null {
+      const instant = computeAudioLevel(data);
+      smoothedLevel = smoothedLevel * smoothing + instant * (1 - smoothing);
+      if (now - lastPush < pushIntervalMs) return null;
+      lastPush = now;
+      history = [...history.slice(1), smoothedLevel];
+      return history;
+    },
+    reset(): number[] {
+      history = new Array(historyLength).fill(0);
+      smoothedLevel = 0;
+      lastPush = -Infinity;
+      return history;
+    },
+  };
+}
+
 interface RealtimeServerEvent {
   type: string;
   transcript?: string;
@@ -60,6 +123,14 @@ export function useRealtimeTranscription({
   onError: (message: string) => void;
 }): {
   status: VoiceStatus;
+  /**
+   * External store (see `useSyncExternalStore`) for the live waveform —
+   * refs + listeners rather than `useState` so the ~14 updates/second the
+   * meter produces re-render only the small bar component that subscribes,
+   * not this whole card on every tick.
+   */
+  subscribeLevels: (onStoreChange: () => void) => () => void;
+  getLevels: () => number[];
   start: () => Promise<void>;
   stop: () => void;
   cancel: () => void;
@@ -70,6 +141,12 @@ export function useRealtimeTranscription({
   const dcRef = useRef<RTCDataChannel | null>(null);
   const micRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelFrameRef = useRef<number | null>(null);
+  const levelTrackerRef = useRef(createLevelTracker());
+  const levelsRef = useRef<number[]>(levelTrackerRef.current.reset());
+  const levelListenersRef = useRef(new Set<() => void>());
   /** Raw input transcription, kept as fallback for the model's reply. */
   const inputTranscriptRef = useRef("");
   /** Set once a final transcript was delivered — guards double delivery. */
@@ -88,11 +165,76 @@ export function useRealtimeTranscription({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
+  const getLevels = useCallback(() => levelsRef.current, []);
+
+  const subscribeLevels = useCallback((onStoreChange: () => void) => {
+    levelListenersRef.current.add(onStoreChange);
+    return () => {
+      levelListenersRef.current.delete(onStoreChange);
+    };
+  }, []);
+
+  const notifyLevelListeners = useCallback(() => {
+    for (const listener of levelListenersRef.current) listener();
+  }, []);
+
+  const stopLevelMeter = useCallback(() => {
+    if (levelFrameRef.current !== null) {
+      cancelAnimationFrame(levelFrameRef.current);
+      levelFrameRef.current = null;
+    }
+    analyserRef.current = null;
+    if (audioCtxRef.current) {
+      void audioCtxRef.current.close();
+      audioCtxRef.current = null;
+    }
+    levelsRef.current = levelTrackerRef.current.reset();
+    notifyLevelListeners();
+  }, [notifyLevelListeners]);
+
+  /**
+   * Taps the mic stream with an AnalyserNode (never routed to the
+   * speakers) so the recording UI can show real voice activity instead of
+   * a generic "something is happening" pulse. Best-effort: on browsers
+   * without AudioContext support the meter just stays flat.
+   */
+  const startLevelMeter = useCallback(
+    (mic: MediaStream) => {
+      const AudioContextCtor =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioContextCtor) return;
+
+      const audioCtx = new AudioContextCtor();
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 512;
+      audioCtx.createMediaStreamSource(mic).connect(analyser);
+      audioCtxRef.current = audioCtx;
+      analyserRef.current = analyser;
+
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = (now: number) => {
+        if (!analyserRef.current) return;
+        analyserRef.current.getByteTimeDomainData(data);
+        const snapshot = levelTrackerRef.current.sample(data, now);
+        if (snapshot) {
+          levelsRef.current = snapshot;
+          notifyLevelListeners();
+        }
+        levelFrameRef.current = requestAnimationFrame(tick);
+      };
+      levelFrameRef.current = requestAnimationFrame(tick);
+    },
+    [notifyLevelListeners],
+  );
+
   const cleanup = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    stopLevelMeter();
     dcRef.current?.close();
     dcRef.current = null;
     pcRef.current?.close();
@@ -101,7 +243,7 @@ export function useRealtimeTranscription({
       for (const track of micRef.current.getTracks()) track.stop();
       micRef.current = null;
     }
-  }, []);
+  }, [stopLevelMeter]);
 
   const deliver = useCallback(
     (text: string) => {
@@ -218,6 +360,7 @@ export function useRealtimeTranscription({
       return;
     }
     micRef.current = mic;
+    startLevelMeter(mic);
 
     // 3. Peer connection + server events channel.
     const pc = new RTCPeerConnection();
@@ -279,7 +422,7 @@ export function useRealtimeTranscription({
       // Cap reached — deliver whatever is already transcribed.
       deliver(inputTranscriptRef.current);
     }, MAX_SESSION_MS);
-  }, [deliver, fail, handleServerEvent]);
+  }, [deliver, fail, handleServerEvent, startLevelMeter]);
 
   /** Finish the current utterance now instead of waiting for the VAD. */
   const stop = useCallback(() => {
@@ -311,5 +454,5 @@ export function useRealtimeTranscription({
     };
   });
 
-  return { status, start, stop, cancel };
+  return { status, subscribeLevels, getLevels, start, stop, cancel };
 }

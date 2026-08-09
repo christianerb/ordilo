@@ -48,7 +48,11 @@ const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
   return new Response("answer-sdp", { status: 200 });
 });
 
-import { useRealtimeTranscription } from "@/lib/realtime/use-realtime-transcription";
+import {
+  computeAudioLevel,
+  createLevelTracker,
+  useRealtimeTranscription,
+} from "@/lib/realtime/use-realtime-transcription";
 
 function setup() {
   const onTranscript = vi.fn();
@@ -303,5 +307,77 @@ describe("useRealtimeTranscription", () => {
 
     expect(pc.close).toHaveBeenCalled();
     expect(mockTrack.stop).toHaveBeenCalled();
+  });
+
+  it("resets the level meter to flat when a session ends", async () => {
+    const { result } = setup();
+    await startSession(result);
+
+    act(() => {
+      result.current.cancel();
+    });
+
+    expect(result.current.getLevels().every((level) => level === 0)).toBe(
+      true,
+    );
+  });
+});
+
+/** A byte-domain buffer at a fixed offset from the 128 (silence) midpoint. */
+function constantAmplitudeBuffer(length: number, amplitude: number): Uint8Array {
+  return new Uint8Array(length).fill(128 + amplitude);
+}
+
+describe("computeAudioLevel", () => {
+  it("reads 0 for silence (flat buffer at the midpoint)", () => {
+    expect(computeAudioLevel(constantAmplitudeBuffer(64, 0))).toBe(0);
+  });
+
+  it("reads higher for a louder signal than a quieter one", () => {
+    const quiet = computeAudioLevel(constantAmplitudeBuffer(64, 10));
+    const loud = computeAudioLevel(constantAmplitudeBuffer(64, 80));
+    expect(loud).toBeGreaterThan(quiet);
+  });
+
+  it("never exceeds 1 even for a maxed-out signal", () => {
+    expect(computeAudioLevel(constantAmplitudeBuffer(64, 127))).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("createLevelTracker", () => {
+  it("throttles pushes to the configured interval", () => {
+    const tracker = createLevelTracker({ historyLength: 4, pushIntervalMs: 50 });
+    const loud = constantAmplitudeBuffer(64, 80);
+
+    expect(tracker.sample(loud, 0)).not.toBeNull(); // first sample always pushes
+    expect(tracker.sample(loud, 10)).toBeNull(); // too soon
+    expect(tracker.sample(loud, 40)).toBeNull(); // still too soon
+    expect(tracker.sample(loud, 60)).not.toBeNull(); // interval elapsed
+  });
+
+  it("slides the history window, dropping the oldest sample", () => {
+    const tracker = createLevelTracker({
+      historyLength: 3,
+      pushIntervalMs: 10,
+      smoothing: 0, // disable smoothing so pushed values are exact
+    });
+    const silence = constantAmplitudeBuffer(64, 0);
+    const loud = constantAmplitudeBuffer(64, 80);
+
+    tracker.sample(silence, 0);
+    tracker.sample(silence, 10);
+    const third = tracker.sample(loud, 20);
+
+    expect(third).toEqual([0, 0, expect.any(Number)]);
+    expect(third?.[2]).toBeGreaterThan(0);
+  });
+
+  it("reset() zeroes the history and lets the next sample push immediately", () => {
+    const tracker = createLevelTracker({ historyLength: 3, pushIntervalMs: 50 });
+    const loud = constantAmplitudeBuffer(64, 80);
+    tracker.sample(loud, 0);
+
+    expect(tracker.reset()).toEqual([0, 0, 0]);
+    expect(tracker.sample(loud, 1)).not.toBeNull(); // no throttling right after reset
   });
 });

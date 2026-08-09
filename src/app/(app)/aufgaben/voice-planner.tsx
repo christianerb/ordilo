@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { Check, Loader2, Mic, Square, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import type { CalendarEvent } from "@/lib/calendar";
 import { formatGermanDate } from "@/lib/format";
 import { useRealtimeTranscription } from "@/lib/realtime/use-realtime-transcription";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 
 /**
@@ -50,6 +51,37 @@ const RECORDING_STATUS_LABELS = {
   listening: "Ich höre zu …",
   processing: "Einen Moment …",
 } as const;
+
+/**
+ * Scrolling waveform of the live mic level, so it's obvious Ordilo hears
+ * you rather than just "something is happening". Subscribes directly to
+ * the hook's level store via `useSyncExternalStore` — only this small
+ * component re-renders on every sample, not the whole card.
+ */
+function VoiceLevelMeter({
+  subscribe,
+  getSnapshot,
+}: {
+  subscribe: (onStoreChange: () => void) => () => void;
+  getSnapshot: () => number[];
+}) {
+  const levels = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return (
+    <span
+      className="flex h-5 items-center gap-px"
+      role="img"
+      aria-label="Mikrofon-Pegel"
+    >
+      {levels.map((level, index) => (
+        <span
+          key={index}
+          className="w-0.5 shrink-0 rounded-full bg-primary motion-safe:transition-[height] motion-safe:duration-100 motion-safe:ease-out"
+          style={{ height: `${3 + level * 17}px` }}
+        />
+      ))}
+    </span>
+  );
+}
 
 /** Parse the confirmation payload into a proposal, or null when incomplete. */
 function parseProposal(data: Record<string, unknown>): EventProposal | null {
@@ -180,17 +212,18 @@ export function VoicePlannerCard({
     [familyId],
   );
 
-  const { status, start, stop, cancel } = useRealtimeTranscription({
-    onTranscript: (text) => {
-      // A transcript arriving after a cancel/discard is ignored.
-      if (phaseRef.current.kind !== "recording") return;
-      void sendTranscript(text);
-    },
-    onError: (message) => {
-      toast.error(message);
-      setPhase({ kind: "idle" });
-    },
-  });
+  const { status, subscribeLevels, getLevels, start, stop, cancel } =
+    useRealtimeTranscription({
+      onTranscript: (text) => {
+        // A transcript arriving after a cancel/discard is ignored.
+        if (phaseRef.current.kind !== "recording") return;
+        void sendTranscript(text);
+      },
+      onError: (message) => {
+        toast.error(message);
+        setPhase({ kind: "idle" });
+      },
+    });
 
   const handleMicClick = useCallback(() => {
     setPhase({ kind: "recording" });
@@ -293,15 +326,26 @@ export function VoicePlannerCard({
       {phase.kind === "recording" && (
         <div className="flex items-center gap-3">
           <span
-            className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground motion-safe:animate-pulse"
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground",
+              status !== "listening" && "motion-safe:animate-pulse",
+            )}
             aria-hidden="true"
           >
             <Mic className="size-4" />
           </span>
-          <p className="flex-1 text-sm font-medium text-foreground">
-            {RECORDING_STATUS_LABELS[status as keyof typeof RECORDING_STATUS_LABELS] ??
-              "Einen Moment …"}
-          </p>
+          <div className="flex-1 space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {RECORDING_STATUS_LABELS[status as keyof typeof RECORDING_STATUS_LABELS] ??
+                "Einen Moment …"}
+            </p>
+            {status === "listening" && (
+              <VoiceLevelMeter
+                subscribe={subscribeLevels}
+                getSnapshot={getLevels}
+              />
+            )}
+          </div>
           {status === "listening" && (
             <Button
               type="button"
