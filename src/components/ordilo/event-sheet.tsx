@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { Check, Loader2, Trash2 } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { Check, Loader2, Trash2, TriangleAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -10,7 +10,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import type { CalendarEvent } from "@/lib/calendar";
+import { findScheduleConflicts, type CalendarEvent } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
@@ -57,6 +57,8 @@ export interface EventSheetProps {
   defaultDate: string;
   /** Create mode only: prefill from a planner suggestion. */
   template?: EventTemplate | null;
+  /** All existing events, used to warn about double-booked people. */
+  existingEvents?: CalendarEvent[];
   /** Called after a successful save with the saved event. */
   onSaved: (event: CalendarEvent, mode: "created" | "updated") => void;
   /** Edit mode only: opens the parent's delete confirmation. */
@@ -79,6 +81,7 @@ export function EventSheet({
   event,
   defaultDate,
   template,
+  existingEvents = [],
   onSaved,
   onDeleteRequest,
 }: EventSheetProps) {
@@ -111,6 +114,37 @@ export function EventSheet({
   );
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  // Live double-booking check: warns — never blocks — when someone
+  // involved already has a timed event in the same slot that day.
+  const conflicts = useMemo(() => {
+    const memberIds =
+      responsibleId && !attendeeIds.includes(responsibleId)
+        ? [...attendeeIds, responsibleId]
+        : attendeeIds;
+    return findScheduleConflicts(existingEvents, {
+      id: event?.id ?? null,
+      starts_on: startsOn,
+      all_day: allDay,
+      starts_time: TIME_PATTERN.test(startsTime) ? startsTime : null,
+      ends_time: TIME_PATTERN.test(endsTime) ? endsTime : null,
+      memberIds,
+    });
+  }, [
+    existingEvents,
+    event,
+    startsOn,
+    allDay,
+    startsTime,
+    endsTime,
+    attendeeIds,
+    responsibleId,
+  ]);
+
+  const memberNameById = useMemo(
+    () => new Map(members.map((member) => [member.id, member.name])),
+    [members],
+  );
 
   const resetForm = useCallback(() => {
     setTitle(event?.title ?? template?.title ?? "");
@@ -424,6 +458,33 @@ export function EventSheet({
                   className={inputClass}
                 />
               </div>
+            </div>
+          )}
+
+          {conflicts.length > 0 && (
+            <div
+              className="rounded-ordilo-sm border border-amber-600/25 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+              role="status"
+              data-testid="event-conflict-warning"
+            >
+              {conflicts.map(({ event: conflictEvent, memberIds }) => (
+                <p key={conflictEvent.id} className="flex items-start gap-1.5">
+                  <TriangleAlert
+                    className="mt-0.5 size-3.5 shrink-0 text-amber-600"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    {memberIds
+                      .map((id) => memberNameById.get(id) ?? "Jemand")
+                      .join(" und ")}{" "}
+                    {memberIds.length === 1 ? "ist" : "sind"} da schon bei
+                    „{conflictEvent.title}“
+                    {conflictEvent.starts_time &&
+                      ` (${conflictEvent.starts_time.slice(0, 5)}–${conflictEvent.ends_time?.slice(0, 5) ?? ""} Uhr)`}{" "}
+                    eingeplant.
+                  </span>
+                </p>
+              ))}
             </div>
           )}
 

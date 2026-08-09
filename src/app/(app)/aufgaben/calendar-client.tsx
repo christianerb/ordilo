@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   CalendarPlus,
@@ -76,11 +76,13 @@ export function CalendarClient({
   initialEvents,
   initialSuggestions = [],
   familyId,
+  currentUserId = null,
   members,
 }: {
   initialEvents: CalendarEvent[];
   initialSuggestions?: CalendarSuggestion[];
   familyId: string | null;
+  currentUserId?: string | null;
   members: AssigneeOption[];
 }) {
   const supabase = createClient();
@@ -153,6 +155,140 @@ export function CalendarClient({
     setSuggestionTemplate(null);
     setSheetOpen(true);
   }, []);
+
+  // ---------------------------------------------------------------------
+  // Live family sync: when someone else adds or edits an event, it shows
+  // up here without a reload, marked "Neu" until this user has seen it.
+  // ---------------------------------------------------------------------
+
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+  /** Events flagged new this session keep their badge while it's open. */
+  const sessionNewRef = useRef<Set<string>>(
+    new Set(initialEvents.filter((e) => e.is_new).map((e) => e.id)),
+  );
+
+  /** Re-fetch the family's events (RLS-scoped) and merge enrichments. */
+  const refreshEvents = useCallback(async () => {
+    if (!familyId) return;
+    const { data: rows } = await supabase
+      .from("calendar_events")
+      .select(
+        "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id, created_by",
+      )
+      .eq("family_id", familyId)
+      .order("starts_on", { ascending: true });
+    if (!rows) return;
+
+    const ids = rows.map((row) => row.id);
+    const [attendeeResult, seenResult] = await Promise.all([
+      ids.length
+        ? supabase
+            .from("calendar_event_attendees")
+            .select("event_id, family_member_id")
+            .in("event_id", ids)
+        : Promise.resolve({ data: [] as { event_id: string; family_member_id: string }[] }),
+      currentUserId
+        ? supabase.from("calendar_event_seen").select("event_id")
+        : Promise.resolve({ data: [] as { event_id: string }[] }),
+    ]);
+
+    const attendeesByEvent = new Map<string, { id: string; name: string }[]>();
+    for (const attendee of attendeeResult.data ?? []) {
+      const list = attendeesByEvent.get(attendee.event_id) ?? [];
+      list.push({
+        id: attendee.family_member_id,
+        name: memberNames.get(attendee.family_member_id) ?? "Familienmitglied",
+      });
+      attendeesByEvent.set(attendee.event_id, list);
+    }
+    const seenIds = new Set((seenResult.data ?? []).map((row) => row.event_id));
+    const previousById = new Map(eventsRef.current.map((e) => [e.id, e]));
+
+    const next: CalendarEvent[] = rows.map((row) => {
+      const isNew = Boolean(
+        currentUserId &&
+          row.created_by &&
+          row.created_by !== currentUserId &&
+          (!seenIds.has(row.id) || sessionNewRef.current.has(row.id)),
+      );
+      if (isNew) sessionNewRef.current.add(row.id);
+      return {
+        ...row,
+        recurrence: row.recurrence as CalendarEvent["recurrence"],
+        recurrence_exceptions: row.recurrence_exceptions ?? [],
+        // Document titles come from the server payload; keep what we have.
+        document_title: previousById.get(row.id)?.document_title ?? null,
+        is_new: isNew,
+        attendees: attendeesByEvent.get(row.id) ?? [],
+      };
+    });
+
+    // A quiet heads-up when a brand-new event from someone else arrives.
+    const arrived = next.filter((e) => e.is_new && !previousById.has(e.id));
+    if (arrived.length === 1) {
+      toast.info(`Neuer Termin von deiner Familie: „${arrived[0].title}“`);
+    } else if (arrived.length > 1) {
+      toast.info(`${arrived.length} neue Termine von deiner Familie`);
+    }
+
+    setEvents(sortEvents(next));
+  }, [familyId, currentUserId, memberNames, supabase]);
+
+  useMountEffect(() => {
+    if (!familyId) return;
+    // Defensive: test mocks (and any non-realtime client) don't implement
+    // channel(); the page then simply stays request/response.
+    if (typeof supabase.channel !== "function") return;
+
+    const channel = supabase
+      .channel(`calendar-events-${familyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "calendar_events",
+          filter: `family_id=eq.${familyId}`,
+        },
+        () => void refreshEvents(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "calendar_events",
+          filter: `family_id=eq.${familyId}`,
+        },
+        () => void refreshEvents(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  });
+
+  // Seeing is acknowledging: once a "Neu" event was actually on screen in
+  // the day list, record it as seen. The badge stays for this session (so
+  // it can be noticed) and is gone on the next visit.
+  const recordedSeenRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!currentUserId) return;
+    const unrecorded = selectedEvents.filter(
+      (event) => event.is_new && !recordedSeenRef.current.has(event.id),
+    );
+    if (unrecorded.length === 0) return;
+    for (const event of unrecorded) recordedSeenRef.current.add(event.id);
+    void supabase.from("calendar_event_seen").upsert(
+      unrecorded.map((event) => ({
+        event_id: event.id,
+        user_id: currentUserId,
+      })),
+      { onConflict: "event_id,user_id", ignoreDuplicates: true },
+    );
+  }, [selectedEvents, currentUserId, supabase]);
 
   // The page header's "Termin" button opens this view's create sheet via
   // the planner actions context (registered on mount, cleared on unmount).
@@ -556,7 +692,17 @@ export function CalendarClient({
                   style={color ? { borderLeftColor: color } : undefined}
                   data-testid={`calendar-event-${event.id}`}
                 >
-                  <p className="text-sm font-medium text-foreground">{event.title}</p>
+                  <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    {event.title}
+                    {event.is_new && (
+                      <span
+                        className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
+                        data-testid={`calendar-event-new-${event.id}`}
+                      >
+                        Neu
+                      </span>
+                    )}
+                  </p>
                   <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
                     {event.starts_on !== event.ends_on && (
                       <span>
@@ -739,6 +885,7 @@ export function CalendarClient({
           familyId={familyId}
           members={members}
           event={editingEvent}
+          existingEvents={events}
           defaultDate={toCalendarDate(selectedDate)}
           template={
             suggestionTemplate

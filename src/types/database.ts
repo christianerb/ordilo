@@ -603,6 +603,7 @@ export type Database = {
           location: string | null;
           responsible_member_id: string | null;
           document_id: string | null;
+          created_by: string | null;
           created_at: string;
         };
         Insert: {
@@ -621,6 +622,7 @@ export type Database = {
           location?: string | null;
           responsible_member_id?: string | null;
           document_id?: string | null;
+          created_by?: string | null;
           created_at?: string;
         };
         Update: {
@@ -639,6 +641,26 @@ export type Database = {
           location?: string | null;
           responsible_member_id?: string | null;
           document_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_event_seen --------------------------------------------------
+      calendar_event_seen: {
+        Row: {
+          event_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          event_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          user_id?: string;
           created_at?: string;
         };
         Relationships: [];

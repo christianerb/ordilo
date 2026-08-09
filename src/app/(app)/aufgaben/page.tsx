@@ -98,6 +98,7 @@ async function loadInitialData(): Promise<{
   events: CalendarEvent[];
   suggestions: CalendarSuggestion[];
   familyId: string | null;
+  currentUserId: string | null;
   error: string | null;
 }> {
   const supabase = await createClient();
@@ -122,13 +123,14 @@ async function loadInitialData(): Promise<{
       events: [],
       suggestions: [],
       familyId: null,
+      currentUserId: null,
       error: null,
     };
   }
 
   // Planner data only depends on the family id, not on other results —
   // fetch members, tasks, calendar events, and suggestions concurrently.
-  const [memberResult, taskResult, eventResult, suggestions] =
+  const [memberResult, taskResult, eventResult, suggestions, userResult, seenResult] =
     await Promise.all([
       supabase
         .from("family_members")
@@ -143,15 +145,22 @@ async function loadInitialData(): Promise<{
         .order("created_at", { ascending: false }),
       supabase
         .from("calendar_events")
-        .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id")
+        .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id, created_by")
         .eq("family_id", family.id)
         .order("starts_on", { ascending: true }),
       loadCalendarSuggestions(supabase, family.id).catch(() => []),
+      supabase.auth.getUser(),
+      // The RLS policy already narrows rows to the current user.
+      supabase.from("calendar_event_seen").select("event_id"),
     ]);
 
   const { data: memberRows } = memberResult;
   const { data: taskRows, error: tasksError } = taskResult;
   const { data: eventRows } = eventResult;
+  const currentUserId = userResult.data.user?.id ?? null;
+  const seenEventIds = new Set(
+    (seenResult.data ?? []).map((row) => row.event_id),
+  );
 
   const members: AssigneeOption[] = (memberRows as MemberRow[] | null) ?? [];
   const memberNameMap = new Map<string, string>();
@@ -205,6 +214,12 @@ async function loadInitialData(): Promise<{
     document_title: event.document_id
       ? eventDocumentTitles.get(event.document_id) ?? null
       : null,
+    is_new: Boolean(
+      currentUserId &&
+        event.created_by &&
+        event.created_by !== currentUserId &&
+        !seenEventIds.has(event.id),
+    ),
     attendees: attendeesByEvent.get(event.id) ?? [],
   }));
 
@@ -215,6 +230,7 @@ async function loadInitialData(): Promise<{
       events,
       suggestions,
       familyId: family.id,
+      currentUserId,
       error: "Aufgaben konnten nicht geladen werden. Bitte versuche es später nochmal.",
     };
   }
@@ -226,6 +242,7 @@ async function loadInitialData(): Promise<{
       events,
       suggestions,
       familyId: family.id,
+      currentUserId,
       error: null,
     };
   }
@@ -278,6 +295,7 @@ async function loadInitialData(): Promise<{
     events,
     suggestions,
     familyId: family.id,
+    currentUserId,
     error: null,
   };
 }
@@ -289,6 +307,7 @@ export default async function AufgabenPage() {
     events,
     suggestions,
     familyId,
+    currentUserId,
     error,
   } = await loadInitialData();
   const taskKey = initialTasks
@@ -315,6 +334,7 @@ export default async function AufgabenPage() {
             initialEvents={events}
             initialSuggestions={suggestions}
             familyId={familyId}
+            currentUserId={currentUserId}
             members={members}
           />
         }

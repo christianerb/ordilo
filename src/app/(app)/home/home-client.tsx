@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertCircle, ChevronRight, FileCheck2 } from "lucide-react";
+import { AlertCircle, CalendarDays, ChevronRight, FileCheck2, MapPin } from "lucide-react";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { cn } from "@/lib/utils";
 import { formatGermanDate, formatRelativeTime } from "@/lib/format";
@@ -33,6 +33,18 @@ export interface HomeMember {
   avatar_color: string | null;
 }
 
+/** A calendar entry happening today, trimmed for the cockpit. */
+export interface HomeCalendarEvent {
+  id: string;
+  title: string;
+  /** HH:MM(:SS) or null for all-day entries. */
+  starts_time: string | null;
+  ends_time: string | null;
+  location: string | null;
+  /** Accent color of the responsible member or first attendee. */
+  color: string | null;
+}
+
 export interface HomeClientProps {
   greeting: string;
   familyName: string;
@@ -42,6 +54,8 @@ export interface HomeClientProps {
       array itself is capped for display). */
   unconfirmedDocCount: number;
   upcomingTasks: HomeTask[];
+  /** Today's calendar entries (all-day first, then by start time). */
+  todayEvents?: HomeCalendarEvent[];
   /** Whether the family has at least one document, including confirmed ones. */
   hasDocuments: boolean;
   insights: HomeInsight[];
@@ -70,6 +84,7 @@ export function HomeClient({
   analyzedDocuments,
   unconfirmedDocCount,
   upcomingTasks,
+  todayEvents = [],
   hasDocuments,
   insights,
   autoOpenScan = false,
@@ -255,6 +270,68 @@ export function HomeClient({
             state={hero}
             onMarkDone={(taskId) => void handleToggleDone(taskId, "done")}
           />
+
+          {/* Today's calendar entries — the family's day at a glance,
+              one tap away from the full planner. */}
+          {todayEvents.length > 0 && (
+            <section data-testid="home-section-today-events" className="space-y-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-semibold text-foreground">
+                    Heute im Kalender
+                  </h2>
+                </div>
+                <Link
+                  href="/aufgaben?tab=planer"
+                  className="shrink-0 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  data-testid="home-events-show-planner"
+                >
+                  Zum Planer
+                </Link>
+              </div>
+              <div className="divide-y divide-[var(--mist-light)]/60 overflow-hidden rounded-ordilo-sm border border-border bg-card shadow-card">
+                {todayEvents.map((event) => (
+                  <Link
+                    key={event.id}
+                    href="/aufgaben?tab=planer"
+                    className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    data-testid={`home-today-event-${event.id}`}
+                  >
+                    <span
+                      className="size-2 shrink-0 rounded-full bg-primary"
+                      style={
+                        event.color
+                          ? { backgroundColor: event.color }
+                          : undefined
+                      }
+                      aria-hidden="true"
+                    />
+                    <span className="w-14 shrink-0 text-sm font-medium tabular-nums text-foreground">
+                      {event.starts_time ? (
+                        event.starts_time.slice(0, 5)
+                      ) : (
+                        <CalendarDays
+                          className="size-4 text-muted-foreground"
+                          aria-label="Ganztägig"
+                        />
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-foreground">
+                        {event.title}
+                      </span>
+                      {event.location && (
+                        <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
+                          <MapPin className="size-3" aria-hidden="true" />
+                          <span className="truncate">{event.location}</span>
+                        </span>
+                      )}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* The home screen is a cockpit: the immediate, short-horizon
               task overview comes before passive document history. */}
