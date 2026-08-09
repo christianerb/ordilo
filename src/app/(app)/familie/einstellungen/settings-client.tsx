@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CalendarFeedCard } from "@/components/ordilo/calendar-feed-card";
 import { formatGermanDate } from "@/lib/format";
 import { updateFamilyName, deleteFamilyAccount } from "../actions";
 
@@ -46,6 +47,7 @@ export interface FamilySettingsClientProps {
  * All text in German.
  */
 export function FamilySettingsClient({
+  familyId,
   familyName = "",
   createdAt,
   memberCount = 0,
@@ -241,6 +243,9 @@ export function FamilySettingsClient({
           </div>
         )}
       </div>
+
+      {/* Calendar subscription (ICS feed) */}
+      {familyId && <CalendarFeedCard familyId={familyId} />}
 
       {/* Danger zone — delete family & account (DSGVO right to erasure) */}
       <div className="space-y-3 rounded-ordilo-md border border-destructive/40 bg-card p-4 shadow-card">
