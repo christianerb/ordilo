@@ -81,7 +81,7 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           all_day: { type: "boolean" },
           starts_time: { type: "string", description: "HH:MM, nur bei Uhrzeit-Terminen" },
           ends_time: { type: "string", description: "HH:MM, nur bei Uhrzeit-Terminen" },
-          recurrence: { type: "string", enum: ["none", "weekly", "monthly", "yearly"] },
+          recurrence: { type: "string", enum: ["none", "weekly", "biweekly", "monthly", "yearly"], description: "biweekly = alle 14 Tage" },
           attendee_names: { type: "array", items: { type: "string" } },
           confirmed: { type: "boolean" },
         },
@@ -1354,7 +1354,7 @@ async function executeAddCalendarEvent(
         "Für einen Termin mit Uhrzeit brauche ich Beginn und Ende (HH:MM).",
     });
   }
-  const recurrence = ["none", "weekly", "monthly", "yearly"].includes(String(args.recurrence))
+  const recurrence = ["none", "weekly", "biweekly", "monthly", "yearly"].includes(String(args.recurrence))
     ? String(args.recurrence)
     : "none";
   const attendees = Array.isArray(args.attendee_names)

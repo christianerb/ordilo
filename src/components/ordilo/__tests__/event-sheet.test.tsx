@@ -46,6 +46,9 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     recurrence: "none",
     recurrence_until: null,
     recurrence_exceptions: [],
+    location: null,
+    responsible_member_id: null,
+    document_id: null,
     attendees: [{ id: "m-1", name: "Emma" }],
     ...overrides,
   };
@@ -162,6 +165,9 @@ describe("EventSheet", () => {
         recurrence: "weekly",
         recurrence_until: null,
         recurrence_exceptions: [],
+        location: null,
+        responsible_member_id: null,
+        document_id: null,
       });
     });
     expect(mockAttendeeInsert).toHaveBeenCalledWith([

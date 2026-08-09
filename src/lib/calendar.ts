@@ -7,11 +7,26 @@ export interface CalendarEvent {
   all_day: boolean;
   starts_time: string | null;
   ends_time: string | null;
-  recurrence: "none" | "weekly" | "monthly" | "yearly";
+  recurrence: "none" | "weekly" | "biweekly" | "monthly" | "yearly";
   recurrence_until: string | null;
   recurrence_exceptions: string[];
+  location: string | null;
+  /** Family member who owns the logistics ("Wer kümmert sich?"). */
+  responsible_member_id: string | null;
+  /** Source document when the event came from a scanned/uploaded document. */
+  document_id: string | null;
+  document_title?: string | null;
   attendees: Array<{ id: string; name: string }>;
 }
+
+/** German labels for the recurrence rhythms, shared across planner UIs. */
+export const RECURRENCE_LABELS: Record<CalendarEvent["recurrence"], string> = {
+  none: "",
+  weekly: "Wöchentlich",
+  biweekly: "Alle 14 Tage",
+  monthly: "Monatlich",
+  yearly: "Jährlich",
+};
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -81,11 +96,12 @@ export function eventOccursOn(event: CalendarEvent, date: string): boolean {
 
   if (current.getTime() < start.getTime()) return false;
 
-  if (event.recurrence === "weekly") {
+  if (event.recurrence === "weekly" || event.recurrence === "biweekly") {
+    const cycle = event.recurrence === "weekly" ? 7 : 14;
     const dayDelta = Math.round(
       (current.getTime() - start.getTime()) / 86_400_000,
     );
-    return dayDelta % 7 >= 0 && dayDelta % 7 <= durationDays;
+    return dayDelta % cycle >= 0 && dayDelta % cycle <= durationDays;
   }
 
   if (event.recurrence === "monthly") {

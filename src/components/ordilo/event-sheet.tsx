@@ -21,9 +21,23 @@ const RECURRENCE_OPTIONS: {
 }[] = [
   { value: "none", label: "Keine" },
   { value: "weekly", label: "Wöchentlich" },
+  { value: "biweekly", label: "Alle 14 Tage" },
   { value: "monthly", label: "Monatlich" },
   { value: "yearly", label: "Jährlich" },
 ];
+
+/**
+ * Prefill for a new event, e.g. from a document-extracted date suggestion.
+ * Only used in create mode; carries the source document so the saved event
+ * stays linked to it.
+ */
+export interface EventTemplate {
+  title?: string;
+  starts_on?: string;
+  ends_on?: string;
+  document_id?: string | null;
+  document_title?: string | null;
+}
 
 const TIME_PATTERN = /^\d{2}:\d{2}$/;
 
@@ -41,6 +55,8 @@ export interface EventSheetProps {
   event: CalendarEvent | null;
   /** Pre-selected date for new events (the day the user tapped). */
   defaultDate: string;
+  /** Create mode only: prefill from a planner suggestion. */
+  template?: EventTemplate | null;
   /** Called after a successful save with the saved event. */
   onSaved: (event: CalendarEvent, mode: "created" | "updated") => void;
   /** Edit mode only: opens the parent's delete confirmation. */
@@ -62,16 +78,21 @@ export function EventSheet({
   members,
   event,
   defaultDate,
+  template,
   onSaved,
   onDeleteRequest,
 }: EventSheetProps) {
   const supabase = createClient();
   const isEdit = event !== null;
 
-  const [title, setTitle] = useState(event?.title ?? "");
+  const [title, setTitle] = useState(event?.title ?? template?.title ?? "");
   const [note, setNote] = useState(event?.note ?? "");
-  const [startsOn, setStartsOn] = useState(event?.starts_on ?? defaultDate);
-  const [endsOn, setEndsOn] = useState(event?.ends_on ?? defaultDate);
+  const [startsOn, setStartsOn] = useState(
+    event?.starts_on ?? template?.starts_on ?? defaultDate,
+  );
+  const [endsOn, setEndsOn] = useState(
+    event?.ends_on ?? template?.ends_on ?? template?.starts_on ?? defaultDate,
+  );
   const [allDay, setAllDay] = useState(event?.all_day ?? true);
   const [startsTime, setStartsTime] = useState(toTimeInput(event?.starts_time));
   const [endsTime, setEndsTime] = useState(toTimeInput(event?.ends_time));
@@ -81,6 +102,10 @@ export function EventSheet({
   const [recurrenceUntil, setRecurrenceUntil] = useState(
     event?.recurrence_until ?? "",
   );
+  const [location, setLocation] = useState(event?.location ?? "");
+  const [responsibleId, setResponsibleId] = useState(
+    event?.responsible_member_id ?? "",
+  );
   const [attendeeIds, setAttendeeIds] = useState<string[]>(
     event?.attendees.map((a) => a.id) ?? [],
   );
@@ -88,18 +113,22 @@ export function EventSheet({
   const [formError, setFormError] = useState<string | null>(null);
 
   const resetForm = useCallback(() => {
-    setTitle(event?.title ?? "");
+    setTitle(event?.title ?? template?.title ?? "");
     setNote(event?.note ?? "");
-    setStartsOn(event?.starts_on ?? defaultDate);
-    setEndsOn(event?.ends_on ?? defaultDate);
+    setStartsOn(event?.starts_on ?? template?.starts_on ?? defaultDate);
+    setEndsOn(
+      event?.ends_on ?? template?.ends_on ?? template?.starts_on ?? defaultDate,
+    );
     setAllDay(event?.all_day ?? true);
     setStartsTime(toTimeInput(event?.starts_time));
     setEndsTime(toTimeInput(event?.ends_time));
     setRecurrence(event?.recurrence ?? "none");
     setRecurrenceUntil(event?.recurrence_until ?? "");
+    setLocation(event?.location ?? "");
+    setResponsibleId(event?.responsible_member_id ?? "");
     setAttendeeIds(event?.attendees.map((a) => a.id) ?? []);
     setFormError(null);
-  }, [event, defaultDate]);
+  }, [event, template, defaultDate]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -156,6 +185,8 @@ export function EventSheet({
       ends_time: allDay ? null : endsTime,
       recurrence,
       recurrence_until: recurrence === "none" ? null : recurrenceUntil || null,
+      location: location.trim() || null,
+      responsible_member_id: responsibleId || null,
     };
     const attendees = members
       .filter((member) => attendeeIds.includes(member.id))
@@ -216,9 +247,14 @@ export function EventSheet({
       } else {
         const { data, error: insertError } = await supabase
           .from("calendar_events")
-          .insert({ ...row, family_id: familyId, recurrence_exceptions: [] })
+          .insert({
+            ...row,
+            family_id: familyId,
+            recurrence_exceptions: [],
+            document_id: template?.document_id ?? null,
+          })
           .select(
-            "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions",
+            "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id",
           )
           .single();
 
@@ -250,6 +286,7 @@ export function EventSheet({
         onSaved(
           {
             ...(data as Omit<CalendarEvent, "attendees">),
+            document_title: template?.document_title ?? null,
             attendees,
           },
           "created",
@@ -272,10 +309,13 @@ export function EventSheet({
     endsTime,
     recurrence,
     recurrenceUntil,
+    location,
+    responsibleId,
     members,
     attendeeIds,
     isEdit,
     event,
+    template,
     supabase,
     familyId,
     onSaved,
@@ -388,6 +428,23 @@ export function EventSheet({
           )}
 
           <div>
+            <label htmlFor="event-location" className={labelClass}>
+              Ort{" "}
+              <span className="font-normal text-muted-foreground">
+                (optional)
+              </span>
+            </label>
+            <input
+              id="event-location"
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="Zum Beispiel: Turnhalle Grundschule"
+              maxLength={200}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
             <label htmlFor="event-recurrence" className={labelClass}>
               Wiederholung
             </label>
@@ -464,6 +521,38 @@ export function EventSheet({
                 })}
               </div>
             </div>
+          )}
+
+          {members.length > 0 && (
+            <div>
+              <label htmlFor="event-responsible" className={labelClass}>
+                Wer kümmert sich?{" "}
+                <span className="font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </label>
+              <select
+                id="event-responsible"
+                value={responsibleId}
+                onChange={(e) => setResponsibleId(e.target.value)}
+                className={cn(inputClass, "bg-card")}
+                data-testid="event-responsible-select"
+              >
+                <option value="">Niemand festgelegt</option>
+                {members.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {!isEdit && template?.document_title && (
+            <p className="rounded-ordilo-sm bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+              Aus dem Dokument „{template.document_title}“ übernommen — der
+              Termin bleibt damit verknüpft.
+            </p>
           )}
 
           <div>
