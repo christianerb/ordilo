@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
 import { Check, Loader2, Mic, Square, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -52,15 +52,31 @@ const RECORDING_STATUS_LABELS = {
   processing: "Einen Moment …",
 } as const;
 
-/** Bars that react to the live mic level so it's obvious Ordilo hears you. */
-function VoiceLevelMeter({ levels }: { levels: number[] }) {
+/**
+ * Scrolling waveform of the live mic level, so it's obvious Ordilo hears
+ * you rather than just "something is happening". Subscribes directly to
+ * the hook's level store via `useSyncExternalStore` — only this small
+ * component re-renders on every sample, not the whole card.
+ */
+function VoiceLevelMeter({
+  subscribe,
+  getSnapshot,
+}: {
+  subscribe: (onStoreChange: () => void) => () => void;
+  getSnapshot: () => number[];
+}) {
+  const levels = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   return (
-    <span className="flex h-4 items-center gap-0.5" role="img" aria-label="Mikrofon-Pegel">
+    <span
+      className="flex h-5 items-center gap-px"
+      role="img"
+      aria-label="Mikrofon-Pegel"
+    >
       {levels.map((level, index) => (
         <span
           key={index}
-          className="w-1 rounded-full bg-primary motion-safe:transition-[height] motion-safe:duration-100"
-          style={{ height: `${4 + level * 12}px` }}
+          className="w-0.5 shrink-0 rounded-full bg-primary motion-safe:transition-[height] motion-safe:duration-100 motion-safe:ease-out"
+          style={{ height: `${3 + level * 17}px` }}
         />
       ))}
     </span>
@@ -196,17 +212,18 @@ export function VoicePlannerCard({
     [familyId],
   );
 
-  const { status, levels, start, stop, cancel } = useRealtimeTranscription({
-    onTranscript: (text) => {
-      // A transcript arriving after a cancel/discard is ignored.
-      if (phaseRef.current.kind !== "recording") return;
-      void sendTranscript(text);
-    },
-    onError: (message) => {
-      toast.error(message);
-      setPhase({ kind: "idle" });
-    },
-  });
+  const { status, subscribeLevels, getLevels, start, stop, cancel } =
+    useRealtimeTranscription({
+      onTranscript: (text) => {
+        // A transcript arriving after a cancel/discard is ignored.
+        if (phaseRef.current.kind !== "recording") return;
+        void sendTranscript(text);
+      },
+      onError: (message) => {
+        toast.error(message);
+        setPhase({ kind: "idle" });
+      },
+    });
 
   const handleMicClick = useCallback(() => {
     setPhase({ kind: "recording" });
@@ -322,7 +339,12 @@ export function VoicePlannerCard({
               {RECORDING_STATUS_LABELS[status as keyof typeof RECORDING_STATUS_LABELS] ??
                 "Einen Moment …"}
             </p>
-            {status === "listening" && <VoiceLevelMeter levels={levels} />}
+            {status === "listening" && (
+              <VoiceLevelMeter
+                subscribe={subscribeLevels}
+                getSnapshot={getLevels}
+              />
+            )}
           </div>
           {status === "listening" && (
             <Button

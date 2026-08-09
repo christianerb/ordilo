@@ -28,13 +28,19 @@ let hookCallbacks: {
   onError: (message: string) => void;
 };
 
+// A stable reference: useSyncExternalStore requires getSnapshot to return
+// the *same* value between calls when nothing changed, or it re-renders in
+// a loop — a fresh array literal per call would violate that contract.
+const mockLevels = [0, 0, 0, 0, 0];
+
 vi.mock("@/lib/realtime/use-realtime-transcription", () => ({
   useRealtimeTranscription: vi.fn(
     (callbacks: typeof hookCallbacks) => {
       hookCallbacks = callbacks;
       return {
         status: "listening",
-        levels: [0, 0, 0, 0, 0],
+        subscribeLevels: () => () => {},
+        getLevels: () => mockLevels,
         start: mockStart,
         stop: mockStop,
         cancel: mockCancel,
