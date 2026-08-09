@@ -8,6 +8,7 @@ import type { CalendarEvent } from "@/lib/calendar";
 import { formatGermanDate } from "@/lib/format";
 import { useRealtimeTranscription } from "@/lib/realtime/use-realtime-transcription";
 import { createClient } from "@/lib/supabase/client";
+import { cn } from "@/lib/utils";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 
 /**
@@ -50,6 +51,21 @@ const RECORDING_STATUS_LABELS = {
   listening: "Ich höre zu …",
   processing: "Einen Moment …",
 } as const;
+
+/** Bars that react to the live mic level so it's obvious Ordilo hears you. */
+function VoiceLevelMeter({ levels }: { levels: number[] }) {
+  return (
+    <span className="flex h-4 items-center gap-0.5" role="img" aria-label="Mikrofon-Pegel">
+      {levels.map((level, index) => (
+        <span
+          key={index}
+          className="w-1 rounded-full bg-primary motion-safe:transition-[height] motion-safe:duration-100"
+          style={{ height: `${4 + level * 12}px` }}
+        />
+      ))}
+    </span>
+  );
+}
 
 /** Parse the confirmation payload into a proposal, or null when incomplete. */
 function parseProposal(data: Record<string, unknown>): EventProposal | null {
@@ -180,7 +196,7 @@ export function VoicePlannerCard({
     [familyId],
   );
 
-  const { status, start, stop, cancel } = useRealtimeTranscription({
+  const { status, levels, start, stop, cancel } = useRealtimeTranscription({
     onTranscript: (text) => {
       // A transcript arriving after a cancel/discard is ignored.
       if (phaseRef.current.kind !== "recording") return;
@@ -293,15 +309,21 @@ export function VoicePlannerCard({
       {phase.kind === "recording" && (
         <div className="flex items-center gap-3">
           <span
-            className="flex size-9 items-center justify-center rounded-full bg-primary text-primary-foreground motion-safe:animate-pulse"
+            className={cn(
+              "flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground",
+              status !== "listening" && "motion-safe:animate-pulse",
+            )}
             aria-hidden="true"
           >
             <Mic className="size-4" />
           </span>
-          <p className="flex-1 text-sm font-medium text-foreground">
-            {RECORDING_STATUS_LABELS[status as keyof typeof RECORDING_STATUS_LABELS] ??
-              "Einen Moment …"}
-          </p>
+          <div className="flex-1 space-y-1">
+            <p className="text-sm font-medium text-foreground">
+              {RECORDING_STATUS_LABELS[status as keyof typeof RECORDING_STATUS_LABELS] ??
+                "Einen Moment …"}
+            </p>
+            {status === "listening" && <VoiceLevelMeter levels={levels} />}
+          </div>
           {status === "listening" && (
             <Button
               type="button"

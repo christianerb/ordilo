@@ -28,6 +28,10 @@ export type VoiceStatus =
 /** Hard cap so a forgotten open mic cannot stream (and bill) forever. */
 const MAX_SESSION_MS = 60_000;
 
+/** Number of bars the level meter reports; frequency bins sampled per bar. */
+const LEVEL_BAR_BINS = [1, 3, 5, 8, 12];
+const IDLE_LEVELS = LEVEL_BAR_BINS.map(() => 0);
+
 interface RealtimeServerEvent {
   type: string;
   transcript?: string;
@@ -60,16 +64,22 @@ export function useRealtimeTranscription({
   onError: (message: string) => void;
 }): {
   status: VoiceStatus;
+  /** Live mic-level per bar (0..1), for a "is it hearing me" meter. */
+  levels: number[];
   start: () => Promise<void>;
   stop: () => void;
   cancel: () => void;
 } {
   const [status, setStatus] = useState<VoiceStatus>("idle");
+  const [levels, setLevels] = useState<number[]>(IDLE_LEVELS);
 
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const micRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const levelFrameRef = useRef<number | null>(null);
   /** Raw input transcription, kept as fallback for the model's reply. */
   const inputTranscriptRef = useRef("");
   /** Set once a final transcript was delivered — guards double delivery. */
@@ -88,11 +98,58 @@ export function useRealtimeTranscription({
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
 
+  const stopLevelMeter = useCallback(() => {
+    if (levelFrameRef.current !== null) {
+      cancelAnimationFrame(levelFrameRef.current);
+      levelFrameRef.current = null;
+    }
+    analyserRef.current = null;
+    if (audioCtxRef.current) {
+      void audioCtxRef.current.close();
+      audioCtxRef.current = null;
+    }
+    setLevels(IDLE_LEVELS);
+  }, []);
+
+  /**
+   * Taps the mic stream with an AnalyserNode (never routed to the
+   * speakers) so the recording UI can show real voice activity instead of
+   * a generic "something is happening" pulse. Best-effort: on browsers
+   * without AudioContext support the meter just stays flat.
+   */
+  const startLevelMeter = useCallback((mic: MediaStream) => {
+    const AudioContextCtor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextCtor) return;
+
+    const audioCtx = new AudioContextCtor();
+    const analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 64;
+    analyser.smoothingTimeConstant = 0.6;
+    audioCtx.createMediaStreamSource(mic).connect(analyser);
+    audioCtxRef.current = audioCtx;
+    analyserRef.current = analyser;
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      if (!analyserRef.current) return;
+      analyserRef.current.getByteFrequencyData(data);
+      setLevels(
+        LEVEL_BAR_BINS.map((bin) => Math.min(1, (data[bin] ?? 0) / 200)),
+      );
+      levelFrameRef.current = requestAnimationFrame(tick);
+    };
+    levelFrameRef.current = requestAnimationFrame(tick);
+  }, []);
+
   const cleanup = useCallback(() => {
     if (timerRef.current) {
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
+    stopLevelMeter();
     dcRef.current?.close();
     dcRef.current = null;
     pcRef.current?.close();
@@ -101,7 +158,7 @@ export function useRealtimeTranscription({
       for (const track of micRef.current.getTracks()) track.stop();
       micRef.current = null;
     }
-  }, []);
+  }, [stopLevelMeter]);
 
   const deliver = useCallback(
     (text: string) => {
@@ -218,6 +275,7 @@ export function useRealtimeTranscription({
       return;
     }
     micRef.current = mic;
+    startLevelMeter(mic);
 
     // 3. Peer connection + server events channel.
     const pc = new RTCPeerConnection();
@@ -279,7 +337,7 @@ export function useRealtimeTranscription({
       // Cap reached — deliver whatever is already transcribed.
       deliver(inputTranscriptRef.current);
     }, MAX_SESSION_MS);
-  }, [deliver, fail, handleServerEvent]);
+  }, [deliver, fail, handleServerEvent, startLevelMeter]);
 
   /** Finish the current utterance now instead of waiting for the VAD. */
   const stop = useCallback(() => {
@@ -311,5 +369,5 @@ export function useRealtimeTranscription({
     };
   });
 
-  return { status, start, stop, cancel };
+  return { status, levels, start, stop, cancel };
 }

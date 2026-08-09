@@ -34,6 +34,7 @@ vi.mock("@/lib/realtime/use-realtime-transcription", () => ({
       hookCallbacks = callbacks;
       return {
         status: "listening",
+        levels: [0, 0, 0, 0, 0],
         start: mockStart,
         stop: mockStop,
         cancel: mockCancel,
