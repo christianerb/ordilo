@@ -46,6 +46,9 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     recurrence: "none",
     recurrence_until: null,
     recurrence_exceptions: [],
+    location: null,
+    responsible_member_id: null,
+    document_id: null,
     attendees: [{ id: "m-1", name: "Emma" }],
     ...overrides,
   };
@@ -162,6 +165,9 @@ describe("EventSheet", () => {
         recurrence: "weekly",
         recurrence_until: null,
         recurrence_exceptions: [],
+        location: null,
+        responsible_member_id: null,
+        document_id: null,
       });
     });
     expect(mockAttendeeInsert).toHaveBeenCalledWith([
@@ -297,5 +303,41 @@ describe("EventSheet", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Termin löschen" }));
     expect(onDeleteRequest).toHaveBeenCalledWith(event);
+  });
+
+  it("warns about a double-booked person without blocking the save", () => {
+    renderSheet({
+      existingEvents: [
+        makeEvent({
+          id: "other-1",
+          title: "Judo",
+          all_day: false,
+          starts_time: "16:00:00",
+          ends_time: "17:00:00",
+          attendees: [{ id: "m-1", name: "Emma" }],
+        }),
+      ],
+    });
+
+    // No warning while the draft is all-day.
+    expect(screen.queryByTestId("event-conflict-warning")).toBeNull();
+
+    fireEvent.click(screen.getByLabelText("Ganztägig"));
+    fireEvent.change(screen.getByLabelText("Beginn"), {
+      target: { value: "16:30" },
+    });
+    fireEvent.change(screen.getByLabelText("Ende"), {
+      target: { value: "17:30" },
+    });
+    fireEvent.click(screen.getByTestId("event-attendee-chip-m-1"));
+
+    const warning = screen.getByTestId("event-conflict-warning");
+    expect(warning.textContent).toContain("Emma");
+    expect(warning.textContent).toContain("Judo");
+    // The save button stays enabled — the family decides.
+    expect(
+      (screen.getByRole("button", { name: "Termin speichern" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
   });
 });

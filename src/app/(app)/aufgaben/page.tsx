@@ -1,20 +1,104 @@
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import type { CalendarEvent } from "@/lib/calendar";
+import { toCalendarDate } from "@/lib/calendar";
 import type { Database } from "@/types/database";
 import { AufgabenClient } from "./aufgaben-client";
-import { CalendarClient } from "./calendar-client";
+import { CalendarClient, type CalendarSuggestion } from "./calendar-client";
 import { PlannerView } from "./planner-view";
 
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_SUGGESTIONS = 5;
+
+/**
+ * Upcoming document-extracted dates that are not in the calendar yet:
+ * confirmed `date` entities from today onwards, minus everything the family
+ * already dismissed or turned into an event linked to the same document and
+ * day. These surface as suggestion cards on the Planer tab.
+ */
+async function loadCalendarSuggestions(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  familyId: string,
+): Promise<CalendarSuggestion[]> {
+  const today = toCalendarDate(new Date());
+  const [entityResult, dismissalResult] = await Promise.all([
+    supabase
+      .from("extracted_entities")
+      .select("id, entity_value, label, document_id")
+      .eq("family_id", familyId)
+      .eq("entity_type", "date")
+      .eq("confirmed", true)
+      .gte("entity_value", today)
+      .order("entity_value", { ascending: true })
+      .limit(50),
+    supabase
+      .from("calendar_suggestion_dismissals")
+      .select("entity_id")
+      .eq("family_id", familyId),
+  ]);
+
+  const dismissed = new Set(
+    (dismissalResult.data ?? []).map((row) => row.entity_id),
+  );
+  const candidates = (entityResult.data ?? []).filter(
+    (entity) =>
+      ISO_DATE_PATTERN.test(entity.entity_value) &&
+      !dismissed.has(entity.id) &&
+      entity.document_id !== null,
+  );
+  if (candidates.length === 0) return [];
+
+  const documentIds = [...new Set(candidates.map((c) => c.document_id!))];
+  const [documentResult, existingEventResult] = await Promise.all([
+    supabase.from("documents").select("id, title").in("id", documentIds),
+    supabase
+      .from("calendar_events")
+      .select("document_id, starts_on")
+      .eq("family_id", familyId)
+      .in("document_id", documentIds),
+  ]);
+
+  const titleByDocument = new Map(
+    (documentResult.data ?? []).map((doc) => [doc.id, doc.title]),
+  );
+  const alreadyPlanned = new Set(
+    (existingEventResult.data ?? []).map(
+      (event) => `${event.document_id}:${event.starts_on}`,
+    ),
+  );
+
+  const suggestions: CalendarSuggestion[] = [];
+  const seen = new Set<string>();
+  for (const entity of candidates) {
+    const key = `${entity.document_id}:${entity.entity_value}:${entity.label ?? ""}`;
+    if (seen.has(key)) continue;
+    if (alreadyPlanned.has(`${entity.document_id}:${entity.entity_value}`)) {
+      continue;
+    }
+    seen.add(key);
+    suggestions.push({
+      entityId: entity.id,
+      date: entity.entity_value,
+      label: entity.label,
+      documentId: entity.document_id!,
+      documentTitle: titleByDocument.get(entity.document_id!) ?? null,
+    });
+    if (suggestions.length >= MAX_SUGGESTIONS) break;
+  }
+  return suggestions;
+}
+
 async function loadInitialData(): Promise<{
   tasks: TaskCardData[];
   members: AssigneeOption[];
   events: CalendarEvent[];
+  suggestions: CalendarSuggestion[];
   familyId: string | null;
+  currentUserId: string | null;
   error: string | null;
 }> {
   const supabase = await createClient();
@@ -33,33 +117,50 @@ async function loadInitialData(): Promise<{
   }
 
   if (!family) {
-    return { tasks: [], members: [], events: [], familyId: null, error: null };
+    return {
+      tasks: [],
+      members: [],
+      events: [],
+      suggestions: [],
+      familyId: null,
+      currentUserId: null,
+      error: null,
+    };
   }
 
   // Planner data only depends on the family id, not on other results —
-  // fetch members, tasks, and calendar events concurrently.
-  const [memberResult, taskResult, eventResult] = await Promise.all([
-    supabase
-      .from("family_members")
-      .select("id, name, role")
-      .eq("family_id", family.id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("tasks")
-      .select("*")
-      .eq("family_id", family.id)
-      .eq("confirmed", true)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("calendar_events")
-      .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions")
-      .eq("family_id", family.id)
-      .order("starts_on", { ascending: true }),
-  ]);
+  // fetch members, tasks, calendar events, and suggestions concurrently.
+  const [memberResult, taskResult, eventResult, suggestions, userResult, seenResult] =
+    await Promise.all([
+      supabase
+        .from("family_members")
+        .select("id, name, role, avatar_color")
+        .eq("family_id", family.id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("tasks")
+        .select("*")
+        .eq("family_id", family.id)
+        .eq("confirmed", true)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("calendar_events")
+        .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id, created_by")
+        .eq("family_id", family.id)
+        .order("starts_on", { ascending: true }),
+      loadCalendarSuggestions(supabase, family.id).catch(() => []),
+      supabase.auth.getUser(),
+      // The RLS policy already narrows rows to the current user.
+      supabase.from("calendar_event_seen").select("event_id"),
+    ]);
 
   const { data: memberRows } = memberResult;
   const { data: taskRows, error: tasksError } = taskResult;
   const { data: eventRows } = eventResult;
+  const currentUserId = userResult.data.user?.id ?? null;
+  const seenEventIds = new Set(
+    (seenResult.data ?? []).map((row) => row.event_id),
+  );
 
   const members: AssigneeOption[] = (memberRows as MemberRow[] | null) ?? [];
   const memberNameMap = new Map<string, string>();
@@ -88,10 +189,37 @@ async function loadInitialData(): Promise<{
     });
     attendeesByEvent.set(attendee.event_id, existing);
   }
+  const eventDocumentIds = [
+    ...new Set(
+      rawEvents
+        .map((event) => event.document_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const eventDocumentTitles = new Map<string, string | null>();
+  if (eventDocumentIds.length > 0) {
+    const { data: eventDocumentRows } = await supabase
+      .from("documents")
+      .select("id, title")
+      .in("id", eventDocumentIds);
+    for (const doc of eventDocumentRows ?? []) {
+      eventDocumentTitles.set(doc.id, doc.title);
+    }
+  }
+
   const events: CalendarEvent[] = rawEvents.map((event) => ({
     ...event,
     recurrence: event.recurrence as CalendarEvent["recurrence"],
     recurrence_exceptions: event.recurrence_exceptions ?? [],
+    document_title: event.document_id
+      ? eventDocumentTitles.get(event.document_id) ?? null
+      : null,
+    is_new: Boolean(
+      currentUserId &&
+        event.created_by &&
+        event.created_by !== currentUserId &&
+        !seenEventIds.has(event.id),
+    ),
     attendees: attendeesByEvent.get(event.id) ?? [],
   }));
 
@@ -100,13 +228,23 @@ async function loadInitialData(): Promise<{
       tasks: [],
       members,
       events,
+      suggestions,
       familyId: family.id,
+      currentUserId,
       error: "Aufgaben konnten nicht geladen werden. Bitte versuche es später nochmal.",
     };
   }
 
   if (!taskRows || taskRows.length === 0) {
-    return { tasks: [], members, events, familyId: family.id, error: null };
+    return {
+      tasks: [],
+      members,
+      events,
+      suggestions,
+      familyId: family.id,
+      currentUserId,
+      error: null,
+    };
   }
 
   const taskIds = taskRows.map((task) => task.id);
@@ -151,7 +289,15 @@ async function loadInitialData(): Promise<{
     assigned_member_name: task.assigned_to ? memberNameMap.get(task.assigned_to) ?? null : null,
   }));
 
-  return { tasks, members, events, familyId: family.id, error: null };
+  return {
+    tasks,
+    members,
+    events,
+    suggestions,
+    familyId: family.id,
+    currentUserId,
+    error: null,
+  };
 }
 
 export default async function AufgabenPage() {
@@ -159,7 +305,9 @@ export default async function AufgabenPage() {
     tasks: initialTasks,
     members,
     events,
+    suggestions,
     familyId,
+    currentUserId,
     error,
   } = await loadInitialData();
   const taskKey = initialTasks
@@ -184,7 +332,9 @@ export default async function AufgabenPage() {
         calendar={
           <CalendarClient
             initialEvents={events}
+            initialSuggestions={suggestions}
             familyId={familyId}
+            currentUserId={currentUserId}
             members={members}
           />
         }

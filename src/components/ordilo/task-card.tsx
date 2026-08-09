@@ -20,6 +20,8 @@ export interface AssigneeOption {
   id: string;
   name: string;
   role: string | null;
+  /** Member accent color (hex) used e.g. for calendar markers. */
+  avatar_color?: string | null;
 }
 
 export interface TaskCardProps {

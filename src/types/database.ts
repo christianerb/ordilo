@@ -600,6 +600,10 @@ export type Database = {
           recurrence: string;
           recurrence_until: string | null;
           recurrence_exceptions: string[];
+          location: string | null;
+          responsible_member_id: string | null;
+          document_id: string | null;
+          created_by: string | null;
           created_at: string;
         };
         Insert: {
@@ -615,6 +619,10 @@ export type Database = {
           recurrence?: string;
           recurrence_until?: string | null;
           recurrence_exceptions?: string[];
+          location?: string | null;
+          responsible_member_id?: string | null;
+          document_id?: string | null;
+          created_by?: string | null;
           created_at?: string;
         };
         Update: {
@@ -630,6 +638,67 @@ export type Database = {
           recurrence?: string;
           recurrence_until?: string | null;
           recurrence_exceptions?: string[];
+          location?: string | null;
+          responsible_member_id?: string | null;
+          document_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_event_seen --------------------------------------------------
+      calendar_event_seen: {
+        Row: {
+          event_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          event_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_suggestion_dismissals -------------------------------------
+      calendar_suggestion_dismissals: {
+        Row: {
+          family_id: string;
+          entity_id: string;
+          created_at: string;
+        };
+        Insert: {
+          family_id: string;
+          entity_id: string;
+          created_at?: string;
+        };
+        Update: {
+          family_id?: string;
+          entity_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_feed_tokens -------------------------------------------------
+      calendar_feed_tokens: {
+        Row: {
+          family_id: string;
+          token: string;
+          created_at: string;
+        };
+        Insert: {
+          family_id: string;
+          token?: string;
+          created_at?: string;
+        };
+        Update: {
+          family_id?: string;
+          token?: string;
           created_at?: string;
         };
         Relationships: [];

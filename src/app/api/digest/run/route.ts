@@ -6,8 +6,10 @@ import {
   digestSubject,
   digestText,
   DIGEST_HORIZON_DAYS,
+  type DigestEvent,
   type DigestTask,
 } from "@/lib/digest";
+import { eventOccursOn, type CalendarEvent } from "@/lib/calendar";
 
 /**
  * GET|POST /api/digest/run — the daily reminder digest.
@@ -46,6 +48,9 @@ const RESEND_BATCH_SIZE = 100;
  * limit becomes visible instead of a silent PostgREST row cap.
  */
 const TASKS_QUERY_LIMIT = 2000;
+
+/** Upper bound on calendar events considered per run (same rationale). */
+const EVENTS_QUERY_LIMIT = 2000;
 
 interface OutgoingEmail {
   from: string;
@@ -118,12 +123,70 @@ async function handleDigest(request: Request): Promise<Response> {
     byFamily.set(task.family_id, list);
   }
 
-  if (byFamily.size === 0) {
+  // 2b. Find calendar entries happening today or tomorrow ------------------
+  // Recurring series can have started long ago, so the filter keeps every
+  // series plus any one-off that has not ended yet; eventOccursOn expands
+  // occurrences for the two target days.
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const { data: eventRows } = await admin
+    .from("calendar_events")
+    .select(
+      "id, family_id, title, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id",
+    )
+    .lte("starts_on", tomorrow)
+    .or(`ends_on.gte.${today},recurrence.neq.none`)
+    .limit(EVENTS_QUERY_LIMIT);
+
+  const responsibleIds = [
+    ...new Set(
+      (eventRows ?? [])
+        .map((event) => event.responsible_member_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const responsibleNames = new Map<string, string>();
+  if (responsibleIds.length > 0) {
+    const { data: memberRows } = await admin
+      .from("family_members")
+      .select("id, name")
+      .in("id", responsibleIds);
+    for (const member of memberRows ?? []) {
+      responsibleNames.set(member.id, member.name);
+    }
+  }
+
+  const eventsByFamily = new Map<string, DigestEvent[]>();
+  for (const row of eventRows ?? []) {
+    const occurrenceSource = {
+      ...row,
+      recurrence: row.recurrence as CalendarEvent["recurrence"],
+      recurrence_exceptions: row.recurrence_exceptions ?? [],
+    };
+    for (const day of [today, tomorrow]) {
+      if (!eventOccursOn(occurrenceSource, day)) continue;
+      const list = eventsByFamily.get(row.family_id) ?? [];
+      list.push({
+        id: row.id,
+        title: row.title,
+        date: day,
+        starts_time: row.all_day ? null : row.starts_time,
+        location: row.location,
+        responsible_name: row.responsible_member_id
+          ? responsibleNames.get(row.responsible_member_id) ?? null
+          : null,
+      });
+      eventsByFamily.set(row.family_id, list);
+    }
+  }
+
+  if (byFamily.size === 0 && eventsByFamily.size === 0) {
     return Response.json({ status: "ok", families: 0, emails_sent: 0 });
   }
 
   // 3. Resolve family names + member emails -------------------------------
-  const familyIds = [...byFamily.keys()];
+  const familyIds = [...new Set([...byFamily.keys(), ...eventsByFamily.keys()])];
   const [{ data: families }, { data: memberships }] = await Promise.all([
     admin.from("families").select("id, name").in("id", familyIds),
     admin
@@ -158,12 +221,13 @@ async function handleDigest(request: Request): Promise<Response> {
   const outgoing: OutgoingEmail[] = [];
   let familiesNotified = 0;
 
-  for (const [familyId, familyTasks] of byFamily) {
+  for (const familyId of familyIds) {
     const digest = buildFamilyDigest(
       familyId,
       familyName.get(familyId) ?? "",
-      familyTasks,
+      byFamily.get(familyId) ?? [],
       today,
+      eventsByFamily.get(familyId) ?? [],
     );
     if (!digest) continue;
 

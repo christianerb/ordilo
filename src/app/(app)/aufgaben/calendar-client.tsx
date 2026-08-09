@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
+  FileText,
+  Link2,
+  MapPin,
   Repeat,
+  Sparkles,
+  UserCheck,
   Users,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -17,7 +24,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { EventSheet } from "@/components/ordilo/event-sheet";
+import { EventSheet, type EventTemplate } from "@/components/ordilo/event-sheet";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 import {
   calendarDays,
@@ -25,6 +32,7 @@ import {
   isSameCalendarDay,
   isSameCalendarMonth,
   monthStart,
+  RECURRENCE_LABELS,
   shiftMonth,
   toCalendarDate,
   type CalendarEvent,
@@ -38,12 +46,27 @@ import { VoicePlannerCard } from "./voice-planner";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
-const RECURRENCE_LABELS: Record<CalendarEvent["recurrence"], string> = {
-  none: "",
-  weekly: "Wöchentlich",
-  monthly: "Monatlich",
-  yearly: "Jährlich",
-};
+/** An upcoming document-extracted date the family can turn into an event. */
+export interface CalendarSuggestion {
+  entityId: string;
+  date: string;
+  label: string | null;
+  documentId: string;
+  documentTitle: string | null;
+}
+
+/**
+ * Fallback accent colors for members without an avatar color, assigned by
+ * position so each member keeps a stable, distinct hue.
+ */
+const FALLBACK_MEMBER_COLORS = [
+  "#305460",
+  "#7a8b5c",
+  "#a56a4e",
+  "#8d6b94",
+  "#b08a3e",
+  "#5c7a8b",
+];
 
 function sortEvents(events: CalendarEvent[]): CalendarEvent[] {
   return [...events].sort((a, b) => a.starts_on.localeCompare(b.starts_on));
@@ -51,28 +74,76 @@ function sortEvents(events: CalendarEvent[]): CalendarEvent[] {
 
 export function CalendarClient({
   initialEvents,
+  initialSuggestions = [],
   familyId,
+  currentUserId = null,
   members,
 }: {
   initialEvents: CalendarEvent[];
+  initialSuggestions?: CalendarSuggestion[];
   familyId: string | null;
+  currentUserId?: string | null;
   members: AssigneeOption[];
 }) {
   const supabase = createClient();
   const today = new Date();
   const [events, setEvents] = useState(initialEvents);
+  const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [activeMonth, setActiveMonth] = useState(() => monthStart(today));
   const [selectedDate, setSelectedDate] = useState(() => today);
   const [view, setView] = useState<"day" | "three-days" | "week" | "month">("month");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [suggestionTemplate, setSuggestionTemplate] =
+    useState<CalendarSuggestion | null>(null);
+  const [memberFilter, setMemberFilter] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CalendarEvent | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [copyingFeed, setCopyingFeed] = useState(false);
+
+  const memberColors = useMemo(() => {
+    const colors = new Map<string, string>();
+    members.forEach((member, index) => {
+      colors.set(
+        member.id,
+        member.avatar_color ||
+          FALLBACK_MEMBER_COLORS[index % FALLBACK_MEMBER_COLORS.length],
+      );
+    });
+    return colors;
+  }, [members]);
+
+  const memberNames = useMemo(
+    () => new Map(members.map((member) => [member.id, member.name])),
+    [members],
+  );
+
+  /** Accent color for an event: responsible member first, else first attendee. */
+  const eventColor = useCallback(
+    (event: CalendarEvent): string | null => {
+      if (event.responsible_member_id) {
+        return memberColors.get(event.responsible_member_id) ?? null;
+      }
+      const first = event.attendees[0];
+      return first ? memberColors.get(first.id) ?? null : null;
+    },
+    [memberColors],
+  );
+
+  /** Events narrowed to the selected person (attendee or responsible). */
+  const filteredEvents = useMemo(() => {
+    if (!memberFilter) return events;
+    return events.filter(
+      (event) =>
+        event.responsible_member_id === memberFilter ||
+        event.attendees.some((attendee) => attendee.id === memberFilter),
+    );
+  }, [events, memberFilter]);
 
   const days = useMemo(() => calendarDays(activeMonth), [activeMonth]);
   const selectedEvents = useMemo(
-    () => eventsForDay(events, selectedDate),
-    [events, selectedDate],
+    () => eventsForDay(filteredEvents, selectedDate),
+    [filteredEvents, selectedDate],
   );
   const monthTitle = activeMonth.toLocaleDateString("de-DE", {
     month: "long",
@@ -81,8 +152,162 @@ export function CalendarClient({
 
   const openCreate = useCallback(() => {
     setEditingEvent(null);
+    setSuggestionTemplate(null);
     setSheetOpen(true);
   }, []);
+
+  // ---------------------------------------------------------------------
+  // Live family sync: when someone else adds or edits an event, it shows
+  // up here without a reload, marked "Neu" until this user has seen it.
+  // ---------------------------------------------------------------------
+
+  const eventsRef = useRef(events);
+  eventsRef.current = events;
+  /** Events flagged new this session keep their badge while it's open. */
+  const sessionNewRef = useRef<Set<string>>(
+    new Set(initialEvents.filter((e) => e.is_new).map((e) => e.id)),
+  );
+
+  /** Re-fetch the family's events (RLS-scoped) and merge enrichments. */
+  const refreshEvents = useCallback(async () => {
+    if (!familyId) return;
+    const { data: rows } = await supabase
+      .from("calendar_events")
+      .select(
+        "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id, created_by",
+      )
+      .eq("family_id", familyId)
+      .order("starts_on", { ascending: true });
+    if (!rows) return;
+
+    const ids = rows.map((row) => row.id);
+    const [attendeeResult, seenResult] = await Promise.all([
+      ids.length
+        ? supabase
+            .from("calendar_event_attendees")
+            .select("event_id, family_member_id")
+            .in("event_id", ids)
+        : Promise.resolve({ data: [] as { event_id: string; family_member_id: string }[] }),
+      currentUserId
+        ? supabase.from("calendar_event_seen").select("event_id")
+        : Promise.resolve({ data: [] as { event_id: string }[] }),
+    ]);
+
+    const attendeesByEvent = new Map<string, { id: string; name: string }[]>();
+    for (const attendee of attendeeResult.data ?? []) {
+      const list = attendeesByEvent.get(attendee.event_id) ?? [];
+      list.push({
+        id: attendee.family_member_id,
+        name: memberNames.get(attendee.family_member_id) ?? "Familienmitglied",
+      });
+      attendeesByEvent.set(attendee.event_id, list);
+    }
+    const seenIds = new Set((seenResult.data ?? []).map((row) => row.event_id));
+    const previousById = new Map(eventsRef.current.map((e) => [e.id, e]));
+
+    const next: CalendarEvent[] = rows.map((row) => {
+      const isNew = Boolean(
+        currentUserId &&
+          row.created_by &&
+          row.created_by !== currentUserId &&
+          (!seenIds.has(row.id) || sessionNewRef.current.has(row.id)),
+      );
+      if (isNew) sessionNewRef.current.add(row.id);
+      return {
+        ...row,
+        recurrence: row.recurrence as CalendarEvent["recurrence"],
+        recurrence_exceptions: row.recurrence_exceptions ?? [],
+        // Document titles come from the server payload; keep what we have.
+        document_title: previousById.get(row.id)?.document_title ?? null,
+        is_new: isNew,
+        attendees: attendeesByEvent.get(row.id) ?? [],
+      };
+    });
+
+    // A quiet heads-up when a brand-new event from someone else arrives.
+    const arrived = next.filter((e) => e.is_new && !previousById.has(e.id));
+    if (arrived.length === 1) {
+      toast.info(`Neuer Termin von deiner Familie: „${arrived[0].title}“`);
+    } else if (arrived.length > 1) {
+      toast.info(`${arrived.length} neue Termine von deiner Familie`);
+    }
+
+    setEvents(sortEvents(next));
+  }, [familyId, currentUserId, memberNames, supabase]);
+
+  useMountEffect(() => {
+    if (!familyId) return;
+    // Defensive: test mocks (and any non-realtime client) don't implement
+    // channel(); the page then simply stays request/response.
+    if (typeof supabase.channel !== "function") return;
+
+    const channel = supabase
+      .channel(`calendar-events-${familyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "calendar_events",
+          filter: `family_id=eq.${familyId}`,
+        },
+        () => void refreshEvents(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "calendar_events",
+          filter: `family_id=eq.${familyId}`,
+        },
+        () => void refreshEvents(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  });
+
+  // Seeing is acknowledging: once the user has a "Neu" event in front of
+  // them — the day list on load, a tapped day, or an opened event — record
+  // it as seen. The badge stays for this session (so it can be noticed)
+  // and is gone on the next visit. Event-handler based on purpose: no
+  // reactive effect, seen state only changes on user-visible moments.
+  const recordedSeenRef = useRef<Set<string>>(new Set());
+  const markEventsSeen = useCallback(
+    (shown: CalendarEvent[]) => {
+      if (!currentUserId) return;
+      const unrecorded = shown.filter(
+        (event) => event.is_new && !recordedSeenRef.current.has(event.id),
+      );
+      if (unrecorded.length === 0) return;
+      for (const event of unrecorded) recordedSeenRef.current.add(event.id);
+      void supabase.from("calendar_event_seen").upsert(
+        unrecorded.map((event) => ({
+          event_id: event.id,
+          user_id: currentUserId,
+        })),
+        { onConflict: "event_id,user_id", ignoreDuplicates: true },
+      );
+    },
+    [currentUserId, supabase],
+  );
+
+  // The initially selected day (today) is on screen right away.
+  useMountEffect(() => {
+    markEventsSeen(eventsForDay(initialEvents, selectedDate));
+  });
+
+  /** Day tap: select it and acknowledge its visible events. */
+  const selectDay = useCallback(
+    (day: Date) => {
+      setSelectedDate(day);
+      markEventsSeen(eventsForDay(filteredEvents, day));
+    },
+    [filteredEvents, markEventsSeen],
+  );
 
   // The page header's "Termin" button opens this view's create sheet via
   // the planner actions context (registered on mount, cleared on unmount).
@@ -93,10 +318,85 @@ export function CalendarClient({
     return () => plannerActions?.setCreateHandler(null);
   });
 
-  const openEdit = useCallback((event: CalendarEvent) => {
-    setEditingEvent(event);
+  const openEdit = useCallback(
+    (event: CalendarEvent) => {
+      // Opening an event is the clearest form of having seen it.
+      markEventsSeen([event]);
+      setEditingEvent(event);
+      setSuggestionTemplate(null);
+      setSheetOpen(true);
+    },
+    [markEventsSeen],
+  );
+
+  /** Remember a handled suggestion so it never comes back. */
+  const recordDismissal = useCallback(
+    async (entityId: string) => {
+      if (!familyId) return false;
+      const { error } = await supabase
+        .from("calendar_suggestion_dismissals")
+        .insert({ family_id: familyId, entity_id: entityId });
+      return !error;
+    },
+    [familyId, supabase],
+  );
+
+  const acceptSuggestion = useCallback((suggestion: CalendarSuggestion) => {
+    setEditingEvent(null);
+    setSuggestionTemplate(suggestion);
     setSheetOpen(true);
   }, []);
+
+  const hideSuggestion = useCallback(
+    async (suggestion: CalendarSuggestion) => {
+      const ok = await recordDismissal(suggestion.entityId);
+      if (!ok) {
+        toast.error("Ausblenden hat nicht geklappt.");
+        return;
+      }
+      setSuggestions((current) =>
+        current.filter((s) => s.entityId !== suggestion.entityId),
+      );
+    },
+    [recordDismissal],
+  );
+
+  /**
+   * Copy the family's ICS subscription URL, creating the feed token on
+   * first use. The link works in Google/Apple/Outlook calendar apps.
+   */
+  const copyFeedLink = useCallback(async () => {
+    if (!familyId) return;
+    setCopyingFeed(true);
+    try {
+      let { data: tokenRow } = await supabase
+        .from("calendar_feed_tokens")
+        .select("token")
+        .eq("family_id", familyId)
+        .maybeSingle();
+      if (!tokenRow) {
+        const { data: created, error } = await supabase
+          .from("calendar_feed_tokens")
+          .insert({ family_id: familyId })
+          .select("token")
+          .single();
+        if (error || !created) {
+          toast.error("Der Kalender-Link konnte nicht erstellt werden.");
+          return;
+        }
+        tokenRow = created;
+      }
+      const url = `${window.location.origin}/api/calendar/ics?token=${tokenRow.token}`;
+      await navigator.clipboard.writeText(url);
+      toast.success(
+        "Link kopiert. Füge ihn in deiner Kalender-App als Abo hinzu.",
+      );
+    } catch {
+      toast.error("Der Link konnte nicht kopiert werden.");
+    } finally {
+      setCopyingFeed(false);
+    }
+  }, [familyId, supabase]);
 
   /** Show the day an event lives on after it was created or edited. */
   const revealEvent = useCallback((event: CalendarEvent) => {
@@ -114,10 +414,20 @@ export function CalendarClient({
               current.map((event) => (event.id === saved.id ? saved : event)),
             ),
       );
+      // A save from a suggestion resolves it: dismiss the source entity so
+      // the card disappears for good.
+      if (mode === "created" && suggestionTemplate) {
+        const entityId = suggestionTemplate.entityId;
+        setSuggestions((current) =>
+          current.filter((s) => s.entityId !== entityId),
+        );
+        setSuggestionTemplate(null);
+        void recordDismissal(entityId);
+      }
       revealEvent(saved);
       toast.success(mode === "created" ? "Termin eingetragen" : "Gespeichert");
     },
-    [revealEvent],
+    [revealEvent, suggestionTemplate, recordDismissal],
   );
 
   const handleEventCreatedByVoice = useCallback(
@@ -195,6 +505,58 @@ export function CalendarClient({
         aria-label="Kalender"
         data-testid="family-calendar"
       >
+        {members.length > 1 && (
+          <div
+            className="mb-3 flex flex-wrap gap-1.5"
+            role="group"
+            aria-label="Nach Person filtern"
+            data-testid="calendar-member-filter"
+          >
+            <button
+              type="button"
+              onClick={() => setMemberFilter(null)}
+              aria-pressed={memberFilter === null}
+              className={cn(
+                "inline-flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                memberFilter === null
+                  ? "border-foreground/70 bg-foreground text-background"
+                  : "border-border bg-card text-foreground",
+              )}
+            >
+              Alle
+            </button>
+            {members.map((member) => {
+              const selected = memberFilter === member.id;
+              return (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() =>
+                    setMemberFilter((current) =>
+                      current === member.id ? null : member.id,
+                    )
+                  }
+                  aria-pressed={selected}
+                  data-testid={`calendar-filter-${member.id}`}
+                  className={cn(
+                    "inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    selected
+                      ? "border-foreground/70 bg-foreground text-background"
+                      : "border-border bg-card text-foreground",
+                  )}
+                >
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: memberColors.get(member.id) }}
+                    aria-hidden="true"
+                  />
+                  {member.name}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="mb-3 grid grid-cols-4 rounded-ordilo-sm bg-secondary p-1 text-xs">
           {([
             ["day", "Tag"],
@@ -212,19 +574,23 @@ export function CalendarClient({
           <div className={cn("grid gap-2", view === "week" ? "grid-cols-7" : view === "three-days" ? "grid-cols-3" : "grid-cols-1")}>
             {Array.from({ length: view === "week" ? 7 : view === "three-days" ? 3 : 1 }, (_, index) => {
               const day = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + index);
-              const dayEvents = eventsForDay(events, day);
+              const dayEvents = eventsForDay(filteredEvents, day);
               return <div key={toCalendarDate(day)} className="min-h-32 rounded-ordilo-sm border border-border p-2">
                 <p className="text-xs font-medium">{day.toLocaleDateString("de-DE", { weekday: "short", day: "numeric" })}</p>
-                {dayEvents.map((event) => (
-                  <button
-                    key={event.id}
-                    type="button"
-                    onClick={() => openEdit(event)}
-                    className="mt-2 block w-full truncate rounded bg-primary/10 px-1.5 py-1 text-left text-[11px] text-primary"
-                  >
-                    {event.title}
-                  </button>
-                ))}
+                {dayEvents.map((event) => {
+                  const color = eventColor(event);
+                  return (
+                    <button
+                      key={event.id}
+                      type="button"
+                      onClick={() => openEdit(event)}
+                      className="mt-2 block w-full truncate rounded border-l-2 border-transparent bg-primary/10 px-1.5 py-1 text-left text-[11px] text-primary"
+                      style={color ? { borderLeftColor: color } : undefined}
+                    >
+                      {event.title}
+                    </button>
+                  );
+                })}
               </div>;
             })}
           </div>
@@ -267,7 +633,7 @@ export function CalendarClient({
           ))}
 
           {days.map((day) => {
-            const dayEvents = eventsForDay(events, day);
+            const dayEvents = eventsForDay(filteredEvents, day);
             const isCurrentMonth = isSameCalendarMonth(day, activeMonth);
             const isSelected = isSameCalendarDay(day, selectedDate);
             const isToday = isSameCalendarDay(day, today);
@@ -276,7 +642,7 @@ export function CalendarClient({
               <button
                 key={toCalendarDate(day)}
                 type="button"
-                onClick={() => setSelectedDate(day)}
+                onClick={() => selectDay(day)}
                 className={cn(
                   "relative flex min-h-11 flex-col items-center rounded-ordilo-sm px-1 py-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-16 sm:items-start sm:p-2",
                   !isCurrentMonth && "text-muted-foreground/45",
@@ -302,9 +668,21 @@ export function CalendarClient({
                 )}
                 {dayEvents.length > 0 && (
                   <span
-                    className="mt-auto size-1.5 rounded-full bg-primary sm:hidden"
+                    className="mt-auto flex items-center gap-0.5 sm:hidden"
                     aria-hidden="true"
-                  />
+                  >
+                    {dayEvents.slice(0, 3).map((event) => (
+                      <span
+                        key={event.id}
+                        className="size-1.5 rounded-full bg-primary"
+                        style={
+                          eventColor(event)
+                            ? { backgroundColor: eventColor(event)! }
+                            : undefined
+                        }
+                      />
+                    ))}
+                  </span>
                 )}
               </button>
             );
@@ -324,46 +702,84 @@ export function CalendarClient({
 
         {selectedEvents.length > 0 ? (
           <div className="space-y-2">
-            {selectedEvents.map((event) => (
-              <button
-                key={event.id}
-                type="button"
-                onClick={() => openEdit(event)}
-                className="block w-full rounded-ordilo-sm border border-border bg-card px-3 py-2.5 text-left shadow-card transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                data-testid={`calendar-event-${event.id}`}
-              >
-                <p className="text-sm font-medium text-foreground">{event.title}</p>
-                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                  {event.starts_on !== event.ends_on && (
-                    <span>
-                      {formatGermanDate(event.starts_on)} bis{" "}
-                      {formatGermanDate(event.ends_on)}
+            {selectedEvents.map((event) => {
+              const color = eventColor(event);
+              const responsibleName = event.responsible_member_id
+                ? memberNames.get(event.responsible_member_id)
+                : null;
+              return (
+                <button
+                  key={event.id}
+                  type="button"
+                  onClick={() => openEdit(event)}
+                  className="block w-full rounded-ordilo-sm border border-border border-l-[3px] bg-card px-3 py-2.5 text-left shadow-card transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  style={color ? { borderLeftColor: color } : undefined}
+                  data-testid={`calendar-event-${event.id}`}
+                >
+                  <p className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    {event.title}
+                    {event.is_new && (
+                      <span
+                        className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
+                        data-testid={`calendar-event-new-${event.id}`}
+                      >
+                        Neu
+                      </span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    {event.starts_on !== event.ends_on && (
+                      <span>
+                        {formatGermanDate(event.starts_on)} bis{" "}
+                        {formatGermanDate(event.ends_on)}
+                      </span>
+                    )}
+                    {!event.all_day && event.starts_time && (
+                      <span>
+                        {event.starts_time.slice(0, 5)}
+                        {event.ends_time && ` bis ${event.ends_time.slice(0, 5)}`} Uhr
+                      </span>
+                    )}
+                    {event.location && (
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="size-3" aria-hidden="true" />
+                        {event.location}
+                      </span>
+                    )}
+                    {event.recurrence !== "none" && (
+                      <span className="inline-flex items-center gap-1">
+                        <Repeat className="size-3" aria-hidden="true" />
+                        {RECURRENCE_LABELS[event.recurrence]}
+                      </span>
+                    )}
+                    {responsibleName && (
+                      <span className="inline-flex items-center gap-1">
+                        <UserCheck className="size-3" aria-hidden="true" />
+                        {responsibleName} kümmert sich
+                      </span>
+                    )}
+                    {event.attendees.length > 0 && (
+                      <span className="inline-flex items-center gap-1">
+                        <Users className="size-3" aria-hidden="true" />
+                        {event.attendees.map((a) => a.name).join(", ")}
+                      </span>
+                    )}
+                  </p>
+                  {event.note && (
+                    <p className="mt-1 text-sm text-muted-foreground">{event.note}</p>
+                  )}
+                  {event.document_id && (
+                    <span
+                      className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
+                      data-testid={`calendar-event-document-${event.id}`}
+                    >
+                      <FileText className="size-3" aria-hidden="true" />
+                      {event.document_title ?? "Aus einem Dokument"}
                     </span>
                   )}
-                  {!event.all_day && event.starts_time && (
-                    <span>
-                      {event.starts_time.slice(0, 5)}
-                      {event.ends_time && ` bis ${event.ends_time.slice(0, 5)}`} Uhr
-                    </span>
-                  )}
-                  {event.recurrence !== "none" && (
-                    <span className="inline-flex items-center gap-1">
-                      <Repeat className="size-3" aria-hidden="true" />
-                      {RECURRENCE_LABELS[event.recurrence]}
-                    </span>
-                  )}
-                  {event.attendees.length > 0 && (
-                    <span className="inline-flex items-center gap-1">
-                      <Users className="size-3" aria-hidden="true" />
-                      {event.attendees.map((a) => a.name).join(", ")}
-                    </span>
-                  )}
-                </p>
-                {event.note && (
-                  <p className="mt-1 text-sm text-muted-foreground">{event.note}</p>
-                )}
-              </button>
-            ))}
+                </button>
+              );
+            })}
           </div>
         ) : (
           <div className="rounded-ordilo-sm bg-secondary/60 px-3 py-3 text-sm text-muted-foreground">
@@ -372,6 +788,71 @@ export function CalendarClient({
           </div>
         )}
       </section>
+
+      {familyId && suggestions.length > 0 && (
+        <section
+          aria-label="Terminvorschläge aus Dokumenten"
+          data-testid="calendar-suggestions"
+        >
+          <div className="mb-2 flex items-center gap-2">
+            <Sparkles className="size-4 text-primary" aria-hidden="true" />
+            <h2 className="text-sm font-semibold text-foreground">
+              Aus euren Dokumenten
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {suggestions.map((suggestion) => (
+              <div
+                key={suggestion.entityId}
+                className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-card px-3 py-2.5 shadow-card"
+                data-testid={`calendar-suggestion-${suggestion.entityId}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {suggestion.label ?? suggestion.documentTitle ?? "Termin"}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    <span>{formatGermanDate(suggestion.date)}</span>
+                    {suggestion.documentTitle && (
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <FileText
+                          className="size-3 shrink-0"
+                          aria-hidden="true"
+                        />
+                        <span className="truncate">
+                          {suggestion.documentTitle}
+                        </span>
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="gap-1"
+                  onClick={() => acceptSuggestion(suggestion)}
+                  data-testid={`suggestion-accept-${suggestion.entityId}`}
+                >
+                  <CalendarPlus className="size-3.5" aria-hidden="true" />
+                  Eintragen
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-8 text-muted-foreground"
+                  onClick={() => void hideSuggestion(suggestion)}
+                  aria-label="Vorschlag ausblenden"
+                  data-testid={`suggestion-dismiss-${suggestion.entityId}`}
+                >
+                  <X className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {familyId && (
         <VoicePlannerCard
@@ -382,14 +863,68 @@ export function CalendarClient({
       )}
 
       {familyId && (
+        <section
+          className="flex items-center gap-3 rounded-ordilo-md border border-border bg-card p-3 shadow-card sm:p-4"
+          aria-label="Kalender abonnieren"
+        >
+          <Link2
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">
+              Im eigenen Kalender sehen
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Abonniert den Familienkalender in Google, Apple oder Outlook.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void copyFeedLink()}
+            disabled={copyingFeed}
+            data-testid="calendar-feed-copy-button"
+          >
+            Link kopieren
+          </Button>
+        </section>
+      )}
+
+      {familyId && (
         <EventSheet
-          key={editingEvent ? `edit-${editingEvent.id}` : "create"}
+          key={
+            editingEvent
+              ? `edit-${editingEvent.id}`
+              : suggestionTemplate
+                ? `suggest-${suggestionTemplate.entityId}`
+                : "create"
+          }
           open={sheetOpen}
-          onOpenChange={setSheetOpen}
+          onOpenChange={(open) => {
+            setSheetOpen(open);
+            if (!open) setSuggestionTemplate(null);
+          }}
           familyId={familyId}
           members={members}
           event={editingEvent}
+          existingEvents={events}
           defaultDate={toCalendarDate(selectedDate)}
+          template={
+            suggestionTemplate
+              ? ({
+                  title:
+                    suggestionTemplate.label ??
+                    suggestionTemplate.documentTitle ??
+                    "",
+                  starts_on: suggestionTemplate.date,
+                  ends_on: suggestionTemplate.date,
+                  document_id: suggestionTemplate.documentId,
+                  document_title: suggestionTemplate.documentTitle,
+                } satisfies EventTemplate)
+              : null
+          }
           onSaved={handleSaved}
           onDeleteRequest={handleDeleteRequest}
         />

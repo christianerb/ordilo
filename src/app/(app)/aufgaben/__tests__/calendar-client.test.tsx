@@ -22,12 +22,17 @@ const mockAttendeeInsert = vi.fn();
 const mockAttendeeDeleteIn = vi.fn();
 const mockAttendeeDeleteEq = vi.fn(() => ({ in: mockAttendeeDeleteIn }));
 const mockAttendeeDelete = vi.fn(() => ({ eq: mockAttendeeDeleteEq }));
+const mockDismissalInsert = vi.fn();
 
-const mockFrom = vi.fn((table: string) =>
-  table === "calendar_event_attendees"
-    ? { insert: mockAttendeeInsert, delete: mockAttendeeDelete }
-    : { insert: mockInsert, update: mockUpdate, delete: mockDelete },
-);
+const mockFrom = vi.fn((table: string) => {
+  if (table === "calendar_event_attendees") {
+    return { insert: mockAttendeeInsert, delete: mockAttendeeDelete };
+  }
+  if (table === "calendar_suggestion_dismissals") {
+    return { insert: mockDismissalInsert };
+  }
+  return { insert: mockInsert, update: mockUpdate, delete: mockDelete };
+});
 
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({ from: mockFrom }),
@@ -72,6 +77,9 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
     recurrence: "none",
     recurrence_until: null,
     recurrence_exceptions: [],
+    location: null,
+    responsible_member_id: null,
+    document_id: null,
     attendees: [],
     ...overrides,
   };
@@ -84,6 +92,7 @@ beforeEach(() => {
   mockDeleteEq.mockResolvedValue({ error: null });
   mockAttendeeInsert.mockResolvedValue({ error: null });
   mockAttendeeDeleteIn.mockResolvedValue({ error: null });
+  mockDismissalInsert.mockResolvedValue({ error: null });
 });
 
 describe("CalendarClient", () => {
@@ -151,6 +160,9 @@ describe("CalendarClient", () => {
         recurrence: "none",
         recurrence_until: null,
         recurrence_exceptions: [],
+        location: null,
+        responsible_member_id: null,
+        document_id: null,
       });
     });
     await waitFor(() => {
@@ -299,5 +311,140 @@ describe("CalendarClient", () => {
     await waitFor(() => {
       expect(mockDeleteEq).toHaveBeenCalledWith("id", "event-1");
     });
+  });
+
+  it("filters the day list to the selected member", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[
+          makeEvent({
+            id: "event-emma",
+            title: "Schwimmen",
+            note: null,
+            attendees: [{ id: "m-1", name: "Emma" }],
+          }),
+          makeEvent({
+            id: "event-jonas",
+            title: "Judo",
+            note: null,
+            responsible_member_id: "m-2",
+            attendees: [],
+          }),
+        ]}
+      />,
+    );
+
+    const dayEvents = () => within(screen.getByTestId("calendar-day-events"));
+    expect(dayEvents().getByText("Schwimmen")).toBeInTheDocument();
+    expect(dayEvents().getByText("Judo")).toBeInTheDocument();
+
+    // Filtering by Emma keeps her event; Jonas's (via responsible) is hidden.
+    fireEvent.click(screen.getByTestId("calendar-filter-m-1"));
+    expect(dayEvents().getByText("Schwimmen")).toBeInTheDocument();
+    expect(dayEvents().queryByText("Judo")).not.toBeInTheDocument();
+
+    // The responsible member also counts as "their" event.
+    fireEvent.click(screen.getByTestId("calendar-filter-m-2"));
+    expect(dayEvents().queryByText("Schwimmen")).not.toBeInTheDocument();
+    expect(dayEvents().getByText("Judo")).toBeInTheDocument();
+
+    // Tapping the active chip again clears the filter.
+    fireEvent.click(screen.getByTestId("calendar-filter-m-2"));
+    expect(dayEvents().getByText("Schwimmen")).toBeInTheDocument();
+  });
+
+  it("hides a document suggestion when dismissed", async () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[]}
+        initialSuggestions={[
+          {
+            entityId: "entity-1",
+            date: "2026-09-01",
+            label: "Elternabend",
+            documentId: "doc-1",
+            documentTitle: "Elternbrief Klasse 3b",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Elternabend")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("suggestion-dismiss-entity-1"));
+
+    await waitFor(() => {
+      expect(mockDismissalInsert).toHaveBeenCalledWith({
+        family_id: "family-1",
+        entity_id: "entity-1",
+      });
+      expect(screen.queryByText("Elternabend")).not.toBeInTheDocument();
+    });
+  });
+
+  it("turns a suggestion into a linked event and dismisses it", async () => {
+    mockSingle.mockResolvedValueOnce({
+      data: {
+        id: "event-5",
+        title: "Elternabend",
+        note: null,
+        starts_on: "2026-09-01",
+        ends_on: "2026-09-01",
+        all_day: true,
+        starts_time: null,
+        ends_time: null,
+        recurrence: "none",
+        recurrence_until: null,
+        recurrence_exceptions: [],
+        location: null,
+        responsible_member_id: null,
+        document_id: "doc-1",
+      },
+      error: null,
+    });
+
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[]}
+        initialSuggestions={[
+          {
+            entityId: "entity-1",
+            date: "2026-09-01",
+            label: "Elternabend",
+            documentId: "doc-1",
+            documentTitle: "Elternbrief Klasse 3b",
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("suggestion-accept-entity-1"));
+
+    // The sheet opens prefilled from the suggestion.
+    const titleInput = screen.getByLabelText(
+      "Was ist geplant?",
+    ) as HTMLInputElement;
+    expect(titleInput.value).toBe("Elternabend");
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+
+    await waitFor(() => {
+      expect(mockInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Elternabend",
+          starts_on: "2026-09-01",
+          document_id: "doc-1",
+        }),
+      );
+      expect(mockDismissalInsert).toHaveBeenCalledWith({
+        family_id: "family-1",
+        entity_id: "entity-1",
+      });
+    });
+    expect(screen.queryByTestId("calendar-suggestion-entity-1")).not.toBeInTheDocument();
   });
 });

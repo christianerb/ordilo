@@ -42,6 +42,7 @@ type VoicePhase =
 const RECURRENCE_LABELS: Record<CalendarEvent["recurrence"], string> = {
   none: "Keine Wiederholung",
   weekly: "Wöchentlich",
+  biweekly: "Alle 14 Tage",
   monthly: "Monatlich",
   yearly: "Jährlich",
 };
@@ -92,7 +93,7 @@ function parseProposal(data: Record<string, unknown>): EventProposal | null {
   if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(startsOn) || endsOn < startsOn) {
     return null;
   }
-  const recurrence = ["none", "weekly", "monthly", "yearly"].includes(
+  const recurrence = ["none", "weekly", "biweekly", "monthly", "yearly"].includes(
     String(data.recurrence),
   )
     ? (String(data.recurrence) as CalendarEvent["recurrence"])
@@ -255,7 +256,7 @@ export function VoicePlannerCard({
             recurrence_exceptions: [],
           })
           .select(
-            "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions",
+            "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id",
           )
           .single();
 

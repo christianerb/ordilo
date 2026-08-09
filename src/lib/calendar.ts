@@ -7,11 +7,30 @@ export interface CalendarEvent {
   all_day: boolean;
   starts_time: string | null;
   ends_time: string | null;
-  recurrence: "none" | "weekly" | "monthly" | "yearly";
+  recurrence: "none" | "weekly" | "biweekly" | "monthly" | "yearly";
   recurrence_until: string | null;
   recurrence_exceptions: string[];
+  location: string | null;
+  /** Family member who owns the logistics ("Wer kümmert sich?"). */
+  responsible_member_id: string | null;
+  /** Source document when the event came from a scanned/uploaded document. */
+  document_id: string | null;
+  document_title?: string | null;
+  /** Auth user who created the event (null for legacy rows). */
+  created_by?: string | null;
+  /** True when someone else added this and the current user hasn't seen it. */
+  is_new?: boolean;
   attendees: Array<{ id: string; name: string }>;
 }
+
+/** German labels for the recurrence rhythms, shared across planner UIs. */
+export const RECURRENCE_LABELS: Record<CalendarEvent["recurrence"], string> = {
+  none: "",
+  weekly: "Wöchentlich",
+  biweekly: "Alle 14 Tage",
+  monthly: "Monatlich",
+  yearly: "Jährlich",
+};
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -58,7 +77,21 @@ export function eventsForDay(
   return events.filter((event) => eventOccursOn(event, dateString));
 }
 
-export function eventOccursOn(event: CalendarEvent, date: string): boolean {
+/** The fields occurrence expansion actually needs — callers with bare DB
+    rows (digest, home) don't have to fake a full CalendarEvent. */
+export type EventOccurrenceSource = Pick<
+  CalendarEvent,
+  | "starts_on"
+  | "ends_on"
+  | "recurrence"
+  | "recurrence_until"
+  | "recurrence_exceptions"
+>;
+
+export function eventOccursOn(
+  event: EventOccurrenceSource,
+  date: string,
+): boolean {
   if (
     !DATE_PATTERN.test(event.starts_on) ||
     !DATE_PATTERN.test(event.ends_on) ||
@@ -81,11 +114,12 @@ export function eventOccursOn(event: CalendarEvent, date: string): boolean {
 
   if (current.getTime() < start.getTime()) return false;
 
-  if (event.recurrence === "weekly") {
+  if (event.recurrence === "weekly" || event.recurrence === "biweekly") {
+    const cycle = event.recurrence === "weekly" ? 7 : 14;
     const dayDelta = Math.round(
       (current.getTime() - start.getTime()) / 86_400_000,
     );
-    return dayDelta % 7 >= 0 && dayDelta % 7 <= durationDays;
+    return dayDelta % cycle >= 0 && dayDelta % cycle <= durationDays;
   }
 
   if (event.recurrence === "monthly") {
@@ -121,6 +155,79 @@ export function eventOccursOn(event: CalendarEvent, date: string): boolean {
     12,
   );
   return current >= occurrenceStart && current <= occurrenceEnd;
+}
+
+/** A draft being checked for schedule conflicts before saving. */
+export interface ConflictDraft {
+  /** Event id when editing (excluded from the check), null when creating. */
+  id: string | null;
+  starts_on: string;
+  all_day: boolean;
+  /** HH:MM */
+  starts_time: string | null;
+  /** HH:MM */
+  ends_time: string | null;
+  /** Everyone involved: attendees plus the responsible member. */
+  memberIds: string[];
+}
+
+export interface ScheduleConflict {
+  event: CalendarEvent;
+  /** The involved members who are double-booked. */
+  memberIds: string[];
+}
+
+/** People involved in an event: attendees plus the responsible member. */
+function involvedMemberIds(event: CalendarEvent): string[] {
+  const ids = event.attendees.map((attendee) => attendee.id);
+  if (
+    event.responsible_member_id &&
+    !ids.includes(event.responsible_member_id)
+  ) {
+    ids.push(event.responsible_member_id);
+  }
+  return ids;
+}
+
+/**
+ * Finds double-bookings for a timed draft: existing timed events on the
+ * same day (recurring occurrences included) whose time range overlaps and
+ * that share at least one involved person. All-day entries (holidays,
+ * "Kita zu") are deliberately not conflicts — they coexist with anything.
+ */
+export function findScheduleConflicts(
+  events: CalendarEvent[],
+  draft: ConflictDraft,
+): ScheduleConflict[] {
+  if (
+    draft.all_day ||
+    !draft.starts_time ||
+    !draft.ends_time ||
+    draft.memberIds.length === 0 ||
+    !DATE_PATTERN.test(draft.starts_on)
+  ) {
+    return [];
+  }
+
+  const conflicts: ScheduleConflict[] = [];
+  for (const event of events) {
+    if (event.id === draft.id) continue;
+    if (event.all_day || !event.starts_time || !event.ends_time) continue;
+    if (!eventOccursOn(event, draft.starts_on)) continue;
+
+    // HH:MM strings compare correctly as strings.
+    const eventStart = event.starts_time.slice(0, 5);
+    const eventEnd = event.ends_time.slice(0, 5);
+    const overlaps = eventStart < draft.ends_time && draft.starts_time < eventEnd;
+    if (!overlaps) continue;
+
+    const involved = new Set(involvedMemberIds(event));
+    const shared = draft.memberIds.filter((id) => involved.has(id));
+    if (shared.length > 0) {
+      conflicts.push({ event, memberIds: shared });
+    }
+  }
+  return conflicts;
 }
 
 export function isSameCalendarDay(a: Date, b: Date): boolean {

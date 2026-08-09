@@ -494,6 +494,47 @@ describe("HomeClient — Family avatar overflow", () => {
   });
 });
 
+describe("HomeClient — Heute im Kalender", () => {
+  const todayEvents = [
+    {
+      id: "ev-1",
+      title: "Kita zu",
+      starts_time: null,
+      ends_time: null,
+      location: null,
+      color: null,
+    },
+    {
+      id: "ev-2",
+      title: "Schwimmen",
+      starts_time: "16:00:00",
+      ends_time: "17:00:00",
+      location: "Hallenbad",
+      color: "#7a8b5c",
+    },
+  ];
+
+  it("shows today's events with time, location, and a planner link", () => {
+    render(<HomeClient {...defaultProps} todayEvents={todayEvents} />);
+    const section = screen.getByTestId("home-section-today-events");
+    expect(within(section).getByText("Heute im Kalender")).toBeDefined();
+    expect(within(section).getByText("Kita zu")).toBeDefined();
+    expect(within(section).getByText("Schwimmen")).toBeDefined();
+    expect(within(section).getByText("16:00")).toBeDefined();
+    expect(within(section).getByText("Hallenbad")).toBeDefined();
+    expect(
+      within(section)
+        .getByTestId("home-events-show-planner")
+        .getAttribute("href"),
+    ).toBe("/aufgaben?tab=planer");
+  });
+
+  it("hides the section entirely when nothing is planned today", () => {
+    render(<HomeClient {...defaultProps} todayEvents={[]} />);
+    expect(screen.queryByTestId("home-section-today-events")).toBeNull();
+  });
+});
+
 describe("HomeClient — German UI", () => {
   it("does not expose English UI text", () => {
     const { container } = render(<HomeClient {...defaultProps} />);

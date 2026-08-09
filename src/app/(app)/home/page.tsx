@@ -1,8 +1,89 @@
 import { redirect } from "next/navigation";
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
-import { HomeClient, type HomeMember } from "./home-client";
+import {
+  HomeClient,
+  type HomeCalendarEvent,
+  type HomeMember,
+} from "./home-client";
 import { type HomeTask, type HomeDocument } from "@/lib/home-utils";
 import { computeInsights } from "@/lib/ai/insights";
+import { eventOccursOn, toCalendarDate, type CalendarEvent } from "@/lib/calendar";
+
+/**
+ * Today's calendar entries for the home cockpit: expands recurring series
+ * for today, resolves an accent color (responsible member first, else the
+ * first attendee), and sorts all-day entries before timed ones.
+ */
+async function loadTodayEvents(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  familyId: string,
+): Promise<HomeCalendarEvent[]> {
+  const today = toCalendarDate(new Date());
+  const { data: rows } = await supabase
+    .from("calendar_events")
+    .select(
+      "id, title, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id",
+    )
+    .eq("family_id", familyId)
+    .lte("starts_on", today)
+    .or(`ends_on.gte.${today},recurrence.neq.none`)
+    .limit(200);
+
+  const occurring = (rows ?? []).filter((row) =>
+    eventOccursOn(
+      {
+        ...row,
+        recurrence: row.recurrence as CalendarEvent["recurrence"],
+        recurrence_exceptions: row.recurrence_exceptions ?? [],
+      },
+      today,
+    ),
+  );
+  if (occurring.length === 0) return [];
+
+  const eventIds = occurring.map((row) => row.id);
+  const [{ data: attendeeRows }, { data: memberRows }] = await Promise.all([
+    supabase
+      .from("calendar_event_attendees")
+      .select("event_id, family_member_id")
+      .in("event_id", eventIds),
+    supabase
+      .from("family_members")
+      .select("id, avatar_color")
+      .eq("family_id", familyId),
+  ]);
+  const colorByMember = new Map(
+    (memberRows ?? []).map((m) => [m.id, m.avatar_color]),
+  );
+  const firstAttendee = new Map<string, string>();
+  for (const attendee of attendeeRows ?? []) {
+    if (!firstAttendee.has(attendee.event_id)) {
+      firstAttendee.set(attendee.event_id, attendee.family_member_id);
+    }
+  }
+
+  return occurring
+    .map((row) => {
+      const colorMemberId =
+        row.responsible_member_id ?? firstAttendee.get(row.id) ?? null;
+      return {
+        id: row.id,
+        title: row.title,
+        starts_time: row.all_day ? null : row.starts_time,
+        ends_time: row.all_day ? null : row.ends_time,
+        location: row.location,
+        color: colorMemberId
+          ? colorByMember.get(colorMemberId) ?? null
+          : null,
+      };
+    })
+    .sort((a, b) => {
+      if (a.starts_time === null && b.starts_time === null) return 0;
+      if (a.starts_time === null) return -1;
+      if (b.starts_time === null) return 1;
+      return a.starts_time.localeCompare(b.starts_time);
+    });
+}
 
 /**
  * Compute a warm German time-of-day greeting (server-side to avoid
@@ -73,6 +154,7 @@ export default async function HomePage({
     { data: taskRows },
     { count: documentCount },
     insights,
+    todayEvents,
   ] = await Promise.all([
     // 2. Fetch family members (for greeting area).
     supabase
@@ -115,6 +197,11 @@ export default async function HomePage({
       .eq("family_id", family.id),
     // 7. Fetch proactive insights from the knowledge graph.
     computeInsights(supabase, family.id),
+    // 8. Today's calendar entries. Failures degrade to an empty list —
+    //    the cockpit must not break while migrations roll out.
+    loadTodayEvents(supabase, family.id).catch(
+      () => [] as HomeCalendarEvent[],
+    ),
   ]);
 
   const members: HomeMember[] = (memberRows ?? []).map((m) => ({
@@ -178,6 +265,7 @@ export default async function HomePage({
       analyzedDocuments={analyzedDocuments}
       unconfirmedDocCount={unconfirmedDocCount ?? 0}
       upcomingTasks={upcomingTasks}
+      todayEvents={todayEvents}
       hasDocuments={(documentCount ?? 0) > 0}
       insights={insights}
       autoOpenScan={autoOpenScan}
