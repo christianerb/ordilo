@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   CalendarDays,
   CalendarPlus,
@@ -270,25 +270,44 @@ export function CalendarClient({
     };
   });
 
-  // Seeing is acknowledging: once a "Neu" event was actually on screen in
-  // the day list, record it as seen. The badge stays for this session (so
-  // it can be noticed) and is gone on the next visit.
+  // Seeing is acknowledging: once the user has a "Neu" event in front of
+  // them — the day list on load, a tapped day, or an opened event — record
+  // it as seen. The badge stays for this session (so it can be noticed)
+  // and is gone on the next visit. Event-handler based on purpose: no
+  // reactive effect, seen state only changes on user-visible moments.
   const recordedSeenRef = useRef<Set<string>>(new Set());
-  useEffect(() => {
-    if (!currentUserId) return;
-    const unrecorded = selectedEvents.filter(
-      (event) => event.is_new && !recordedSeenRef.current.has(event.id),
-    );
-    if (unrecorded.length === 0) return;
-    for (const event of unrecorded) recordedSeenRef.current.add(event.id);
-    void supabase.from("calendar_event_seen").upsert(
-      unrecorded.map((event) => ({
-        event_id: event.id,
-        user_id: currentUserId,
-      })),
-      { onConflict: "event_id,user_id", ignoreDuplicates: true },
-    );
-  }, [selectedEvents, currentUserId, supabase]);
+  const markEventsSeen = useCallback(
+    (shown: CalendarEvent[]) => {
+      if (!currentUserId) return;
+      const unrecorded = shown.filter(
+        (event) => event.is_new && !recordedSeenRef.current.has(event.id),
+      );
+      if (unrecorded.length === 0) return;
+      for (const event of unrecorded) recordedSeenRef.current.add(event.id);
+      void supabase.from("calendar_event_seen").upsert(
+        unrecorded.map((event) => ({
+          event_id: event.id,
+          user_id: currentUserId,
+        })),
+        { onConflict: "event_id,user_id", ignoreDuplicates: true },
+      );
+    },
+    [currentUserId, supabase],
+  );
+
+  // The initially selected day (today) is on screen right away.
+  useMountEffect(() => {
+    markEventsSeen(eventsForDay(initialEvents, selectedDate));
+  });
+
+  /** Day tap: select it and acknowledge its visible events. */
+  const selectDay = useCallback(
+    (day: Date) => {
+      setSelectedDate(day);
+      markEventsSeen(eventsForDay(filteredEvents, day));
+    },
+    [filteredEvents, markEventsSeen],
+  );
 
   // The page header's "Termin" button opens this view's create sheet via
   // the planner actions context (registered on mount, cleared on unmount).
@@ -299,11 +318,16 @@ export function CalendarClient({
     return () => plannerActions?.setCreateHandler(null);
   });
 
-  const openEdit = useCallback((event: CalendarEvent) => {
-    setEditingEvent(event);
-    setSuggestionTemplate(null);
-    setSheetOpen(true);
-  }, []);
+  const openEdit = useCallback(
+    (event: CalendarEvent) => {
+      // Opening an event is the clearest form of having seen it.
+      markEventsSeen([event]);
+      setEditingEvent(event);
+      setSuggestionTemplate(null);
+      setSheetOpen(true);
+    },
+    [markEventsSeen],
+  );
 
   /** Remember a handled suggestion so it never comes back. */
   const recordDismissal = useCallback(
@@ -618,7 +642,7 @@ export function CalendarClient({
               <button
                 key={toCalendarDate(day)}
                 type="button"
-                onClick={() => setSelectedDate(day)}
+                onClick={() => selectDay(day)}
                 className={cn(
                   "relative flex min-h-11 flex-col items-center rounded-ordilo-sm px-1 py-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-16 sm:items-start sm:p-2",
                   !isCurrentMonth && "text-muted-foreground/45",
