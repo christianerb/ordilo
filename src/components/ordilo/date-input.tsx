@@ -95,6 +95,14 @@ export interface DateInputProps {
   /** Called when the calendar popover opens or closes. */
   onOpenChange?: (open: boolean) => void;
   /**
+   * Fires when the typed text switches between parseable and not.
+   * `onChange` only reports valid dates, so without this a form cannot
+   * tell "field shows 31.02.2027" apart from "field shows the saved
+   * value" — and would silently save the stale date. Empty text counts
+   * as valid; required-ness stays the form's job.
+   */
+  onValidChange?: (valid: boolean) => void;
+  /**
    * Called only when a day is deliberately picked from the calendar — unlike
    * `onChange`, which also fires for partial keystrokes while typing. Inline
    * editors use this as the "done" signal so typing corrections don't close
@@ -120,12 +128,25 @@ export function DateInput({
   disabled,
   autoFocus,
   onOpenChange,
+  onValidChange,
   onPickDate,
   className,
   ...rest
 }: DateInputProps) {
   const [text, setText] = useState(() => (value ? toGermanDateText(value) : ""));
   const [open, setOpen] = useState(false);
+
+  // Sync the visible text when the value prop changes EXTERNALLY (e.g. a
+  // form auto-adjusts the end date after the start moved past it). While
+  // the user types, onChange keeps prop and parsed text equal, so this
+  // never fires mid-edit.
+  const [lastValue, setLastValue] = useState(value);
+  if (value !== lastValue) {
+    setLastValue(value);
+    if (parseGermanDate(text) !== (value || null)) {
+      setText(value ? toGermanDateText(value) : "");
+    }
+  }
   const today = useMemo(() => new Date(), []);
   const [viewYear, setViewYear] = useState(() => {
     const parsed = value ? new Date(value) : today;
@@ -140,10 +161,12 @@ export function DateInput({
     const masked = maskGermanDateText(next);
     setText(masked);
     if (masked.trim() === "") {
+      onValidChange?.(true);
       onChange("");
       return;
     }
     const parsed = parseGermanDate(masked);
+    onValidChange?.(parsed !== null);
     if (parsed) onChange(parsed);
   };
 
@@ -181,6 +204,7 @@ export function DateInput({
 
   const handlePickDay = (day: number) => {
     const iso = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    onValidChange?.(true);
     onChange(iso);
     onPickDate?.(iso);
     setText(toGermanDateText(iso));

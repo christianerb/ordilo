@@ -18,6 +18,13 @@ describe("maskTimeText", () => {
     expect(maskTimeText("930")).toBe("09:30");
   });
 
+  it("keeps the minutes when a separator follows an auto-padded hour", () => {
+    expect(maskTimeText("9:30")).toBe("09:30");
+    expect(maskTimeText("9.15")).toBe("09:15");
+    // Re-masking its own output stays stable.
+    expect(maskTimeText(maskTimeText("9:30"))).toBe("09:30");
+  });
+
   it("clamps out-of-range segments", () => {
     expect(maskTimeText("2790")).toBe("23:59");
   });

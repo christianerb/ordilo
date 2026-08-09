@@ -22,6 +22,9 @@ export function maskTimeText(raw: string): string {
   for (const ch of raw) {
     if (segments.length >= 2) break;
     if (ch === ":" || ch === ".") {
+      // A separator right after an auto-padded hour ("9:30" → hour already
+      // committed as "09") must not commit an empty minute segment.
+      if (current === "" && segments.length > 0) continue;
       segments.push(clamp(current.padStart(2, "0"), segments.length));
       current = "";
     } else if (/\d/.test(ch)) {

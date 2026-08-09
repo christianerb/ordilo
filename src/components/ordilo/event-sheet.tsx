@@ -124,6 +124,22 @@ export function EventSheet({
   );
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // DateInput reports valid dates via onChange only — these flags catch
+  // "the field shows 31.02.2027 but state still holds the old date", so
+  // saving never silently uses a value the user no longer sees.
+  const [invalidDateField, setInvalidDateField] = useState<{
+    start: boolean;
+    end: boolean;
+    until: boolean;
+  }>({ start: false, end: false, until: false });
+
+  const markDateValidity = useCallback(
+    (field: "start" | "end" | "until") => (valid: boolean) =>
+      setInvalidDateField((current) =>
+        current[field] === !valid ? current : { ...current, [field]: !valid },
+      ),
+    [],
+  );
 
   // Live double-booking check: warns — never blocks — when someone
   // involved already has a timed event in the same slot that day.
@@ -171,6 +187,7 @@ export function EventSheet({
     setLocation(event?.location ?? "");
     setResponsibleId(event?.responsible_member_id ?? "");
     setAttendeeIds(event?.attendees.map((a) => a.id) ?? []);
+    setInvalidDateField({ start: false, end: false, until: false });
     setFormError(null);
   }, [event, template, defaultDate]);
 
@@ -192,6 +209,12 @@ export function EventSheet({
 
   const validate = useCallback((): string | null => {
     if (!title.trim()) return "Bitte gib einen Namen ein.";
+    if (invalidDateField.start || invalidDateField.end || invalidDateField.until) {
+      return "Bitte prüf das Datum — diesen Tag gibt es so nicht.";
+    }
+    if (!startsOn || !endsOn) {
+      return "Bitte gib an, von wann bis wann der Termin geht.";
+    }
     if (endsOn < startsOn) {
       return "Das Ende darf nicht vor dem Anfang liegen.";
     }
@@ -207,7 +230,7 @@ export function EventSheet({
       return "Das Ende der Wiederholung darf nicht vor dem Anfang liegen.";
     }
     return null;
-  }, [allDay, endsOn, endsTime, recurrence, recurrenceUntil, startsOn, startsTime, title]);
+  }, [allDay, endsOn, endsTime, invalidDateField, recurrence, recurrenceUntil, startsOn, startsTime, title]);
 
   const handleSave = useCallback(async () => {
     const error = validate();
@@ -443,8 +466,14 @@ export function EventSheet({
                   setStartsOn(value);
                   // A fresh start after the current end pulls the end along —
                   // nobody wants "Bis vor Von" errors for single-day entries.
-                  if (value && endsOn && value > endsOn) setEndsOn(value);
+                  // DateInput syncs its visible text to the new prop value,
+                  // and the adjusted end is by construction valid.
+                  if (value && endsOn && value > endsOn) {
+                    setEndsOn(value);
+                    markDateValidity("end")(true);
+                  }
                 }}
+                onValidChange={markDateValidity("start")}
                 className="h-10"
               />
             </div>
@@ -457,6 +486,7 @@ export function EventSheet({
                 id="event-end"
                 value={endsOn}
                 onChange={setEndsOn}
+                onValidChange={markDateValidity("end")}
                 className="h-10"
               />
             </div>
@@ -576,6 +606,7 @@ export function EventSheet({
                 id="event-recurrence-until"
                 value={recurrenceUntil}
                 onChange={setRecurrenceUntil}
+                onValidChange={markDateValidity("until")}
                 className="h-10"
               />
             </div>
