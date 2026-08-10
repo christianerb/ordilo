@@ -142,4 +142,33 @@ describe("DateInput", () => {
     expect(screen.getByRole("textbox")).toBeDisabled();
     expect(screen.getByTestId("date-input-calendar-trigger")).toBeDisabled();
   });
+
+  it("syncs the visible text when the value prop changes externally", () => {
+    const { rerender } = render(
+      <DateInput value="2026-08-10" onChange={vi.fn()} aria-label="Bis" />,
+    );
+    expect(screen.getByRole("textbox")).toHaveValue("10.08.2026");
+    // e.g. the form auto-adjusts the end date after the start moved past it.
+    rerender(<DateInput value="2026-08-20" onChange={vi.fn()} aria-label="Bis" />);
+    expect(screen.getByRole("textbox")).toHaveValue("20.08.2026");
+  });
+
+  it("reports validity transitions through onValidChange", () => {
+    const onValidChange = vi.fn();
+    render(
+      <DateInput
+        value=""
+        onChange={vi.fn()}
+        onValidChange={onValidChange}
+        aria-label="Von"
+      />,
+    );
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: "31.02.2027" } });
+    expect(onValidChange).toHaveBeenLastCalledWith(false);
+    fireEvent.change(input, { target: { value: "28.02.2027" } });
+    expect(onValidChange).toHaveBeenLastCalledWith(true);
+    fireEvent.change(input, { target: { value: "" } });
+    expect(onValidChange).toHaveBeenLastCalledWith(true);
+  });
 });

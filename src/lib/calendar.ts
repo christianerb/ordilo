@@ -230,6 +230,22 @@ export function findScheduleConflicts(
   return conflicts;
 }
 
+/** The Monday of the week containing `date` (German weeks start Monday). */
+export function weekStart(date: Date): Date {
+  const offset = (date.getDay() + 6) % 7;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() - offset);
+}
+
+/** The seven days (Mo–So) of the week containing `date`. */
+export function weekDays(date: Date): Date[] {
+  const start = weekStart(date);
+  return Array.from(
+    { length: 7 },
+    (_, index) =>
+      new Date(start.getFullYear(), start.getMonth(), start.getDate() + index),
+  );
+}
+
 export function isSameCalendarDay(a: Date, b: Date): boolean {
   return toCalendarDate(a) === toCalendarDate(b);
 }

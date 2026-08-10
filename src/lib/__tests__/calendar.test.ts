@@ -6,6 +6,8 @@ import {
   monthStart,
   shiftMonth,
   toCalendarDate,
+  weekDays,
+  weekStart,
   type CalendarEvent,
 } from "@/lib/calendar";
 import { describe, expect, it } from "vitest";
@@ -214,6 +216,18 @@ describe("calendar helpers", () => {
         draft,
       ),
     ).toHaveLength(0);
+  });
+
+  it("computes Monday-first weeks", () => {
+    // 2026-08-09 is a Sunday — its week starts Monday the 3rd.
+    expect(toCalendarDate(weekStart(new Date(2026, 7, 9)))).toBe("2026-08-03");
+    // A Monday is its own week start.
+    expect(toCalendarDate(weekStart(new Date(2026, 7, 3)))).toBe("2026-08-03");
+
+    const days = weekDays(new Date(2026, 7, 9));
+    expect(days).toHaveLength(7);
+    expect(toCalendarDate(days[0])).toBe("2026-08-03");
+    expect(toCalendarDate(days[6])).toBe("2026-08-09");
   });
 
   it("compares months by calendar month and year", () => {

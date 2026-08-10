@@ -1,8 +1,18 @@
 "use client";
 
 import { useCallback, useMemo, useState } from "react";
-import { Check, Loader2, Trash2, TriangleAlert } from "lucide-react";
+import Link from "next/link";
+import {
+  Check,
+  ChevronRight,
+  FileText,
+  Loader2,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ordilo/date-input";
+import { TimeInput } from "@/components/ordilo/time-input";
 import {
   Sheet,
   SheetContent,
@@ -114,6 +124,22 @@ export function EventSheet({
   );
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  // DateInput reports valid dates via onChange only — these flags catch
+  // "the field shows 31.02.2027 but state still holds the old date", so
+  // saving never silently uses a value the user no longer sees.
+  const [invalidDateField, setInvalidDateField] = useState<{
+    start: boolean;
+    end: boolean;
+    until: boolean;
+  }>({ start: false, end: false, until: false });
+
+  const markDateValidity = useCallback(
+    (field: "start" | "end" | "until") => (valid: boolean) =>
+      setInvalidDateField((current) =>
+        current[field] === !valid ? current : { ...current, [field]: !valid },
+      ),
+    [],
+  );
 
   // Live double-booking check: warns — never blocks — when someone
   // involved already has a timed event in the same slot that day.
@@ -161,6 +187,7 @@ export function EventSheet({
     setLocation(event?.location ?? "");
     setResponsibleId(event?.responsible_member_id ?? "");
     setAttendeeIds(event?.attendees.map((a) => a.id) ?? []);
+    setInvalidDateField({ start: false, end: false, until: false });
     setFormError(null);
   }, [event, template, defaultDate]);
 
@@ -182,6 +209,12 @@ export function EventSheet({
 
   const validate = useCallback((): string | null => {
     if (!title.trim()) return "Bitte gib einen Namen ein.";
+    if (invalidDateField.start || invalidDateField.end || invalidDateField.until) {
+      return "Bitte prüf das Datum — diesen Tag gibt es so nicht.";
+    }
+    if (!startsOn || !endsOn) {
+      return "Bitte gib an, von wann bis wann der Termin geht.";
+    }
     if (endsOn < startsOn) {
       return "Das Ende darf nicht vor dem Anfang liegen.";
     }
@@ -197,7 +230,7 @@ export function EventSheet({
       return "Das Ende der Wiederholung darf nicht vor dem Anfang liegen.";
     }
     return null;
-  }, [allDay, endsOn, endsTime, recurrence, recurrenceUntil, startsOn, startsTime, title]);
+  }, [allDay, endsOn, endsTime, invalidDateField, recurrence, recurrenceUntil, startsOn, startsTime, title]);
 
   const handleSave = useCallback(async () => {
     const error = validate();
@@ -371,6 +404,31 @@ export function EventSheet({
         </SheetHeader>
 
         <div className="space-y-4 p-4">
+          {isEdit && event.document_id && (
+            <Link
+              href={`/dokumente?doc=${event.document_id}`}
+              className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-secondary/50 px-3 py-2.5 text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              data-testid="event-document-link"
+            >
+              <FileText
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-xs text-muted-foreground">
+                  Aus dem Dokument
+                </span>
+                <span className="block truncate font-medium text-foreground">
+                  {event.document_title ?? "Dokument öffnen"}
+                </span>
+              </span>
+              <ChevronRight
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </Link>
+          )}
+
           {formError && (
             <div
               className="rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive"
@@ -400,24 +458,36 @@ export function EventSheet({
               <label htmlFor="event-start" className={labelClass}>
                 Von
               </label>
-              <input
+              <DateInput
+                key={`start-${String(open)}`}
                 id="event-start"
-                type="date"
                 value={startsOn}
-                onChange={(e) => setStartsOn(e.target.value)}
-                className={inputClass}
+                onChange={(value) => {
+                  setStartsOn(value);
+                  // A fresh start after the current end pulls the end along —
+                  // nobody wants "Bis vor Von" errors for single-day entries.
+                  // DateInput syncs its visible text to the new prop value,
+                  // and the adjusted end is by construction valid.
+                  if (value && endsOn && value > endsOn) {
+                    setEndsOn(value);
+                    markDateValidity("end")(true);
+                  }
+                }}
+                onValidChange={markDateValidity("start")}
+                className="h-10"
               />
             </div>
             <div>
               <label htmlFor="event-end" className={labelClass}>
                 Bis
               </label>
-              <input
+              <DateInput
+                key={`end-${String(open)}`}
                 id="event-end"
-                type="date"
                 value={endsOn}
-                onChange={(e) => setEndsOn(e.target.value)}
-                className={inputClass}
+                onChange={setEndsOn}
+                onValidChange={markDateValidity("end")}
+                className="h-10"
               />
             </div>
           </div>
@@ -438,24 +508,22 @@ export function EventSheet({
                 <label htmlFor="event-starts-time" className={labelClass}>
                   Beginn
                 </label>
-                <input
+                <TimeInput
                   id="event-starts-time"
-                  type="time"
                   value={startsTime}
-                  onChange={(e) => setStartsTime(e.target.value)}
-                  className={inputClass}
+                  onChange={setStartsTime}
+                  className="h-10"
                 />
               </div>
               <div>
                 <label htmlFor="event-ends-time" className={labelClass}>
                   Ende
                 </label>
-                <input
+                <TimeInput
                   id="event-ends-time"
-                  type="time"
                   value={endsTime}
-                  onChange={(e) => setEndsTime(e.target.value)}
-                  className={inputClass}
+                  onChange={setEndsTime}
+                  className="h-10"
                 />
               </div>
             </div>
@@ -533,12 +601,13 @@ export function EventSheet({
                   (optional)
                 </span>
               </label>
-              <input
+              <DateInput
+                key={`until-${String(open)}`}
                 id="event-recurrence-until"
-                type="date"
                 value={recurrenceUntil}
-                onChange={(e) => setRecurrenceUntil(e.target.value)}
-                className={inputClass}
+                onChange={setRecurrenceUntil}
+                onValidChange={markDateValidity("until")}
+                className="h-10"
               />
             </div>
           )}

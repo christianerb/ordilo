@@ -305,6 +305,43 @@ describe("EventSheet", () => {
     expect(onDeleteRequest).toHaveBeenCalledWith(event);
   });
 
+  it("blocks saving while a date field shows an invalid date", () => {
+    const { onSaved } = renderSheet();
+    fireEvent.change(screen.getByLabelText("Was ist geplant?"), {
+      target: { value: "Ausflug" },
+    });
+    // 31.02. exists on no calendar — the field shows it, state keeps the
+    // old date, and saving must refuse instead of writing the stale value.
+    fireEvent.change(screen.getByLabelText("Von"), {
+      target: { value: "31.02.2027" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+
+    expect(
+      screen.getByText("Bitte prüf das Datum — diesen Tag gibt es so nicht."),
+    ).toBeInTheDocument();
+    expect(mockInsert).not.toHaveBeenCalled();
+    expect(onSaved).not.toHaveBeenCalled();
+
+    // Correcting the date clears the block.
+    fireEvent.change(screen.getByLabelText("Von"), {
+      target: { value: "28.02.2027" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+    expect(
+      screen.queryByText("Bitte prüf das Datum — diesen Tag gibt es so nicht."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("pulls the end date along when the start moves past it", () => {
+    renderSheet();
+    fireEvent.change(screen.getByLabelText("Von"), {
+      target: { value: "20.12.2027" },
+    });
+    // The "Bis" field's visible text follows the auto-adjusted value.
+    expect(screen.getByLabelText("Bis")).toHaveValue("20.12.2027");
+  });
+
   it("warns about a double-booked person without blocking the save", () => {
     renderSheet({
       existingEvents: [

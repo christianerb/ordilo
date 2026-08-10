@@ -7,8 +7,8 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText,
-  Link2,
   MapPin,
+  Plus,
   Repeat,
   Sparkles,
   UserCheck,
@@ -35,6 +35,7 @@ import {
   RECURRENCE_LABELS,
   shiftMonth,
   toCalendarDate,
+  weekDays,
   type CalendarEvent,
 } from "@/lib/calendar";
 import { formatGermanDate } from "@/lib/format";
@@ -72,6 +73,48 @@ function sortEvents(events: CalendarEvent[]): CalendarEvent[] {
   return [...events].sort((a, b) => a.starts_on.localeCompare(b.starts_on));
 }
 
+/** "Heute · Sonntag, 9. August" / "Morgen · …" / "Dienstag, 11. August". */
+function dayHeading(date: Date): string {
+  const now = new Date();
+  const tomorrow = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + 1,
+  );
+  const long = date.toLocaleDateString("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  if (isSameCalendarDay(date, now)) return `Heute · ${long}`;
+  if (isSameCalendarDay(date, tomorrow)) return `Morgen · ${long}`;
+  return long;
+}
+
+/** "10.–16. August" or "28. Juli – 3. August" for the week header. */
+function weekTitle(days: Date[]): string {
+  const first = days[0];
+  const last = days[days.length - 1];
+  const monthLong = (d: Date) =>
+    d.toLocaleDateString("de-DE", { month: "long" });
+  return first.getMonth() === last.getMonth()
+    ? `${first.getDate()}.–${last.getDate()}. ${monthLong(first)}`
+    : `${first.getDate()}. ${monthLong(first)} – ${last.getDate()}. ${monthLong(last)}`;
+}
+
+/** Sort a day's events: all-day first, then by start time. */
+function sortDayEvents(events: CalendarEvent[]): CalendarEvent[] {
+  return [...events].sort((a, b) => {
+    if (a.all_day !== b.all_day) return a.all_day ? -1 : 1;
+    return (a.starts_time ?? "").localeCompare(b.starts_time ?? "");
+  });
+}
+
+/** First grapheme of a name for the avatar chip. */
+function initialOf(name: string): string {
+  return [...name.trim()][0]?.toLocaleUpperCase("de") ?? "?";
+}
+
 export function CalendarClient({
   initialEvents,
   initialSuggestions = [],
@@ -91,7 +134,7 @@ export function CalendarClient({
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [activeMonth, setActiveMonth] = useState(() => monthStart(today));
   const [selectedDate, setSelectedDate] = useState(() => today);
-  const [view, setView] = useState<"day" | "three-days" | "week" | "month">("month");
+  const [view, setView] = useState<"week" | "month">("month");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [suggestionTemplate, setSuggestionTemplate] =
@@ -99,7 +142,6 @@ export function CalendarClient({
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CalendarEvent | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [copyingFeed, setCopyingFeed] = useState(false);
 
   const memberColors = useMemo(() => {
     const colors = new Map<string, string>();
@@ -309,6 +351,30 @@ export function CalendarClient({
     [filteredEvents, markEventsSeen],
   );
 
+  /** "Heute" anchor: jump both views and the day list back to now. */
+  const goToToday = useCallback(() => {
+    const now = new Date();
+    setActiveMonth(monthStart(now));
+    selectDay(now);
+  }, [selectDay]);
+
+  const shiftWeek = useCallback(
+    (amount: number) => {
+      const next = new Date(
+        selectedDate.getFullYear(),
+        selectedDate.getMonth(),
+        selectedDate.getDate() + amount * 7,
+      );
+      setActiveMonth(monthStart(next));
+      selectDay(next);
+    },
+    [selectedDate, selectDay],
+  );
+
+  const isTodayInView =
+    isSameCalendarDay(selectedDate, today) &&
+    (view === "week" || isSameCalendarMonth(activeMonth, today));
+
   // The page header's "Termin" button opens this view's create sheet via
   // the planner actions context (registered on mount, cleared on unmount).
   const plannerActions = usePlannerActionsOptional();
@@ -360,43 +426,6 @@ export function CalendarClient({
     },
     [recordDismissal],
   );
-
-  /**
-   * Copy the family's ICS subscription URL, creating the feed token on
-   * first use. The link works in Google/Apple/Outlook calendar apps.
-   */
-  const copyFeedLink = useCallback(async () => {
-    if (!familyId) return;
-    setCopyingFeed(true);
-    try {
-      let { data: tokenRow } = await supabase
-        .from("calendar_feed_tokens")
-        .select("token")
-        .eq("family_id", familyId)
-        .maybeSingle();
-      if (!tokenRow) {
-        const { data: created, error } = await supabase
-          .from("calendar_feed_tokens")
-          .insert({ family_id: familyId })
-          .select("token")
-          .single();
-        if (error || !created) {
-          toast.error("Der Kalender-Link konnte nicht erstellt werden.");
-          return;
-        }
-        tokenRow = created;
-      }
-      const url = `${window.location.origin}/api/calendar/ics?token=${tokenRow.token}`;
-      await navigator.clipboard.writeText(url);
-      toast.success(
-        "Link kopiert. Füge ihn in deiner Kalender-App als Abo hinzu.",
-      );
-    } catch {
-      toast.error("Der Link konnte nicht kopiert werden.");
-    } finally {
-      setCopyingFeed(false);
-    }
-  }, [familyId, supabase]);
 
   /** Show the day an event lives on after it was created or edited. */
   const revealEvent = useCallback((event: CalendarEvent) => {
@@ -505,122 +534,219 @@ export function CalendarClient({
         aria-label="Kalender"
         data-testid="family-calendar"
       >
-        {members.length > 1 && (
-          <div
-            className="mb-3 flex flex-wrap gap-1.5"
-            role="group"
-            aria-label="Nach Person filtern"
-            data-testid="calendar-member-filter"
-          >
-            <button
-              type="button"
-              onClick={() => setMemberFilter(null)}
-              aria-pressed={memberFilter === null}
-              className={cn(
-                "inline-flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                memberFilter === null
-                  ? "border-foreground/70 bg-foreground text-background"
-                  : "border-border bg-card text-foreground",
-              )}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          {members.length > 1 ? (
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              role="group"
+              aria-label="Nach Person filtern"
+              data-testid="calendar-member-filter"
             >
-              Alle
-            </button>
-            {members.map((member) => {
-              const selected = memberFilter === member.id;
-              return (
-                <button
-                  key={member.id}
-                  type="button"
-                  onClick={() =>
-                    setMemberFilter((current) =>
-                      current === member.id ? null : member.id,
-                    )
-                  }
-                  aria-pressed={selected}
-                  data-testid={`calendar-filter-${member.id}`}
-                  className={cn(
-                    "inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                    selected
-                      ? "border-foreground/70 bg-foreground text-background"
-                      : "border-border bg-card text-foreground",
-                  )}
-                >
-                  <span
-                    className="size-2 rounded-full"
-                    style={{ backgroundColor: memberColors.get(member.id) }}
-                    aria-hidden="true"
-                  />
-                  {member.name}
-                </button>
-              );
-            })}
-          </div>
-        )}
+              <button
+                type="button"
+                onClick={() => setMemberFilter(null)}
+                aria-pressed={memberFilter === null}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  memberFilter === null
+                    ? "border-foreground/70 bg-foreground text-background"
+                    : "border-border bg-card text-foreground",
+                )}
+              >
+                Alle
+              </button>
+              {members.map((member) => {
+                const selected = memberFilter === member.id;
+                const color = memberColors.get(member.id);
+                return (
+                  <button
+                    key={member.id}
+                    type="button"
+                    onClick={() =>
+                      setMemberFilter((current) =>
+                        current === member.id ? null : member.id,
+                      )
+                    }
+                    aria-pressed={selected}
+                    aria-label={`Nur Termine von ${member.name}`}
+                    title={member.name}
+                    data-testid={`calendar-filter-${member.id}`}
+                    className={cn(
+                      "flex size-9 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      selected ? "scale-105 text-white shadow-sm" : "bg-card",
+                    )}
+                    style={
+                      selected
+                        ? { backgroundColor: color, borderColor: color }
+                        : { borderColor: color, color }
+                    }
+                  >
+                    {initialOf(member.name)}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <span />
+          )}
 
-        <div className="mb-3 grid grid-cols-4 rounded-ordilo-sm bg-secondary p-1 text-xs">
-          {([
-            ["day", "Tag"],
-            ["three-days", "3 Tage"],
-            ["week", "Woche"],
-            ["month", "Monat"],
-          ] as const).map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setView(value)}
-              className={cn("rounded-[8px] px-2 py-1.5 font-medium", view === value && "bg-card text-foreground shadow-sm")}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {view !== "month" ? (
-          <div className={cn("grid gap-2", view === "week" ? "grid-cols-7" : view === "three-days" ? "grid-cols-3" : "grid-cols-1")}>
-            {Array.from({ length: view === "week" ? 7 : view === "three-days" ? 3 : 1 }, (_, index) => {
-              const day = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate() + index);
-              const dayEvents = eventsForDay(filteredEvents, day);
-              return <div key={toCalendarDate(day)} className="min-h-32 rounded-ordilo-sm border border-border p-2">
-                <p className="text-xs font-medium">{day.toLocaleDateString("de-DE", { weekday: "short", day: "numeric" })}</p>
-                {dayEvents.map((event) => {
-                  const color = eventColor(event);
-                  return (
-                    <button
-                      key={event.id}
-                      type="button"
-                      onClick={() => openEdit(event)}
-                      className="mt-2 block w-full truncate rounded border-l-2 border-transparent bg-primary/10 px-1.5 py-1 text-left text-[11px] text-primary"
-                      style={color ? { borderLeftColor: color } : undefined}
-                    >
-                      {event.title}
-                    </button>
-                  );
-                })}
-              </div>;
-            })}
+          <div
+            className="grid shrink-0 grid-cols-2 rounded-ordilo-sm bg-secondary p-1 text-xs"
+            role="group"
+            aria-label="Ansicht wechseln"
+          >
+            {([
+              ["week", "Woche"],
+              ["month", "Monat"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setView(value)}
+                aria-pressed={view === value}
+                className={cn(
+                  "rounded-[8px] px-3 py-1.5 font-medium",
+                  view === value && "bg-card text-foreground shadow-sm",
+                )}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        ) : (
-        <>
-        <div className="mb-4 flex items-center justify-between">
+        </div>
+
+        <div className="mb-3 flex items-center justify-between gap-1">
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="size-9"
-            onClick={() => setActiveMonth((current) => shiftMonth(current, -1))}
-            aria-label="Vorheriger Monat"
+            onClick={() =>
+              view === "month"
+                ? setActiveMonth((current) => shiftMonth(current, -1))
+                : shiftWeek(-1)
+            }
+            aria-label={view === "month" ? "Vorheriger Monat" : "Vorherige Woche"}
           >
             <ChevronLeft className="size-4" aria-hidden="true" />
           </Button>
-          <h2 className="text-base font-semibold capitalize text-foreground">
-            {monthTitle}
-          </h2>
+          <div className="flex min-w-0 items-center justify-center gap-2">
+            <h2 className="truncate text-base font-semibold capitalize text-foreground">
+              {view === "month" ? monthTitle : weekTitle(weekDays(selectedDate))}
+            </h2>
+            {!isTodayInView && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 rounded-full px-2.5 text-xs"
+                onClick={goToToday}
+                data-testid="calendar-today-button"
+              >
+                Heute
+              </Button>
+            )}
+          </div>
           <Button
             type="button"
             variant="ghost"
             size="icon"
             className="size-9"
-            onClick={() => setActiveMonth((current) => shiftMonth(current, 1))}
-            aria-label="Nächster Monat"
+            onClick={() =>
+              view === "month"
+                ? setActiveMonth((current) => shiftMonth(current, 1))
+                : shiftWeek(1)
+            }
+            aria-label={view === "month" ? "Nächster Monat" : "Nächste Woche"}
           >
             <ChevronRight className="size-4" aria-hidden="true" />
           </Button>
         </div>
+
+        {view === "week" ? (
+          <div
+            className="divide-y divide-border/70"
+            data-testid="calendar-week-agenda"
+          >
+            {weekDays(selectedDate).map((day) => {
+              const dayEvents = sortDayEvents(eventsForDay(filteredEvents, day));
+              const isToday = isSameCalendarDay(day, today);
+              const isSelected = isSameCalendarDay(day, selectedDate);
+              return (
+                <div
+                  key={toCalendarDate(day)}
+                  className={cn("flex gap-2 py-1.5", isSelected && "bg-secondary/40")}
+                >
+                  <button
+                    type="button"
+                    onClick={() => selectDay(day)}
+                    aria-label={`${formatGermanDate(toCalendarDate(day))} auswählen`}
+                    aria-pressed={isSelected}
+                    className="flex w-11 shrink-0 flex-col items-center rounded-ordilo-sm py-1 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  >
+                    <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                      {day.toLocaleDateString("de-DE", { weekday: "short" })}
+                    </span>
+                    <span
+                      className={cn(
+                        "flex size-7 items-center justify-center rounded-full text-sm font-medium",
+                        isToday && "bg-primary text-primary-foreground",
+                      )}
+                    >
+                      {day.getDate()}
+                    </span>
+                  </button>
+                  <div className="min-w-0 flex-1 space-y-1 py-0.5">
+                    {dayEvents.length > 0 ? (
+                      dayEvents.map((event) => {
+                        const color = eventColor(event);
+                        return (
+                          <button
+                            key={event.id}
+                            type="button"
+                            onClick={() => openEdit(event)}
+                            className="flex w-full items-baseline gap-2 rounded-ordilo-sm border-l-[3px] border-transparent bg-secondary/60 px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            style={color ? { borderLeftColor: color } : undefined}
+                            data-testid={`week-event-${event.id}`}
+                          >
+                            <span className="w-11 shrink-0 text-xs tabular-nums text-muted-foreground">
+                              {event.all_day || !event.starts_time
+                                ? "ganztags"
+                                : event.starts_time.slice(0, 5)}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+                              {event.title}
+                              {event.is_new && (
+                                <span
+                                  className="ml-1.5 inline-block size-1.5 rounded-full bg-[var(--apricot,#E46018)] align-middle"
+                                  aria-label="Neu"
+                                />
+                              )}
+                            </span>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          selectDay(day);
+                          openCreate();
+                        }}
+                        aria-label={`Termin am ${formatGermanDate(toCalendarDate(day))} eintragen`}
+                        className="flex h-8 w-full items-center gap-1.5 rounded-ordilo-sm px-2 text-xs text-muted-foreground/70 transition-colors hover:bg-secondary/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      >
+                        <Plus className="size-3" aria-hidden="true" />
+                        Eintragen
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+        <>
 
         <div className="grid grid-cols-7 gap-1 text-center">
           {WEEKDAYS.map((weekday) => (
@@ -694,10 +820,15 @@ export function CalendarClient({
 
       <section aria-live="polite" data-testid="calendar-day-events">
         <div className="mb-2 flex items-center gap-2">
-          <CalendarDays className="size-4 text-primary" aria-hidden="true" />
-          <h2 className="text-sm font-semibold text-foreground">
-            {formatGermanDate(toCalendarDate(selectedDate))}
+          <CalendarDays className="size-4 shrink-0 text-primary" aria-hidden="true" />
+          <h2 className="min-w-0 truncate text-sm font-semibold text-foreground">
+            {dayHeading(selectedDate)}
           </h2>
+          {memberFilter && (
+            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+              nur {memberNames.get(memberFilter) ?? "…"}
+            </span>
+          )}
         </div>
 
         {selectedEvents.length > 0 ? (
@@ -782,12 +913,36 @@ export function CalendarClient({
             })}
           </div>
         ) : (
-          <div className="rounded-ordilo-sm bg-secondary/60 px-3 py-3 text-sm text-muted-foreground">
-            Noch nichts geplant. Tragt Ferien, Kita-Termine oder andere wichtige
-            Tage ein.
+          <div className="flex flex-col items-start gap-2 rounded-ordilo-sm bg-secondary/60 px-3 py-3">
+            <p className="text-sm text-muted-foreground">
+              {memberFilter
+                ? `Für ${memberNames.get(memberFilter) ?? "diese Person"} steht hier nichts an.`
+                : "Noch nichts geplant an diesem Tag."}
+            </p>
+            {familyId && !memberFilter && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                onClick={openCreate}
+                data-testid="calendar-empty-day-create"
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                Termin am {formatGermanDate(toCalendarDate(selectedDate))} eintragen
+              </Button>
+            )}
           </div>
         )}
       </section>
+
+      {familyId && (
+        <VoicePlannerCard
+          familyId={familyId}
+          members={members}
+          onEventCreated={handleEventCreatedByVoice}
+        />
+      )}
 
       {familyId && suggestions.length > 0 && (
         <section
@@ -804,91 +959,48 @@ export function CalendarClient({
             {suggestions.map((suggestion) => (
               <div
                 key={suggestion.entityId}
-                className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-card px-3 py-2.5 shadow-card"
+                className="rounded-ordilo-sm border border-border bg-card px-3 py-2.5 shadow-card"
                 data-testid={`calendar-suggestion-${suggestion.entityId}`}
               >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {suggestion.label ?? suggestion.documentTitle ?? "Termin"}
-                  </p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                    <span>{formatGermanDate(suggestion.date)}</span>
-                    {suggestion.documentTitle && (
-                      <span className="inline-flex min-w-0 items-center gap-1">
-                        <FileText
-                          className="size-3 shrink-0"
-                          aria-hidden="true"
-                        />
-                        <span className="truncate">
-                          {suggestion.documentTitle}
-                        </span>
-                      </span>
-                    )}
-                  </p>
+                <p className="text-sm font-medium text-foreground">
+                  {suggestion.label ?? suggestion.documentTitle ?? "Termin"}
+                </p>
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                  <span>{formatGermanDate(suggestion.date)}</span>
+                  {suggestion.documentTitle && (
+                    <span className="inline-flex min-w-0 items-center gap-1">
+                      <FileText className="size-3 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{suggestion.documentTitle}</span>
+                    </span>
+                  )}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={() => acceptSuggestion(suggestion)}
+                    data-testid={`suggestion-accept-${suggestion.entityId}`}
+                  >
+                    <CalendarPlus className="size-3.5" aria-hidden="true" />
+                    Eintragen
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1 text-muted-foreground"
+                    onClick={() => void hideSuggestion(suggestion)}
+                    data-testid={`suggestion-dismiss-${suggestion.entityId}`}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    Ausblenden
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="gap-1"
-                  onClick={() => acceptSuggestion(suggestion)}
-                  data-testid={`suggestion-accept-${suggestion.entityId}`}
-                >
-                  <CalendarPlus className="size-3.5" aria-hidden="true" />
-                  Eintragen
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="size-8 text-muted-foreground"
-                  onClick={() => void hideSuggestion(suggestion)}
-                  aria-label="Vorschlag ausblenden"
-                  data-testid={`suggestion-dismiss-${suggestion.entityId}`}
-                >
-                  <X className="size-4" aria-hidden="true" />
-                </Button>
               </div>
             ))}
           </div>
-        </section>
-      )}
-
-      {familyId && (
-        <VoicePlannerCard
-          familyId={familyId}
-          members={members}
-          onEventCreated={handleEventCreatedByVoice}
-        />
-      )}
-
-      {familyId && (
-        <section
-          className="flex items-center gap-3 rounded-ordilo-md border border-border bg-card p-3 shadow-card sm:p-4"
-          aria-label="Kalender abonnieren"
-        >
-          <Link2
-            className="size-4 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-foreground">
-              Im eigenen Kalender sehen
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Abonniert den Familienkalender in Google, Apple oder Outlook.
-            </p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => void copyFeedLink()}
-            disabled={copyingFeed}
-            data-testid="calendar-feed-copy-button"
-          >
-            Link kopieren
-          </Button>
         </section>
       )}
 
