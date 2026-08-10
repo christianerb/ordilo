@@ -1,9 +1,66 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen, fireEvent } from "@testing-library/react";
+
+const mockStart = vi.fn();
+const mockStop = vi.fn();
+const mockCancel = vi.fn();
+let voiceCallbacks: {
+  onTranscript: (text: string) => void;
+  onError: (message: string) => void;
+};
+
+class MockSpeechRecognition {
+  static instance: MockSpeechRecognition | null = null;
+
+  lang = "";
+  interimResults = false;
+  maxAlternatives = 0;
+  start = vi.fn();
+  stop = vi.fn();
+  abort = vi.fn();
+  onresult: ((event: {
+    results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }>;
+  }) => void) | null = null;
+  onerror: (() => void) | null = null;
+  onend: (() => void) | null = null;
+
+  constructor() {
+    MockSpeechRecognition.instance = this;
+  }
+
+  emitFinal(transcript: string) {
+    this.onresult?.({
+      results: [{ isFinal: true, 0: { transcript } }],
+    });
+  }
+}
+
+vi.mock("@/lib/realtime/use-realtime-transcription", () => ({
+  useRealtimeTranscription: vi.fn(
+    (callbacks: typeof voiceCallbacks) => {
+      voiceCallbacks = callbacks;
+      return {
+        status: "idle",
+        start: mockStart,
+        stop: mockStop,
+        cancel: mockCancel,
+      };
+    },
+  ),
+}));
 
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 
 describe("AISearchBar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    MockSpeechRecognition.instance = null;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("renders a text input", () => {
     render(<AISearchBar onSubmit={vi.fn()} />);
     expect(screen.getByRole("textbox")).toBeDefined();
@@ -110,6 +167,67 @@ describe("AISearchBar", () => {
     );
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(input.getAttribute("placeholder")).toBe("Frage Ordilo…");
+  });
+
+  it("uses native speech recognition in a regular browser tab", () => {
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+    const onSubmit = vi.fn();
+    render(<AISearchBar onSubmit={onSubmit} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mit Sprache fragen" }),
+    );
+
+    const recognition = MockSpeechRecognition.instance;
+    expect(recognition).not.toBeNull();
+    expect(recognition?.start).toHaveBeenCalledOnce();
+    expect(mockStart).not.toHaveBeenCalled();
+
+    act(() => {
+      recognition?.emitFinal("Zeig mir Rechnungen von gestern");
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith("Zeig mir Rechnungen von gestern");
+  });
+
+  it("uses Realtime transcription in an installed PWA", () => {
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+    render(<AISearchBar onSubmit={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mit Sprache fragen" }),
+    );
+
+    expect(mockStart).toHaveBeenCalledOnce();
+    expect(MockSpeechRecognition.instance).toBeNull();
+  });
+
+  it("falls back to Realtime when native speech recognition fails", () => {
+    vi.stubGlobal("SpeechRecognition", MockSpeechRecognition);
+    render(<AISearchBar onSubmit={vi.fn()} />);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mit Sprache fragen" }),
+    );
+    act(() => {
+      MockSpeechRecognition.instance?.onerror?.();
+    });
+
+    expect(mockStart).toHaveBeenCalledOnce();
+  });
+
+  it("submits the final Realtime voice transcript", async () => {
+    const onSubmit = vi.fn();
+    render(<AISearchBar onSubmit={onSubmit} />);
+
+    await act(async () => {
+      voiceCallbacks.onTranscript("Zeig mir Rechnungen von gestern");
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      "Zeig mir Rechnungen von gestern",
+    );
   });
 });
 
