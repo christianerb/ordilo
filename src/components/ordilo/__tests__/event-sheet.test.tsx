@@ -81,6 +81,17 @@ beforeEach(() => {
 });
 
 describe("EventSheet", () => {
+  it("stacks date fields and clips horizontal overflow on narrow screens", () => {
+    renderSheet();
+
+    expect(document.querySelector("[data-slot=sheet-content]")).toHaveClass(
+      "overflow-x-hidden",
+    );
+    expect(screen.getByTestId("event-date-range")).toHaveClass(
+      "min-[480px]:grid-cols-2",
+    );
+  });
+
   it("requires a title", async () => {
     renderSheet();
     fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));

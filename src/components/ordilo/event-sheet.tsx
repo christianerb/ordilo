@@ -390,12 +390,12 @@ export function EventSheet({
   ]);
 
   const inputClass =
-    "h-10 w-full rounded-ordilo-base border border-border bg-transparent px-3 text-sm outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/50";
+    "h-10 min-w-0 w-full rounded-ordilo-base border border-border bg-transparent px-3 text-sm outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/50";
   const labelClass = "mb-1.5 block text-sm font-medium";
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="w-full gap-0 overflow-y-auto sm:max-w-md">
+      <SheetContent className="w-full max-w-full gap-0 overflow-x-hidden overflow-y-auto sm:max-w-md">
         <SheetHeader className="border-b border-border/60">
           <SheetTitle>{isEdit ? "Termin bearbeiten" : "Neuer Termin"}</SheetTitle>
           <SheetDescription>
@@ -403,7 +403,7 @@ export function EventSheet({
           </SheetDescription>
         </SheetHeader>
 
-        <div className="space-y-4 p-4">
+        <div className="min-w-0 space-y-4 p-4">
           {isEdit && event.document_id && (
             <Link
               href={`/dokumente?doc=${event.document_id}`}
@@ -453,7 +453,10 @@ export function EventSheet({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div
+            className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2"
+            data-testid="event-date-range"
+          >
             <div>
               <label htmlFor="event-start" className={labelClass}>
                 Von
@@ -503,7 +506,7 @@ export function EventSheet({
           </label>
 
           {!allDay && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2">
               <div>
                 <label htmlFor="event-starts-time" className={labelClass}>
                   Beginn
