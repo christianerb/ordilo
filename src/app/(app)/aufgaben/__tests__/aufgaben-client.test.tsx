@@ -244,3 +244,16 @@ describe("AufgabenClient — drag hint", () => {
     expect(screen.queryByTestId("board-drag-hint")).toBeNull();
   });
 });
+
+describe("AufgabenClient — delete confirmation", () => {
+  it("uses a bounded dialog instead of a full-width bottom sheet", async () => {
+    renderBoard();
+
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    fireEvent.click(await screen.findByTestId("card-action-delete"));
+
+    const dialog = await screen.findByTestId("task-delete-confirm-dialog");
+    expect(dialog.className).toContain("max-w-sm");
+    expect(screen.queryByTestId("task-delete-confirm-sheet")).toBeNull();
+  });
+});
