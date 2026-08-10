@@ -212,6 +212,10 @@ export function useScanWizardHandlers({
       const files = Array.from(event.target.files ?? []);
       if (files.length === 0) return;
       const [first, ...rest] = files;
+      // The mobile actions sheet uses this same picker while the wizard is
+      // closed. Open it before capture so processing and review remain
+      // visible, and document polling continues to sync the wizard.
+      setWizardOpen(true);
       // The first file is followed through the wizard's guided flow; any
       // extras upload in the background and appear as progress cards on
       // the Dokumente page once the wizard closes.
@@ -223,7 +227,12 @@ export function useScanWizardHandlers({
         wizardGalleryInputRef.current.value = "";
       }
     },
-    [handleWizardCapture, handleFileUpload, wizardGalleryInputRef],
+    [
+      handleWizardCapture,
+      handleFileUpload,
+      setWizardOpen,
+      wizardGalleryInputRef,
+    ],
   );
 
   const handleWizardRetryUpload = useCallback(() => {
