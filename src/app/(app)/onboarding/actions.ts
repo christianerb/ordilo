@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { type ActionResult, FRIENDLY_ERROR } from "@/lib/actions/result";
 import { validateFamilyName, validateMember } from "@/lib/schemas/onboarding";
 import { DEFAULT_COLLECTIONS } from "@/lib/schemas/collections";
 import type { Database } from "@/types/database";
@@ -17,13 +18,6 @@ import type { Database } from "@/types/database";
 
 type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
-
-type ActionResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };
-
-/** Friendly German error used for unexpected failures. */
-const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 
 /**
  * Create a family for the authenticated user.

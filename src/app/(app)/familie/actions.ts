@@ -2,7 +2,11 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
-import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
+import {
+  type ActionResult,
+  FRIENDLY_ERROR,
+  getUserFamily,
+} from "@/lib/actions/result";
 import { validateMember, validateFamilyName } from "@/lib/schemas/onboarding";
 import type { Database } from "@/types/database";
 
@@ -16,15 +20,7 @@ import type { Database } from "@/types/database";
  * - Friendly German error messages on failures
  */
 
-type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
-
-type ActionResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };
-
-/** Friendly German error used for unexpected failures. */
-const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 
 /**
  * Input shape for member add/edit operations.
@@ -57,22 +53,6 @@ async function verifyRelatedMembers(
   if (error || !data) return false;
   const found = new Set(data.filter((m) => m.family_id === familyId).map((m) => m.id));
   return relatedMemberIds.every((id) => found.has(id));
-}
-
-/**
- * Fetch the authenticated user's family.
- *
- * Delegates to the shared `resolveUserFamily` helper, which resolves
- * deterministically (oldest owned family first, then oldest membership)
- * instead of an arbitrary `.limit(1)` row — relevant since migration 0024
- * exposes every family the user belongs to via RLS.
- *
- * @returns The family row, or null if the user has no family.
- */
-async function getUserFamily(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<{ data: Pick<FamilyRow, "id" | "name"> | null; error: string | null }> {
-  return resolveUserFamily(supabase);
 }
 
 /**

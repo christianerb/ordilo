@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 /**
  * Zod schema for the POST /api/search API route.
@@ -108,10 +109,7 @@ export interface SearchSuccessResponse {
 /**
  * Error search API response (same shape as other route errors).
  */
-export interface SearchErrorResponse {
-  error: string;
-  code: string;
-}
+export type SearchErrorResponse = ApiErrorResponse;
 
 // ---------------------------------------------------------------------------
 // Graph search query analysis

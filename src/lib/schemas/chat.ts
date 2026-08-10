@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 /**
  * Zod schema and types for the POST /api/chat API route.
@@ -124,10 +125,48 @@ export interface ChatSuccessResponse {
 /**
  * Error chat API response (same shape as other route errors).
  */
-export interface ChatErrorResponse {
-  error: string;
-  code: string;
-}
+export type ChatErrorResponse = ApiErrorResponse;
+
+// ---------------------------------------------------------------------------
+// Chat feedback schema (POST /api/chat/feedback)
+// ---------------------------------------------------------------------------
+
+/** Allowed feedback ratings. */
+export const CHAT_FEEDBACK_VALUES = ["positive", "negative"] as const;
+export type ChatFeedbackValue = (typeof CHAT_FEEDBACK_VALUES)[number];
+
+/** Fixed feedback reason choices (stored as-is). */
+export const CHAT_FEEDBACK_REASONS = [
+  "falsche_antwort",
+  "falsches_dokument",
+  "unvollstaendig",
+] as const;
+export type ChatFeedbackReason = (typeof CHAT_FEEDBACK_REASONS)[number];
+
+/** Maximum length of the optional free-text comment. */
+export const MAX_FEEDBACK_COMMENT_LENGTH = 500;
+/** Maximum number of ticked reasons stored per feedback event. */
+export const MAX_FEEDBACK_REASONS = 3;
+
+/**
+ * POST /api/chat/feedback input: thumbs up/down on a chat message with
+ * optional ticked reasons and free-text comment.
+ */
+export const chatFeedbackSchema = z.object({
+  message_id: z.string().min(1),
+  feedback: z.enum(CHAT_FEEDBACK_VALUES),
+  reasons: z
+    .array(z.enum(CHAT_FEEDBACK_REASONS))
+    .max(MAX_FEEDBACK_REASONS)
+    .optional(),
+  comment: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_FEEDBACK_COMMENT_LENGTH)
+    .optional(),
+});
+export type ChatFeedbackInput = z.infer<typeof chatFeedbackSchema>;
 
 // ---------------------------------------------------------------------------
 // Hallucination protection constants and helpers

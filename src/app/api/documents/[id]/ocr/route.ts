@@ -10,6 +10,7 @@ import {
   type OcrSuccessResponse,
   type OcrErrorResponse,
 } from "@/lib/schemas/document";
+import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 
 /**
  * POST /api/documents/[id]/ocr
@@ -68,11 +69,7 @@ export async function POST(
   // Validate the document ID is a UUID (defensive — Next.js route matching
   // may pass non-UUID segments).
   if (!isValidUuid(documentId)) {
-    const body: OcrErrorResponse = {
-      error: "Ungültige Dokument-ID.",
-      code: "INVALID_DOCUMENT_ID",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError("Ungültige Dokument-ID.", "INVALID_DOCUMENT_ID", 400);
   }
 
   // 3. Atomic conditional transition to ocr_processing ---------------------
@@ -98,11 +95,11 @@ export async function POST(
     .maybeSingle();
 
   if (transitionError) {
-    const body: OcrErrorResponse = {
-      error: "Status konnte nicht aktualisiert werden.",
-      code: "DB_UPDATE_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Status konnte nicht aktualisiert werden.",
+      "DB_UPDATE_FAILED",
+      500,
+    );
   }
 
   // If the atomic update matched 0 rows, the document either doesn't exist
@@ -118,19 +115,19 @@ export async function POST(
 
     if (!existingDoc) {
       // 404 (not 403) to avoid leaking document existence to non-owners.
-      const body: OcrErrorResponse = {
-        error: "Dokument nicht gefunden oder kein Zugriff.",
-        code: "DOCUMENT_NOT_FOUND",
-      };
-      return Response.json(body, { status: 404 });
+      return jsonError(
+        "Dokument nicht gefunden oder kein Zugriff.",
+        "DOCUMENT_NOT_FOUND",
+        404,
+      );
     }
 
     // Document exists but is not in an allowed source state.
-    const body: OcrErrorResponse = {
-      error: `OCR kann für ein Dokument im Status „${existingDoc.status}“ nicht gestartet werden.`,
-      code: "INVALID_STATUS_TRANSITION",
-    };
-    return Response.json(body, { status: 409 });
+    return jsonError(
+      `OCR kann für ein Dokument im Status „${existingDoc.status}“ nicht gestartet werden.`,
+      "INVALID_STATUS_TRANSITION",
+      409,
+    );
   }
 
   // 4-6. Download, OCR, persist (shared pipeline step) ---------------------
@@ -172,8 +169,7 @@ export async function POST(
           : 502)
       : 500;
 
-    const body: OcrErrorResponse = { error: message, code };
-    return Response.json(body, { status: statusCode });
+    return jsonError(message, code, statusCode);
   }
 }
 
@@ -181,9 +177,5 @@ export async function POST(
  * GET /api/documents/[id]/ocr — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  const body: OcrErrorResponse = {
-    error: "Methode nicht erlaubt. Bitte POST verwenden.",
-    code: "METHOD_NOT_ALLOWED",
-  };
-  return Response.json(body, { status: 405 });
+  return methodNotAllowed();
 }

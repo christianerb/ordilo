@@ -1,6 +1,9 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { deleteConversation, updateConversationTitle } from "@/lib/ai/chat-history";
+import { jsonError } from "@/lib/api/respond";
+import { parseJsonBody } from "@/lib/api/parse-json";
+import { updateConversationSchema } from "@/lib/schemas/conversations";
 
 /**
  * DELETE /api/conversations/[id] — Delete a conversation and all its messages.
@@ -23,10 +26,12 @@ export async function DELETE(
   try {
     await deleteConversation(serverClient, id);
     return Response.json({ success: true });
-  } catch {
-    return Response.json(
-      { error: "Konversation konnte nicht gelöscht werden." },
-      { status: 500 },
+  } catch (err) {
+    console.error("[conversations] Failed to delete conversation:", err);
+    return jsonError(
+      "Konversation konnte nicht gelöscht werden.",
+      "DELETE_FAILED",
+      500,
     );
   }
 }
@@ -43,21 +48,22 @@ export async function PATCH(
   const { id } = await params;
   const serverClient = await createServerClient();
 
-  try {
-    const json = await request.json();
-    if (!json?.title || typeof json.title !== "string") {
-      return Response.json(
-        { error: "Titel erforderlich." },
-        { status: 400 },
-      );
-    }
+  const parsed = await parseJsonBody(request, updateConversationSchema, {
+    invalidJson: "Titel erforderlich.",
+    invalidPayload: "Titel erforderlich.",
+    payloadCode: "INVALID_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
 
-    await updateConversationTitle(serverClient, id, json.title.trim());
+  try {
+    await updateConversationTitle(serverClient, id, parsed.data.title);
     return Response.json({ success: true });
-  } catch {
-    return Response.json(
-      { error: "Titel konnte nicht aktualisiert werden." },
-      { status: 500 },
+  } catch (err) {
+    console.error("[conversations] Failed to update conversation title:", err);
+    return jsonError(
+      "Titel konnte nicht aktualisiert werden.",
+      "UPDATE_FAILED",
+      500,
     );
   }
 }

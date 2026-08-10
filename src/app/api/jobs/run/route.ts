@@ -1,6 +1,7 @@
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runPendingJobs } from "@/lib/jobs";
 import { requireSchedulerAuth } from "@/lib/scheduler-auth";
+import { jobsRunRequestSchema } from "@/lib/schemas/jobs";
 
 /**
  * POST /api/jobs/run — the pipeline job worker.
@@ -29,15 +30,20 @@ export async function POST(request: Request): Promise<Response> {
   if (authError) return authError;
 
   // 2. Parse optional limit ---------------------------------------------------
-  let limit = 5;
+  // The body is optional: a missing, malformed, or invalid body must never
+  // break the scheduler — fall back to the default limit instead.
+  let raw: unknown = {};
   try {
-    const body = await request.json();
-    if (typeof body?.limit === "number") {
-      limit = Math.max(1, Math.min(20, Math.floor(body.limit)));
-    }
+    raw = await request.json();
   } catch {
     // No/invalid body → default limit.
   }
+  const parsed = jobsRunRequestSchema.safeParse(raw);
+  const parsedLimit = parsed.success ? parsed.data.limit : undefined;
+  const limit =
+    parsedLimit !== undefined
+      ? Math.max(1, Math.min(20, Math.floor(parsedLimit)))
+      : 5;
 
   // 3. Run jobs ---------------------------------------------------------------
   try {

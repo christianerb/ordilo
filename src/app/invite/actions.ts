@@ -2,6 +2,7 @@
 
 import { cookies, headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
+import type { SimpleActionResult } from "@/lib/actions/result";
 import { INVITE_COOKIE } from "@/lib/invite";
 
 /**
@@ -10,9 +11,7 @@ import { INVITE_COOKIE } from "@/lib/invite";
  * NOTE: "use server" modules may only export async functions.
  */
 
-type ActionResult =
-  | { success: true }
-  | { success: false; error: string };
+type ActionResult = SimpleActionResult;
 
 type AcceptInviteResult =
   | { success: true }

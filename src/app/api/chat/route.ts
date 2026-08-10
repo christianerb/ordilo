@@ -1,5 +1,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
+import { parseJsonBody } from "@/lib/api/parse-json";
+import { methodNotAllowed } from "@/lib/api/respond";
 import {
   streamAgenticAnswer,
   ChatError,
@@ -8,7 +10,6 @@ import {
 import type { ToolContext } from "@/lib/ai/tools";
 import {
   chatRequestSchema,
-  type ChatRequest,
   type ChatErrorResponse,
 } from "@/lib/schemas/chat";
 import {
@@ -59,30 +60,14 @@ export async function POST(request: Request): Promise<Response> {
   // 2. Parse & validate (Zod: non-empty message capped at
   //    MAX_CHAT_MESSAGE_LENGTH, UUID family_id, optional history and
   //    conversation_id)
-  let parsed: ChatRequest;
-  try {
-    const json = await request.json();
-    const result = chatRequestSchema.safeParse(json);
-    if (!result.success) {
-      const body: ChatErrorResponse = {
-        error: "Anfrage ungültig (message und family_id erforderlich).",
-        code: "INVALID_CHAT_INPUT",
-      };
-      return Response.json(body, { status: 400 });
-    }
-    parsed = result.data;
-  } catch {
-    const body: ChatErrorResponse = {
-      error: "Anfrage konnte nicht gelesen werden.",
-      code: "INVALID_JSON",
-    };
-    return Response.json(body, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request, chatRequestSchema, {
+    invalidPayload: "Anfrage ungültig (message und family_id erforderlich).",
+    payloadCode: "INVALID_CHAT_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
 
-  const message = parsed.message;
-  const familyId = parsed.family_id;
-  const clientHistory: HistoryMessage[] = parsed.history;
-  const conversationIdParam = parsed.conversation_id;
+  const { message, family_id: familyId, history: clientHistory } = parsed.data;
+  const conversationIdParam = parsed.data.conversation_id;
 
   // 3. Dev-only failure simulation (header-controlled)
   if (request.headers.get("x-dev-simulate-failure") === "chat") {
@@ -322,9 +307,5 @@ export async function POST(request: Request): Promise<Response> {
 }
 
 export async function GET(): Promise<Response> {
-  const body: ChatErrorResponse = {
-    error: "Methode nicht erlaubt. Bitte POST verwenden.",
-    code: "METHOD_NOT_ALLOWED",
-  };
-  return Response.json(body, { status: 405 });
+  return methodNotAllowed();
 }

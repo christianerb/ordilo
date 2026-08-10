@@ -9,6 +9,12 @@ import {
 } from "@/lib/schemas/document";
 import { DOCUMENT_TYPES } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
+import { jsonError, methodNotAllowed } from "@/lib/api/respond";
+import {
+  buildStoragePath,
+  readFileHeaderBytes,
+  sanitizeFilename,
+} from "@/lib/api/storage";
 
 /**
  * Success response for POST /api/documents/notes.
@@ -87,11 +93,7 @@ export async function POST(request: Request): Promise<Response> {
   try {
     formData = await request.formData();
   } catch {
-    const body: UploadErrorResponse = {
-      error: "Ungültige Anfrage.",
-      code: "INVALID_FORM_DATA",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError("Ungültige Anfrage.", "INVALID_FORM_DATA", 400);
   }
 
   const title = formData.get("title");
@@ -113,11 +115,11 @@ export async function POST(request: Request): Promise<Response> {
   });
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
-    const body: UploadErrorResponse = {
-      error: firstError?.message ?? "Eingabe ungültig.",
-      code: "VALIDATION_ERROR",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError(
+      firstError?.message ?? "Eingabe ungültig.",
+      "VALIDATION_ERROR",
+      400,
+    );
   }
 
   const { title: validTitle, content: validContent, document_type: validType, family_id: familyId, category: validCategory } = parsed.data;
@@ -131,11 +133,11 @@ export async function POST(request: Request): Promise<Response> {
     .maybeSingle();
 
   if (familyError || !familyRow) {
-    const body: UploadErrorResponse = {
-      error: "Kein Zugriff auf diese Familie.",
-      code: "FAMILY_NOT_FOUND",
-    };
-    return Response.json(body, { status: 403 });
+    return jsonError(
+      "Kein Zugriff auf diese Familie.",
+      "FAMILY_NOT_FOUND",
+      403,
+    );
   }
 
   // 4. Optional image upload ----------------------------------------------
@@ -147,39 +149,31 @@ export async function POST(request: Request): Promise<Response> {
 
   if (file && file instanceof File && file.size > 0) {
     // Read header bytes for signature validation.
-    let headerBytes: Uint8Array;
-    try {
-      const fullBuffer = await file.arrayBuffer();
-      headerBytes = new Uint8Array(fullBuffer, 0, Math.min(16, fullBuffer.byteLength));
-    } catch {
-      const body: UploadErrorResponse = {
-        error: "Datei konnte nicht gelesen werden.",
-        code: "FILE_READ_ERROR",
-      };
-      return Response.json(body, { status: 400 });
+    const headerResult = await readFileHeaderBytes(
+      file,
+      "Datei konnte nicht gelesen werden.",
+    );
+    if (!headerResult.ok) {
+      return headerResult.response;
     }
 
-    const validation = validateFileWithSignature(file.type, file.size, headerBytes);
+    const validation = validateFileWithSignature(file.type, file.size, headerResult.headerBytes);
     if (!validation.valid) {
       const statusCode = validation.code === "FILE_TOO_LARGE" ? 413 : 400;
-      const body: UploadErrorResponse = {
-        error: validation.error,
-        code: validation.code,
-      };
-      return Response.json(body, { status: statusCode });
+      return jsonError(validation.error, validation.code, statusCode);
     }
 
     // Only allow images for note attachments (no PDF — a note is text-based).
     if (!(IMAGE_MIME_TYPES as readonly string[]).includes(validation.mimeType)) {
-      const body: UploadErrorResponse = {
-        error: "Nur Bilder können an eine Notiz angehängt werden.",
-        code: "UNSUPPORTED_FILE_TYPE",
-      };
-      return Response.json(body, { status: 400 });
+      return jsonError(
+        "Nur Bilder können an eine Notiz angehängt werden.",
+        "UNSUPPORTED_FILE_TYPE",
+        400,
+      );
     }
 
-    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "attachment";
-    storagePath = `${familyId}/${documentId}/${safeFilename}`;
+    const safeFilename = sanitizeFilename(file.name, "attachment");
+    storagePath = buildStoragePath(familyId, documentId, safeFilename);
     mimeType = validation.mimeType;
     originalFilename = file.name;
 
@@ -191,11 +185,11 @@ export async function POST(request: Request): Promise<Response> {
       });
 
     if (uploadError) {
-      const body: UploadErrorResponse = {
-        error: "Bild konnte nicht hochgeladen werden.",
-        code: "STORAGE_UPLOAD_FAILED",
-      };
-      return Response.json(body, { status: 500 });
+      return jsonError(
+        "Bild konnte nicht hochgeladen werden.",
+        "STORAGE_UPLOAD_FAILED",
+        500,
+      );
     }
   }
 
@@ -229,11 +223,11 @@ export async function POST(request: Request): Promise<Response> {
     if (storagePath) {
       await adminClient.storage.from("documents").remove([storagePath]).catch(() => {});
     }
-    const body: UploadErrorResponse = {
-      error: "Notiz konnte nicht gespeichert werden.",
-      code: "DB_INSERT_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Notiz konnte nicht gespeichert werden.",
+      "DB_INSERT_FAILED",
+      500,
+    );
   }
 
   // 6. Insert document_pages row ------------------------------------------
@@ -264,9 +258,5 @@ export async function POST(request: Request): Promise<Response> {
  * GET /api/documents/notes — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  const body: UploadErrorResponse = {
-    error: "Methode nicht erlaubt. Bitte POST verwenden.",
-    code: "METHOD_NOT_ALLOWED",
-  };
-  return Response.json(body, { status: 405 });
+  return methodNotAllowed();
 }

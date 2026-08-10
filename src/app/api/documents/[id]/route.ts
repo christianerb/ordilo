@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { isValidUuid } from "@/lib/supabase/document-helpers";
+import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 
 /**
  * DELETE /api/documents/[id]
@@ -31,10 +32,7 @@ export async function DELETE(
 
   const { id: documentId } = await params;
   if (!isValidUuid(documentId)) {
-    return Response.json(
-      { error: "Ungültige Dokument-ID.", code: "INVALID_DOCUMENT_ID" },
-      { status: 400 },
-    );
+    return jsonError("Ungültige Dokument-ID.", "INVALID_DOCUMENT_ID", 400);
   }
 
   const serverClient = await createServerClient();
@@ -47,15 +45,17 @@ export async function DELETE(
     .maybeSingle();
 
   if (readError) {
-    return Response.json(
-      { error: "Dokument konnte nicht geladen werden.", code: "DB_READ_FAILED" },
-      { status: 500 },
+    return jsonError(
+      "Dokument konnte nicht geladen werden.",
+      "DB_READ_FAILED",
+      500,
     );
   }
   if (!document) {
-    return Response.json(
-      { error: "Dokument nicht gefunden oder kein Zugriff.", code: "DOCUMENT_NOT_FOUND" },
-      { status: 404 },
+    return jsonError(
+      "Dokument nicht gefunden oder kein Zugriff.",
+      "DOCUMENT_NOT_FOUND",
+      404,
     );
   }
 
@@ -66,9 +66,10 @@ export async function DELETE(
     .eq("id", documentId);
 
   if (deleteError) {
-    return Response.json(
-      { error: "Dokument konnte nicht gelöscht werden.", code: "DB_DELETE_FAILED" },
-      { status: 500 },
+    return jsonError(
+      "Dokument konnte nicht gelöscht werden.",
+      "DB_DELETE_FAILED",
+      500,
     );
   }
 
@@ -93,8 +94,5 @@ export async function DELETE(
  * GET /api/documents/[id] — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  return Response.json(
-    { error: "Methode nicht erlaubt.", code: "METHOD_NOT_ALLOWED" },
-    { status: 405 },
-  );
+  return methodNotAllowed("Methode nicht erlaubt.");
 }

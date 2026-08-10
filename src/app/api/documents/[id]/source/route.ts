@@ -3,8 +3,9 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { resolveDocumentWithOwnership } from "@/lib/supabase/document-helpers";
 import { findSourceLocation } from "@/lib/source-locations";
-
-const MAX_SOURCE_TEXT_LENGTH = 500;
+import { jsonError } from "@/lib/api/respond";
+import { parseJsonBody } from "@/lib/api/parse-json";
+import { sourceRequestSchema } from "@/lib/schemas/document";
 
 /**
  * Returns a single, unambiguous OCR source location for a field value.
@@ -17,19 +18,13 @@ export async function POST(
   const auth = await requireUser();
   if (auth.status) return Response.json(auth.json, { status: auth.status });
 
-  let sourceText = "";
-  try {
-    const body = (await request.json()) as { text?: unknown };
-    sourceText = typeof body.text === "string" ? body.text.trim() : "";
-  } catch {
-    sourceText = "";
-  }
-  if (!sourceText || sourceText.length > MAX_SOURCE_TEXT_LENGTH) {
-    return Response.json(
-      { error: "Ungültiger Vergleichswert.", code: "INVALID_SOURCE_TEXT" },
-      { status: 400 },
-    );
-  }
+  const parsed = await parseJsonBody(request, sourceRequestSchema, {
+    invalidJson: "Ungültiger Vergleichswert.",
+    invalidPayload: "Ungültiger Vergleichswert.",
+    payloadCode: "INVALID_SOURCE_TEXT",
+  });
+  if (!parsed.ok) return parsed.response;
+  const sourceText = parsed.data.text;
 
   const { id: documentId } = await params;
   const serverClient = await createServerClient();
@@ -47,9 +42,10 @@ export async function POST(
     .eq("document_id", documentId)
     .order("page_number", { ascending: true });
   if (pagesError) {
-    return Response.json(
-      { error: "Original konnte nicht vorbereitet werden.", code: "DB_READ_FAILED" },
-      { status: 500 },
+    return jsonError(
+      "Original konnte nicht vorbereitet werden.",
+      "DB_READ_FAILED",
+      500,
     );
   }
 

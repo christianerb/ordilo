@@ -11,6 +11,12 @@ import {
   getErrorCode,
   reportPipelineFailure,
 } from "@/lib/pipeline/failure-tracking";
+import { jsonError, methodNotAllowed } from "@/lib/api/respond";
+import {
+  buildStoragePath,
+  readFileHeaderBytes,
+  sanitizeFilename,
+} from "@/lib/api/storage";
 
 /**
  * Maximum document uploads per family per day.
@@ -70,11 +76,11 @@ export async function POST(request: Request): Promise<Response> {
   try {
     formData = await request.formData();
   } catch {
-    const body: UploadErrorResponse = {
-      error: "Ungültige Anfrage. Bitte eine Datei hochladen.",
-      code: "INVALID_FORM_DATA",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError(
+      "Ungültige Anfrage. Bitte eine Datei hochladen.",
+      "INVALID_FORM_DATA",
+      400,
+    );
   }
 
   const file = formData.get("file");
@@ -82,11 +88,11 @@ export async function POST(request: Request): Promise<Response> {
 
   // Verify a file was provided.
   if (!file || !(file instanceof File)) {
-    const body: UploadErrorResponse = {
-      error: "Keine Datei gefunden. Bitte eine Datei auswählen.",
-      code: "NO_FILE",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError(
+      "Keine Datei gefunden. Bitte eine Datei auswählen.",
+      "NO_FILE",
+      400,
+    );
   }
 
   // Validate family_id format.
@@ -94,11 +100,7 @@ export async function POST(request: Request): Promise<Response> {
     family_id: familyIdRaw,
   });
   if (!familyIdParsed.success) {
-    const body: UploadErrorResponse = {
-      error: "Ungültige Familien-ID.",
-      code: "INVALID_FAMILY_ID",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError("Ungültige Familien-ID.", "INVALID_FAMILY_ID", 400);
   }
   const familyId = familyIdParsed.data.family_id;
 
@@ -112,17 +114,14 @@ export async function POST(request: Request): Promise<Response> {
   // We read the full file into memory (it's already buffered for the
   // Storage upload) and take the first 16 bytes. This is safe for the
   // 4 MB max file size and avoids platform-specific Blob.slice() issues.
-  let headerBytes: Uint8Array;
-  try {
-    const fullBuffer = await file.arrayBuffer();
-    headerBytes = new Uint8Array(fullBuffer, 0, Math.min(16, fullBuffer.byteLength));
-  } catch {
-    const body: UploadErrorResponse = {
-      error: "Datei konnte nicht gelesen werden. Bitte erneut versuchen.",
-      code: "FILE_READ_ERROR",
-    };
-    return Response.json(body, { status: 400 });
+  const headerResult = await readFileHeaderBytes(
+    file,
+    "Datei konnte nicht gelesen werden. Bitte erneut versuchen.",
+  );
+  if (!headerResult.ok) {
+    return headerResult.response;
   }
+  const headerBytes = headerResult.headerBytes;
 
   const validation = validateFileWithSignature(
     file.type,
@@ -132,11 +131,7 @@ export async function POST(request: Request): Promise<Response> {
   if (!validation.valid) {
     const statusCode =
       validation.code === "FILE_TOO_LARGE" ? 413 : 400;
-    const body: UploadErrorResponse = {
-      error: validation.error,
-      code: validation.code,
-    };
-    return Response.json(body, { status: statusCode });
+    return jsonError(validation.error, validation.code, statusCode);
   }
 
   // 4. Verify family ownership (RLS) --------------------------------------
@@ -149,11 +144,11 @@ export async function POST(request: Request): Promise<Response> {
     .maybeSingle();
 
   if (familyError || !familyRow) {
-    const body: UploadErrorResponse = {
-      error: "Kein Zugriff auf diese Familie.",
-      code: "FAMILY_NOT_FOUND",
-    };
-    return Response.json(body, { status: 403 });
+    return jsonError(
+      "Kein Zugriff auf diese Familie.",
+      "FAMILY_NOT_FOUND",
+      403,
+    );
   }
 
   // 4b. Check daily upload limit ------------------------------------------
@@ -168,11 +163,11 @@ export async function POST(request: Request): Promise<Response> {
     .gte("created_at", todayStart.toISOString());
 
   if ((todayCount ?? 0) >= DAILY_UPLOAD_LIMIT) {
-    const body: UploadErrorResponse = {
-      error: `Tageslimit erreicht (${DAILY_UPLOAD_LIMIT} Dokumente pro Tag). Bitte morgen erneut versuchen.`,
-      code: "UPLOAD_LIMIT_EXCEEDED",
-    };
-    return Response.json(body, { status: 429 });
+    return jsonError(
+      `Tageslimit erreicht (${DAILY_UPLOAD_LIMIT} Dokumente pro Tag). Bitte morgen erneut versuchen.`,
+      "UPLOAD_LIMIT_EXCEEDED",
+      429,
+    );
   }
 
   // 5. Generate document ID and upload to Storage -------------------------
@@ -181,8 +176,8 @@ export async function POST(request: Request): Promise<Response> {
 
   // Build the Storage path: {family_id}/{document_id}/{filename}
   // Sanitize the filename to avoid path traversal issues.
-  const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "document";
-  const storagePath = `${familyId}/${documentId}/${safeFilename}`;
+  const safeFilename = sanitizeFilename(file.name, "document");
+  const storagePath = buildStoragePath(familyId, documentId, safeFilename);
 
   const { error: uploadError } = await adminClient.storage
     .from("documents")
@@ -200,11 +195,11 @@ export async function POST(request: Request): Promise<Response> {
       source: "api",
     });
     // Storage upload failed — do NOT create a documents row (no orphaned rows).
-    const body: UploadErrorResponse = {
-      error: "Upload fehlgeschlagen. Bitte erneut versuchen.",
-      code: "STORAGE_UPLOAD_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Upload fehlgeschlagen. Bitte erneut versuchen.",
+      "STORAGE_UPLOAD_FAILED",
+      500,
+    );
   }
 
   // 6. Create the documents row (status = uploaded) ----------------------
@@ -238,11 +233,11 @@ export async function POST(request: Request): Promise<Response> {
     // leave a file with no corresponding document row.
     await adminClient.storage.from("documents").remove([storagePath]);
 
-    const body: UploadErrorResponse = {
-      error: "Dokument konnte nicht gespeichert werden. Bitte erneut versuchen.",
-      code: "DB_INSERT_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Dokument konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "DB_INSERT_FAILED",
+      500,
+    );
   }
 
   // 7. Async pipeline: enqueue the OCR job and process it in-band ----------
@@ -317,9 +312,5 @@ export async function POST(request: Request): Promise<Response> {
  * GET /api/documents/upload — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  const body: UploadErrorResponse = {
-    error: "Methode nicht erlaubt. Bitte POST verwenden.",
-    code: "METHOD_NOT_ALLOWED",
-  };
-  return Response.json(body, { status: 405 });
+  return methodNotAllowed();
 }
