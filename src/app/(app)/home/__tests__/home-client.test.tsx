@@ -287,6 +287,15 @@ describe("HomeClient — Heute hero", () => {
     });
   });
 
+  it("gives hero actions a one-thumb target", () => {
+    render(<HomeClient {...defaultProps} />);
+    const hero = screen.getByTestId("today-hero");
+    expect(within(hero).getByTestId("today-hero-done").className).toContain(
+      "h-11",
+    );
+    expect(within(hero).getByText("Details").className).toContain("h-11");
+  });
+
   it("labels a task due today as 'Heute fällig'", () => {
     render(
       <HomeClient

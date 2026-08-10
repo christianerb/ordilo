@@ -93,17 +93,22 @@ export function TaskCard({
         aria-checked={isDone}
         aria-label={isDone ? "Aufgabe als offen markieren" : "Aufgabe als erledigt markieren"}
         onClick={handleToggle}
-        className={cn(
-          "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border-2 transition-all press-scale focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          isDone
-            ? "border-[var(--petrol)] bg-[var(--petrol)]"
-            : "border-[var(--mist)] bg-transparent hover:border-[var(--petrol)]",
-        )}
+        className="mt-[-0.25rem] flex size-11 shrink-0 items-center justify-center rounded-full transition-transform press-scale hover:[&>span]:border-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         data-testid="task-checkbox"
       >
-        {isDone && (
-          <Check className="size-3 text-white animate-check-pop" strokeWidth={3} aria-hidden="true" />
-        )}
+        <span
+          className={cn(
+            "flex size-6 items-center justify-center rounded-full border-2 transition-colors",
+            isDone
+              ? "border-[var(--petrol)] bg-[var(--petrol)]"
+              : "border-[var(--mist)] bg-transparent",
+          )}
+          aria-hidden="true"
+        >
+          {isDone && (
+            <Check className="size-3.5 text-[var(--warm-white)] animate-check-pop" strokeWidth={3} />
+          )}
+        </span>
       </button>
 
       {/* Content — button opens the detail sheet when onClick is provided */}

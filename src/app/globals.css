@@ -236,11 +236,16 @@
     80% { transform: rotate(4deg); }
     100% { transform: rotate(0deg); }
   }
-  @keyframes ordilo-mascot-bounce {
-    0%, 100% { transform: translateY(0); }
-    30% { transform: translateY(-4px); }
-    50% { transform: translateY(0); }
-    65% { transform: translateY(-1.5px); }
+  /* A single success acknowledgement, not a decorative bounce loop. */
+  @keyframes ordilo-mascot-success {
+    from {
+      opacity: 0.72;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
   }
   @keyframes ordilo-mascot-ear-wiggle {
     0%, 100% { transform: rotate(0deg); }
@@ -586,8 +591,8 @@
   .ordilo-mascot-greet {
     animation: ordilo-mascot-greet 1.1s ease-in-out 1;
   }
-  .ordilo-mascot-bounce {
-    animation: ordilo-mascot-bounce 0.8s var(--ease-out-quart) 1;
+  .ordilo-mascot-success {
+    animation: ordilo-mascot-success 220ms var(--ease-out-quart) 1;
   }
   .ordilo-mascot-ear-wiggle {
     animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
@@ -654,7 +659,7 @@
   .ordilo-mascot-sway,
   .ordilo-mascot-nod,
   .ordilo-mascot-greet,
-  .ordilo-mascot-bounce,
+  .ordilo-mascot-success,
   .ordilo-mascot-ear-wiggle,
   .animate-banner-glow,
   .animate-avatar-pop,
@@ -671,10 +676,12 @@
     transform: none;
   }
 
-  * {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
+  .card-lift,
+  .press-scale {
+    transition-duration: 0ms;
+  }
+
+  html {
+    scroll-behavior: auto;
   }
 }

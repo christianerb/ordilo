@@ -92,6 +92,8 @@ describe("TaskCard", () => {
     render(<TaskCard task={makeTask({ status: "open" })} />);
     const checkbox = screen.getByRole("checkbox");
     expect(checkbox.getAttribute("aria-checked")).toBe("false");
+    expect(checkbox.className).toContain("size-11");
+    expect(checkbox.querySelector("span")?.className).toContain("size-6");
   });
 
   it("renders a checkbox that is checked for done tasks", () => {

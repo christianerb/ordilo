@@ -95,7 +95,7 @@ export function TodayHero({
         <div className="mt-3">
           <Link
             href={insight.href}
-            className="inline-flex h-9 items-center rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex h-11 items-center rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             Ansehen
           </Link>
@@ -143,14 +143,14 @@ export function TodayHero({
           type="button"
           onClick={() => onMarkDone(task.id)}
           data-testid="today-hero-done"
-          className="inline-flex h-9 items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex h-11 items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <Check className="size-4" aria-hidden="true" />
           Erledigt
         </button>
         <Link
           href="/aufgaben"
-          className="inline-flex h-9 items-center rounded-ordilo-sm px-3 text-sm font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex h-11 items-center rounded-ordilo-sm px-3 text-sm font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           Details
         </Link>

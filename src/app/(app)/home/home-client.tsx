@@ -23,6 +23,10 @@ import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { SuggestionChipsRegistrar } from "@/lib/search/suggestion-chips-context";
 import {
+  getAvatarTextColor,
+  resolveAvatarColor,
+} from "@/lib/avatar-colors";
+import {
   filterRecentDocuments,
   mergeJournalDocuments,
   JOURNAL_DOCS_LIMIT,
@@ -288,9 +292,10 @@ export function HomeClient({
                 {members.slice(0, 5).map((m) => (
                   <div
                     key={m.id}
-                    className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold text-white"
+                    className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold"
                     style={{
-                      backgroundColor: m.avatar_color ?? "var(--petrol)",
+                      backgroundColor: resolveAvatarColor(m.avatar_color),
+                      color: getAvatarTextColor(m.avatar_color),
                     }}
                     title={m.name}
                     aria-label={m.name}
@@ -379,7 +384,7 @@ export function HomeClient({
               )}
             </div>
             {journalDocs.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:gap-4 stagger-children">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(10rem,15rem))] md:gap-4 stagger-children">
                 {journalDocs.map((doc) => (
                   <JournalDocTile
                     key={doc.id}

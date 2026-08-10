@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * - thinking: subtle head nod (used while the AI is processing)
  * - searching: trunk swings side to side, as if looking around
  * - greeting: trunk raised in a wave, happy eyes — plays once on mount
- * - success: same happy pose as greeting, with a small hop — plays once
+ * - success: same happy pose as greeting, with a brief settle-in — plays once
  * - helping: trunk raised and held, ear perked — ready to assist
  * - sleepy: eyes closed, trunk resting low, no idle animation
  */
@@ -66,7 +66,7 @@ export function OrdiloMascot({
 
   const bodyAnimClass =
     mood === "success"
-      ? "ordilo-mascot-bounce"
+      ? "ordilo-mascot-success"
       : animate
         ? "ordilo-mascot-breathe"
         : undefined;
