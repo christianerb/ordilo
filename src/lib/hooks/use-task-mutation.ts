@@ -57,6 +57,32 @@ export interface UseTaskMutationOptions {
    */
   onDismissException?: () => void;
   /**
+   * Apply the optimistic reschedule update (e.g. set the task's status and
+   * due date to `updates`). Called immediately before the Supabase update.
+   * Optional — components without board drag-and-drop don't need it.
+   */
+  onOptimisticReschedule?: (
+    taskId: string,
+    updates: { status: string; due_date: string | null },
+  ) => void;
+  /**
+   * Revert a failed reschedule back to `previous`. Called when the Supabase
+   * update returns an error or throws.
+   */
+  onRevertReschedule?: (
+    taskId: string,
+    previous: { status: string; due_date: string | null },
+  ) => void;
+  /**
+   * Called when a reschedule mutation fails with a Supabase error object.
+   */
+  onRescheduleError?: () => void;
+  /**
+   * Called when a reschedule mutation throws an exception. When omitted,
+   * falls back to {@link onRescheduleError}.
+   */
+  onRescheduleException?: () => void;
+  /**
    * Called after a successful Supabase update (no error, no exception).
    * Used to sync server state (e.g. `router.refresh()`). NOT called on
    * error or exception paths — `onToggleError` / `onDismissError` cover
@@ -86,6 +112,11 @@ export interface UseTaskMutationOptions {
 export function useTaskMutation(options: UseTaskMutationOptions): {
   toggleDone: (taskId: string, newStatus: string) => Promise<boolean>;
   dismiss: (taskId: string) => Promise<boolean>;
+  reschedule: (
+    taskId: string,
+    updates: { status: string; due_date: string | null },
+    previous: { status: string; due_date: string | null },
+  ) => Promise<boolean>;
 } {
   const supabase = createClient();
 
@@ -147,5 +178,36 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
     [supabase],
   );
 
-  return { toggleDone, dismiss };
+  const reschedule = useCallback(
+    async (
+      taskId: string,
+      updates: { status: string; due_date: string | null },
+      previous: { status: string; due_date: string | null },
+    ): Promise<boolean> => {
+      const opts = optionsRef.current;
+      opts.onOptimisticReschedule?.(taskId, updates);
+
+      try {
+        const { error } = await supabase
+          .from("tasks")
+          .update({ status: updates.status, due_date: updates.due_date })
+          .eq("id", taskId);
+
+        if (error) {
+          opts.onRevertReschedule?.(taskId, previous);
+          opts.onRescheduleError?.();
+          return false;
+        }
+        opts.onSettled?.();
+        return true;
+      } catch {
+        opts.onRevertReschedule?.(taskId, previous);
+        (opts.onRescheduleException ?? opts.onRescheduleError)?.();
+        return false;
+      }
+    },
+    [supabase],
+  );
+
+  return { toggleDone, dismiss, reschedule };
 }
