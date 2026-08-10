@@ -1,5 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
-import type { Database } from "@/types/database";
+import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 
 /**
  * Shared building blocks for "use server" action modules
@@ -24,30 +23,15 @@ export type SimpleActionResult =
 export const FRIENDLY_ERROR =
   "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 
-type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
-type ServerClient = Awaited<ReturnType<typeof createClient>>;
-
 /**
- * Fetch the authenticated user's family (RLS-scoped — only returns the
- * family created_by the current user).
+ * Fetch the authenticated user's family using the app-wide deterministic
+ * resolution rule: owned family first, then the oldest membership.
  *
  * @returns The family row, or null if the user has no family. `error`
- *          carries FRIENDLY_ERROR when the query itself failed.
+ *          carries FRIENDLY_ERROR when a lookup fails.
  */
 export async function getUserFamily(
-  supabase: ServerClient,
-): Promise<{
-  data: Pick<FamilyRow, "id" | "name"> | null;
-  error: string | null;
-}> {
-  const { data, error } = await supabase
-    .from("families")
-    .select("id, name")
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { data: null, error: FRIENDLY_ERROR };
-  }
-  return { data, error: null };
+  supabase: Parameters<typeof resolveUserFamily>[0],
+) {
+  return resolveUserFamily(supabase);
 }

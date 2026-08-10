@@ -1,20 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/supabase/resolve-user-family", () => ({
+  resolveUserFamily: vi.fn(),
+}));
+
 import { FRIENDLY_ERROR, getUserFamily } from "@/lib/actions/result";
+import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 
 type SupabaseLike = Parameters<typeof getUserFamily>[0];
 
-function mockSupabase(result: {
-  data: { id: string; name: string } | null;
-  error: unknown;
-}): SupabaseLike {
-  return {
-    from: () => ({
-      select: () => ({
-        limit: () => ({ maybeSingle: () => Promise.resolve(result) }),
-      }),
-    }),
-  } as unknown as SupabaseLike;
-}
+const supabase = {} as SupabaseLike;
 
 describe("FRIENDLY_ERROR", () => {
   it("is the shared German fallback message", () => {
@@ -25,29 +20,43 @@ describe("FRIENDLY_ERROR", () => {
 });
 
 describe("getUserFamily", () => {
-  it("returns the family row on success", async () => {
-    const supabase = mockSupabase({
-      data: { id: "fam-1", name: "Familie Test" },
-      error: null,
-    });
-    const result = await getUserFamily(supabase);
-    expect(result).toEqual({
-      data: { id: "fam-1", name: "Familie Test" },
-      error: null,
-    });
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it("returns null data when the user has no family", async () => {
-    const supabase = mockSupabase({ data: null, error: null });
+  it("delegates to the deterministic family resolver", async () => {
+    const resolved = {
+      data: {
+        id: "fam-1",
+        name: "Familie Test",
+        onboarding_completed_at: null,
+      },
+      error: null,
+    };
+    (resolveUserFamily as ReturnType<typeof vi.fn>).mockResolvedValue(resolved);
+
+    const result = await getUserFamily(supabase);
+
+    expect(result).toEqual(resolved);
+    expect(resolveUserFamily).toHaveBeenCalledWith(supabase);
+  });
+
+  it("preserves a missing-family result", async () => {
+    (resolveUserFamily as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: null,
+      error: null,
+    });
+
     const result = await getUserFamily(supabase);
     expect(result).toEqual({ data: null, error: null });
   });
 
-  it("returns FRIENDLY_ERROR when the query fails", async () => {
-    const supabase = mockSupabase({
+  it("preserves the resolver's friendly query error", async () => {
+    (resolveUserFamily as ReturnType<typeof vi.fn>).mockResolvedValue({
       data: null,
-      error: new Error("db down"),
+      error: FRIENDLY_ERROR,
     });
+
     const result = await getUserFamily(supabase);
     expect(result).toEqual({ data: null, error: FRIENDLY_ERROR });
   });
