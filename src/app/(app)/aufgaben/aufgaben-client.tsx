@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { X } from "lucide-react";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import { SwipeableTaskCard } from "@/components/ordilo/swipeable-task-card";
 import { TaskDetailSheet } from "@/components/ordilo/task-detail-sheet";
@@ -18,7 +19,12 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { sortTasksByPriorityAndDate } from "@/lib/task-utils";
+import {
+  sortTasksByPriorityAndDate,
+  getTaskDropUpdates,
+  type TaskBoardColumnId,
+  type TaskDropUpdates,
+} from "@/lib/task-utils";
 import { useScanActions } from "@/lib/scan/scan-context";
 import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { cn } from "@/lib/utils";
@@ -43,10 +49,25 @@ const COLUMN_DEFS: Omit<ColumnConfig, "filter">[] = [
   { id: "done", label: "Erledigt", dot: "bg-[var(--petrol)]", emptyText: "Noch nichts geschafft" },
 ];
 
+/** Success toasts per drop target column (German UI copy). */
+const DROP_SUCCESS_TOASTS: Record<TaskBoardColumnId, string> = {
+  done: "Erledigt — gut gemacht!",
+  "this-week": "Für diese Woche eingeplant",
+  later: "Auf später verschoben",
+  overdue: "Als überfällig markiert",
+};
+
+/**
+ * localStorage key for the one-time drag-and-drop hint. Versioned so a
+ * future wording change can re-show the hint under a fresh key.
+ */
+const DRAG_HINT_STORAGE_KEY = "ordilo-board-drag-hint-v1";
+
 function BoardColumn({
   column,
   tasks,
   canAcceptDrop,
+  isTouchDragOver,
   onToggleDone,
   onDismiss,
   onCardClick,
@@ -55,11 +76,14 @@ function BoardColumn({
   onDrop,
   deleteLabel,
   onDragStateChange,
+  onDragOverColumn,
 }: {
   column: ColumnConfig;
   tasks: TaskCardData[];
   /** Whether this column can accept the currently-dragged task. */
   canAcceptDrop: boolean;
+  /** Whether a touch drag is currently hovering this column. */
+  isTouchDragOver?: boolean;
   onToggleDone: (taskId: string, newStatus: string) => void;
   onDismiss: (taskId: string) => void;
   onCardClick: (task: TaskCardData) => void;
@@ -68,6 +92,7 @@ function BoardColumn({
   onDrop: (taskId: string, targetColumnId: string) => void;
   deleteLabel?: string;
   onDragStateChange?: (taskId: string | null) => void;
+  onDragOverColumn?: (columnId: string | null) => void;
 }) {
   const sortedTasks = useMemo(
     () => sortTasksByPriorityAndDate(tasks),
@@ -110,13 +135,16 @@ function BoardColumn({
     }
   }, [canAcceptDrop, column.id, onDrop]);
 
+  const highlighted = isDragOver || (canAcceptDrop && isTouchDragOver);
+
   return (
     <div
       className={cn(
         "animate-column-in flex flex-col gap-2 rounded-ordilo-sm p-1 transition-colors",
-        isDragOver && "bg-secondary/30",
+        highlighted && "bg-secondary/30",
       )}
       data-testid={`board-column-${column.id}`}
+      data-column-id={column.id}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -149,6 +177,8 @@ function BoardColumn({
               showConfidence={false}
               deleteLabel={deleteLabel}
               onDragStateChange={onDragStateChange}
+              onTaskDrop={onDrop}
+              onDragOverColumn={onDragOverColumn}
             />
           ))
         ) : (
@@ -158,6 +188,17 @@ function BoardColumn({
           >
             {column.emptyText}
           </p>
+        )}
+
+        {/* Drop placeholder — shows where the dragged task will land.
+            Sorting is automatic (priority, then date), so the placeholder
+            sits at the end of the list rather than under the finger. */}
+        {highlighted && (
+          <div
+            data-testid={`drop-placeholder-${column.id}`}
+            aria-hidden="true"
+            className="h-14 rounded-ordilo-sm border border-dashed border-[var(--petrol)]/50 bg-secondary/20"
+          />
         )}
       </div>
     </div>
@@ -184,6 +225,21 @@ export function AufgabenClient({
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
+  const [showDragHint, setShowDragHint] = useState(false);
+
+  // One-time drag-and-drop hint — read localStorage after mount (not
+  // during render) to avoid a server/client hydration mismatch. Optional
+  // chaining matches the codebase's defensive localStorage access (it can
+  // be unavailable, e.g. in private browsing or test environments).
+  useMountEffect(() => {
+    setShowDragHint(!window.localStorage?.getItem(DRAG_HINT_STORAGE_KEY));
+  });
+
+  const dismissDragHint = useCallback(() => {
+    window.localStorage?.setItem(DRAG_HINT_STORAGE_KEY, "dismissed");
+    setShowDragHint(false);
+  }, []);
 
   // The page header's "Neue Aufgabe" button opens this view's create sheet
   // via the planner actions context (registered on mount, cleared on
@@ -221,11 +277,16 @@ export function AufgabenClient({
             : (t: TaskCardData) => t.status === "done",
   }));
 
-  const draggingTaskStatus = draggingTaskId
-    ? tasks.find((t) => t.id === draggingTaskId)?.status
-    : undefined;
+  // Which column the dragged task currently belongs to — every other
+  // column is a valid drop target.
+  const draggingColumnId = draggingTaskId
+    ? (() => {
+        const task = tasks.find((t) => t.id === draggingTaskId);
+        return task ? (columns.find((col) => col.filter(task))?.id ?? null) : null;
+      })()
+    : null;
 
-  const { toggleDone, dismiss } = useTaskMutation({
+  const { toggleDone, dismiss, reschedule } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
@@ -252,6 +313,16 @@ export function AufgabenClient({
     onDismissError: () => toast.error("Verwerfen hat nicht geklappt — bitte nochmal versuchen"),
     onDismissException: () =>
       toast.error("Etwas ist schiefgelaufen. Bitte erneut versuchen."),
+    onOptimisticReschedule: (taskId, updates) =>
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, ...updates } : t)),
+      ),
+    onRevertReschedule: (taskId, previous) =>
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, ...previous } : t)),
+      ),
+    onRescheduleError: () =>
+      toast.error("Verschieben hat nicht geklappt — bitte nochmal versuchen"),
   });
 
   const handleToggleDone = useCallback(
@@ -293,23 +364,57 @@ export function AufgabenClient({
     router.refresh();
   }, [router]);
 
+  /** Revert a board drop back to the task's previous column values. */
+  const handleUndoDrop = useCallback(
+    async (taskId: string, current: TaskDropUpdates, previous: TaskDropUpdates) => {
+      setSelectedTask((prev) =>
+        prev && prev.id === taskId ? { ...prev, ...previous } : prev,
+      );
+      const ok = await reschedule(taskId, previous, current);
+      if (ok) {
+        toast.success("Rückgängig gemacht");
+      }
+    },
+    [reschedule],
+  );
+
   const handleDrop = useCallback(
     async (taskId: string, targetColumnId: string) => {
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
 
-      const newStatus = targetColumnId === "done" ? "done" : "open";
-      if (task.status === newStatus) return;
-
-      setSelectedTask((prev) =>
-        prev && prev.id === taskId ? { ...prev, status: newStatus } : prev,
+      // Dropping between open columns reschedules the due date; dropping
+      // onto "Erledigt" completes the task. No-op when the task already
+      // belongs to the target column.
+      const updates = getTaskDropUpdates(
+        task,
+        targetColumnId as TaskBoardColumnId,
+        nowStr,
       );
-      const ok = await toggleDone(taskId, newStatus);
+      if (!updates) return;
+
+      const previous: TaskDropUpdates = {
+        status: task.status,
+        due_date: task.due_date,
+      };
+      setSelectedTask((prev) =>
+        prev && prev.id === taskId ? { ...prev, ...updates } : prev,
+      );
+      const ok = await reschedule(taskId, updates, previous);
       if (ok) {
-        toast.success(newStatus === "done" ? "Erledigt — gut gemacht!" : "Wieder geöffnet — kein Problem");
+        toast.success(
+          DROP_SUCCESS_TOASTS[targetColumnId as TaskBoardColumnId] ??
+            "Verschoben",
+          {
+            action: {
+              label: "Rückgängig",
+              onClick: () => void handleUndoDrop(taskId, updates, previous),
+            },
+          },
+        );
       }
     },
-    [tasks, toggleDone],
+    [tasks, reschedule, nowStr, handleUndoDrop],
   );
 
   const visibleTasks = useMemo(
@@ -349,6 +454,25 @@ export function AufgabenClient({
         />
       )}
 
+      {hasAnyTasks && showDragHint && (
+        <div
+          data-testid="board-drag-hint"
+          className="flex items-center gap-2 rounded-ordilo-sm bg-secondary/20 px-3 py-2 text-xs text-muted-foreground [@media(pointer:fine)]:hidden"
+        >
+          <span className="flex-1">
+            Tipp: Halte eine Aufgabe kurz gedrückt, um sie zu verschieben.
+          </span>
+          <button
+            type="button"
+            onClick={dismissDragHint}
+            aria-label="Hinweis schließen"
+            className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+      )}
+
       {hasAnyTasks && (
         <div
           data-testid="task-board"
@@ -360,9 +484,9 @@ export function AufgabenClient({
               column={col}
               tasks={columnTasks[col.id]}
               canAcceptDrop={
-                draggingTaskStatus !== undefined &&
-                (col.id === "done") !== (draggingTaskStatus === "done")
+                draggingColumnId !== null && col.id !== draggingColumnId
               }
+              isTouchDragOver={dragOverColumnId === col.id}
               onToggleDone={handleToggleDone}
               onDismiss={handleDismiss}
               onCardClick={handleCardClick}
@@ -371,6 +495,7 @@ export function AufgabenClient({
               onDrop={handleDrop}
               deleteLabel="Verwerfen"
               onDragStateChange={setDraggingTaskId}
+              onDragOverColumn={setDragOverColumnId}
             />
           ))}
         </div>

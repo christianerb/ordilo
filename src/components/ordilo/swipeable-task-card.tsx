@@ -1,19 +1,28 @@
 "use client";
 
-import { useRef, useState, useCallback, type TouchEvent } from "react";
+import {
+  useRef,
+  useState,
+  useCallback,
+  type TouchEvent as ReactTouchEvent,
+} from "react";
 import { Check, X } from "lucide-react";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
 import { vibrate } from "@/lib/haptics";
 
 /**
- * SwipeableTaskCard — wraps a TaskCard with touch swipe gestures and
- * native drag-and-drop for desktop.
+ * SwipeableTaskCard — wraps a TaskCard with touch swipe gestures,
+ * long-press touch drag-and-drop, and native drag-and-drop for desktop.
  *
  * Swipe right → mark as done (petrol check indicator).
  * Swipe left → dismiss (destructive X indicator).
  * Tap (minimal movement) → open task detail via onClick.
- * Drag (desktop) → move task between board columns.
+ * Long-press + drag (touch) → move task between board columns. The page
+ *   scroll is blocked while dragging; columns are hit-tested via
+ *   `document.elementFromPoint` against `[data-column-id]` ancestors.
+ * Drag (desktop) → move task between board columns (native HTML5 DnD).
  *
  * Visual flow on swipe commit:
  * 1. Card slides off-screen in the swipe direction (200ms).
@@ -24,6 +33,11 @@ const SWIPE_THRESHOLD = 80;
 const TAP_THRESHOLD = 10;
 const SLIDE_OFF_DISTANCE = 200;
 const SLIDE_OFF_DURATION = 200;
+/** Finger must stay within TAP_THRESHOLD for this long to start a drag. */
+const LONG_PRESS_MS = 450;
+/** Viewport edge zones where the page auto-scrolls during a touch drag. */
+const DRAG_SCROLL_EDGE_PX = 72;
+const DRAG_SCROLL_STEP_PX = 12;
 
 export interface SwipeableTaskCardProps {
   task: TaskCardData;
@@ -37,6 +51,13 @@ export interface SwipeableTaskCardProps {
   deleteLabel?: string;
   /** Notifies the parent when a drag starts/ends (for drop-target gating). */
   onDragStateChange?: (taskId: string | null) => void;
+  /**
+   * Called when a touch drag ends over a board column. When omitted,
+   * long-press touch dragging is disabled (e.g. outside the board).
+   */
+  onTaskDrop?: (taskId: string, columnId: string) => void;
+  /** Notifies the parent which column the touch drag is currently over. */
+  onDragOverColumn?: (columnId: string | null) => void;
 }
 
 export function SwipeableTaskCard({
@@ -49,7 +70,10 @@ export function SwipeableTaskCard({
   showConfidence = false,
   deleteLabel = "Löschen",
   onDragStateChange,
+  onTaskDrop,
+  onDragOverColumn,
 }: SwipeableTaskCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
   const startX = useRef(0);
   const startY = useRef(0);
   const swiping = useRef(false);
@@ -61,37 +85,181 @@ export function SwipeableTaskCard({
   const [phase, setPhase] = useState<"live" | "snap" | "slide-off">("snap");
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleTouchStart = useCallback((e: TouchEvent) => {
-    startX.current = e.touches[0].clientX;
-    startY.current = e.touches[0].clientY;
-    swiping.current = true;
-    moved.current = false;
-    armed.current = 0;
-    setPhase("live");
+  // Touch drag state. `touchDragging` mirrors `dragOffset !== null` for use
+  // inside event handlers without stale closures.
+  const longPressTimer = useRef<number | null>(null);
+  const touchDragging = useRef(false);
+  const overColumnId = useRef<string | null>(null);
+  const [dragOffset, setDragOffset] = useState<{ x: number; y: number } | null>(
+    null,
+  );
+
+  // Auto-scroll state for the drag loop: -1/0/+1 per frame while the
+  // finger rests in a viewport edge zone, plus the last finger position
+  // for re-hit-testing after each scroll step.
+  const scrollVelocity = useRef(0);
+  const lastTouchPos = useRef({ x: 0, y: 0 });
+  const scrollRaf = useRef<number | null>(null);
+
+  // Latest callback refs so the rAF scroll loop never goes stale.
+  const onDragOverColumnRef = useRef(onDragOverColumn);
+  onDragOverColumnRef.current = onDragOverColumn;
+
+  const clearLongPressTimer = useCallback(() => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
   }, []);
 
-  const handleTouchMove = useCallback((e: TouchEvent) => {
-    if (!swiping.current) return;
-    const dx = e.touches[0].clientX - startX.current;
-    const dy = e.touches[0].clientY - startY.current;
-    if (Math.abs(dx) > TAP_THRESHOLD || Math.abs(dy) > TAP_THRESHOLD) {
-      moved.current = true;
+  /** Hit-test the board column under a viewport point and notify on change. */
+  const updateOverColumn = useCallback((clientX: number, clientY: number) => {
+    // The dragged card has pointer-events: none while dragging, so
+    // elementFromPoint sees through it to the column (or a card inside one).
+    const el = document.elementFromPoint(clientX, clientY);
+    const columnId =
+      el?.closest("[data-column-id]")?.getAttribute("data-column-id") ?? null;
+    if (columnId !== overColumnId.current) {
+      overColumnId.current = columnId;
+      onDragOverColumnRef.current?.(columnId);
     }
-    setOffset(Math.max(-150, Math.min(150, dx)));
+  }, []);
 
-    // A light tick the instant the swipe first crosses the commit
-    // threshold in either direction — like iOS's rubber-band tick when an
-    // action becomes armed. Fires once per crossing, resets on release.
-    const direction = dx > SWIPE_THRESHOLD ? 1 : dx < -SWIPE_THRESHOLD ? -1 : 0;
-    if (direction !== 0 && armed.current !== direction) {
-      armed.current = direction;
-      vibrate(8);
-    } else if (direction === 0) {
+  const activateTouchDrag = useCallback(() => {
+    if (!onTaskDrop || touchDragging.current) return;
+    touchDragging.current = true;
+    setDragOffset({ x: 0, y: 0 });
+    onDragStateChange?.(task.id);
+    // Haptic bump where supported (Android; iOS Safari has none — the
+    // animate-drag-pop class is the visual haptic there).
+    vibrate(10);
+
+    // Continuous edge auto-scroll: keeps scrolling while the finger rests
+    // in an edge zone, and re-hit-tests after each step because scrolling
+    // moves the columns under the stationary finger.
+    scrollVelocity.current = 0;
+    const step = () => {
+      if (!touchDragging.current) {
+        scrollRaf.current = null;
+        return;
+      }
+      if (scrollVelocity.current !== 0) {
+        window.scrollBy(0, scrollVelocity.current * DRAG_SCROLL_STEP_PX);
+        updateOverColumn(lastTouchPos.current.x, lastTouchPos.current.y);
+      }
+      scrollRaf.current = requestAnimationFrame(step);
+    };
+    scrollRaf.current = requestAnimationFrame(step);
+  }, [onTaskDrop, onDragStateChange, task.id, updateOverColumn]);
+
+  const endTouchDrag = useCallback(
+    (drop: boolean) => {
+      const target = overColumnId.current;
+      touchDragging.current = false;
+      overColumnId.current = null;
+      swiping.current = false;
+      scrollVelocity.current = 0;
+      if (scrollRaf.current !== null) {
+        cancelAnimationFrame(scrollRaf.current);
+        scrollRaf.current = null;
+      }
+      setDragOffset(null);
+      setPhase("snap");
+      setOffset(0);
+      onDragOverColumn?.(null);
+      onDragStateChange?.(null);
+      if (drop && target) {
+        onTaskDrop?.(task.id, target);
+      }
+    },
+    [onDragOverColumn, onDragStateChange, onTaskDrop, task.id],
+  );
+
+  // Block page scroll during a touch drag. React attaches touchmove as
+  // passive, so preventDefault only works in a native non-passive listener.
+  // Touch events stay captured to the gesture's original target, so the
+  // listener on the wrapper fires for the whole drag. Attached once on
+  // mount; the handler no-ops unless a touch drag is active.
+  useMountEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const preventScrollDuringDrag = (e: TouchEvent) => {
+      if (touchDragging.current) e.preventDefault();
+    };
+    el.addEventListener("touchmove", preventScrollDuringDrag, {
+      passive: false,
+    });
+    return () => el.removeEventListener("touchmove", preventScrollDuringDrag);
+  });
+
+  const handleTouchStart = useCallback(
+    (e: ReactTouchEvent) => {
+      startX.current = e.touches[0].clientX;
+      startY.current = e.touches[0].clientY;
+      swiping.current = true;
+      moved.current = false;
       armed.current = 0;
-    }
-  }, []);
+      setPhase("live");
+      if (onTaskDrop) {
+        longPressTimer.current = window.setTimeout(
+          activateTouchDrag,
+          LONG_PRESS_MS,
+        );
+      }
+    },
+    [onTaskDrop, activateTouchDrag],
+  );
+
+  const handleTouchMove = useCallback(
+    (e: ReactTouchEvent) => {
+      if (!swiping.current) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - startX.current;
+      const dy = touch.clientY - startY.current;
+
+      if (touchDragging.current) {
+        setDragOffset({ x: dx, y: dy });
+        lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
+        updateOverColumn(touch.clientX, touch.clientY);
+        // Arm the edge auto-scroll; the rAF loop applies it continuously.
+        if (touch.clientY < DRAG_SCROLL_EDGE_PX) {
+          scrollVelocity.current = -1;
+        } else if (touch.clientY > window.innerHeight - DRAG_SCROLL_EDGE_PX) {
+          scrollVelocity.current = 1;
+        } else {
+          scrollVelocity.current = 0;
+        }
+        return;
+      }
+
+      if (Math.abs(dx) > TAP_THRESHOLD || Math.abs(dy) > TAP_THRESHOLD) {
+        moved.current = true;
+        // Movement before the long-press fired → swipe or page scroll.
+        clearLongPressTimer();
+      }
+      setOffset(Math.max(-150, Math.min(150, dx)));
+
+      // A light tick the instant the swipe first crosses the commit
+      // threshold in either direction — like iOS's rubber-band tick when an
+      // action becomes armed. Fires once per crossing, resets on release.
+      const direction =
+        dx > SWIPE_THRESHOLD ? 1 : dx < -SWIPE_THRESHOLD ? -1 : 0;
+      if (direction !== 0 && armed.current !== direction) {
+        armed.current = direction;
+        vibrate(8);
+      } else if (direction === 0) {
+        armed.current = 0;
+      }
+    },
+    [clearLongPressTimer, updateOverColumn],
+  );
 
   const handleTouchEnd = useCallback(() => {
+    clearLongPressTimer();
+    if (touchDragging.current) {
+      endTouchDrag(true);
+      return;
+    }
     if (!swiping.current) return;
     swiping.current = false;
 
@@ -114,7 +282,18 @@ export function SwipeableTaskCard({
       setPhase("snap");
       setOffset(0);
     }
-  }, [offset, onToggleDone, onDismiss, onClick]);
+  }, [offset, onToggleDone, onDismiss, onClick, clearLongPressTimer, endTouchDrag]);
+
+  const handleTouchCancel = useCallback(() => {
+    clearLongPressTimer();
+    if (touchDragging.current) {
+      endTouchDrag(false);
+      return;
+    }
+    swiping.current = false;
+    setPhase("snap");
+    setOffset(0);
+  }, [clearLongPressTimer, endTouchDrag]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.setData("text/plain", task.id);
@@ -134,21 +313,30 @@ export function SwipeableTaskCard({
       ? "none"
       : `transform ${phase === "slide-off" ? SLIDE_OFF_DURATION : 300}ms var(--ease-out-quart)`;
 
+  const dragActive = dragOffset !== null;
+
   // Only clip overflow during active swipe — otherwise the hover shadow
-  // gets clipped and the card feels dead on hover.
-  const needsClip = swiping.current || Math.abs(offset) > 0;
+  // gets clipped and the card feels dead on hover. Never clip during a
+  // touch drag: the card must overflow its slot to reach other columns.
+  const needsClip = !dragActive && (swiping.current || Math.abs(offset) > 0);
 
   return (
     <div
+      ref={cardRef}
       className={cn(
-        "relative rounded-ordilo-sm transition-opacity",
+        "relative select-none rounded-ordilo-sm transition-opacity",
         needsClip && "overflow-hidden",
         isDragging && "opacity-40",
       )}
-      style={{ touchAction: "pan-y" }}
+      style={{ touchAction: "pan-y", WebkitTouchCallout: "none" }}
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
+      onContextMenu={(e) => {
+        // Suppress the long-press context menu while touch-dragging.
+        if (touchDragging.current) e.preventDefault();
+      }}
     >
       {/* Swipe background indicators */}
       <div
@@ -175,13 +363,25 @@ export function SwipeableTaskCard({
         </div>
       </div>
 
-      {/* The card, translated by the swipe offset, draggable for DnD */}
+      {/* The card, translated by the swipe offset or the touch-drag
+          position, draggable for desktop DnD. While touch-dragging it
+          floats above siblings and is transparent to hit-testing so the
+          column underneath can be found via elementFromPoint. The pickup
+          scale uses the individual `scale` property so the drag-pop
+          animation and the inline translate never fight over `transform`. */}
       <div
         style={{
-          transform: `translateX(${offset}px)`,
-          transition,
+          transform: dragOffset
+            ? `translate(${dragOffset.x}px, ${dragOffset.y}px)`
+            : `translateX(${offset}px)`,
+          scale: dragOffset ? "1.03" : undefined,
+          transition: dragOffset ? "none" : transition,
         }}
-        className="relative"
+        className={cn(
+          "relative",
+          dragOffset &&
+            "animate-drag-pop pointer-events-none z-20 rounded-ordilo-sm shadow-card-hover",
+        )}
         draggable
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}

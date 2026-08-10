@@ -245,6 +245,7 @@ Legend: `→` = context.
 | 5.24 | `"Überprüfung nötig"` | `src/components/ordilo/review-card/content.tsx` | needs_user_review badge label |
 | 5.25 | `"Alle Aufgaben wurden entfernt."` | `src/components/ordilo/review-card/content.tsx` | Empty-tasks note (all deleted in review) |
 | 5.26 | `"Keine Person erkannt — gehört das Dokument zu jemandem?"` | `src/components/ordilo/review-card/content.tsx` | Person section hint when the extraction found no person |
+| 5.27 | `"Tipp: Halte eine Aufgabe kurz gedrückt, um sie zu verschieben."` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | One-time drag-and-drop hint above the task board (touch devices only, dismissible) |
 
 ---
 
@@ -289,6 +290,7 @@ Legend: `→` = context.
 | 6.35 | `"Du hast heute viele Fragen gestellt. Das Tageslimit ist erreicht — bitte morgen weiter."` | `src/app/(app)/suche/suche-client.tsx` | Chat rate-limit (429) message bubble |
 | 6.36 | `"Dieser Anmeldelink ist abgelgelaufen oder wurde bereits verwendet. Bitte fordere einen neuen an."` | `src/app/(auth)/auth/auth-error/page.tsx` | Auth-error page description |
 | 6.37 | API route error strings (surfaced in fetch failures) | `src/app/api/documents/upload/route.ts`, `analyze/route.ts`, `ocr/route.ts`, `confirm/route.ts`, `file/route.ts`, `chat/route.ts`, `conversations/[id]/route.ts`, `chat/feedback/route.ts`, `search/route.ts` | Various German API error messages (e.g. "Upload fehlgeschlagen. Bitte erneut versuchen.", "Dokument nicht gefunden oder kein Zugriff.", "Tageslimit erreicht (...). Bitte morgen erneut versuchen.", "Anfrage ungültig (message und family_id erforderlich).", "Ein unerwarteter Fehler ist aufgetreten.", "Methode nicht erlaubt. Bitte POST verwenden.", etc.) — see section 13 for the full list |
+| 6.38 | `"Verschieben hat nicht geklappt — bitte nochmal versuchen"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: board drag-and-drop reschedule error |
 
 ---
 
@@ -307,6 +309,11 @@ Legend: `→` = context.
 | 7.9 | `"{name} wurde entfernt"` (template) | `src/app/(app)/familie/familie-client.tsx` | Toast: member removed |
 | 7.10 | `"Gespeichert"` | `src/app/(app)/familie/einstellungen/settings-client.tsx` | Inline save-success indicator (family name) |
 | 7.11 | `"{name} ist jetzt Teil der Familie."` (template) | `src/components/ordilo/review-card/index.tsx` + `src/components/ordilo/scan-wizard/review-step.tsx` | Toast: member created inline from the review person picker |
+| 7.12 | `"Für diese Woche eingeplant"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: task dropped on "Diese Woche" column |
+| 7.13 | `"Auf später verschoben"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: task dropped on "Später" column |
+| 7.14 | `"Als überfällig markiert"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: task dropped on "Überfällig" column |
+| 7.15 | `"Rückgängig"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast action button: undo a board drag-and-drop move |
+| 7.16 | `"Rückgängig gemacht"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: board drag-and-drop move undone |
 
 ---
 
