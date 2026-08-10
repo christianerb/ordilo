@@ -368,4 +368,101 @@ describe("DokumentePage empty state", () => {
     // The duplicate full-table fetch must NOT have fired.
     expect(documentsOrderSpy).not.toHaveBeenCalled();
   });
+
+  it("heartbeat refetches only the processing documents, never the whole table", async () => {
+    vi.useFakeTimers();
+
+    const processingDoc = {
+      id: "doc-processing",
+      family_id: FAMILY_ID,
+      uploaded_by: "user-1",
+      title: "Rechnung in Arbeit",
+      document_type: "invoice",
+      category: null,
+      status: "ocr_processing",
+      file_url: `${FAMILY_ID}/doc-processing/rechnung.pdf`,
+      original_filename: "rechnung.pdf",
+      mime_type: "application/pdf",
+      page_count: null,
+      ocr_text: null,
+      summary: null,
+      error_message: null,
+      created_at: new Date().toISOString(),
+      confirmed_at: null,
+    };
+    const confirmedDoc = {
+      ...processingDoc,
+      id: "doc-confirmed",
+      title: "Alte Rechnung",
+      status: "confirmed",
+    };
+
+    // fetchDocuments filters by family_id; the delta heartbeat fetches by
+    // document id. Spying on eq() tells the two apart.
+    const eqSpy = vi.fn().mockReturnThis();
+    const documentsChain = {
+      eq: eqSpy,
+      order: vi.fn().mockResolvedValue({ data: [processingDoc], error: null }),
+    };
+    const familiesChain = {
+      limit: vi.fn(() => ({
+        maybeSingle: vi
+          .fn()
+          .mockResolvedValue({ data: { id: FAMILY_ID }, error: null }),
+      })),
+    };
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn((table: string) => {
+        if (table === "families") {
+          return { select: vi.fn(() => familiesChain) };
+        }
+        if (table === "documents") {
+          return { select: vi.fn(() => documentsChain) };
+        }
+        if (table === "collections") {
+          return {
+            select: vi.fn(() => ({
+              order: vi.fn().mockResolvedValue({ data: [], error: null }),
+            })),
+          };
+        }
+        throw new Error(`Unexpected table: ${table}`);
+      }),
+    } as unknown as ReturnType<typeof createClient>);
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient
+            initialDocuments={[
+              processingDoc as unknown as DocumentRow,
+              confirmedDoc as unknown as DocumentRow,
+            ]}
+          />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("document-list")).toBeDefined();
+
+    // First heartbeat: realtime is unavailable with this mock client, so
+    // the safety net fires at the 3-tick cadence (3 × 1.5s).
+    await act(async () => {
+      vi.advanceTimersByTime(4500);
+      await Promise.resolve();
+    });
+
+    const eqCalls = eqSpy.mock.calls.map((call) => call[0]);
+    // Delta fetch by document id for the processing doc…
+    expect(eqSpy).toHaveBeenCalledWith("id", "doc-processing");
+    // …never a full-table fetch by family id…
+    expect(eqCalls).not.toContain("family_id");
+    // …and never a fetch for the settled confirmed doc.
+    expect(eqSpy).not.toHaveBeenCalledWith("id", "doc-confirmed");
+
+    vi.useRealTimers();
+  });
 });

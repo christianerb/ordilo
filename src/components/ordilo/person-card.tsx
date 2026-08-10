@@ -2,8 +2,10 @@ import { Cake } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatGermanDate, getDaysUntilBirthday } from "@/lib/format";
 import { CardActions } from "@/components/ordilo/card-actions";
-
-const DEFAULT_AVATAR_COLOR = "#305460";
+import {
+  getAvatarTextColor,
+  resolveAvatarColor,
+} from "@/lib/avatar-colors";
 
 export interface PersonCardProps {
   name: string;
@@ -28,7 +30,8 @@ export function PersonCard({
   onRemove,
   className,
 }: PersonCardProps) {
-  const color = avatarColor || DEFAULT_AVATAR_COLOR;
+  const color = resolveAvatarColor(avatarColor);
+  const textColor = getAvatarTextColor(color);
   const initial = name.charAt(0).toUpperCase() || "?";
   const formattedBirthdate = formatGermanDate(birthdate);
   const hasActions = Boolean(onEdit || onRemove);
@@ -47,8 +50,8 @@ export function PersonCard({
   const content = (
     <div className="flex items-center gap-2.5">
       <div
-        className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
-        style={{ backgroundColor: color }}
+        className="relative flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold"
+        style={{ backgroundColor: color, color: textColor }}
         aria-hidden="true"
       >
         {initial}

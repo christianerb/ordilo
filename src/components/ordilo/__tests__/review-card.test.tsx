@@ -1371,7 +1371,7 @@ describe("ReviewCard", () => {
 
     const confirmedCard = await screen.findByTestId("review-card-confirmed");
     expect(
-      confirmedCard.querySelector("svg.ordilo-mascot-bounce"),
+      confirmedCard.querySelector("svg.ordilo-mascot-success"),
     ).not.toBeNull();
   });
 
@@ -1380,7 +1380,7 @@ describe("ReviewCard", () => {
 
     const confirmedCard = await screen.findByTestId("review-card-confirmed");
     expect(
-      confirmedCard.querySelector("svg.ordilo-mascot-bounce"),
+      confirmedCard.querySelector("svg.ordilo-mascot-success"),
     ).toBeNull();
   });
 

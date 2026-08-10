@@ -3,15 +3,36 @@
 import { useCallback, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertCircle, CalendarDays, ChevronRight, FileCheck2, MapPin } from "lucide-react";
+import {
+  CalendarClock,
+  AlertCircle,
+  Receipt,
+  Building2,
+  type LucideIcon,
+} from "lucide-react";
+import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { cn } from "@/lib/utils";
-import { formatGermanDate, formatRelativeTime } from "@/lib/format";
+import { formatRelativeTime } from "@/lib/format";
+import {
+  getFileIcon,
+  getStatusLabel,
+} from "@/lib/schemas/document";
 import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { SuggestionChipsRegistrar } from "@/lib/search/suggestion-chips-context";
-import { toLocalDateStr, type HomeTask, type HomeDocument } from "@/lib/home-utils";
+import {
+  getAvatarTextColor,
+  resolveAvatarColor,
+} from "@/lib/avatar-colors";
+import {
+  filterRecentDocuments,
+  mergeJournalDocuments,
+  JOURNAL_DOCS_LIMIT,
+  type HomeTask,
+  type HomeDocument,
+} from "@/lib/home-utils";
 import {
   deriveBriefingFacts,
   composeBriefing,
@@ -19,7 +40,6 @@ import {
   deriveSuggestionChips,
 } from "@/lib/home-briefing";
 import { TodayHero } from "./today-hero";
-import { INSIGHT_ICONS } from "./insight-icons";
 import type { HomeInsight } from "@/lib/ai/insights";
 
 // ---------------------------------------------------------------------------
@@ -33,18 +53,6 @@ export interface HomeMember {
   avatar_color: string | null;
 }
 
-/** A calendar entry happening today, trimmed for the cockpit. */
-export interface HomeCalendarEvent {
-  id: string;
-  title: string;
-  /** HH:MM(:SS) or null for all-day entries. */
-  starts_time: string | null;
-  ends_time: string | null;
-  location: string | null;
-  /** Accent color of the responsible member or first attendee. */
-  color: string | null;
-}
-
 export interface HomeClientProps {
   greeting: string;
   familyName: string;
@@ -54,10 +62,9 @@ export interface HomeClientProps {
       array itself is capped for display). */
   unconfirmedDocCount: number;
   upcomingTasks: HomeTask[];
-  /** Today's calendar entries (all-day first, then by start time). */
-  todayEvents?: HomeCalendarEvent[];
-  /** Whether the family has at least one document, including confirmed ones. */
-  hasDocuments: boolean;
+  recentDocuments: HomeDocument[];
+  /** Signed thumbnail URLs keyed by document id (image documents only). */
+  thumbUrls: Record<string, string>;
   insights: HomeInsight[];
   /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
   autoOpenScan?: boolean;
@@ -65,7 +72,27 @@ export interface HomeClientProps {
 
 /** "Als Nächstes" shows at most this many tasks below the hero. */
 const HOME_TASK_LIMIT = 3;
-const THREE_DAY_HORIZON = 2;
+
+// ---------------------------------------------------------------------------
+// Status dot color mapping for JournalDocTile
+// ---------------------------------------------------------------------------
+
+// "analyzed" intentionally avoids apricot here: analyzed documents get a
+// "Bitte bestätigen" chip instead of a dot, and apricot on home belongs to
+// the "Heute" hero alone (Apricot Scarcity Rule).
+const STATUS_DOT_COLORS: Record<string, string> = {
+  confirmed: "bg-[var(--petrol)]",
+  analyzed: "bg-[var(--petrol)]/50",
+  uploaded: "bg-[var(--mist)]",
+  failed: "bg-[var(--destructive)]",
+  ocr_processing: "bg-[var(--mist)] animate-pulse",
+  analyzing: "bg-[var(--mist)] animate-pulse",
+  ocr_done: "bg-[var(--petrol)]",
+};
+
+function getStatusDotClass(status: string): string {
+  return STATUS_DOT_COLORS[status] ?? "bg-[var(--mist)]";
+}
 
 function getDocumentIdFromHref(href: string): string | null {
   if (!href.startsWith("/dokumente")) return null;
@@ -84,8 +111,8 @@ export function HomeClient({
   analyzedDocuments,
   unconfirmedDocCount,
   upcomingTasks,
-  todayEvents = [],
-  hasDocuments,
+  recentDocuments,
+  thumbUrls,
   insights,
   autoOpenScan = false,
 }: HomeClientProps) {
@@ -103,7 +130,7 @@ export function HomeClient({
   });
   const [localTasks, setLocalTasks] = useState<HomeTask[]>(upcomingTasks);
 
-  const { toggleDone } = useTaskMutation({
+  const { toggleDone, dismiss } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
       setLocalTasks((prev) =>
         prev.map((t) =>
@@ -140,9 +167,20 @@ export function HomeClient({
     },
     [toggleDone],
   );
+  const handleDismiss = dismiss;
+
   // -------------------------------------------------------------------------
   // Derived data
   // -------------------------------------------------------------------------
+
+  // JOURNAL_DOCS_LIMIT (not the old RECENT_DOCS_LIMIT default): the
+  // journal merge dedupes against the analyzed documents, and the grid
+  // should still fill up when the newest confirmed docs ARE the analyzed
+  // ones.
+  const visibleRecentDocs = filterRecentDocuments(
+    recentDocuments,
+    JOURNAL_DOCS_LIMIT,
+  );
 
   // ONE priority list: open, confirmed, dated tasks sorted by due date —
   // overdue lands first by construction. totalTasks counts the WHOLE
@@ -172,31 +210,39 @@ export function HomeClient({
   // never asks about something the screen contradicts.
   const suggestionChips = deriveSuggestionChips(facts);
 
-  // The cockpit only looks three calendar days ahead: today plus the next
-  // two days. The hero already owns the single most urgent task, so it
-  // does not repeat in this compact overview.
-  const today = toLocalDateStr(new Date());
-  const threeDayHorizon = toLocalDateStr(
-    new Date(
-      new Date().getFullYear(),
-      new Date().getMonth(),
-      new Date().getDate() + THREE_DAY_HORIZON,
-    ),
-  );
+  // "Als Nächstes" starts AFTER the task the hero already shows.
   const nextTasks = datedOpenTasks
-    .filter(
-      (t) =>
-        t.id !== heroTaskId &&
-        t.due_date !== null &&
-        t.due_date >= today &&
-        t.due_date <= threeDayHorizon,
-    )
+    .filter((t) => t.id !== heroTaskId)
     .slice(0, HOME_TASK_LIMIT);
+  const hiddenTaskCount =
+    totalTasks - (heroTaskId ? 1 : 0) - nextTasks.length;
+
+  // The journal merges the two former document sections: awaiting
+  // confirmation first (with a chip), then the most recent scans.
+  const journalDocs = mergeJournalDocuments(analyzedDocuments, visibleRecentDocs);
 
   const isFirstVisit =
     totalTasks === 0 &&
     analyzedDocuments.length === 0 &&
-    !hasDocuments;
+    visibleRecentDocs.length === 0;
+
+  const toTaskCardData = (t: HomeTask): TaskCardData => ({
+    id: t.id,
+    family_id: t.family_id,
+    document_id: t.document_id,
+    title: t.title,
+    description: t.description,
+    due_date: t.due_date,
+    priority: t.priority,
+    status: t.status,
+    confidence: t.confidence,
+    confirmed: t.confirmed,
+    created_at: t.created_at,
+    tags: t.tags,
+    document_title: t.document_title ?? null,
+    assigned_to: t.assigned_to ?? null,
+    assigned_member_name: null,
+  });
 
   // -------------------------------------------------------------------------
   // Render
@@ -246,9 +292,10 @@ export function HomeClient({
                 {members.slice(0, 5).map((m) => (
                   <div
                     key={m.id}
-                    className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold text-white"
+                    className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold"
                     style={{
-                      backgroundColor: m.avatar_color ?? "var(--petrol)",
+                      backgroundColor: resolveAvatarColor(m.avatar_color),
+                      color: getAvatarTextColor(m.avatar_color),
                     }}
                     title={m.name}
                     aria-label={m.name}
@@ -271,150 +318,13 @@ export function HomeClient({
             onMarkDone={(taskId) => void handleToggleDone(taskId, "done")}
           />
 
-          {/* Today's calendar entries — the family's day at a glance,
-              one tap away from the full planner. */}
-          {todayEvents.length > 0 && (
-            <section data-testid="home-section-today-events" className="space-y-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-foreground">
-                    Heute im Kalender
-                  </h2>
-                </div>
-                <Link
-                  href="/aufgaben?tab=planer"
-                  className="shrink-0 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="home-events-show-planner"
-                >
-                  Zum Planer
-                </Link>
-              </div>
-              <div className="divide-y divide-[var(--mist-light)]/60 overflow-hidden rounded-ordilo-sm border border-border bg-card shadow-card">
-                {todayEvents.map((event) => (
-                  <Link
-                    key={event.id}
-                    href="/aufgaben?tab=planer"
-                    className="flex items-center gap-3 px-3 py-2.5 transition-colors hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    data-testid={`home-today-event-${event.id}`}
-                  >
-                    <span
-                      className="size-2 shrink-0 rounded-full bg-primary"
-                      style={
-                        event.color
-                          ? { backgroundColor: event.color }
-                          : undefined
-                      }
-                      aria-hidden="true"
-                    />
-                    <span className="w-14 shrink-0 text-sm font-medium tabular-nums text-foreground">
-                      {event.starts_time ? (
-                        event.starts_time.slice(0, 5)
-                      ) : (
-                        <CalendarDays
-                          className="size-4 text-muted-foreground"
-                          aria-label="Ganztägig"
-                        />
-                      )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-foreground">
-                        {event.title}
-                      </span>
-                      {event.location && (
-                        <span className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                          <MapPin className="size-3" aria-hidden="true" />
-                          <span className="truncate">{event.location}</span>
-                        </span>
-                      )}
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* The home screen is a cockpit: the immediate, short-horizon
-              task overview comes before passive document history. */}
-          <section data-testid="home-section-next-days" className="space-y-2">
-            <div className="flex items-baseline justify-between gap-3">
-              <div>
-                <h2 className="text-base font-semibold text-foreground">
-                  Nächste 3 Tage
-                </h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  Was als Nächstes ansteht.
-                </p>
-              </div>
-              {totalTasks > nextTasks.length + (heroTaskId ? 1 : 0) && (
-                <Link
-                  href="/aufgaben"
-                  className="shrink-0 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="home-tasks-show-all"
-                >
-                  Alle anzeigen
-                </Link>
-              )}
-            </div>
-            {nextTasks.length > 0 ? (
-              <div
-                className="divide-y divide-[var(--mist-light)]/60 overflow-hidden rounded-ordilo-sm border border-border bg-card shadow-card"
-                data-testid="home-tasks-next"
-              >
-                {nextTasks.map((task) => (
-                  <NextDaysTaskRow
-                    key={task.id}
-                    task={task}
-                    onMarkDone={() => void handleToggleDone(task.id, "done")}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p className="rounded-ordilo-sm bg-[var(--surface-story)] px-3 py-2.5 text-sm text-muted-foreground">
-                In den nächsten drei Tagen steht nichts an.
-              </p>
-            )}
-          </section>
-
-          {/* Documents only earn space on home when a person needs to
-              review them. Confirmed documents remain in /dokumente. */}
-          {analyzedDocuments.length > 0 && (
-            <section data-testid="home-section-document-review" className="space-y-2">
-              <div className="flex items-baseline justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-foreground">
-                    Dokumente prüfen
-                  </h2>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    Ordilo braucht dein OK.
-                  </p>
-                </div>
-                <Link
-                  href="/dokumente"
-                  className="shrink-0 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                >
-                  {unconfirmedDocCount > analyzedDocuments.length
-                    ? `Alle ${unconfirmedDocCount} ansehen`
-                    : "Alle anzeigen"}
-                </Link>
-              </div>
-              <div className="divide-y divide-[var(--mist-light)]/60 overflow-hidden rounded-ordilo-sm border border-border bg-card shadow-card">
-                {analyzedDocuments.map((doc) => (
-                  <DocumentReviewRow
-                    key={doc.id}
-                    doc={doc}
-                    onOpenDocument={openDocument}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Proactive insights are useful context, but do not displace
-              the family's tasks and review queue from the cockpit. */}
+          {/* Proactive insights from the knowledge graph — one grouped
+              surface with dividers instead of floating cards (the insight
+              the hero already shows is filtered out). */}
           {visibleInsights.length > 0 && (
             <section data-testid="home-section-insights" className="space-y-2">
               <h2 className="text-base font-semibold text-foreground">Hinweise</h2>
-              <div className="divide-y divide-[var(--mist-light)]/60 overflow-hidden rounded-ordilo-sm border border-border bg-card shadow-card">
+              <div className="divide-y divide-[var(--mist-light)]/60 rounded-ordilo-md border border-border bg-card shadow-card">
                 {visibleInsights.map((insight) => (
                   <InsightRow
                     key={insight.id}
@@ -426,6 +336,77 @@ export function HomeClient({
               </div>
             </section>
           )}
+
+          {/* Aufgaben — starts after the task the hero already covers;
+              the full list lives one tap away on /aufgaben. */}
+          {nextTasks.length > 0 && (
+            <section data-testid="home-section-aufgaben" className="space-y-3">
+              <h2 className="text-base font-semibold text-foreground">Als Nächstes</h2>
+              <div className="space-y-2 stagger-children" data-testid="home-tasks-next">
+                {nextTasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={toTaskCardData(task)}
+                    onToggleDone={(newStatus) =>
+                      handleToggleDone(task.id, newStatus)
+                    }
+                    onDismiss={() => handleDismiss(task.id)}
+                    showConfidence={false}
+                  />
+                ))}
+              </div>
+              {hiddenTaskCount > 0 && (
+                <Link
+                  href="/aufgaben"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                  data-testid="home-tasks-show-all"
+                >
+                  Alle {totalTasks} Aufgaben anzeigen
+                </Link>
+              )}
+            </section>
+          )}
+
+          {/* Deine Dokumente — the journal: awaiting confirmation first
+              (with a chip), then the most recent scans, thumbnail-first. */}
+          <section data-testid="home-section-journal" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold text-foreground">
+                Deine Dokumente
+              </h2>
+              {journalDocs.length > 0 && (
+                <Link
+                  href="/dokumente"
+                  className="text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                >
+                  Alle anzeigen
+                </Link>
+              )}
+            </div>
+            {journalDocs.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-[repeat(auto-fill,minmax(10rem,15rem))] md:gap-4 stagger-children">
+                {journalDocs.map((doc) => (
+                  <JournalDocTile
+                    key={doc.id}
+                    doc={doc}
+                    thumbUrl={thumbUrls[doc.id] ?? null}
+                    onOpenDocument={openDocument}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-1">
+                <p className="text-sm text-muted-foreground">Noch keine Dokumente</p>
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  Dokument scannen
+                </button>
+              </div>
+            )}
+          </section>
         </>
       )}
     </div>
@@ -436,82 +417,89 @@ export function HomeClient({
 // Sub-components
 // ---------------------------------------------------------------------------
 
-function NextDaysTaskRow({
-  task,
-  onMarkDone,
-}: {
-  task: HomeTask;
-  onMarkDone: () => void;
-}) {
-  const dueDate = task.due_date ? formatGermanDate(task.due_date) : null;
-
-  return (
-    <div className="flex items-center gap-3 px-3 py-3">
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={false}
-        aria-label={`Aufgabe als erledigt markieren: ${task.title}`}
-        onClick={onMarkDone}
-        data-testid="task-checkbox"
-        className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-[var(--mist)] bg-transparent transition-colors hover:border-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      />
-      <Link
-        href="/aufgaben"
-        className="min-w-0 flex-1 rounded-ordilo-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <p className="truncate text-sm font-medium text-foreground">{task.title}</p>
-        {dueDate && (
-          <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
-            {task.due_date === toLocalDateStr(new Date())
-              ? "Heute"
-              : dueDate}
-            {task.document_title ? ` · ${task.document_title}` : ""}
-          </p>
-        )}
-      </Link>
-      <ChevronRight className="size-4 shrink-0 text-[var(--mist)]" aria-hidden="true" />
-    </div>
-  );
-}
-
-function DocumentReviewRow({
+/**
+ * Journal tile — thumbnail-first (a real scan preview when available,
+ * the generic file icon as fallback), title and relative time below.
+ * Documents awaiting confirmation wear a "Bitte bestätigen" chip instead
+ * of the status dot; other statuses keep the quiet dot + label.
+ */
+function JournalDocTile({
   doc,
+  thumbUrl,
   onOpenDocument,
 }: {
   doc: HomeDocument;
+  thumbUrl: string | null;
   onOpenDocument: (documentId: string) => Promise<void>;
 }) {
+  const FileIcon = getFileIcon(doc.mime_type);
   const displayTitle = doc.title?.trim() || doc.original_filename || "Dokument";
   const relativeTime = formatRelativeTime(doc.created_at, true);
+  const statusLabel = getStatusLabel(doc.status);
+  const needsConfirmation = doc.status === "analyzed";
+
+  // A signed thumbnail URL that fails to load (expired, transform not
+  // available on the plan, ...) falls back to the icon variant — the tile
+  // never renders a broken image.
+  const [thumbFailed, setThumbFailed] = useState(false);
+  const showThumb = thumbUrl !== null && !thumbFailed;
 
   return (
     <Link
       href={`/dokumente?doc=${doc.id}`}
-      onClick={(event) => {
-        event.preventDefault();
+      onClick={(e) => {
+        e.preventDefault();
         void onOpenDocument(doc.id);
       }}
-      className="flex items-center gap-3 px-3 py-3 transition-colors hover:bg-[var(--sand-warm)]/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
-      aria-label={`Dokument prüfen: ${displayTitle}`}
+      className="flex flex-col gap-2 rounded-ordilo-sm border border-border bg-card p-3 shadow-card card-lift cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
-      <div
-        className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)]/[0.06]"
-        aria-hidden="true"
-      >
-        <FileCheck2 className="size-4 text-[var(--petrol)]" strokeWidth={1.8} />
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-foreground">{displayTitle}</p>
+      {showThumb ? (
+        // Signed URLs are already resized by Supabase image transforms;
+        // the Next.js optimizer would only add latency here.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={thumbUrl}
+          alt=""
+          loading="lazy"
+          onError={() => setThumbFailed(true)}
+          className="aspect-[3/4] w-full rounded-ordilo-sm border border-[var(--mist-light)] object-cover"
+        />
+      ) : (
+        <div
+          className="flex aspect-[3/4] w-full items-center justify-center rounded-ordilo-sm"
+          style={{ backgroundColor: "var(--secondary)" }}
+          aria-hidden="true"
+        >
+          <FileIcon
+            className="size-6"
+            style={{ color: "var(--mist-dark)" }}
+            strokeWidth={1.5}
+          />
+        </div>
+      )}
+      <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+        {displayTitle}
+      </p>
+      <div className="flex items-center justify-between gap-2">
         {relativeTime && (
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Eingescannt {relativeTime}
-          </p>
+          <p className="text-xs tabular-nums text-muted-foreground">{relativeTime}</p>
+        )}
+        {needsConfirmation ? (
+          <span className="shrink-0 rounded-full bg-[var(--petrol)]/10 px-2 py-0.5 text-xs font-medium text-[var(--petrol)]">
+            Bitte bestätigen
+          </span>
+        ) : (
+          <span className="flex shrink-0 items-center gap-1">
+            <span
+              className={cn("size-2 rounded-full", getStatusDotClass(doc.status))}
+              aria-hidden="true"
+            />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {statusLabel}
+            </span>
+          </span>
         )}
       </div>
-      <span className="shrink-0 text-sm font-medium text-[var(--petrol)]">
-        Prüfen
-      </span>
     </Link>
   );
 }
@@ -519,6 +507,13 @@ function DocumentReviewRow({
 // ---------------------------------------------------------------------------
 // Insight row — one line inside the grouped Hinweise surface
 // ---------------------------------------------------------------------------
+
+const INSIGHT_ICONS: Record<HomeInsight["icon"], LucideIcon> = {
+  alert: AlertCircle,
+  receipt: Receipt,
+  building: Building2,
+  calendar: CalendarClock,
+};
 
 function InsightRow({
   insight,

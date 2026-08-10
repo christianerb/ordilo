@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 
 /**
  * Run a side effect exactly once on mount.
@@ -19,4 +19,22 @@ import { useEffect } from "react";
 export function useMountEffect(effect: () => void | (() => void)): void {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(effect, []);
+}
+
+/**
+ * Like {@link useMountEffect}, but runs BEFORE the browser paints
+ * (layout effect on the client, no-op-safe on the server).
+ *
+ * Use this for DOM measurements whose result must be in place for the
+ * very first frame — e.g. publishing a measured element's height to a
+ * CSS variable that layout depends on. With a paint-time effect the
+ * first frame renders with the fallback value and snaps to the measured
+ * one a frame later, which is a visible layout shift (CLS).
+ */
+const useIsomorphicLayoutMountEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
+
+export function useMountLayoutEffect(effect: () => void | (() => void)): void {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useIsomorphicLayoutMountEffect(effect, []);
 }

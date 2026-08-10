@@ -3,6 +3,7 @@ import {
   render as rtlRender,
   screen,
   fireEvent,
+  waitFor,
   within,
 } from "@testing-library/react";
 import type { ReactElement } from "react";
@@ -135,6 +136,25 @@ const upcomingTasks: HomeTask[] = [
   },
 ];
 
+const recentDocuments = [
+  {
+    id: "doc-3",
+    title: "Arztbrief",
+    original_filename: "arzt.pdf",
+    mime_type: "application/pdf",
+    status: "confirmed",
+    created_at: "2026-07-06T14:30:00Z",
+  },
+  {
+    id: "doc-4",
+    title: "Versicherungsschreiben",
+    original_filename: "vers.pdf",
+    mime_type: "application/pdf",
+    status: "confirmed",
+    created_at: "2026-07-04T09:00:00Z",
+  },
+];
+
 const defaultProps: HomeClientProps = {
   greeting: "Guten Abend",
   familyName: "Erb",
@@ -142,7 +162,8 @@ const defaultProps: HomeClientProps = {
   analyzedDocuments,
   unconfirmedDocCount: 2,
   upcomingTasks,
-  hasDocuments: true,
+  recentDocuments,
+  thumbUrls: {},
   insights: [],
 };
 
@@ -266,6 +287,15 @@ describe("HomeClient — Heute hero", () => {
     });
   });
 
+  it("gives hero actions a one-thumb target", () => {
+    render(<HomeClient {...defaultProps} />);
+    const hero = screen.getByTestId("today-hero");
+    expect(within(hero).getByTestId("today-hero-done").className).toContain(
+      "h-11",
+    );
+    expect(within(hero).getByText("Details").className).toContain("h-11");
+  });
+
   it("labels a task due today as 'Heute fällig'", () => {
     render(
       <HomeClient
@@ -321,7 +351,7 @@ describe("HomeClient — Heute hero", () => {
   });
 });
 
-describe("HomeClient — Cockpit: nächste 3 Tage", () => {
+describe("HomeClient — Aufgaben timeline", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-06T12:00:00Z"));
@@ -331,21 +361,26 @@ describe("HomeClient — Cockpit: nächste 3 Tage", () => {
     vi.useRealTimers();
   });
 
-  it("renders the three-day overview heading", () => {
+  it("renders the 'Als Nächstes' section heading", () => {
     render(<HomeClient {...defaultProps} />);
-    expect(screen.getByText("Nächste 3 Tage")).toBeDefined();
+    expect(screen.getByText("Als Nächstes")).toBeDefined();
   });
 
-  it("shows only the next three days after the hero task", () => {
+  it("starts the list after the task the hero already shows", () => {
     render(<HomeClient {...defaultProps} />);
     const list = screen.getByTestId("home-tasks-next");
-    expect(within(list).getByText("Rechnung bezahlen")).toBeDefined();
+    const titles = within(list)
+      .getAllByText(/Alter Task|Rechnung bezahlen|Anmeldung Kita/)
+      .map((el) => el.textContent);
+    // The hero covers "Alter Task" (overdue) — the list continues with
+    // the next tasks in due-date order.
+    expect(titles).toEqual(["Rechnung bezahlen", "Anmeldung Kita"]);
     expect(within(list).queryByText("Alter Task")).toBeNull();
-    expect(within(list).queryByText("Anmeldung Kita")).toBeNull();
   });
 
   it("caps the list at three tasks and links to the full list", () => {
-    // Extra near-term tasks push a fourth task out of the cockpit list.
+    // Extra this-week tasks push the "later" task ("Anmeldung Kita")
+    // past the cap.
     const extra = Array.from({ length: 3 }, (_, i) => ({
       ...upcomingTasks[0],
       id: `task-extra-${i}`,
@@ -361,78 +396,149 @@ describe("HomeClient — Cockpit: nächste 3 Tage", () => {
     const list = screen.getByTestId("home-tasks-next");
     // Only the top 3 render …
     expect(within(list).getByText("Rechnung bezahlen")).toBeDefined();
-    expect(within(list).queryByText("Extra-Aufgabe 2")).toBeNull();
+    expect(within(list).queryByText("Anmeldung Kita")).toBeNull();
     // … and the rest are one tap away.
     const showAll = screen.getByTestId("home-tasks-show-all");
-    expect(showAll.textContent).toContain("Alle anzeigen");
+    // The full, uncapped count — home derives it from the whole task
+    // list, not from the capped display slice.
+    expect(showAll.textContent).toContain("Alle 6 Aufgaben anzeigen");
     expect(showAll.getAttribute("href")).toBe("/aufgaben");
   });
 
-  it("links to all tasks when later tasks sit outside the three-day view", () => {
+  it("hides the show-all link when everything already fits", () => {
     render(<HomeClient {...defaultProps} />);
-    expect(screen.getByTestId("home-tasks-show-all")).toBeDefined();
+    expect(screen.queryByTestId("home-tasks-show-all")).toBeNull();
   });
 
-  it("shows a calm next-days message when there are no tasks", () => {
+  it("does not render the Aufgaben section when there are no tasks", () => {
     render(
       <HomeClient
         {...defaultProps}
         upcomingTasks={[]}
       />,
     );
-    expect(screen.getByTestId("home-section-next-days")).toBeDefined();
-    expect(
-      screen.getByText("In den nächsten drei Tagen steht nichts an."),
-    ).toBeDefined();
+    expect(screen.queryByTestId("home-section-aufgaben")).toBeNull();
   });
 
-  it("does not repeat the only hero task in the overview", () => {
+  it("hides the section when the hero covers the only task", () => {
     render(
       <HomeClient
         {...defaultProps}
         upcomingTasks={[upcomingTasks[2]]} // only "Alter Task" (overdue → hero)
       />,
     );
-    expect(
-      within(screen.getByTestId("home-section-next-days")).getByText(
-        "In den nächsten drei Tagen steht nichts an.",
-      ),
-    ).toBeDefined();
+    expect(screen.queryByTestId("home-section-aufgaben")).toBeNull();
     expect(
       within(screen.getByTestId("today-hero")).getByText("Alter Task"),
     ).toBeDefined();
   });
 });
 
-describe("HomeClient — Dokumente prüfen", () => {
-  it("renders a focused review queue", () => {
+describe("HomeClient — Deine Dokumente (journal)", () => {
+  it("renders the journal section heading", () => {
     render(<HomeClient {...defaultProps} />);
-    expect(screen.getByText("Dokumente prüfen")).toBeDefined();
+    expect(screen.getByText("Deine Dokumente")).toBeDefined();
   });
 
-  it("shows analyzed documents as review actions", () => {
+  it("shows analyzed documents first with a 'Bitte bestätigen' chip", () => {
     render(<HomeClient {...defaultProps} />);
-    const section = screen.getByTestId("home-section-document-review");
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
     expect(
       within(section).getByText("Kita-Brief für Emma"),
     ).toBeDefined();
     expect(within(section).getByText("Stromrechnung Juli")).toBeDefined();
-    expect(
-      within(section).getByRole("link", {
-        name: "Dokument prüfen: Kita-Brief für Emma",
-      }),
-    ).toBeDefined();
+    expect(within(section).getAllByText("Bitte bestätigen")).toHaveLength(2);
   });
 
-  it("does not show a document section when nothing needs review", () => {
+  it("shows recent documents with their status label", () => {
+    render(<HomeClient {...defaultProps} />);
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    expect(within(section).getByText("Arztbrief")).toBeDefined();
+    expect(within(section).getByText("Versicherungsschreiben")).toBeDefined();
+    expect(
+      within(section).getAllByText("Im Familienbuch").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("renders a thumbnail image when a signed URL exists", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        thumbUrls={{ "doc-3": "https://example.com/thumb.webp" }}
+      />,
+    );
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    const img = section.querySelector("img[src='https://example.com/thumb.webp']");
+    expect(img).not.toBeNull();
+  });
+
+  it("does not show failed documents (VAL-CROSS-013)", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        recentDocuments={[
+          ...recentDocuments,
+          {
+            id: "doc-fail",
+            title: "Fehlgeschlagenes Dokument",
+            original_filename: "fail.pdf",
+            mime_type: "application/pdf",
+            status: "failed",
+            created_at: "2026-07-06T15:00:00Z",
+          },
+        ]}
+      />,
+    );
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    expect(
+      within(section).queryByText("Fehlgeschlagenes Dokument"),
+    ).toBeNull();
+  });
+
+  it("shows an empty state with a scan CTA when there are no documents", () => {
     render(
       <HomeClient
         {...defaultProps}
         analyzedDocuments={[]}
-        unconfirmedDocCount={0}
+        recentDocuments={[]}
       />,
     );
-    expect(screen.queryByTestId("home-section-document-review")).toBeNull();
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    expect(within(section).getByText("Noch keine Dokumente")).toBeDefined();
+    // VAL-HOME-007: empty state must include a scan CTA
+    expect(
+      within(section).getByRole("button", { name: "Dokument scannen" }),
+    ).toBeDefined();
+  });
+
+  it("scan CTA in the empty state opens the scan wizard", async () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        analyzedDocuments={[]}
+        recentDocuments={[]}
+      />,
+    );
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']");
+    const cta = within(section as HTMLElement).getByRole("button", {
+      name: "Dokument scannen",
+    });
+    fireEvent.click(cta);
+    await waitFor(() => {
+      expect(screen.getByTestId("scan-wizard")).toBeDefined();
+    });
   });
 });
 
@@ -442,26 +548,17 @@ describe("HomeClient — Layout", () => {
     const sections = screen.getAllByTestId(/^home-section-/);
     const sectionIds = sections.map((s) => s.getAttribute("data-testid"));
     expect(sectionIds).toEqual([
-      "home-section-next-days",
-      "home-section-document-review",
+      "home-section-aufgaben",
+      "home-section-journal",
     ]);
   });
 });
 
 describe("HomeClient — Task Interaction", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-07-06T12:00:00Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it("marks a task as done from the home dashboard", async () => {
     render(<HomeClient {...defaultProps} />);
 
-    // Click the checkbox for the first task in the three-day overview.
+    // Click the checkbox for the first task in "Als Nächstes"
     const checkboxes = screen.getAllByTestId("task-checkbox");
     expect(checkboxes.length).toBeGreaterThan(0);
     fireEvent.click(checkboxes[0]);
@@ -474,7 +571,7 @@ describe("HomeClient — Task Interaction", () => {
     render(<HomeClient {...defaultProps} />);
     const checkboxes = screen.getAllByTestId("task-checkbox");
     fireEvent.click(checkboxes[0]);
-    await vi.waitFor(() => {
+    await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith("Erledigt — gut gemacht!");
     });
   });
@@ -491,47 +588,6 @@ describe("HomeClient — Family avatar overflow", () => {
     render(<HomeClient {...defaultProps} members={manyMembers} />);
     const memberList = screen.getByTestId("member-list");
     expect(within(memberList).getByText("+1")).toBeDefined();
-  });
-});
-
-describe("HomeClient — Heute im Kalender", () => {
-  const todayEvents = [
-    {
-      id: "ev-1",
-      title: "Kita zu",
-      starts_time: null,
-      ends_time: null,
-      location: null,
-      color: null,
-    },
-    {
-      id: "ev-2",
-      title: "Schwimmen",
-      starts_time: "16:00:00",
-      ends_time: "17:00:00",
-      location: "Hallenbad",
-      color: "#7a8b5c",
-    },
-  ];
-
-  it("shows today's events with time, location, and a planner link", () => {
-    render(<HomeClient {...defaultProps} todayEvents={todayEvents} />);
-    const section = screen.getByTestId("home-section-today-events");
-    expect(within(section).getByText("Heute im Kalender")).toBeDefined();
-    expect(within(section).getByText("Kita zu")).toBeDefined();
-    expect(within(section).getByText("Schwimmen")).toBeDefined();
-    expect(within(section).getByText("16:00")).toBeDefined();
-    expect(within(section).getByText("Hallenbad")).toBeDefined();
-    expect(
-      within(section)
-        .getByTestId("home-events-show-planner")
-        .getAttribute("href"),
-    ).toBe("/aufgaben?tab=planer");
-  });
-
-  it("hides the section entirely when nothing is planned today", () => {
-    render(<HomeClient {...defaultProps} todayEvents={[]} />);
-    expect(screen.queryByTestId("home-section-today-events")).toBeNull();
   });
 });
 

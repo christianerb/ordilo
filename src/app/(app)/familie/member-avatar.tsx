@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  getAvatarTextColor,
+  resolveAvatarColor,
+} from "@/lib/avatar-colors";
+
 export function MemberAvatar({
   name,
   color,
@@ -13,6 +18,8 @@ export function MemberAvatar({
   sizeClass: string;
   className?: string;
 }) {
+  const avatarColor = resolveAvatarColor(color);
+
   if (photoUrl) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
@@ -27,8 +34,11 @@ export function MemberAvatar({
 
   return (
     <div
-      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${className}`}
-      style={{ backgroundColor: color ?? "#305460" }}
+      className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-full text-xs font-semibold ${className}`}
+      style={{
+        backgroundColor: avatarColor,
+        color: getAvatarTextColor(avatarColor),
+      }}
       aria-hidden="true"
     >
       {name.charAt(0).toUpperCase() || "?"}

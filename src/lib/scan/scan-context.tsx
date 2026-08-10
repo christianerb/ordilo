@@ -37,8 +37,16 @@ export function useDocumentViewer(): DocumentViewerValue {
   return ctx;
 }
 
-export function ScanProvider({ children }: { children: ReactNode }) {
-  const state = useScanProviderState();
+export function ScanProvider({
+  children,
+  initialFamilyId,
+}: {
+  children: ReactNode;
+  /** Family id resolved by the server layout — skips the client-side
+   *  families query on mount when provided. */
+  initialFamilyId?: string | null;
+}) {
+  const state = useScanProviderState(initialFamilyId);
 
   return (
     <ScanActionsContext.Provider value={state.scanActionsValue}>

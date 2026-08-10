@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { CHAT_MODEL } from "@/lib/ai/models";
+import { CHAT_MODEL, RERANK_REASONING_EFFORT } from "@/lib/ai/models";
 import type { SearchResult } from "@/lib/schemas/search";
 
 /**
@@ -98,6 +98,9 @@ Keine Erklaerung, nur die Bewertungen.`;
         messages: [{ role: "user", content: prompt }],
         max_tokens: 200,
         temperature: 0,
+        // Mechanical 0-10 scoring needs no deliberation — minimal
+        // reasoning keeps the re-rank inside its latency budget.
+        reasoning_effort: RERANK_REASONING_EFFORT,
       }),
       new Promise<null>((resolve) =>
         setTimeout(() => resolve(null), RERANK_BUDGET_MS),

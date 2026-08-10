@@ -12,6 +12,20 @@ export const EXTRACTION_MODEL = "gpt-5.4-mini";
 /** Model for user-facing chat with tool calling (streaming). */
 export const CHAT_MODEL = "gpt-5.4-mini";
 
+/**
+ * Reasoning effort for user-facing chat. Family Q&A is mostly retrieval +
+ * phrasing, so "low" keeps time-to-first-word snappy without hurting answer
+ * quality measurably. Passed as `reasoning_effort` on every chat call.
+ */
+export const CHAT_REASONING_EFFORT = "low" as const;
+
+/**
+ * Reasoning effort for search-result re-ranking. Scoring ten documents
+ * 0-10 is a mechanical task — "minimal" keeps the re-rank from adding
+ * noticeable latency on the search critical path.
+ */
+export const RERANK_REASONING_EFFORT = "minimal" as const;
+
 /** Model for text embeddings (semantic search vectors). */
 export const EMBEDDINGS_MODEL = "text-embedding-3-large";
 

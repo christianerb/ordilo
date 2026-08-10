@@ -41,6 +41,7 @@ export function AppShell({
   children,
   profile,
   initialCollections,
+  familyId,
   recentQueries,
 }: {
   children: React.ReactNode;
@@ -58,6 +59,11 @@ export function AppShell({
    */
   initialCollections?: CollectionInfo[];
   /**
+   * Family id resolved by the server layout — the ScanProvider skips its
+   * client-side families query on mount when this is set.
+   */
+  familyId?: string | null;
+  /**
    * Recent conversation titles (newest first), resolved by the server
    * layout — surfaced as suggestion chips in the mobile composer's
    * zoomed-in overlay. Omitted when there is no family yet (onboarding).
@@ -67,7 +73,7 @@ export function AppShell({
   const hasServerData = initialCollections !== undefined;
   return (
     <ActiveSearchProvider>
-      <ScanProvider>
+      <ScanProvider initialFamilyId={familyId}>
         <CollectionsProvider initialCollections={initialCollections}>
           <SuggestionChipsProvider>
             <AppShellContent

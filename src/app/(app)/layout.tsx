@@ -72,13 +72,8 @@ export default async function AppLayout({
       color: row.color,
     }),
   );
-
-  // The composer's zoomed-in overlay surfaces recent questions as tappable
-  // suggestions (titles are auto-generated from each conversation's first
-  // message — see /api/chat). Newest first, capped to what the chip row can
-  // reasonably hold.
   const recentQueries = conversations
-    .map((c) => c.title)
+    .map((conversation) => conversation.title)
     .filter((title): title is string => Boolean(title))
     .slice(0, 4);
 
@@ -86,6 +81,7 @@ export default async function AppLayout({
     <AppShell
       profile={profile}
       initialCollections={initialCollections}
+      familyId={familyId}
       recentQueries={recentQueries}
     >
       {children}

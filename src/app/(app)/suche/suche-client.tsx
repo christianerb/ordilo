@@ -452,6 +452,19 @@ export function SucheClient({
                       : m,
                   ),
                 );
+              } else if (data.type === "replace") {
+                // The server retracts or corrects what was streamed for
+                // this message so far — preamble on the way to a tool
+                // call, or a guardrail rewrite — so replace, don't append.
+                accumulatedText =
+                  typeof data.content === "string" ? data.content : "";
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === aiMsgId
+                      ? { ...m, content: accumulatedText }
+                      : m,
+                  ),
+                );
               } else if (data.type === "tool") {
                 // Real tool activity, so the progress list can stop
                 // inventing steps on a timer.

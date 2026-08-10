@@ -12,14 +12,25 @@ import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
  * Refresh the Supabase auth session on every matched request and protect
  * authenticated routes.
  *
- * - Calls `supabase.auth.getUser()` which refreshes the access token when
- *   needed and writes the updated cookies back to the response.
+ * - Calls `supabase.auth.getClaims()` which verifies the access token
+ *   LOCALLY (WebCrypto signature check against the project's JWKS, cached
+ *   process-wide) instead of round-tripping to the Auth server on every
+ *   request. When the token is (about to be) expired it refreshes the
+ *   session first and writes the updated cookies back to the response —
+ *   the same cookie behavior `getUser()` had. For projects on symmetric
+ *   signing keys it transparently falls back to a server call.
  * - Redirects unauthenticated visitors trying to reach a protected `(app)`
  *   route to `/login`.
  * - Blocks authenticated users who haven't completed onboarding from
  *   accessing app routes (redirects them to `/onboarding`).
  * - Redirects authenticated users who HAVE completed onboarding away from
  *   `/onboarding` to `/home`.
+ *
+ * Security note: local verification trusts a cryptographically valid
+ * token until its expiry (≤ 1h), so a revoked session is not detected
+ * until then. That is the Supabase-recommended trade-off for routing
+ * decisions — data access itself stays enforced by Postgres RLS on the
+ * same JWT, which is unaffected by this change.
  *
  * Returns the modified `NextResponse` so that the refreshed cookies
  * propagate to the browser.
@@ -57,11 +68,20 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     },
   );
 
-  // Do not run logic between `createServerClient` and `getUser`.
+  // Do not run logic between `createServerClient` and `getClaims`.
   // A simple mistake can make it very hard to debug auth issues.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  // The middleware only needs to know WHETHER a verified session exists
+  // (routing) plus the email for the layout header. The claims carry both
+  // — no user object round-trip required.
+  const claims = claimsData?.claims ?? null;
+  const user =
+    claims?.sub != null
+      ? {
+          id: claims.sub,
+          email: typeof claims.email === "string" ? claims.email : undefined,
+        }
+      : null;
 
   // Route classification
   const appPaths = ["/home", "/dokumente", "/suche", "/familie", "/aufgaben", "/sammlungen"];

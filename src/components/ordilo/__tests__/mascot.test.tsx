@@ -57,10 +57,10 @@ describe("OrdiloMascot", () => {
     expect(svg?.getAttribute("class") ?? "").not.toContain("ordilo-mascot-breathe");
   });
 
-  it("applies the bounce animation for success mood regardless of animate", () => {
+  it("applies the success animation regardless of animate", () => {
     const { container } = render(<OrdiloMascot mood="success" animate={false} />);
     const svg = container.querySelector("svg");
-    expect(svg?.getAttribute("class")).toContain("ordilo-mascot-bounce");
+    expect(svg?.getAttribute("class")).toContain("ordilo-mascot-success");
   });
 
   it("is hidden from assistive tech (decorative)", () => {

@@ -23,11 +23,16 @@ vi.mock("@/components/ordilo/app-shell", () => ({
   AppShell: vi.fn(),
 }));
 
+vi.mock("@/lib/ai/chat-history", () => ({
+  listConversations: vi.fn().mockResolvedValue([]),
+}));
+
 import AppLayout from "@/app/(app)/layout";
 
 interface AppShellProps {
   profile?: { familyName: string; email: string | null };
   initialCollections?: { id: string; name: string; icon: string | null; color: string | null }[];
+  familyId?: string | null;
   children?: React.ReactNode;
 }
 
@@ -85,6 +90,7 @@ describe("AppLayout (server-provided shell data)", () => {
       familyName: "Familie Müller",
       email: "anna@example.com",
     });
+    expect(props.familyId).toBe("fam-1");
     expect(props.initialCollections).toEqual([
       { id: "col-1", name: "Rechnungen", icon: "receipt", color: "petrol" },
     ]);

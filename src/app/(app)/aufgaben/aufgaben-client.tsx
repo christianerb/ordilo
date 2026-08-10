@@ -13,12 +13,13 @@ import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { usePlannerActionsOptional } from "./planner-actions-context";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   sortTasksByPriorityAndDate,
   getTaskDropUpdates,
@@ -522,20 +523,23 @@ export function AufgabenClient({
         />
       )}
 
-      <Sheet
+      <Dialog
         open={!!deleteConfirmId}
         onOpenChange={(open) => {
           if (!open) setDeleteConfirmId(null);
         }}
       >
-        <SheetContent side="bottom" data-testid="task-delete-confirm-sheet">
-          <SheetHeader>
-            <SheetTitle>Aufgabe verwerfen?</SheetTitle>
-            <SheetDescription>
+        <DialogContent
+          className="max-w-sm"
+          data-testid="task-delete-confirm-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>Aufgabe verwerfen?</DialogTitle>
+            <DialogDescription>
               Die Aufgabe wird aus deiner Liste entfernt.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="mt-4 flex gap-3">
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-2 flex-row gap-3 sm:justify-end">
             <Button
               variant="outline"
               className="flex-1"
@@ -556,9 +560,9 @@ export function AufgabenClient({
             >
               Verwerfen
             </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

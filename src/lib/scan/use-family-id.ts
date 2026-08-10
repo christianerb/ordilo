@@ -10,12 +10,19 @@ type BrowserSupabaseClient = ReturnType<typeof createClient>;
  * Resolves the signed-in family's id once per session and mirrors it into
  * a ref, so event-time callbacks (uploads, note creation, list fetches)
  * can read it without depending on render timing.
+ *
+ * When the server layout already knows the family id it hands it over as
+ * `initialFamilyId` — the client-side `families` query on mount is then
+ * skipped entirely (one less Supabase round-trip after hydration).
  */
-export function useFamilyId(supabase: BrowserSupabaseClient) {
-  const [familyId, setFamilyId] = useState<string | null>(null);
+export function useFamilyId(
+  supabase: BrowserSupabaseClient,
+  initialFamilyId?: string | null,
+) {
+  const [familyId, setFamilyId] = useState<string | null>(initialFamilyId ?? null);
   const familyIdRef = useRef(familyId);
   familyIdRef.current = familyId;
-  const familyIdResolvedRef = useRef(false);
+  const familyIdResolvedRef = useRef(initialFamilyId != null);
   const familyIdPromiseRef = useRef<Promise<string | null> | null>(null);
 
   const ensureFamilyId = useCallback(async () => {
