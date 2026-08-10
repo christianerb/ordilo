@@ -92,4 +92,19 @@ describe("TaskDetailSheet", () => {
       screen.queryByRole("button", { name: "Als erledigt markieren" }),
     ).not.toBeInTheDocument();
   });
+
+  it("rejects changing a due date to the past", () => {
+    renderSheet();
+
+    fireEvent.change(screen.getByTestId("task-detail-due-date"), {
+      target: { value: "01.01.2000" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Änderungen speichern" }),
+    );
+
+    expect(
+      screen.getByText("Bitte wähle heute oder einen späteren Tag."),
+    ).toBeInTheDocument();
+  });
 });

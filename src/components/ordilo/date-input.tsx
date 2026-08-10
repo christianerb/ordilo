@@ -90,6 +90,8 @@ export interface DateInputProps {
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Earliest selectable ISO date. Earlier days stay visible but disabled. */
+  minDate?: string;
   /** Focus the text input on mount (e.g. when an inline editor appears). */
   autoFocus?: boolean;
   /** Called when the calendar popover opens or closes. */
@@ -126,6 +128,7 @@ export function DateInput({
   value,
   onChange,
   disabled,
+  minDate,
   autoFocus,
   onOpenChange,
   onValidChange,
@@ -281,16 +284,18 @@ export function DateInput({
             if (day === null) return <span key={`pad-${i}`} aria-hidden="true" />;
             const iso = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
             const isSelected = iso === value;
+            const isBeforeMinDate = Boolean(minDate && iso < minDate);
             return (
               <button
                 key={iso}
                 type="button"
                 onClick={() => handlePickDay(day)}
+                disabled={isBeforeMinDate}
                 aria-pressed={isSelected}
                 aria-label={`${day}. ${MONTH_LABELS[viewMonth]} ${viewYear} auswählen`}
                 data-testid="date-input-day"
                 className={cn(
-                  "flex size-8 items-center justify-center rounded-ordilo-sm text-sm transition-colors hover:bg-accent",
+                  "flex size-8 items-center justify-center rounded-ordilo-sm text-sm transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-35",
                   isSelected
                     ? "bg-[var(--petrol)] text-white hover:bg-[var(--petrol-dark)]"
                     : "text-foreground",

@@ -48,6 +48,12 @@ function areTagsEqual(a: string[], b: string[]): boolean {
   return a.every((tag) => setB.has(tag));
 }
 
+function todayAsIsoDate(): string {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60_000;
+  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -87,6 +93,7 @@ export function TaskDetailSheet({
   const [showMore, setShowMore] = useState((task?.tags?.length ?? 0) > 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const minDueDate = todayAsIsoDate();
 
   const isDone = task?.status === "done";
   const isOpen = task?.status === "open";
@@ -106,6 +113,14 @@ export function TaskDetailSheet({
 
   const handleSave = useCallback(async () => {
     if (!task) return;
+    if (
+      dueDate &&
+      dueDate !== (task.due_date ?? "") &&
+      dueDate < minDueDate
+    ) {
+      setError("Bitte wähle heute oder einen späteren Tag.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -133,7 +148,7 @@ export function TaskDetailSheet({
     } finally {
       setSaving(false);
     }
-  }, [task, title, description, dueDate, priority, tags, assignedTo, supabase, onSaved, onOpenChange]);
+  }, [task, title, description, dueDate, priority, tags, assignedTo, supabase, onSaved, onOpenChange, minDueDate]);
 
   const handleToggle = useCallback(() => {
     if (!task) return;
@@ -247,6 +262,7 @@ export function TaskDetailSheet({
                       id="task-detail-due-date"
                       value={dueDate}
                       onChange={setDueDate}
+                      minDate={minDueDate}
                       className="h-12"
                       aria-label="Fällig am"
                       data-testid="task-detail-due-date"

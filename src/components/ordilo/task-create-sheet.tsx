@@ -25,6 +25,12 @@ const PRIORITIES: {
   { value: "low", label: "Niedrig", dot: "bg-[var(--mist)]" },
 ];
 
+function todayAsIsoDate(): string {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60_000;
+  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
+}
+
 export interface TaskCreateSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,6 +54,7 @@ export function TaskCreateSheet({
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const minDueDate = todayAsIsoDate();
 
   const resetForm = useCallback(() => {
     setTitle("");
@@ -71,6 +78,10 @@ export function TaskCreateSheet({
   const handleSave = useCallback(async () => {
     if (!title.trim()) {
       setError("Bitte gib einen Titel ein.");
+      return;
+    }
+    if (dueDate && dueDate < minDueDate) {
+      setError("Bitte wähle heute oder einen späteren Tag.");
       return;
     }
 
@@ -105,7 +116,7 @@ export function TaskCreateSheet({
     } finally {
       setSaving(false);
     }
-  }, [title, description, dueDate, priority, assignedTo, familyId, supabase, onCreated, handleOpenChange]);
+  }, [title, description, dueDate, priority, assignedTo, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -166,6 +177,7 @@ export function TaskCreateSheet({
                   id="task-create-due-date"
                   value={dueDate}
                   onChange={setDueDate}
+                  minDate={minDueDate}
                   className="h-12"
                   aria-label="Fällig am"
                   data-testid="task-create-due-date"
