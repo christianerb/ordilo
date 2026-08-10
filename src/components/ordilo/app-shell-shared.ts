@@ -8,6 +8,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+export interface NavSubItem {
+  label: string;
+  href: string;
+}
+
 export interface NavTab {
   label: string;
   href: string;
@@ -18,6 +23,12 @@ export interface NavTab {
    * their own tab.
    */
   match?: string[];
+  /**
+   * Sub-views of this tab's page, rendered indented under the nav item.
+   * They point at URL-driven in-page tabs (e.g. /aufgaben?tab=planer), so
+   * they work as deep links from anywhere.
+   */
+  children?: NavSubItem[];
 }
 
 /**
@@ -40,7 +51,15 @@ export const NAV_TABS: NavTab[] = [
     icon: BookOpen,
     match: ["/sammlungen"],
   },
-  { label: "Aufgaben", href: "/aufgaben", icon: ListChecks },
+  {
+    label: "Familienplaner",
+    href: "/aufgaben",
+    icon: ListChecks,
+    children: [
+      { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Planer", href: "/aufgaben?tab=planer" },
+    ],
+  },
   { label: "Familie", href: "/familie", icon: Users },
 ];
 
@@ -49,6 +68,24 @@ export function isTabActive(tab: NavTab, pathname: string): boolean {
   return prefixes.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
+}
+
+/**
+ * A sub-item is active when its path matches and its `tab` param (or lack
+ * of one) matches the current URL — "/aufgaben" is the Aufgaben view,
+ * "/aufgaben?tab=planer" is the Planer view.
+ */
+export function isSubItemActive(
+  subItem: NavSubItem,
+  pathname: string,
+  currentTab: string | null,
+): boolean {
+  const [path, query] = subItem.href.split("?");
+  if (pathname !== path) return false;
+  const wantedTab = query
+    ? new URLSearchParams(query).get("tab")
+    : null;
+  return wantedTab === currentTab;
 }
 
 export function shouldShowNav(pathname: string): boolean {

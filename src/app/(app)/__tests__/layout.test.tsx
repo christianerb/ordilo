@@ -23,6 +23,10 @@ vi.mock("@/components/ordilo/app-shell", () => ({
   AppShell: vi.fn(),
 }));
 
+vi.mock("@/lib/ai/chat-history", () => ({
+  listConversations: vi.fn().mockResolvedValue([]),
+}));
+
 import AppLayout from "@/app/(app)/layout";
 
 interface AppShellProps {

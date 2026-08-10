@@ -13,4 +13,4 @@ export const DOCUMENT_LIST_COLUMNS =
   "id, family_id, uploaded_by, title, document_type, category, status, " +
   "file_url, original_filename, mime_type, page_count, summary, " +
   "error_message, failure_stage, failure_code, failed_at, created_at, " +
-  "confirmed_at, tags, source, extraction_version";
+  "confirmed_at, tags, source, extraction_version, partial_analysis";

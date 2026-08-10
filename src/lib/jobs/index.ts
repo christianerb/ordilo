@@ -327,7 +327,7 @@ async function executeAnalyzeJob(
 ): Promise<"done" | "skipped"> {
   const { data: document, error: readError } = await adminClient
     .from("documents")
-    .select("id, family_id, status, ocr_text")
+    .select("id, family_id, status, ocr_text, category")
     .eq("id", documentId)
     .maybeSingle();
 
@@ -359,6 +359,7 @@ async function executeAnalyzeJob(
       id: documentId,
       family_id: document.family_id,
       ocr_text: document.ocr_text,
+      category: document.category,
       wasConfirmed,
     });
   } catch (err) {

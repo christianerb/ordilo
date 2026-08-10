@@ -12,7 +12,7 @@ import { MobileComposer } from "@/components/ordilo/app-shell-navigation";
 describe("MobileComposer", () => {
   it("submits a question and clears the field", () => {
     const onSearch = vi.fn();
-    render(<MobileComposer onSearch={onSearch} onScan={vi.fn()} />);
+    render(<MobileComposer onSearch={onSearch} onOpenActions={vi.fn()} />);
 
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "Wann war der Elternabend?" } });
@@ -24,7 +24,7 @@ describe("MobileComposer", () => {
 
   it("does not submit on Enter — it only inserts a newline", () => {
     const onSearch = vi.fn();
-    render(<MobileComposer onSearch={onSearch} onScan={vi.fn()} />);
+    render(<MobileComposer onSearch={onSearch} onOpenActions={vi.fn()} />);
 
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "Wann war der Elternabend?" } });
@@ -37,7 +37,7 @@ describe("MobileComposer", () => {
     // Without this the bar looked ready mid-stream, cleared the textarea on
     // submit, and the question was dropped by the /suche handler.
     const onSearch = vi.fn();
-    render(<MobileComposer onSearch={onSearch} onScan={vi.fn()} isLoading />);
+    render(<MobileComposer onSearch={onSearch} onOpenActions={vi.fn()} isLoading />);
 
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     expect(input.disabled).toBe(true);
@@ -51,43 +51,74 @@ describe("MobileComposer", () => {
     ).toBe(true);
   });
 
-  it("opens the scanner from inside the bar, next to the mic", () => {
-    // The scan button used to sit beside the bar and cost ~60px of the
-    // 393px a phone has, which is why the input was ~23 characters wide.
-    const onScan = vi.fn();
+  it("opens the shared + action sheet, not the scanner directly", () => {
+    // Scanning used to sit inside the bar, next to the mic. It now lives
+    // behind a separate + circle so the same control also reaches "Notiz
+    // erstellen" and "Neue Sammlung" — the bar itself only calls back up.
+    const onOpenActions = vi.fn();
     const { container } = render(
-      <MobileComposer onSearch={vi.fn()} onScan={onScan} />,
+      <MobileComposer onSearch={vi.fn()} onOpenActions={onOpenActions} />,
     );
 
-    const scan = screen.getByTestId("composer-scan-button");
-    expect(scan).toHaveAttribute("aria-label", "Scannen");
-    // Inside the search bar, not a sibling of it.
+    const actions = screen.getByTestId("composer-actions-button");
+    expect(actions).toHaveAttribute("aria-label", "Aktionen");
+    // Beside the search bar, not inside it.
     expect(
-      container.querySelector('[data-testid="ai-search-bar"]')!.contains(scan),
-    ).toBe(true);
+      container.querySelector('[data-testid="ai-search-bar"]')!.contains(actions),
+    ).toBe(false);
 
-    fireEvent.click(scan);
-    expect(onScan).toHaveBeenCalledTimes(1);
+    fireEvent.click(actions);
+    expect(onOpenActions).toHaveBeenCalledTimes(1);
   });
 
-  it("gives the text its own full-width row above the controls", () => {
-    render(<MobileComposer onSearch={vi.fn()} onScan={vi.fn()} />);
-    const input = screen.getByRole("textbox");
-    // w-full instead of flex-1 next to the buttons — the stacked layout is
-    // what frees the width (measured: 201px to 335px at 393px viewport).
-    expect(input.className).toContain("w-full");
+  it("disables the + button while an answer streams, like the rest of the bar", () => {
+    render(<MobileComposer onSearch={vi.fn()} onOpenActions={vi.fn()} isLoading />);
+    const actions = screen.getByTestId("composer-actions-button") as HTMLButtonElement;
+    expect(actions.disabled).toBe(true);
   });
 
-  it("disables scanning while an answer streams, like the rest of the bar", () => {
-    const onScan = vi.fn();
-    render(<MobileComposer onSearch={vi.fn()} onScan={onScan} isLoading />);
-    const scan = screen.getByTestId("composer-scan-button") as HTMLButtonElement;
-    expect(scan.disabled).toBe(true);
+  it("zooms into the fullscreen overlay when the pill is focused", () => {
+    render(
+      <MobileComposer onSearch={vi.fn()} onOpenActions={vi.fn()} />,
+    );
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+
+    fireEvent.focus(screen.getByRole("textbox"));
+    expect(screen.getByTestId("composer-overlay")).toBeDefined();
+  });
+
+  it("does not zoom when enableOverlay is false (already inside /suche)", () => {
+    // Zooming into "ask anything" makes no sense while already inside the
+    // fullscreen /suche conversation — the pill stays a plain composer.
+    render(
+      <MobileComposer
+        onSearch={vi.fn()}
+        onOpenActions={vi.fn()}
+        enableOverlay={false}
+      />,
+    );
+    fireEvent.focus(screen.getByRole("textbox"));
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+  });
+
+  it("closes the overlay again without losing the draft", () => {
+    render(<MobileComposer onSearch={vi.fn()} onOpenActions={vi.fn()} />);
+
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Wo ist der Impfausweis?" } });
+    fireEvent.focus(input);
+    expect(screen.getByTestId("composer-overlay")).toBeDefined();
+
+    fireEvent.click(screen.getByTestId("composer-overlay-close"));
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe(
+      "Wo ist der Impfausweis?",
+    );
   });
 
   it("publishes its height so page content can clear the fixed bar", () => {
     const { unmount } = render(
-      <MobileComposer onSearch={vi.fn()} onScan={vi.fn()} />,
+      <MobileComposer onSearch={vi.fn()} onOpenActions={vi.fn()} />,
     );
     // jsdom reports 0-height boxes, so assert the contract (the variable is
     // set and cleaned up), not the value.

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Loader2, Calendar, User, ChevronDown } from "lucide-react";
+import { Loader2, User, ChevronDown } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -10,6 +10,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
@@ -23,6 +24,12 @@ const PRIORITIES: {
   { value: "medium", label: "Mittel", dot: "bg-[var(--petrol)]" },
   { value: "low", label: "Niedrig", dot: "bg-[var(--mist)]" },
 ];
+
+function todayAsIsoDate(): string {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60_000;
+  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
+}
 
 export interface TaskCreateSheetProps {
   open: boolean;
@@ -47,6 +54,7 @@ export function TaskCreateSheet({
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const minDueDate = todayAsIsoDate();
 
   const resetForm = useCallback(() => {
     setTitle("");
@@ -70,6 +78,10 @@ export function TaskCreateSheet({
   const handleSave = useCallback(async () => {
     if (!title.trim()) {
       setError("Bitte gib einen Titel ein.");
+      return;
+    }
+    if (dueDate && dueDate < minDueDate) {
+      setError("Bitte wähle heute oder einen späteren Tag.");
       return;
     }
 
@@ -104,7 +116,7 @@ export function TaskCreateSheet({
     } finally {
       setSaving(false);
     }
-  }, [title, description, dueDate, priority, assignedTo, familyId, supabase, onCreated, handleOpenChange]);
+  }, [title, description, dueDate, priority, assignedTo, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -161,21 +173,15 @@ export function TaskCreateSheet({
                 >
                   Fällig am
                 </label>
-                <div className="flex h-12 items-center gap-2 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] px-3 transition-colors focus-within:border-[var(--petrol)] focus-within:ring-[3px] focus-within:ring-ring/20">
-                  <Calendar
-                    className="size-4 shrink-0 text-muted-foreground"
-                    aria-hidden="true"
-                    strokeWidth={1.5}
-                  />
-                  <input
-                    id="task-create-due-date"
-                    type="date"
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none focus:ring-0"
-                    data-testid="task-create-due-date"
-                  />
-                </div>
+                <DateInput
+                  id="task-create-due-date"
+                  value={dueDate}
+                  onChange={setDueDate}
+                  minDate={minDueDate}
+                  className="h-12"
+                  aria-label="Fällig am"
+                  data-testid="task-create-due-date"
+                />
               </div>
 
               <fieldset>

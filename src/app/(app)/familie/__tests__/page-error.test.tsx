@@ -50,12 +50,25 @@ function mockServerClient(options: {
   memberData?: unknown[];
   memberError?: unknown;
 }) {
+  // resolveUserFamily's owned lookup:
+  // families.select().eq("created_by", uid).order().limit(1).maybeSingle()
   const familiesChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
       data: options.familyData ?? null,
       error: options.familyError ?? null,
     }),
+  };
+
+  // Invite-only fallback — these tests exercise the owned path (or no
+  // family at all), so this resolves null.
+  const membershipsChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   };
 
   const membersChain = {
@@ -83,6 +96,9 @@ function mockServerClient(options: {
     if (table === "families") {
       return { select: vi.fn(() => familiesChain) };
     }
+    if (table === "family_memberships") {
+      return { select: vi.fn(() => membershipsChain) };
+    }
     if (table === "family_members") {
       return { select: vi.fn(() => membersChain) };
     }
@@ -96,6 +112,12 @@ function mockServerClient(options: {
   });
 
   return {
+    auth: {
+      // resolveUserFamily resolves the session before querying.
+      getUser: vi.fn().mockResolvedValue({
+        data: { user: { id: "user-1", email: "test@ordilo.test" } },
+      }),
+    },
     from: fromMock,
   } as unknown as Awaited<ReturnType<typeof createClient>>;
 }

@@ -67,6 +67,18 @@
     }
   }
 
+  /* Citation jump — brief highlight when a chat citation marker scrolls
+     its source card into view, so the "which one did I just click" link
+     between text and card grid stays visible even after the scroll. */
+  @keyframes citation-flash {
+    0% {
+      background-color: var(--wash-sage-soft);
+    }
+    100% {
+      background-color: transparent;
+    }
+  }
+
   /* Chat message entrance — fade + slide up */
   @keyframes message-in {
     from {
@@ -181,6 +193,16 @@
   @keyframes column-in {
     from { opacity: 0; transform: translateY(8px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Touch-drag pickup — tactile "pop" when a long-press drag activates.
+     Animates the individual `scale` property so it composes with the
+     inline `transform: translate(...)` that follows the finger. Ends at
+     the drag resting scale (1.03) so there is no jump when it finishes. */
+  @keyframes drag-pop {
+    0% { scale: 1; }
+    55% { scale: 1.07; }
+    100% { scale: 1.03; }
   }
 
   /* AI search bar — gentle sparkle pulse (see ai-search-bar.tsx) */
@@ -480,6 +502,9 @@
   .animate-check-pop {
     animation: check-pop 0.2s var(--ease-out-quart);
   }
+  .animate-citation-flash {
+    animation: citation-flash 900ms var(--ease-out-quart);
+  }
 
   /* Task completion celebration */
   .animate-task-done {
@@ -519,6 +544,12 @@
   /* Board column entrance */
   .animate-column-in {
     animation: column-in 0.3s var(--ease-out-quart) backwards;
+  }
+
+  /* Touch-drag pickup pop (iOS has no navigator.vibrate — this is the
+     visual haptic that confirms the long-press) */
+  .animate-drag-pop {
+    animation: drag-pop 180ms var(--ease-out-quart);
   }
 
   /* Stagger children entrance — applies card-in to direct children with
@@ -583,6 +614,12 @@
     transform: translateY(-2px);
     box-shadow: var(--shadow-card-hover);
   }
+  /* Press feedback on click — settle back down with a tiny scale so the
+     card acknowledges the tap instead of freezing in the hover-lift state. */
+  .card-lift:active {
+    transform: translateY(0) scale(0.99);
+    transition-duration: 0.1s;
+  }
 }
 
 /* Coarse pointer (touch): no hover lift, use active scale for feedback */
@@ -609,6 +646,7 @@
   .animate-nav-dot,
   .animate-camera-flash,
   .animate-column-in,
+  .animate-drag-pop,
   .animate-sparkle-pulse,
   .stagger-children > *,
   .ordilo-mascot-breathe,
@@ -619,7 +657,8 @@
   .ordilo-mascot-bounce,
   .ordilo-mascot-ear-wiggle,
   .animate-banner-glow,
-  .animate-avatar-pop {
+  .animate-avatar-pop,
+  .animate-citation-flash {
     animation: none;
   }
 

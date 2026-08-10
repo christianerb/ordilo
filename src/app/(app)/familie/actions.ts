@@ -1,6 +1,12 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import {
+  type ActionResult,
+  FRIENDLY_ERROR,
+  getUserFamily,
+} from "@/lib/actions/result";
 import { validateMember, validateFamilyName } from "@/lib/schemas/onboarding";
 import type { Database } from "@/types/database";
 
@@ -14,15 +20,7 @@ import type { Database } from "@/types/database";
  * - Friendly German error messages on failures
  */
 
-type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
-
-type ActionResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };
-
-/** Friendly German error used for unexpected failures. */
-const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 
 /**
  * Input shape for member add/edit operations.
@@ -55,27 +53,6 @@ async function verifyRelatedMembers(
   if (error || !data) return false;
   const found = new Set(data.filter((m) => m.family_id === familyId).map((m) => m.id));
   return relatedMemberIds.every((id) => found.has(id));
-}
-
-/**
- * Fetch the authenticated user's family (RLS-scoped — only returns the
- * family created_by the current user).
- *
- * @returns The family row, or null if the user has no family.
- */
-async function getUserFamily(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<{ data: Pick<FamilyRow, "id" | "name"> | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from("families")
-    .select("id, name")
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { data: null, error: FRIENDLY_ERROR };
-  }
-  return { data, error: null };
 }
 
 /**
@@ -320,6 +297,121 @@ export async function removeFamilyMember(
 
   if (deleteError) {
     return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: null };
+}
+
+/**
+ * Delete the user's family and their account (DSGVO Art. 17 — right to
+ * erasure).
+ *
+ * Only the family OWNER (created_by) may delete it — this mirrors the
+ * families_owner_delete RLS policy, so an invited member cannot wipe someone
+ * else's family. Deleting the families row cascades to every family-scoped
+ * table (documents, tasks, members, chat, collections, embeddings, …). Two
+ * things are NOT covered by the cascade and are removed explicitly:
+ *   - Storage files (document scans + member avatars) in the private buckets
+ *   - The auth user itself (full account deletion; also removes the user's
+ *     family_memberships rows for any other families via user_id cascade)
+ *
+ * @param confirmName - The family name, typed by the user to confirm. Must
+ *                      match exactly (defense in depth on top of the client).
+ * @returns `{ success: true, data: null }` on success, or a German error.
+ */
+export async function deleteFamilyAccount(
+  confirmName: string,
+): Promise<ActionResult<null>> {
+  const supabase = await createClient();
+
+  // Require an authenticated session.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  // Resolve the family the user OWNS (created_by is unique, so at most one).
+  const { data: family, error: familyError } = await supabase
+    .from("families")
+    .select("id, name")
+    .eq("created_by", user.id)
+    .maybeSingle();
+
+  if (familyError) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+  if (!family) {
+    return {
+      success: false,
+      error:
+        "Nur die Person, die die Familie erstellt hat, kann sie löschen.",
+    };
+  }
+
+  // Confirmation: the typed name must match the family name exactly.
+  if (confirmName.trim() !== family.name) {
+    return {
+      success: false,
+      error: "Der Name stimmt nicht mit dem Familiennamen überein.",
+    };
+  }
+
+  // Privileged work (storage + auth) needs the service-role client.
+  const admin = createAdminClient();
+
+  // Collect storage paths BEFORE deleting rows — the rows hold the locations.
+  const { data: docs } = await admin
+    .from("documents")
+    .select("file_url")
+    .eq("family_id", family.id);
+  const documentPaths = (docs ?? [])
+    .map((d) => d.file_url)
+    .filter((url): url is string => Boolean(url));
+
+  const { data: memberRows } = await admin
+    .from("family_members")
+    .select("photo_url")
+    .eq("family_id", family.id);
+  const avatarPaths = (memberRows ?? [])
+    .map((m) => m.photo_url)
+    .filter((url): url is string => Boolean(url));
+
+  // Delete the family row — cascades to all family-scoped data.
+  const { error: deleteError } = await admin
+    .from("families")
+    .delete()
+    .eq("id", family.id);
+
+  if (deleteError) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  // Best-effort storage cleanup — orphaned files are non-fatal (the data is
+  // already gone), so failures are swallowed.
+  if (documentPaths.length > 0) {
+    await admin.storage
+      .from("documents")
+      .remove(documentPaths)
+      .catch(() => {});
+  }
+  if (avatarPaths.length > 0) {
+    await admin.storage
+      .from("avatars")
+      .remove(avatarPaths)
+      .catch(() => {});
+  }
+
+  // Delete the auth user (full account deletion). The family's data is
+  // already erased — the DSGVO-relevant part — so a failure here only leaves
+  // an orphaned login (no family, no data) and is logged, not fatal.
+  const { error: deleteUserError } = await admin.auth.admin.deleteUser(user.id);
+  if (deleteUserError) {
+    console.error(
+      "deleteFamilyAccount: failed to delete auth user",
+      deleteUserError,
+    );
   }
 
   return { success: true, data: null };

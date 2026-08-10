@@ -112,6 +112,7 @@ function mockServerClient(options: {
   user?: { id: string; email: string } | null;
   docStatus?: string;
   docOcrText?: string | null;
+  docCategory?: string | null;
   docNotFound?: boolean;
   pages?: { ocr_markdown: string | null }[];
   members?: { id: string; name: string; role: string | null }[];
@@ -126,6 +127,7 @@ function mockServerClient(options: {
     user = { id: "user-1", email: "test@ordilo.test" },
     docStatus = "ocr_done",
     docOcrText = "OCR text from document",
+    docCategory = null,
     docNotFound = false,
     pages = [{ ocr_markdown: "# Page 1\n\nOCR content" }],
     members = [{ id: "member-1", name: "Emma", role: "Kind" }],
@@ -169,6 +171,7 @@ function mockServerClient(options: {
                 family_id: FAMILY_ID,
                 status: docStatus,
                 ocr_text: docOcrText,
+                category: docCategory,
               },
               error: null,
             }),
@@ -901,6 +904,43 @@ describe("POST /api/documents/[id]/analyze", () => {
     expect(payload.title).toBe("Einladung zum Elternabend");
     expect(payload.summary).toBe("Elternabend in der Kita Sonnenblume am 15. Juli 2026.");
     expect(payload.document_type).toBe("letter");
+    expect(payload.category).toBe("Kita");
+  });
+
+  it("preserves a category pinned at creation (collection note) instead of the LLM category", async () => {
+    // A note created inside a collection has its category set to the
+    // collection's name before analysis runs. The analyze step must keep
+    // that pinned category rather than re-filing the note under the LLM's
+    // suggested_category ("Kita").
+    const client = mockServerClient({ docStatus: "ocr_done", docCategory: "Unterlagen" });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(new Request("http://localhost"), createParams());
+
+    const updateCalls = client._documentsBuilder.update.mock.calls;
+    const finalUpdateCall = updateCalls.find(
+      (call: unknown[]) => (call[0] as Record<string, unknown>).status === "analyzed",
+    );
+    expect(finalUpdateCall).toBeDefined();
+    const payload = finalUpdateCall![0] as Record<string, unknown>;
+    expect(payload.category).toBe("Unterlagen");
+  });
+
+  it("re-categorizes on re-analysis of a confirmed document even when a category is set", async () => {
+    // The preservation guard only fires on FIRST analysis. Re-analyzing a
+    // confirmed document (wasConfirmed = true) may legitimately update the
+    // category to the LLM's canonicalized suggestion.
+    const client = mockServerClient({ docStatus: "confirmed", docCategory: "Unterlagen" });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(new Request("http://localhost"), createParams());
+
+    const updateCalls = client._documentsBuilder.update.mock.calls;
+    const finalUpdateCall = updateCalls.find(
+      (call: unknown[]) => (call[0] as Record<string, unknown>).status === "confirmed",
+    );
+    expect(finalUpdateCall).toBeDefined();
+    const payload = finalUpdateCall![0] as Record<string, unknown>;
     expect(payload.category).toBe("Kita");
   });
 });

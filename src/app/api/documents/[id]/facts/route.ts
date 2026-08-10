@@ -1,10 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
+import { jsonError } from "@/lib/api/respond";
+import { parseJsonBody } from "@/lib/api/parse-json";
 import {
-  FACT_TYPES,
-  FACT_TYPE_LABELS,
-  normalizeFactValue,
-  type FactType,
-} from "@/lib/schemas/extraction";
+  createFactSchema,
+  updateFactSchema,
+  deleteFactSchema,
+} from "@/lib/schemas/facts";
+import { FACT_TYPE_LABELS, normalizeFactValue } from "@/lib/schemas/extraction";
 
 /**
  * POST|PATCH|DELETE /api/documents/[id]/facts — manage a document's typed
@@ -25,9 +27,6 @@ import {
  * family. User-provided facts are stored with confidence 1.0 and
  * confirmed=true (fact search only surfaces confirmed facts).
  */
-
-const MAX_VALUE_LENGTH = 200;
-const MAX_LABEL_LENGTH = 120;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -74,13 +73,6 @@ async function resolveDocument(documentId: string): Promise<ResolvedDocument> {
   return { ok: true, supabase, document };
 }
 
-function validateValue(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > MAX_VALUE_LENGTH) return null;
-  return trimmed;
-}
-
 export async function POST(
   request: Request,
   context: RouteContext,
@@ -90,30 +82,15 @@ export async function POST(
   if (!resolved.ok) return resolved.response;
   const { supabase, document } = resolved;
 
-  let body: { fact_type?: string; value?: unknown; label?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
+  const parsed = await parseJsonBody(request, createFactSchema, {
+    invalidJson: "Bitte gib eine gültige Nummer und ihren Typ an.",
+    invalidPayload: "Bitte gib eine gültige Nummer und ihren Typ an.",
+    payloadCode: "INVALID_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
 
-  const factType = FACT_TYPES.includes(body.fact_type as FactType)
-    ? (body.fact_type as FactType)
-    : null;
-  const value = validateValue(body.value);
-  if (!factType || !value) {
-    return Response.json(
-      {
-        error: "Bitte gib eine gültige Nummer und ihren Typ an.",
-        code: "INVALID_INPUT",
-      },
-      { status: 400 },
-    );
-  }
-  const label =
-    typeof body.label === "string" && body.label.trim()
-      ? body.label.trim().slice(0, MAX_LABEL_LENGTH)
-      : FACT_TYPE_LABELS[factType];
+  const { fact_type: factType, value } = parsed.data;
+  const label = parsed.data.label ?? FACT_TYPE_LABELS[factType];
 
   const { data: fact, error } = await supabase
     .from("document_facts")
@@ -132,10 +109,7 @@ export async function POST(
     .single();
 
   if (error || !fact) {
-    return Response.json(
-      { error: "Speichern hat nicht geklappt.", code: "INSERT_FAILED" },
-      { status: 500 },
-    );
+    return jsonError("Speichern hat nicht geklappt.", "INSERT_FAILED", 500);
   }
   return Response.json({ status: "ok", fact });
 }
@@ -149,29 +123,14 @@ export async function PATCH(
   if (!resolved.ok) return resolved.response;
   const { supabase, document } = resolved;
 
-  let body: { fact_id?: unknown; value?: unknown; label?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
+  const parsed = await parseJsonBody(request, updateFactSchema, {
+    invalidJson: "Bitte gib die Nummer und einen neuen Wert an.",
+    invalidPayload: "Bitte gib die Nummer und einen neuen Wert an.",
+    payloadCode: "INVALID_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
 
-  const factId = typeof body.fact_id === "string" ? body.fact_id : null;
-  const value = validateValue(body.value);
-  if (!factId || !value) {
-    return Response.json(
-      {
-        error: "Bitte gib die Nummer und einen neuen Wert an.",
-        code: "INVALID_INPUT",
-      },
-      { status: 400 },
-    );
-  }
-
-  const label =
-    typeof body.label === "string" && body.label.trim()
-      ? body.label.trim().slice(0, MAX_LABEL_LENGTH)
-      : undefined;
+  const { fact_id: factId, value, label } = parsed.data;
   const update = {
     value,
     normalized_value: normalizeFactValue(value),
@@ -189,10 +148,7 @@ export async function PATCH(
     .maybeSingle();
 
   if (error || !fact) {
-    return Response.json(
-      { error: "Die Nummer wurde nicht gefunden.", code: "NOT_FOUND" },
-      { status: 404 },
-    );
+    return jsonError("Die Nummer wurde nicht gefunden.", "NOT_FOUND", 404);
   }
   return Response.json({ status: "ok", fact });
 }
@@ -206,31 +162,21 @@ export async function DELETE(
   if (!resolved.ok) return resolved.response;
   const { supabase, document } = resolved;
 
-  let body: { fact_id?: unknown };
-  try {
-    body = await request.json();
-  } catch {
-    body = {};
-  }
-  const factId = typeof body.fact_id === "string" ? body.fact_id : null;
-  if (!factId) {
-    return Response.json(
-      { error: "Bitte gib an, welche Nummer entfernt werden soll.", code: "INVALID_INPUT" },
-      { status: 400 },
-    );
-  }
+  const parsed = await parseJsonBody(request, deleteFactSchema, {
+    invalidJson: "Bitte gib an, welche Nummer entfernt werden soll.",
+    invalidPayload: "Bitte gib an, welche Nummer entfernt werden soll.",
+    payloadCode: "INVALID_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
 
   const { error } = await supabase
     .from("document_facts")
     .delete()
-    .eq("id", factId)
+    .eq("id", parsed.data.fact_id)
     .eq("document_id", document.id);
 
   if (error) {
-    return Response.json(
-      { error: "Entfernen hat nicht geklappt.", code: "DELETE_FAILED" },
-      { status: 500 },
-    );
+    return jsonError("Entfernen hat nicht geklappt.", "DELETE_FAILED", 500);
   }
   return Response.json({ status: "ok" });
 }

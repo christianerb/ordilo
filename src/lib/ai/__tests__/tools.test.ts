@@ -15,14 +15,19 @@ vi.mock("@/lib/ai/chat", () => ({
   combineSearchResults: vi.fn(() => []),
 }));
 
-vi.mock("@/app/(app)/familie/actions", () => ({
-  addFamilyMember: vi.fn(),
+vi.mock("@/lib/pipeline/analyze-step", () => ({
+  performAnalyzeStep: vi.fn().mockResolvedValue({}),
+}));
+
+vi.mock("@/lib/supabase/document-helpers", () => ({
+  markDocumentFailed: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
-import { addFamilyMember } from "@/app/(app)/familie/actions";
+import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import { markDocumentFailed } from "@/lib/supabase/document-helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -270,6 +275,48 @@ describe("mark_task_done confirmation gate", () => {
 // add_family_member confirmation gate
 // ---------------------------------------------------------------------------
 
+/**
+ * Ctx for add_family_member: `.from("family_members")` captures the insert
+ * payload and resolves the select/single chain.
+ */
+function makeMemberCtx({
+  inserted = null,
+  insertError = null,
+}: {
+  inserted?: { id: string; name: string } | null;
+  insertError?: unknown;
+} = {}) {
+  let capturedInsert: Record<string, unknown> | null = null;
+
+  const from = vi.fn((table: string) => {
+    if (table === "family_members") {
+      return {
+        insert: vi.fn((payload: Record<string, unknown>) => {
+          capturedInsert = payload;
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: insertError ? null : inserted,
+                error: insertError,
+              }),
+            })),
+          };
+        }),
+      };
+    }
+    return makeThenableChain(null);
+  });
+
+  const ctx = {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+
+  return { ctx, getInsert: () => capturedInsert };
+}
+
 describe("add_family_member confirmation gate", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -279,53 +326,29 @@ describe("add_family_member confirmation gate", () => {
     expect(CONFIRMATION_TOOLS.has("add_family_member")).toBe(true);
   });
 
-  it("returns needs_confirmation when confirmed is missing", async () => {
-    const ctx = makeCtx();
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const { ctx, getInsert } = makeMemberCtx();
     const result = await executeTool("add_family_member", { name: "Emma" }, ctx);
     const parsed = JSON.parse(result);
 
     expect(parsed.needs_confirmation).toBe(true);
     expect(parsed.member_name).toBe("Emma");
-    expect(addFamilyMember).not.toHaveBeenCalled();
+    expect(getInsert()).toBeNull();
   });
 
   it("returns error when name is empty", async () => {
-    const ctx = makeCtx();
+    const { ctx, getInsert } = makeMemberCtx();
     const result = await executeTool("add_family_member", { name: "  " }, ctx);
     const parsed = JSON.parse(result);
 
     expect(parsed.error).toBe("Kein Name angegeben.");
-    expect(addFamilyMember).not.toHaveBeenCalled();
+    expect(getInsert()).toBeNull();
   });
 
-  it("calls addFamilyMember and returns success when confirmed is true", async () => {
-    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: true,
-      data: { id: "member-1", name: "Emma" },
+  it("inserts into the ACTIVE chat family with normalized optional fields", async () => {
+    const { ctx, getInsert } = makeMemberCtx({
+      inserted: { id: "member-1", name: "Emma" },
     });
-    const ctx = makeCtx();
-    const result = await executeTool(
-      "add_family_member",
-      { name: "Emma", role: "Kind", confirmed: true },
-      ctx,
-    );
-    const parsed = JSON.parse(result);
-
-    expect(addFamilyMember).toHaveBeenCalledWith({
-      name: "Emma",
-      role: "Kind",
-      birthdate: undefined,
-    });
-    expect(parsed.success).toBe(true);
-    expect(parsed.member_id).toBe("member-1");
-  });
-
-  it("returns error when addFamilyMember fails", async () => {
-    (addFamilyMember as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: false,
-      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
-    });
-    const ctx = makeCtx();
     const result = await executeTool(
       "add_family_member",
       { name: "Emma", confirmed: true },
@@ -333,7 +356,57 @@ describe("add_family_member confirmation gate", () => {
     );
     const parsed = JSON.parse(result);
 
-    expect(parsed.error).toBe("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
+    // The family binding is the regression guard: the member must land in
+    // ctx.familyId, not in an arbitrary RLS-visible family.
+    expect(getInsert()).toEqual({
+      family_id: "fam-1",
+      name: "Emma",
+      role: null,
+      birthdate: null,
+      avatar_color: null,
+      related_member_ids: [],
+      relationship_label: null,
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.member_id).toBe("member-1");
+  });
+
+  it("passes role and birthdate through the shared validation", async () => {
+    const { ctx, getInsert } = makeMemberCtx({
+      inserted: { id: "member-2", name: "Emma" },
+    });
+    await executeTool(
+      "add_family_member",
+      { name: "Emma", role: "Kind", birthdate: "2020-04-03", confirmed: true },
+      ctx,
+    );
+
+    expect(getInsert()).toMatchObject({ role: "Kind", birthdate: "2020-04-03" });
+  });
+
+  it("returns the shared validation error for an invalid birthdate", async () => {
+    const { ctx, getInsert } = makeMemberCtx();
+    const result = await executeTool(
+      "add_family_member",
+      { name: "Emma", birthdate: "3.4.2020", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Bitte ein gültiges Geburtsdatum eingeben");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("returns error when the insert fails", async () => {
+    const { ctx } = makeMemberCtx({ insertError: { message: "RLS denied" } });
+    const result = await executeTool(
+      "add_family_member",
+      { name: "Emma", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Familienmitglied konnte nicht angelegt werden.");
   });
 });
 
@@ -1004,5 +1077,680 @@ describe("query_payments", () => {
     const ctx = makeCtxWithAmounts([], documents, { message: "boom" });
     const result = JSON.parse(await executeTool("query_payments", {}, ctx));
     expect(result.error).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// update_task confirmation gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for update_task: `.from("tasks")` resolves the task lookup and
+ * captures the update payload, `.from("family_members")` resolves the
+ * optional assignee lookup.
+ */
+function makeUpdateTaskCtx({
+  task = null,
+  member = null,
+  updateError = null,
+}: {
+  task?: { id: string; title: string; status?: string } | null;
+  member?: { id: string; name: string } | null;
+  updateError?: unknown;
+} = {}) {
+  let capturedUpdate: Record<string, unknown> | null = null;
+
+  const updateThenable: {
+    eq: ReturnType<typeof vi.fn>;
+    then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => Promise<unknown>;
+  } = {
+    eq: vi.fn(),
+    then: (resolve: (v: unknown) => void) =>
+      Promise.resolve({ data: null, error: updateError }).then(resolve),
+  };
+  updateThenable.eq.mockReturnValue(updateThenable);
+
+  const from = vi.fn((table: string) => {
+    if (table === "tasks") {
+      return {
+        select: vi.fn().mockReturnThis(),
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: task, error: null }),
+        update: vi.fn((payload: Record<string, unknown>) => {
+          capturedUpdate = payload;
+          return { eq: vi.fn().mockReturnValue(updateThenable) };
+        }),
+      };
+    }
+    if (table === "family_members") {
+      return makeThenableChain(member);
+    }
+    return makeThenableChain(null);
+  });
+
+  const ctx = {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+
+  return { ctx, getUpdate: () => capturedUpdate };
+}
+
+describe("update_task confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("includes 'update_task' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("update_task")).toBe(true);
+  });
+
+  it("returns needs_confirmation with the planned changes when unconfirmed", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Steuererklaerung" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", due_date: "2026-09-01", priority: "high" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.task_title).toBe("Steuererklaerung");
+    expect(parsed.aenderungen).toEqual(["Frist: 2026-09-01", "Prioritaet: Hoch"]);
+    expect(getUpdate()).toBeNull();
+  });
+
+  it("returns error when the task is not found", async () => {
+    const { ctx } = makeUpdateTaskCtx({ task: null });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "nope", due_date: "2026-09-01", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Aufgabe nicht gefunden.");
+  });
+
+  it("returns error when task_id is empty", async () => {
+    const { ctx } = makeUpdateTaskCtx();
+    const result = await executeTool("update_task", { task_id: "" }, ctx);
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Keine Aufgaben-ID angegeben.");
+  });
+
+  it("returns error when no field to change is given", async () => {
+    const { ctx } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toContain("Keine Aenderung angegeben");
+  });
+
+  it("applies only the provided fields when confirmed", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Steuererklaerung" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", due_date: "2026-09-01", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(getUpdate()).toEqual({ due_date: "2026-09-01" });
+  });
+
+  it("clears the due date when due_date is an empty string", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+    });
+    await executeTool(
+      "update_task",
+      { task_id: "task-1", due_date: "", confirmed: true },
+      ctx,
+    );
+
+    expect(getUpdate()).toEqual({ due_date: null });
+  });
+
+  it("reopens a done task via status 'open'", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test", status: "done" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", status: "open", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(getUpdate()).toEqual({ status: "open" });
+    expect(parsed.aenderungen).toEqual(["wieder geoeffnet"]);
+  });
+
+  it("resolves assignee_name to the member id", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+      member: { id: "member-5", name: "Emma" },
+    });
+    await executeTool(
+      "update_task",
+      { task_id: "task-1", assignee_name: "Emma", confirmed: true },
+      ctx,
+    );
+
+    expect(getUpdate()).toEqual({ assigned_to: "member-5" });
+  });
+
+  it("returns error for an unknown assignee instead of clearing it", async () => {
+    const { ctx, getUpdate } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+      member: null,
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", assignee_name: "Unbekannt", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toContain("Unbekannt");
+    expect(getUpdate()).toBeNull();
+  });
+
+  it("returns error on update failure", async () => {
+    const { ctx } = makeUpdateTaskCtx({
+      task: { id: "task-1", title: "Test" },
+      updateError: { message: "RLS denied" },
+    });
+    const result = await executeTool(
+      "update_task",
+      { task_id: "task-1", priority: "low", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Aufgabe konnte nicht aktualisiert werden.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// create_collection confirmation gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for create_collection: `.from("collections")` captures the insert
+ * payload and resolves the select/single chain.
+ */
+function makeCollectionCtx({
+  inserted = null,
+  insertError = null,
+}: {
+  inserted?: { id: string; name: string } | null;
+  insertError?: { code?: string; message?: string } | null;
+} = {}) {
+  let capturedInsert: Record<string, unknown> | null = null;
+
+  const from = vi.fn((table: string) => {
+    if (table === "collections") {
+      return {
+        insert: vi.fn((payload: Record<string, unknown>) => {
+          capturedInsert = payload;
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: insertError ? null : inserted,
+                error: insertError,
+              }),
+            })),
+          };
+        }),
+      };
+    }
+    return makeThenableChain(null);
+  });
+
+  const ctx = {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+
+  return { ctx, getInsert: () => capturedInsert };
+}
+
+describe("create_collection confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("includes 'create_collection' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("create_collection")).toBe(true);
+  });
+
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const { ctx, getInsert } = makeCollectionCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "Steuer 2026" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.collection_name).toBe("Steuer 2026");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("returns error when name is empty", async () => {
+    const { ctx, getInsert } = makeCollectionCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "  ", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Kein Name angegeben.");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("inserts into the ACTIVE chat family with default icon and color", async () => {
+    const { ctx, getInsert } = makeCollectionCtx({
+      inserted: { id: "col-1", name: "Steuer 2026" },
+    });
+    const result = await executeTool(
+      "create_collection",
+      { name: "Steuer 2026", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    // The family binding is the P1 regression guard: the collection must
+    // land in ctx.familyId, not in an arbitrary RLS-visible family.
+    expect(getInsert()).toEqual({
+      family_id: "fam-1",
+      name: "Steuer 2026",
+      icon: "file-text",
+      color: "petrol",
+    });
+    expect(parsed.success).toBe(true);
+    expect(parsed.collection_id).toBe("col-1");
+  });
+
+  it("passes a chosen icon and color through", async () => {
+    const { ctx, getInsert } = makeCollectionCtx({
+      inserted: { id: "col-2", name: "Finanzen" },
+    });
+    await executeTool(
+      "create_collection",
+      { name: "Finanzen", icon: "wallet", color: "apricot", confirmed: true },
+      ctx,
+    );
+
+    expect(getInsert()).toMatchObject({ icon: "wallet", color: "apricot" });
+  });
+
+  it("rejects an invalid icon via the shared validation", async () => {
+    const { ctx, getInsert } = makeCollectionCtx();
+    const result = await executeTool(
+      "create_collection",
+      { name: "Finanzen", icon: "rocket", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Ungültiges Icon");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("returns a friendly error on duplicate name (unique violation)", async () => {
+    const { ctx } = makeCollectionCtx({
+      insertError: { code: "23505", message: "duplicate key" },
+    });
+    const result = await executeTool(
+      "create_collection",
+      { name: "Rechnungen", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Diese Sammlung gibt es schon.");
+  });
+
+  it("returns a generic error on other insert failures", async () => {
+    const { ctx } = makeCollectionCtx({
+      insertError: { message: "RLS denied" },
+    });
+    const result = await executeTool(
+      "create_collection",
+      { name: "Rechnungen", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Sammlung konnte nicht angelegt werden.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// create_note confirmation gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for create_note: the client carries `auth.getUser`, `.from("documents")`
+ * supports the insert (select/single) and the analyzing transition
+ * (update/eq/eq/select/maybeSingle), `.from("document_pages")` the page insert.
+ */
+function makeNoteCtx({
+  user = { id: "user-1" } as { id: string } | null,
+  insertError = null,
+}: {
+  user?: { id: string } | null;
+  insertError?: unknown;
+} = {}): ToolContext {
+  const from = vi.fn((table: string) => {
+    if (table === "documents") {
+      return {
+        insert: vi.fn(() => ({
+          select: vi.fn(() => ({
+            single: vi.fn().mockResolvedValue({
+              data: insertError ? null : { id: "note-1" },
+              error: insertError,
+            }),
+          })),
+        })),
+        update: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              select: vi.fn(() => ({
+                maybeSingle: vi
+                  .fn()
+                  .mockResolvedValue({ data: { id: "note-1" }, error: null }),
+              })),
+            })),
+          })),
+        })),
+      };
+    }
+    if (table === "document_pages") {
+      return { insert: vi.fn().mockResolvedValue({ data: null, error: null }) };
+    }
+    return makeThenableChain(null);
+  });
+
+  return {
+    client: {
+      from,
+      auth: {
+        getUser: vi.fn().mockResolvedValue({ data: { user }, error: null }),
+      },
+    } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  };
+}
+
+describe("create_note confirmation gate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockResolvedValue({});
+  });
+
+  it("includes 'create_note' in CONFIRMATION_TOOLS", () => {
+    expect(CONFIRMATION_TOOLS.has("create_note")).toBe(true);
+  });
+
+  it("returns needs_confirmation when confirmed is missing, without inserting", async () => {
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Passwort haengt am Kuehlschrank" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.note_title).toBe("WLAN");
+    expect(ctx.client.from).not.toHaveBeenCalled();
+  });
+
+  it("returns error when title or content is empty", async () => {
+    const ctx = makeNoteCtx();
+    const noTitle = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: " ", content: "Text", confirmed: true },
+        ctx,
+      ),
+    );
+    const noContent = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "Titel", content: " ", confirmed: true },
+        ctx,
+      ),
+    );
+
+    expect(noTitle.error).toBe("Kein Titel angegeben.");
+    expect(noContent.error).toBe("Kein Notiztext angegeben.");
+  });
+
+  it("rejects an over-long title", async () => {
+    const ctx = makeNoteCtx();
+    const result = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "x".repeat(201), content: "Text", confirmed: true },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toContain("zu lang");
+  });
+
+  it("inserts the note and runs the analysis when confirmed", async () => {
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Passwort haengt am Kuehlschrank", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(true);
+    expect(ctx.client.from).toHaveBeenCalledWith("documents");
+    expect(ctx.client.from).toHaveBeenCalledWith("document_pages");
+    expect(performAnalyzeStep).toHaveBeenCalledWith(
+      ctx.client,
+      expect.objectContaining({
+        family_id: "fam-1",
+        ocr_text: "Passwort haengt am Kuehlschrank",
+        wasConfirmed: false,
+      }),
+    );
+  });
+
+  it("still reports success when the analysis fails, and marks the document failed", async () => {
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new Error("OpenAI down"),
+    );
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(false);
+    expect(markDocumentFailed).toHaveBeenCalled();
+  });
+
+  it("returns error when the insert fails", async () => {
+    const ctx = makeNoteCtx({ insertError: { message: "db error" } });
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Notiz konnte nicht gespeichert werden.");
+    expect(performAnalyzeStep).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// add_calendar_event
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for add_calendar_event: `.from("calendar_events")` supports the
+ * insert → select → single chain, `.from("family_members")` resolves the
+ * attendee name lookup, `.from("calendar_event_attendees")` captures the
+ * attendee insert.
+ */
+function makeCalendarCtx({
+  insertedEvent,
+  members = [],
+}: {
+  insertedEvent: { id: string; title: string } | null;
+  members?: Array<{ id: string; name: string }>;
+}) {
+  const single = vi.fn().mockResolvedValue({
+    data: insertedEvent,
+    error: insertedEvent ? null : { message: "insert failed" },
+  });
+  const insert = vi.fn(() => ({ select: vi.fn(() => ({ single })) }));
+  const attendeesInsert = vi.fn().mockResolvedValue({ error: null });
+
+  const from = vi.fn((table: string) => {
+    if (table === "calendar_events") return { insert };
+    if (table === "family_members") return makeThenableChain(members);
+    if (table === "calendar_event_attendees") return { insert: attendeesInsert };
+    return makeThenableChain(null);
+  });
+
+  return {
+    ctx: {
+      client: { from } as unknown as ToolContext["client"],
+      familyId: "fam-1",
+      sources: [] as ChatSource[],
+      speakerName: null,
+    } as ToolContext,
+    insert,
+    attendeesInsert,
+  };
+}
+
+describe("add_calendar_event", () => {
+  it("carries the full proposal in the confirmation payload", async () => {
+    const { ctx, insert } = makeCalendarCtx({ insertedEvent: null });
+    const result = JSON.parse(
+      await executeTool(
+        "add_calendar_event",
+        {
+          title: "Zahnarzt Emma",
+          starts_on: "2026-08-12",
+          ends_on: "2026-08-12",
+          all_day: false,
+          starts_time: "15:00",
+          ends_time: "15:30",
+          recurrence: "weekly",
+          attendee_names: ["Emma"],
+          confirmed: false,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      needs_confirmation: true,
+      event_title: "Zahnarzt Emma",
+      starts_on: "2026-08-12",
+      ends_on: "2026-08-12",
+      all_day: false,
+      starts_time: "15:00",
+      ends_time: "15:30",
+      recurrence: "weekly",
+      attendee_names: ["Emma"],
+    });
+    // Nothing is written before confirmation.
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects a timed event without both times instead of inserting garbage", async () => {
+    const { ctx, insert } = makeCalendarCtx({ insertedEvent: null });
+    const result = JSON.parse(
+      await executeTool(
+        "add_calendar_event",
+        {
+          title: "Zahnarzt",
+          starts_on: "2026-08-12",
+          all_day: false,
+          confirmed: true,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toMatch(/Uhrzeit/);
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("inserts an all-day event with null times and writes attendees", async () => {
+    const { ctx, insert, attendeesInsert } = makeCalendarCtx({
+      insertedEvent: { id: "ev-1", title: "Herbstferien" },
+      members: [{ id: "m-1", name: "Emma" }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "add_calendar_event",
+        {
+          title: "Herbstferien",
+          starts_on: "2026-10-12",
+          ends_on: "2026-10-18",
+          attendee_names: ["Emma"],
+          confirmed: true,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.success).toBe(true);
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        family_id: "fam-1",
+        title: "Herbstferien",
+        starts_on: "2026-10-12",
+        ends_on: "2026-10-18",
+        all_day: true,
+        starts_time: null,
+        ends_time: null,
+        recurrence: "none",
+      }),
+    );
+    expect(attendeesInsert).toHaveBeenCalledWith([
+      { event_id: "ev-1", family_member_id: "m-1" },
+    ]);
   });
 });

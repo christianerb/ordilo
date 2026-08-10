@@ -208,6 +208,7 @@ export function ReviewCardContent({
               lowConfidencePersons={lowConfidencePersons}
               familyMembers={familyMembers}
               onResolve={onResolveDisambiguation}
+              onCreateMember={onCreateMember}
             />
           </div>
         )}
@@ -234,6 +235,38 @@ export function ReviewCardContent({
             ))}
           </ReviewFieldSection>
         )}
+
+        {/* No person recognized at all — still let the user assign or
+            create one. Previously this case rendered no person UI at all,
+            a dead end for documents the OCR read as person-less. The edit
+            is stored at index 0 (beyond the empty extracted list) and
+            appended to the confirm payload by buildConfirmPayload. */}
+        {analysis.family_members.length === 0 &&
+          (familyMembers.length > 0 || onCreateMember) && (
+            <ReviewFieldSection icon={User} title="Personen" testId="review-persons">
+              <div className="py-3" data-testid="review-person-add">
+                <p className="text-sm text-muted-foreground">
+                  Keine Person erkannt — gehört das Dokument zu jemandem?
+                </p>
+                <PersonPicker
+                  className="mt-2"
+                  familyMembers={familyMembers}
+                  value={
+                    edits.persons.has(0)
+                      ? edits.persons.get(0)!.personId
+                      : undefined
+                  }
+                  onChange={(memberId) => onEditPerson(0, memberId)}
+                  onCreate={
+                    onCreateMember
+                      ? (name) => onCreateMember(0, name)
+                      : undefined
+                  }
+                  testIdPrefix="person-add"
+                />
+              </div>
+            </ReviewFieldSection>
+          )}
 
         {/* Organizations */}
         {analysis.organizations.length > 0 && (
@@ -655,6 +688,10 @@ function PersonFieldRow({
   const createName = edited
     ? null
     : unmatchedPersonName(member.name, member.person_id, familyMembers);
+  // With no family members at all there is nothing to pick behind the
+  // pencil — show the picker inline instead, so its create path (the
+  // only way forward) is visible rather than hidden.
+  const pickerOpen = isEditing || familyMembers.length === 0;
 
   return (
     <FieldRow
@@ -663,7 +700,7 @@ function PersonFieldRow({
       onShowSource={onViewOriginal}
       isEdited={Boolean(edited)}
       editControl={
-        isEditing || familyMembers.length === 0 ? undefined : (
+        pickerOpen ? undefined : (
           <FieldEditButton
             buttonRef={pencilRef}
             onClick={() => setIsEditing(true)}
@@ -679,7 +716,7 @@ function PersonFieldRow({
           Wird keiner Person zugeordnet
         </span>
       )}
-      {isEditing ? (
+      {pickerOpen ? (
         <PersonPicker
           className="mt-2"
           familyMembers={familyMembers}
@@ -688,7 +725,20 @@ function PersonFieldRow({
             onEditPerson(memberId);
             closePicker();
           }}
-          onDismiss={closePicker}
+          createName={createName}
+          onCreate={
+            onCreateMember
+              ? async (name) => {
+                  const ok = await onCreateMember(name);
+                  // The creation already linked the entity to the new
+                  // member — the picker's job is done.
+                  if (ok) closePicker();
+                  return ok;
+                }
+              : undefined
+          }
+          // An always-on picker (empty family) has nothing to dismiss to.
+          onDismiss={familyMembers.length === 0 ? undefined : closePicker}
           testIdPrefix="person-edit"
         />
       ) : (

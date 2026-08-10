@@ -1,7 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
 import { buildConfirmPayload, type EditState } from "@/components/ordilo/review-card/helpers";
-import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
 function emptyEdits(): EditState {
@@ -57,13 +55,5 @@ describe("buildConfirmPayload facts", () => {
     expect(payload.facts[0].value).toBe("SN 4823-XL");
     // Other fact fields stay intact.
     expect(payload.facts[0].fact_type).toBe("serial_number");
-  });
-});
-
-describe("AISearchBar voice button", () => {
-  it("hides the mic button when the browser lacks SpeechRecognition", () => {
-    // jsdom has no (webkit)SpeechRecognition → the button must not render.
-    render(<AISearchBar onSubmit={() => {}} />);
-    expect(screen.queryByTestId("voice-search-button")).toBeNull();
   });
 });

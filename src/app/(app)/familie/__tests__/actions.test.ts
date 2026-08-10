@@ -5,13 +5,20 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: vi.fn(),
 }));
 
+// Mock the service-role (admin) client used for privileged deletes.
+vi.mock("@/lib/supabase/admin", () => ({
+  createClient: vi.fn(),
+}));
+
 import {
   addFamilyMember,
   updateFamilyMember,
   removeFamilyMember,
   updateFamilyName,
+  deleteFamilyAccount,
 } from "@/app/(app)/familie/actions";
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/database";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
@@ -48,13 +55,26 @@ function mockSupabase(options: {
 }) {
   const { user = { id: "user-1", email: "test@ordilo.test" } } = options;
 
-  // families chain (for fetching the user's family)
+  // families chain (for fetching the user's family): resolveUserFamily
+  // looks up the OWNED family first (created_by = user, at most one row)
+  // and falls back to the oldest membership for invite-only accounts.
   const familiesSelectChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
       data: options.family ?? null,
       error: options.familyError ?? null,
     }),
+  };
+
+  // Invite-only fallback — the actions tests always exercise the owned
+  // path, so this resolves null.
+  const membershipsSelectChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   };
 
   // families update chain (for renaming the family)
@@ -116,6 +136,11 @@ function mockSupabase(options: {
         update: vi.fn(() => familiesUpdateChain),
       };
     }
+    if (table === "family_memberships") {
+      return {
+        select: vi.fn(() => membershipsSelectChain),
+      };
+    }
     if (table === "family_members") {
       return {
         select: vi.fn(() => membersSelectChain),
@@ -135,6 +160,71 @@ function mockSupabase(options: {
       }),
     },
   } as unknown as Awaited<ReturnType<typeof createClient>>;
+}
+
+/**
+ * Build a mock service-role (admin) client for deleteFamilyAccount: the
+ * documents/family_members storage-path lookups, the families delete, the
+ * storage removals, and the auth.admin.deleteUser call.
+ */
+function mockAdmin(options: {
+  documentPaths?: (string | null)[];
+  avatarPaths?: (string | null)[];
+  deleteError?: unknown;
+  deleteUserError?: unknown;
+}) {
+  const removeDocuments = vi.fn().mockResolvedValue({ data: null, error: null });
+  const removeAvatars = vi.fn().mockResolvedValue({ data: null, error: null });
+  const deleteUser = vi
+    .fn()
+    .mockResolvedValue({ data: null, error: options.deleteUserError ?? null });
+
+  const documentsSelectChain = {
+    eq: vi.fn().mockResolvedValue({
+      data: (options.documentPaths ?? []).map((file_url) => ({ file_url })),
+      error: null,
+    }),
+  };
+  const membersSelectChain = {
+    eq: vi.fn().mockResolvedValue({
+      data: (options.avatarPaths ?? []).map((photo_url) => ({ photo_url })),
+      error: null,
+    }),
+  };
+  const familiesDeleteChain = {
+    eq: vi.fn().mockResolvedValue({ error: options.deleteError ?? null }),
+  };
+
+  const fromMock = vi.fn((table: string) => {
+    if (table === "documents") {
+      return { select: vi.fn(() => documentsSelectChain) };
+    }
+    if (table === "family_members") {
+      return { select: vi.fn(() => membersSelectChain) };
+    }
+    if (table === "families") {
+      return { delete: vi.fn(() => familiesDeleteChain) };
+    }
+    throw new Error(`Unexpected table: ${table}`);
+  });
+
+  const admin = {
+    from: fromMock,
+    storage: {
+      from: vi.fn((bucket: string) => ({
+        remove: bucket === "documents" ? removeDocuments : removeAvatars,
+      })),
+    },
+    auth: { admin: { deleteUser } },
+  };
+
+  return {
+    admin: admin as unknown as ReturnType<typeof createAdminClient>,
+    removeDocuments,
+    removeAvatars,
+    deleteUser,
+    familiesDeleteEq: familiesDeleteChain.eq,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -764,5 +854,123 @@ describe("updateFamilyName", () => {
     if (!result.success) {
       expect(result.error).toBe(FRIENDLY_ERROR);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deleteFamilyAccount
+// ---------------------------------------------------------------------------
+
+describe("deleteFamilyAccount", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns friendly German error when unauthenticated", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({ user: null }),
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(FRIENDLY_ERROR);
+    }
+  });
+
+  it("returns an error when the user owns no family", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({ family: null }),
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Nur die Person, die die Familie erstellt hat, kann sie löschen.",
+      );
+    }
+  });
+
+  it("returns an error when the confirmation name does not match", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
+      }),
+    );
+
+    const result = await deleteFamilyAccount("Falscher Name");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(
+        "Der Name stimmt nicht mit dem Familiennamen überein.",
+      );
+    }
+  });
+
+  it("deletes the family, storage files, and auth user on success", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
+      }),
+    );
+    const adminMock = mockAdmin({
+      documentPaths: ["fam-1/doc1.pdf", "fam-1/doc2.pdf"],
+      avatarPaths: ["fam-1/avatar1.jpg"],
+    });
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+
+    expect(result.success).toBe(true);
+    // Family row deleted by id (cascades all family-scoped data).
+    expect(adminMock.familiesDeleteEq).toHaveBeenCalledWith("id", "fam-1");
+    // Storage files removed from both private buckets.
+    expect(adminMock.removeDocuments).toHaveBeenCalledWith([
+      "fam-1/doc1.pdf",
+      "fam-1/doc2.pdf",
+    ]);
+    expect(adminMock.removeAvatars).toHaveBeenCalledWith([
+      "fam-1/avatar1.jpg",
+    ]);
+    // Auth user deleted (full account deletion).
+    expect(adminMock.deleteUser).toHaveBeenCalledWith("user-1");
+  });
+
+  it("returns friendly German error when the family delete fails", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
+      }),
+    );
+    const adminMock = mockAdmin({ deleteError: new Error("DB error") });
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toBe(FRIENDLY_ERROR);
+    }
+    // The auth user must NOT be deleted when the family delete failed.
+    expect(adminMock.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("still succeeds when the auth user delete fails (data already erased)", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: { id: "fam-1", name: "Familie Müller", created_by: "user-1" },
+      }),
+    );
+    const adminMock = mockAdmin({ deleteUserError: new Error("auth error") });
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+    expect(result.success).toBe(true);
   });
 });

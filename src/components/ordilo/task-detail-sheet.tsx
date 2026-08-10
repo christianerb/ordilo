@@ -8,7 +8,6 @@ import {
   Trash2,
   RotateCcw,
   Loader2,
-  Calendar,
   User,
   ChevronDown,
 } from "lucide-react";
@@ -20,6 +19,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -46,6 +46,12 @@ function areTagsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const setB = new Set(b);
   return a.every((tag) => setB.has(tag));
+}
+
+function todayAsIsoDate(): string {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60_000;
+  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -87,6 +93,7 @@ export function TaskDetailSheet({
   const [showMore, setShowMore] = useState((task?.tags?.length ?? 0) > 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const minDueDate = todayAsIsoDate();
 
   const isDone = task?.status === "done";
   const isOpen = task?.status === "open";
@@ -106,6 +113,14 @@ export function TaskDetailSheet({
 
   const handleSave = useCallback(async () => {
     if (!task) return;
+    if (
+      dueDate &&
+      dueDate !== (task.due_date ?? "") &&
+      dueDate < minDueDate
+    ) {
+      setError("Bitte wähle heute oder einen späteren Tag.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -133,7 +148,7 @@ export function TaskDetailSheet({
     } finally {
       setSaving(false);
     }
-  }, [task, title, description, dueDate, priority, tags, assignedTo, supabase, onSaved, onOpenChange]);
+  }, [task, title, description, dueDate, priority, tags, assignedTo, supabase, onSaved, onOpenChange, minDueDate]);
 
   const handleToggle = useCallback(() => {
     if (!task) return;
@@ -243,21 +258,15 @@ export function TaskDetailSheet({
                     >
                       Fällig am
                     </label>
-                    <div className="flex h-12 items-center gap-2 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] px-3 transition-colors focus-within:border-[var(--petrol)] focus-within:ring-[3px] focus-within:ring-ring/20">
-                      <Calendar
-                        className="size-4 shrink-0 text-muted-foreground"
-                        aria-hidden="true"
-                        strokeWidth={1.5}
-                      />
-                      <input
-                        id="task-detail-due-date"
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none focus:ring-0"
-                        data-testid="task-detail-due-date"
-                      />
-                    </div>
+                    <DateInput
+                      id="task-detail-due-date"
+                      value={dueDate}
+                      onChange={setDueDate}
+                      minDate={minDueDate}
+                      className="h-12"
+                      aria-label="Fällig am"
+                      data-testid="task-detail-due-date"
+                    />
                   </div>
 
                   <fieldset>

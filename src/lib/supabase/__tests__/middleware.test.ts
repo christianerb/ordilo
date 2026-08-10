@@ -32,19 +32,46 @@ function mockSupabaseClient(options: {
     onboarding_completed_at: string | null;
   } | null;
   familyError?: unknown;
+  /** Membership row for invite-only accounts (owned family misses). */
+  membershipData?: {
+    family_id: string;
+    families: {
+      id: string;
+      name?: string;
+      onboarding_completed_at: string | null;
+    };
+  } | null;
 }) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
     familyData = null,
     familyError = null,
+    membershipData = null,
   } = options;
 
+  // resolveUserFamily's owned lookup:
+  // families.select().eq("created_by", uid).order().limit(1).maybeSingle()
   const familyChain = {
     select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
       data: familyData,
       error: familyError,
+    }),
+  };
+
+  // resolveUserFamily's invite-only fallback:
+  // family_memberships.select("families(...)").eq("user_id", uid).order()...
+  const membershipChain = {
+    select: vi.fn().mockReturnThis(),
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: membershipData,
+      error: null,
     }),
   };
 
@@ -62,6 +89,7 @@ function mockSupabaseClient(options: {
     },
     from: vi.fn((table: string) => {
       if (table === "families") return familyChain;
+      if (table === "family_memberships") return membershipChain;
       throw new Error(`Unexpected table: ${table}`);
     }),
   } as unknown as Record<string, unknown>;
@@ -154,6 +182,31 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
     const response = await updateSession(request);
 
     expect(response.status).toBe(200);
+  });
+
+  it("resolves invite-only users via their membership and forwards that family", async () => {
+    // No owned family — the deterministic fallback is the oldest
+    // membership. The forwarded header must carry THAT family so the UI
+    // displays the same family the server actions write to.
+    setupMock({
+      familyData: null,
+      membershipData: {
+        family_id: "fam-invited",
+        families: {
+          id: "fam-invited",
+          name: "Partnerfamilie",
+          onboarding_completed_at: "2026-07-04T10:00:00Z",
+        },
+      },
+    });
+
+    const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBe("fam-invited");
   });
 
   it("allows completed user with zero members to access /home", async () => {

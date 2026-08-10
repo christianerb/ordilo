@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 
 import { ReviewSummary } from "@/components/ordilo/review-summary";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
@@ -341,5 +341,93 @@ describe("ReviewSummary", () => {
     expect(
       screen.getByText("Bestätigen hat nicht geklappt."),
     ).toBeDefined();
+  });
+
+  it("gives the person assignment its own section, not a highlight row", () => {
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+      />,
+    );
+
+    const section = screen.getByTestId("review-summary-person-section");
+    // The picker lives in the dedicated section…
+    expect(
+      within(section).getByTestId("review-summary-person-chip-member-1"),
+    ).toBeDefined();
+    // …and the highlights list does not repeat the person (their role
+    // caption "Kind" would be the only place it could show up).
+    expect(screen.queryByText("Kind")).toBeNull();
+  });
+
+  it("shows the person section even when no person was extracted", () => {
+    render(
+      <ReviewSummary
+        analysis={{ ...analysis, family_members: [] }}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+      />,
+    );
+
+    const section = screen.getByTestId("review-summary-person-section");
+    expect(
+      within(section).getByTestId("review-summary-person-chip-member-2"),
+    ).toBeDefined();
+  });
+
+  it("offers free-text create from the person section", () => {
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        onCreatePerson={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("review-summary-person-chip-new"),
+    ).toBeDefined();
+  });
+
+  it("shows the person section for an empty family when creating is possible", () => {
+    render(
+      <ReviewSummary
+        analysis={{ ...analysis, family_members: [] }}
+        familyMembers={[]}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+        onEditPerson={vi.fn()}
+        onCreatePerson={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("review-summary-person-chip-new"),
+    ).toBeDefined();
+  });
+
+  it("hides the person section entirely without edit handlers", () => {
+    render(
+      <ReviewSummary
+        analysis={analysis}
+        familyMembers={familyMembers}
+        onConfirm={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("review-summary-person-section")).toBeNull();
+    // The person then shows up as a plain highlight row instead.
+    expect(screen.getByText("Emma")).toBeDefined();
+    expect(screen.getByText("Kind")).toBeDefined();
   });
 });

@@ -1,6 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  type ActionResult,
+  FRIENDLY_ERROR,
+  getUserFamily,
+} from "@/lib/actions/result";
 import { validateCollectionInput } from "@/lib/schemas/collections";
 import type { Database } from "@/types/database";
 
@@ -14,34 +19,7 @@ import type { Database } from "@/types/database";
  * supabase/migrations/0012_collections.sql.
  */
 
-type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 type CollectionRow = Database["public"]["Tables"]["collections"]["Row"];
-
-type ActionResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };
-
-/** Friendly German error used for unexpected failures. */
-const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
-
-/**
- * Fetch the authenticated user's family (RLS-scoped — only returns the
- * family created_by the current user).
- */
-async function getUserFamily(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<{ data: Pick<FamilyRow, "id" | "name"> | null; error: string | null }> {
-  const { data, error } = await supabase
-    .from("families")
-    .select("id, name")
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    return { data: null, error: FRIENDLY_ERROR };
-  }
-  return { data, error: null };
-}
 
 /**
  * Create a new collection for the authenticated user's family.

@@ -34,6 +34,11 @@ const ChatMarkdown = dynamic(
   { ssr: false },
 );
 
+/** DOM id for a top source card, shared between the card and its inline "[N]" citation marker. */
+function citationSourceId(messageId: string, index: number): string {
+  return `cite-source-${messageId}-${index}`;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -116,6 +121,18 @@ export function MessageBubble({
     passesFilters(s.document_id),
   );
   const { top: topSources, rest: restSources } = splitSources(visibleSources);
+  const citations = topSources.map((source, i) => ({
+    index: i + 1,
+    title: (source.title ?? "").trim(),
+  }));
+
+  const handleCitationClick = (index: number) => {
+    const el = document.getElementById(citationSourceId(message.id, index));
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("animate-citation-flash");
+    window.setTimeout(() => el.classList.remove("animate-citation-flash"), 900);
+  };
 
   if (isUser) {
     return (
@@ -159,7 +176,11 @@ export function MessageBubble({
             />
           ) : (
             <div data-testid="message-content">
-              <ChatMarkdown content={message.content} />
+              <ChatMarkdown
+                content={message.content}
+                citations={citations}
+                onCitationClick={handleCitationClick}
+              />
               {isStreaming && (
                 <span
                   className="ml-0.5 inline-block w-[2px] h-4 bg-[var(--petrol)] align-text-bottom animate-pulse"
@@ -179,7 +200,10 @@ export function MessageBubble({
             <span className="text-xs font-medium text-muted-foreground">
               Passende Dokumente
             </span>
-            <span className="text-[11px] text-muted-foreground">
+            <span
+              className="text-[11px] text-muted-foreground"
+              data-testid="source-count-badge"
+            >
               {visibleSources.length}
             </span>
           </div>
@@ -187,12 +211,14 @@ export function MessageBubble({
             {topSources.map((source, i) => (
               <SourceMatchCard
                 key={source.document_id}
+                id={citationSourceId(message.id, i + 1)}
                 documentId={source.document_id}
                 title={source.title}
                 score={source.score}
                 excerpt={source.excerpt}
                 kind={getSourceKind(source)}
                 isBestMatch={i === 0}
+                citationIndex={i + 1}
                 onClick={() => onSourceCardClick(source.document_id)}
                 style={{ animationDelay: `${i * 40}ms` }}
               />

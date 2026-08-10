@@ -1,4 +1,16 @@
 import { z } from "zod";
+import {
+  FileSignature,
+  FileText,
+  GraduationCap,
+  Landmark,
+  Mail,
+  Receipt,
+  Shield,
+  Stethoscope,
+  type LucideIcon,
+} from "lucide-react";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 /**
  * Zod schema and JSON schema for the LLM document analysis extraction.
@@ -494,7 +506,23 @@ export type AnalyzeSuccessResponse = DocumentAnalysis & {
 /**
  * Error analyze API response (same shape as other route errors).
  */
-export type AnalyzeErrorResponse = {
-  error: string;
-  code: string;
+export type AnalyzeErrorResponse = ApiErrorResponse;
+
+// ---------------------------------------------------------------------------
+// Document type → icon
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical document-type icons — the single source shared by the review
+ * UI (review-summary.tsx) and note creation (create-note-sheet.tsx).
+ */
+export const DOCUMENT_TYPE_ICONS: Record<DocumentType, LucideIcon> = {
+  invoice: Receipt,
+  letter: Mail,
+  contract: FileSignature,
+  medical: Stethoscope,
+  school: GraduationCap,
+  insurance: Shield,
+  tax: Landmark,
+  other: FileText,
 };

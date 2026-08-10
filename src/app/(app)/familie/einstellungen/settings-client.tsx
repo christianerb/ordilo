@@ -11,12 +11,14 @@ import {
   AlertCircle,
   RefreshCw,
   Check,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CalendarFeedCard } from "@/components/ordilo/calendar-feed-card";
 import { formatGermanDate } from "@/lib/format";
-import { updateFamilyName } from "../actions";
+import { updateFamilyName, deleteFamilyAccount } from "../actions";
 
 /**
  * Props for the FamilySettingsClient component.
@@ -45,6 +47,7 @@ export interface FamilySettingsClientProps {
  * All text in German.
  */
 export function FamilySettingsClient({
+  familyId,
   familyName = "",
   createdAt,
   memberCount = 0,
@@ -57,6 +60,28 @@ export function FamilySettingsClient({
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const canConfirmDelete = confirmName.trim() === savedName && savedName !== "";
+
+  const handleDelete = async () => {
+    if (!canConfirmDelete || isDeleting) return;
+    setDeleteError(null);
+    setIsDeleting(true);
+    const result = await deleteFamilyAccount(confirmName.trim());
+    if (!result.success) {
+      setIsDeleting(false);
+      setDeleteError(result.error);
+      return;
+    }
+    // Account + data are gone — a full navigation clears all client state and
+    // the now-invalid session, landing on the login screen.
+    window.location.href = "/login";
+  };
 
   const trimmed = name.trim();
   const hasChanges = trimmed !== "" && trimmed !== savedName;
@@ -214,6 +239,90 @@ export function FamilySettingsClient({
               <p className="font-medium tabular-nums text-foreground">
                 {formattedCreatedAt}
               </p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Calendar subscription (ICS feed) */}
+      {familyId && <CalendarFeedCard familyId={familyId} />}
+
+      {/* Danger zone — delete family & account (DSGVO right to erasure) */}
+      <div className="space-y-3 rounded-ordilo-md border border-destructive/40 bg-card p-4 shadow-card">
+        <h2 className="text-base font-semibold text-destructive">
+          Familie löschen
+        </h2>
+        <p className="text-sm leading-relaxed text-muted-foreground">
+          Dabei werden alle Dokumente, Aufgaben, Familienmitglieder und dein
+          Konto endgültig gelöscht. Das kann nicht rückgängig gemacht werden.
+        </p>
+
+        {!confirmingDelete ? (
+          <Button
+            type="button"
+            variant="destructive"
+            size="lg"
+            onClick={() => setConfirmingDelete(true)}
+            className="h-12 rounded-ordilo-md"
+          >
+            <Trash2 className="h-4 w-4" />
+            Familie löschen …
+          </Button>
+        ) : (
+          <div className="space-y-3">
+            <Label htmlFor="family-delete-confirm">
+              Gib zur Bestätigung „{savedName}“ ein
+            </Label>
+            <Input
+              id="family-delete-confirm"
+              data-testid="family-delete-confirm"
+              type="text"
+              autoComplete="off"
+              value={confirmName}
+              onChange={(e) => {
+                setConfirmName(e.target.value);
+                if (deleteError) setDeleteError(null);
+              }}
+              disabled={isDeleting}
+              className="h-12 rounded-ordilo-md text-base"
+            />
+            {deleteError && (
+              <p role="alert" className="text-sm font-medium text-destructive">
+                {deleteError}
+              </p>
+            )}
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="destructive"
+                size="lg"
+                disabled={!canConfirmDelete || isDeleting}
+                onClick={handleDelete}
+                className="h-12 flex-1 rounded-ordilo-md"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Wird gelöscht…
+                  </>
+                ) : (
+                  "Endgültig löschen"
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="lg"
+                disabled={isDeleting}
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setConfirmName("");
+                  setDeleteError(null);
+                }}
+                className="h-12 rounded-ordilo-md"
+              >
+                Abbrechen
+              </Button>
             </div>
           </div>
         )}

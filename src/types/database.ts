@@ -398,6 +398,8 @@ export type Database = {
           source: string;
           /** Pipeline version that produced the current extraction (see 0026). */
           extraction_version: number | null;
+          /** Best-effort in-progress extraction preview while status = analyzing (see 0043). */
+          partial_analysis: Record<string, unknown> | null;
         };
         Insert: {
           id?: string;
@@ -422,6 +424,7 @@ export type Database = {
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
+          partial_analysis?: Record<string, unknown> | null;
         };
         Update: {
           id?: string;
@@ -446,6 +449,7 @@ export type Database = {
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
+          partial_analysis?: Record<string, unknown> | null;
         };
         Relationships: [];
       };
@@ -578,6 +582,143 @@ export type Database = {
           created_at?: string;
           tags?: string[];
           assigned_to?: string | null;
+        };
+        Relationships: [];
+      };
+      // calendar_events ----------------------------------------------------
+      calendar_events: {
+        Row: {
+          id: string;
+          family_id: string;
+          title: string;
+          note: string | null;
+          starts_on: string;
+          ends_on: string;
+          all_day: boolean;
+          starts_time: string | null;
+          ends_time: string | null;
+          recurrence: string;
+          recurrence_until: string | null;
+          recurrence_exceptions: string[];
+          location: string | null;
+          responsible_member_id: string | null;
+          document_id: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          title: string;
+          note?: string | null;
+          starts_on: string;
+          ends_on?: string;
+          all_day?: boolean;
+          starts_time?: string | null;
+          ends_time?: string | null;
+          recurrence?: string;
+          recurrence_until?: string | null;
+          recurrence_exceptions?: string[];
+          location?: string | null;
+          responsible_member_id?: string | null;
+          document_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          title?: string;
+          note?: string | null;
+          starts_on?: string;
+          ends_on?: string;
+          all_day?: boolean;
+          starts_time?: string | null;
+          ends_time?: string | null;
+          recurrence?: string;
+          recurrence_until?: string | null;
+          recurrence_exceptions?: string[];
+          location?: string | null;
+          responsible_member_id?: string | null;
+          document_id?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_event_seen --------------------------------------------------
+      calendar_event_seen: {
+        Row: {
+          event_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          event_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_suggestion_dismissals -------------------------------------
+      calendar_suggestion_dismissals: {
+        Row: {
+          family_id: string;
+          entity_id: string;
+          created_at: string;
+        };
+        Insert: {
+          family_id: string;
+          entity_id: string;
+          created_at?: string;
+        };
+        Update: {
+          family_id?: string;
+          entity_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_feed_tokens -------------------------------------------------
+      calendar_feed_tokens: {
+        Row: {
+          family_id: string;
+          token: string;
+          created_at: string;
+        };
+        Insert: {
+          family_id: string;
+          token?: string;
+          created_at?: string;
+        };
+        Update: {
+          family_id?: string;
+          token?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      // calendar_event_attendees -----------------------------------------
+      calendar_event_attendees: {
+        Row: {
+          event_id: string;
+          family_member_id: string;
+          created_at: string;
+        };
+        Insert: {
+          event_id: string;
+          family_member_id: string;
+          created_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          family_member_id?: string;
+          created_at?: string;
         };
         Relationships: [];
       };

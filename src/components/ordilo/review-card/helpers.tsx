@@ -6,6 +6,10 @@ import {
 import type { FamilyMemberOption } from "@/lib/analysis";
 import { cn } from "@/lib/utils";
 import { Check, AlertTriangle, Search } from "lucide-react";
+import {
+  PersonPicker,
+  unmatchedPersonName,
+} from "@/components/ordilo/person-picker";
 
 // ---------------------------------------------------------------------------
 // Shared types
@@ -108,6 +112,21 @@ export function buildConfirmPayload(
       return m;
     })
     .filter((m) => m.name.trim().length > 0);
+
+  // A person the user assigned although the extraction found none (edit
+  // index beyond the extracted list) is appended as a new entity — the
+  // confirm route persists it like any extracted person. Without this,
+  // assigning a person to a document with no recognized name was a
+  // silent no-op.
+  edits.persons.forEach((edit, index) => {
+    if (index >= analysis.family_members.length && edit.name.trim().length > 0) {
+      familyMembers.push({
+        person_id: edit.personId,
+        name: edit.name,
+        confidence: 1,
+      });
+    }
+  });
 
   // Apply category edit.
   const suggestedCategory = edits.category ?? analysis.suggested_category;
@@ -441,16 +460,27 @@ export function FieldRow({
 
 /**
  * Disambiguation prompt for low-confidence person entities.
+ *
+ * Uses the same PersonPicker as every other person assignment surface, so
+ * the blocked-confirm moment offers the full vocabulary too: pick a
+ * member, assign nobody, or create the person the extraction misread —
+ * previously a dead end here.
  */
 export function DisambiguationPrompt({
   lowConfidencePersons,
   familyMembers,
   onResolve,
+  onCreateMember,
 }: {
   lowConfidencePersons: { member: DocumentAnalysis["family_members"][0]; index: number }[];
   familyMembers: FamilyMemberOption[];
   onResolve: (entityIndex: number, memberId: string | null) => void;
+  /** Create a new family member and resolve the entity to them. */
+  onCreateMember?: (entityIndex: number, name: string) => Promise<boolean>;
 }) {
+  // Resolve for the first unresolved low-confidence person.
+  const first = lowConfidencePersons[0];
+
   return (
     <div
       data-testid="disambiguation-prompt"
@@ -470,48 +500,29 @@ export function DisambiguationPrompt({
           </p>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {familyMembers.map((member) => (
-          <button
-            key={member.id}
-            type="button"
-            onClick={() => {
-              // Resolve for the first unresolved low-confidence person.
-              const first = lowConfidencePersons[0];
-              if (first) {
-                onResolve(first.index, member.id);
-              }
-            }}
-            className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-all hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            data-testid={`disambiguation-option-${member.id}`}
-          >
-            <span
-              className="flex size-6 items-center justify-center rounded-full text-xs font-semibold text-white"
-              style={{ backgroundColor: "var(--petrol)" }}
-              aria-hidden="true"
-            >
-              {member.name.charAt(0).toUpperCase()}
-            </span>
-            {member.name}
-          </button>
-        ))}
-        {/* The document may genuinely belong to nobody (a flyer, a letter
-            about someone outside the family) — forcing a wrong assignment
-            would poison the family book. */}
-        <button
-          type="button"
-          onClick={() => {
-            const first = lowConfidencePersons[0];
-            if (first) {
-              onResolve(first.index, null);
-            }
-          }}
-          className="inline-flex items-center gap-2 rounded-full border border-dashed border-border bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground transition-all hover:border-foreground/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          data-testid="disambiguation-option-none"
-        >
-          Gehört niemandem
-        </button>
-      </div>
+      <PersonPicker
+        className="mt-3"
+        familyMembers={familyMembers}
+        value={undefined}
+        onChange={(memberId) => {
+          if (first) onResolve(first.index, memberId);
+        }}
+        createName={
+          first
+            ? unmatchedPersonName(
+                first.member.name,
+                first.member.person_id,
+                familyMembers,
+              )
+            : null
+        }
+        onCreate={
+          onCreateMember && first
+            ? (name) => onCreateMember(first.index, name)
+            : undefined
+        }
+        testIdPrefix="disambiguation"
+      />
     </div>
   );
 }

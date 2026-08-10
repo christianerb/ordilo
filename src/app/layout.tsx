@@ -29,6 +29,12 @@ export const viewport: Viewport = {
   initialScale: 1,
   themeColor: "#FCFCFC",
   viewportFit: "cover",
+  // Without this, iOS Safari overlays the keyboard on top of the layout
+  // viewport instead of shrinking it, then pans the whole page (fixed
+  // elements included) to keep the focused input visible — which is what
+  // pushed the composer overlay's close/history buttons off-screen. This
+  // makes the visual viewport actually shrink, so `h-dvh` tracks it.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({

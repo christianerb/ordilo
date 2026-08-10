@@ -181,6 +181,35 @@ describe("DokumentePage — scan wizard flow", () => {
     });
   });
 
+  it("opens the wizard and reaches review when a file is chosen before scanning", async () => {
+    const docId = "doc-direct-upload-1";
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockSupabaseClient(() => [analyzedDoc(docId)]),
+    );
+    vi.mocked(uploadFile).mockResolvedValue({
+      document_id: docId,
+      status: "uploaded",
+      server_pipeline: false,
+    });
+    vi.mocked(triggerOcr).mockResolvedValue({ status: "ocr_done", page_count: 1 });
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(analysis);
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient initialDocuments={[]} />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    const uploadInput = screen.getByTestId("wizard-gallery-input");
+    const file = new File(["dummy"], "brief.jpg", { type: "image/jpeg" });
+    fireEvent.change(uploadInput, { target: { files: [file] } });
+
+    expect(await screen.findByTestId("scan-wizard")).toBeDefined();
+    expect(await screen.findByTestId("review-step-autofile")).toBeDefined();
+  });
+
   it("routes the camera fallback's gallery pick through the wizard's tracked upload, all the way to the auto-file card", async () => {
     const docId = "doc-wizard-1";
     // The provider seeds from the (empty) server-rendered list, so the

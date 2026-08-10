@@ -41,7 +41,7 @@ export default function AppError({
         Etwas ist schiefgelaufen
       </h3>
       <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted-foreground">
-        Die Seite konnte nicht geladen werden. Versuche es erneut.
+        Die Seite konnte nicht geladen werden. Bitte versuche es erneut.
       </p>
 
       <Button

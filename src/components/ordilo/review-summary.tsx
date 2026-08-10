@@ -214,11 +214,18 @@ export function ReviewSummary({
     editedPersonId === undefined
       ? unmatchedPersonName(topPerson?.name, topPerson?.person_id, familyMembers)
       : null;
-  // Render the picker whenever it can offer anything at all. Gating on
-  // `familyMembers.length > 0` used to hide it for a family with no members
-  // yet — the one case where the "create" chip is the only way forward.
-  const showPersonPicker =
-    familyMembers.length > 0 || Boolean(unknownPersonName && onCreatePerson);
+  // Render the person section whenever it can offer anything at all:
+  // members to pick, or a create path (the picker's "Neue Person" chip
+  // works even for a family with zero members — the case where creating
+  // is the only way forward).
+  const showPersonSection = Boolean(
+    onEditPerson && (familyMembers.length > 0 || onCreatePerson),
+  );
+  // With the assignment living in its own section, the person highlight
+  // row would say the same thing twice — drop it there.
+  const visibleHighlights = showPersonSection
+    ? highlights.filter((h) => !h.isPerson)
+    : highlights;
 
   return (
     <div data-testid="review-summary" className={cn("space-y-5", className)}>
@@ -255,14 +262,35 @@ export function ReviewSummary({
         </div>
       )}
 
+      {/* Person assignment — the one correction that matters most gets
+          its own calm section instead of sharing a cramped highlight row
+          with a caption. One tap per family member, "Ohne Person" for
+          documents that belong to nobody, and inline create for people
+          the family does not have yet. */}
+      {showPersonSection && (
+        <section data-testid="review-summary-person-section">
+          <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist-text)]">
+            Wem gehört das Dokument?
+          </h3>
+          <PersonPicker
+            familyMembers={familyMembers}
+            value={currentPersonId}
+            onChange={onEditPerson!}
+            createName={unknownPersonName}
+            onCreate={onCreatePerson}
+            testIdPrefix="review-summary-person"
+          />
+        </section>
+      )}
+
       {/* Highlights */}
-      {highlights.length > 0 && (
+      {visibleHighlights.length > 0 && (
         <div>
           <h3 className="mb-2 text-xs font-semibold tracking-wide text-[var(--mist-text)]">
             Ordilo hat erkannt
           </h3>
           <div className="space-y-1.5 stagger-children">
-            {highlights.map((h, i) => (
+            {visibleHighlights.map((h, i) => (
               <div
                 key={i}
                 className="flex items-center gap-3 rounded-ordilo-sm bg-[var(--sand-light)] p-3"
@@ -273,38 +301,21 @@ export function ReviewSummary({
                   strokeWidth={1.75}
                 />
                 <div className="min-w-0 flex-1">
-                  {h.isPerson && onEditPerson && showPersonPicker ? (
-                    <PersonPicker
-                      familyMembers={familyMembers}
-                      value={currentPersonId}
-                      onChange={onEditPerson}
-                      createName={unknownPersonName}
-                      onCreate={onCreatePerson}
-                      testIdPrefix="review-summary-person"
-                    />
-                  ) : (
-                    <>
-                      <p className="truncate text-sm font-medium text-foreground">
-                        {h.value}
-                      </p>
-                      {h.isVerifiable && onViewOriginal && (
-                        <button
-                          type="button"
-                          onClick={onViewOriginal}
-                          className="mt-1 rounded-ordilo-sm text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        >
-                          Im Original vergleichen
-                        </button>
-                      )}
-                    </>
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {h.value}
+                  </p>
+                  {h.isVerifiable && onViewOriginal && (
+                    <button
+                      type="button"
+                      onClick={onViewOriginal}
+                      className="mt-1 rounded-ordilo-sm text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      Im Original vergleichen
+                    </button>
                   )}
                 </div>
                 <span className="shrink-0 text-xs text-muted-foreground">
-                  {/* With the chip picker the assignment can change to any
-                      member, so a fixed role caption ("Kind") would lie. */}
-                  {h.isPerson && onEditPerson && showPersonPicker
-                    ? "Person"
-                    : h.caption}
+                  {h.caption}
                 </span>
               </div>
             ))}

@@ -24,6 +24,10 @@ export interface EmptyStateProps {
   actionLabel?: string;
   /** Click handler for the CTA button. Must be paired with actionLabel. */
   onAction?: () => void;
+  /** Label for an optional secondary (ghost) action shown below the CTA. */
+  secondaryActionLabel?: string;
+  /** Click handler for the secondary action. Paired with secondaryActionLabel. */
+  onSecondaryAction?: () => void;
   /** Optional additional className for the container. */
   className?: string;
 }
@@ -55,6 +59,8 @@ export function EmptyState({
   mascotMood,
   actionLabel,
   onAction,
+  secondaryActionLabel,
+  onSecondaryAction,
   className,
 }: EmptyStateProps) {
   return (
@@ -106,6 +112,19 @@ export function EmptyState({
           className="mt-6 h-12 rounded-ordilo-md px-6"
         >
           {actionLabel}
+        </Button>
+      )}
+
+      {/* Secondary (ghost) action */}
+      {secondaryActionLabel && onSecondaryAction && (
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onSecondaryAction}
+          className={cn("text-muted-foreground", actionLabel ? "mt-2" : "mt-6")}
+          data-testid="empty-state-secondary-action"
+        >
+          {secondaryActionLabel}
         </Button>
       )}
     </div>

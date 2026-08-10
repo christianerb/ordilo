@@ -92,7 +92,7 @@ export default function GlobalError({
               lineHeight: 1.5,
             }}
           >
-            Ein unerwarteter Fehler ist aufgetreten. Versuche es erneut.
+            Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es erneut.
           </p>
           <button
             onClick={reset}

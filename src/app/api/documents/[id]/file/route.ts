@@ -1,10 +1,8 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { SIGNED_URL_TTL_SECONDS } from "@/lib/api/storage";
 import { resolveDocumentWithOwnership } from "@/lib/supabase/document-helpers";
-
-/** How long the signed URL stays valid, in seconds. */
-const SIGNED_URL_TTL_SECONDS = 300;
 
 /**
  * GET /api/documents/[id]/file

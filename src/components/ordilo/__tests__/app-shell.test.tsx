@@ -6,10 +6,12 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 // `next/navigation` must be mocked so we can control the pathname per test.
 const mockUsePathname = vi.fn<() => string>();
+const mockSearchParamsGet = vi.fn<(key: string) => string | null>(() => null);
 const mockPush = vi.fn();
 const mockRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
   usePathname: () => mockUsePathname(),
+  useSearchParams: () => ({ get: mockSearchParamsGet }),
   useRouter: () => ({
     push: mockPush,
     replace: vi.fn(),
@@ -137,7 +139,7 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly four tabs (Heute, Dokumente, Aufgaben, Familie)", () => {
+  it("exports exactly four tabs (Heute, Dokumente, Familienplaner, Familie)", () => {
     expect(NAV_TABS).toHaveLength(4);
   });
 
@@ -145,7 +147,7 @@ describe("NAV_TABS", () => {
     const expected = [
       { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
-      { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Familienplaner", href: "/aufgaben" },
       { label: "Familie", href: "/familie" },
     ];
     expect(NAV_TABS.map((t) => ({ label: t.label, href: t.href }))).toEqual(
@@ -158,12 +160,22 @@ describe("NAV_TABS", () => {
     const uniqueIcons = new Set(icons);
     expect(uniqueIcons.size).toBe(4);
   });
+
+  it("nests Aufgaben and Planer under Familienplaner", () => {
+    const planner = NAV_TABS.find((tab) => tab.label === "Familienplaner");
+    expect(planner?.children).toEqual([
+      { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Planer", href: "/aufgaben?tab=planer" },
+    ]);
+  });
 });
 
 describe("AppShell", () => {
   beforeEach(() => {
     mockUsePathname.mockReset();
     mockUsePathname.mockReturnValue("/home");
+    mockSearchParamsGet.mockReset();
+    mockSearchParamsGet.mockReturnValue(null);
     mockPush.mockClear();
     mockSupabaseData();
     // Pretend prefers-reduced-motion is active so the CameraStep's
@@ -196,12 +208,12 @@ describe("AppShell", () => {
     expect(surface.className).not.toContain("border");
   });
 
-  it("renders a nav drawer with exactly four tab links", () => {
+  it("renders a nav drawer with the primary links, planner sub-items, and chat history", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(4);
+    expect(links).toHaveLength(7);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -221,8 +233,11 @@ describe("AppShell", () => {
     const expected = [
       { label: "Heute", href: "/home" },
       { label: "Dokumente", href: "/dokumente" },
+      { label: "Familienplaner", href: "/aufgaben" },
       { label: "Aufgaben", href: "/aufgaben" },
+      { label: "Planer", href: "/aufgaben?tab=planer" },
       { label: "Familie", href: "/familie" },
+      { label: "Chat-Verlauf", href: "/suche?history=1" },
     ];
 
     links.forEach((link, i) => {
@@ -297,14 +312,14 @@ describe("AppShell", () => {
     unmount();
   });
 
-  it("marks only Aufgaben active on /aufgaben", () => {
+  it("marks Familienplaner active on /aufgaben", () => {
     renderShell("/aufgaben");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
     const heuteLink = within(nav).getByText("Heute").closest("a");
-    const aufgabenLink = within(nav).getByText("Aufgaben").closest("a");
+    const plannerLink = within(nav).getByText("Familienplaner").closest("a");
     expect(heuteLink?.getAttribute("aria-current")).toBeNull();
-    expect(aufgabenLink?.getAttribute("aria-current")).toBe("page");
+    expect(plannerLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("marks no tab active on /suche (fullscreen answer mode, not a place)", () => {
@@ -365,7 +380,7 @@ describe("AppShell", () => {
 
   // --- Global search + scan bottom bars (VAL-NAV) -------------------------
 
-  it("renders both the mobile composer and the desktop bottom bar (search + scan) on every tab, including /suche", () => {
+  it("renders both the mobile composer and the desktop bottom bar (search + actions) on every tab, including /suche", () => {
     for (const pathname of ["/home", "/dokumente", "/suche", "/familie", "/aufgaben"]) {
       // Mobile composer + desktop bottom bar both exist in jsdom (only
       // Tailwind breakpoints hide one or the other visually). /suche shares
@@ -375,9 +390,25 @@ describe("AppShell", () => {
       expect(screen.getByTestId("mobile-composer")).toBeDefined();
       expect(screen.getByTestId("desktop-bottom-bar")).toBeDefined();
       expect(screen.getAllByTestId("ai-search-bar")).toHaveLength(2);
-      expect(screen.getAllByRole("button", { name: /scannen/i })).toHaveLength(2);
+      // Scanning now lives behind the shared + action sheet instead of an
+      // inline button — one + per surface (mobile pill, desktop dock).
+      expect(screen.getAllByRole("button", { name: /^aktionen$/i })).toHaveLength(2);
       unmount();
     }
+  });
+
+  it("does not zoom into the fullscreen overlay on /suche (already inside the chat)", () => {
+    renderShell("/suche");
+    const [pill] = screen.getAllByRole("textbox");
+    fireEvent.focus(pill);
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+  });
+
+  it("still zooms into the fullscreen overlay on other tabs", () => {
+    renderShell("/home");
+    const [pill] = screen.getAllByRole("textbox");
+    fireEvent.focus(pill);
+    expect(screen.getByTestId("composer-overlay")).toBeDefined();
   });
 
   it("renders the desktop composer as a rounded floating dock", () => {
@@ -388,10 +419,10 @@ describe("AppShell", () => {
     expect(screen.queryByTestId("desktop-shell-elbow")).toBeNull();
   });
 
-  it("does not render the search+scan row on /onboarding", () => {
+  it("does not render the search+actions row on /onboarding", () => {
     renderShell("/onboarding");
     expect(screen.queryByTestId("ai-search-bar")).toBeNull();
-    expect(screen.queryByRole("button", { name: /^scannen$/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^aktionen$/i })).toBeNull();
   });
 
   it("navigates to /suche with the query when submitted from a non-suche tab", () => {
@@ -419,13 +450,38 @@ describe("AppShell", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("opens the scan wizard overlay when the Scannen button is clicked", async () => {
+  it("opens the native upload picker via the + action sheet", async () => {
     renderShell("/dokumente");
-    const [scanButton] = screen.getAllByRole("button", { name: /scannen/i });
-    fireEvent.click(scanButton);
+    const uploadInput = screen.getByTestId("wizard-gallery-input");
+    const click = vi.spyOn(uploadInput, "click");
+    const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
+    fireEvent.click(actionsButton);
+    const uploadAction = await screen.findByTestId("composer-action-upload");
+    fireEvent.click(uploadAction);
+    expect(click).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens the create-note sheet via the + action sheet", async () => {
+    renderShell("/dokumente");
+    const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
+    fireEvent.click(actionsButton);
+    const noteAction = await screen.findByTestId("composer-action-note");
+    fireEvent.click(noteAction);
     await waitFor(() => {
-      expect(screen.getByTestId("scan-wizard")).toBeDefined();
+      expect(screen.getByTestId("create-note-sheet")).toBeDefined();
     });
+  });
+
+  it("swaps the + action sheet to the collection form for 'Neue Sammlung'", async () => {
+    renderShell("/dokumente");
+    const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
+    fireEvent.click(actionsButton);
+    const collectionAction = await screen.findByTestId("composer-action-collection");
+    fireEvent.click(collectionAction);
+    expect(
+      screen.getByText("Gib der Sammlung einen Namen, ein Icon und eine Farbe."),
+    ).toBeDefined();
+    expect(await screen.findByLabelText("Name")).toBeDefined();
   });
 
   // --- Navigation performance (no remount on route change) ---------------
@@ -808,7 +864,6 @@ describe("AppShell server-provided data", () => {
       <AppShell
         profile={{ familyName: "Familie Server", email: "server@example.com" }}
         initialCollections={serverCollections}
-        familyId="fam-1"
       >
         <div>content</div>
       </AppShell>,
@@ -819,23 +874,22 @@ describe("AppShell server-provided data", () => {
     expect(screen.getByRole("link", { name: /Schule/i })).toBeDefined();
   });
 
-  it("skips every client-side setup fetch when the server provides all data", async () => {
+  it("skips the client-side profile and collections fetches when server data is given", async () => {
     render(
       <AppShell
         profile={{ familyName: "Familie Server", email: "server@example.com" }}
         initialCollections={serverCollections}
-        familyId="fam-1"
       >
         <div>content</div>
       </AppShell>,
     );
     await screen.findAllByText("Familie Server");
-    // Profile fetch (auth.getUser), collections query AND the ScanProvider's
-    // family-id lookup must all stay off — the server layout resolved them.
+    // The profile fetch (auth.getUser) and the collections query must not
+    // fire — the server layout already resolved both. (ScanProvider still
+    // resolves the family id via from("families"), which is fine.)
     expect(mockAuthGetUser).not.toHaveBeenCalled();
     const queriedTables = mockFrom.mock.calls.map((call) => call[0]);
     expect(queriedTables).not.toContain("collections");
-    expect(queriedTables).not.toContain("families");
   });
 
   it("does not fall back to a client fetch when the server profile is undefined (no family)", async () => {

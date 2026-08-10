@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil, Trash2, AlertTriangle, Loader2 } from "lucide-react";
+import { FilePlus2, Pencil, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import type { Database } from "@/types/database";
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
@@ -58,7 +58,7 @@ export function CollectionClient({
   documents,
 }: CollectionClientProps) {
   const router = useRouter();
-  const { openWizard } = useScanActions();
+  const { openWizard, openCreateNote } = useScanActions();
   const { openDocument } = useDocumentViewer();
   const [current, setCurrent] = useState(collection);
 
@@ -113,6 +113,12 @@ export function CollectionClient({
     [openDocument],
   );
 
+  // File a quick note directly into this collection (no scanning). The
+  // collection's name becomes the note's category, so it lands here.
+  const handleAddNote = useCallback(() => {
+    openCreateNote({ category: current.name });
+  }, [openCreateNote, current.name]);
+
   return (
     <div className="app-page-stack">
       {/* Header */}
@@ -137,6 +143,15 @@ export function CollectionClient({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <button
+            type="button"
+            onClick={handleAddNote}
+            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            aria-label="Notiz hinzufügen"
+            data-testid="collection-add-note"
+          >
+            <FilePlus2 className="size-4" aria-hidden="true" />
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -167,9 +182,11 @@ export function CollectionClient({
         <EmptyState
           icon={Icon}
           title="Noch keine Dokumente hier"
-          description="Dokumente landen hier automatisch, sobald ihre Kategorie zu dieser Sammlung passt."
+          description="Dokumente landen hier automatisch, sobald ihre Kategorie zu dieser Sammlung passt. Oder schreib einfach kurz selbst etwas rein."
           actionLabel="Dokument scannen"
           onAction={openWizard}
+          secondaryActionLabel="Notiz schreiben"
+          onSecondaryAction={handleAddNote}
         />
       ) : (
         <div className="space-y-2 stagger-children lg:grid lg:grid-cols-2 lg:gap-3 lg:space-y-0">

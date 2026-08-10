@@ -99,6 +99,9 @@ Legend: `→` = context.
 | 2.53 | `"Filter löschen"` | `src/app/(app)/dokumente/page.tsx` | Clear filters link (folder view) |
 | 2.54 | `"Zurücksetzen"` | `src/app/(app)/suche/filter-chips.tsx` | Clear all filter chips button |
 | 2.55 | `"Neu"` | `src/app/(app)/suche/suche-client.tsx` | New chat button (sm+ label) |
+| 2.56 | `"Neue Person"` | `src/components/ordilo/person-picker.tsx` | Chip opening the inline free-text create form |
+| 2.57 | `"Anlegen"` | `src/components/ordilo/person-picker.tsx` | Inline create-form submit button |
+| 2.58 | `"{name} anlegen"` (template) | `src/components/ordilo/person-picker.tsx` | One-tap create chip for an extracted-but-unknown person |
 
 ---
 
@@ -187,6 +190,7 @@ Legend: `→` = context.
 | 3.79 | `"Relevanz"` (aria) | `src/components/ordilo/source-card.tsx` | aria-label prefix for source-card score |
 | 3.80 | `"Quellen"` | `src/app/(app)/suche/message-bubble.tsx` | Sources section label above citations |
 | 3.81 | `"Weitere mögliche Dokumente"` | `src/app/(app)/suche/message-bubble.tsx` | Sub-label below top sources |
+| 3.82 | `"Wem gehört das Dokument?"` | `src/components/ordilo/review-summary.tsx` | Person-assignment section heading (review summary) |
 
 ---
 
@@ -207,6 +211,7 @@ Legend: `→` = context.
 | 4.11 | `"Tag hinzufügen…"` | `src/components/ordilo/task-detail-sheet.tsx` | Task detail tag-input placeholder |
 | 4.12 | `"Eigene Kategorie"` | `src/components/ordilo/review-card/edit-controls.tsx` | Category free-text input placeholder |
 | 4.13 | `"Person wählen …"` | `src/components/ordilo/review-card/edit-controls.tsx` | Person-edit select placeholder option |
+| 4.14 | `"Name der Person"` | `src/components/ordilo/person-picker.tsx` | Inline create-form name input placeholder |
 
 ---
 
@@ -218,7 +223,7 @@ Legend: `→` = context.
 | 5.2 | `"${documents.length} Dokumente · ${reviewDocs.length} zum Durchsehen · ${confirmedDocs.length} im Familienbuch"` (template) | `src/app/(app)/dokumente/page.tsx` | Page subtitle (with documents) |
 | 5.3 | `"oder Datei hierher ziehen"` | `src/app/(app)/dokumente/page.tsx` | Drag-hint next to "PDF hochladen" |
 | 5.4 | `"Datei hier ablegen"` | `src/app/(app)/dokumente/page.tsx` | Drag-overlay heading |
-| 5.5 | `"${visibleTasks.filter(open).length} offen · ${visibleTasks.filter(done).length} erledigt"` (template) | `src/app/(app)/aufgaben/page.tsx` | Aufgaben header count summary |
+| 5.5 | `"Neue Aufgabe"` / `"Termin"` (view-dependent) | `src/app/(app)/aufgaben/planner-view.tsx` | Familienplaner header create button |
 | 5.6 | `"Gib einen Namen ein. Weitere Angaben sind optional."` | `src/app/(app)/familie/familie-client.tsx` | Add-member sheet description |
 | 5.7 | `"Ändere die Angaben dieser Person."` | `src/app/(app)/familie/familie-client.tsx` | Edit-member sheet description |
 | 5.8 | `"Möchtest du {name} wirklich entfernen?"` (template) | `src/app/(app)/familie/familie-client.tsx` | Remove-member dialog description |
@@ -239,6 +244,8 @@ Legend: `→` = context.
 | 5.23 | `"Bitte wähle die richtige Person:"` | `src/components/ordilo/review-card/helpers.tsx` | Disambiguation prompt helper text |
 | 5.24 | `"Überprüfung nötig"` | `src/components/ordilo/review-card/content.tsx` | needs_user_review badge label |
 | 5.25 | `"Alle Aufgaben wurden entfernt."` | `src/components/ordilo/review-card/content.tsx` | Empty-tasks note (all deleted in review) |
+| 5.26 | `"Keine Person erkannt — gehört das Dokument zu jemandem?"` | `src/components/ordilo/review-card/content.tsx` | Person section hint when the extraction found no person |
+| 5.27 | `"Tipp: Halte eine Aufgabe kurz gedrückt, um sie zu verschieben."` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | One-time drag-and-drop hint above the task board (touch devices only, dismissible) |
 
 ---
 
@@ -283,6 +290,7 @@ Legend: `→` = context.
 | 6.35 | `"Du hast heute viele Fragen gestellt. Das Tageslimit ist erreicht — bitte morgen weiter."` | `src/app/(app)/suche/suche-client.tsx` | Chat rate-limit (429) message bubble |
 | 6.36 | `"Dieser Anmeldelink ist abgelgelaufen oder wurde bereits verwendet. Bitte fordere einen neuen an."` | `src/app/(auth)/auth/auth-error/page.tsx` | Auth-error page description |
 | 6.37 | API route error strings (surfaced in fetch failures) | `src/app/api/documents/upload/route.ts`, `analyze/route.ts`, `ocr/route.ts`, `confirm/route.ts`, `file/route.ts`, `chat/route.ts`, `conversations/[id]/route.ts`, `chat/feedback/route.ts`, `search/route.ts` | Various German API error messages (e.g. "Upload fehlgeschlagen. Bitte erneut versuchen.", "Dokument nicht gefunden oder kein Zugriff.", "Tageslimit erreicht (...). Bitte morgen erneut versuchen.", "Anfrage ungültig (message und family_id erforderlich).", "Ein unerwarteter Fehler ist aufgetreten.", "Methode nicht erlaubt. Bitte POST verwenden.", etc.) — see section 13 for the full list |
+| 6.38 | `"Verschieben hat nicht geklappt — bitte nochmal versuchen"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: board drag-and-drop reschedule error |
 
 ---
 
@@ -300,6 +308,12 @@ Legend: `→` = context.
 | 7.8 | `"Änderungen gespeichert"` | `src/app/(app)/familie/familie-client.tsx` | Toast: member edited |
 | 7.9 | `"{name} wurde entfernt"` (template) | `src/app/(app)/familie/familie-client.tsx` | Toast: member removed |
 | 7.10 | `"Gespeichert"` | `src/app/(app)/familie/einstellungen/settings-client.tsx` | Inline save-success indicator (family name) |
+| 7.11 | `"{name} ist jetzt Teil der Familie."` (template) | `src/components/ordilo/review-card/index.tsx` + `src/components/ordilo/scan-wizard/review-step.tsx` | Toast: member created inline from the review person picker |
+| 7.12 | `"Für diese Woche eingeplant"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: task dropped on "Diese Woche" column |
+| 7.13 | `"Auf später verschoben"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: task dropped on "Später" column |
+| 7.14 | `"Als überfällig markiert"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: task dropped on "Überfällig" column |
+| 7.15 | `"Rückgängig"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast action button: undo a board drag-and-drop move |
+| 7.16 | `"Rückgängig gemacht"` | `src/app/(app)/aufgaben/aufgaben-client.tsx` | Toast: board drag-and-drop move undone |
 
 ---
 

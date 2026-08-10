@@ -63,6 +63,7 @@ export function ScanProvider({
             wizardGalleryInputRef={state.wizardGalleryInputRef}
             confirmedCount={state.value.documents.filter((d) => d.status === "confirmed").length}
             createNoteOpen={state.createNoteOpen}
+            createNoteCategory={state.createNoteCategory}
             closeDocument={state.closeDocument}
             closeWizard={state.closeWizard}
             handleConfirmSuccess={state.handleConfirmSuccess}
