@@ -1,12 +1,16 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import {
+  buildStoragePath,
+  readFileHeaderBytes,
+  sanitizeFilename,
+  SIGNED_URL_TTL_SECONDS,
+} from "@/lib/api/storage";
+import { jsonError } from "@/lib/api/respond";
 import { validateAvatarFile } from "@/lib/schemas/avatar";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 
-/** How long the signed URL stays valid, in seconds. */
-const SIGNED_URL_TTL_SECONDS = 300;
-
-type PhotoErrorResponse = { error: string; code: string };
 type PhotoSuccessResponse = { url: string };
 
 /**
@@ -19,7 +23,7 @@ async function resolveOwnedMember(
   memberId: string,
 ): Promise<
   | { member: { id: string; family_id: string; photo_url: string | null }; error: null }
-  | { member: null; error: { status: number; body: PhotoErrorResponse } }
+  | { member: null; error: { status: number; body: ApiErrorResponse } }
 > {
   const { data, error } = await serverClient
     .from("family_members")
@@ -73,56 +77,49 @@ export async function POST(
   try {
     formData = await request.formData();
   } catch {
-    const body: PhotoErrorResponse = {
-      error: "Ungültige Anfrage. Bitte ein Foto hochladen.",
-      code: "INVALID_FORM_DATA",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError(
+      "Ungültige Anfrage. Bitte ein Foto hochladen.",
+      "INVALID_FORM_DATA",
+      400,
+    );
   }
 
   const file = formData.get("file");
   if (!file || !(file instanceof File)) {
-    const body: PhotoErrorResponse = {
-      error: "Keine Datei gefunden. Bitte ein Foto auswählen.",
-      code: "NO_FILE",
-    };
-    return Response.json(body, { status: 400 });
+    return jsonError(
+      "Keine Datei gefunden. Bitte ein Foto auswählen.",
+      "NO_FILE",
+      400,
+    );
   }
 
-  let headerBytes: Uint8Array;
-  let fullBuffer: ArrayBuffer;
-  try {
-    fullBuffer = await file.arrayBuffer();
-    headerBytes = new Uint8Array(fullBuffer, 0, Math.min(16, fullBuffer.byteLength));
-  } catch {
-    const body: PhotoErrorResponse = {
-      error: "Datei konnte nicht gelesen werden. Bitte erneut versuchen.",
-      code: "FILE_READ_ERROR",
-    };
-    return Response.json(body, { status: 400 });
-  }
+  const header = await readFileHeaderBytes(file);
+  if (!header.ok) return header.response;
 
-  const validation = validateAvatarFile(file.type, file.size, headerBytes);
+  const validation = validateAvatarFile(file.type, file.size, header.headerBytes);
   if (!validation.valid) {
     const statusCode = validation.code === "FILE_TOO_LARGE" ? 413 : 400;
-    const body: PhotoErrorResponse = { error: validation.error, code: validation.code };
-    return Response.json(body, { status: statusCode });
+    return jsonError(validation.error, validation.code, statusCode);
   }
 
   const adminClient = createAdminClient();
-  const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_") || "photo";
-  const storagePath = `${member.family_id}/${member.id}/${Date.now()}_${safeFilename}`;
+  const safeFilename = sanitizeFilename(file.name, "photo");
+  const storagePath = buildStoragePath(
+    member.family_id,
+    member.id,
+    `${Date.now()}_${safeFilename}`,
+  );
 
   const { error: uploadError } = await adminClient.storage
     .from("avatars")
     .upload(storagePath, file, { contentType: file.type, upsert: false });
 
   if (uploadError) {
-    const body: PhotoErrorResponse = {
-      error: "Upload fehlgeschlagen. Bitte erneut versuchen.",
-      code: "STORAGE_UPLOAD_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Upload fehlgeschlagen. Bitte erneut versuchen.",
+      "STORAGE_UPLOAD_FAILED",
+      500,
+    );
   }
 
   const { error: updateError } = await serverClient
@@ -132,11 +129,11 @@ export async function POST(
 
   if (updateError) {
     await adminClient.storage.from("avatars").remove([storagePath]);
-    const body: PhotoErrorResponse = {
-      error: "Foto konnte nicht gespeichert werden. Bitte erneut versuchen.",
-      code: "DB_UPDATE_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Foto konnte nicht gespeichert werden. Bitte erneut versuchen.",
+      "DB_UPDATE_FAILED",
+      500,
+    );
   }
 
   // Clean up the previous photo now that the new one is persisted.
@@ -149,11 +146,11 @@ export async function POST(
     .createSignedUrl(storagePath, SIGNED_URL_TTL_SECONDS);
 
   if (signError || !signed?.signedUrl) {
-    const body: PhotoErrorResponse = {
-      error: "Foto wurde gespeichert, konnte aber nicht angezeigt werden.",
-      code: "SIGNED_URL_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Foto wurde gespeichert, konnte aber nicht angezeigt werden.",
+      "SIGNED_URL_FAILED",
+      500,
+    );
   }
 
   const body: PhotoSuccessResponse = { url: signed.signedUrl };
@@ -190,11 +187,11 @@ export async function DELETE(
     .eq("id", member.id);
 
   if (updateError) {
-    const body: PhotoErrorResponse = {
-      error: "Foto konnte nicht entfernt werden. Bitte erneut versuchen.",
-      code: "DB_UPDATE_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    return jsonError(
+      "Foto konnte nicht entfernt werden. Bitte erneut versuchen.",
+      "DB_UPDATE_FAILED",
+      500,
+    );
   }
 
   if (member.photo_url) {

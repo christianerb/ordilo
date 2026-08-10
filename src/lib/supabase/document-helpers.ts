@@ -1,4 +1,5 @@
 import type { Database } from "@/types/database";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -21,7 +22,7 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 /** Error response shape shared by all document API routes. */
-export type DocumentErrorResponse = { error: string; code: string };
+export type DocumentErrorResponse = ApiErrorResponse;
 
 /** Discriminated result of {@link resolveDocumentWithOwnership}. */
 export type ResolveResult<T = DocumentRow> =

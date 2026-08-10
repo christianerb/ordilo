@@ -4,6 +4,8 @@ import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { getFamilyId } from "@/lib/supabase/client-helpers";
 import { enqueueJob } from "@/lib/jobs";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
+import { methodNotAllowed } from "@/lib/api/respond";
+import { reindexRequestSchema } from "@/lib/schemas/jobs";
 
 /**
  * POST /api/documents/reindex
@@ -37,13 +39,16 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  let force = false;
+  // The body is optional: a missing, malformed, or invalid body must never
+  // break the caller — fall back to the default (only stale documents).
+  let raw: unknown = {};
   try {
-    const body = await request.json();
-    force = body?.force === true;
+    raw = await request.json();
   } catch {
     // No body → default (only stale documents).
   }
+  const parsed = reindexRequestSchema.safeParse(raw);
+  const force = parsed.success ? parsed.data.force === true : false;
 
   // 2. Find candidate documents (RLS-scoped) ---------------------------------
   const { data: docs, error: docsError } = await serverClient
@@ -108,8 +113,5 @@ export async function POST(request: Request): Promise<Response> {
  * GET /api/documents/reindex — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  return Response.json(
-    { error: "Methode nicht erlaubt. Bitte POST verwenden.", code: "METHOD_NOT_ALLOWED" },
-    { status: 405 },
-  );
+  return methodNotAllowed();
 }

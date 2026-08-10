@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { FileText, ImageIcon, type LucideIcon } from "lucide-react";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 /**
  * Document-related schemas, constants, and helpers.
@@ -424,10 +425,7 @@ export type UploadSuccessResponse = {
 /**
  * Error upload API response.
  */
-export type UploadErrorResponse = {
-  error: string;
-  code: string;
-};
+export type UploadErrorResponse = ApiErrorResponse;
 
 // ---------------------------------------------------------------------------
 // Zod schema for upload form data validation (server-side)
@@ -608,7 +606,17 @@ export type OcrSuccessResponse = {
 /**
  * Error OCR API response (same shape as upload errors).
  */
-export type OcrErrorResponse = {
-  error: string;
-  code: string;
-};
+export type OcrErrorResponse = ApiErrorResponse;
+
+// ---------------------------------------------------------------------------
+// Source-location request schema (POST /api/documents/[id]/source)
+// ---------------------------------------------------------------------------
+
+/** Maximum length of the field value sent for source localization. */
+export const SOURCE_TEXT_MAX_LENGTH = 500;
+
+export const sourceRequestSchema = z.object({
+  text: z.string().trim().min(1).max(SOURCE_TEXT_MAX_LENGTH),
+});
+
+export type SourceRequest = z.infer<typeof sourceRequestSchema>;

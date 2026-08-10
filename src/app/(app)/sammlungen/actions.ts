@@ -1,7 +1,11 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
+import {
+  type ActionResult,
+  FRIENDLY_ERROR,
+  getUserFamily,
+} from "@/lib/actions/result";
 import { validateCollectionInput } from "@/lib/schemas/collections";
 import type { Database } from "@/types/database";
 
@@ -15,29 +19,7 @@ import type { Database } from "@/types/database";
  * supabase/migrations/0012_collections.sql.
  */
 
-type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 type CollectionRow = Database["public"]["Tables"]["collections"]["Row"];
-
-type ActionResult<T> =
-  | { success: true; data: T }
-  | { success: false; error: string };
-
-/** Friendly German error used for unexpected failures. */
-const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
-
-/**
- * Fetch the authenticated user's family.
- *
- * Delegates to the shared `resolveUserFamily` helper, which resolves
- * deterministically (oldest owned family first, then oldest membership)
- * instead of an arbitrary `.limit(1)` row — relevant since migration 0024
- * exposes every family the user belongs to via RLS.
- */
-async function getUserFamily(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-): Promise<{ data: Pick<FamilyRow, "id" | "name"> | null; error: string | null }> {
-  return resolveUserFamily(supabase);
-}
 
 /**
  * Create a new collection for the authenticated user's family.

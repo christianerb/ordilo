@@ -1,9 +1,10 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { EmbeddingError } from "@/lib/ai/embeddings";
+import { parseJsonBody } from "@/lib/api/parse-json";
+import { jsonError, methodNotAllowed } from "@/lib/api/respond";
 import {
   searchRequestSchema,
-  type SearchRequest,
   type SearchSuccessResponse,
   type SearchErrorResponse,
 } from "@/lib/schemas/search";
@@ -66,47 +67,35 @@ export async function POST(
   }
 
   // 2. Parse & validate the request body -----------------------------------
-  let parsed: SearchRequest;
-  try {
-    const json = await request.json();
-    const result = searchRequestSchema.safeParse(json);
-    if (!result.success) {
-      const body: SearchErrorResponse = {
-        error: "Suchanfrage ungültig (query, family_id und mode erforderlich).",
-        code: "INVALID_SEARCH_INPUT",
-      };
-      return Response.json(body, { status: 400 });
-    }
-    parsed = result.data;
-  } catch {
-    const body: SearchErrorResponse = {
-      error: "Anfrage konnte nicht gelesen werden.",
-      code: "INVALID_JSON",
-    };
-    return Response.json(body, { status: 400 });
-  }
+  const parsed = await parseJsonBody(request, searchRequestSchema, {
+    invalidPayload:
+      "Suchanfrage ungültig (query, family_id und mode erforderlich).",
+    payloadCode: "INVALID_SEARCH_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
+  const requestData = parsed.data;
 
   const serverClient = await createServerClient();
 
   // 3. Execute the search based on mode ------------------------------------
   try {
-    if (parsed.mode === "semantic") {
+    if (requestData.mode === "semantic") {
       // "semantic" mode executes the hybrid content search (facts +
       // semantic + lexical, RRF-fused); the reported mode stays "semantic".
       const results = await hybridSearch(
         serverClient,
-        parsed.query,
-        parsed.family_id,
+        requestData.query,
+        requestData.family_id,
       );
       const body: SearchSuccessResponse = { results, mode: "semantic" };
       return Response.json(body, { status: 200 });
     }
 
-    if (parsed.mode === "graph") {
+    if (requestData.mode === "graph") {
       const results = await graphSearch(
         serverClient,
-        parsed.query,
-        parsed.family_id,
+        requestData.query,
+        requestData.family_id,
       );
       const body: SearchSuccessResponse = { results, mode: "graph" };
       return Response.json(body, { status: 200 });
@@ -115,15 +104,15 @@ export async function POST(
     // mode === "auto": resolve to semantic or graph
     const resolvedMode = await resolveAutoMode(
       serverClient,
-      parsed.query,
-      parsed.family_id,
+      requestData.query,
+      requestData.family_id,
     );
 
     if (resolvedMode === "graph") {
       const results = await graphSearch(
         serverClient,
-        parsed.query,
-        parsed.family_id,
+        requestData.query,
+        requestData.family_id,
       );
       const body: SearchSuccessResponse = { results, mode: "graph" };
       return Response.json(body, { status: 200 });
@@ -131,8 +120,8 @@ export async function POST(
 
     const results = await hybridSearch(
       serverClient,
-      parsed.query,
-      parsed.family_id,
+      requestData.query,
+      requestData.family_id,
     );
     const body: SearchSuccessResponse = { results, mode: "semantic" };
     return Response.json(body, { status: 200 });
@@ -145,8 +134,7 @@ export async function POST(
         err.statusCode < 500
           ? err.statusCode
           : 502;
-      const body: SearchErrorResponse = { error: err.message, code: err.code };
-      return Response.json(body, { status: statusCode });
+      return jsonError(err.message, err.code, statusCode);
     }
 
     // Generic error → 500
@@ -154,8 +142,7 @@ export async function POST(
       err instanceof Error
         ? err.message
         : "Suche fehlgeschlagen. Bitte erneut versuchen.";
-    const body: SearchErrorResponse = { error: message, code: "SEARCH_FAILED" };
-    return Response.json(body, { status: 500 });
+    return jsonError(message, "SEARCH_FAILED", 500);
   }
 }
 
@@ -167,9 +154,5 @@ export async function POST(
  * GET /api/search — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  const body: SearchErrorResponse = {
-    error: "Methode nicht erlaubt. Bitte POST verwenden.",
-    code: "METHOD_NOT_ALLOWED",
-  };
-  return Response.json(body, { status: 405 });
+  return methodNotAllowed();
 }

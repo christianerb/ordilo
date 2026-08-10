@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { methodNotAllowed } from "@/lib/api/respond";
 import {
   resolveDocumentWithOwnership,
   markDocumentFailed,
@@ -200,9 +201,5 @@ export async function POST(
  * GET /api/documents/[id]/analyze — method not allowed.
  */
 export async function GET(): Promise<Response> {
-  const body: AnalyzeErrorResponse = {
-    error: "Methode nicht erlaubt. Bitte POST verwenden.",
-    code: "METHOD_NOT_ALLOWED",
-  };
-  return Response.json(body, { status: 405 });
+  return methodNotAllowed();
 }

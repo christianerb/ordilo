@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { documentAnalysisSchema } from "@/lib/schemas/extraction";
+import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 /**
  * Zod schema for the confirm API route payload.
@@ -52,10 +53,7 @@ export type ConfirmSuccessResponse = {
 /**
  * Error confirm API response (same shape as other route errors).
  */
-export type ConfirmErrorResponse = {
-  error: string;
-  code: string;
-};
+export type ConfirmErrorResponse = ApiErrorResponse;
 
 // ---------------------------------------------------------------------------
 // Confirm source status

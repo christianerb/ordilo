@@ -1,6 +1,7 @@
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import type { ChatErrorResponse } from "@/lib/schemas/chat";
+import { parseJsonBody } from "@/lib/api/parse-json";
+import { chatFeedbackSchema, type ChatErrorResponse } from "@/lib/schemas/chat";
 import { isTaskQuery, findMentionedMembers } from "@/lib/schemas/search";
 import { FACT_TYPE_LABELS } from "@/lib/schemas/extraction";
 
@@ -26,17 +27,6 @@ import { FACT_TYPE_LABELS } from "@/lib/schemas/extraction";
  * Errors: 400 (invalid input), 500 (feedback update failed). The event
  *         insert is best-effort and never fails the request.
  */
-
-const VALID_FEEDBACK = ["positive", "negative"] as const;
-type ValidFeedback = (typeof VALID_FEEDBACK)[number];
-
-const VALID_REASONS = new Set([
-  "falsche_antwort",
-  "falsches_dokument",
-  "unvollstaendig",
-]);
-
-const MAX_COMMENT_LENGTH = 500;
 
 /**
  * Classify a user question into a coarse kind for aggregate insights.
@@ -66,46 +56,16 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // 2. Parse & validate
-  let messageId: string;
-  let feedback: ValidFeedback;
-  let reasons: string[] = [];
-  let comment: string | null = null;
+  const parsed = await parseJsonBody(request, chatFeedbackSchema, {
+    invalidPayload: "Ungültiges Feedback (message_id und feedback erforderlich).",
+    payloadCode: "INVALID_FEEDBACK_INPUT",
+  });
+  if (!parsed.ok) return parsed.response;
 
-  try {
-    const json = await request.json();
-    if (!json?.message_id || typeof json.message_id !== "string") {
-      const body: ChatErrorResponse = {
-        error: "message_id ist erforderlich.",
-        code: "INVALID_FEEDBACK_INPUT",
-      };
-      return Response.json(body, { status: 400 });
-    }
-    if (!json.feedback || !VALID_FEEDBACK.includes(json.feedback)) {
-      const body: ChatErrorResponse = {
-        error: "feedback muss 'positive' oder 'negative' sein.",
-        code: "INVALID_FEEDBACK_INPUT",
-      };
-      return Response.json(body, { status: 400 });
-    }
-    messageId = json.message_id;
-    feedback = json.feedback as ValidFeedback;
-
-    if (Array.isArray(json.reasons)) {
-      reasons = json.reasons
-        .filter((r: unknown): r is string => typeof r === "string")
-        .filter((r: string) => VALID_REASONS.has(r))
-        .slice(0, 3);
-    }
-    if (typeof json.comment === "string" && json.comment.trim()) {
-      comment = json.comment.trim().slice(0, MAX_COMMENT_LENGTH);
-    }
-  } catch {
-    const body: ChatErrorResponse = {
-      error: "Anfrage konnte nicht gelesen werden.",
-      code: "INVALID_JSON",
-    };
-    return Response.json(body, { status: 400 });
-  }
+  const messageId = parsed.data.message_id;
+  const feedback = parsed.data.feedback;
+  const reasons = parsed.data.reasons ?? [];
+  const comment = parsed.data.comment ?? null;
 
   // 3. Update the message's feedback column (RLS-scoped)
   const serverClient = await createServerClient();
