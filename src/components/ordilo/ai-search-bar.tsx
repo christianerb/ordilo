@@ -3,6 +3,8 @@
 import { useState, useCallback, useRef } from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { Sparkles, ArrowUp, Mic, MicOff } from "lucide-react";
+import { toast } from "sonner";
+import { useRealtimeTranscription } from "@/lib/realtime/use-realtime-transcription";
 import { cn } from "@/lib/utils";
 
 /**
@@ -72,6 +74,7 @@ interface SpeechRecognitionEventLike {
 }
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
+type VoiceMode = "native" | "realtime" | null;
 
 /** Resolve the SpeechRecognition constructor (Chrome/Safari prefix-aware). */
 function getSpeechRecognition(): SpeechRecognitionConstructor | null {
@@ -82,6 +85,17 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | null {
     (w.webkitSpeechRecognition as SpeechRecognitionConstructor | undefined) ??
     null
   );
+}
+
+function isStandalonePwa(): boolean {
+  if (typeof window === "undefined") return false;
+  const displayModeStandalone = window.matchMedia?.(
+    "(display-mode: standalone)",
+  ).matches;
+  const navigatorStandalone = (
+    navigator as Navigator & { standalone?: boolean }
+  ).standalone;
+  return displayModeStandalone === true || navigatorStandalone === true;
 }
 
 /**
@@ -98,11 +112,8 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | null {
  *   - Send button click → submit
  *   - Empty / whitespace-only input → no submit
  *
- * Voice input (where the browser supports the Web Speech API):
- *   - Mic button starts German speech recognition (de-DE)
- *   - Interim transcripts stream into the input while speaking
- *   - The final transcript submits automatically — ask out loud, done
- *   - Unsupported browsers simply do not render the mic button
+ * Voice input uses Web Speech in regular browser tabs. Installed PWAs and
+ * unsupported browsers use authenticated Realtime transcription instead.
  *
  * The input is cleared after a successful submit.
  */
@@ -135,13 +146,10 @@ export function AISearchBar({
   const singleLineHeightRef = useRef<number | null>(null);
   const [multiline, setMultiline] = useState(false);
 
-  // Voice input state.
-  const [voiceSupported, setVoiceSupported] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
 
   useMountEffect(() => {
-    setVoiceSupported(getSpeechRecognition() !== null);
     const el = inputRef.current;
     if (el && singleLineHeightRef.current === null) {
       singleLineHeightRef.current = el.scrollHeight;
@@ -151,7 +159,9 @@ export function AISearchBar({
     // fixed overlay — shoves everything above it off-screen.
     if (autoFocus) el?.focus({ preventScroll: true });
     return () => {
-      recognitionRef.current?.abort();
+      const recognition = recognitionRef.current;
+      recognitionRef.current = null;
+      recognition?.abort();
     };
   });
 
@@ -201,15 +211,36 @@ export function AISearchBar({
     setMultiline(oneLine !== null && natural > oneLine + 4);
   }, []);
 
-  /** Start/stop German voice recognition. */
+  const { status: voiceStatus, start, stop, cancel } = useRealtimeTranscription({
+    onTranscript: (transcript) => {
+      setValue(transcript);
+      handleSubmit(transcript);
+    },
+    onError: (message) => toast.error(message),
+  });
+  const listening = voiceMode === "native" || voiceStatus !== "idle";
+
+  /** Use native speech in browser tabs, Realtime as the PWA fallback. */
   const handleVoiceToggle = useCallback(() => {
-    if (listening) {
+    if (voiceMode === "native") {
       recognitionRef.current?.stop();
+      return;
+    }
+    if (voiceStatus === "listening") {
+      stop();
+      return;
+    }
+    if (voiceStatus !== "idle") {
+      cancel();
       return;
     }
 
     const SpeechRecognitionCtor = getSpeechRecognition();
-    if (!SpeechRecognitionCtor) return;
+    if (!SpeechRecognitionCtor || isStandalonePwa()) {
+      setVoiceMode("realtime");
+      void start();
+      return;
+    }
 
     const recognition = new SpeechRecognitionCtor();
     recognition.lang = "de-DE";
@@ -221,7 +252,7 @@ export function AISearchBar({
       let isFinal = false;
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
-        if (event.results[i].isFinal) isFinal = true;
+        isFinal ||= event.results[i].isFinal;
       }
       setValue(transcript);
       if (isFinal && transcript.trim()) {
@@ -232,18 +263,19 @@ export function AISearchBar({
       }
     };
     recognition.onerror = () => {
-      setListening(false);
       recognitionRef.current = null;
+      setVoiceMode("realtime");
+      void start();
     };
     recognition.onend = () => {
-      setListening(false);
       recognitionRef.current = null;
+      setVoiceMode(null);
     };
 
     recognitionRef.current = recognition;
-    setListening(true);
+    setVoiceMode("native");
     recognition.start();
-  }, [listening, setValue, handleSubmit]);
+  }, [cancel, handleSubmit, setValue, start, stop, voiceMode, voiceStatus]);
 
   return (
     <div
@@ -305,29 +337,26 @@ export function AISearchBar({
             the inline layout the row is content-sized). */}
         {stacked && <span className="flex-1" aria-hidden="true" />}
 
-        {/* Voice input button (only when the browser supports it) */}
-        {voiceSupported && (
-          <button
-            type="button"
-            onClick={handleVoiceToggle}
-            disabled={isLoading}
-            aria-label={listening ? "Spracheingabe stoppen" : "Mit Sprache fragen"}
-            aria-pressed={listening}
-            data-testid="voice-search-button"
-            className={cn(
-              "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              listening
-                ? "bg-[var(--petrol)] text-white animate-pulse"
-                : "text-muted-foreground hover:bg-accent hover:text-foreground",
-            )}
-          >
-            {listening ? (
-              <MicOff className="size-5" aria-hidden="true" />
-            ) : (
-              <Mic className="size-5" aria-hidden="true" />
-            )}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleVoiceToggle}
+          disabled={isLoading}
+          aria-label={listening ? "Spracheingabe stoppen" : "Mit Sprache fragen"}
+          aria-pressed={listening}
+          data-testid="voice-search-button"
+          className={cn(
+            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            listening
+              ? "bg-[var(--petrol)] text-white animate-pulse"
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+          )}
+        >
+          {listening ? (
+            <MicOff className="size-5" aria-hidden="true" />
+          ) : (
+            <Mic className="size-5" aria-hidden="true" />
+          )}
+        </button>
 
         {/* Send button */}
         <button
