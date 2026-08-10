@@ -120,6 +120,28 @@ describe("DateInput", () => {
     expect(screen.getByRole("textbox")).toHaveValue("20.06.1985");
   });
 
+  it("disables calendar days before the minimum date", () => {
+    const onChange = vi.fn();
+    render(
+      <DateInput
+        value="2026-08-10"
+        onChange={onChange}
+        minDate="2026-08-10"
+        aria-label="Fällig am"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("date-input-calendar-trigger"));
+
+    expect(
+      screen.getByRole("button", { name: "9. August 2026 auswählen" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "10. August 2026 auswählen" }),
+    );
+    expect(onChange).toHaveBeenCalledWith("2026-08-10");
+  });
+
   it("navigates to the next and previous month", () => {
     render(<DateInput value="1985-06-15" onChange={vi.fn()} aria-label="Geburtsdatum" />);
     fireEvent.click(screen.getByTestId("date-input-calendar-trigger"));
