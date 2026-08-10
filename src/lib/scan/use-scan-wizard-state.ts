@@ -200,9 +200,12 @@ export function useScanWizardHandlers({
     ],
   );
 
+  // Used both from the scan camera and from the mobile actions sheet. The
+  // sheet deliberately skips the camera screen and opens this picker.
   const handleWizardUseGallery = useCallback(() => {
     wizardGalleryInputRef.current?.click();
   }, [wizardGalleryInputRef]);
+  const openUploadPicker = handleWizardUseGallery;
 
   const handleWizardGallerySelect = useCallback(
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -365,6 +368,7 @@ export function useScanWizardHandlers({
 
   return {
     openWizard,
+    openUploadPicker,
     closeWizard,
     handleWizardCapture,
     handleWizardUseGallery,
