@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
-import { Camera, FileText, FolderPlus, type LucideIcon } from "lucide-react";
+import { ImageUp, FileText, FolderPlus, type LucideIcon } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -35,7 +35,7 @@ export function ComposerActionSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const { openWizard, openCreateNote } = useScanActions();
+  const { openUploadPicker, openCreateNote } = useScanActions();
   const { addCollection } = useCollections();
   const [view, setView] = useState<"actions" | "collection">("actions");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,17 +80,17 @@ export function ComposerActionSheet({
             <SheetHeader>
               <SheetTitle>Aktionen</SheetTitle>
               <SheetDescription>
-                Dokument scannen, Notiz erstellen oder eine neue Sammlung anlegen.
+                Foto oder PDF hochladen, Notiz erstellen oder eine neue Sammlung anlegen.
               </SheetDescription>
             </SheetHeader>
             <div className="grid gap-1 px-4 pb-6">
               <ActionRow
-                icon={Camera}
-                label="Scannen"
-                testId="composer-action-scan"
+                icon={ImageUp}
+                label="Foto oder PDF hochladen"
+                testId="composer-action-upload"
                 onClick={() => {
                   close();
-                  openWizard();
+                  openUploadPicker();
                 }}
               />
               <ActionRow

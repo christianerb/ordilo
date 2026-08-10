@@ -138,6 +138,7 @@ export function useScanProviderState(): ScanProviderState {
 
   const {
     openWizard,
+    openUploadPicker,
     closeWizard,
     handleWizardCapture,
     handleWizardUseGallery,
@@ -189,6 +190,7 @@ export function useScanProviderState(): ScanProviderState {
       handleConfirmSuccess,
       handleReanalyzeSuccess,
       openWizard,
+      openUploadPicker,
       openCreateNote,
       closeCreateNote,
       handleCreateNote,
@@ -221,6 +223,7 @@ export function useScanProviderState(): ScanProviderState {
       handleConfirmSuccess,
       handleReanalyzeSuccess,
       openWizard,
+      openUploadPicker,
       openCreateNote,
       closeCreateNote,
       handleCreateNote,
@@ -228,8 +231,20 @@ export function useScanProviderState(): ScanProviderState {
   );
 
   const scanActionsValue = useMemo(
-    () => ({ openWizard, openCreateNote, closeCreateNote, handleCreateNote }),
-    [openWizard, openCreateNote, closeCreateNote, handleCreateNote],
+    () => ({
+      openWizard,
+      openUploadPicker,
+      openCreateNote,
+      closeCreateNote,
+      handleCreateNote,
+    }),
+    [
+      openWizard,
+      openUploadPicker,
+      openCreateNote,
+      closeCreateNote,
+      handleCreateNote,
+    ],
   );
   const documentViewerValue = useMemo(
     () => ({ openDocument, closeDocument }),

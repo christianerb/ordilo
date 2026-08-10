@@ -13,6 +13,8 @@ export type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 export interface ScanActionsValue {
   openWizard: () => void;
+  /** Opens the device picker for a photo or PDF. */
+  openUploadPicker: () => void;
   /**
    * Open the create-note sheet. Pass `{ category }` to file the note into a
    * collection (the collection's name becomes the note's category).

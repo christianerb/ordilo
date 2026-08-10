@@ -450,15 +450,15 @@ describe("AppShell", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("opens the scan wizard overlay via the + action sheet", async () => {
+  it("opens the native upload picker via the + action sheet", async () => {
     renderShell("/dokumente");
+    const uploadInput = screen.getByTestId("wizard-gallery-input");
+    const click = vi.spyOn(uploadInput, "click");
     const [actionsButton] = screen.getAllByRole("button", { name: /^aktionen$/i });
     fireEvent.click(actionsButton);
-    const scanAction = await screen.findByTestId("composer-action-scan");
-    fireEvent.click(scanAction);
-    await waitFor(() => {
-      expect(screen.getByTestId("scan-wizard")).toBeDefined();
-    });
+    const uploadAction = await screen.findByTestId("composer-action-upload");
+    fireEvent.click(uploadAction);
+    expect(click).toHaveBeenCalledTimes(1);
   });
 
   it("opens the create-note sheet via the + action sheet", async () => {
