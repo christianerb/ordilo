@@ -22,6 +22,7 @@ import {
   updateConversationTitle,
 } from "@/lib/ai/chat-history";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
  * POST /api/chat — Agentic chat with OpenAI function calling (streaming).
@@ -224,6 +225,11 @@ export async function POST(request: Request): Promise<Response> {
   if (conversationId) {
     void saveUserMessage(serverClient, conversationId, familyId, message);
   }
+  void recordProductEvent(serverClient, {
+    userId: user.id,
+    familyId,
+    eventName: "chat_question_sent",
+  });
 
   // 10. Build tool context with speaker identity
   const toolContext: ToolContext = {

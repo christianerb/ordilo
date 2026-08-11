@@ -70,6 +70,12 @@ export default function DatenschutzPage() {
             (Daumen hoch/runter, Anmerkung) — ohne Dokumenteninhalte im
             Klartext.
           </li>
+          <li>
+            <strong>Technische Nutzungsdaten:</strong> Zeitpunkt der Anmeldung
+            sowie inhaltsfreie Ereignisse wie Upload, Suche, Chat-Frage,
+            Aufgabe oder Kalendertermin. Wir speichern dabei keine
+            Dokumentinhalte, Dateinamen, Suchbegriffe oder Chat-Nachrichten.
+          </li>
         </ul>
       </Section>
 
@@ -84,7 +90,12 @@ export default function DatenschutzPage() {
             Erinnerungs-E-Mails zu Fristen aus deinen bestätigten Aufgaben
             (abschaltbar).
           </li>
-          <li>Keine Werbung. Kein Verkauf von Daten. Kein Tracking.</li>
+          <li>
+            Betrieb, Sicherheit und Verbesserung von Ordilo durch eine
+            streng eingeschränkte interne Auswertung. Zugriff haben nur
+            berechtigte Admins mit zusätzlichem Zugangsschutz.
+          </li>
+          <li>Keine Werbung, kein Verkauf von Daten und kein Drittanbieter-Tracking.</li>
         </ul>
       </Section>
 
@@ -141,6 +152,11 @@ export default function DatenschutzPage() {
           Gelöschte Dokumente werden endgültig entfernt. Bei Löschung des
           Kontos werden alle personenbezogenen Daten gelöscht, soweit keine
           gesetzlichen Aufbewahrungspflichten bestehen.
+        </p>
+        <p>
+          Inhaltsfreie Nutzungsereignisse bewahren wir höchstens 12 Monate
+          auf. Fehlversuche beim zusätzlichen Admin-Zugang werden nur kurz
+          für den Schutz vor Missbrauch gespeichert.
         </p>
       </Section>
 
