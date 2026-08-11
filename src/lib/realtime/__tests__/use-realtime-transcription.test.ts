@@ -155,7 +155,7 @@ describe("useRealtimeTranscription", () => {
     expect(pc.dataChannel.send).toHaveBeenCalledWith(
       JSON.stringify({
         type: "response.create",
-        response: { modalities: ["text"] },
+        response: { output_modalities: ["text"] },
       }),
     );
     expect(result.current.status).toBe("processing");
@@ -203,6 +203,29 @@ describe("useRealtimeTranscription", () => {
 
     expect(onError).toHaveBeenCalledWith(
       "Spracheingabe konnte nicht gestartet werden.",
+    );
+    expect(result.current.status).toBe("idle");
+  });
+
+  it("surfaces the route's own reason instead of the generic sentence", async () => {
+    mockFetch.mockImplementationOnce(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: "Tageslimit erreicht. Bitte morgen erneut versuchen.",
+            code: "RATE_LIMIT_EXCEEDED",
+          }),
+          { status: 429 },
+        ),
+    );
+    const { result, onError } = setup();
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(onError).toHaveBeenCalledWith(
+      "Tageslimit erreicht. Bitte morgen erneut versuchen.",
     );
     expect(result.current.status).toBe("idle");
   });
