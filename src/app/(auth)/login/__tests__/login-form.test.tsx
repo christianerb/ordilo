@@ -16,6 +16,11 @@ vi.mock("@/lib/supabase/client", () => ({
 describe("LoginForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false })),
+    );
     signInWithOtp.mockResolvedValue({ error: null });
     verifyOtp.mockResolvedValue({ error: null });
   });
@@ -87,5 +92,41 @@ describe("LoginForm", () => {
     expect(
       await screen.findByText("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen."),
     ).toBeDefined();
+  });
+
+  it("opens webmail in the same context on mobile so the mail app can take over", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: true })),
+    );
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("E-Mail-Adresse"), {
+      target: { value: "familie@gmail.com" },
+    });
+    fireEvent.submit(
+      screen.getByRole("button", { name: /loslegen/i }).closest("form")!,
+    );
+
+    const webmailButton = await screen.findByTestId("open-webmail-button");
+    expect(webmailButton).not.toHaveAttribute("target");
+    expect(
+      screen.getByText("Danach hier den Code eingeben."),
+    ).toBeInTheDocument();
+  });
+
+  it("restores the code-entry screen after returning from the inbox", async () => {
+    window.sessionStorage.setItem(
+      "ordilo-pending-login-v1",
+      JSON.stringify({ email: "familie@gmail.com", sentAt: Date.now() }),
+    );
+
+    render(<LoginForm />);
+
+    expect(await screen.findByTestId("sent-email")).toHaveTextContent(
+      "familie@gmail.com",
+    );
+    expect(screen.getByLabelText("Ziffer 1 des Anmelde-Codes")).toBeInTheDocument();
+    expect(screen.getByTestId("resend-button")).toHaveTextContent("(60s)");
   });
 });

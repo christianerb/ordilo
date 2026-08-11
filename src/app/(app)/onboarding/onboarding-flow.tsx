@@ -228,7 +228,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
   // ---------------------------------------------------------------------------
 
   const finishOnboarding = useCallback(
-    async (destination: string) => {
+    async (destination: string, startsFirstScan = false) => {
       setServerError(null);
 
       if (!familyId) {
@@ -238,7 +238,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
 
       setIsSubmitting(true);
       try {
-        const result = await completeOnboarding(familyId);
+        const result = await completeOnboarding(familyId, startsFirstScan);
         if (!result.success) {
           setServerError(result.error);
           return;
@@ -264,6 +264,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           {/* Step 1: family + self */}
           {step === "family-name" && (
             <>
+              <OnboardingProgress currentStep={1} />
               <MascotBubble>
                 Hallo! Ich bin Ordilo und kümmere mich um eure
                 Familienunterlagen — nichts geht verloren, keine Frist geht
@@ -311,6 +312,9 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                       disabled={isSubmitting}
                       className="h-12 rounded-ordilo-md text-base"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Das kannst du auch später ergänzen.
+                    </p>
                   </div>
 
                   {serverError && <ErrorBanner message={serverError} />}
@@ -341,6 +345,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
           {/* Step 2: quick-add members (finish always one tap away) */}
           {step === "add-member" && (
             <>
+              <OnboardingProgress currentStep={2} />
               <MascotBubble>
                 {familyName ? `Schön, ${familyName}!` : "Schön!"} Wer gehört
                 noch dazu? Du kannst das auch jederzeit später ergänzen.
@@ -456,7 +461,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                 <Button
                   type="button"
                   size="lg"
-                  onClick={() => finishOnboarding("/home?scan=1")}
+                  onClick={() => finishOnboarding("/home?scan=1", true)}
                   disabled={isSubmitting}
                   className="h-12 w-full rounded-ordilo-md text-base"
                   data-testid="onboarding-scan-button"
@@ -508,6 +513,30 @@ function MascotBubble({ children }: { children: React.ReactNode }) {
       </div>
       <div className="flex-1 pt-1">
         <p className="text-sm leading-relaxed text-foreground">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+function OnboardingProgress({ currentStep }: { currentStep: 1 | 2 }) {
+  const percent = currentStep === 1 ? 50 : 100;
+
+  return (
+    <div className="space-y-1.5" aria-label={`Schritt ${currentStep} von 2`}>
+      <p className="text-xs font-medium text-muted-foreground">
+        Schritt {currentStep} von 2
+      </p>
+      <div
+        role="progressbar"
+        aria-valuemin={1}
+        aria-valuemax={2}
+        aria-valuenow={currentStep}
+        className="h-1.5 overflow-hidden rounded-full bg-[var(--mist-light)]"
+      >
+        <div
+          className="h-full rounded-full bg-[var(--petrol)] transition-[width] duration-200 motion-reduce:transition-none"
+          style={{ width: `${percent}%` }}
+        />
       </div>
     </div>
   );
