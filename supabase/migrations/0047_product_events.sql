@@ -28,7 +28,13 @@ alter table public.product_events enable row level security;
 
 drop policy if exists "product_events_insert_own" on public.product_events;
 create policy "product_events_insert_own" on public.product_events
-  for insert with check (auth.uid() = user_id);
+  for insert with check (
+    auth.uid() = user_id
+    and (
+      family_id is null
+      or public.user_belongs_to_family(family_id)
+    )
+  );
 
 drop policy if exists "product_events_select_own" on public.product_events;
 create policy "product_events_select_own" on public.product_events

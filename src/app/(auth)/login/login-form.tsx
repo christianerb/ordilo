@@ -21,6 +21,7 @@ import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/ordilo/auth-shell";
 import { webmailFor } from "@/lib/auth/webmail";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
@@ -235,7 +236,7 @@ export function LoginForm() {
     setFormState("verifying");
 
     const supabase = createClient();
-    const { error } = await supabase.auth.verifyOtp({
+    const { data, error } = await supabase.auth.verifyOtp({
       email,
       token,
       type: "email",
@@ -245,6 +246,13 @@ export function LoginForm() {
       setErrorMessage("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.");
       setFormState("sent");
       return;
+    }
+
+    if (data.user) {
+      await recordProductEvent(supabase, {
+        userId: data.user.id,
+        eventName: "onboarding_started",
+      });
     }
 
     clearPendingLogin();
