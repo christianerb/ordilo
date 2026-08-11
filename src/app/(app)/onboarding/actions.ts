@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { type ActionResult, FRIENDLY_ERROR } from "@/lib/actions/result";
 import { validateFamilyName, validateMember } from "@/lib/schemas/onboarding";
 import { DEFAULT_COLLECTIONS } from "@/lib/schemas/collections";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 import type { Database } from "@/types/database";
 
 /**
@@ -104,6 +105,13 @@ export async function createFamily(name: string): Promise<ActionResult<Pick<Fami
     return { success: false, error: FRIENDLY_ERROR };
   }
 
+  await recordProductEvent(supabase, {
+    userId: user.id,
+    familyId: family.id,
+    eventName: "onboarding_step_completed",
+    properties: { step: "family_name" },
+  });
+
   return { success: true, data: family };
 }
 
@@ -179,6 +187,13 @@ export async function addMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
+  await recordProductEvent(supabase, {
+    userId: user.id,
+    familyId,
+    eventName: "onboarding_step_completed",
+    properties: { step: input.is_self ? "self_member_added" : "member_added" },
+  });
+
   return { success: true, data: member };
 }
 
@@ -197,6 +212,7 @@ export async function addMember(
  */
 export async function completeOnboarding(
   familyId: string,
+  startsFirstScan = false,
 ): Promise<ActionResult<null>> {
   const supabase = await createClient();
 
@@ -249,6 +265,23 @@ export async function completeOnboarding(
       })),
     );
   }
+
+  await Promise.all([
+    recordProductEvent(supabase, {
+      userId: user.id,
+      familyId,
+      eventName: "onboarding_completed",
+    }),
+    ...(startsFirstScan
+      ? [
+          recordProductEvent(supabase, {
+            userId: user.id,
+            familyId,
+            eventName: "onboarding_scan_started",
+          }),
+        ]
+      : []),
+  ]);
 
   return { success: true, data: null };
 }

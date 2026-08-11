@@ -20,8 +20,52 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/ordilo/auth-shell";
 import { webmailFor } from "@/lib/auth/webmail";
+import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
+
+const PENDING_LOGIN_STORAGE_KEY = "ordilo-pending-login-v1";
+const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000;
+
+type PendingLogin = { email: string; sentAt: number };
+
+function savePendingLogin(email: string) {
+  try {
+    window.sessionStorage.setItem(
+      PENDING_LOGIN_STORAGE_KEY,
+      JSON.stringify({ email, sentAt: Date.now() } satisfies PendingLogin),
+    );
+  } catch {
+    // Storage is an optional convenience. The login code still works without it.
+  }
+}
+
+function clearPendingLogin() {
+  try {
+    window.sessionStorage.removeItem(PENDING_LOGIN_STORAGE_KEY);
+  } catch {
+    // Storage is an optional convenience.
+  }
+}
+
+function getPendingLogin(): PendingLogin | null {
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_LOGIN_STORAGE_KEY);
+    if (!raw) return null;
+    const pending = JSON.parse(raw) as Partial<PendingLogin>;
+    if (
+      typeof pending.email !== "string" ||
+      typeof pending.sentAt !== "number" ||
+      Date.now() - pending.sentAt > PENDING_LOGIN_MAX_AGE_MS
+    ) {
+      clearPendingLogin();
+      return null;
+    }
+    return { email: pending.email, sentAt: pending.sentAt };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Passwordless email-code login form.
@@ -40,13 +84,14 @@ export function LoginForm() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const [resending, setResending] = useState(false);
+  const [openInboxInSameTab, setOpenInboxInSameTab] = useState(false);
   const loginRequestInFlightRef = useRef(false);
   const resendRequestInFlightRef = useRef(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
-  const startCooldown = useCallback(() => {
-    setResendCooldown(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
+  const startCooldown = useCallback((seconds = EMAIL_OTP_RESEND_COOLDOWN_SECONDS) => {
+    setResendCooldown(seconds);
     if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
     cooldownTimerRef.current = setInterval(() => {
       setResendCooldown((s) => {
@@ -58,6 +103,27 @@ export function LoginForm() {
       });
     }, 1000);
   }, []);
+
+  useMountEffect(() => {
+    const pending = getPendingLogin();
+    if (pending) {
+      setEmail(pending.email);
+      setFormState("sent");
+      const elapsedSeconds = Math.floor((Date.now() - pending.sentAt) / 1000);
+      const remainingSeconds = Math.max(
+        0,
+        EMAIL_OTP_RESEND_COOLDOWN_SECONDS - elapsedSeconds,
+      );
+      if (remainingSeconds > 0) startCooldown(remainingSeconds);
+    }
+
+    // Opening a known provider in the same context lets Android and iOS
+    // hand the URL to its installed mail app. Desktop keeps the expected
+    // new-tab behavior.
+    setOpenInboxInSameTab(
+      window.matchMedia?.("(max-width: 767px), (pointer: coarse)").matches ?? false,
+    );
+  });
 
   const sendLoginCode = useCallback(async (targetEmail: string) => {
     try {
@@ -101,6 +167,7 @@ export function LoginForm() {
     }
 
     setEmail(result.data.email);
+    savePendingLogin(result.data.email);
     setFormState("sent");
     startCooldown();
   }
@@ -118,6 +185,7 @@ export function LoginForm() {
     }
     setCode("");
     setErrorMessage(null);
+    savePendingLogin(email);
     codeInputRefs.current[0]?.focus();
     startCooldown();
   }, [email, resendCooldown, resending, sendLoginCode, startCooldown]);
@@ -179,6 +247,7 @@ export function LoginForm() {
       return;
     }
 
+    clearPendingLogin();
     window.location.assign("/");
   }
 
@@ -187,6 +256,7 @@ export function LoginForm() {
     setFormState("idle");
     setCode("");
     setErrorMessage(null);
+    clearPendingLogin();
   }, []);
 
   function handleEmailChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -307,7 +377,11 @@ export function LoginForm() {
               className="h-12 w-full rounded-ordilo-md text-base press-scale"
               data-testid="open-webmail-button"
             >
-              <a href={webmail.url} target="_blank" rel="noopener noreferrer">
+              <a
+                href={webmail.url}
+                target={openInboxInSameTab ? undefined : "_blank"}
+                rel={openInboxInSameTab ? undefined : "noopener noreferrer"}
+              >
                 {webmail.label}
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
               </a>
@@ -315,6 +389,11 @@ export function LoginForm() {
           )}
 
           <div className="space-y-2 text-sm">
+            {webmail && (
+              <p className="text-muted-foreground">
+                Danach hier den Code eingeben.
+              </p>
+            )}
             <p className="text-muted-foreground">
               Nichts angekommen? Schau auch im Spam-Ordner nach.
             </p>

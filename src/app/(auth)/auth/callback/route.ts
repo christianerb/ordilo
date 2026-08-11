@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPostAuthDestination } from "@/lib/auth/routing";
 import { INVITE_COOKIE } from "@/lib/invite";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
  * Magic link callback route.
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient();
 
   // Exchange the PKCE code for a session. This sets the auth cookies.
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { data: authData, error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (error) {
     // Expired, already-used, or otherwise invalid code.
@@ -56,9 +57,16 @@ export async function GET(request: NextRequest) {
   }
 
   // Session established — determine first-time vs returning user.
-  const { destination } = joinedViaInvite
-    ? { destination: "/home" }
+  const { destination, isFirstTime } = joinedViaInvite
+    ? { destination: "/home" as const, isFirstTime: false }
     : await getPostAuthDestination(supabase);
+
+  if (isFirstTime && authData.user) {
+    await recordProductEvent(supabase, {
+      userId: authData.user.id,
+      eventName: "onboarding_started",
+    });
+  }
 
   const destinationUrl = new URL(requestUrl);
   destinationUrl.pathname = destination;

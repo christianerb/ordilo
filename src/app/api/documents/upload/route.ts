@@ -17,6 +17,7 @@ import {
   readFileHeaderBytes,
   sanitizeFilename,
 } from "@/lib/api/storage";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
  * Maximum document uploads per family per day.
@@ -239,6 +240,12 @@ export async function POST(request: Request): Promise<Response> {
       500,
     );
   }
+
+  await recordProductEvent(serverClient, {
+    userId: user.id,
+    familyId,
+    eventName: "document_upload_succeeded",
+  });
 
   // 7. Async pipeline: enqueue the OCR job and process it in-band ----------
   // Default ON (opt out with PIPELINE_MODE=sync): enqueue an `ocr` job,
