@@ -136,13 +136,14 @@ export default async function HomePage({
     redirect("/onboarding");
   }
 
-  // 2-4 + 6-7 only depend on family.id, not on each other's results, so
+  // 2-4 + 6-8 only depend on family.id, not on each other's results, so
   // they run concurrently instead of as a sequential waterfall — this is
   // the single biggest lever for server-render latency on this page.
   const [
     { data: memberRows },
     { data: analyzedRows },
     { count: unconfirmedDocCount },
+    { count: confirmedDocumentCount },
     { data: taskRows },
     { data: recentRows },
     insights,
@@ -170,6 +171,14 @@ export default async function HomePage({
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
       .eq("status", "analyzed"),
+    // 3c. Exact confirmed-document count determines whether the family has
+    // just reached its first lasting result. It must not depend on the
+    // mixed-status recent-documents list.
+    supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("family_id", family.id)
+      .eq("status", "confirmed"),
     // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
     //    "Fristen"). We fetch all confirmed open tasks and let the client
     //    component filter them into the two sections.
@@ -275,11 +284,13 @@ export default async function HomePage({
 
   return (
     <HomeClient
+      familyId={family.id}
       greeting={getGreeting()}
       familyName={family.name}
       members={members}
       analyzedDocuments={analyzedDocuments}
       unconfirmedDocCount={unconfirmedDocCount ?? 0}
+      confirmedDocumentCount={confirmedDocumentCount ?? 0}
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
       thumbUrls={thumbUrls}

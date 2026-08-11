@@ -156,16 +156,34 @@ const recentDocuments = [
 ];
 
 const defaultProps: HomeClientProps = {
+  familyId: "fam-1",
   greeting: "Guten Abend",
   familyName: "Erb",
   members,
   analyzedDocuments,
   unconfirmedDocCount: 2,
+  confirmedDocumentCount: 2,
   upcomingTasks,
   recentDocuments,
   thumbUrls: {},
   insights: [],
 };
+
+function makeLocalStorageMock() {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+}
 
 // Reference date for test data: 2026-07-06 (matches system date)
 // Test task due dates are relative to this date.
@@ -178,6 +196,7 @@ beforeEach(() => {
   mockPush.mockClear();
   mockUpdate.mockClear();
   mockEq.mockClear();
+  vi.stubGlobal("localStorage", makeLocalStorageMock());
   mockUpdate.mockReturnValue({ eq: mockEq });
   mockEq.mockResolvedValue({ error: null });
   vi.mocked(toast.success).mockClear();
@@ -538,6 +557,121 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
     fireEvent.click(cta);
     await waitFor(() => {
       expect(screen.getByTestId("scan-wizard")).toBeDefined();
+    });
+  });
+});
+
+describe("HomeClient — first success guide", () => {
+  const firstConfirmedDocument = [recentDocuments[0]];
+
+  it("celebrates the first confirmed document with useful next actions", async () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        unconfirmedDocCount={0}
+        confirmedDocumentCount={1}
+        analyzedDocuments={[]}
+        recentDocuments={firstConfirmedDocument}
+      />,
+    );
+
+    const guide = await screen.findByTestId("first-success-guide");
+    expect(within(guide).getByText("Dein Familienbuch wächst")).toBeDefined();
+    expect(
+      within(guide).getByRole("button", { name: "Nächstes Dokument scannen" }),
+    ).toBeDefined();
+    expect(within(guide).getByRole("link", { name: "Etwas fragen" })).toHaveAttribute(
+      "href",
+      "/suche",
+    );
+  });
+
+  it("opens the scanner from the first-success guide", async () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        unconfirmedDocCount={0}
+        confirmedDocumentCount={1}
+        analyzedDocuments={[]}
+        recentDocuments={firstConfirmedDocument}
+      />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Nächstes Dokument scannen" }),
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("scan-wizard")).toBeDefined();
+    });
+  });
+
+  it("does not show again after dismissal", async () => {
+    const props = {
+      ...defaultProps,
+      upcomingTasks: [],
+      unconfirmedDocCount: 0,
+      confirmedDocumentCount: 1,
+      analyzedDocuments: [],
+      recentDocuments: firstConfirmedDocument,
+    };
+    const firstRender = render(<HomeClient {...props} />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Hinweis schließen" }),
+    );
+    expect(screen.queryByTestId("first-success-guide")).toBeNull();
+    firstRender.unmount();
+
+    render(<HomeClient {...props} />);
+    await waitFor(() => {
+      expect(screen.queryByTestId("first-success-guide")).toBeNull();
+    });
+
+    render(<HomeClient {...props} familyId="fam-2" />);
+    expect(await screen.findByTestId("first-success-guide")).toBeDefined();
+  });
+
+  it("uses the confirmed count when another document is still processing", async () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        unconfirmedDocCount={0}
+        confirmedDocumentCount={1}
+        analyzedDocuments={[]}
+        recentDocuments={[
+          ...firstConfirmedDocument,
+          {
+            id: "doc-processing",
+            title: "Noch wird gelesen",
+            original_filename: "neu.pdf",
+            mime_type: "application/pdf",
+            status: "uploaded",
+            created_at: "2026-07-06T15:30:00Z",
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByTestId("first-success-guide")).toBeDefined();
+  });
+
+  it("does not show after the second confirmed document", async () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        unconfirmedDocCount={0}
+        confirmedDocumentCount={2}
+        analyzedDocuments={[]}
+        recentDocuments={firstConfirmedDocument}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("first-success-guide")).toBeNull();
     });
   });
 });

@@ -40,6 +40,7 @@ import {
   deriveSuggestionChips,
 } from "@/lib/home-briefing";
 import { TodayHero } from "./today-hero";
+import { FirstSuccessGuide } from "@/components/ordilo/first-success-guide";
 import type { HomeInsight } from "@/lib/ai/insights";
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,7 @@ export interface HomeMember {
 }
 
 export interface HomeClientProps {
+  familyId: string;
   greeting: string;
   familyName: string;
   members: HomeMember[];
@@ -61,6 +63,8 @@ export interface HomeClientProps {
   /** Exact count of documents awaiting confirmation (the analyzedDocuments
       array itself is capped for display). */
   unconfirmedDocCount: number;
+  /** Exact count of confirmed documents, used for first-success guidance. */
+  confirmedDocumentCount: number;
   upcomingTasks: HomeTask[];
   recentDocuments: HomeDocument[];
   /** Signed thumbnail URLs keyed by document id (image documents only). */
@@ -105,11 +109,13 @@ function getDocumentIdFromHref(href: string): string | null {
 // ---------------------------------------------------------------------------
 
 export function HomeClient({
+  familyId,
   greeting,
   familyName,
   members,
   analyzedDocuments,
   unconfirmedDocCount,
+  confirmedDocumentCount,
   upcomingTasks,
   recentDocuments,
   thumbUrls,
@@ -225,6 +231,9 @@ export function HomeClient({
     totalTasks === 0 &&
     analyzedDocuments.length === 0 &&
     visibleRecentDocs.length === 0;
+  const showFirstSuccessGuide =
+    analyzedDocuments.length === 0 &&
+    confirmedDocumentCount === 1;
 
   const toTaskCardData = (t: HomeTask): TaskCardData => ({
     id: t.id,
@@ -311,6 +320,10 @@ export function HomeClient({
               </Link>
             )}
           </div>
+
+          {showFirstSuccessGuide && (
+            <FirstSuccessGuide familyId={familyId} onScan={openWizard} />
+          )}
 
           {/* The "Heute" hero — the single most important thing right now */}
           <TodayHero
