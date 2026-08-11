@@ -8,9 +8,13 @@ import { useState } from "react";
 
 const FIRST_SUCCESS_GUIDE_STORAGE_KEY = "ordilo-first-success-guide-v1";
 
-function wasDismissed(): boolean {
+function storageKey(familyId: string): string {
+  return `${FIRST_SUCCESS_GUIDE_STORAGE_KEY}:${familyId}`;
+}
+
+function wasDismissed(familyId: string): boolean {
   try {
-    return window.localStorage.getItem(FIRST_SUCCESS_GUIDE_STORAGE_KEY) === "dismissed";
+    return window.localStorage.getItem(storageKey(familyId)) === "dismissed";
   } catch {
     return false;
   }
@@ -20,16 +24,22 @@ function wasDismissed(): boolean {
  * A one-time, post-confirmation nudge. It celebrates the first real result
  * and offers the two most useful next actions without starting a tour.
  */
-export function FirstSuccessGuide({ onScan }: { onScan: () => void }) {
+export function FirstSuccessGuide({
+  familyId,
+  onScan,
+}: {
+  familyId: string;
+  onScan: () => void;
+}) {
   const [visible, setVisible] = useState(false);
 
   useMountEffect(() => {
-    setVisible(!wasDismissed());
+    setVisible(!wasDismissed(familyId));
   });
 
   const dismiss = () => {
     try {
-      window.localStorage.setItem(FIRST_SUCCESS_GUIDE_STORAGE_KEY, "dismissed");
+      window.localStorage.setItem(storageKey(familyId), "dismissed");
     } catch {
       // The hint remains a convenience when storage is unavailable.
     }
@@ -83,7 +93,7 @@ export function FirstSuccessGuide({ onScan }: { onScan: () => void }) {
           type="button"
           size="lg"
           onClick={onScan}
-          className="h-11 flex-1 rounded-ordilo-md"
+          className="h-12 flex-1 rounded-ordilo-md"
           data-testid="first-success-scan"
         >
           <ScanLine className="size-4" aria-hidden="true" />
@@ -94,7 +104,7 @@ export function FirstSuccessGuide({ onScan }: { onScan: () => void }) {
           type="button"
           size="lg"
           variant="outline"
-          className="h-11 flex-1 rounded-ordilo-md"
+          className="h-12 flex-1 rounded-ordilo-md"
         >
           <Link href="/suche">
             <MessageCircle className="size-4" aria-hidden="true" />

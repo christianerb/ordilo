@@ -156,11 +156,13 @@ const recentDocuments = [
 ];
 
 const defaultProps: HomeClientProps = {
+  familyId: "fam-1",
   greeting: "Guten Abend",
   familyName: "Erb",
   members,
   analyzedDocuments,
   unconfirmedDocCount: 2,
+  confirmedDocumentCount: 2,
   upcomingTasks,
   recentDocuments,
   thumbUrls: {},
@@ -568,6 +570,7 @@ describe("HomeClient — first success guide", () => {
         {...defaultProps}
         upcomingTasks={[]}
         unconfirmedDocCount={0}
+        confirmedDocumentCount={1}
         analyzedDocuments={[]}
         recentDocuments={firstConfirmedDocument}
       />,
@@ -590,6 +593,7 @@ describe("HomeClient — first success guide", () => {
         {...defaultProps}
         upcomingTasks={[]}
         unconfirmedDocCount={0}
+        confirmedDocumentCount={1}
         analyzedDocuments={[]}
         recentDocuments={firstConfirmedDocument}
       />,
@@ -608,6 +612,7 @@ describe("HomeClient — first success guide", () => {
       ...defaultProps,
       upcomingTasks: [],
       unconfirmedDocCount: 0,
+      confirmedDocumentCount: 1,
       analyzedDocuments: [],
       recentDocuments: firstConfirmedDocument,
     };
@@ -623,15 +628,45 @@ describe("HomeClient — first success guide", () => {
     await waitFor(() => {
       expect(screen.queryByTestId("first-success-guide")).toBeNull();
     });
+
+    render(<HomeClient {...props} familyId="fam-2" />);
+    expect(await screen.findByTestId("first-success-guide")).toBeDefined();
   });
 
-  it("does not show for more than one confirmed document", async () => {
+  it("uses the confirmed count when another document is still processing", async () => {
     render(
       <HomeClient
         {...defaultProps}
         upcomingTasks={[]}
         unconfirmedDocCount={0}
+        confirmedDocumentCount={1}
         analyzedDocuments={[]}
+        recentDocuments={[
+          ...firstConfirmedDocument,
+          {
+            id: "doc-processing",
+            title: "Noch wird gelesen",
+            original_filename: "neu.pdf",
+            mime_type: "application/pdf",
+            status: "uploaded",
+            created_at: "2026-07-06T15:30:00Z",
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByTestId("first-success-guide")).toBeDefined();
+  });
+
+  it("does not show after the second confirmed document", async () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        unconfirmedDocCount={0}
+        confirmedDocumentCount={2}
+        analyzedDocuments={[]}
+        recentDocuments={firstConfirmedDocument}
       />,
     );
 
