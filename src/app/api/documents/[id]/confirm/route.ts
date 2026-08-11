@@ -49,6 +49,7 @@ import {
 } from "@/lib/analysis-cleanup";
 import { canonicalizeCategory } from "@/lib/categories";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
  * POST /api/documents/[id]/confirm
@@ -528,6 +529,12 @@ export async function POST(
   } catch {
     // Non-critical — confirmation already succeeded.
   }
+
+  await recordProductEvent(serverClient, {
+    userId: auth.user.id,
+    familyId,
+    eventName: "document_confirmed",
+  });
 
   const body: ConfirmSuccessResponse = {
     status: "confirmed",

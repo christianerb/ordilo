@@ -145,6 +145,34 @@ export type Database = {
         };
         Relationships: [];
       };
+      // product_events -----------------------------------------------------
+      product_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          family_id: string | null;
+          event_name: string;
+          properties: Record<string, string | number | boolean | null>;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          family_id?: string | null;
+          event_name: string;
+          properties?: Record<string, string | number | boolean | null>;
+          occurred_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          family_id?: string | null;
+          event_name?: string;
+          properties?: Record<string, string | number | boolean | null>;
+          occurred_at?: string;
+        };
+        Relationships: [];
+      };
       // family_members -----------------------------------------------------
       family_members: {
         Row: {
