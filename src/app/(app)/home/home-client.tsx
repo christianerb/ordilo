@@ -40,6 +40,7 @@ import {
   deriveSuggestionChips,
 } from "@/lib/home-briefing";
 import { TodayHero } from "./today-hero";
+import { FirstSuccessGuide } from "./first-success-guide";
 import type { HomeInsight } from "@/lib/ai/insights";
 
 // ---------------------------------------------------------------------------
@@ -225,6 +226,10 @@ export function HomeClient({
     totalTasks === 0 &&
     analyzedDocuments.length === 0 &&
     visibleRecentDocs.length === 0;
+  const showFirstSuccessGuide =
+    analyzedDocuments.length === 0 &&
+    visibleRecentDocs.length === 1 &&
+    visibleRecentDocs[0].status === "confirmed";
 
   const toTaskCardData = (t: HomeTask): TaskCardData => ({
     id: t.id,
@@ -311,6 +316,8 @@ export function HomeClient({
               </Link>
             )}
           </div>
+
+          {showFirstSuccessGuide && <FirstSuccessGuide onScan={openWizard} />}
 
           {/* The "Heute" hero — the single most important thing right now */}
           <TodayHero
