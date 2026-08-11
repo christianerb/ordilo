@@ -230,6 +230,22 @@ describe("useRealtimeTranscription", () => {
     expect(result.current.status).toBe("idle");
   });
 
+  it("distinguishes an unreachable server from a refused session", async () => {
+    mockFetch.mockImplementationOnce(async () => {
+      throw new TypeError("Load failed");
+    });
+    const { result, onError } = setup();
+
+    await act(async () => {
+      await result.current.start();
+    });
+
+    expect(onError).toHaveBeenCalledWith(
+      expect.stringMatching(/Internetverbindung/),
+    );
+    expect(result.current.status).toBe("idle");
+  });
+
   it("treats a manual stop with nothing said as 'nothing heard', not an error", async () => {
     const { result, onTranscript, onError } = setup();
     const pc = await startSession(result);

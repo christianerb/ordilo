@@ -342,9 +342,16 @@ export function useRealtimeTranscription({
       clientSecret = session.client_secret;
       model = session.model;
     } catch {
-      // Network-level failure — no body to quote.
+      // Network-level failure — the request never reached the route, so
+      // there is no body to quote. Deliberately worded differently from
+      // the route's own 502 text: sharing one sentence made "OpenAI
+      // refused the session" and "the phone never got through" look
+      // identical in a bug report, which is exactly the distinction
+      // needed to know where to look next.
       setStatus("idle");
-      onErrorRef.current("Spracheingabe konnte nicht gestartet werden.");
+      onErrorRef.current(
+        "Keine Verbindung zum Server. Bitte prüf deine Internetverbindung.",
+      );
       return;
     }
     // The user cancelled while the session request was in flight — the UI
@@ -390,7 +397,10 @@ export function useRealtimeTranscription({
     dc.onopen = () => setStatus("listening");
     pc.onconnectionstatechange = () => {
       if (pc.connectionState === "failed") {
-        fail("Die Verbindung hat nicht geklappt.");
+        // ICE gave up: the handshake itself succeeded, so this is the
+        // media path being blocked rather than the API being unreachable.
+        // Kept distinct from the SDP failure below for that reason.
+        fail("Die Sprachverbindung wurde unterbrochen.");
       }
     };
 
