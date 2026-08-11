@@ -453,7 +453,7 @@ describe("MessageBubble — Ordilo Action Card", () => {
       <MessageBubble
         message={buildMessage({
           content: "Ich habe das für dich vorbereitet.",
-          action: taskAction,
+          actions: [taskAction],
         })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
@@ -475,7 +475,7 @@ describe("MessageBubble — Ordilo Action Card", () => {
     const onAdjust = vi.fn();
     render(
       <MessageBubble
-        message={buildMessage({ action: taskAction })}
+        message={buildMessage({ actions: [taskAction] })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
         onActionConfirm={onConfirm}
@@ -488,11 +488,72 @@ describe("MessageBubble — Ordilo Action Card", () => {
     fireEvent.click(screen.getByTestId("action-card-adjust"));
     fireEvent.click(screen.getByTestId("action-card-dismiss"));
 
-    expect(onConfirm).toHaveBeenCalledWith("msg-1");
+    expect(onConfirm).toHaveBeenCalledWith("msg-1", "action-1");
     expect(onAdjust).toHaveBeenCalledWith(
       expect.objectContaining({ id: "msg-1" }),
+      expect.objectContaining({ id: "action-1" }),
     );
-    expect(onDismiss).toHaveBeenCalledWith("msg-1");
+    expect(onDismiss).toHaveBeenCalledWith("msg-1", "action-1");
+  });
+
+  it("renders one card per proposed action when an answer carries several", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Ich habe zwei Aufgaben vorbereitet.",
+          actions: [
+            taskAction,
+            {
+              id: "action-2",
+              toolName: "add_task" as const,
+              args: { title: "Elternabend eintragen" },
+              state: "ready" as const,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByTestId("ordilo-action-card")).toHaveLength(2);
+    expect(screen.getByText("Anmeldung abschicken")).toBeDefined();
+    expect(screen.getByText("Elternabend eintragen")).toBeDefined();
+  });
+
+  it("shows every field an update_task proposal will write", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [
+            {
+              id: "action-3",
+              toolName: "update_task" as const,
+              args: {
+                task_id: "task-1",
+                task_title: "Steuererklärung",
+                title: "Steuererklärung abgeben",
+                due_date: "2026-09-01",
+                priority: "high",
+                assignee_name: "Emma",
+                status: "open",
+              },
+              state: "ready" as const,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    const card = screen.getByTestId("ordilo-action-card");
+    expect(card.textContent).toContain("Steuererklärung");
+    expect(card.textContent).toContain("Steuererklärung abgeben");
+    expect(card.textContent).toContain("01.09.2026");
+    expect(card.textContent).toContain("Hoch");
+    expect(card.textContent).toContain("Emma");
+    expect(card.textContent).toContain("Wieder offen");
   });
 });
 

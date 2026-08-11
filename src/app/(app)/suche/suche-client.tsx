@@ -531,19 +531,23 @@ export function SucheClient({
                         ].includes(key),
                     ),
                   );
-                  const action: ChatAction = {
-                    id: `${aiMsgId}-${toolName}`,
-                    toolName: toolName as ChatAction["toolName"],
-                    args: {
-                      ...(actionArgs as Record<string, unknown>),
-                      ...previewFields,
-                    },
-                    state: "ready",
-                  };
+                  // A single answer can propose several writes — append each
+                  // as its own card instead of overwriting the previous one.
+                  // The index keeps the id unique even for repeated tools.
                   setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === aiMsgId ? { ...m, action } : m,
-                    ),
+                    prev.map((m) => {
+                      if (m.id !== aiMsgId) return m;
+                      const action: ChatAction = {
+                        id: `${aiMsgId}-${toolName}-${(m.actions ?? []).length}`,
+                        toolName: toolName as ChatAction["toolName"],
+                        args: {
+                          ...(actionArgs as Record<string, unknown>),
+                          ...previewFields,
+                        },
+                        state: "ready",
+                      };
+                      return { ...m, actions: [...(m.actions ?? []), action] };
+                    }),
                   );
                 }
               } else if (data.type === "conversation") {
@@ -626,12 +630,18 @@ export function SucheClient({
   const updateAction = useCallback(
     (
       messageId: string,
+      actionId: string,
       update: (action: ChatAction) => ChatAction,
     ) => {
       setMessages((previous) =>
         previous.map((message) =>
-          message.id === messageId && message.action
-            ? { ...message, action: update(message.action) }
+          message.id === messageId
+            ? {
+                ...message,
+                actions: message.actions?.map((action) =>
+                  action.id === actionId ? update(action) : action,
+                ),
+              }
             : message,
         ),
       );
@@ -642,10 +652,11 @@ export function SucheClient({
   const runAction = useCallback(
     async (
       messageId: string,
+      actionId: string,
       action: ChatAction,
       mode: "confirm" | "undo",
     ) => {
-      updateAction(messageId, (current) => ({
+      updateAction(messageId, actionId, (current) => ({
         ...current,
         state: mode === "confirm" ? "confirming" : "undoing",
         error: undefined,
@@ -660,6 +671,9 @@ export function SucheClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             family_id: familyId,
+            // Stable idempotency key: a retried tap reuses it, so the
+            // server executes the write at most once per proposal.
+            action_id: mode === "undo" ? `${action.id}:undo` : action.id,
             tool_name: proposal.toolName,
             args: proposal.args,
           }),
@@ -673,7 +687,7 @@ export function SucheClient({
           );
         }
 
-        updateAction(messageId, (current) => {
+        updateAction(messageId, actionId, (current) => {
           if (mode === "undo") return { ...current, state: "undone" };
 
           const taskId =
@@ -693,7 +707,7 @@ export function SucheClient({
           };
         });
       } catch (error) {
-        updateAction(messageId, (current) => ({
+        updateAction(messageId, actionId, (current) => ({
           ...current,
           state: "error",
           error:
@@ -706,42 +720,55 @@ export function SucheClient({
     [familyId, updateAction],
   );
 
+  const findAction = useCallback(
+    (messageId: string, actionId: string) =>
+      messages
+        .find((message) => message.id === messageId)
+        ?.actions?.find((action) => action.id === actionId),
+    [messages],
+  );
+
   const handleActionConfirm = useCallback(
-    (messageId: string) => {
-      const action = messages.find((message) => message.id === messageId)?.action;
-      if (action) void runAction(messageId, action, "confirm");
+    (messageId: string, actionId: string) => {
+      const action = findAction(messageId, actionId);
+      if (action) void runAction(messageId, actionId, action, "confirm");
     },
-    [messages, runAction],
+    [findAction, runAction],
   );
 
   const handleActionUndo = useCallback(
-    (messageId: string) => {
-      const action = messages.find((message) => message.id === messageId)?.action;
-      if (action?.undo) void runAction(messageId, action, "undo");
+    (messageId: string, actionId: string) => {
+      const action = findAction(messageId, actionId);
+      if (action?.undo) void runAction(messageId, actionId, action, "undo");
     },
-    [messages, runAction],
+    [findAction, runAction],
   );
 
   const handleActionDismiss = useCallback(
-    (messageId: string) => {
-      updateAction(messageId, (action) => ({ ...action, state: "dismissed" }));
+    (messageId: string, actionId: string) => {
+      updateAction(messageId, actionId, (action) => ({
+        ...action,
+        state: "dismissed",
+      }));
     },
     [updateAction],
   );
 
-  const handleActionAdjust = useCallback((message: ChatMessage) => {
-    if (!message.action) return;
-    const title =
-      typeof message.action.args.title === "string"
-        ? message.action.args.title
-        : message.action.toolName === "mark_task_done" &&
-            typeof message.action.args.task_title === "string"
-          ? message.action.args.task_title
-          : "diesen Vorschlag";
-    setQuotedMessage({
-      text: `Vorschlag von Ordilo: ${title}`,
-    });
-  }, []);
+  const handleActionAdjust = useCallback(
+    (_message: ChatMessage, action: ChatAction) => {
+      const title =
+        typeof action.args.title === "string"
+          ? action.args.title
+          : action.toolName === "mark_task_done" &&
+              typeof action.args.task_title === "string"
+            ? action.args.task_title
+            : "diesen Vorschlag";
+      setQuotedMessage({
+        text: `Vorschlag von Ordilo: ${title}`,
+      });
+    },
+    [],
+  );
 
   // -------------------------------------------------------------------------
   // Quote a message — the excerpt shows above the composer until the next

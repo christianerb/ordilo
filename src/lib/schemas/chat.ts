@@ -183,6 +183,16 @@ export const chatActionConfirmationSchema = z.object({
     .trim()
     .min(1, "family_id ist erforderlich.")
     .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
+  /**
+   * Stable, client-generated idempotency key for the proposal. A retried
+   * confirm reuses it, so the server executes the write at most once even
+   * if the first response was lost on the way back.
+   */
+  action_id: z
+    .string()
+    .trim()
+    .min(1, "action_id ist erforderlich.")
+    .max(120, "action_id ist zu lang."),
   tool_name: z.enum(CHAT_ACTION_TOOL_NAMES),
   args: z.record(z.string(), z.unknown()),
 });

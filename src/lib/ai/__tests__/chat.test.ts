@@ -1133,3 +1133,63 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// streamAgenticAnswer — confirmation requests
+// ---------------------------------------------------------------------------
+
+describe("streamAgenticAnswer — confirmation requests", () => {
+  beforeEach(() => {
+    setApiKey();
+    mockCreate.mockReset();
+  });
+
+  it("emits one confirmation_request per proposed write in the same round", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "add_task",
+              argumentsChunk: JSON.stringify({ title: "Anmeldung abschicken" }),
+            },
+          },
+          {
+            toolCall: {
+              index: 1,
+              id: "call_2",
+              name: "add_task",
+              argumentsChunk: JSON.stringify({ title: "Elternabend eintragen" }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Ich habe beide Aufgaben vorbereitet." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Leg zwei Aufgaben an",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    const confirmations = lines.filter(
+      (line) => line.type === "confirmation_request",
+    );
+    expect(confirmations).toHaveLength(2);
+    expect(confirmations[0]).toMatchObject({
+      tool_name: "add_task",
+      needs_confirmation: true,
+      action_args: { title: "Anmeldung abschicken" },
+    });
+    expect(confirmations[1]).toMatchObject({
+      tool_name: "add_task",
+      needs_confirmation: true,
+      action_args: { title: "Elternabend eintragen" },
+    });
+  });
+});

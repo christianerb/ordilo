@@ -173,6 +173,31 @@ export type Database = {
         };
         Relationships: [];
       };
+      // chat_action_executions ---------------------------------------------
+      chat_action_executions: {
+        Row: {
+          id: string;
+          family_id: string;
+          action_id: string;
+          tool_name: string;
+          executed_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          action_id: string;
+          tool_name: string;
+          executed_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          action_id?: string;
+          tool_name?: string;
+          executed_at?: string;
+        };
+        Relationships: [];
+      };
       // family_members -----------------------------------------------------
       family_members: {
         Row: {

@@ -24,6 +24,12 @@ function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+const PRIORITY_LABELS: Record<string, string> = {
+  high: "Hoch",
+  medium: "Mittel",
+  low: "Niedrig",
+};
+
 function getActionContent(action: ChatAction): {
   icon: typeof ListPlus;
   eyebrow: string;
@@ -125,13 +131,53 @@ function getActionContent(action: ChatAction): {
           ? [{ label: asText(args.label) ?? "Angabe", value: asText(args.value)! }]
           : [],
       };
-    case "update_task":
+    case "update_task": {
+      // Trust rule: every field the confirmation endpoint will write must be
+      // visible before "Übernehmen" is enabled. Only fields actually present
+      // in the proposal change — absent fields stay untouched server-side.
+      const details: Detail[] = [];
+      const newTitle = asText(args.title);
+      if (newTitle) details.push({ label: "Neuer Titel", value: newTitle });
+      if (typeof args.description === "string") {
+        const description = args.description.trim();
+        details.push({
+          label: "Beschreibung",
+          value: description || "wird entfernt",
+        });
+      }
+      if (typeof args.due_date === "string") {
+        const dueDate = args.due_date.trim();
+        details.push({
+          label: "Frist",
+          value: dueDate
+            ? formatGermanDate(dueDate) || dueDate
+            : "wird entfernt",
+        });
+      }
+      if (typeof args.priority === "string") {
+        const priority = PRIORITY_LABELS[args.priority];
+        if (priority) details.push({ label: "Priorität", value: priority });
+      }
+      if (typeof args.assignee_name === "string") {
+        const assignee = args.assignee_name.trim();
+        details.push({
+          label: "Zuständig",
+          value: assignee || "wird entfernt",
+        });
+      }
+      if (args.status === "open" || args.status === "done") {
+        details.push({
+          label: "Status",
+          value: args.status === "done" ? "Erledigt" : "Wieder offen",
+        });
+      }
       return {
         icon: Pencil,
         eyebrow: "Aufgabe ändern",
-        title: asText(args.task_title) ?? "Aufgabe anpassen",
-        details: [],
+        title: asText(args.task_title) ?? newTitle ?? "Aufgabe anpassen",
+        details,
       };
+    }
   }
 }
 

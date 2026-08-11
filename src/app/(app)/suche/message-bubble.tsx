@@ -59,8 +59,8 @@ export interface ChatMessage {
   feedback?: "positive" | "negative" | null;
   /** An excerpt of an earlier message the user quoted before asking this one. */
   quotedText?: string;
-  /** A write proposed by Ordilo that needs an explicit family-member choice. */
-  action?: ChatAction;
+  /** Writes proposed by Ordilo that each need an explicit family-member choice. */
+  actions?: ChatAction[];
 }
 
 /**
@@ -129,10 +129,10 @@ export function MessageBubble({
   onQuote?: (message: ChatMessage) => void;
   /** Starts a suggested, source-aware follow-up question. */
   onFollowUp?: (question: string) => void;
-  onActionConfirm?: (messageId: string) => void;
-  onActionDismiss?: (messageId: string) => void;
-  onActionAdjust?: (message: ChatMessage) => void;
-  onActionUndo?: (messageId: string) => void;
+  onActionConfirm?: (messageId: string, actionId: string) => void;
+  onActionDismiss?: (messageId: string, actionId: string) => void;
+  onActionAdjust?: (message: ChatMessage, action: ChatAction) => void;
+  onActionUndo?: (messageId: string, actionId: string) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -218,17 +218,17 @@ export function MessageBubble({
 
       {hasAnswer && <AnswerFeedback message={message} onQuote={onQuote} />}
 
-      {message.action && (
-        <div className="ml-10 w-[calc(100%_-_2.5rem)] max-w-md">
+      {message.actions?.map((action) => (
+        <div key={action.id} className="ml-10 w-[calc(100%_-_2.5rem)] max-w-md">
           <OrdiloActionCard
-            action={message.action}
-            onConfirm={() => onActionConfirm?.(message.id)}
-            onDismiss={() => onActionDismiss?.(message.id)}
-            onAdjust={() => onActionAdjust?.(message)}
-            onUndo={() => onActionUndo?.(message.id)}
+            action={action}
+            onConfirm={() => onActionConfirm?.(message.id, action.id)}
+            onDismiss={() => onActionDismiss?.(message.id, action.id)}
+            onAdjust={() => onActionAdjust?.(message, action)}
+            onUndo={() => onActionUndo?.(message.id, action.id)}
           />
         </div>
-      )}
+      ))}
 
       {visibleSources.length > 0 && !isStreaming && (
         <div className="ml-10 w-[calc(100%_-_2.5rem)] space-y-1.5">

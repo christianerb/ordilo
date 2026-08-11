@@ -633,7 +633,10 @@ export async function streamAgenticAnswer(
             // document_id/collection_name, etc.) — the client currently
             // only relies on the model's text to ask for confirmation, so
             // this stays a loose record rather than a per-tool union.
-            let confirmationToSend: Record<string, unknown> | null = null;
+            // One entry per confirmation-seeking tool call — a round can
+            // propose several writes (e.g. two add_task calls) and each of
+            // them must reach the client as its own confirmation request.
+            const confirmationsToSend: Record<string, unknown>[] = [];
 
             // Results aligned with the toolCalls order — tool messages
             // must be fed back in the order the model emitted the calls,
@@ -730,7 +733,7 @@ export async function streamAgenticAnswer(
                 try {
                   const parsed = JSON.parse(resultContent);
                   if (parsed.needs_confirmation) {
-                    confirmationToSend = {
+                    confirmationsToSend.push({
                       tool_name: toolCall.function.name,
                       // The tool result intentionally contains only the
                       // friendly preview fields. The action card also needs
@@ -738,7 +741,7 @@ export async function streamAgenticAnswer(
                       // exactly what it showed after a person taps confirm.
                       action_args: toolArguments.get(i) ?? {},
                       ...parsed,
-                    };
+                    });
                   }
                 } catch {
                   // Ignore parse errors — the tool result is still fed
@@ -756,17 +759,22 @@ export async function streamAgenticAnswer(
             if (cardToSend) {
               send({ type: "card", card: cardToSend });
               send({ type: "sources", sources: toolContext.sources });
+              // A round can end in an answer card AND still carry pending
+              // write proposals — emit those confirmations before closing.
+              for (const confirmation of confirmationsToSend) {
+                send({ type: "confirmation_request", ...confirmation });
+              }
               send({ type: "done" });
               controller.close();
               return;
             }
 
-            // Emit a confirmation request event if a destructive tool
+            // Emit one confirmation request event per destructive tool that
             // requires user confirmation. The model will also ask the
-            // user in its text response, but this event lets the client
-            // render a confirmation UI (buttons) alongside the text.
-            if (confirmationToSend) {
-              send({ type: "confirmation_request", ...confirmationToSend });
+            // user in its text response, but these events let the client
+            // render a confirmation UI (action cards) alongside the text.
+            for (const confirmation of confirmationsToSend) {
+              send({ type: "confirmation_request", ...confirmation });
             }
 
             continue;

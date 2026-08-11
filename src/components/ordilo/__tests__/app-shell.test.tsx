@@ -117,6 +117,20 @@ import { createCollection } from "@/app/(app)/sammlungen/actions";
 
 // --- Helpers ---------------------------------------------------------------
 
+/**
+ * Reset persisted UI preferences (e.g. the sidebar collapse flag) between
+ * tests. Storage may be partially unavailable in some environments, so this
+ * is guarded — where localStorage works (CI), the collapse click in one test
+ * must never leak into the next test's render.
+ */
+function clearStoredPreferences() {
+  try {
+    window.localStorage?.clear();
+  } catch {
+    // Storage unavailable — nothing to reset.
+  }
+}
+
 /** Render the shell with a given pathname and simple children. */
 function renderShell(pathname: string) {
   mockUsePathname.mockReturnValue(pathname);
@@ -178,6 +192,9 @@ describe("AppShell", () => {
     mockSearchParamsGet.mockReturnValue(null);
     mockPush.mockClear();
     mockSupabaseData();
+    // The sidebar collapse preference persists in localStorage — reset it
+    // so one test's click never leaks into the next test's render.
+    clearStoredPreferences();
     // Pretend prefers-reduced-motion is active so the CameraStep's
     // auto-capture sampler doesn't call canvas.getContext (not
     // implemented in jsdom) when the scan wizard opens.
@@ -539,6 +556,7 @@ describe("AppShell sidebar collections", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePathname.mockReturnValue("/home");
+    clearStoredPreferences();
     mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
   });
 
@@ -661,6 +679,7 @@ describe("AppShell sidebar profile footer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePathname.mockReturnValue("/home");
+    clearStoredPreferences();
   });
 
   it("falls back to a plain logout button when no profile is given", () => {
@@ -738,6 +757,9 @@ describe("AppShell sidebar personality touches", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePathname.mockReturnValue("/home");
+    // Reset the persisted sidebar collapse preference — a collapse click in
+    // one test must not start the next test with a collapsed sidebar.
+    clearStoredPreferences();
   });
 
   afterEach(() => {
@@ -869,6 +891,7 @@ describe("AppShell server-provided data", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePathname.mockReturnValue("/home");
+    clearStoredPreferences();
     mockSupabaseData();
   });
 

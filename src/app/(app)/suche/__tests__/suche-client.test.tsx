@@ -363,7 +363,10 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
         "/api/chat/actions",
         expect.objectContaining({
           method: "POST",
-          body: expect.stringContaining('"tool_name":"add_task"'),
+          // The stable action_id lets the server dedupe retried confirms.
+          body: expect.stringMatching(
+            /"tool_name":"add_task".*"action_id":"[^"]+"|"action_id":"[^"]+".*"tool_name":"add_task"/,
+          ),
         }),
       );
     });
