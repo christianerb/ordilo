@@ -128,6 +128,70 @@ export interface ChatSuccessResponse {
 export type ChatErrorResponse = ApiErrorResponse;
 
 // ---------------------------------------------------------------------------
+// Chat action proposals
+// ---------------------------------------------------------------------------
+
+/**
+ * Mutating tools that may be presented as an explicit, user-confirmed action
+ * in the chat. The model proposes one first; the client never runs it until
+ * the family member deliberately chooses "Übernehmen".
+ */
+export const CHAT_ACTION_TOOL_NAMES = [
+  "add_calendar_event",
+  "add_task",
+  "update_task",
+  "mark_task_done",
+  "add_family_member",
+  "create_collection",
+  "create_note",
+  "move_document_to_collection",
+  "add_document_tags",
+  "save_document_fact",
+] as const;
+
+export type ChatActionToolName = (typeof CHAT_ACTION_TOOL_NAMES)[number];
+
+export type ChatActionState =
+  | "ready"
+  | "confirming"
+  | "confirmed"
+  | "undoing"
+  | "undone"
+  | "dismissed"
+  | "error";
+
+/**
+ * A proposed write from the agent, transported separately from prose so the
+ * UI can make its scope and confirmation state unmistakable.
+ */
+export interface ChatAction {
+  id: string;
+  toolName: ChatActionToolName;
+  args: Record<string, unknown>;
+  state: ChatActionState;
+  error?: string;
+  /** Only supplied for actions that have a safe, supported undo path. */
+  undo?: {
+    toolName: ChatActionToolName;
+    args: Record<string, unknown>;
+  };
+}
+
+export const chatActionConfirmationSchema = z.object({
+  family_id: z
+    .string()
+    .trim()
+    .min(1, "family_id ist erforderlich.")
+    .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
+  tool_name: z.enum(CHAT_ACTION_TOOL_NAMES),
+  args: z.record(z.string(), z.unknown()),
+});
+
+export type ChatActionConfirmationInput = z.infer<
+  typeof chatActionConfirmationSchema
+>;
+
+// ---------------------------------------------------------------------------
 // Chat feedback schema (POST /api/chat/feedback)
 // ---------------------------------------------------------------------------
 

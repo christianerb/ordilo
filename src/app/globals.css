@@ -57,13 +57,121 @@
   @keyframes page-fade-in {
     from {
       opacity: 0;
-      transform: translateY(4px);
-      filter: blur(4px);
+      transform: translateY(10px);
+      filter: blur(6px);
+      clip-path: inset(0 0 2% 0 round 20px);
     }
     to {
       opacity: 1;
       transform: translateY(0);
       filter: blur(0);
+      clip-path: inset(0 0 0 0 round 20px);
+    }
+  }
+
+  /* The wordmark opens like a small family-journal flourish: the mascot
+     settles first, then the name arrives. It is for a genuine brand moment,
+     not a repeated page-loading effect. */
+  @keyframes ordilo-wordmark-label-in {
+    from {
+      opacity: 0;
+      transform: translateX(-5px);
+      filter: blur(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes ordilo-wordmark-mascot-in {
+    from {
+      opacity: 0;
+      transform: rotate(-10deg) scale(0.76);
+    }
+    58% {
+      opacity: 1;
+      transform: rotate(3deg) scale(1.06);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0) scale(1);
+    }
+  }
+
+  @keyframes ordilo-wordmark-halo-in {
+    from {
+      opacity: 0;
+      transform: translateY(-50%) scale(0.55);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(-50%) scale(1);
+    }
+  }
+
+  /* Three tiny "paper stars" keep the wordmark from feeling like a static
+     corporate logo. They appear once with the greeting, then only return
+     when somebody intentionally hovers or focuses the mark. */
+  @keyframes ordilo-wordmark-sparkle-in {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 4px, 0) scale(0.25) rotate(21deg);
+    }
+    62% {
+      opacity: 1;
+      transform: translate3d(0, -1px, 0) scale(1.12) rotate(53deg);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, -4px, 0) scale(0.55) rotate(45deg);
+    }
+  }
+
+  @keyframes ordilo-wordmark-greet {
+    0% { transform: rotate(0) translateY(0); }
+    28% { transform: rotate(-7deg) translateY(-2px); }
+    56% { transform: rotate(4deg) translateY(-1px); }
+    100% { transform: rotate(0) translateY(0); }
+  }
+
+  @keyframes ordilo-wordmark-name-delight {
+    0%, 100% { transform: translateX(0) rotate(0); }
+    42% { transform: translateX(2px) rotate(-1.2deg); }
+    70% { transform: translateX(-1px) rotate(0.7deg); }
+  }
+
+  /* A status change has a directional arrival. This keeps "Ordilo works on
+     it" legible when the AI changes from one real tool call to the next. */
+  @keyframes status-line-in {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+      filter: blur(2px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+  }
+
+  /* Scan steps feel like turning a page in the family journal. The movement
+     keeps the captured document context continuous while its meaning changes
+     from camera, to processing, to review. */
+  @keyframes scan-step-in {
+    from {
+      opacity: 0;
+      transform: translateX(16px);
+      filter: blur(5px);
+      clip-path: inset(0 0 0 7% round 20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+      filter: blur(0);
+      clip-path: inset(0 0 0 0 round 20px);
     }
   }
 
@@ -269,6 +377,78 @@
       transform: scale(1);
     }
   }
+
+  /* Onboarding advances through a small, intentional sequence. The next
+     prompt arrives from the right, as if turning a page in the family
+     journal, rather than cutting to a new form. */
+  @keyframes onboarding-step-in {
+    from {
+      opacity: 0;
+      transform: translateX(10px);
+      clip-path: inset(0 0 8% 0 round 20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+      clip-path: inset(0 0 0 0 round 20px);
+    }
+  }
+
+  /* Processing outcomes are background work made visible. A brief settle
+     makes the new semantic state readable without calling attention to it. */
+  @keyframes status-settle {
+    from {
+      opacity: 0;
+      transform: scale(0.92);
+    }
+    65% {
+      opacity: 1;
+      transform: scale(1.04);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* The vertical pipeline should visibly connect a finished step to the
+     next one, rather than changing color as a disconnected update. */
+  @keyframes pipeline-connector-fill {
+    from { transform: scaleY(0); }
+    to { transform: scaleY(1); }
+  }
+
+  /* A phase change in the upload card swaps meaning, not just text. */
+  @keyframes upload-phase-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* A successful planner drop gets one quiet confirmation in its
+     destination column, so a task never appears to simply vanish. */
+  @keyframes board-settle {
+    0% { background-color: color-mix(in srgb, var(--petrol) 12%, transparent); }
+    100% { background-color: transparent; }
+  }
+
+  /* Opening the focused composer reveals a dedicated thinking space, not a
+     second page. The crop grows from the lower input users just touched. */
+  @keyframes composer-overlay-in {
+    from {
+      opacity: 0;
+      clip-path: inset(84% 4% 0 round 20px);
+    }
+    to {
+      opacity: 1;
+      clip-path: inset(0 0 0 0 round 0);
+    }
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -276,6 +456,13 @@
    --------------------------------------------------------------------------- */
 
 :root {
+  /* Motion vocabulary — shared by every interaction so timing settles with
+     the same calm deceleration. These must live on an element selector:
+     declarations directly in @layer utilities are invalid CSS. */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+
   /* Surfaces — warm paper undertone (R ≥ G > B), not the cool blue-gray
      lean of earlier revisions. Lightness stays high across the ramp for an
      airy, uncluttered feel; only the hue shifts warm. */
@@ -437,11 +624,6 @@
    --------------------------------------------------------------------------- */
 
 @layer utilities {
-  /* Easing curves — natural deceleration, no bounce/elastic */
-  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
-  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-
   .shadow-card {
     box-shadow: var(--shadow-card);
   }
@@ -496,7 +678,7 @@
   }
 
   .animate-page-fade-in {
-    animation: page-fade-in 0.3s var(--ease-out-quart);
+    animation: page-fade-in 0.46s var(--ease-out-expo);
   }
   .animate-message-in {
     animation: message-in 0.25s var(--ease-out-quart);
@@ -607,6 +789,117 @@
   .animate-avatar-pop {
     animation: avatar-pop 0.3s var(--ease-out-quart) backwards;
   }
+
+  .animate-onboarding-step {
+    animation: onboarding-step-in 0.38s var(--ease-out-expo) both;
+  }
+
+  .animate-status-settle {
+    animation: status-settle 0.24s var(--ease-out-quart);
+  }
+
+  .animate-pipeline-connector {
+    animation: pipeline-connector-fill 0.35s var(--ease-out-quart) both;
+    transform-origin: top;
+  }
+
+  .animate-upload-phase {
+    animation: upload-phase-in 0.2s var(--ease-out-quart) both;
+  }
+
+  .animate-board-settle {
+    animation: board-settle 0.45s var(--ease-out-quart);
+  }
+
+  .animate-composer-overlay {
+    animation: composer-overlay-in 0.38s var(--ease-out-expo) both;
+  }
+
+  .animate-status-line {
+    animation: status-line-in 0.26s var(--ease-out-expo) both;
+  }
+
+  .animate-scan-step {
+    animation: scan-step-in 0.48s var(--ease-out-expo) both;
+  }
+
+  .ordilo-wordmark {
+    position: relative;
+    isolation: isolate;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .ordilo-wordmark::before {
+    position: absolute;
+    z-index: -1;
+    left: -0.35rem;
+    top: 50%;
+    width: 2.35rem;
+    height: 2.35rem;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--wash-sage) 82%, transparent);
+    content: "";
+    animation: ordilo-wordmark-halo-in 0.5s var(--ease-out-expo) both;
+    transition: transform 0.24s var(--ease-out-quart),
+      background-color 0.24s var(--ease-out-quart);
+    transform: translateY(-50%);
+  }
+
+  .ordilo-wordmark__mascot {
+    display: inline-flex;
+    animation: ordilo-wordmark-mascot-in 0.5s var(--ease-out-expo) both;
+    transition: transform 0.24s var(--ease-out-quart);
+    transform-origin: 50% 62%;
+  }
+
+  .ordilo-wordmark__label {
+    display: inline-block;
+    animation: ordilo-wordmark-label-in 0.36s var(--ease-out-expo) 70ms both;
+  }
+
+  .ordilo-wordmark__sparkles {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+
+  .ordilo-wordmark__sparkle {
+    position: absolute;
+    display: block;
+    width: 0.34rem;
+    height: 0.34rem;
+    border-radius: 1px;
+    background: var(--apricot);
+    opacity: 0;
+    animation: ordilo-wordmark-sparkle-in 0.46s var(--ease-out-expo) both;
+  }
+
+  .ordilo-wordmark__sparkle--one {
+    left: 0.72rem;
+    top: -0.18rem;
+    animation-delay: 100ms;
+  }
+
+  .ordilo-wordmark__sparkle--two {
+    left: 1.66rem;
+    top: 0.2rem;
+    width: 0.23rem;
+    height: 0.23rem;
+    background: var(--petrol);
+    animation-delay: 170ms;
+  }
+
+  .ordilo-wordmark__sparkle--three {
+    left: 0.08rem;
+    top: 1.15rem;
+    width: 0.2rem;
+    height: 0.2rem;
+    background: var(--apricot-light);
+    animation-delay: 230ms;
+  }
 }
 
 /* ---------------------------------------------------------------------------
@@ -615,6 +908,31 @@
 
 /* Fine pointer + hover support (mouse, trackpad): full hover effects */
 @media (hover: hover) and (pointer: fine) {
+  .ordilo-wordmark:hover::before {
+    background-color: color-mix(in srgb, var(--wash-sage) 96%, transparent);
+    transform: translateY(-50%) scale(1.16);
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__mascot {
+    animation: ordilo-wordmark-greet 0.58s var(--ease-out-expo);
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__label {
+    animation: ordilo-wordmark-name-delight 0.48s var(--ease-out-quart);
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__sparkle {
+    animation: ordilo-wordmark-sparkle-in 0.46s var(--ease-out-expo) both;
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__sparkle--two {
+    animation-delay: 70ms;
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__sparkle--three {
+    animation-delay: 130ms;
+  }
+
   .card-lift:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-card-hover);
@@ -639,6 +957,15 @@
    --------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0ms !important;
+  }
+
   .animate-page-fade-in,
   .animate-message-in,
   .animate-card-in,
@@ -663,7 +990,19 @@
   .ordilo-mascot-ear-wiggle,
   .animate-banner-glow,
   .animate-avatar-pop,
-  .animate-citation-flash {
+  .animate-citation-flash,
+  .animate-onboarding-step,
+  .animate-status-settle,
+  .animate-pipeline-connector,
+  .animate-upload-phase,
+  .animate-board-settle,
+  .animate-composer-overlay,
+  .animate-status-line,
+  .animate-scan-step,
+  .ordilo-wordmark::before,
+  .ordilo-wordmark__mascot,
+  .ordilo-wordmark__label,
+  .ordilo-wordmark__sparkle {
     animation: none;
   }
 

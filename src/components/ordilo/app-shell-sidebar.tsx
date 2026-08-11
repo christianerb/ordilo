@@ -16,7 +16,8 @@ import { useState } from "react";
 import { logout } from "@/app/(app)/actions";
 import type { CollectionFormValues } from "@/components/ordilo/collection-form";
 import { useCollections } from "@/lib/collections/collections-context";
-import { OrdiloMascot, type OrdiloMascotMood } from "@/components/ordilo/mascot";
+import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,8 +40,10 @@ import {
   getProfileDisplayName,
   isSubItemActive,
   isTabActive,
+  getTimeOfDay,
   NAV_TABS,
   type SidebarProfile,
+  type TimeOfDay,
   TIME_REFRESH_INTERVAL_MS,
 } from "./app-shell-shared";
 
@@ -296,6 +299,90 @@ function SidebarFooter({
   );
 }
 
+const SCENERY_TONES: Record<TimeOfDay, { sky: string; light: string }> = {
+  morning: { sky: "var(--wash-apricot)", light: "var(--apricot-light)" },
+  day: { sky: "var(--wash-blue)", light: "var(--petrol)" },
+  evening: { sky: "var(--wash-apricot)", light: "var(--apricot)" },
+  night: { sky: "var(--petrol-darker)", light: "var(--warm-white)" },
+};
+
+/**
+ * A small time-aware family-journal scene. It sits near the profile rather
+ * than the working area, so its warmth never competes with navigation.
+ */
+function SidebarScenery({
+  timeOfDay,
+  collapsed,
+}: {
+  timeOfDay: TimeOfDay;
+  collapsed: boolean;
+}) {
+  if (collapsed) return null;
+  const tone = SCENERY_TONES[timeOfDay];
+  const isNight = timeOfDay === "night";
+
+  return (
+    <div
+      data-testid="sidebar-scenery"
+      className="px-4 pb-2 pt-3 text-[var(--mist-dark)]"
+      aria-hidden="true"
+    >
+      <svg
+        viewBox="0 0 192 64"
+        fill="none"
+        className="h-auto w-full overflow-visible"
+      >
+        <path
+          d="M0 48 C21 31 39 36 57 48 C74 36 91 38 108 48 C129 27 153 31 192 47 V64 H0 Z"
+          fill={tone.sky}
+          className="transition-colors duration-500"
+          opacity={isNight ? 0.45 : 0.7}
+        />
+        <path
+          d="M0 51 C25 42 44 44 64 53 C92 43 120 45 143 53 C161 45 176 46 192 51"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          opacity="0.42"
+        />
+        <path
+          d="M83 50 V35 L94 26 L105 35 V50 M89 50 V40 H99 V50 M88 35 H100"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.72"
+        />
+        <path
+          d="M36 50 V34 M25 39 L36 25 L47 39 M43 50 V40 M52 50 V38 M45 42 L52 31 L59 42"
+          stroke="currentColor"
+          strokeWidth="1.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.62"
+        />
+        {isNight ? (
+          <path
+            d="M155 11 A9 9 0 1 0 164 21 A7 7 0 1 1 155 11 Z"
+            fill={tone.light}
+            className="transition-colors duration-500"
+            opacity="0.9"
+          />
+        ) : (
+          <circle
+            cx="157"
+            cy="17"
+            r="7"
+            fill={tone.light}
+            className="transition-colors duration-500"
+            opacity="0.85"
+          />
+        )}
+      </svg>
+    </div>
+  );
+}
+
 export function SidebarNav({
   pathname,
   profile,
@@ -308,22 +395,17 @@ export function SidebarNav({
   onToggleCollapse: () => void;
 }) {
   const [greeting, setGreeting] = useState<string | null>(null);
-  const [mascotMood, setMascotMood] = useState<OrdiloMascotMood>("idle");
+  const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("day");
 
   useMountEffect(() => {
     const refresh = () => {
       const now = new Date();
       setGreeting(getGreeting(now));
+      setTimeOfDay(getTimeOfDay(now));
     };
     refresh();
     const interval = window.setInterval(refresh, TIME_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(interval);
-  });
-
-  useMountEffect(() => {
-    setMascotMood("greeting");
-    const timer = window.setTimeout(() => setMascotMood("idle"), 1300);
-    return () => window.clearTimeout(timer);
   });
 
   const displayName = profile ? getProfileDisplayName(profile) : null;
@@ -348,23 +430,16 @@ export function SidebarNav({
       >
         <Link
           href="/home"
-          onMouseEnter={() => setMascotMood("greeting")}
-          onMouseLeave={() => setMascotMood("idle")}
           className={cn(
-            "flex items-center rounded-ordilo-sm transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            collapsed ? "justify-center" : "gap-2",
+            "rounded-ordilo-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            collapsed && "flex justify-center",
           )}
           aria-label="Ordilo Startseite"
         >
-          <OrdiloMascot
-            size={collapsed ? 26 : 28}
-            mood={mascotMood}
-            style={{ color: "var(--petrol)" }}
-          />
-          {!collapsed && (
-            <span className="text-sm font-semibold text-foreground">
-              Ordilo
-            </span>
+          {collapsed ? (
+            <OrdiloMascot size={26} mood="helping" style={{ color: "var(--petrol)" }} />
+          ) : (
+            <OrdiloWordmark mascotSize={28} labelClassName="text-sm font-semibold text-foreground" />
           )}
         </Link>
         <button
@@ -496,6 +571,7 @@ export function SidebarNav({
         />
       </div>
 
+      <SidebarScenery timeOfDay={timeOfDay} collapsed={collapsed} />
       <SidebarFooter profile={profile} collapsed={collapsed} />
     </aside>
   );

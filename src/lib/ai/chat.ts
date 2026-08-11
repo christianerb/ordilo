@@ -639,6 +639,7 @@ export async function streamAgenticAnswer(
             // must be fed back in the order the model emitted the calls,
             // regardless of which parallel execution finished first.
             const results: (string | null)[] = toolCalls.map(() => null);
+            const toolArguments = new Map<number, Record<string, unknown>>();
             const executable: {
               index: number;
               name: string;
@@ -654,6 +655,7 @@ export async function streamAgenticAnswer(
               } catch {
                 args = {};
               }
+              toolArguments.set(i, args);
 
               if (toolCall.function.name === "present_answer_card") {
                 const card = parseAnswerCardArgs(args);
@@ -730,6 +732,11 @@ export async function streamAgenticAnswer(
                   if (parsed.needs_confirmation) {
                     confirmationToSend = {
                       tool_name: toolCall.function.name,
+                      // The tool result intentionally contains only the
+                      // friendly preview fields. The action card also needs
+                      // the original, already validated proposal to execute
+                      // exactly what it showed after a person taps confirm.
+                      action_args: toolArguments.get(i) ?? {},
                       ...parsed,
                     };
                   }

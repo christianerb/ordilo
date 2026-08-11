@@ -81,6 +81,7 @@ export function SwipeableTaskCard({
   /** 0 = not armed, 1/-1 = armed past the threshold in that direction —
    * used to fire the "armed" tick exactly once per crossing. */
   const armed = useRef<0 | 1 | -1>(0);
+  const reducedMotion = useRef(false);
   const [offset, setOffset] = useState(0);
   const [phase, setPhase] = useState<"live" | "snap" | "slide-off">("snap");
   const [isDragging, setIsDragging] = useState(false);
@@ -100,6 +101,20 @@ export function SwipeableTaskCard({
   const scrollVelocity = useRef(0);
   const lastTouchPos = useRef({ x: 0, y: 0 });
   const scrollRaf = useRef<number | null>(null);
+
+  // The card's slide-off is helpful confirmation under normal motion, but
+  // people who reduce motion should get the committed state immediately.
+  // Keep this in a ref so gesture callbacks always read the current setting.
+  useMountEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => {
+      reducedMotion.current = media.matches;
+    };
+    updatePreference();
+    media.addEventListener?.("change", updatePreference);
+    return () => media.removeEventListener?.("change", updatePreference);
+  });
 
   // Latest callback refs so the rAF scroll loop never goes stale.
   const onDragOverColumnRef = useRef(onDragOverColumn);
@@ -265,11 +280,19 @@ export function SwipeableTaskCard({
 
     if (offset > SWIPE_THRESHOLD) {
       vibrate(14);
+      if (reducedMotion.current) {
+        onToggleDone("done");
+        return;
+      }
       setPhase("slide-off");
       setOffset(SLIDE_OFF_DISTANCE);
       window.setTimeout(() => onToggleDone("done"), SLIDE_OFF_DURATION);
     } else if (offset < -SWIPE_THRESHOLD) {
       vibrate(14);
+      if (reducedMotion.current) {
+        onDismiss();
+        return;
+      }
       setPhase("slide-off");
       setOffset(-SLIDE_OFF_DISTANCE);
       window.setTimeout(() => onDismiss(), SLIDE_OFF_DURATION);
@@ -309,7 +332,7 @@ export function SwipeableTaskCard({
 
   const hintOpacity = Math.min(1, Math.abs(offset) / SWIPE_THRESHOLD);
   const transition =
-    phase === "live"
+    reducedMotion.current || phase === "live"
       ? "none"
       : `transform ${phase === "slide-off" ? SLIDE_OFF_DURATION : 300}ms var(--ease-out-quart)`;
 

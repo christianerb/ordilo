@@ -95,7 +95,7 @@ export function TodayHero({
         <div className="mt-3">
           <Link
             href={insight.href}
-            className="inline-flex h-11 items-center rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex h-11 items-center rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors press-scale hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
             Ansehen
           </Link>
@@ -143,7 +143,7 @@ export function TodayHero({
           type="button"
           onClick={() => onMarkDone(task.id)}
           data-testid="today-hero-done"
-          className="inline-flex h-11 items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex h-11 items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors press-scale hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <Check className="size-4" aria-hidden="true" />
           Erledigt

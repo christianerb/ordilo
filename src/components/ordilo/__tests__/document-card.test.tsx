@@ -103,6 +103,15 @@ describe("DocumentCard", () => {
     expect(screen.getByTestId("status-badge-failed")).toBeDefined();
   });
 
+  it("settles the badge when a document status changes", () => {
+    const { rerender } = render(<DocumentCard status="ocr_processing" />);
+    rerender(<DocumentCard status="analyzed" />);
+
+    expect(screen.getByTestId("status-badge-analyzed")).toHaveClass(
+      "animate-status-settle",
+    );
+  });
+
   it("sets data-status attribute on the card root", () => {
     const { container } = render(<DocumentCard status="uploaded" />);
     const card = container.querySelector("[data-testid='document-card']");

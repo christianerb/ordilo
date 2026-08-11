@@ -106,6 +106,42 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
     expect(await screen.findByTestId("review-summary")).toBeDefined();
   });
 
+  it("sends a medium-confidence result through the compact confirmation path", async () => {
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    expect(await screen.findByTestId("review-summary")).toBeDefined();
+    expect(screen.queryByTestId("review-summary-review-focus")).toBeNull();
+    expect(screen.getByTestId("review-summary-confirm-button")).toHaveTextContent(
+      "Passt so",
+    );
+  });
+
+  it("asks for one concrete check before opening full review on a low-confidence result", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue({
+      ...uncertainAnalysis,
+      tasks: [
+        {
+          title: "Anmeldung abschicken",
+          due_date: "2026-08-15",
+          priority: "high",
+          confidence: 0.45,
+        },
+      ],
+    });
+
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+
+    expect(await screen.findByTestId("review-summary-review-focus")).toHaveTextContent(
+      "Soll diese Aufgabe wirklich angelegt werden",
+    );
+    expect(screen.getByTestId("review-summary-confirm-button")).toHaveTextContent(
+      "Jetzt prüfen",
+    );
+
+    fireEvent.click(screen.getByTestId("review-summary-confirm-button"));
+    expect(await screen.findByTestId("review-card")).toBeDefined();
+  });
+
   it("switches to the full Review Card when 'Bearbeiten' is clicked", async () => {
     render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
     fireEvent.click(await screen.findByTestId("review-summary-edit-button"));

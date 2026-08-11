@@ -65,7 +65,7 @@ export function ComposerOverlay({
       // page to keep the focused input visible, shoving the close/history
       // buttons above the top edge. dvh + interactiveWidget:resizes-content
       // (root layout viewport) together keep this actually full-height.
-      className="fixed inset-x-0 top-0 z-40 flex h-dvh flex-col lg:hidden"
+      className="fixed inset-x-0 top-0 z-40 flex h-dvh flex-col animate-composer-overlay lg:hidden"
     >
       {/* Backdrop — a self-contained soft-glow scene (not just a blur of
           whatever happens to be behind, which is often too plain to read

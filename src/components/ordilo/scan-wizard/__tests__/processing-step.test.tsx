@@ -61,6 +61,16 @@ describe("ScanProcessingStep", () => {
       "data-state",
       "active",
     );
+    expect(
+      screen
+        .getByTestId("processing-step-upload")
+        .querySelector(".animate-check-pop"),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByTestId("processing-step-upload")
+        .querySelector(".animate-pipeline-connector"),
+    ).not.toBeNull();
   });
 
   it("marks upload and OCR done and analysis active for status 'ocr_done'", () => {

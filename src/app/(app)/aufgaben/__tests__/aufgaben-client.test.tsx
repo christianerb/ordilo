@@ -174,6 +174,7 @@ describe("AufgabenClient — board drag-and-drop", () => {
       status: "open",
       due_date: TODAY_STR,
     });
+    expect(column).toHaveClass("animate-board-settle");
   });
 
   it("shows a success toast with an undo action that reverts the drop", async () => {
@@ -255,5 +256,30 @@ describe("AufgabenClient — delete confirmation", () => {
     const dialog = await screen.findByTestId("task-delete-confirm-dialog");
     expect(dialog.className).toContain("max-w-sm");
     expect(screen.queryByTestId("task-delete-confirm-sheet")).toBeNull();
+  });
+
+  it("offers an undo action after dismissing a task", async () => {
+    renderBoard();
+
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    fireEvent.click(await screen.findByTestId("card-action-delete"));
+    fireEvent.click(screen.getByTestId("confirm-delete-task-button"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [message, options] = vi.mocked(toast.success).mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    expect(message).toBe("Verworfen");
+    expect(options.action.label).toBe("Rückgängig");
+
+    await act(async () => {
+      options.action.onClick();
+    });
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
+    expect(mockUpdate.mock.calls[1][0]).toEqual({
+      status: "open",
+      due_date: null,
+    });
   });
 });

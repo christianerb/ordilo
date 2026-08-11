@@ -93,7 +93,7 @@ export function ScanWizard({
           of hard-cutting between steps. The step components themselves
           already mount/unmount on this same swap; the key only adds a
           fresh animated wrapper around whichever one is active. */}
-      <div key={step} className="size-full animate-card-in">
+      <div key={step} className="size-full animate-scan-step">
         {step === "camera" && (
           <CameraStep
             onCapture={onCapture}

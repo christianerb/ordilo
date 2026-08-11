@@ -86,6 +86,7 @@ describe("SwipeableTaskCard", () => {
   afterEach(() => {
     document.elementFromPoint = originalElementFromPoint;
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   describe("touch drag-and-drop (long-press)", () => {
@@ -223,6 +224,25 @@ describe("SwipeableTaskCard", () => {
 
       expect(props.onToggleDone).toHaveBeenCalledWith("done");
       expect(props.onTaskDrop).not.toHaveBeenCalled();
+    });
+
+    it("commits a swipe immediately when reduced motion is preferred", () => {
+      vi.stubGlobal(
+        "matchMedia",
+        vi.fn().mockReturnValue({
+          matches: true,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }),
+      );
+      const props = renderBoard();
+      const card = screen.getByTestId("task-card");
+
+      touchStart(card);
+      touchMove(card, 220, 100);
+      fireEvent.touchEnd(card);
+
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
     });
   });
 });

@@ -11,7 +11,12 @@ import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown, RefreshCw, Reply, X
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
-import type { ChatSource, AnswerCard as AnswerCardData } from "@/lib/schemas/chat";
+import {
+  CHAT_ACTION_TOOL_NAMES,
+  type ChatAction,
+  type ChatSource,
+  type AnswerCard as AnswerCardData,
+} from "@/lib/schemas/chat";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
@@ -503,12 +508,44 @@ export function SucheClient({
                   ),
                 );
               } else if (data.type === "confirmation_request") {
-                // A destructive tool (mark_task_done) needs user
-                // confirmation. The model will also ask in its text, but
-                // this event lets the client render a confirmation UI.
-                // For now, we rely on the model's text response to ask
-                // for confirmation. The event is available for future
-                // UI enhancement (e.g. inline confirm buttons).
+                const toolName = data.tool_name;
+                const actionArgs = data.action_args;
+                if (
+                  typeof toolName === "string" &&
+                  CHAT_ACTION_TOOL_NAMES.includes(
+                    toolName as (typeof CHAT_ACTION_TOOL_NAMES)[number],
+                  ) &&
+                  actionArgs &&
+                  typeof actionArgs === "object" &&
+                  !Array.isArray(actionArgs)
+                ) {
+                  const previewFields = Object.fromEntries(
+                    Object.entries(data).filter(
+                      ([key]) =>
+                        ![
+                          "type",
+                          "tool_name",
+                          "action_args",
+                          "needs_confirmation",
+                          "message",
+                        ].includes(key),
+                    ),
+                  );
+                  const action: ChatAction = {
+                    id: `${aiMsgId}-${toolName}`,
+                    toolName: toolName as ChatAction["toolName"],
+                    args: {
+                      ...(actionArgs as Record<string, unknown>),
+                      ...previewFields,
+                    },
+                    state: "ready",
+                  };
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      m.id === aiMsgId ? { ...m, action } : m,
+                    ),
+                  );
+                }
               } else if (data.type === "conversation") {
                 // Conversation ID from the server — update URL and state
                 const newId = data.conversation_id as string;
@@ -585,6 +622,126 @@ export function SucheClient({
     },
     [openDocument],
   );
+
+  const updateAction = useCallback(
+    (
+      messageId: string,
+      update: (action: ChatAction) => ChatAction,
+    ) => {
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === messageId && message.action
+            ? { ...message, action: update(message.action) }
+            : message,
+        ),
+      );
+    },
+    [],
+  );
+
+  const runAction = useCallback(
+    async (
+      messageId: string,
+      action: ChatAction,
+      mode: "confirm" | "undo",
+    ) => {
+      updateAction(messageId, (current) => ({
+        ...current,
+        state: mode === "confirm" ? "confirming" : "undoing",
+        error: undefined,
+      }));
+
+      const proposal = mode === "undo" ? action.undo : action;
+      if (!proposal) return;
+
+      try {
+        const response = await fetch("/api/chat/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            family_id: familyId,
+            tool_name: proposal.toolName,
+            args: proposal.args,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof body.error === "string"
+              ? body.error
+              : "Das hat nicht geklappt. Bitte nochmal versuchen.",
+          );
+        }
+
+        updateAction(messageId, (current) => {
+          if (mode === "undo") return { ...current, state: "undone" };
+
+          const taskId =
+            current.toolName === "mark_task_done" &&
+            typeof body.result?.task_id === "string"
+              ? body.result.task_id
+              : null;
+          return {
+            ...current,
+            state: "confirmed",
+            undo: taskId
+              ? {
+                  toolName: "update_task",
+                  args: { task_id: taskId, status: "open" },
+                }
+              : undefined,
+          };
+        });
+      } catch (error) {
+        updateAction(messageId, (current) => ({
+          ...current,
+          state: "error",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Das hat nicht geklappt. Bitte nochmal versuchen.",
+        }));
+      }
+    },
+    [familyId, updateAction],
+  );
+
+  const handleActionConfirm = useCallback(
+    (messageId: string) => {
+      const action = messages.find((message) => message.id === messageId)?.action;
+      if (action) void runAction(messageId, action, "confirm");
+    },
+    [messages, runAction],
+  );
+
+  const handleActionUndo = useCallback(
+    (messageId: string) => {
+      const action = messages.find((message) => message.id === messageId)?.action;
+      if (action?.undo) void runAction(messageId, action, "undo");
+    },
+    [messages, runAction],
+  );
+
+  const handleActionDismiss = useCallback(
+    (messageId: string) => {
+      updateAction(messageId, (action) => ({ ...action, state: "dismissed" }));
+    },
+    [updateAction],
+  );
+
+  const handleActionAdjust = useCallback((message: ChatMessage) => {
+    if (!message.action) return;
+    const title =
+      typeof message.action.args.title === "string"
+        ? message.action.args.title
+        : message.action.toolName === "mark_task_done" &&
+            typeof message.action.args.task_title === "string"
+          ? message.action.args.task_title
+          : "diesen Vorschlag";
+    setQuotedMessage({
+      text: `Vorschlag von Ordilo: ${title}`,
+    });
+  }, []);
 
   // -------------------------------------------------------------------------
   // Quote a message — the excerpt shows above the composer until the next
@@ -714,6 +871,10 @@ export function SucheClient({
                   passesFilters={passesFilters}
                   onSourceCardClick={handleSourceCardClick}
                   onQuote={handleQuoteMessage}
+                  onActionConfirm={handleActionConfirm}
+                  onActionDismiss={handleActionDismiss}
+                  onActionAdjust={handleActionAdjust}
+                  onActionUndo={handleActionUndo}
                 />
               ))}
 

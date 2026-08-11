@@ -15,9 +15,9 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { logout } from "@/app/(app)/actions";
-import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import { ComposerOverlay } from "@/components/ordilo/composer-overlay";
+import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import { useSuggestionChips } from "@/lib/search/suggestion-chips-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
@@ -72,11 +72,10 @@ export function Topbar({
           )}
           <Link
             href="/home"
-            className="flex items-center gap-2 rounded-ordilo-sm text-sm font-semibold tracking-tight text-foreground transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="rounded-ordilo-sm text-sm font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             aria-label="Ordilo Startseite"
           >
-            <OrdiloMascot size={24} style={{ color: "var(--petrol)" }} />
-            Ordilo
+            <OrdiloWordmark mascotSize={24} />
           </Link>
         </div>
       </div>
@@ -89,9 +88,8 @@ export function Topbar({
         >
           <SheetHeader className="relative px-5 pb-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
             <SheetTitle className="flex items-center gap-2">
-              <Link href="/home" className="flex items-center gap-2.5 rounded-ordilo-sm text-base transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label="Ordilo Startseite">
-                <OrdiloMascot size={28} style={{ color: "var(--petrol)" }} />
-                Ordilo
+              <Link href="/home" className="rounded-ordilo-sm text-base font-semibold focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label="Ordilo Startseite">
+                <OrdiloWordmark mascotSize={28} />
               </Link>
             </SheetTitle>
             <SheetDescription className="sr-only">Hauptmenü</SheetDescription>
@@ -128,7 +126,7 @@ export function Topbar({
                       {tab.children ? (
                         <ChevronDown className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
                       ) : active ? (
-                        <span className="size-1.5 rounded-full bg-[var(--apricot)]" aria-hidden="true" />
+                        <span className="size-1.5 rounded-full bg-[var(--apricot)] animate-nav-dot" aria-hidden="true" />
                       ) : (
                         <ChevronRight className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
                       )}

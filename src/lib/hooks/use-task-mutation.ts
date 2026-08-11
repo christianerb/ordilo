@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
  * Options for the {@link useTaskMutation} hook.
@@ -139,6 +140,19 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
           opts.onRevertToggle(taskId, newStatus);
           opts.onToggleError();
           return false;
+        }
+        if (newStatus === "done") {
+          void Promise.resolve()
+            .then(() => supabase.auth.getUser())
+            .then(({ data: { user } }) =>
+              user
+                ? recordProductEvent(supabase, {
+                    userId: user.id,
+                    eventName: "task_completed",
+                  })
+                : undefined,
+            )
+            .catch(() => undefined);
         }
         opts.onSettled?.();
         return true;
