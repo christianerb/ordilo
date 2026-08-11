@@ -49,6 +49,10 @@ Do not commit real secret values.
 - `PIPELINE_MODE` (optional; the background job pipeline is ON by default,
   set `sync` to opt out and let the client drive OCR/analysis)
 - `JOBS_RUNNER_SECRET` (optional; Bearer secret for `POST /api/jobs/run`)
+- `ADMIN_EMAILS` (comma-separated allowlist for the internal `/admin` area)
+- `ADMIN_ACCESS_CODE` (long, random second-factor code for allowed admins)
+- `ADMIN_SESSION_SECRET` (at least 32 random characters; rotating it closes
+  all active admin sessions)
 
 ## Setup
 
