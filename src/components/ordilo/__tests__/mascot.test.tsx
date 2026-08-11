@@ -18,9 +18,9 @@ describe("OrdiloMascot", () => {
     expect(svg?.getAttribute("width")).toBe("40");
   });
 
-  it("renders open eyes (two dots) for idle mood", () => {
+  it("renders a single open profile eye for idle mood", () => {
     const { container } = render(<OrdiloMascot mood="idle" />);
-    expect(container.querySelectorAll("circle").length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll("circle").length).toBe(1);
   });
 
   it("renders closed eyes (no eye dots) for sleepy mood", () => {
