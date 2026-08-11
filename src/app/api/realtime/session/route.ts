@@ -6,7 +6,33 @@ import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
 
 const REALTIME_MODEL = "gpt-realtime-2.1";
 
+/**
+ * Record why a voice session was refused.
+ *
+ * Every refusal below is otherwise silent, which makes this route
+ * impossible to diagnose from the outside: an installed PWA can be
+ * running a JS bundle from whenever it was last cold-started, so the
+ * sentence the user reports does not reliably identify which branch
+ * fired. The server always knows. Logged AND sent to Sentry so one tap
+ * on the microphone is enough to tell the branches apart, whatever the
+ * device happens to have cached.
+ *
+ * Only the failure code travels — no user id, no family id, no
+ * transcript.
+ */
+function reportRefusal(code: string, detail?: string): void {
+  const message = detail
+    ? `Realtime session refused (${code}): ${detail}`
+    : `Realtime session refused (${code})`;
+  console.error("[realtime]", message);
+  Sentry.captureMessage(message, {
+    level: "warning",
+    tags: { area: "realtime", realtime_refusal: code },
+  });
+}
+
 function sessionUnavailable(): Response {
+  reportRefusal("REALTIME_UNAVAILABLE", "OPENAI_API_KEY is not set");
   return Response.json(
     {
       error: "Spracheingabe ist gerade nicht verfügbar.",
@@ -28,7 +54,13 @@ function sessionFailed(reason: string): Response {
   console.error("[realtime] Client secret could not be minted:", reason);
   Sentry.captureException(
     new Error(`Realtime client secret could not be minted: ${reason}`),
-    { tags: { area: "realtime", model: REALTIME_MODEL } },
+    {
+      tags: {
+        area: "realtime",
+        realtime_refusal: "REALTIME_SESSION_FAILED",
+        model: REALTIME_MODEL,
+      },
+    },
   );
   return Response.json(
     {
@@ -54,7 +86,15 @@ function sessionFailed(reason: string): Response {
  */
 export async function POST(): Promise<Response> {
   const auth = await requireUser();
-  if (auth.status) return Response.json(auth.json, { status: auth.status });
+  if (auth.status) {
+    // Prime suspect for an installed PWA specifically: the middleware
+    // refreshes Supabase sessions on page navigations but deliberately
+    // skips /api, and a home-screen app can sit resumed for days without
+    // ever navigating — so the access token can be long stale by the
+    // time this is the first request it makes.
+    reportRefusal("UNAUTHENTICATED");
+    return Response.json(auth.json, { status: auth.status });
+  }
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -71,6 +111,7 @@ export async function POST(): Promise<Response> {
     .maybeSingle();
 
   if (!membership) {
+    reportRefusal("NO_FAMILY");
     return Response.json(
       { error: "Keine Familie gefunden.", code: "NO_FAMILY" },
       { status: 403 },
@@ -81,6 +122,7 @@ export async function POST(): Promise<Response> {
   // unlimited secrets and stream audio directly against OpenAI.
   const rateLimit = await checkRateLimit(supabase, membership.family_id);
   if (!rateLimit.allowed) {
+    reportRefusal("RATE_LIMIT_EXCEEDED", `used ${rateLimit.used} today`);
     return Response.json(
       {
         error: "Tageslimit erreicht. Bitte morgen erneut versuchen.",
