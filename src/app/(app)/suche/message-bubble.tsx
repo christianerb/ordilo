@@ -12,6 +12,7 @@ import {
   Copy,
   Check,
   Reply,
+  CornerDownLeft,
 } from "lucide-react";
 import { SourceCard, type SourceCardKind } from "@/components/ordilo/source-card";
 import { SourceMatchCard } from "@/components/ordilo/source-match-card";
@@ -107,6 +108,7 @@ export function MessageBubble({
   passesFilters,
   onSourceCardClick,
   onQuote,
+  onFollowUp,
 }: {
   message: ChatMessage;
   isStreaming?: boolean;
@@ -114,6 +116,8 @@ export function MessageBubble({
   onSourceCardClick: (docId: string) => void;
   /** Called with the message when the user taps "Zitieren" on an assistant answer. */
   onQuote?: (message: ChatMessage) => void;
+  /** Starts a suggested, source-aware follow-up question. */
+  onFollowUp?: (question: string) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -182,10 +186,15 @@ export function MessageBubble({
                 onCitationClick={handleCitationClick}
               />
               {isStreaming && (
-                <span
-                  className="ml-0.5 inline-block w-[2px] h-4 bg-[var(--petrol)] align-text-bottom animate-pulse"
-                  aria-hidden="true"
-                />
+                <>
+                  <span
+                    className="ml-0.5 inline-block h-4 w-[2px] align-text-bottom bg-[var(--petrol)] animate-stream-caret"
+                    aria-hidden="true"
+                  />
+                  <span className="sr-only" role="status">
+                    Ordilo schreibt noch.
+                  </span>
+                </>
               )}
             </div>
           )}
@@ -198,7 +207,7 @@ export function MessageBubble({
         <div className="ml-10 w-[calc(100%_-_2.5rem)] space-y-1.5">
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-medium text-muted-foreground">
-              Passende Dokumente
+              Diese Antwort basiert auf
             </span>
             <span
               className="text-[11px] text-muted-foreground"
@@ -233,6 +242,60 @@ export function MessageBubble({
           )}
         </div>
       )}
+
+      {hasAnswer && visibleSources.length > 0 && !isStreaming && onFollowUp && (
+        <SourceFollowUps
+          sources={visibleSources}
+          onFollowUp={onFollowUp}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Follow-up questions appear only after a complete, sourced answer. They
+ * use real family documents rather than generic prompts.
+ */
+function SourceFollowUps({
+  sources,
+  onFollowUp,
+}: {
+  sources: ChatSource[];
+  onFollowUp: (question: string) => void;
+}) {
+  const firstTitle = sources[0]?.title?.trim() || "diesem Dokument";
+  const followUps = [
+    `Was ist in „${firstTitle}“ noch wichtig?`,
+    sources.length > 1
+      ? "Welche Fristen stehen in diesen Dokumenten?"
+      : `Gibt es in „${firstTitle}“ eine Frist?`,
+  ];
+
+  return (
+    <div
+      className="ml-10 w-[calc(100%_-_2.5rem)] pt-1"
+      data-testid="source-follow-ups"
+    >
+      <p className="px-1 text-xs font-medium text-muted-foreground">
+        Das könnte dir auch helfen
+      </p>
+      <div className="mt-1 flex flex-col">
+        {followUps.map((question) => (
+          <button
+            key={question}
+            type="button"
+            onClick={() => onFollowUp(question)}
+            className="group flex min-h-11 items-center gap-2 rounded-ordilo-sm px-2 py-2 text-left text-sm text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            <CornerDownLeft
+              className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-[var(--petrol)]"
+              aria-hidden="true"
+            />
+            <span>{question}</span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

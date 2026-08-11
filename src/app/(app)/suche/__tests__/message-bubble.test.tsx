@@ -112,7 +112,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
     expect(screen.queryByText("Passende Dokumente")).toBeNull();
   });
 
-  it("renders the document suggestions label and count when sources are visible", () => {
+  it("renders the source label and count when sources are visible", () => {
     render(
       <MessageBubble
         message={buildMessage({ content: "Antwort", sources })}
@@ -120,7 +120,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("Passende Dokumente")).toBeDefined();
+    expect(screen.getByText("Diese Antwort basiert auf")).toBeDefined();
     expect(screen.getByTestId("source-count-badge").textContent).toBe("2");
   });
 
@@ -311,6 +311,19 @@ describe("MessageBubble — loading checklist", () => {
     expect(screen.queryByTestId("processing-checklist")).toBeNull();
   });
 
+  it("shows a quiet status message and caret while an answer streams", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({ content: "Teilantwort" })}
+        isStreaming
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Ordilo schreibt noch.")).toBeDefined();
+    expect(document.querySelector(".animate-stream-caret")).not.toBeNull();
+  });
+
   it("hides the processing checklist once a card has arrived", () => {
     render(
       <MessageBubble
@@ -331,6 +344,48 @@ describe("MessageBubble — loading checklist", () => {
     );
     expect(screen.queryByTestId("processing-checklist")).toBeNull();
     expect(screen.getByTestId("answer-card")).toBeDefined();
+  });
+});
+
+describe("MessageBubble — source-aware follow-ups", () => {
+  it("offers follow-ups only for completed answers with sources", () => {
+    const onFollowUp = vi.fn();
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Antwort",
+          sources: [
+            { document_id: "doc-1", title: "Kita-Brief", excerpt: "x", score: 0.9 },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+        onFollowUp={onFollowUp}
+      />,
+    );
+    expect(screen.getByTestId("source-follow-ups")).toBeDefined();
+    fireEvent.click(screen.getByText("Gibt es in „Kita-Brief“ eine Frist?"));
+    expect(onFollowUp).toHaveBeenCalledWith(
+      "Gibt es in „Kita-Brief“ eine Frist?",
+    );
+  });
+
+  it("waits to offer follow-ups until streaming and source lookup finish", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Teilantwort",
+          sources: [
+            { document_id: "doc-1", title: "Kita-Brief", excerpt: "x", score: 0.9 },
+          ],
+        })}
+        isStreaming
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+        onFollowUp={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId("source-follow-ups")).toBeNull();
   });
 });
 
