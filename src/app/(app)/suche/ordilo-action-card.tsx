@@ -30,6 +30,19 @@ const PRIORITY_LABELS: Record<string, string> = {
   low: "Niedrig",
 };
 
+const RECURRENCE_LABELS: Record<string, string> = {
+  weekly: "Wöchentlich",
+  biweekly: "Alle 14 Tage",
+  monthly: "Monatlich",
+  yearly: "Jährlich",
+};
+
+function asStringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
+}
+
 function getActionContent(action: ChatAction): {
   icon: typeof ListPlus;
   eyebrow: string;
@@ -42,6 +55,7 @@ function getActionContent(action: ChatAction): {
     case "add_task": {
       const dueDate = asText(args.due_date);
       const assignee = asText(args.assignee_name);
+      const description = asText(args.description);
       return {
         icon: ListPlus,
         eyebrow: "Aufgabe vorbereiten",
@@ -51,13 +65,23 @@ function getActionContent(action: ChatAction): {
             ? [{ label: "Frist", value: formatGermanDate(dueDate) || dueDate }]
             : []),
           ...(assignee ? [{ label: "Für", value: assignee }] : []),
+          // The server defaults a missing priority to "medium" — show the
+          // value that will actually be written, not just explicit ones.
+          {
+            label: "Priorität",
+            value: PRIORITY_LABELS[args.priority as string] ?? "Mittel",
+          },
+          ...(description ? [{ label: "Beschreibung", value: description }] : []),
         ],
       };
     }
     case "add_calendar_event": {
       const start = asText(args.starts_on);
       const end = asText(args.ends_on);
-      const time = asText(args.starts_time);
+      const startTime = asText(args.starts_time);
+      const endTime = asText(args.ends_time);
+      const recurrence = asText(args.recurrence);
+      const attendees = asStringList(args.attendee_names);
       const date =
         start && end && end !== start
           ? `${formatGermanDate(start) || start} bis ${formatGermanDate(end) || end}`
@@ -70,7 +94,21 @@ function getActionContent(action: ChatAction): {
         title: asText(args.title) ?? "Neuer Termin",
         details: [
           ...(date ? [{ label: "Wann", value: date }] : []),
-          ...(time ? [{ label: "Uhrzeit", value: time }] : []),
+          ...(args.all_day === true ? [{ label: "Ganztägig", value: "Ja" }] : []),
+          ...(startTime
+            ? [
+                {
+                  label: "Uhrzeit",
+                  value: endTime ? `${startTime} bis ${endTime}` : startTime,
+                },
+              ]
+            : []),
+          ...(recurrence && recurrence !== "none" && RECURRENCE_LABELS[recurrence]
+            ? [{ label: "Wiederholung", value: RECURRENCE_LABELS[recurrence] }]
+            : []),
+          ...(attendees.length
+            ? [{ label: "Mit", value: attendees.join(", ") }]
+            : []),
         ],
       };
     }
@@ -81,27 +119,48 @@ function getActionContent(action: ChatAction): {
         title: asText(args.task_title) ?? "Aufgabe erledigen",
         details: [],
       };
-    case "add_family_member":
+    case "add_family_member": {
+      const role = asText(args.role);
+      const birthdate = asText(args.birthdate);
       return {
         icon: UserPlus,
         eyebrow: "Familie ergänzen",
         title: `${asText(args.name) ?? asText(args.member_name) ?? "Neue Person"} hinzufügen`,
-        details: [],
+        details: [
+          ...(role ? [{ label: "Rolle", value: role }] : []),
+          ...(birthdate
+            ? [
+                {
+                  label: "Geburtstag",
+                  value: formatGermanDate(birthdate) || birthdate,
+                },
+              ]
+            : []),
+        ],
       };
-    case "create_collection":
+    }
+    case "create_collection": {
+      const iconName = asText(args.icon);
+      const color = asText(args.color);
       return {
         icon: FolderPlus,
         eyebrow: "Sammlung anlegen",
         title: asText(args.name) ?? asText(args.collection_name) ?? "Neue Sammlung",
-        details: [],
+        details: [
+          ...(iconName ? [{ label: "Icon", value: iconName }] : []),
+          ...(color ? [{ label: "Farbe", value: color }] : []),
+        ],
       };
-    case "create_note":
+    }
+    case "create_note": {
+      const content = asText(args.content);
       return {
         icon: FilePenLine,
         eyebrow: "Notiz anlegen",
         title: asText(args.title) ?? "Neue Notiz",
-        details: [],
+        details: content ? [{ label: "Inhalt", value: content }] : [],
       };
+    }
     case "move_document_to_collection":
       return {
         icon: FolderPlus,
@@ -240,8 +299,8 @@ export function OrdiloActionCard({
           <dl className="mt-3 divide-y divide-border/60 rounded-ordilo-sm bg-card/60 px-3">
             {details.map((detail) => (
               <div key={detail.label} className="flex items-baseline justify-between gap-3 py-2">
-                <dt className="text-xs text-[var(--mist-dark)]">{detail.label}</dt>
-                <dd className="min-w-0 text-right text-xs font-medium text-foreground">
+                <dt className="shrink-0 text-xs text-[var(--mist-dark)]">{detail.label}</dt>
+                <dd className="min-w-0 break-words text-right text-xs font-medium text-foreground">
                   {detail.value}
                 </dd>
               </div>

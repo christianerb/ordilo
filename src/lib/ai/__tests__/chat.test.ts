@@ -1192,4 +1192,45 @@ describe("streamAgenticAnswer — confirmation requests", () => {
       action_args: { title: "Elternabend eintragen" },
     });
   });
+
+  it("refuses a model-originated confirmed=true call and points to the card", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "add_task",
+              argumentsChunk: JSON.stringify({
+                title: "Anmeldung abschicken",
+                confirmed: true,
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Tippe dazu oben auf Übernehmen." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Ja, leg die Aufgabe an",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    // The tool result fed back to the model is a refusal, not a write.
+    const secondRoundMessages = mockCreate.mock.calls[1][0]
+      .messages as { role: string; content: string }[];
+    const toolResult = secondRoundMessages.find((m) => m.role === "tool");
+    expect(toolResult?.content).toContain("Aktionskarte");
+    expect(toolResult?.content).not.toContain('"success":true');
+
+    // No card confirmation event, no second confirmation round.
+    expect(
+      lines.some((line) => line.type === "confirmation_request"),
+    ).toBe(false);
+  });
 });

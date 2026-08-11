@@ -469,6 +469,87 @@ describe("MessageBubble — Ordilo Action Card", () => {
     );
   });
 
+  it("shows priority and description an add_task proposal will write", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [
+            {
+              id: "action-4",
+              toolName: "add_task" as const,
+              args: {
+                title: "Anmeldung abschicken",
+                priority: "high",
+                description: "Formular liegt in der Mappe",
+              },
+              state: "ready" as const,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    const card = screen.getByTestId("ordilo-action-card");
+    expect(card.textContent).toContain("Hoch");
+    expect(card.textContent).toContain("Formular liegt in der Mappe");
+  });
+
+  it("shows the default priority the server will write when none is proposed", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [
+            {
+              id: "action-5",
+              toolName: "add_task" as const,
+              args: { title: "Anmeldung abschicken" },
+              state: "ready" as const,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("ordilo-action-card").textContent).toContain(
+      "Mittel",
+    );
+  });
+
+  it("shows end time, recurrence and attendees on a calendar proposal", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [
+            {
+              id: "action-6",
+              toolName: "add_calendar_event" as const,
+              args: {
+                title: "Elternabend",
+                starts_on: "2026-09-10",
+                starts_time: "18:00",
+                ends_time: "19:30",
+                recurrence: "monthly",
+                attendee_names: ["Anna", "Emma"],
+              },
+              state: "ready" as const,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    const card = screen.getByTestId("ordilo-action-card");
+    expect(card.textContent).toContain("18:00 bis 19:30");
+    expect(card.textContent).toContain("Monatlich");
+    expect(card.textContent).toContain("Anna, Emma");
+  });
+
   it("routes the card controls to the message action callbacks", () => {
     const onConfirm = vi.fn();
     const onDismiss = vi.fn();

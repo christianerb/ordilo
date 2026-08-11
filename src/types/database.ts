@@ -180,6 +180,7 @@ export type Database = {
           family_id: string;
           action_id: string;
           tool_name: string;
+          status: string;
           executed_at: string;
         };
         Insert: {
@@ -187,6 +188,7 @@ export type Database = {
           family_id: string;
           action_id: string;
           tool_name: string;
+          status?: string;
           executed_at?: string;
         };
         Update: {
@@ -194,6 +196,7 @@ export type Database = {
           family_id?: string;
           action_id?: string;
           tool_name?: string;
+          status?: string;
           executed_at?: string;
         };
         Relationships: [];

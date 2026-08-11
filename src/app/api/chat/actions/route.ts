@@ -7,6 +7,12 @@ import { executeTool, type ToolContext } from "@/lib/ai/tools";
 import { chatActionConfirmationSchema } from "@/lib/schemas/chat";
 
 /**
+ * A claim still "running" after this long belongs to a crashed request —
+ * the write never committed, so the family may safely retry.
+ */
+const CLAIM_STALE_MS = 10 * 60 * 1000;
+
+/**
  * POST /api/chat/actions
  *
  * Executes exactly one action the family member explicitly accepted in an
@@ -42,28 +48,70 @@ export async function POST(request: Request): Promise<Response> {
     return jsonError("Kein Zugriff auf diese Familie.", "FAMILY_ACCESS_DENIED", 403);
   }
 
-  // Claim the proposal id BEFORE executing. If a previous attempt already
-  // committed this write (response lost on the way back), the unique index
-  // rejects the second claim and we report success instead of duplicating
-  // the insert. The ledger lives behind the service role only.
+  // Claim the proposal id BEFORE executing. The ledger row carries a
+  // status because a uniqueness conflict alone does NOT prove success:
+  // the first request may still be running (or may have crashed). The
+  // ledger lives behind the service role only.
   const admin = createAdminClient();
-  const { error: claimError } = await admin
-    .from("chat_action_executions")
-    .insert({ family_id: familyId, action_id: actionId, tool_name: toolName });
+  const ledgerTable = () => admin.from("chat_action_executions");
+  const claim = {
+    family_id: familyId,
+    action_id: actionId,
+    tool_name: toolName,
+    status: "running",
+  };
+  const { error: claimError } = await ledgerTable().insert(claim);
 
   if (claimError) {
-    if (claimError.code === "23505") {
+    if (claimError.code !== "23505") {
+      return jsonError(
+        "Die Aktion konnte nicht übernommen werden. Bitte versuche es erneut.",
+        "CHAT_ACTION_FAILED",
+        500,
+      );
+    }
+
+    const { data: existing } = await ledgerTable()
+      .select("status, executed_at")
+      .eq("family_id", familyId)
+      .eq("action_id", actionId)
+      .maybeSingle();
+
+    if (existing?.status === "completed") {
       return Response.json({
         success: true,
         duplicate: true,
         message: "Schon übernommen.",
       });
     }
-    return jsonError(
-      "Die Aktion konnte nicht übernommen werden. Bitte versuche es erneut.",
-      "CHAT_ACTION_FAILED",
-      500,
-    );
+
+    // A crashed request leaves a "running" row behind forever — after a
+    // grace period it is treated like a failed one and may be reclaimed.
+    const staleRunning =
+      existing?.status === "running" &&
+      Date.parse(existing.executed_at) < Date.now() - CLAIM_STALE_MS;
+
+    if (existing?.status === "failed" || staleRunning) {
+      await ledgerTable()
+        .delete()
+        .eq("family_id", familyId)
+        .eq("action_id", actionId);
+      const { error: reclaimError } = await ledgerTable().insert(claim);
+      if (reclaimError) {
+        // Lost the reclaim race — another request is executing right now.
+        return jsonError(
+          "Diese Aktion wird gerade übernommen. Warte einen Moment und tippe dann nochmal.",
+          "CHAT_ACTION_IN_PROGRESS",
+          409,
+        );
+      }
+    } else {
+      return jsonError(
+        "Diese Aktion wird gerade übernommen. Warte einen Moment und tippe dann nochmal.",
+        "CHAT_ACTION_IN_PROGRESS",
+        409,
+      );
+    }
   }
 
   const context: ToolContext = {
@@ -73,12 +121,16 @@ export async function POST(request: Request): Promise<Response> {
     speakerName: null,
   };
 
-  // If execution fails, release the claim so the family's next tap on
-  // "Übernehmen" can actually retry instead of being treated as a duplicate.
-  const releaseClaim = () =>
-    admin
-      .from("chat_action_executions")
-      .delete()
+  // Success and failure are both recorded, never deleted: a duplicate tap
+  // must find a completed row, and a failed row tells the next attempt it
+  // may safely retry. Deleting on failure would reopen the race where a
+  // retry reports "confirmed" for a write that never happened.
+  const settleClaim = (status: "completed" | "failed") =>
+    ledgerTable()
+      .update({
+        status,
+        ...(status === "completed" ? { executed_at: new Date().toISOString() } : {}),
+      })
       .eq("family_id", familyId)
       .eq("action_id", actionId)
       .then(undefined, () => undefined);
@@ -89,7 +141,7 @@ export async function POST(request: Request): Promise<Response> {
     ) as Record<string, unknown>;
 
     if (result.error || !result.success) {
-      await releaseClaim();
+      await settleClaim("failed");
       return jsonError(
         typeof result.error === "string"
           ? result.error
@@ -99,6 +151,7 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
+    await settleClaim("completed");
     return Response.json({
       success: true,
       message:
@@ -108,7 +161,7 @@ export async function POST(request: Request): Promise<Response> {
       result,
     });
   } catch {
-    await releaseClaim();
+    await settleClaim("failed");
     return jsonError(
       "Die Aktion konnte nicht übernommen werden. Bitte versuche es erneut.",
       "CHAT_ACTION_FAILED",

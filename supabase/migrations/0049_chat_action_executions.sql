@@ -10,6 +10,11 @@ create table if not exists public.chat_action_executions (
   family_id uuid references public.families (id) on delete cascade not null,
   action_id text not null,
   tool_name text not null,
+  -- running: claimed, execution in flight; completed: write committed;
+  -- failed: execution failed and the family may retry (row gets reclaimed).
+  -- A uniqueness conflict alone must never be read as "already done".
+  status text not null default 'running'
+    check (status in ('running', 'completed', 'failed')),
   executed_at timestamptz not null default now()
 );
 

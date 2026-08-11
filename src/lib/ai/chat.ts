@@ -363,9 +363,9 @@ STRENGE REGELN:
 6. Bei allgemeinen Fragen (Begruessung, Dank, Smalltalk) antworte natuerlich und freundlich, ohne Tools aufzurufen.
 6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
 6b. Rufe so wenige Tools wie moeglich auf — in der Regel GENAU EINS pro Frage. Mehrere Tools nur, wenn die Frage klar verschiedene Informationsarten verlangt (z.B. Dokumenteninhalt UND Aufgabenstatus).
-7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, update_task, mark_task_done, add_family_member, create_collection, create_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe das Tool zuerst mit confirmed=false auf. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen willst (z.B. "Soll ich die Aufgabe 'Kita-Ausflug' (faellig 12.9.) anlegen?", "Soll ich '<aufgabentitel>' als erledigt markieren?", "Soll ich '<name>' als neues Familienmitglied hinzufuegen?"). Erst wenn der Nutzer eindeutig zustimmt ("Ja", "Erledigt", "Mach das", "Passt so"), rufe das Tool erneut mit confirmed=true auf. Rufe niemals eine dieser Aktionen ohne vorherige, explizite Bestaetigung des Nutzers aus.
+7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, update_task, mark_task_done, add_family_member, create_collection, create_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe das Tool GENAU EINMAL mit confirmed=false auf. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen willst (z.B. "Soll ich die Aufgabe 'Kita-Ausflug' (faellig 12.9.) anlegen?", "Soll ich '<aufgabentitel>' als erledigt markieren?", "Soll ich '<name>' als neues Familienmitglied hinzufuegen?"). Die App zeigt dem Nutzer dazu eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karte (z.B. "Tippe oben auf Uebernehmen").
 7a. move_document_to_collection und add_document_tags brauchen eine document_id — hole diese immer zuerst ueber search_documents oder graph_query, bevor du eines der beiden Tools aufrufst. update_task braucht eine task_id — hole sie zuerst ueber list_tasks oder graph_query.
-7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast, ohne dass das entsprechende Tool tatsaechlich mit confirmed=true aufgerufen wurde und einen Erfolg zurueckgegeben hat. Sag niemals "Ich lege das fuer dich an" oder Aehnliches, ohne im selben oder naechsten Schritt das passende Tool aufzurufen — frage stattdessen direkt nach der Bestaetigung (siehe Regel 7).
+7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast. Die Ausfuehrung siehst du nicht — sie passiert in der Aktionskarte, ausserhalb dieses Gespraechs. Sag niemals "Ich lege das fuer dich an" oder "Erledigt" — frage stattdessen nach der Bestaetigung (siehe Regel 7) oder verweise auf die Karte.
 8. Halte die Antwort praezise und hilfreich. Verwende Aufzaehlungen wenn es sinnvoll ist.
 9. Formatiere deine Antwort als Markdown: **fett** fuer wichtige Begriffe wie Fristen und Betraege, "-" fuer einfache Aufzaehlungen.
 10. WICHTIG: Wenn du mehrere Elemente mit MEHREREN Detail-Eigenschaften auflistest (z.B. mehrere Aufgaben mit Frist UND Prioritaet, mehrere Rechnungen mit Betrag UND Faelligkeit), formatiere die Antwort als Markdown-Tabelle mit sprechenden Spaltenkoepfen (z.B. "| Aufgabe | Frist |") statt als Fliesstext. AUSNAHME: Wenn du als Ergebnis einer Dokumentensuche einfach mehrere GEFUNDENE DOKUMENTE auflistest (ohne weitere Detailfelder pro Dokument), schreibe KEINE Tabelle und KEINE Aufzaehlung — nenne die gefundenen Dokumente stattdessen in ein bis zwei kurzen Saetzen namentlich (z.B. "Ich habe den Kita-Brief und den Schulbrief zum Sommerfest gefunden."), denn die Dokumente selbst werden dem Nutzer bereits separat als Karten angezeigt.
@@ -659,6 +659,26 @@ export async function streamAgenticAnswer(
                 args = {};
               }
               toolArguments.set(i, args);
+
+              // A mutating tool with confirmed=true came from the model
+              // itself (e.g. after the user typed "Ja" instead of tapping
+              // the card). Executing it here would bypass the action card
+              // AND the idempotency ledger, leaving the card in "ready" so
+              // a later tap would repeat the write. Refuse and let the
+              // model point the user to the card instead.
+              if (
+                CONFIRMATION_TOOLS.has(toolCall.function.name) &&
+                args.confirmed === true
+              ) {
+                results[i] = JSON.stringify({
+                  error:
+                    "Direkte Ausfuehrung mit confirmed=true ist nicht moeglich. " +
+                    "Die Bestaetigung laeuft ausschliesslich ueber die " +
+                    "Aktionskarte in der App. Bitte den Nutzer freundlich, " +
+                    "in der Karte auf 'Uebernehmen' zu tippen.",
+                });
+                continue;
+              }
 
               if (toolCall.function.name === "present_answer_card") {
                 const card = parseAnswerCardArgs(args);
