@@ -321,17 +321,28 @@ export function useRealtimeTranscription({
       const sessionResponse = await fetch("/api/realtime/session", {
         method: "POST",
       });
-      if (!sessionResponse.ok) throw new Error("session failed");
-      const session = (await sessionResponse.json()) as {
+      // The route answers every refusal with a specific German
+      // `{ error, code }` body (abgelaufene Anmeldung, Tageslimit, kein
+      // Schlüssel konfiguriert). Showing that instead of one blanket
+      // sentence is the difference between a user who knows what to do and
+      // a "geht nicht" nobody can act on — this path is only reachable in
+      // the installed PWA, where there is no native speech fallback left.
+      const session = (await sessionResponse.json().catch(() => null)) as {
         client_secret?: string;
         model?: string;
-      };
-      if (!session.client_secret || !session.model) {
-        throw new Error("session incomplete");
+        error?: string;
+      } | null;
+      if (!sessionResponse.ok || !session?.client_secret || !session.model) {
+        setStatus("idle");
+        onErrorRef.current(
+          session?.error ?? "Spracheingabe konnte nicht gestartet werden.",
+        );
+        return;
       }
       clientSecret = session.client_secret;
       model = session.model;
     } catch {
+      // Network-level failure — no body to quote.
       setStatus("idle");
       onErrorRef.current("Spracheingabe konnte nicht gestartet werden.");
       return;
@@ -433,7 +444,9 @@ export function useRealtimeTranscription({
     dc.send(
       JSON.stringify({
         type: "response.create",
-        response: { modalities: ["text"] },
+        // GA Realtime names this `output_modalities`; the beta-era
+        // `modalities` is rejected as an unknown parameter.
+        response: { output_modalities: ["text"] },
       }),
     );
   }, []);
