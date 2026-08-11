@@ -91,6 +91,13 @@
     }
   }
 
+  /* Streaming cursor — communicates that a real server response is still
+     arriving without delaying, blurring, or re-animating the answer text. */
+  @keyframes stream-caret {
+    0%, 42% { opacity: 1; }
+    43%, 100% { opacity: 0; }
+  }
+
   /* Card list item entrance — fade + slide up, used with stagger delays */
   @keyframes card-in {
     from {
@@ -501,6 +508,9 @@
   .animate-message-in {
     animation: message-in 0.25s var(--ease-out-quart);
   }
+  .animate-stream-caret {
+    animation: stream-caret 850ms steps(1, end) infinite;
+  }
   .animate-card-in {
     animation: card-in 0.25s var(--ease-out-quart) backwards;
   }
@@ -641,6 +651,7 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-page-fade-in,
   .animate-message-in,
+  .animate-stream-caret,
   .animate-card-in,
   .animate-check-pop,
   .animate-task-done,

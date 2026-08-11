@@ -714,6 +714,7 @@ export function SucheClient({
                   passesFilters={passesFilters}
                   onSourceCardClick={handleSourceCardClick}
                   onQuote={handleQuoteMessage}
+                  onFollowUp={handleExampleClick}
                 />
               ))}
 
