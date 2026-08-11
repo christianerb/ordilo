@@ -519,6 +519,39 @@ describe("MessageBubble — Ordilo Action Card", () => {
     );
   });
 
+  it("discloses the existing value when a fact proposal is a correction", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [
+            {
+              id: "action-7",
+              toolName: "save_document_fact" as const,
+              args: {
+                document_title: "Kontoauszug",
+                fact_type: "iban",
+                fact_type_label: "IBAN",
+                label: "IBAN",
+                value: "DE44 5001 0517 5407 3249 31",
+                existing_value: "DE12 3456 7890 1234 5678 90",
+              },
+              state: "ready" as const,
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    const card = screen.getByTestId("ordilo-action-card");
+    expect(card.textContent).toContain("Angabe korrigieren");
+    expect(card.textContent).toContain("Bisheriger Wert");
+    expect(card.textContent).toContain("DE12 3456 7890 1234 5678 90");
+    expect(card.textContent).toContain("Neuer Wert");
+    expect(card.textContent).toContain("DE44 5001 0517 5407 3249 31");
+  });
+
   it("shows end time, recurrence and attendees on a calendar proposal", () => {
     render(
       <MessageBubble

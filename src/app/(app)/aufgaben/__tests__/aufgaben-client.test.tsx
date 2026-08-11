@@ -282,4 +282,28 @@ describe("AufgabenClient — delete confirmation", () => {
       due_date: null,
     });
   });
+
+  it("restores a task dismissed from the done column back to done, not open", async () => {
+    renderBoard([makeTask({ id: "task-done", status: "done" })]);
+
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    fireEvent.click(await screen.findByTestId("card-action-delete"));
+    fireEvent.click(screen.getByTestId("confirm-delete-task-button"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [, options] = vi.mocked(toast.success).mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+
+    await act(async () => {
+      options.action.onClick();
+    });
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
+    // Undo must return the task to the "Erledigt" column it came from.
+    expect(mockUpdate.mock.calls[1][0]).toEqual({
+      status: "done",
+      due_date: null,
+    });
+  });
 });

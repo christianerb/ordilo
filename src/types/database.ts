@@ -1027,6 +1027,7 @@ export type Database = {
           content: string;
           sources: Record<string, unknown>[] | null;
           card: Record<string, unknown> | null;
+          actions: Record<string, unknown>[] | null;
           feedback: string | null;
           created_at: string;
         };
@@ -1038,6 +1039,7 @@ export type Database = {
           content: string;
           sources?: Record<string, unknown>[] | null;
           card?: Record<string, unknown> | null;
+          actions?: Record<string, unknown>[] | null;
           feedback?: string | null;
           created_at?: string;
         };
@@ -1049,6 +1051,7 @@ export type Database = {
           content?: string;
           sources?: Record<string, unknown>[] | null;
           card?: Record<string, unknown> | null;
+          actions?: Record<string, unknown>[] | null;
           feedback?: string | null;
           created_at?: string;
         };

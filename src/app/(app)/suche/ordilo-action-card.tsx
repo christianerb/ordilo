@@ -181,15 +181,36 @@ function getActionContent(action: ChatAction): {
         details: tags.length ? [{ label: "Schlagworte", value: tags.join(", ") }] : [],
       };
     }
-    case "save_document_fact":
+    case "save_document_fact": {
+      // The tool preview tells us when this proposal overwrites an existing
+      // fact of the same type — the card must disclose that correction,
+      // including the value being replaced, before "Übernehmen" is tapped.
+      const factTypeLabel = asText(args.fact_type_label);
+      const label = asText(args.label);
+      const value = asText(args.value);
+      const existingValue = asText(args.existing_value);
+      const isCorrection = Boolean(existingValue);
+      const details: Detail[] = [];
+      if (factTypeLabel) details.push({ label: "Typ", value: factTypeLabel });
+      if (label && label !== factTypeLabel) {
+        details.push({ label: "Bezeichnung", value: label });
+      }
+      if (existingValue) {
+        details.push({ label: "Bisheriger Wert", value: existingValue });
+      }
+      if (value) {
+        details.push({
+          label: isCorrection ? "Neuer Wert" : "Angabe",
+          value,
+        });
+      }
       return {
         icon: FilePenLine,
-        eyebrow: "Angabe merken",
+        eyebrow: isCorrection ? "Angabe korrigieren" : "Angabe merken",
         title: asText(args.document_title) ?? "Angabe speichern",
-        details: asText(args.value)
-          ? [{ label: asText(args.label) ?? "Angabe", value: asText(args.value)! }]
-          : [],
+        details,
       };
+    }
     case "update_task": {
       // Trust rule: every field the confirmation endpoint will write must be
       // visible before "Übernehmen" is enabled. Only fields actually present

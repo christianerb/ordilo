@@ -45,6 +45,7 @@ export interface InitialMessage {
   content: string;
   sources: ChatSource[];
   card?: AnswerCardData;
+  actions?: ChatAction[];
   feedback?: "positive" | "negative" | null;
 }
 
@@ -113,6 +114,7 @@ export function SucheClient({
       content: m.content,
       sources: m.sources,
       card: m.card,
+      actions: m.actions,
       feedback: m.feedback ?? null,
     })),
   );
@@ -526,6 +528,7 @@ export function SucheClient({
                           "type",
                           "tool_name",
                           "action_args",
+                          "action_id",
                           "needs_confirmation",
                           "message",
                         ].includes(key),
@@ -538,7 +541,14 @@ export function SucheClient({
                     prev.map((m) => {
                       if (m.id !== aiMsgId) return m;
                       const action: ChatAction = {
-                        id: `${aiMsgId}-${toolName}-${(m.actions ?? []).length}`,
+                        // The server mints a stable id per proposal (also
+                        // persisted with the message) so a reload restores
+                        // the same idempotency key. The derived fallback
+                        // covers streams from older server versions.
+                        id:
+                          typeof data.action_id === "string"
+                            ? data.action_id
+                            : `${aiMsgId}-${toolName}-${(m.actions ?? []).length}`,
                         toolName: toolName as ChatAction["toolName"],
                         args: {
                           ...(actionArgs as Record<string, unknown>),

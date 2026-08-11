@@ -19,6 +19,18 @@ type ServerClient = Awaited<
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * A write proposal persisted with an assistant message so its action card
+ * survives a page reload. Only the proposal is stored, never a resolution
+ * state — re-confirming after a reload is safe because the confirmation
+ * endpoint's idempotency ledger deduplicates on the action id.
+ */
+export interface PersistedChatAction {
+  action_id: string;
+  tool_name: string;
+  action_args: Record<string, unknown>;
+}
+
 /** A persisted chat message row from the database. */
 export interface ChatMessageRow {
   id: string;
@@ -28,6 +40,7 @@ export interface ChatMessageRow {
   content: string;
   sources: ChatSource[] | null;
   card: AnswerCard | null;
+  actions: PersistedChatAction[] | null;
   feedback: string | null;
   created_at: string;
 }
@@ -182,6 +195,7 @@ export async function saveAssistantMessage(
   content: string,
   sources: ChatSource[],
   card: AnswerCard | null,
+  actions: PersistedChatAction[] = [],
 ): Promise<void> {
   await client.from("chat_messages").insert({
     conversation_id: conversationId,
@@ -190,6 +204,7 @@ export async function saveAssistantMessage(
     content,
     sources: sources.length > 0 ? sources as unknown as Record<string, unknown>[] : null,
     card: card as unknown as Record<string, unknown> | null,
+    actions: actions.length > 0 ? (actions as unknown as Record<string, unknown>[]) : null,
   });
 }
 
@@ -209,7 +224,7 @@ export async function loadConversationMessages(
 ): Promise<ChatMessageRow[]> {
   const { data, error } = await client
     .from("chat_messages")
-    .select("id, conversation_id, family_id, role, content, sources, card, created_at")
+    .select("id, conversation_id, family_id, role, content, sources, card, actions, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true })
     .limit(limit);

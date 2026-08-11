@@ -1999,6 +1999,14 @@ async function executeSaveDocumentFact(
       needs_confirmation: true,
       document_id: doc.id,
       document_title: documentTitle,
+      // The card must disclose when this "add" actually overwrites an
+      // existing fact of the same type — otherwise a person would confirm
+      // a correction (e.g. of an IBAN) without ever seeing the old value.
+      fact_type: factType,
+      fact_type_label: typeLabel,
+      label: requestedLabel ?? typeLabel,
+      value,
+      existing_value: existing ? existing.value : null,
       message: existing
         ? `Bitte bestaetige: Soll die ${typeLabel} von '${documentTitle}' von '${existing.value}' zu '${value}' korrigiert werden?`
         : `Bitte bestaetige: Soll die ${typeLabel} '${value}' bei '${documentTitle}' hinterlegt werden?`,

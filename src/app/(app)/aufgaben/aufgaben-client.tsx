@@ -381,15 +381,17 @@ export function AufgabenClient({
     [reschedule],
   );
 
-  /** Restore a dismissed task to its exact prior schedule. */
+  /** Restore a dismissed task to its exact prior schedule and status. */
   const handleUndoDismiss = useCallback(
     async (task: TaskCardData) => {
       const dismissed: TaskDropUpdates = {
         status: "dismissed",
         due_date: task.due_date,
       };
+      // The captured task carries the status it had before the dismiss —
+      // a task dismissed from "Erledigt" goes back to done, not to open.
       const restored: TaskDropUpdates = {
-        status: "open",
+        status: task.status === "dismissed" ? "open" : task.status,
         due_date: task.due_date,
       };
       const ok = await reschedule(task.id, restored, dismissed);

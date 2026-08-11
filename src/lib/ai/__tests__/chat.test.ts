@@ -1191,6 +1191,12 @@ describe("streamAgenticAnswer — confirmation requests", () => {
       needs_confirmation: true,
       action_args: { title: "Elternabend eintragen" },
     });
+    // Each proposal carries a stable, unique idempotency key.
+    for (const confirmation of confirmations) {
+      expect(typeof confirmation.action_id).toBe("string");
+      expect(confirmation.action_id).toBeTruthy();
+    }
+    expect(confirmations[0].action_id).not.toBe(confirmations[1].action_id);
   });
 
   it("refuses a model-originated confirmed=true call and points to the card", async () => {

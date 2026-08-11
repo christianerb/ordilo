@@ -6,6 +6,10 @@ import {
 } from "@/lib/ai/chat-history";
 import { SucheClient } from "./suche-client";
 import type { DocumentMetadata, InitialMessage } from "./suche-client";
+import {
+  CHAT_ACTION_TOOL_NAMES,
+  type ChatActionToolName,
+} from "@/lib/schemas/chat";
 
 /**
  * Search / Chat page (server component).
@@ -136,6 +140,25 @@ export default async function SuchePage({
         content: row.content,
         sources: row.sources ?? [],
         card: row.card ?? undefined,
+        // Pending action cards are restored as "ready" — re-confirming is
+        // safe because the confirmation endpoint deduplicates on the
+        // action id, and the persisted id IS the one the live card used.
+        actions: (row.actions ?? [])
+          .filter(
+            (action) =>
+              typeof action?.tool_name === "string" &&
+              (CHAT_ACTION_TOOL_NAMES as readonly string[]).includes(action.tool_name) &&
+              Boolean(action?.action_args),
+          )
+          .map((action, index) => ({
+            id:
+              typeof action.action_id === "string"
+                ? action.action_id
+                : `${row.id}-${action.tool_name}-${index}`,
+            toolName: action.tool_name as ChatActionToolName,
+            args: action.action_args,
+            state: "ready" as const,
+          })),
         feedback: (row.feedback as "positive" | "negative" | null) ?? null,
       }));
     } catch {

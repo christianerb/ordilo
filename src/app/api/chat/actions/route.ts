@@ -7,8 +7,9 @@ import { executeTool, type ToolContext } from "@/lib/ai/tools";
 import { chatActionConfirmationSchema } from "@/lib/schemas/chat";
 
 /**
- * A claim still "running" after this long belongs to a crashed request —
- * the write never committed, so the family may safely retry.
+ * A claim still "running" after this long almost certainly belongs to a
+ * crashed request. It is never replayed (the write may have committed) —
+ * the copy just switches from "wait a moment" to "uncertain, ask again".
  */
 const CLAIM_STALE_MS = 10 * 60 * 1000;
 
@@ -85,13 +86,11 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    // A crashed request leaves a "running" row behind forever — after a
-    // grace period it is treated like a failed one and may be reclaimed.
-    const staleRunning =
-      existing?.status === "running" &&
-      Date.parse(existing.executed_at) < Date.now() - CLAIM_STALE_MS;
-
-    if (existing?.status === "failed" || staleRunning) {
+    if (existing?.status === "failed") {
+      // Safe to reclaim: every tool reports an error only BEFORE its
+      // write commits (single inserts fail atomically; post-insert steps
+      // like note analysis swallow their own errors and still report
+      // success). A failed row therefore proves no write happened.
       await ledgerTable()
         .delete()
         .eq("family_id", familyId)
@@ -105,10 +104,19 @@ export async function POST(request: Request): Promise<Response> {
           409,
         );
       }
-    } else {
+    } else if (existing?.status === "running") {
+      // NEVER replay a running claim, no matter how old: the request may
+      // still be executing, or may have crashed between the write and the
+      // settle update — in that case the write DID commit and replaying
+      // would duplicate the task/event/member/note. The person dismisses
+      // the card and asks again, which creates a fresh proposal id.
+      const stale =
+        Date.parse(existing.executed_at) < Date.now() - CLAIM_STALE_MS;
       return jsonError(
-        "Diese Aktion wird gerade übernommen. Warte einen Moment und tippe dann nochmal.",
-        "CHAT_ACTION_IN_PROGRESS",
+        stale
+          ? "Der Status dieser Aktion ist unklar. Tippe auf Ablehnen und bitte Ordilo nochmal darum — so verhindern wir doppelte Einträge."
+          : "Diese Aktion wird gerade übernommen. Warte einen Moment und tippe dann nochmal.",
+        stale ? "CHAT_ACTION_UNCERTAIN" : "CHAT_ACTION_IN_PROGRESS",
         409,
       );
     }

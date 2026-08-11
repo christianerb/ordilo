@@ -222,13 +222,35 @@ describe("POST /api/chat/actions", () => {
     expect(executeTool).not.toHaveBeenCalled();
   });
 
-  it("reclaims a stale running claim from a crashed request", async () => {
+  it("never replays a stale running claim — the write may have committed", async () => {
     mockLedgerClaim({
       claimError: { code: "23505", message: "duplicate key value" },
       existing: {
         status: "running",
         executed_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
       },
+    });
+
+    const response = await POST(
+      request({
+        family_id: FAMILY_ID,
+        action_id: "msg-1-add_task-0",
+        tool_name: "add_task",
+        args: { title: "Anmeldung abschicken" },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.code).toBe("CHAT_ACTION_UNCERTAIN");
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(ledger.delete).not.toHaveBeenCalled();
+  });
+
+  it("reclaims a failed claim — a failed tool never committed a write", async () => {
+    mockLedgerClaim({
+      claimError: { code: "23505", message: "duplicate key value" },
+      existing: { status: "failed", executed_at: new Date().toISOString() },
     });
     vi.mocked(executeTool).mockResolvedValue(
       JSON.stringify({ success: true, task_id: "task-1" }),

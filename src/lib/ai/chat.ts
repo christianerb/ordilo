@@ -761,6 +761,10 @@ export async function streamAgenticAnswer(
                       // exactly what it showed after a person taps confirm.
                       action_args: toolArguments.get(i) ?? {},
                       ...parsed,
+                      // Stable proposal id, minted here so the live card,
+                      // the persisted message and a restored card after a
+                      // reload all share one idempotency key.
+                      action_id: crypto.randomUUID(),
                     });
                   }
                 } catch {
