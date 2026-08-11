@@ -310,7 +310,7 @@ export function VoicePlannerCard({
           <Button
             type="button"
             size="sm"
-            className="gap-1.5"
+            className="h-11 gap-1.5 sm:h-8"
             onClick={handleMicClick}
             data-testid="voice-start-button"
           >
@@ -351,7 +351,7 @@ export function VoicePlannerCard({
             <Button
               type="button"
               size="sm"
-              className="gap-1.5"
+              className="h-11 gap-1.5 sm:h-8"
               onClick={stop}
               data-testid="voice-stop-button"
             >
@@ -363,7 +363,7 @@ export function VoicePlannerCard({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-9"
+            className="size-11 sm:size-9"
             onClick={handleCancelRecording}
             aria-label="Abbrechen"
           >
@@ -414,7 +414,7 @@ export function VoicePlannerCard({
             <Button
               type="button"
               size="sm"
-              className="gap-1.5"
+              className="h-11 gap-1.5 sm:h-8"
               onClick={() => void handleConfirm(phase.proposal)}
               disabled={confirming}
               data-testid="voice-confirm-button"
@@ -430,6 +430,7 @@ export function VoicePlannerCard({
               type="button"
               size="sm"
               variant="outline"
+              className="h-11 sm:h-8"
               onClick={() => setPhase({ kind: "idle" })}
               disabled={confirming}
               data-testid="voice-discard-button"
@@ -452,6 +453,7 @@ export function VoicePlannerCard({
             type="button"
             size="sm"
             variant="outline"
+            className="h-11 sm:h-8"
             onClick={() => setPhase({ kind: "idle" })}
           >
             Schließen

@@ -72,6 +72,15 @@ describe("PlannerView", () => {
     expect(screen.getByRole("button", { name: "Termin" })).toBeInTheDocument();
   });
 
+  it("keeps the header action thumb-friendly on mobile", () => {
+    renderView();
+
+    expect(screen.getByTestId("planner-create-button")).toHaveClass(
+      "h-11",
+      "sm:h-8",
+    );
+  });
+
   it("hides the header action without a family", () => {
     renderView(null);
     expect(

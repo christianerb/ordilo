@@ -23,6 +23,13 @@ const mockAttendeeDeleteIn = vi.fn();
 const mockAttendeeDeleteEq = vi.fn(() => ({ in: mockAttendeeDeleteIn }));
 const mockAttendeeDelete = vi.fn(() => ({ eq: mockAttendeeDeleteEq }));
 const mockDismissalInsert = vi.fn();
+const mockChannelOn = vi.fn();
+const mockChannelSubscribe = vi.fn();
+const mockChannel = {
+  on: mockChannelOn,
+  subscribe: mockChannelSubscribe,
+};
+const mockRemoveChannel = vi.fn();
 
 const mockFrom = vi.fn((table: string) => {
   if (table === "calendar_event_attendees") {
@@ -35,7 +42,11 @@ const mockFrom = vi.fn((table: string) => {
 });
 
 vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({ from: mockFrom }),
+  createClient: () => ({
+    from: mockFrom,
+    channel: () => mockChannel,
+    removeChannel: mockRemoveChannel,
+  }),
 }));
 
 import { CalendarClient } from "@/app/(app)/aufgaben/calendar-client";
@@ -93,6 +104,8 @@ beforeEach(() => {
   mockAttendeeInsert.mockResolvedValue({ error: null });
   mockAttendeeDeleteIn.mockResolvedValue({ error: null });
   mockDismissalInsert.mockResolvedValue({ error: null });
+  mockChannelOn.mockReturnValue(mockChannel);
+  mockChannelSubscribe.mockReturnValue(mockChannel);
 });
 
 describe("CalendarClient", () => {
@@ -109,6 +122,68 @@ describe("CalendarClient", () => {
     const dayEvents = within(screen.getByTestId("calendar-day-events"));
     expect(dayEvents.getByText("Kita geschlossen")).toBeInTheDocument();
     expect(dayEvents.getByText("Fortbildung")).toBeInTheDocument();
+  });
+
+  it("uses a full event border instead of a colored accent stripe", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[makeEvent()]}
+      />,
+    );
+
+    const event = screen.getByTestId("calendar-event-event-1");
+    expect(event).toHaveClass("border");
+    expect(event).not.toHaveClass("border-l-[3px]");
+  });
+
+  it("keeps selected person initials legible on light colors", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={[
+          ...MEMBERS,
+          {
+            id: "m-light",
+            name: "Lina",
+            role: "Kind",
+            avatar_color: "#b08a3e",
+          },
+        ]}
+        initialEvents={[]}
+      />,
+    );
+
+    const filter = screen.getByTestId("calendar-filter-m-light");
+    fireEvent.click(filter);
+
+    expect(filter).toHaveClass("size-11", "sm:size-9");
+    expect(filter).toHaveStyle({
+      backgroundColor: "#b08a3e",
+      color: "#201E1B",
+    });
+  });
+
+  it("subscribes to calendar event deletions", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[]}
+      />,
+    );
+
+    expect(mockChannelOn).toHaveBeenCalledWith(
+      "postgres_changes",
+      expect.objectContaining({
+        event: "DELETE",
+        schema: "public",
+        table: "calendar_events",
+        filter: "family_id=eq.family-1",
+      }),
+      expect.any(Function),
+    );
   });
 
   it("saves a new shared event", async () => {

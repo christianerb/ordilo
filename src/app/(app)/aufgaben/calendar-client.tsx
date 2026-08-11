@@ -42,6 +42,10 @@ import { formatGermanDate } from "@/lib/format";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import {
+  getAvatarTextColor,
+  resolveAvatarColor,
+} from "@/lib/avatar-colors";
 import { usePlannerActionsOptional } from "./planner-actions-context";
 import { VoicePlannerCard } from "./voice-planner";
 
@@ -148,8 +152,10 @@ export function CalendarClient({
     members.forEach((member, index) => {
       colors.set(
         member.id,
-        member.avatar_color ||
-          FALLBACK_MEMBER_COLORS[index % FALLBACK_MEMBER_COLORS.length],
+        resolveAvatarColor(
+          member.avatar_color ||
+            FALLBACK_MEMBER_COLORS[index % FALLBACK_MEMBER_COLORS.length],
+        ),
       );
     });
     return colors;
@@ -299,6 +305,16 @@ export function CalendarClient({
         "postgres_changes",
         {
           event: "UPDATE",
+          schema: "public",
+          table: "calendar_events",
+          filter: `family_id=eq.${familyId}`,
+        },
+        () => void refreshEvents(),
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "DELETE",
           schema: "public",
           table: "calendar_events",
           filter: `family_id=eq.${familyId}`,
@@ -547,7 +563,7 @@ export function CalendarClient({
                 onClick={() => setMemberFilter(null)}
                 aria-pressed={memberFilter === null}
                 className={cn(
-                  "inline-flex h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  "inline-flex h-11 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-9",
                   memberFilter === null
                     ? "border-foreground/70 bg-foreground text-background"
                     : "border-border bg-card text-foreground",
@@ -572,12 +588,16 @@ export function CalendarClient({
                     title={member.name}
                     data-testid={`calendar-filter-${member.id}`}
                     className={cn(
-                      "flex size-9 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      selected ? "scale-105 text-white shadow-sm" : "bg-card",
+                      "flex size-11 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:size-9",
+                      selected ? "scale-105 shadow-sm" : "bg-card",
                     )}
                     style={
                       selected
-                        ? { backgroundColor: color, borderColor: color }
+                        ? {
+                            backgroundColor: color,
+                            borderColor: color,
+                            color: getAvatarTextColor(color),
+                          }
                         : { borderColor: color, color }
                     }
                   >
@@ -605,7 +625,7 @@ export function CalendarClient({
                 onClick={() => setView(value)}
                 aria-pressed={view === value}
                 className={cn(
-                  "rounded-[8px] px-3 py-1.5 font-medium",
+                  "min-h-11 rounded-[8px] px-3 py-1.5 font-medium sm:min-h-7",
                   view === value && "bg-card text-foreground shadow-sm",
                 )}
               >
@@ -620,7 +640,7 @@ export function CalendarClient({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-9"
+            className="size-11 sm:size-9"
             onClick={() =>
               view === "month"
                 ? setActiveMonth((current) => shiftMonth(current, -1))
@@ -639,7 +659,7 @@ export function CalendarClient({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-7 shrink-0 rounded-full px-2.5 text-xs"
+                className="h-11 shrink-0 rounded-full px-2.5 text-xs sm:h-7"
                 onClick={goToToday}
                 data-testid="calendar-today-button"
               >
@@ -651,7 +671,7 @@ export function CalendarClient({
             type="button"
             variant="ghost"
             size="icon"
-            className="size-9"
+            className="size-11 sm:size-9"
             onClick={() =>
               view === "month"
                 ? setActiveMonth((current) => shiftMonth(current, 1))
@@ -682,9 +702,9 @@ export function CalendarClient({
                     onClick={() => selectDay(day)}
                     aria-label={`${formatGermanDate(toCalendarDate(day))} auswählen`}
                     aria-pressed={isSelected}
-                    className="flex w-11 shrink-0 flex-col items-center rounded-ordilo-sm py-1 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="flex min-h-11 w-11 shrink-0 flex-col items-center justify-center rounded-ordilo-sm py-1 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-9"
                   >
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {day.toLocaleDateString("de-DE", { weekday: "short" })}
                     </span>
                     <span
@@ -705,8 +725,8 @@ export function CalendarClient({
                             key={event.id}
                             type="button"
                             onClick={() => openEdit(event)}
-                            className="flex w-full items-baseline gap-2 rounded-ordilo-sm border-l-[3px] border-transparent bg-secondary/60 px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            style={color ? { borderLeftColor: color } : undefined}
+                            className="flex w-full items-baseline gap-2 rounded-ordilo-sm border border-border bg-secondary/60 px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            style={color ? { borderColor: color } : undefined}
                             data-testid={`week-event-${event.id}`}
                           >
                             <span className="w-11 shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -734,7 +754,7 @@ export function CalendarClient({
                           openCreate();
                         }}
                         aria-label={`Termin am ${formatGermanDate(toCalendarDate(day))} eintragen`}
-                        className="flex h-8 w-full items-center gap-1.5 rounded-ordilo-sm px-2 text-xs text-muted-foreground/70 transition-colors hover:bg-secondary/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="flex h-11 w-full items-center gap-1.5 rounded-ordilo-sm px-2 text-xs text-muted-foreground/70 transition-colors hover:bg-secondary/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-8"
                       >
                         <Plus className="size-3" aria-hidden="true" />
                         Eintragen
@@ -748,11 +768,11 @@ export function CalendarClient({
         ) : (
         <>
 
-        <div className="grid grid-cols-7 gap-1 text-center">
+        <div className="grid grid-cols-7 gap-px text-center sm:gap-1">
           {WEEKDAYS.map((weekday) => (
             <span
               key={weekday}
-              className="py-1 text-[11px] font-medium text-muted-foreground"
+              className="py-1 text-xs font-medium text-muted-foreground"
             >
               {weekday}
             </span>
@@ -787,7 +807,7 @@ export function CalendarClient({
                   {day.getDate()}
                 </span>
                 {dayEvents.length > 0 && (
-                  <span className="mt-auto hidden w-full truncate text-left text-[10px] font-medium text-primary sm:block">
+                    <span className="mt-auto hidden w-full truncate text-left text-xs font-medium text-primary sm:block">
                     {dayEvents[0].title}
                     {dayEvents.length > 1 && ` +${dayEvents.length - 1}`}
                   </span>
@@ -825,7 +845,7 @@ export function CalendarClient({
             {dayHeading(selectedDate)}
           </h2>
           {memberFilter && (
-            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
               nur {memberNames.get(memberFilter) ?? "…"}
             </span>
           )}
@@ -843,15 +863,15 @@ export function CalendarClient({
                   key={event.id}
                   type="button"
                   onClick={() => openEdit(event)}
-                  className="block w-full rounded-ordilo-sm border border-border border-l-[3px] bg-card px-3 py-2.5 text-left shadow-card transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  style={color ? { borderLeftColor: color } : undefined}
+                  className="block w-full rounded-ordilo-sm border border-border bg-card px-3 py-2.5 text-left shadow-card transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  style={color ? { borderColor: color } : undefined}
                   data-testid={`calendar-event-${event.id}`}
                 >
                   <p className="flex items-center gap-2 text-sm font-medium text-foreground">
                     {event.title}
                     {event.is_new && (
                       <span
-                        className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
+                        className="rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary"
                         data-testid={`calendar-event-new-${event.id}`}
                       >
                         Neu
@@ -901,7 +921,7 @@ export function CalendarClient({
                   )}
                   {event.document_id && (
                     <span
-                      className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
+                      className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground"
                       data-testid={`calendar-event-document-${event.id}`}
                     >
                       <FileText className="size-3" aria-hidden="true" />
@@ -924,7 +944,7 @@ export function CalendarClient({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="gap-1.5"
+                className="h-11 gap-1.5 sm:h-8"
                 onClick={openCreate}
                 data-testid="calendar-empty-day-create"
               >
@@ -979,7 +999,7 @@ export function CalendarClient({
                     type="button"
                     size="sm"
                     variant="outline"
-                    className="gap-1"
+                    className="h-11 gap-1 sm:h-8"
                     onClick={() => acceptSuggestion(suggestion)}
                     data-testid={`suggestion-accept-${suggestion.entityId}`}
                   >
@@ -990,7 +1010,7 @@ export function CalendarClient({
                     type="button"
                     size="sm"
                     variant="ghost"
-                    className="gap-1 text-muted-foreground"
+                    className="h-11 gap-1 text-muted-foreground sm:h-8"
                     onClick={() => void hideSuggestion(suggestion)}
                     data-testid={`suggestion-dismiss-${suggestion.entityId}`}
                   >
@@ -1062,7 +1082,7 @@ export function CalendarClient({
               <>
                 <Button
                   variant="outline"
-                  className="w-full"
+                  className="h-11 w-full sm:h-9"
                   onClick={() => void handleDelete("single")}
                   disabled={deleting}
                   data-testid="confirm-delete-single-button"
@@ -1071,7 +1091,7 @@ export function CalendarClient({
                 </Button>
                 <Button
                   variant="destructive"
-                  className="w-full"
+                  className="h-11 w-full sm:h-9"
                   onClick={() => void handleDelete("series")}
                   disabled={deleting}
                   data-testid="confirm-delete-series-button"
@@ -1083,7 +1103,7 @@ export function CalendarClient({
             {deleteTarget?.recurrence === "none" && (
               <Button
                 variant="destructive"
-                className="w-full"
+                className="h-11 w-full sm:h-9"
                 onClick={() => void handleDelete("series")}
                 disabled={deleting}
                 data-testid="confirm-delete-event-button"
@@ -1093,7 +1113,7 @@ export function CalendarClient({
             )}
             <Button
               variant="ghost"
-              className="w-full"
+              className="h-11 w-full sm:h-9"
               onClick={() => setDeleteTarget(null)}
               disabled={deleting}
             >

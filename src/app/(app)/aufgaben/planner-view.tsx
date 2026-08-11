@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,7 +34,9 @@ export function PlannerView({
   return (
     <PlannerActionsProvider>
       <PlannerHeader showPlaner={showPlaner} familyId={familyId} />
-      {showPlaner ? calendar : tasks}
+      <Fragment key={showPlaner ? "calendar" : "tasks"}>
+        {showPlaner ? calendar : tasks}
+      </Fragment>
     </PlannerActionsProvider>
   );
 }
@@ -61,7 +63,7 @@ function PlannerHeader({
       {familyId && (
         <Button
           size="sm"
-          className="gap-1.5"
+          className="h-11 gap-1.5 sm:h-8"
           onClick={openCreate}
           data-testid="planner-create-button"
         >
