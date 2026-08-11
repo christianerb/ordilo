@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import * as Sentry from "@sentry/nextjs";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
@@ -16,10 +17,19 @@ function sessionUnavailable(): Response {
 }
 
 function sessionFailed(reason: string): Response {
-  // Without this the 502 carries no trace of WHY OpenAI refused (bad
-  // model name, rejected session parameter, expired key), and the client
+  // Without this the 502 carries no trace of WHY OpenAI refused (rejected
+  // model name, unknown session parameter, expired key), and the client
   // only ever sees the generic German sentence below.
+  //
+  // Reported to Sentry as well, not just logged: a console line is only
+  // findable if you already know to go digging in the platform logs, and
+  // this failure is invisible to everyone except PWA users — the browser
+  // never takes this path at all.
   console.error("[realtime] Client secret could not be minted:", reason);
+  Sentry.captureException(
+    new Error(`Realtime client secret could not be minted: ${reason}`),
+    { tags: { area: "realtime", model: REALTIME_MODEL } },
+  );
   return Response.json(
     {
       error: "Spracheingabe konnte nicht gestartet werden.",
