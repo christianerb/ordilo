@@ -213,10 +213,14 @@ export function AISearchBar({
 
   const { status: voiceStatus, start, stop, cancel } = useRealtimeTranscription({
     onTranscript: (transcript) => {
+      setVoiceMode(null);
       setValue(transcript);
       handleSubmit(transcript);
     },
-    onError: (message) => toast.error(message),
+    onError: (message) => {
+      setVoiceMode(null);
+      toast.error(message);
+    },
   });
   const listening = voiceMode === "native" || voiceStatus !== "idle";
 

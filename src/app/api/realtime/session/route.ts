@@ -15,7 +15,11 @@ function sessionUnavailable(): Response {
   );
 }
 
-function sessionFailed(): Response {
+function sessionFailed(reason: string): Response {
+  // Without this the 502 carries no trace of WHY OpenAI refused (bad
+  // model name, rejected session parameter, expired key), and the client
+  // only ever sees the generic German sentence below.
+  console.error("[realtime] Client secret could not be minted:", reason);
   return Response.json(
     {
       error: "Spracheingabe konnte nicht gestartet werden.",
@@ -97,8 +101,12 @@ export async function POST(): Promise<Response> {
             instructions:
               "Du hörst einen deutschen Familienplaner-Wunsch. Gib nur eine klare, vollständige deutsche Transkription zurück. Lege niemals selbst Termine oder Aufgaben an und behaupte niemals, dass etwas gespeichert wurde.",
             // Text-only output: the session exists to transcribe, so no
-            // audio answer is ever generated (or paid for).
-            modalities: ["text"],
+            // audio answer is ever generated (or paid for). GA Realtime
+            // names this `output_modalities` — the beta-era `modalities`
+            // is rejected as an unknown parameter, which took down the
+            // whole PWA voice path (the only caller without a native
+            // Web Speech fallback).
+            output_modalities: ["text"],
             audio: {
               input: {
                 transcription: { model: "gpt-live-transcribe", language: "de" },
@@ -113,7 +121,10 @@ export async function POST(): Promise<Response> {
     );
 
     if (!response.ok) {
-      return sessionFailed();
+      const detail = await response.text().catch(() => "");
+      return sessionFailed(
+        `OpenAI responded ${response.status}: ${detail.slice(0, 500)}`,
+      );
     }
 
     const session = (await response.json()) as {
@@ -121,7 +132,7 @@ export async function POST(): Promise<Response> {
     };
     const value = session.client_secret?.value;
     if (!value) {
-      return sessionFailed();
+      return sessionFailed("OpenAI returned no client_secret value");
     }
 
     // Count the minted session against the family's daily budget (token
@@ -133,8 +144,8 @@ export async function POST(): Promise<Response> {
       expires_at: session.client_secret?.expires_at ?? null,
       model: REALTIME_MODEL,
     });
-  } catch {
-    return sessionFailed();
+  } catch (err) {
+    return sessionFailed(`request to OpenAI threw: ${String(err)}`);
   }
 }
 

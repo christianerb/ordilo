@@ -129,6 +129,16 @@ describe("POST /api/realtime/session", () => {
     );
   });
 
+  it("requests a text-only session with the GA parameter name", async () => {
+    await POST();
+
+    const sent = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    // `modalities` is the beta-era name and is rejected outright, which
+    // left the PWA (the only voice path without a native fallback) dead.
+    expect(sent.session.output_modalities).toEqual(["text"]);
+    expect(sent.session.modalities).toBeUndefined();
+  });
+
   it("returns 503 when no OpenAI key is configured", async () => {
     vi.stubEnv("OPENAI_API_KEY", "");
 
