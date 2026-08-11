@@ -1,5 +1,6 @@
 import { BellRing, Camera, ShieldCheck, Sparkles } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 
 interface AuthShellProps {
   children: React.ReactNode;
@@ -39,9 +40,10 @@ export function AuthShell({ children, compact = false }: AuthShellProps) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-xl font-semibold tracking-[-0.03em] text-[var(--petrol-darker)]">
-              ordil<span className="text-[var(--apricot)]">o</span>
-            </span>
+            <OrdiloWordmark
+              mascotSize={28}
+              labelClassName="text-xl font-semibold tracking-[-0.03em] text-[var(--petrol-darker)]"
+            />
             <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--auth-sage)] px-3 py-1.5 text-xs font-medium text-[var(--petrol-darker)]">
               <ShieldCheck className="size-3.5" aria-hidden="true" />
               Sicher und vertraulich

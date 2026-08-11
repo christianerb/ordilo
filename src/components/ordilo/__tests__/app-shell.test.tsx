@@ -755,6 +755,19 @@ describe("AppShell sidebar personality touches", () => {
     expect(aside?.getAttribute("style")).toContain("gradient");
   });
 
+  it("shows the time-aware family scene only while the sidebar is expanded", () => {
+    mockSupabaseData();
+    render(
+      <AppShell>
+        <div>content</div>
+      </AppShell>,
+    );
+
+    expect(screen.getByTestId("sidebar-scenery")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Seitenleiste einklappen"));
+    expect(screen.queryByTestId("sidebar-scenery")).toBeNull();
+  });
+
   it("shows a time-appropriate greeting with the display name when a profile is given", async () => {
     mockSupabaseData({
       family: { id: "fam-1", name: "Familie Müller" },

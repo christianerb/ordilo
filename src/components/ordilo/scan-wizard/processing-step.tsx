@@ -282,7 +282,8 @@ export function ScanProcessingStep({
                         >
                           {stepDone ? (
                             <Check
-                              className="size-3.5 text-white"
+                              key={`${step.key}-complete`}
+                              className="size-3.5 text-white animate-check-pop"
                               strokeWidth={2.5}
                             />
                           ) : stepActive ? (
@@ -295,7 +296,7 @@ export function ScanProcessingStep({
                             className={cn(
                               "mt-1 h-7 w-px transition-colors duration-500",
                               stepDone
-                                ? "bg-[var(--petrol)]"
+                                ? "bg-[var(--petrol)] animate-pipeline-connector"
                                 : "bg-[var(--mist-light)]",
                             )}
                             aria-hidden="true"

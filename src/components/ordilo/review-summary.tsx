@@ -137,6 +137,13 @@ function buildHighlights(
 export interface ReviewSummaryProps {
   analysis: DocumentAnalysis;
   familyMembers: FamilyMemberOption[];
+  /**
+   * How much control the scan result needs. High confidence stays compact;
+   * low confidence points to one concrete question before saving.
+   */
+  confidenceLevel?: "high" | "medium" | "low";
+  /** The first concrete detail Ordilo needs the family to check. */
+  reviewFocus?: string;
   hasUnresolvedDisambiguation?: boolean;
   confirming?: boolean;
   confirmError?: string | null;
@@ -175,6 +182,8 @@ export interface ReviewSummaryProps {
 export function ReviewSummary({
   analysis,
   familyMembers,
+  confidenceLevel = "medium",
+  reviewFocus,
   hasUnresolvedDisambiguation = false,
   confirming = false,
   confirmError,
@@ -247,7 +256,27 @@ export function ReviewSummary({
       </div>
 
       {/* Uncertainty notice */}
-      {analysis.needs_user_review && (
+      {confidenceLevel === "low" && reviewFocus ? (
+        <div
+          data-testid="review-summary-review-focus"
+          className="rounded-ordilo-sm border border-[var(--apricot)]/30 bg-[var(--sand-warm)] p-3"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle
+              className="mt-0.5 size-4 shrink-0 text-[var(--apricot)]"
+              aria-hidden="true"
+            />
+            <div>
+              <p className="text-sm font-medium text-foreground">
+                Eine Sache kurz prüfen
+              </p>
+              <p className="mt-1 text-sm text-[var(--mist-dark)]">
+                {reviewFocus}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : analysis.needs_user_review && (
         <div
           data-testid="review-summary-uncertain-notice"
           className="flex items-start gap-2 rounded-ordilo-sm border border-[var(--apricot)]/30 bg-[var(--apricot)]/5 p-3"
@@ -347,7 +376,11 @@ export function ReviewSummary({
         <Button
           type="button"
           size="lg"
-          onClick={hasUnresolvedDisambiguation ? onEdit : onConfirm}
+          onClick={
+            hasUnresolvedDisambiguation || confidenceLevel === "low"
+              ? onEdit
+              : onConfirm
+          }
           disabled={confirming}
           className="h-12 w-full rounded-ordilo-md"
           data-testid="review-summary-confirm-button"
@@ -362,6 +395,11 @@ export function ReviewSummary({
               <AlertCircle className="size-4" aria-hidden="true" />
               Bitte Person wählen
             </>
+          ) : confidenceLevel === "low" ? (
+            <>
+              <AlertTriangle className="size-4" aria-hidden="true" />
+              Jetzt prüfen
+            </>
           ) : (
             <>
               <Check className="size-4" aria-hidden="true" />
@@ -371,15 +409,24 @@ export function ReviewSummary({
         </Button>
         <Button
           type="button"
-          variant="outline"
+          variant={confidenceLevel === "low" ? "ghost" : "outline"}
           size="lg"
-          onClick={onEdit}
+          onClick={confidenceLevel === "low" ? onConfirm : onEdit}
           disabled={confirming}
           className="h-12 w-full rounded-ordilo-md"
           data-testid="review-summary-edit-button"
         >
-          <Pencil className="size-4" aria-hidden="true" />
-          Bearbeiten
+          {confidenceLevel === "low" ? (
+            <>
+              <Check className="size-4" aria-hidden="true" />
+              Trotzdem übernehmen
+            </>
+          ) : (
+            <>
+              <Pencil className="size-4" aria-hidden="true" />
+              Bearbeiten
+            </>
+          )}
         </Button>
       </div>
 

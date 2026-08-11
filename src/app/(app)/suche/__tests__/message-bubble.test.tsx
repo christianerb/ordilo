@@ -436,6 +436,66 @@ describe("MessageBubble — structured answer card", () => {
   });
 });
 
+describe("MessageBubble — Ordilo Action Card", () => {
+  const taskAction = {
+    id: "action-1",
+    toolName: "add_task" as const,
+    args: {
+      title: "Anmeldung abschicken",
+      due_date: "2026-08-15",
+      assignee_name: "Emma",
+    },
+    state: "ready" as const,
+  };
+
+  it("renders a clear proposed action separate from the assistant answer", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Ich habe das für dich vorbereitet.",
+          action: taskAction,
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("ordilo-action-card")).toBeDefined();
+    expect(screen.getByText("Aufgabe vorbereiten")).toBeDefined();
+    expect(screen.getByText("Anmeldung abschicken")).toBeDefined();
+    expect(screen.getByText("15.08.2026")).toBeDefined();
+    expect(screen.getByTestId("action-card-confirm")).toHaveTextContent(
+      "Übernehmen",
+    );
+  });
+
+  it("routes the card controls to the message action callbacks", () => {
+    const onConfirm = vi.fn();
+    const onDismiss = vi.fn();
+    const onAdjust = vi.fn();
+    render(
+      <MessageBubble
+        message={buildMessage({ action: taskAction })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+        onActionConfirm={onConfirm}
+        onActionDismiss={onDismiss}
+        onActionAdjust={onAdjust}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("action-card-confirm"));
+    fireEvent.click(screen.getByTestId("action-card-adjust"));
+    fireEvent.click(screen.getByTestId("action-card-dismiss"));
+
+    expect(onConfirm).toHaveBeenCalledWith("msg-1");
+    expect(onAdjust).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "msg-1" }),
+    );
+    expect(onDismiss).toHaveBeenCalledWith("msg-1");
+  });
+});
+
 describe("MessageBubble — feedback icons", () => {
   it("shows feedback icons for a completed text answer", () => {
     render(
