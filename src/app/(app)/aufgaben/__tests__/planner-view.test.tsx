@@ -1,10 +1,26 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSearchParamsGet = vi.fn<(key: string) => string | null>(() => null);
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: mockSearchParamsGet }),
+}));
+
+// Keep link rendering plain in the unit test (no router needed).
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...rest
+  }: {
+    href: string;
+    children: React.ReactNode;
+  }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  ),
 }));
 
 import { PlannerView } from "@/app/(app)/aufgaben/planner-view";
@@ -50,6 +66,30 @@ describe("PlannerView", () => {
     renderView();
     expect(screen.getByTestId("calendar-view")).toBeInTheDocument();
     expect(screen.queryByTestId("tasks-view")).not.toBeInTheDocument();
+  });
+
+  it("shows a local Aufgaben/Planer switcher with the active view marked", () => {
+    renderView();
+
+    const switcher = screen.getByTestId("planner-view-switcher");
+    const aufgaben = within(switcher).getByRole("link", { name: "Aufgaben" });
+    const planer = within(switcher).getByRole("link", { name: "Planer" });
+    expect(aufgaben).toHaveAttribute("aria-current", "page");
+    expect(planer).not.toHaveAttribute("aria-current");
+    expect(planer).toHaveAttribute("href", "/aufgaben?tab=planer");
+  });
+
+  it("marks Planer as the current view in the switcher when ?tab=planer", () => {
+    mockSearchParamsGet.mockImplementation((key: string) =>
+      key === "tab" ? "planer" : null,
+    );
+    renderView();
+
+    const switcher = screen.getByTestId("planner-view-switcher");
+    expect(within(switcher).getByRole("link", { name: "Planer" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   it("labels the header action after the active view", () => {

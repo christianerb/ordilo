@@ -223,6 +223,43 @@ describe("AufgabenClient — board drag-and-drop", () => {
   });
 });
 
+describe("AufgabenClient — undoable dismissal", () => {
+  it("offers undo after dismissing a task and restores it on click", async () => {
+    renderBoard();
+
+    // Dismiss through the overflow menu's confirm dialog.
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    fireEvent.click(await screen.findByTestId("card-action-delete"));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("task-delete-confirm-dialog"),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByTestId("confirm-delete-task-button"));
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    const [message, options] = vi.mocked(toast.success).mock.calls[0] as [
+      string,
+      { action: { label: string; onClick: () => void } },
+    ];
+    expect(message).toBe("Verworfen — weg damit");
+    expect(options.action.label).toBe("Rückgängig");
+
+    // The task vanished optimistically; undo brings it back (status open).
+    await act(async () => {
+      options.action.onClick();
+    });
+    await waitFor(() =>
+      expect(mockUpdate).toHaveBeenLastCalledWith({ status: "open" }),
+    );
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenLastCalledWith(
+        "Wieder da — Aufgabe ist zurück",
+      ),
+    );
+  });
+});
+
 describe("AufgabenClient — drag hint", () => {
   it("shows the hint on first visit and hides it after dismiss", () => {
     renderBoard();

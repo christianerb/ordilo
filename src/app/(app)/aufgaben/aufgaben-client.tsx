@@ -287,7 +287,7 @@ export function AufgabenClient({
       })()
     : null;
 
-  const { toggleDone, dismiss, reschedule } = useTaskMutation({
+  const { toggleDone, dismiss, restore, reschedule } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
@@ -340,14 +340,37 @@ export function AufgabenClient({
     [toggleDone],
   );
 
+  const handleUndoDismiss = useCallback(
+    async (taskId: string) => {
+      const ok = await restore(taskId);
+      if (ok) {
+        setTasks((prev) =>
+          prev.map((t) => (t.id === taskId ? { ...t, status: "open" } : t)),
+        );
+        setSelectedTask((prev) =>
+          prev && prev.id === taskId ? { ...prev, status: "open" } : prev,
+        );
+        toast.success("Wieder da — Aufgabe ist zurück");
+      }
+    },
+    [restore],
+  );
+
   const handleDismiss = useCallback(
     async (taskId: string) => {
       const ok = await dismiss(taskId);
       if (ok) {
-        toast.success("Verworfen — weg damit");
+        // Dismissal is reversible: offer undo right in the success toast
+        // so an accidental swipe never silently loses a task.
+        toast.success("Verworfen — weg damit", {
+          action: {
+            label: "Rückgängig",
+            onClick: () => void handleUndoDismiss(taskId),
+          },
+        });
       }
     },
-    [dismiss],
+    [dismiss, handleUndoDismiss],
   );
 
   const handleCardClick = useCallback((task: TaskCardData) => {
@@ -536,7 +559,8 @@ export function AufgabenClient({
           <DialogHeader>
             <DialogTitle>Aufgabe verwerfen?</DialogTitle>
             <DialogDescription>
-              Die Aufgabe wird aus deiner Liste entfernt.
+              Die Aufgabe verschwindet aus deiner Liste. Du kannst das direkt
+              danach rückgängig machen.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter className="mt-2 flex-row gap-3 sm:justify-end">

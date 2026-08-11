@@ -138,7 +138,9 @@ export function CalendarClient({
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [activeMonth, setActiveMonth] = useState(() => monthStart(today));
   const [selectedDate, setSelectedDate] = useState(() => today);
-  const [view, setView] = useState<"week" | "month">("month");
+  // Default to the week agenda: it answers "Was steht an?" at a glance,
+  // while the month grid stays one tap away for orientation.
+  const [view, setView] = useState<"week" | "month">("week");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [suggestionTemplate, setSuggestionTemplate] =
@@ -565,7 +567,7 @@ export function CalendarClient({
                 className={cn(
                   "inline-flex h-11 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-9",
                   memberFilter === null
-                    ? "border-foreground/70 bg-foreground text-background"
+                    ? "border-primary/30 bg-primary/10 text-primary"
                     : "border-border bg-card text-foreground",
                 )}
               >
@@ -585,11 +587,10 @@ export function CalendarClient({
                     }
                     aria-pressed={selected}
                     aria-label={`Nur Termine von ${member.name}`}
-                    title={member.name}
                     data-testid={`calendar-filter-${member.id}`}
                     className={cn(
-                      "flex size-11 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:size-9",
-                      selected ? "scale-105 shadow-sm" : "bg-card",
+                      "inline-flex h-11 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:h-9",
+                      selected ? "shadow-sm" : "bg-card text-foreground",
                     )}
                     style={
                       selected
@@ -598,10 +599,24 @@ export function CalendarClient({
                             borderColor: color,
                             color: getAvatarTextColor(color),
                           }
-                        : { borderColor: color, color }
+                        : { borderColor: color }
                     }
                   >
-                    {initialOf(member.name)}
+                    <span
+                      className="flex size-5 items-center justify-center rounded-full text-xs font-semibold"
+                      style={
+                        selected
+                          ? undefined
+                          : {
+                              backgroundColor: color,
+                              color: getAvatarTextColor(color),
+                            }
+                      }
+                      aria-hidden="true"
+                    >
+                      {selected ? null : initialOf(member.name)}
+                    </span>
+                    {member.name}
                   </button>
                 );
               })}

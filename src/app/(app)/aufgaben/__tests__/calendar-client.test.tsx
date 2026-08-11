@@ -158,11 +158,53 @@ describe("CalendarClient", () => {
     const filter = screen.getByTestId("calendar-filter-m-light");
     fireEvent.click(filter);
 
-    expect(filter).toHaveClass("size-11", "sm:size-9");
+    expect(filter).toHaveClass("h-11", "sm:h-9");
     expect(filter).toHaveStyle({
       backgroundColor: "#b08a3e",
       color: "#201E1B",
     });
+  });
+
+  it("shows member names, not just initials, in the person filter", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Nur Termine von Emma" }),
+    ).toHaveTextContent("Emma");
+    expect(
+      screen.getByRole("button", { name: "Nur Termine von Jonas" }),
+    ).toHaveTextContent("Jonas");
+  });
+
+  it("defaults to the week agenda and switches to the month grid on demand", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[]}
+      />,
+    );
+
+    expect(screen.getByTestId("calendar-week-agenda")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Woche" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Monat" }));
+    expect(screen.getByRole("button", { name: "Monat" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.queryByTestId("calendar-week-agenda"),
+    ).not.toBeInTheDocument();
   });
 
   it("subscribes to calendar event deletions", () => {

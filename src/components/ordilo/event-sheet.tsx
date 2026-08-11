@@ -534,14 +534,14 @@ export function EventSheet({
 
           {conflicts.length > 0 && (
             <div
-              className="rounded-ordilo-sm border border-amber-600/25 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+              className="rounded-ordilo-sm border border-primary/20 bg-secondary/60 px-3 py-2 text-sm text-foreground"
               role="status"
               data-testid="event-conflict-warning"
             >
               {conflicts.map(({ event: conflictEvent, memberIds }) => (
                 <p key={conflictEvent.id} className="flex items-start gap-1.5">
                   <TriangleAlert
-                    className="mt-0.5 size-3.5 shrink-0 text-amber-600"
+                    className="mt-0.5 size-3.5 shrink-0 text-primary"
                     aria-hidden="true"
                   />
                   <span>

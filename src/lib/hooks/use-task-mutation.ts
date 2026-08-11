@@ -112,6 +112,7 @@ export interface UseTaskMutationOptions {
 export function useTaskMutation(options: UseTaskMutationOptions): {
   toggleDone: (taskId: string, newStatus: string) => Promise<boolean>;
   dismiss: (taskId: string) => Promise<boolean>;
+  restore: (taskId: string) => Promise<boolean>;
   reschedule: (
     taskId: string,
     updates: { status: string; due_date: string | null },
@@ -178,6 +179,36 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
     [supabase],
   );
 
+  /**
+   * Undo a dismiss: sets the task back to open. Not optimistic — undo is
+   * a deliberate user action after the dismiss already settled, so it
+   * applies only once the server confirms (and reports failure via
+   * onDismissError so the caller's toast wording stays honest).
+   */
+  const restore = useCallback(
+    async (taskId: string): Promise<boolean> => {
+      const opts = optionsRef.current;
+
+      try {
+        const { error } = await supabase
+          .from("tasks")
+          .update({ status: "open" })
+          .eq("id", taskId);
+
+        if (error) {
+          opts.onDismissError();
+          return false;
+        }
+        opts.onSettled?.();
+        return true;
+      } catch {
+        (opts.onDismissException ?? opts.onDismissError)();
+        return false;
+      }
+    },
+    [supabase],
+  );
+
   const reschedule = useCallback(
     async (
       taskId: string,
@@ -209,5 +240,5 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
     [supabase],
   );
 
-  return { toggleDone, dismiss, reschedule };
+  return { toggleDone, dismiss, restore, reschedule };
 }
