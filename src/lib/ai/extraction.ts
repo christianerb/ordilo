@@ -5,7 +5,10 @@ import {
   type DocumentAnalysis,
   type FamilyContext,
 } from "@/lib/schemas/extraction";
-import { EXTRACTION_MODEL } from "@/lib/ai/models";
+import {
+  EXTRACTION_MODEL,
+  EXTRACTION_REASONING_EFFORT,
+} from "@/lib/ai/models";
 import {
   extractPartialPreview,
   repairPartialJson,
@@ -15,7 +18,7 @@ import {
 /**
  * OpenAI structured output extraction client.
  *
- * Calls OpenAI with `response_format: { type: "json_schema", strict: true }`
+ * Calls OpenAI Responses API with `text.format: { type: "json_schema", strict: true }`
  * using the `document_analysis` schema. The response is validated against
  * the Zod schema before being returned to the caller.
  *
@@ -221,7 +224,7 @@ function parseAndValidate(content: string): DocumentAnalysis {
 /**
  * Run the LLM extraction on a document's OCR text.
  *
- * Calls OpenAI (see `EXTRACTION_MODEL`) with `response_format: json_schema`
+ * Calls OpenAI Responses API (see `EXTRACTION_MODEL`) with `text.format: json_schema`
  * (strict mode) using the `document_analysis` schema. The response is
  * validated against the Zod schema before being returned.
  *
@@ -250,30 +253,27 @@ export async function runExtraction(
 
   const responseFormat = {
     type: "json_schema" as const,
-    json_schema: {
-      name: "document_analysis",
-      strict: true,
-      schema: documentAnalysisJsonSchema as Record<string, unknown>,
-    },
+    name: "document_analysis",
+    strict: true,
+    schema: documentAnalysisJsonSchema as Record<string, unknown>,
   };
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: ocrMarkdown },
-  ];
 
   if (!onPartial) {
-    let response: OpenAI.Chat.Completions.ChatCompletion;
+    let response: OpenAI.Responses.Response;
     try {
-      response = await client.chat.completions.create({
+      response = await client.responses.create({
         model: EXTRACTION_MODEL,
-        messages,
-        response_format: responseFormat,
+        instructions: systemPrompt,
+        input: ocrMarkdown,
+        text: { format: responseFormat },
+        reasoning: { effort: EXTRACTION_REASONING_EFFORT },
+        store: false,
       });
     } catch (err) {
       throw toExtractionError(err);
     }
 
-    const content = response.choices[0]?.message?.content;
+    const content = response.output_text;
     if (!content) {
       throw new ExtractionError(
         "OpenAI: Leere Antwort erhalten.",
@@ -284,12 +284,15 @@ export async function runExtraction(
   }
 
   // --- Streaming path: same call, incrementally previewed. ---
-  let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+  let stream: AsyncIterable<OpenAI.Responses.ResponseStreamEvent>;
   try {
-    stream = await client.chat.completions.create({
+    stream = await client.responses.create({
       model: EXTRACTION_MODEL,
-      messages,
-      response_format: responseFormat,
+      instructions: systemPrompt,
+      input: ocrMarkdown,
+      text: { format: responseFormat },
+      reasoning: { effort: EXTRACTION_REASONING_EFFORT },
+      store: false,
       stream: true,
     });
   } catch (err) {
@@ -299,10 +302,9 @@ export async function runExtraction(
   let buffer = "";
   let lastPreviewSize = 0;
   try {
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content;
-      if (!delta) continue;
-      buffer += delta;
+    for await (const event of stream) {
+      if (event.type !== "response.output_text.delta") continue;
+      buffer += event.delta;
 
       const repaired = repairPartialJson(buffer);
       if (repaired === null) continue;

@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the OpenAI module.
-// We replace the default export with a mock class that has a
-// chat.completions.create method we control per-test.
+// Mock the OpenAI module. The Responses API create method is controlled per
+// test through `mockCreate`.
 const mockCreate = vi.fn();
 vi.mock("openai", () => {
   // Reproduce a minimal APIError shape for testing error handling.
@@ -19,13 +18,11 @@ vi.mock("openai", () => {
   // here too for the `instanceof OpenAI.APIError` check in extraction.ts.
   class MockOpenAI {
     static APIError = MockAPIError;
-    chat: { completions: { create: typeof mockCreate } };
+    responses: { create: typeof mockCreate };
     constructor(_config: { apiKey: string }) {
       void _config; // Intentionally unused — just matches real constructor signature.
-      this.chat = {
-        completions: {
-          create: mockCreate,
-        },
+      this.responses = {
+        create: mockCreate,
       };
     }
   }
@@ -96,16 +93,10 @@ function validAnalysis(): DocumentAnalysis {
   };
 }
 
-/** Create a mock OpenAI chat completion response. */
-function mockChatResponse(content: string) {
+/** Create a mock OpenAI Responses API response. */
+function mockResponse(content: string) {
   return {
-    choices: [
-      {
-        message: {
-          content,
-        },
-      },
-    ],
+    output_text: content,
   };
 }
 
@@ -207,7 +198,7 @@ describe("runExtraction", () => {
   it("returns validated analysis on success", async () => {
     const analysis = validAnalysis();
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse(JSON.stringify(analysis)),
+      mockResponse(JSON.stringify(analysis)),
     );
 
     const result = await runExtraction("OCR markdown text", validFamilyContext());
@@ -221,33 +212,32 @@ describe("runExtraction", () => {
   it("calls OpenAI with correct model and strict json_schema", async () => {
     const analysis = validAnalysis();
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse(JSON.stringify(analysis)),
+      mockResponse(JSON.stringify(analysis)),
     );
 
     await runExtraction("OCR text", validFamilyContext());
 
     expect(mockCreate).toHaveBeenCalledTimes(1);
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.model).toBe("gpt-5.4-mini");
-    expect(callArgs.response_format.type).toBe("json_schema");
-    expect(callArgs.response_format.json_schema.strict).toBe(true);
-    expect(callArgs.response_format.json_schema.name).toBe("document_analysis");
+    expect(callArgs.model).toBe("gpt-5.6-terra");
+    expect(callArgs.text.format.type).toBe("json_schema");
+    expect(callArgs.text.format.strict).toBe(true);
+    expect(callArgs.text.format.name).toBe("document_analysis");
+    expect(callArgs.reasoning).toEqual({ effort: "medium" });
+    expect(callArgs.store).toBe(false);
   });
 
-  it("includes system prompt with family context in messages", async () => {
+  it("includes system prompt and OCR text in Responses API input", async () => {
     const analysis = validAnalysis();
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse(JSON.stringify(analysis)),
+      mockResponse(JSON.stringify(analysis)),
     );
 
     await runExtraction("OCR text", validFamilyContext());
 
     const callArgs = mockCreate.mock.calls[0][0];
-    expect(callArgs.messages).toHaveLength(2);
-    expect(callArgs.messages[0].role).toBe("system");
-    expect(callArgs.messages[0].content).toContain("Emma");
-    expect(callArgs.messages[1].role).toBe("user");
-    expect(callArgs.messages[1].content).toBe("OCR text");
+    expect(callArgs.instructions).toContain("Emma");
+    expect(callArgs.input).toBe("OCR text");
   });
 
   it("throws ExtractionError when API key is missing", async () => {
@@ -268,7 +258,7 @@ describe("runExtraction", () => {
 
   it("throws ExtractionError on empty response content", async () => {
     mockCreate.mockResolvedValueOnce({
-      choices: [{ message: { content: null } }],
+      output_text: "",
     });
 
     await expect(
@@ -277,7 +267,7 @@ describe("runExtraction", () => {
 
     try {
       mockCreate.mockResolvedValueOnce({
-        choices: [{ message: { content: null } }],
+        output_text: "",
       });
       await runExtraction("OCR text", validFamilyContext());
     } catch (err) {
@@ -287,7 +277,7 @@ describe("runExtraction", () => {
 
   it("throws ExtractionError on invalid JSON response", async () => {
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse("not valid json {{{"),
+      mockResponse("not valid json {{{"),
     );
 
     await expect(
@@ -296,7 +286,7 @@ describe("runExtraction", () => {
 
     try {
       mockCreate.mockResolvedValueOnce(
-        mockChatResponse("also not json"),
+        mockResponse("also not json"),
       );
       await runExtraction("OCR text", validFamilyContext());
     } catch (err) {
@@ -307,7 +297,7 @@ describe("runExtraction", () => {
   it("throws ExtractionError on schema validation failure", async () => {
     // Valid JSON but wrong schema — document_type not in enum.
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse(
+      mockResponse(
         JSON.stringify({ ...validAnalysis(), document_type: "blog" }),
       ),
     );
@@ -318,7 +308,7 @@ describe("runExtraction", () => {
 
     try {
       mockCreate.mockResolvedValueOnce(
-        mockChatResponse(
+        mockResponse(
           JSON.stringify({ ...validAnalysis(), document_type: "blog" }),
         ),
       );
@@ -394,7 +384,7 @@ describe("runExtraction", () => {
   it("does not include the API key in the response or error message", async () => {
     setApiKey("sk-secret-key-12345");
     mockCreate.mockResolvedValueOnce(
-      mockChatResponse(JSON.stringify(validAnalysis())),
+      mockResponse(JSON.stringify(validAnalysis())),
     );
 
     const result = await runExtraction("OCR text", validFamilyContext());
@@ -408,12 +398,12 @@ describe("runExtraction", () => {
 // runExtraction — streaming (onPartial)
 // ---------------------------------------------------------------------------
 
-/** A minimal async-iterable mimicking OpenAI's ChatCompletionChunk stream. */
+/** A minimal async-iterable mimicking a Responses API stream. */
 function fakeChunkStream(deltas: string[]) {
   return {
     [Symbol.asyncIterator]: async function* () {
       for (const delta of deltas) {
-        yield { choices: [{ delta: { content: delta } }] };
+        yield { type: "response.output_text.delta", delta };
       }
     },
   };
@@ -482,7 +472,7 @@ describe("runExtraction — streaming (onPartial)", () => {
   it("propagates a stream error as ExtractionError", async () => {
     mockCreate.mockResolvedValueOnce({
       [Symbol.asyncIterator]: async function* () {
-        yield { choices: [{ delta: { content: '{"title":"x"' } }] };
+        yield { type: "response.output_text.delta", delta: '{"title":"x"' };
         throw new Error("stream broke");
       },
     });
