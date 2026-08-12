@@ -171,9 +171,10 @@ export function DocumentCard({
       <div className="flex shrink-0 flex-col items-end gap-1.5">
         <div className="flex items-center gap-1.5">
           <span
+            key={status}
             data-testid={`status-badge-${status}`}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium",
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium animate-status-settle",
               getStatusBadgeClasses(status),
             )}
           >

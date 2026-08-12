@@ -120,7 +120,7 @@ export function ProcessingChecklist({
         data-testid="processing-step"
         data-status={status}
         className={cn(
-          "text-sm animate-in fade-in-0 duration-200",
+          "text-sm animate-status-line",
           status === "error" && "text-destructive",
           status === "active" && "font-medium text-foreground",
           status === "done" && "text-muted-foreground",

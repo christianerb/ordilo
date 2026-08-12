@@ -11,7 +11,13 @@ import { Sparkles, Plus, MessageSquare, Trash2, ChevronDown, RefreshCw, Reply, X
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
-import type { ChatSource, AnswerCard as AnswerCardData } from "@/lib/schemas/chat";
+import {
+  CHAT_ACTION_TOOL_NAMES,
+  mergeConfirmationProposal,
+  type ChatAction,
+  type ChatSource,
+  type AnswerCard as AnswerCardData,
+} from "@/lib/schemas/chat";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
@@ -40,6 +46,7 @@ export interface InitialMessage {
   content: string;
   sources: ChatSource[];
   card?: AnswerCardData;
+  actions?: ChatAction[];
   feedback?: "positive" | "negative" | null;
 }
 
@@ -108,6 +115,7 @@ export function SucheClient({
       content: m.content,
       sources: m.sources,
       card: m.card,
+      actions: m.actions,
       feedback: m.feedback ?? null,
     })),
   );
@@ -503,12 +511,42 @@ export function SucheClient({
                   ),
                 );
               } else if (data.type === "confirmation_request") {
-                // A destructive tool (mark_task_done) needs user
-                // confirmation. The model will also ask in its text, but
-                // this event lets the client render a confirmation UI.
-                // For now, we rely on the model's text response to ask
-                // for confirmation. The event is available for future
-                // UI enhancement (e.g. inline confirm buttons).
+                const toolName = data.tool_name;
+                if (
+                  typeof toolName === "string" &&
+                  CHAT_ACTION_TOOL_NAMES.includes(
+                    toolName as (typeof CHAT_ACTION_TOOL_NAMES)[number],
+                  ) &&
+                  data.action_args &&
+                  typeof data.action_args === "object" &&
+                  !Array.isArray(data.action_args)
+                ) {
+                  // A single answer can propose several writes — append each
+                  // as its own card instead of overwriting the previous one.
+                  // The server mints and persists the same merged proposal,
+                  // so a reload restores exactly this card.
+                  setMessages((prev) =>
+                    prev.map((m) => {
+                      if (m.id !== aiMsgId) return m;
+                      const action: ChatAction = {
+                        // The server mints a stable id per proposal (also
+                        // persisted with the message) so a reload restores
+                        // the same idempotency key. The derived fallback
+                        // covers streams from older server versions.
+                        id:
+                          typeof data.action_id === "string"
+                            ? data.action_id
+                            : `${aiMsgId}-${toolName}-${(m.actions ?? []).length}`,
+                        toolName: toolName as ChatAction["toolName"],
+                        // Shared merge: validated args + server-resolved
+                        // preview fields (same as the persisted copy).
+                        args: mergeConfirmationProposal(data),
+                        state: "ready",
+                      };
+                      return { ...m, actions: [...(m.actions ?? []), action] };
+                    }),
+                  );
+                }
               } else if (data.type === "conversation") {
                 // Conversation ID from the server — update URL and state
                 const newId = data.conversation_id as string;
@@ -584,6 +622,149 @@ export function SucheClient({
       void openDocument(documentId);
     },
     [openDocument],
+  );
+
+  const updateAction = useCallback(
+    (
+      messageId: string,
+      actionId: string,
+      update: (action: ChatAction) => ChatAction,
+    ) => {
+      setMessages((previous) =>
+        previous.map((message) =>
+          message.id === messageId
+            ? {
+                ...message,
+                actions: message.actions?.map((action) =>
+                  action.id === actionId ? update(action) : action,
+                ),
+              }
+            : message,
+        ),
+      );
+    },
+    [],
+  );
+
+  const runAction = useCallback(
+    async (
+      messageId: string,
+      actionId: string,
+      action: ChatAction,
+      mode: "confirm" | "undo",
+    ) => {
+      updateAction(messageId, actionId, (current) => ({
+        ...current,
+        state: mode === "confirm" ? "confirming" : "undoing",
+        error: undefined,
+      }));
+
+      const proposal = mode === "undo" ? action.undo : action;
+      if (!proposal) return;
+
+      try {
+        const response = await fetch("/api/chat/actions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            family_id: familyId,
+            // Stable idempotency key: a retried tap reuses it, so the
+            // server executes the write at most once per proposal.
+            action_id: mode === "undo" ? `${action.id}:undo` : action.id,
+            tool_name: proposal.toolName,
+            args: proposal.args,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof body.error === "string"
+              ? body.error
+              : "Das hat nicht geklappt. Bitte nochmal versuchen.",
+          );
+        }
+
+        updateAction(messageId, actionId, (current) => {
+          if (mode === "undo") return { ...current, state: "undone" };
+
+          const taskId =
+            current.toolName === "mark_task_done" &&
+            typeof body.result?.task_id === "string"
+              ? body.result.task_id
+              : null;
+          return {
+            ...current,
+            state: "confirmed",
+            undo: taskId
+              ? {
+                  toolName: "update_task",
+                  args: { task_id: taskId, status: "open" },
+                }
+              : undefined,
+          };
+        });
+      } catch (error) {
+        updateAction(messageId, actionId, (current) => ({
+          ...current,
+          state: "error",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Das hat nicht geklappt. Bitte nochmal versuchen.",
+        }));
+      }
+    },
+    [familyId, updateAction],
+  );
+
+  const findAction = useCallback(
+    (messageId: string, actionId: string) =>
+      messages
+        .find((message) => message.id === messageId)
+        ?.actions?.find((action) => action.id === actionId),
+    [messages],
+  );
+
+  const handleActionConfirm = useCallback(
+    (messageId: string, actionId: string) => {
+      const action = findAction(messageId, actionId);
+      if (action) void runAction(messageId, actionId, action, "confirm");
+    },
+    [findAction, runAction],
+  );
+
+  const handleActionUndo = useCallback(
+    (messageId: string, actionId: string) => {
+      const action = findAction(messageId, actionId);
+      if (action?.undo) void runAction(messageId, actionId, action, "undo");
+    },
+    [findAction, runAction],
+  );
+
+  const handleActionDismiss = useCallback(
+    (messageId: string, actionId: string) => {
+      updateAction(messageId, actionId, (action) => ({
+        ...action,
+        state: "dismissed",
+      }));
+    },
+    [updateAction],
+  );
+
+  const handleActionAdjust = useCallback(
+    (_message: ChatMessage, action: ChatAction) => {
+      const title =
+        typeof action.args.title === "string"
+          ? action.args.title
+          : action.toolName === "mark_task_done" &&
+              typeof action.args.task_title === "string"
+            ? action.args.task_title
+            : "diesen Vorschlag";
+      setQuotedMessage({
+        text: `Vorschlag von Ordilo: ${title}`,
+      });
+    },
+    [],
   );
 
   // -------------------------------------------------------------------------
@@ -715,6 +896,10 @@ export function SucheClient({
                   onSourceCardClick={handleSourceCardClick}
                   onQuote={handleQuoteMessage}
                   onFollowUp={handleExampleClick}
+                  onActionConfirm={handleActionConfirm}
+                  onActionDismiss={handleActionDismiss}
+                  onActionAdjust={handleActionAdjust}
+                  onActionUndo={handleActionUndo}
                 />
               ))}
 

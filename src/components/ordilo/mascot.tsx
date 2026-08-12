@@ -37,12 +37,13 @@ export interface OrdiloMascotProps {
   style?: React.CSSProperties;
 }
 
-// Paths live in a 68x68 box; the elephant's face is centered around
-// (32, 27) with the trunk attaching at (30, 40).
+// Paths live in a 68x68 box. The profile deliberately keeps the three
+// unmistakable elephant cues visible even at 22–28px: one oversized ear,
+// a single eye, and a hooked trunk with a small tusk.
 const TRUNK_DOWN =
-  "M30 40 C 28.5 44.5 27 48 30 51 C 32 53 35.5 52 34.5 49.5 C 34 48.2 32.3 48.6 32.6 50";
+  "M50 35 C52 41 56 44 59 48 C61.5 51.5 60 56.5 56.5 57 C53.4 57.5 51.2 55.2 52.8 52.8 C53.6 51.7 55.2 52.3 55.1 54";
 const TRUNK_UP =
-  "M30 40 C 34 48 48 48 54 44 C 60 40 58 32 62 24 C 64 20 60 16 56 18";
+  "M50 35 C52.5 41 58 44 62 40 C65 37 63 32 65 27 C66.5 23 63.5 20 60 22";
 
 /**
  * The Ordilo mascot — a small line-art elephant, drawn in the same stroke
@@ -92,66 +93,75 @@ export function OrdiloMascot({
       style={style}
     >
       <g className={headAnimClass}>
-        <g className={earAnimClass} style={{ transformOrigin: "13px 20px" }}>
+        {/* Large, filled ear: the most recognizable silhouette cue when
+            Ordilo appears at navigation-icon size. */}
+        <g className={earAnimClass} style={{ transformOrigin: "24px 31px" }}>
           <path
-            d="M21 24 C 15 22 12 27 14 33 C 15.5 37 20 38 22.5 35.5"
+            d="M33 22 C27 16 17 18 15 28 C13 38 19 45 27 43 C33 41 36 35 35 29 C35 26 34 24 33 22 Z"
             stroke="currentColor"
             strokeWidth={2}
             strokeLinecap="round"
             strokeLinejoin="round"
+            fill="currentColor"
+            fillOpacity={0.13}
           />
-        </g>
-        <g className={earAnimClass} style={{ transformOrigin: "35px 20px" }}>
           <path
-            d="M43 24 C 49 22 52 27 50 33 C 48.5 37 44 38 41.5 35.5"
+            d="M28.5 23 C23 22 19.5 25.5 19.5 31 C19.5 35.5 22.5 38.5 26.5 38"
             stroke="currentColor"
-            strokeWidth={2}
+            strokeWidth={1.35}
             strokeLinecap="round"
             strokeLinejoin="round"
+            opacity={0.54}
           />
         </g>
         <path
-          d="M32 14 C 23.5 14 18 19.5 18 27 C 18 33 21.5 37.5 26 39.5 C 28 40.4 30 40.8 32 40.8 C 34 40.8 36 40.4 38 39.5 C 42.5 37.5 46 33 46 27 C 46 19.5 40.5 14 32 14 Z"
+          d="M31 15 C42 12 52 20 53 31 C53.5 36 51.5 40.5 48 43.5 C44.5 46.5 39.5 48 34 48 C30 48 26.5 46.8 23.5 44.5"
           stroke="currentColor"
           strokeWidth={2}
+          strokeLinecap="round"
           strokeLinejoin="round"
+          fill="none"
         />
         <g
           className={eyeAnimClass}
-          style={{ transformOrigin: "center", transformBox: "fill-box" }}
+          style={{ transformOrigin: "44px 28px", transformBox: "fill-box" }}
         >
           {eyesClosed ? (
-            <>
-              <path
-                d="M24.5 27 q2 2 4 0"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                fill="none"
-              />
-              <path
-                d="M35.5 27 q2 2 4 0"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                fill="none"
-              />
-            </>
+            <path
+              d="M41.5 28 q2.5 2.2 5 0"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              fill="none"
+            />
           ) : (
-            <>
-              <circle cx={26.5} cy={27} r={1.6} fill="currentColor" />
-              <circle cx={37.5} cy={27} r={1.6} fill="currentColor" />
-            </>
+            <circle cx={44} cy={28} r={1.65} fill="currentColor" />
           )}
         </g>
-        {showBlush && <circle cx={32} cy={32.5} r={1.3} fill="var(--apricot)" />}
+        <path
+          d="M49 37 C52.5 37 53.2 39.6 50.5 42"
+          stroke="currentColor"
+          strokeWidth={1.55}
+          strokeLinecap="round"
+          fill="none"
+          opacity={0.72}
+        />
+        <path
+          d="M22 44 V52 M28 48 V53 M39 48 V53 M46 45 V52"
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinecap="round"
+          opacity={0.9}
+        />
+        {showBlush && <circle cx={42} cy={33} r={1.3} fill="var(--apricot)" />}
       </g>
-      <g className={trunkAnimClass} style={{ transformOrigin: "30px 40px" }}>
+      <g className={trunkAnimClass} style={{ transformOrigin: "50px 35px" }}>
         <path
           d={trunkUp ? TRUNK_UP : TRUNK_DOWN}
           stroke="currentColor"
           strokeWidth={2}
           strokeLinecap="round"
+          strokeLinejoin="round"
           fill="none"
         />
       </g>

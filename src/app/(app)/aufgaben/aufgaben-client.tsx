@@ -69,6 +69,7 @@ function BoardColumn({
   tasks,
   canAcceptDrop,
   isTouchDragOver,
+  justReceivedDrop,
   onToggleDone,
   onDismiss,
   onCardClick,
@@ -85,6 +86,8 @@ function BoardColumn({
   canAcceptDrop: boolean;
   /** Whether a touch drag is currently hovering this column. */
   isTouchDragOver?: boolean;
+  /** Briefly confirms the task's new location after a successful drop. */
+  justReceivedDrop?: boolean;
   onToggleDone: (taskId: string, newStatus: string) => void;
   onDismiss: (taskId: string) => void;
   onCardClick: (task: TaskCardData) => void;
@@ -143,6 +146,7 @@ function BoardColumn({
       className={cn(
         "animate-column-in flex flex-col gap-2 rounded-ordilo-sm p-1 transition-colors",
         highlighted && "bg-secondary/30",
+        justReceivedDrop && "animate-board-settle",
       )}
       data-testid={`board-column-${column.id}`}
       data-column-id={column.id}
@@ -227,7 +231,9 @@ export function AufgabenClient({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
+  const [settledColumnId, setSettledColumnId] = useState<string | null>(null);
   const [showDragHint, setShowDragHint] = useState(false);
+  const settleTimer = useRef<number | null>(null);
 
   // One-time drag-and-drop hint — read localStorage after mount (not
   // during render) to avoid a server/client hydration mismatch. Optional
@@ -235,6 +241,12 @@ export function AufgabenClient({
   // be unavailable, e.g. in private browsing or test environments).
   useMountEffect(() => {
     setShowDragHint(!window.localStorage?.getItem(DRAG_HINT_STORAGE_KEY));
+  });
+
+  useMountEffect(() => () => {
+    if (settleTimer.current !== null) {
+      window.clearTimeout(settleTimer.current);
+    }
   });
 
   const dismissDragHint = useCallback(() => {
@@ -340,16 +352,6 @@ export function AufgabenClient({
     [toggleDone],
   );
 
-  const handleDismiss = useCallback(
-    async (taskId: string) => {
-      const ok = await dismiss(taskId);
-      if (ok) {
-        toast.success("Verworfen — weg damit");
-      }
-    },
-    [dismiss],
-  );
-
   const handleCardClick = useCallback((task: TaskCardData) => {
     setSelectedTask(task);
     setSheetOpen(true);
@@ -379,6 +381,45 @@ export function AufgabenClient({
     [reschedule],
   );
 
+  /** Restore a dismissed task to its exact prior schedule and status. */
+  const handleUndoDismiss = useCallback(
+    async (task: TaskCardData) => {
+      const dismissed: TaskDropUpdates = {
+        status: "dismissed",
+        due_date: task.due_date,
+      };
+      // The captured task carries the status it had before the dismiss —
+      // a task dismissed from "Erledigt" goes back to done, not to open.
+      const restored: TaskDropUpdates = {
+        status: task.status === "dismissed" ? "open" : task.status,
+        due_date: task.due_date,
+      };
+      const ok = await reschedule(task.id, restored, dismissed);
+      if (ok) {
+        toast.success("Wieder da — kein Problem");
+      }
+    },
+    [reschedule],
+  );
+
+  const handleDismiss = useCallback(
+    async (taskId: string) => {
+      const task = tasks.find((item) => item.id === taskId);
+      const ok = await dismiss(taskId);
+      if (ok) {
+        toast.success("Verworfen", {
+          action: task
+            ? {
+                label: "Rückgängig",
+                onClick: () => void handleUndoDismiss(task),
+              }
+            : undefined,
+        });
+      }
+    },
+    [dismiss, handleUndoDismiss, tasks],
+  );
+
   const handleDrop = useCallback(
     async (taskId: string, targetColumnId: string) => {
       const task = tasks.find((t) => t.id === taskId);
@@ -403,6 +444,14 @@ export function AufgabenClient({
       );
       const ok = await reschedule(taskId, updates, previous);
       if (ok) {
+        if (settleTimer.current !== null) {
+          window.clearTimeout(settleTimer.current);
+        }
+        setSettledColumnId(targetColumnId);
+        settleTimer.current = window.setTimeout(() => {
+          setSettledColumnId(null);
+          settleTimer.current = null;
+        }, 450);
         toast.success(
           DROP_SUCCESS_TOASTS[targetColumnId as TaskBoardColumnId] ??
             "Verschoben",
@@ -488,6 +537,7 @@ export function AufgabenClient({
                 draggingColumnId !== null && col.id !== draggingColumnId
               }
               isTouchDragOver={dragOverColumnId === col.id}
+              justReceivedDrop={settledColumnId === col.id}
               onToggleDone={handleToggleDone}
               onDismiss={handleDismiss}
               onCardClick={handleCardClick}

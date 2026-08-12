@@ -322,6 +322,57 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
     });
   });
 
+  it("turns a confirmation request into an action card and executes only after its button is tapped", async () => {
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        streamResponse([
+          {
+            type: "confirmation_request",
+            tool_name: "add_task",
+            action_args: {
+              title: "Anmeldung abschicken",
+              due_date: "2026-08-15",
+              priority: "high",
+            },
+          },
+          { type: "text", content: "Ich habe die Aufgabe vorbereitet." },
+          { type: "done" },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            success: true,
+            result: { success: true, task_id: "task-1" },
+          }),
+          { status: 200 },
+        ),
+      );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Erinnere mich an die Anmeldung");
+
+    expect(await screen.findByTestId("ordilo-action-card")).toBeDefined();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("action-card-confirm"));
+
+    await waitFor(() => {
+      expect(global.fetch).toHaveBeenLastCalledWith(
+        "/api/chat/actions",
+        expect.objectContaining({
+          method: "POST",
+          // The stable action_id lets the server dedupe retried confirms.
+          body: expect.stringMatching(
+            /"tool_name":"add_task".*"action_id":"[^"]+"|"action_id":"[^"]+".*"tool_name":"add_task"/,
+          ),
+        }),
+      );
+    });
+    expect(screen.getByText("Übernommen")).toBeDefined();
+  });
+
   it("shows a German error message when the chat API returns non-ok", async () => {
     global.fetch = vi.fn().mockResolvedValue(
       streamResponse([{ type: "error", error: "API error", code: "FAIL" }], false),

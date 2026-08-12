@@ -128,6 +128,120 @@ export interface ChatSuccessResponse {
 export type ChatErrorResponse = ApiErrorResponse;
 
 // ---------------------------------------------------------------------------
+// Chat action proposals
+// ---------------------------------------------------------------------------
+
+/**
+ * Mutating tools that may be presented as an explicit, user-confirmed action
+ * in the chat. The model proposes one first; the client never runs it until
+ * the family member deliberately chooses "Übernehmen".
+ */
+export const CHAT_ACTION_TOOL_NAMES = [
+  "add_calendar_event",
+  "add_task",
+  "update_task",
+  "mark_task_done",
+  "add_family_member",
+  "create_collection",
+  "create_note",
+  "move_document_to_collection",
+  "add_document_tags",
+  "save_document_fact",
+] as const;
+
+export type ChatActionToolName = (typeof CHAT_ACTION_TOOL_NAMES)[number];
+
+export type ChatActionState =
+  | "ready"
+  | "confirming"
+  | "confirmed"
+  | "undoing"
+  | "undone"
+  | "dismissed"
+  | "error";
+
+/**
+ * A proposed write from the agent, transported separately from prose so the
+ * UI can make its scope and confirmation state unmistakable.
+ */
+export interface ChatAction {
+  id: string;
+  toolName: ChatActionToolName;
+  args: Record<string, unknown>;
+  state: ChatActionState;
+  error?: string;
+  /** Only supplied for actions that have a safe, supported undo path. */
+  undo?: {
+    toolName: ChatActionToolName;
+    args: Record<string, unknown>;
+  };
+}
+
+export const chatActionConfirmationSchema = z.object({
+  family_id: z
+    .string()
+    .trim()
+    .min(1, "family_id ist erforderlich.")
+    .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
+  /**
+   * Stable, client-generated idempotency key for the proposal. A retried
+   * confirm reuses it, so the server executes the write at most once even
+   * if the first response was lost on the way back.
+   */
+  action_id: z
+    .string()
+    .trim()
+    .min(1, "action_id ist erforderlich.")
+    .max(120, "action_id ist zu lang."),
+  tool_name: z.enum(CHAT_ACTION_TOOL_NAMES),
+  args: z.record(z.string(), z.unknown()),
+});
+
+export type ChatActionConfirmationInput = z.infer<
+  typeof chatActionConfirmationSchema
+>;
+
+/**
+ * Keys of a `confirmation_request` stream event that describe transport,
+ * not the proposal itself. Everything else on the event is a
+ * server-resolved preview field (e.g. `task_title`, `existing_value`,
+ * `fact_type_label`, `document_title`) that the action card renders but
+ * that is not part of the raw, model-supplied tool arguments.
+ */
+const CONFIRMATION_EVENT_META_KEYS = new Set([
+  "type",
+  "tool_name",
+  "action_args",
+  "action_id",
+  "needs_confirmation",
+  "message",
+]);
+
+/**
+ * Merges the validated proposal args of a `confirmation_request` event with
+ * its server-resolved preview fields into the single object the action card
+ * renders and the confirmation endpoint executes. Client (live stream) and
+ * server (persistence for reloads) MUST use this same merge, otherwise a
+ * restored card shows less than the live card did.
+ */
+export function mergeConfirmationProposal(
+  event: Record<string, unknown>,
+): Record<string, unknown> {
+  const base =
+    event.action_args &&
+    typeof event.action_args === "object" &&
+    !Array.isArray(event.action_args)
+      ? (event.action_args as Record<string, unknown>)
+      : {};
+  const preview = Object.fromEntries(
+    Object.entries(event).filter(
+      ([key]) => !CONFIRMATION_EVENT_META_KEYS.has(key),
+    ),
+  );
+  return { ...base, ...preview };
+}
+
+// ---------------------------------------------------------------------------
 // Chat feedback schema (POST /api/chat/feedback)
 // ---------------------------------------------------------------------------
 

@@ -23,6 +23,8 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { vibrate } from "@/lib/haptics";
 
+const HIGH_CONFIDENCE_THRESHOLD = 0.85;
+
 const EMPTY_EDITS: EditState = {
   persons: new Map(),
   factValues: new Map(),
@@ -35,6 +37,60 @@ const EMPTY_EDITS: EditState = {
   taskDueDates: new Map(),
   deletedTasks: new Set(),
 };
+
+type ScanConfidenceLevel = "high" | "medium" | "low";
+
+function getScanConfidenceLevel(analysis: DocumentAnalysis): ScanConfidenceLevel {
+  const confidences = [
+    ...analysis.family_members.map((item) => item.confidence),
+    ...analysis.organizations.map((item) => item.confidence),
+    ...analysis.dates.map((item) => item.confidence),
+    ...analysis.amounts.map((item) => item.confidence),
+    ...analysis.tasks.map((item) => item.confidence),
+    ...analysis.facts.map((item) => item.confidence),
+  ];
+  const lowestConfidence = Math.min(...confidences, 1);
+
+  if (lowestConfidence < LOW_CONFIDENCE_THRESHOLD) return "low";
+  if (analysis.needs_user_review || lowestConfidence < HIGH_CONFIDENCE_THRESHOLD) {
+    return "medium";
+  }
+  return "high";
+}
+
+function getReviewFocus(analysis: DocumentAnalysis): string | undefined {
+  const uncertainPerson = analysis.family_members.find(
+    (item) => item.confidence < LOW_CONFIDENCE_THRESHOLD,
+  );
+  if (uncertainPerson) return `Gehört das Dokument zu ${uncertainPerson.name}?`;
+
+  const uncertainTask = analysis.tasks.find(
+    (item) => item.confidence < LOW_CONFIDENCE_THRESHOLD,
+  );
+  if (uncertainTask) return `Soll diese Aufgabe wirklich angelegt werden: „${uncertainTask.title}“?`;
+
+  const uncertainDate = analysis.dates.find(
+    (item) => item.confidence < LOW_CONFIDENCE_THRESHOLD,
+  );
+  if (uncertainDate) return `Stimmt dieser Termin: ${formatGermanDate(uncertainDate.date) || uncertainDate.date}?`;
+
+  const uncertainAmount = analysis.amounts.find(
+    (item) => item.confidence < LOW_CONFIDENCE_THRESHOLD,
+  );
+  if (uncertainAmount) return `Stimmt dieser Betrag: ${uncertainAmount.amount} ${uncertainAmount.currency}?`;
+
+  const uncertainOrganization = analysis.organizations.find(
+    (item) => item.confidence < LOW_CONFIDENCE_THRESHOLD,
+  );
+  if (uncertainOrganization) return `Stimmt diese Organisation: ${uncertainOrganization.name}?`;
+
+  const uncertainFact = analysis.facts.find(
+    (item) => item.confidence < LOW_CONFIDENCE_THRESHOLD,
+  );
+  if (uncertainFact) return `Stimmt diese Angabe: ${uncertainFact.value}?`;
+
+  return undefined;
+}
 
 /** Build the ready-to-save action list inline (was previously imported). */
 function buildAutoActions(analysis: DocumentAnalysis): string[] {
@@ -102,6 +158,29 @@ export function ScanReviewStep({
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
 
   const cancelledRef = useRef(false);
+  const rawConfidenceLevel = analysis ? getScanConfidenceLevel(analysis) : null;
+  const hasOnlyResolvedLowConfidencePerson = Boolean(
+    analysis &&
+      rawConfidenceLevel === "low" &&
+      analysis.family_members.some(
+        (member) => member.confidence < LOW_CONFIDENCE_THRESHOLD,
+      ) &&
+      analysis.family_members.every(
+        (member, index) =>
+          member.confidence >= LOW_CONFIDENCE_THRESHOLD || edits.persons.has(index),
+      ) &&
+      [
+        ...analysis.organizations,
+        ...analysis.dates,
+        ...analysis.amounts,
+        ...analysis.tasks,
+        ...analysis.facts,
+      ].every((item) => item.confidence >= LOW_CONFIDENCE_THRESHOLD),
+  );
+  const confidenceLevel =
+    hasOnlyResolvedLowConfidencePerson ? "medium" : rawConfidenceLevel;
+  const reviewFocus =
+    confidenceLevel === "low" && analysis ? getReviewFocus(analysis) : undefined;
 
   // Load the analysis + family members. Previously a failed/empty fetch
   // (network blip, replica lag) left the skeleton on screen forever with
@@ -117,8 +196,10 @@ export function ScanReviewStep({
       setAnalysis(a);
       setFamilyMembers(members);
 
-      if (a && !a.needs_user_review) {
+      if (a && getScanConfidenceLevel(a) === "high") {
         setMode("auto");
+      } else {
+        setMode("summary");
       }
     } catch {
       if (cancelledRef.current) return;
@@ -468,6 +549,9 @@ export function ScanReviewStep({
               <Check className="size-4" aria-hidden="true" />
               Passt so
             </Button>
+            <p className="-mt-1 text-center text-xs text-muted-foreground">
+              Wird erst nach deinem Tap gespeichert.
+            </p>
             <Button
               type="button"
               variant="outline"
@@ -507,6 +591,8 @@ export function ScanReviewStep({
       <ReviewSummary
         analysis={analysis}
         familyMembers={familyMembers}
+        confidenceLevel={confidenceLevel ?? "medium"}
+        reviewFocus={reviewFocus}
         hasUnresolvedDisambiguation={hasUnresolvedDisambiguation}
         confirming={confirming}
         confirmError={confirmError}

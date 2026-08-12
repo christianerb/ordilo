@@ -103,16 +103,19 @@ export function UploadProgressCard({
       >
         {isUploading || isProcessing ? (
           <Loader2
+            key={upload.phase}
             className="size-6 animate-spin"
             style={{ color: "var(--petrol)" }}
           />
         ) : isError ? (
           <AlertCircle
+            key={upload.phase}
             className="size-6 text-destructive"
             strokeWidth={1.5}
           />
         ) : (
           <FileIcon
+            key={upload.phase}
             className="size-6"
             style={{ color: "var(--mist-dark)" }}
             strokeWidth={1.5}
@@ -125,7 +128,7 @@ export function UploadProgressCard({
         <p className="truncate font-medium text-foreground">{upload.file.name}</p>
 
         {isUploading && (
-          <>
+          <div key="uploading" className="animate-upload-phase">
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--mist-light)]">
               <div
                 className="h-full rounded-full transition-all duration-200"
@@ -139,15 +142,21 @@ export function UploadProgressCard({
             <p className="mt-1 text-sm text-muted-foreground">
               Wird hochgeladen … {upload.progress}%
             </p>
-          </>
+          </div>
         )}
 
-        {isProcessing && <RotatingProcessingMessage />}
+        {isProcessing && (
+          <div key="processing" className="animate-upload-phase">
+            <RotatingProcessingMessage />
+          </div>
+        )}
 
         {isError && (
-          <p className="mt-1 break-words text-sm text-destructive">
-            {upload.error}
-          </p>
+          <div key="error" className="animate-upload-phase">
+            <p className="mt-1 break-words text-sm text-destructive">
+              {upload.error}
+            </p>
+          </div>
         )}
       </div>
 

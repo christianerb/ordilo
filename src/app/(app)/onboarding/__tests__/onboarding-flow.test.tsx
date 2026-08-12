@@ -35,6 +35,7 @@ describe("OnboardingFlow", () => {
 
     expect(screen.getByText("Schritt 1 von 2")).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
+    expect(document.querySelector(".animate-onboarding-step")).not.toBeNull();
     expect(
       screen.getByText("Das kannst du auch später ergänzen."),
     ).toBeInTheDocument();
