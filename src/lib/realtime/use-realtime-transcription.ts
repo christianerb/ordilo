@@ -443,7 +443,7 @@ export function useRealtimeTranscription({
       // Cap reached — deliver whatever is already transcribed.
       deliver(inputTranscriptRef.current);
     }, MAX_SESSION_MS);
-  }, [deliver, fail, handleServerEvent, startLevelMeter]);
+  }, [cleanup, deliver, fail, handleServerEvent, startLevelMeter]);
 
   /** Finish the current utterance now instead of waiting for the VAD. */
   const stop = useCallback(() => {

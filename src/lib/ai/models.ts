@@ -6,25 +6,36 @@
  * library modules.
  */
 
-/** Model for LLM extraction (document analysis, entity/task detection). Runs once per document on confirm. */
-export const EXTRACTION_MODEL = "gpt-5.4-mini";
+/** Cost-efficient model for mechanical and retrieval-adjacent AI work. */
+export const GENERAL_MODEL = "gpt-5.6-luna";
 
-/** Model for user-facing chat with tool calling (streaming). */
-export const CHAT_MODEL = "gpt-5.4-mini";
+/** Higher-capability model for multi-step reasoning and structured analysis. */
+export const REASONING_MODEL = "gpt-5.6-terra";
+
+/** Model for LLM extraction (document analysis, entity/task detection). Runs once per document on confirm. */
+export const EXTRACTION_MODEL = REASONING_MODEL;
+
+/** Model for user-facing, tool-calling chat. */
+export const CHAT_MODEL = REASONING_MODEL;
+
+/** Model for query expansion, HyDE search variants, and result re-ranking. */
+export const SEARCH_AUGMENTATION_MODEL = GENERAL_MODEL;
 
 /**
- * Reasoning effort for user-facing chat. Family Q&A is mostly retrieval +
- * phrasing, so "low" keeps time-to-first-word snappy without hurting answer
- * quality measurably. Passed as `reasoning_effort` on every chat call.
+ * Reasoning effort for agentic, tool-calling chat. Responses API supports
+ * reasoning together with function tools, unlike the legacy completions API.
  */
 export const CHAT_REASONING_EFFORT = "low" as const;
 
+/** Reasoning effort for structured document analysis. */
+export const EXTRACTION_REASONING_EFFORT = "medium" as const;
+
 /**
  * Reasoning effort for search-result re-ranking. Scoring ten documents
- * 0-10 is a mechanical task — "minimal" keeps the re-rank from adding
+ * 0-10 is a mechanical task — no explicit reasoning keeps the re-rank from adding
  * noticeable latency on the search critical path.
  */
-export const RERANK_REASONING_EFFORT = "minimal" as const;
+export const RERANK_REASONING_EFFORT = "none" as const;
 
 /** Model for text embeddings (semantic search vectors). */
 export const EMBEDDINGS_MODEL = "text-embedding-3-large";

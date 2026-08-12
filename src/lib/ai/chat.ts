@@ -63,7 +63,7 @@ const MAX_SOURCES = MAX_RESULTS;
 // ---------------------------------------------------------------------------
 
 /**
- * Error thrown when the chat completion call fails (API error, timeout,
+ * Error thrown when the Responses API call fails (API error, timeout,
  * or unexpected response shape).
  */
 export class ChatError extends Error {
@@ -242,6 +242,19 @@ function getOpenAIClient(): OpenAI {
 export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
+}
+
+function isResponseContextItem(
+  item: OpenAI.Responses.ResponseOutputItem,
+): item is
+  | OpenAI.Responses.ResponseOutputMessage
+  | OpenAI.Responses.ResponseFunctionToolCall
+  | OpenAI.Responses.ResponseReasoningItem {
+  return (
+    item.type === "message" ||
+    item.type === "function_call" ||
+    item.type === "reasoning"
+  );
 }
 
 /**
@@ -487,10 +500,9 @@ export async function streamAgenticAnswer(
   const familyContext = await loadFamilyContext(toolContext);
   const systemPrompt = buildAgenticSystemPrompt(familyContext);
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
+  const input: OpenAI.Responses.ResponseInput = [
     ...truncatedHistory.map((m) => ({
-      role: m.role as "user" | "assistant",
+      role: m.role,
       content: m.content,
     })),
     { role: "user", content: query },
@@ -517,23 +529,22 @@ export async function streamAgenticAnswer(
 
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-          const openaiStream = await client.chat.completions.create({
+          const openaiStream = await client.responses.create({
             model: CHAT_MODEL,
-            messages,
+            instructions: systemPrompt,
+            input,
             tools: TOOL_DEFINITIONS,
             stream: true,
-            reasoning_effort: CHAT_REASONING_EFFORT,
+            reasoning: { effort: CHAT_REASONING_EFFORT },
+            // Family documents and conversations must not be retained by
+            // OpenAI. Reasoning items are explicitly included so they can
+            // be returned with the next tool output in this stateless loop.
+            store: false,
+            include: ["reasoning.encrypted_content"],
           });
 
           const contentChunks: string[] = [];
-          const toolCallsMap = new Map<
-            number,
-            {
-              id: string;
-              type: "function";
-              function: { name: string; arguments: string };
-            }
-          >();
+          let responseOutput: OpenAI.Responses.ResponseOutputItem[] = [];
 
           // Rolling hedging-guardrail state for this round. Every text
           // piece is checked together with the tail of the text already
@@ -546,26 +557,29 @@ export async function streamAgenticAnswer(
           // the way to a tool call never flash on screen.
           let pendingRelease = "";
 
-          for await (const chunk of openaiStream) {
-            const delta = chunk.choices[0]?.delta;
-            if (!delta) continue;
-
-            // Accumulate tool calls (streamed in pieces).
-            if (delta.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                if (tc.index === undefined) continue;
-                const existing = toolCallsMap.get(tc.index) ?? {
-                  id: "",
-                  type: "function" as const,
-                  function: { name: "", arguments: "" },
-                };
-                if (tc.id) existing.id = tc.id;
-                if (tc.function?.name)
-                  existing.function.name += tc.function.name;
-                if (tc.function?.arguments)
-                  existing.function.arguments += tc.function.arguments;
-                toolCallsMap.set(tc.index, existing);
-              }
+          for await (const event of openaiStream) {
+            if (event.type === "error") {
+              throw new ChatError(
+                event.message,
+                event.code ?? "OPENAI_API_ERROR",
+              );
+            }
+            if (event.type === "response.failed") {
+              throw new ChatError(
+                event.response.error?.message ??
+                  "OpenAI konnte die Antwort nicht erstellen.",
+                event.response.error?.code ?? "OPENAI_API_ERROR",
+              );
+            }
+            if (event.type === "response.incomplete") {
+              throw new ChatError(
+                "OpenAI hat die Antwort nicht vollständig erstellt.",
+                "OPENAI_INCOMPLETE_RESPONSE",
+              );
+            }
+            if (event.type === "response.completed") {
+              responseOutput = event.response.output;
+              continue;
             }
 
             // Release text as soon as the round proves to be a real
@@ -574,8 +588,8 @@ export async function streamAgenticAnswer(
             // round still ends with tool calls, released text is
             // retracted below; text still in the hold-back buffer is
             // discarded silently and never appears at all.
-            if (delta.content) {
-              pendingRelease += delta.content;
+            if (event.type === "response.output_text.delta") {
+              pendingRelease += event.delta;
               if (
                 answerTextVisible ||
                 pendingRelease.length >= FIRST_RELEASE_THRESHOLD
@@ -595,9 +609,12 @@ export async function streamAgenticAnswer(
             }
           }
 
-          const toolCalls = [...toolCallsMap.entries()]
-            .sort(([a], [b]) => a - b)
-            .map(([, v]) => v);
+          const toolCalls = responseOutput.filter(
+            (
+              item,
+            ): item is OpenAI.Responses.ResponseFunctionToolCall =>
+              item.type === "function_call",
+          );
 
           // If we got tool calls, execute them and continue the loop.
           // Any text streamed this round was preamble on the way to the
@@ -605,16 +622,11 @@ export async function streamAgenticAnswer(
           // context but is retracted from the client before the tools run.
           // (Skipped when the round was stopped early by the hedging
           // guardrail — then the regeneration path below handles it.)
-          if (!hedgingDetected && toolCalls.length > 0 && toolCalls.some((tc) => tc.id)) {
-            // The model's preamble (released parts AND the held-back
-            // buffer) stays in its message for context — but only the
-            // released part was ever visible, so only that needs
-            // retraction; the buffer simply disappears.
-            messages.push({
-              role: "assistant",
-              tool_calls: toolCalls,
-              content: [...contentChunks, pendingRelease].join("") || null,
-            });
+          if (!hedgingDetected && toolCalls.length > 0) {
+            // Responses includes reasoning items and function calls in its
+            // output. Both must be returned with function results on the
+            // next turn so the reasoning chain remains valid.
+            input.push(...responseOutput.filter(isResponseContextItem));
 
             if (answerTextVisible) {
               send({ type: "replace", content: "" });
@@ -651,10 +663,9 @@ export async function streamAgenticAnswer(
 
             for (let i = 0; i < toolCalls.length; i++) {
               const toolCall = toolCalls[i];
-              if (toolCall.type !== "function") continue;
               let args: Record<string, unknown>;
               try {
-                args = JSON.parse(toolCall.function.arguments || "{}");
+                args = JSON.parse(toolCall.arguments || "{}");
               } catch {
                 args = {};
               }
@@ -667,7 +678,7 @@ export async function streamAgenticAnswer(
               // a later tap would repeat the write. Refuse and let the
               // model point the user to the card instead.
               if (
-                CONFIRMATION_TOOLS.has(toolCall.function.name) &&
+                CONFIRMATION_TOOLS.has(toolCall.name) &&
                 args.confirmed === true
               ) {
                 results[i] = JSON.stringify({
@@ -680,7 +691,7 @@ export async function streamAgenticAnswer(
                 continue;
               }
 
-              if (toolCall.function.name === "present_answer_card") {
+              if (toolCall.name === "present_answer_card") {
                 const card = parseAnswerCardArgs(args);
                 if (card) {
                   // Never trust an unverified document reference — only
@@ -706,7 +717,7 @@ export async function streamAgenticAnswer(
                 continue;
               }
 
-              executable.push({ index: i, name: toolCall.function.name, args });
+              executable.push({ index: i, name: toolCall.name, args });
             }
 
             // Independent calls from the same round run in parallel: the
@@ -739,7 +750,6 @@ export async function streamAgenticAnswer(
 
             for (let i = 0; i < toolCalls.length; i++) {
               const toolCall = toolCalls[i];
-              if (toolCall.type !== "function") continue;
               const resultContent =
                 results[i] ??
                 JSON.stringify({ error: "Tool-Ausfuehrung fehlgeschlagen." });
@@ -749,12 +759,12 @@ export async function streamAgenticAnswer(
               // confirmation_request event to the client so it can render
               // a confirmation UI. The model also receives the tool result
               // and will ask the user to confirm in its text response.
-              if (CONFIRMATION_TOOLS.has(toolCall.function.name)) {
+              if (CONFIRMATION_TOOLS.has(toolCall.name)) {
                 try {
                   const parsed = JSON.parse(resultContent);
                   if (parsed.needs_confirmation) {
                     confirmationsToSend.push({
-                      tool_name: toolCall.function.name,
+                      tool_name: toolCall.name,
                       // The tool result intentionally contains only the
                       // friendly preview fields. The action card also needs
                       // the original, already validated proposal to execute
@@ -773,10 +783,10 @@ export async function streamAgenticAnswer(
                 }
               }
 
-              messages.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: resultContent,
+              input.push({
+                type: "function_call_output",
+                call_id: toolCall.call_id,
+                output: resultContent,
               });
             }
 
@@ -829,22 +839,18 @@ export async function streamAgenticAnswer(
             // instruction. If part of the hedged draft already reached the
             // client, the corrected answer REPLACES it; the remainder of
             // the draft never left the server.
-            messages.push({
-              role: "user",
-              content:
+            const retryResponse = await client.responses.create({
+              model: CHAT_MODEL,
+              instructions:
+                `${systemPrompt}\n\n` +
                 "HINWEIS: Deine Antwort enthielt verbotene Formulierungen. " +
                 "Formuliere unbedingt, direkt und bestimmt. Verwende keine unsicheren Ausdrücke.",
+              input,
+              reasoning: { effort: CHAT_REASONING_EFFORT },
+              store: false,
             });
 
-            const retryResponse = await client.chat.completions.create({
-              model: CHAT_MODEL,
-              messages,
-              tools: TOOL_DEFINITIONS,
-              reasoning_effort: CHAT_REASONING_EFFORT,
-            });
-
-            const retryContent =
-              retryResponse.choices[0]?.message?.content;
+            const retryContent = retryResponse.output_text;
             const finalText =
               retryContent &&
               retryContent.trim() &&

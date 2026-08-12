@@ -1,5 +1,8 @@
 import OpenAI from "openai";
-import { CHAT_MODEL, RERANK_REASONING_EFFORT } from "@/lib/ai/models";
+import {
+  RERANK_REASONING_EFFORT,
+  SEARCH_AUGMENTATION_MODEL,
+} from "@/lib/ai/models";
 import type { SearchResult } from "@/lib/schemas/search";
 
 /**
@@ -93,14 +96,14 @@ Antworte NUR im Format "NR:SCORE" pro Zeile, z.B.:
 Keine Erklaerung, nur die Bewertungen.`;
 
     const response = await Promise.race([
-      client.chat.completions.create({
-        model: CHAT_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 200,
-        temperature: 0,
+      client.responses.create({
+        model: SEARCH_AUGMENTATION_MODEL,
+        input: prompt,
+        max_output_tokens: 200,
         // Mechanical 0-10 scoring needs no deliberation — minimal
         // reasoning keeps the re-rank inside its latency budget.
-        reasoning_effort: RERANK_REASONING_EFFORT,
+        reasoning: { effort: RERANK_REASONING_EFFORT },
+        store: false,
       }),
       new Promise<null>((resolve) =>
         setTimeout(() => resolve(null), RERANK_BUDGET_MS),
@@ -108,7 +111,7 @@ Keine Erklaerung, nur die Bewertungen.`;
     ]);
     if (!response) return results;
 
-    const text = response.choices[0]?.message?.content ?? "";
+    const text = response.output_text;
 
     // Parse LLM scores: "1:9\n2:3\n..."
     const scoreMap = new Map<number, number>();

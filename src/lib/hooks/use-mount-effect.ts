@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
 /**
  * Run a side effect exactly once on mount.
@@ -17,8 +17,8 @@ import { useEffect, useLayoutEffect } from "react";
  * prop to force a clean remount instead of a dependency array.
  */
 export function useMountEffect(effect: () => void | (() => void)): void {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(effect, []);
+  const effectRef = useRef(effect);
+  useEffect(() => effectRef.current(), []);
 }
 
 /**
@@ -35,6 +35,6 @@ const useIsomorphicLayoutMountEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function useMountLayoutEffect(effect: () => void | (() => void)): void {
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useIsomorphicLayoutMountEffect(effect, []);
+  const effectRef = useRef(effect);
+  useIsomorphicLayoutMountEffect(() => effectRef.current(), []);
 }

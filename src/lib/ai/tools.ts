@@ -66,7 +66,7 @@ export interface ToolResult {
 // Tool definitions (OpenAI function-calling format)
 // ---------------------------------------------------------------------------
 
-export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
@@ -728,6 +728,31 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     },
   }
 ];
+
+/**
+ * Responses API function tools use a flat definition shape. Keep the
+ * established schemas above as the source of truth and adapt them once here.
+ */
+export const TOOL_DEFINITIONS: OpenAI.Responses.FunctionTool[] =
+  CHAT_COMPLETION_TOOL_DEFINITIONS.map((tool) => {
+    if (tool.type !== "function") {
+      throw new Error("Unsupported non-function tool definition.");
+    }
+
+    return {
+      type: "function" as const,
+      name: tool.function.name,
+      description: tool.function.description,
+      parameters: tool.function.parameters ?? {
+        type: "object",
+        properties: {},
+      },
+      // Existing tool schemas have optional fields. The application
+      // validates every call server-side, so retain that compatibility
+      // instead of falsely declaring an incomplete schema as strict.
+      strict: false,
+    };
+  });
 
 // ---------------------------------------------------------------------------
 // Tool executors
