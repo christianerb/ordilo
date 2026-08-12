@@ -215,18 +215,27 @@ export function AufgabenClient({
   members,
   familyId,
   initialError = null,
+  openTaskId = null,
 }: {
   initialTasks: TaskCardData[];
   members: AssigneeOption[];
   familyId: string | null;
   initialError?: string | null;
+  /** Deep link (/aufgaben?task=<id>): open this task's detail sheet once. */
+  openTaskId?: string | null;
 }) {
   const router = useRouter();
   const { openWizard } = useScanActions();
   const [tasks, setTasks] = useState<TaskCardData[]>(initialTasks);
   const [error] = useState<string | null>(initialError);
-  const [selectedTask, setSelectedTask] = useState<TaskCardData | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  // Deep link: /aufgaben?task=<id> preselects that task and opens its
+  // detail sheet right away (the home hero's "Details" link targets this).
+  const [selectedTask, setSelectedTask] = useState<TaskCardData | null>(
+    () => initialTasks.find((t) => t.id === openTaskId) ?? null,
+  );
+  const [sheetOpen, setSheetOpen] = useState(() =>
+    initialTasks.some((t) => t.id === openTaskId),
+  );
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);

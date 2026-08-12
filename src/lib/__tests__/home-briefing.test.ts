@@ -1,13 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   deriveBriefingFacts,
-  composeBriefing,
   selectHomeHero,
   deriveSuggestionChips,
   type BriefingFacts,
 } from "@/lib/home-briefing";
 import type { HomeTask } from "@/lib/home-utils";
-import type { HomeInsight } from "@/lib/ai/insights";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -28,18 +26,6 @@ function makeTask(overrides: Partial<HomeTask> = {}): HomeTask {
     tags: [],
     document_id: "doc-1",
     document_title: "Stromrechnung",
-    ...overrides,
-  };
-}
-
-function makeInsight(overrides: Partial<HomeInsight> = {}): HomeInsight {
-  return {
-    id: "insight-1",
-    icon: "alert",
-    title: "Frist läuft bald ab",
-    detail: "Schulranzen kaufen",
-    href: "/aufgaben",
-    tone: "urgent",
     ...overrides,
   };
 }
@@ -90,97 +76,6 @@ describe("deriveBriefingFacts", () => {
     expect(facts.unconfirmedDocCount).toBe(2);
   });
 });
-
-// ---------------------------------------------------------------------------
-// composeBriefing
-// ---------------------------------------------------------------------------
-
-describe("composeBriefing", () => {
-  it("names the single overdue task", () => {
-    const text = composeBriefing(
-      makeFacts({ overdueTasks: [makeTask({ title: "Kita-Ausflug" })] }),
-    );
-    expect(text).toBe(
-      "„Kita-Ausflug\" ist überfällig — am besten heute erledigen.",
-    );
-  });
-
-  it("counts multiple overdue tasks and names the first", () => {
-    const text = composeBriefing(
-      makeFacts({
-        overdueTasks: [
-          makeTask({ id: "a", title: "Kita-Ausflug" }),
-          makeTask({ id: "b", title: "Rechnung" }),
-        ],
-      }),
-    );
-    expect(text).toBe(
-      "2 Aufgaben sind überfällig — „Kita-Ausflug\" zuerst.",
-    );
-  });
-
-  it("names the task due today", () => {
-    const text = composeBriefing(
-      makeFacts({ dueTodayTasks: [makeTask({ title: "Elternabend" })] }),
-    );
-    expect(text).toBe("Heute ist „Elternabend\" fällig.");
-  });
-
-  it("counts multiple tasks due today", () => {
-    const text = composeBriefing(
-      makeFacts({
-        dueTodayTasks: [
-          makeTask({ id: "a", title: "Elternabend" }),
-          makeTask({ id: "b", title: "Rechnung" }),
-        ],
-      }),
-    );
-    expect(text).toBe("Heute sind 2 Aufgaben fällig — „Elternabend\" zuerst.");
-  });
-
-  it("mentions tomorrow with a calm today", () => {
-    const text = composeBriefing(
-      makeFacts({ dueTomorrowTasks: [makeTask({ title: "Sportfest" })] }),
-    );
-    expect(text).toBe(
-      "Morgen ist „Sportfest\" fällig — heute ist noch alles ruhig.",
-    );
-  });
-
-  it("appends the document clause to a task-based briefing", () => {
-    const text = composeBriefing(
-      makeFacts({
-        dueTodayTasks: [makeTask({ title: "Elternabend" })],
-        unconfirmedDocCount: 2,
-      }),
-    );
-    expect(text).toBe(
-      "Heute ist „Elternabend\" fällig. Außerdem warten 2 Dokumente auf dein OK.",
-    );
-  });
-
-  it("uses singular for one waiting document", () => {
-    const text = composeBriefing(
-      makeFacts({
-        dueTodayTasks: [makeTask({ title: "Elternabend" })],
-        unconfirmedDocCount: 1,
-      }),
-    );
-    expect(text).toContain("Außerdem wartet 1 Dokument auf dein OK.");
-  });
-
-  it("leads with documents when no task is close", () => {
-    const text = composeBriefing(makeFacts({ unconfirmedDocCount: 3 }));
-    expect(text).toBe("3 Dokumente warten auf dein OK — sonst ist alles ruhig.");
-  });
-
-  it("has a warm calm state when nothing is going on", () => {
-    expect(composeBriefing(makeFacts())).toBe(
-      "Alles erledigt — die Woche sieht ruhig aus.",
-    );
-  });
-});
-
 // ---------------------------------------------------------------------------
 // selectHomeHero
 // ---------------------------------------------------------------------------
@@ -192,7 +87,6 @@ describe("selectHomeHero", () => {
         overdueTasks: [makeTask({ id: "late" })],
         dueTodayTasks: [makeTask({ id: "today" })],
       }),
-      [makeInsight()],
     );
     expect(hero).toEqual({
       kind: "task",
@@ -201,41 +95,25 @@ describe("selectHomeHero", () => {
     });
   });
 
-  it("prefers due today over due tomorrow and insights", () => {
+  it("prefers due today over due tomorrow", () => {
     const hero = selectHomeHero(
       makeFacts({
         dueTodayTasks: [makeTask({ id: "today" })],
         dueTomorrowTasks: [makeTask({ id: "tomorrow" })],
       }),
-      [makeInsight()],
     );
     expect(hero).toMatchObject({ kind: "task", urgency: "today" });
   });
 
-  it("prefers due tomorrow over an urgent insight", () => {
+  it("shows a task due tomorrow", () => {
     const hero = selectHomeHero(
       makeFacts({ dueTomorrowTasks: [makeTask({ id: "tomorrow" })] }),
-      [makeInsight()],
     );
     expect(hero).toMatchObject({ kind: "task", urgency: "tomorrow" });
   });
 
-  it("falls back to the first urgent insight", () => {
-    const hero = selectHomeHero(makeFacts(), [
-      makeInsight({ id: "info", tone: "info" }),
-      makeInsight({ id: "urgent", tone: "urgent" }),
-    ]);
-    expect(hero).toMatchObject({ kind: "insight" });
-    if (hero.kind === "insight") {
-      expect(hero.insight.id).toBe("urgent");
-    }
-  });
-
-  it("is calm when nothing is close and no insight is urgent", () => {
-    expect(selectHomeHero(makeFacts(), [makeInsight({ tone: "info" })])).toEqual({
-      kind: "calm",
-    });
-    expect(selectHomeHero(makeFacts(), [])).toEqual({ kind: "calm" });
+  it("is calm when nothing is close", () => {
+    expect(selectHomeHero(makeFacts())).toEqual({ kind: "calm" });
   });
 });
 

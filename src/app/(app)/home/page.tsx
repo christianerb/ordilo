@@ -7,7 +7,6 @@ import {
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
-import { computeInsights } from "@/lib/ai/insights";
 
 /** How long journal thumbnail signed URLs stay valid, in seconds. */
 const THUMB_SIGNED_URL_TTL_SECONDS = 300;
@@ -143,9 +142,9 @@ export default async function HomePage({
     { data: memberRows },
     { data: analyzedRows },
     { count: unconfirmedDocCount },
+    { count: journalDocCount },
     { data: taskRows },
     { data: recentRows },
-    insights,
   ] = await Promise.all([
     // 2. Fetch family members (for greeting area).
     supabase
@@ -158,7 +157,7 @@ export default async function HomePage({
     //    so the briefing sentence never underreports.
     supabase
       .from("documents")
-      .select("id, title, original_filename, mime_type, status, created_at, file_url")
+      .select("id, title, original_filename, mime_type, status, created_at, file_url, summary")
       .eq("family_id", family.id)
       .eq("status", "analyzed")
       .order("created_at", { ascending: false })
@@ -170,6 +169,13 @@ export default async function HomePage({
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
       .eq("status", "analyzed"),
+    // 3c. Total documents in the family book (all non-failed) — the quiet
+    //     "… Dokumente sicher im Familienbuch" line in the journal header.
+    supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("family_id", family.id)
+      .neq("status", "failed"),
     // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
     //    "Fristen"). We fetch all confirmed open tasks and let the client
     //    component filter them into the two sections.
@@ -192,13 +198,11 @@ export default async function HomePage({
     // documents (the newest confirmed docs often ARE the analyzed ones).
     supabase
       .from("documents")
-      .select("id, title, original_filename, mime_type, status, created_at, file_url")
+      .select("id, title, original_filename, mime_type, status, created_at, file_url, summary")
       .eq("family_id", family.id)
       .neq("status", "failed")
       .order("created_at", { ascending: false })
       .limit(JOURNAL_DOCS_LIMIT),
-    // 7. Fetch proactive insights from the knowledge graph.
-    computeInsights(supabase, family.id),
   ]);
 
   const members: HomeMember[] = (memberRows ?? []).map((m) => ({
@@ -215,6 +219,7 @@ export default async function HomePage({
     mime_type: d.mime_type,
     status: d.status,
     created_at: d.created_at,
+    summary: d.summary,
   }));
 
   // 5. Fetch document titles for the tasks (for source-document links).
@@ -262,6 +267,7 @@ export default async function HomePage({
       mime_type: d.mime_type,
       status: d.status,
       created_at: d.created_at,
+      summary: d.summary,
     })),
     JOURNAL_DOCS_LIMIT,
   );
@@ -280,10 +286,10 @@ export default async function HomePage({
       members={members}
       analyzedDocuments={analyzedDocuments}
       unconfirmedDocCount={unconfirmedDocCount ?? 0}
+      journalDocCount={journalDocCount ?? 0}
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
       thumbUrls={thumbUrls}
-      insights={insights}
       autoOpenScan={autoOpenScan}
     />
   );

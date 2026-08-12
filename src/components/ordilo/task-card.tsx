@@ -33,6 +33,10 @@ export interface TaskCardProps {
   onClick?: () => void;
   className?: string;
   showConfidence?: boolean;
+  /** Flat row inside a grouped surface: no own card chrome (background,
+      shadow, radius) — the parent surface carries those, and a divider
+      separates the rows. */
+  flat?: boolean;
   /** Label for the delete/dismiss menu item. Defaults to "Löschen". */
   deleteLabel?: string;
 }
@@ -51,6 +55,7 @@ export function TaskCard({
   onDelete,
   onClick,
   className,
+  flat = false,
   deleteLabel = "Löschen",
 }: TaskCardProps) {
   const { openDocument } = useDocumentViewer();
@@ -81,7 +86,10 @@ export function TaskCard({
       data-priority={task.priority}
       role="group"
       className={cn(
-        "flex items-start gap-2.5 rounded-ordilo-sm bg-card p-3 shadow-card card-lift",
+        "flex items-start gap-2.5",
+        flat
+          ? "py-3"
+          : "rounded-ordilo-sm bg-card p-3 shadow-card card-lift",
         isDone && "animate-task-done",
         className,
       )}

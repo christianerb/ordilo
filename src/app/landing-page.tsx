@@ -13,6 +13,7 @@ import {
   CalendarClock,
 } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 
 /**
@@ -100,7 +101,7 @@ export function LandingPage() {
                 <div className="ml-7 rounded-ordilo-sm bg-[var(--auth-surface)] p-4 shadow-card">
                   <div className="flex items-center gap-2">
                     <span className="flex size-8 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
-                      <OrdiloMascot size={25} mood="helping" animate={false} />
+                      <OrdiloMark size={26} />
                     </span>
                     <p className="text-xs font-medium text-[var(--petrol)]">Ordilo antwortet</p>
                   </div>

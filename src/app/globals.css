@@ -360,6 +360,28 @@
     50% { transform: rotate(6deg); }
   }
 
+  @keyframes ordilo-mark-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(3px) scale(0.9);
+    }
+    62% {
+      opacity: 1;
+      transform: translateY(-1px) scale(1.035);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes ordilo-mark-look {
+    0%, 30%, 100% { transform: translateX(0); }
+    36%, 42% { transform: translateX(-1.7px); }
+    48%, 54% { transform: translateX(1.4px); }
+    60% { transform: translateX(0); }
+  }
+
   /* Banner ambient glow — barely-visible breathing pulse */
   @keyframes banner-glow {
     0%, 100% { opacity: 0.04; transform: scale(1); }
@@ -780,6 +802,26 @@
     animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
   }
 
+  .ordilo-mark {
+    display: block;
+    overflow: visible;
+  }
+
+  .ordilo-mark__elephant {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .ordilo-mark--alive .ordilo-mark__elephant {
+    animation: ordilo-mark-arrive 0.56s var(--ease-out-expo) both;
+  }
+
+  .ordilo-mark--alive .ordilo-mark__eye {
+    animation: ordilo-mark-look 5.8s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
   /* Banner ambient glow breathing */
   .animate-banner-glow {
     animation: banner-glow 6s ease-in-out infinite;
@@ -847,7 +889,7 @@
     transform: translateY(-50%);
   }
 
-  .ordilo-wordmark__mascot {
+  .ordilo-wordmark__mark {
     display: inline-flex;
     animation: ordilo-wordmark-mascot-in 0.5s var(--ease-out-expo) both;
     transition: transform 0.24s var(--ease-out-quart);
@@ -913,7 +955,7 @@
     transform: translateY(-50%) scale(1.16);
   }
 
-  .ordilo-wordmark:hover .ordilo-wordmark__mascot {
+  .ordilo-wordmark:hover .ordilo-wordmark__mark {
     animation: ordilo-wordmark-greet 0.58s var(--ease-out-expo);
   }
 
@@ -988,6 +1030,8 @@
   .ordilo-mascot-greet,
   .ordilo-mascot-success,
   .ordilo-mascot-ear-wiggle,
+  .ordilo-mark__elephant,
+  .ordilo-mark__eye,
   .animate-banner-glow,
   .animate-avatar-pop,
   .animate-citation-flash,
@@ -1000,7 +1044,7 @@
   .animate-status-line,
   .animate-scan-step,
   .ordilo-wordmark::before,
-  .ordilo-wordmark__mascot,
+  .ordilo-wordmark__mark,
   .ordilo-wordmark__label,
   .ordilo-wordmark__sparkle {
     animation: none;

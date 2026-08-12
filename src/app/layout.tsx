@@ -20,6 +20,15 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
   },
   icons: {
+    // Next.js only auto-links the file-based src/app/icon.svg when NO
+    // explicit `icons` config exists — setting `apple` here silently
+    // dropped the favicon. So the SVG icon must be listed explicitly.
+    // Order matters: Chromium uses the last matching icon (gets the
+    // crisp SVG), Safari ignores SVG and falls back to the PNG.
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon.svg", type: "image/svg+xml" },
+    ],
     apple: "/apple-touch-icon.png",
   },
 };

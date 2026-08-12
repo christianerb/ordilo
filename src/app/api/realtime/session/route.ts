@@ -127,12 +127,17 @@ export async function POST(): Promise<Response> {
       );
     }
 
+    // `/v1/realtime/client_secrets` returns the secret fields at the top
+    // level. The former sessions endpoint used a nested `client_secret`
+    // object, so keep that shape as a rollout-safe fallback.
     const session = (await response.json()) as {
+      value?: string;
+      expires_at?: number;
       client_secret?: { value?: string; expires_at?: number };
     };
-    const value = session.client_secret?.value;
+    const value = session.value ?? session.client_secret?.value;
     if (!value) {
-      return sessionFailed("OpenAI returned no client_secret value");
+      return sessionFailed("OpenAI returned no client secret value");
     }
 
     // Count the minted session against the family's daily budget (token
@@ -141,7 +146,8 @@ export async function POST(): Promise<Response> {
 
     return Response.json({
       client_secret: value,
-      expires_at: session.client_secret?.expires_at ?? null,
+      expires_at:
+        session.expires_at ?? session.client_secret?.expires_at ?? null,
       model: REALTIME_MODEL,
     });
   } catch (err) {

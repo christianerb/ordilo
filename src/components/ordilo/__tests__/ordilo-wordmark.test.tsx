@@ -9,7 +9,7 @@ describe("OrdiloWordmark", () => {
 
     expect(screen.getByText("Ordilo")).toBeDefined();
     expect(container.querySelector(".ordilo-wordmark")).not.toBeNull();
-    expect(container.querySelector(".ordilo-wordmark__mascot svg")?.getAttribute("width")).toBe("30");
+    expect(container.querySelector(".ordilo-mark")?.getAttribute("width")).toBe("30");
     expect(container.querySelector(".ordilo-wordmark__label")).not.toBeNull();
     expect(container.querySelectorAll(".ordilo-wordmark__sparkle")).toHaveLength(3);
   });

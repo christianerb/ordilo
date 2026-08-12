@@ -92,6 +92,49 @@ export const TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "query_calendar_events",
+      description:
+        "Beantwortet Fragen zum Familienkalender — vergangene UND kommende " +
+        "Termine. Verwende dies IMMER fuer Fragen wie 'Wann war der letzte " +
+        "Zahnarzttermin?', 'Wann hatte Emma das letzte Mal Training?', " +
+        "'Was steht naechste Woche an?' oder 'Haben wir im August was vor?'. " +
+        "Rate niemals Termine, ohne dieses Tool aufzurufen.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Stichwort, das im Titel oder der Notiz vorkommt, z.B. 'Zahnarzt'. Optional.",
+          },
+          person: {
+            type: "string",
+            description:
+              "Name eines Familienmitglieds — nur Termine mit diesem Teilnehmer. Optional.",
+          },
+          direction: {
+            type: "string",
+            enum: ["past", "upcoming", "all"],
+            description:
+              "past = vergangene Termine (neueste zuerst, fuer 'wann war der letzte...'), " +
+              "upcoming = kommende (naechste zuerst), all = beides. Standard: all.",
+          },
+          from: {
+            type: "string",
+            description: "Fruehestes Datum, ISO YYYY-MM-DD. Optional.",
+          },
+          to: {
+            type: "string",
+            description: "Spaetestes Datum, ISO YYYY-MM-DD. Optional.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_documents",
       description:
         "Durchsucht alle Familien-Dokumente semantisch und nach Stichworten. " +
@@ -748,6 +791,8 @@ export async function executeTool(
   switch (name) {
     case "add_calendar_event":
       return executeAddCalendarEvent(args, ctx);
+    case "query_calendar_events":
+      return executeQueryCalendarEvents(args, ctx);
     case "search_documents":
       return executeSearchDocuments(args, ctx);
     case "query_payments":
@@ -1318,6 +1363,122 @@ async function executeAddTask(
     task_id: task.id,
     titel: task.title,
     message: `Aufgabe '${task.title}' wurde angelegt.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// query_calendar_events (read-only)
+// ---------------------------------------------------------------------------
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const RECURRENCE_LABELS: Record<string, string> = {
+  none: "einmalig",
+  weekly: "wöchentlich",
+  biweekly: "alle 2 Wochen",
+  monthly: "monatlich",
+  yearly: "jährlich",
+};
+
+async function executeQueryCalendarEvents(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const queryText = String(args.query ?? "").trim();
+  const person = String(args.person ?? "").trim();
+  const direction = ["past", "upcoming", "all"].includes(String(args.direction))
+    ? String(args.direction)
+    : "all";
+  const from = typeof args.from === "string" && DATE_PATTERN.test(args.from) ? args.from : null;
+  const to = typeof args.to === "string" && DATE_PATTERN.test(args.to) ? args.to : null;
+  const today = new Date().toLocaleDateString("sv-SE");
+
+  // Resolve a person filter to the set of event ids they attend.
+  let personEventIds: Set<string> | null = null;
+  if (person) {
+    const { data: members } = await ctx.client
+      .from("family_members")
+      .select("id, name")
+      .eq("family_id", ctx.familyId)
+      .ilike("name", `%${person}%`);
+    if (!members?.length) {
+      return JSON.stringify({ events: [], message: `Kein Familienmitglied namens '${person}' gefunden.` });
+    }
+    const { data: attendeeRows } = await ctx.client
+      .from("calendar_event_attendees")
+      .select("event_id")
+      .in("family_member_id", members.map((m) => m.id));
+    personEventIds = new Set((attendeeRows ?? []).map((r) => r.event_id));
+    if (personEventIds.size === 0) {
+      return JSON.stringify({ events: [], message: `Keine Termine mit ${members[0].name} gefunden.` });
+    }
+  }
+
+  let query = ctx.client
+    .from("calendar_events")
+    .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence")
+    .eq("family_id", ctx.familyId);
+
+  // Range filters use overlap semantics: an event counts if any day of it
+  // falls inside [from, to].
+  if (from) query = query.gte("ends_on", from);
+  if (to) query = query.lte("starts_on", to);
+  if (direction === "past") {
+    query = query.lt("starts_on", today).order("starts_on", { ascending: false });
+  } else if (direction === "upcoming") {
+    query = query.gte("ends_on", today).order("starts_on", { ascending: true });
+  } else {
+    query = query.order("starts_on", { ascending: false });
+  }
+  if (queryText) {
+    // Commas would break PostgREST's or() syntax — strip them.
+    const safe = queryText.replace(/[(),]/g, " ").trim();
+    if (safe) query = query.or(`title.ilike.%${safe}%,note.ilike.%${safe}%`);
+  }
+
+  const { data, error } = await query.limit(20);
+  if (error) return JSON.stringify({ error: "Termine konnten nicht geladen werden." });
+
+  let events = data ?? [];
+  if (personEventIds) events = events.filter((e) => personEventIds!.has(e.id));
+  if (events.length === 0) {
+    return JSON.stringify({ events: [], message: "Keine passenden Termine gefunden." });
+  }
+
+  // Enrich with attendee names (two steps — the FK embed join is brittle).
+  const eventIds = events.map((e) => e.id);
+  const { data: attendees } = await ctx.client
+    .from("calendar_event_attendees")
+    .select("event_id, family_member_id")
+    .in("event_id", eventIds);
+  const memberIds = [...new Set((attendees ?? []).map((a) => a.family_member_id))];
+  const memberNameMap = new Map<string, string>();
+  if (memberIds.length > 0) {
+    const { data: memberRows } = await ctx.client
+      .from("family_members")
+      .select("id, name")
+      .in("id", memberIds);
+    for (const m of memberRows ?? []) memberNameMap.set(m.id, m.name);
+  }
+  const eventAttendees = new Map<string, string[]>();
+  for (const a of attendees ?? []) {
+    const name = memberNameMap.get(a.family_member_id);
+    if (!name) continue;
+    if (!eventAttendees.has(a.event_id)) eventAttendees.set(a.event_id, []);
+    eventAttendees.get(a.event_id)!.push(name);
+  }
+
+  return JSON.stringify({
+    heute: today,
+    events: events.map((e) => ({
+      titel: e.title,
+      notiz: e.note ?? undefined,
+      von: e.starts_on,
+      bis: e.ends_on !== e.starts_on ? e.ends_on : undefined,
+      uhrzeit: e.all_day ? "ganztägig" : `${e.starts_time}–${e.ends_time}`,
+      wiederholung: RECURRENCE_LABELS[e.recurrence] ?? e.recurrence,
+      teilnehmer: eventAttendees.get(e.id) ?? [],
+    })),
   });
 }
 

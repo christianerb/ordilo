@@ -35,6 +35,8 @@ export interface HomeDocument {
   mime_type: string | null;
   status: string;
   created_at: string;
+  /** AI one-liner from the analysis — the journal row's subtitle. */
+  summary: string | null;
 }
 
 // ---------------------------------------------------------------------------

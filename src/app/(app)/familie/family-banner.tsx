@@ -3,6 +3,7 @@
 import { Cake, Users } from "lucide-react";
 import { getDaysUntilBirthday } from "@/lib/format";
 import { getGreeting } from "@/components/ordilo/app-shell-shared";
+import { InviteAction } from "@/components/ordilo/invite-action";
 import { MemberAvatar } from "./member-avatar";
 
 interface FamilyBannerMember {
@@ -47,7 +48,10 @@ export function FamilyBanner({
         aria-hidden="true"
       />
 
-      <div className="relative flex items-center gap-3">
+      {/* flex-wrap lets the invite link panel (rendered by InviteAction
+          once a link exists) wrap below this row inside the banner —
+          one grouped surface instead of a separate card. */}
+      <div className="relative flex flex-wrap items-center gap-3">
         <div className="flex shrink-0 items-center" aria-hidden="true">
           {members.length === 0 ? (
             <div className="flex size-10 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)]/8">
@@ -111,6 +115,8 @@ export function FamilyBanner({
             aria-hidden="true"
           />
         )}
+
+        <InviteAction />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { cn } from "@/lib/utils";
 
 interface OrdiloWordmarkProps {
@@ -19,12 +19,10 @@ export function OrdiloWordmark({
 }: OrdiloWordmarkProps) {
   return (
     <span className={cn("ordilo-wordmark", className)}>
-      <span className="ordilo-wordmark__mascot" aria-hidden="true">
-        <OrdiloMascot
+      <span className="ordilo-wordmark__mark" aria-hidden="true">
+        <OrdiloMark
           size={mascotSize}
-          mood="greeting"
-          animate={false}
-          style={{ color: "var(--petrol)" }}
+          className="text-[var(--petrol)]"
         />
       </span>
       <span className={cn("ordilo-wordmark__label", labelClassName)}>

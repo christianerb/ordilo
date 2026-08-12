@@ -34,9 +34,11 @@ vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({ openDocument: vi.fn() }),
 }));
 
-// The detail/create sheets are irrelevant for board interactions.
+// The detail/create sheets are irrelevant for board interactions — the
+// detail sheet mock only records whether it would be open (deep links).
 vi.mock("@/components/ordilo/task-detail-sheet", () => ({
-  TaskDetailSheet: () => null,
+  TaskDetailSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="task-detail-sheet-open" /> : null,
 }));
 vi.mock("@/components/ordilo/task-create-sheet", () => ({
   TaskCreateSheet: () => null,
@@ -76,12 +78,16 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
   };
 }
 
-function renderBoard(tasks: TaskCardData[] = [makeTask()]) {
+function renderBoard(
+  tasks: TaskCardData[] = [makeTask()],
+  openTaskId?: string,
+) {
   return render(
     <AufgabenClient
       initialTasks={tasks}
       members={members}
       familyId="fam-1"
+      openTaskId={openTaskId}
     />,
   );
 }
@@ -161,6 +167,23 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("AufgabenClient — deep link", () => {
+  it("opens the detail sheet for ?task=<id>", () => {
+    renderBoard([makeTask()], "task-1");
+    expect(screen.getByTestId("task-detail-sheet-open")).toBeDefined();
+  });
+
+  it("stays closed when the id matches no task", () => {
+    renderBoard([makeTask()], "task-unknown");
+    expect(screen.queryByTestId("task-detail-sheet-open")).toBeNull();
+  });
+
+  it("stays closed without a deep link", () => {
+    renderBoard([makeTask()]);
+    expect(screen.queryByTestId("task-detail-sheet-open")).toBeNull();
+  });
+});
 
 describe("AufgabenClient — board drag-and-drop", () => {
   it("reschedules the due date when a task is dropped on another column", async () => {

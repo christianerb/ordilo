@@ -262,6 +262,7 @@ function makeDoc(overrides: Partial<HomeDocument> = {}): HomeDocument {
     mime_type: "application/pdf",
     status: "confirmed",
     created_at: "2026-07-06T14:30:00Z",
+    summary: null,
     ...overrides,
   };
 }
