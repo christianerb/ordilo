@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 
 /**
  * Legal pages layout (Impressum, Datenschutz) — public, minimal chrome:
@@ -14,9 +14,11 @@ export default function LegalLayout({
   return (
     <div className="min-h-dvh bg-[var(--warm-white)] text-foreground">
       <header className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-4">
-        <Link href="/" className="flex items-center gap-2 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm">
-          <OrdiloMascot size={28} mood="idle" style={{ color: "var(--petrol)" }} />
-          <span className="text-lg font-semibold tracking-tight">Ordilo</span>
+        <Link href="/" className="rounded-ordilo-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <OrdiloWordmark
+            mascotSize={28}
+            labelClassName="text-lg font-semibold tracking-tight"
+          />
         </Link>
         <Link
           href="/"

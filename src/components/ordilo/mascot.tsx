@@ -37,19 +37,15 @@ export interface OrdiloMascotProps {
   style?: React.CSSProperties;
 }
 
-// Paths live in a 68x68 box. The profile deliberately keeps the three
-// unmistakable elephant cues visible even at 22–28px: one oversized ear,
-// a single eye, and a hooked trunk with a small tusk.
 const TRUNK_DOWN =
-  "M50 35 C52 41 56 44 59 48 C61.5 51.5 60 56.5 56.5 57 C53.4 57.5 51.2 55.2 52.8 52.8 C53.6 51.7 55.2 52.3 55.1 54";
+  "M49.5 33 C50 38.7 52.5 43.4 56 45.8 C59.2 48 61.7 45.8 61 42.8 C60.4 40.3 58.4 39.4 56.9 40.8";
 const TRUNK_UP =
-  "M50 35 C52.5 41 58 44 62 40 C65 37 63 32 65 27 C66.5 23 63.5 20 60 22";
+  "M49.5 33 C50 38.5 52.7 42.7 56.3 42.4 C60.2 42.1 61.5 38.4 61 34.7 C60.6 31.6 61.8 29.2 64.2 29.7";
 
 /**
- * The Ordilo mascot — a small line-art elephant, drawn in the same stroke
- * weight and style as the app's Lucide icons so it can drop into any spot
- * that currently takes an icon (headers, empty states, conversation
- * avatars). Color is inherited via `currentColor`.
+ * Ordilo as a warm, filled character. The compact hexagon mark owns tiny
+ * brand placements; this character owns emotional moments where users should
+ * feel noticed, helped, or celebrated.
  *
  * @example
  * <OrdiloMascot size={28} mood="idle" style={{ color: "var(--petrol)" }} />
@@ -61,7 +57,8 @@ export function OrdiloMascot({
   className,
   style,
 }: OrdiloMascotProps) {
-  const eyesClosed = mood === "sleepy" || mood === "greeting" || mood === "success";
+  const eyesClosed = mood === "sleepy";
+  const eyesHappy = mood === "greeting" || mood === "success";
   const trunkUp = mood === "greeting" || mood === "success" || mood === "helping";
   const showBlush = mood === "greeting" || mood === "success";
 
@@ -72,8 +69,12 @@ export function OrdiloMascot({
         ? "ordilo-mascot-breathe"
         : undefined;
   const headAnimClass = animate && mood === "thinking" ? "ordilo-mascot-nod" : undefined;
-  const earAnimClass = animate && mood === "helping" ? "ordilo-mascot-ear-wiggle" : undefined;
-  const eyeAnimClass = animate && !eyesClosed ? "ordilo-mascot-blink" : undefined;
+  const earAnimClass = animate && (mood === "helping" || mood === "greeting")
+    ? "ordilo-mascot-ear-wiggle"
+    : undefined;
+  const eyeAnimClass = animate && !eyesClosed && !eyesHappy
+    ? "ordilo-mascot-blink"
+    : undefined;
   const trunkAnimClass =
     mood === "greeting"
       ? "ordilo-mascot-greet"
@@ -93,73 +94,98 @@ export function OrdiloMascot({
       style={style}
     >
       <g className={headAnimClass}>
-        {/* Large, filled ear: the most recognizable silhouette cue when
-            Ordilo appears at navigation-icon size. */}
+        <path
+          data-part="body"
+          d="M15 34 C15 23 23 15 35 15 C45.5 15 52 22.5 52 33.5 C52 43 46 50 37 50 H24 C17.5 50 12 46 12 40.5 C12 37.8 13 35.6 15 34 Z"
+          fill="currentColor"
+          fillOpacity={0.14}
+          stroke="currentColor"
+          strokeWidth={2}
+          strokeLinejoin="round"
+        />
         <g className={earAnimClass} style={{ transformOrigin: "24px 31px" }}>
           <path
-            d="M33 22 C27 16 17 18 15 28 C13 38 19 45 27 43 C33 41 36 35 35 29 C35 26 34 24 33 22 Z"
+            data-part="ear"
+            d="M29.5 20 C21 17.8 15.5 23.7 15.5 32.2 C15.5 40.3 20.5 45.5 27.2 44 C33.1 42.7 36.2 37.6 35.4 31.1 C34.8 26.2 33 22.1 29.5 20 Z"
+            fill="currentColor"
+            fillOpacity={0.28}
             stroke="currentColor"
             strokeWidth={2}
-            strokeLinecap="round"
             strokeLinejoin="round"
-            fill="currentColor"
-            fillOpacity={0.13}
           />
           <path
-            d="M28.5 23 C23 22 19.5 25.5 19.5 31 C19.5 35.5 22.5 38.5 26.5 38"
+            d="M27.8 24 C22.8 23.2 19.8 27 19.8 32.2 C19.8 37 22.5 40.2 26.5 40"
             stroke="currentColor"
             strokeWidth={1.35}
             strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity={0.54}
+            opacity={0.42}
           />
         </g>
-        <path
-          d="M31 15 C42 12 52 20 53 31 C53.5 36 51.5 40.5 48 43.5 C44.5 46.5 39.5 48 34 48 C30 48 26.5 46.8 23.5 44.5"
-          stroke="currentColor"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          fill="none"
-        />
         <g
           className={eyeAnimClass}
-          style={{ transformOrigin: "44px 28px", transformBox: "fill-box" }}
+          style={{ transformOrigin: "43px 28px", transformBox: "fill-box" }}
         >
           {eyesClosed ? (
             <path
-              d="M41.5 28 q2.5 2.2 5 0"
+              data-part="eye"
+              d="M40.5 28 q2.5 2.1 5 0"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              fill="none"
+            />
+          ) : eyesHappy ? (
+            <path
+              data-part="eye"
+              d="M40.5 29 q2.5-2.4 5 0"
               stroke="currentColor"
               strokeWidth={2}
               strokeLinecap="round"
               fill="none"
             />
           ) : (
-            <circle cx={44} cy={28} r={1.65} fill="currentColor" />
+            <circle data-part="eye" cx={43} cy={28} r={1.8} fill="currentColor" />
           )}
         </g>
         <path
-          d="M49 37 C52.5 37 53.2 39.6 50.5 42"
-          stroke="currentColor"
+          data-part="tusk"
+          d="M49.2 36.3 C51.8 36.6 52.7 38.6 50.5 40.8"
+          stroke="var(--apricot)"
           strokeWidth={1.55}
           strokeLinecap="round"
           fill="none"
-          opacity={0.72}
         />
         <path
-          d="M22 44 V52 M28 48 V53 M39 48 V53 M46 45 V52"
+          d="M21 48 V54 M28 50 V55 M38 50 V55 M45 47 V54"
           stroke="currentColor"
-          strokeWidth={2}
+          strokeWidth={2.4}
           strokeLinecap="round"
-          opacity={0.9}
         />
-        {showBlush && <circle cx={42} cy={33} r={1.3} fill="var(--apricot)" />}
-      </g>
-      <g className={trunkAnimClass} style={{ transformOrigin: "50px 35px" }}>
         <path
+          d="M14 37 C10 35 8.5 37.2 10.2 39"
+          stroke="currentColor"
+          strokeWidth={1.7}
+          strokeLinecap="round"
+          opacity={0.7}
+        />
+        {showBlush && (
+          <ellipse
+            data-part="blush"
+            cx={41.5}
+            cy={33.5}
+            rx={2.5}
+            ry={1.25}
+            fill="var(--apricot)"
+            opacity={0.68}
+          />
+        )}
+      </g>
+      <g className={trunkAnimClass} style={{ transformOrigin: "49.5px 33px" }}>
+        <path
+          data-part="trunk"
           d={trunkUp ? TRUNK_UP : TRUNK_DOWN}
           stroke="currentColor"
-          strokeWidth={2}
+          strokeWidth={2.6}
           strokeLinecap="round"
           strokeLinejoin="round"
           fill="none"

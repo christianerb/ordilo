@@ -294,6 +294,24 @@
     50% { transform: rotate(6deg); }
   }
 
+  /* The compact mark is static in navigation. Contextual brand moments may
+     opt into one brief arrival and glance, never an autonomous loop. */
+  @keyframes ordilo-mark-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(2px) scale(0.94);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes ordilo-mark-look {
+    0%, 35%, 100% { transform: translateX(0); }
+    55% { transform: translateX(-1.2px); }
+    75% { transform: translateX(0.9px); }
+  }
+
   /* Banner ambient glow — barely-visible breathing pulse */
   @keyframes banner-glow {
     0%, 100% { opacity: 0.04; transform: scale(1); }
@@ -717,6 +735,26 @@
     animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
   }
 
+  .ordilo-mark {
+    display: block;
+    overflow: visible;
+  }
+
+  .ordilo-mark__elephant {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  .ordilo-mark--alive .ordilo-mark__elephant {
+    animation: ordilo-mark-arrive 0.24s var(--ease-out-quart) both;
+  }
+
+  .ordilo-mark--alive .ordilo-mark__eye {
+    animation: ordilo-mark-look 0.9s var(--ease-out-quart) 0.12s both;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
   /* Banner ambient glow breathing */
   .animate-banner-glow {
     animation: banner-glow 6s ease-in-out infinite;
@@ -768,7 +806,7 @@
     gap: 0.5rem;
   }
 
-  /* The wordmark is a static composition (halo, mascot, name). Per
+  /* The wordmark is a static composition (halo, mark, name). Per
      DESIGN.md it gets no entrance or decorative motion — it lives in
      persistent navigation, where repeated flourishes would be noise.
      The only motion is the 240ms hover state transition below. */
@@ -787,7 +825,7 @@
     transform: translateY(-50%);
   }
 
-  .ordilo-wordmark__mascot {
+  .ordilo-wordmark__mark {
     display: inline-flex;
     transition: transform 0.24s var(--ease-out-quart);
     transform-origin: 50% 62%;
@@ -811,7 +849,7 @@
     transform: translateY(-50%) scale(1.16);
   }
 
-  .ordilo-wordmark:hover .ordilo-wordmark__mascot {
+  .ordilo-wordmark:hover .ordilo-wordmark__mark {
     transform: rotate(-4deg);
   }
 

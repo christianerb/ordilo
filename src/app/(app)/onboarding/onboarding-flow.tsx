@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PersonCard } from "@/components/ordilo/person-card";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { RoleChipGroup } from "@/components/ordilo/role-chips";
 import { createFamily, addMember, completeOnboarding } from "./actions";
 
@@ -511,7 +512,7 @@ function MascotBubble({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex gap-3">
       <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-        <OrdiloMascot size={22} mood="idle" />
+        <OrdiloMark size={24} />
       </div>
       <div className="flex-1 pt-1">
         <p className="text-sm leading-relaxed text-foreground">{children}</p>

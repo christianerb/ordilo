@@ -16,7 +16,7 @@ import { useState } from "react";
 import { logout } from "@/app/(app)/actions";
 import type { CollectionFormValues } from "@/components/ordilo/collection-form";
 import { useCollections } from "@/lib/collections/collections-context";
-import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import {
   DropdownMenu,
@@ -437,7 +437,7 @@ export function SidebarNav({
           aria-label="Ordilo Startseite"
         >
           {collapsed ? (
-            <OrdiloMascot size={26} mood="helping" style={{ color: "var(--petrol)" }} />
+            <OrdiloMark size={28} className="text-[var(--petrol)]" />
           ) : (
             <OrdiloWordmark mascotSize={28} labelClassName="text-sm font-semibold text-foreground" />
           )}
