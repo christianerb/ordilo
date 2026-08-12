@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Check,
+  ChevronDown,
   ChevronRight,
   FileText,
   Loader2,
@@ -132,6 +133,16 @@ export function EventSheet({
     end: boolean;
     until: boolean;
   }>({ start: false, end: false, until: false });
+  const [showDetails, setShowDetails] = useState(
+    Boolean(
+      event &&
+        (event.location ||
+          event.note ||
+          event.recurrence !== "none" ||
+          event.responsible_member_id ||
+          event.attendees.length),
+    ),
+  );
 
   const markDateValidity = useCallback(
     (field: "start" | "end" | "until") => (valid: boolean) =>
@@ -261,13 +272,17 @@ export function EventSheet({
 
     try {
       if (isEdit) {
-        const { error: updateError } = await supabase
+        const { data, error: updateError } = await supabase
           .from("calendar_events")
           .update(row)
-          .eq("id", event.id);
+          .eq("id", event.id)
+          .select(
+            "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id",
+          )
+          .single();
 
-        if (updateError) {
-          setFormError("Speichern hat nicht geklappt.");
+        if (updateError || !data) {
+          setFormError("Speichern hat nicht geklappt. Bitte versuch es nochmal.");
           return;
         }
 
@@ -308,7 +323,11 @@ export function EventSheet({
         }
 
         onSaved(
-          { ...event, ...row, attendees },
+          {
+            ...(data as Omit<CalendarEvent, "attendees">),
+            document_title: event.document_title,
+            attendees,
+          },
           "updated",
         );
       } else {
@@ -407,6 +426,9 @@ export function EventSheet({
           {isEdit && event.document_id && (
             <Link
               href={`/dokumente?doc=${event.document_id}`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Dokument „${event.document_title ?? "öffnen"}“ in einem neuen Tab öffnen`}
               className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-secondary/50 px-3 py-2.5 text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               data-testid="event-document-link"
             >
@@ -534,14 +556,14 @@ export function EventSheet({
 
           {conflicts.length > 0 && (
             <div
-              className="rounded-ordilo-sm border border-amber-600/25 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+              className="rounded-ordilo-sm border border-primary/20 bg-secondary/70 px-3 py-2 text-sm text-foreground"
               role="status"
               data-testid="event-conflict-warning"
             >
               {conflicts.map(({ event: conflictEvent, memberIds }) => (
                 <p key={conflictEvent.id} className="flex items-start gap-1.5">
                   <TriangleAlert
-                    className="mt-0.5 size-3.5 shrink-0 text-amber-600"
+                    className="mt-0.5 size-3.5 shrink-0 text-primary"
                     aria-hidden="true"
                   />
                   <span>
@@ -559,22 +581,55 @@ export function EventSheet({
             </div>
           )}
 
-          <div>
-            <label htmlFor="event-location" className={labelClass}>
-              Ort{" "}
-              <span className="font-normal text-muted-foreground">
-                (optional)
+          {!isEdit && template?.document_title && (
+            <p className="rounded-ordilo-sm bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
+              Aus dem Dokument „{template.document_title}“ übernommen — der
+              Termin bleibt damit verknüpft.
+            </p>
+          )}
+
+          <button
+            type="button"
+            className="flex w-full items-center justify-between rounded-ordilo-sm bg-secondary/60 px-3 py-2.5 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            onClick={() => setShowDetails((current) => !current)}
+            aria-expanded={showDetails}
+            aria-controls="event-details"
+          >
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Weitere Angaben
               </span>
-            </label>
-            <input
-              id="event-location"
-              value={location}
-              onChange={(e) => setLocation(e.target.value)}
-              placeholder="Zum Beispiel: Turnhalle Grundschule"
-              maxLength={200}
-              className={inputClass}
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Ort, Wiederholung, Familie und Notiz
+              </span>
+            </span>
+            <ChevronDown
+              className={cn(
+                "size-4 shrink-0 text-muted-foreground transition-transform",
+                showDetails && "rotate-180",
+              )}
+              aria-hidden="true"
             />
-          </div>
+          </button>
+
+          {showDetails && (
+            <div id="event-details" className="space-y-4">
+              <div>
+                <label htmlFor="event-location" className={labelClass}>
+                  Ort{" "}
+                  <span className="font-normal text-muted-foreground">
+                    (optional)
+                  </span>
+                </label>
+                <input
+                  id="event-location"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Zum Beispiel: Turnhalle Grundschule"
+                  maxLength={200}
+                  className={inputClass}
+                />
+              </div>
 
           <div>
             <label htmlFor="event-recurrence" className={labelClass}>
@@ -681,13 +736,6 @@ export function EventSheet({
             </div>
           )}
 
-          {!isEdit && template?.document_title && (
-            <p className="rounded-ordilo-sm bg-secondary/60 px-3 py-2 text-xs text-muted-foreground">
-              Aus dem Dokument „{template.document_title}“ übernommen — der
-              Termin bleibt damit verknüpft.
-            </p>
-          )}
-
           <div>
             <label htmlFor="event-note" className={labelClass}>
               Notiz{" "}
@@ -703,7 +751,9 @@ export function EventSheet({
               rows={3}
               className="w-full resize-none rounded-ordilo-base border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-primary focus:ring-[3px] focus:ring-ring/50"
             />
-          </div>
+              </div>
+            </div>
+          )}
 
           <Button className="w-full" onClick={handleSave} disabled={saving}>
             {saving && (

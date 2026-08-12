@@ -8,10 +8,10 @@ import {
   ChevronRight,
   FileText,
   MapPin,
+  Pencil,
   Plus,
   Repeat,
   Sparkles,
-  UserCheck,
   Users,
   X,
 } from "lucide-react";
@@ -43,7 +43,6 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { usePlannerActionsOptional } from "./planner-actions-context";
-import { VoicePlannerCard } from "./voice-planner";
 
 const WEEKDAYS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 
@@ -134,7 +133,7 @@ export function CalendarClient({
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [activeMonth, setActiveMonth] = useState(() => monthStart(today));
   const [selectedDate, setSelectedDate] = useState(() => today);
-  const [view, setView] = useState<"week" | "month">("month");
+  const [view, setView] = useState<"week" | "month">("week");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   const [suggestionTemplate, setSuggestionTemplate] =
@@ -142,6 +141,7 @@ export function CalendarClient({
   const [memberFilter, setMemberFilter] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CalendarEvent | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [celebratedEventId, setCelebratedEventId] = useState<string | null>(null);
 
   const memberColors = useMemo(() => {
     const colors = new Map<string, string>();
@@ -160,16 +160,22 @@ export function CalendarClient({
     [members],
   );
 
-  /** Accent color for an event: responsible member first, else first attendee. */
-  const eventColor = useCallback(
+  /** A plain-language ownership label, so color never carries this meaning. */
+  const eventPeopleLabel = useCallback(
     (event: CalendarEvent): string | null => {
-      if (event.responsible_member_id) {
-        return memberColors.get(event.responsible_member_id) ?? null;
+      const attendeeNames = event.attendees.map((attendee) => attendee.name);
+      const responsibleName = event.responsible_member_id
+        ? memberNames.get(event.responsible_member_id)
+        : null;
+
+      if (responsibleName && attendeeNames.length > 0) {
+        return `Für ${attendeeNames.join(", ")} · ${responsibleName} kümmert sich`;
       }
-      const first = event.attendees[0];
-      return first ? memberColors.get(first.id) ?? null : null;
+      if (responsibleName) return `Für ${responsibleName}`;
+      if (attendeeNames.length > 0) return `Für ${attendeeNames.join(", ")}`;
+      return null;
     },
-    [memberColors],
+    [memberNames],
   );
 
   /** Events narrowed to the selected person (attendee or responsible). */
@@ -436,6 +442,7 @@ export function CalendarClient({
 
   const handleSaved = useCallback(
     (saved: CalendarEvent, mode: "created" | "updated") => {
+      setCelebratedEventId(mode === "created" ? saved.id : null);
       setEvents((current) =>
         mode === "created"
           ? sortEvents([...current, saved])
@@ -454,17 +461,13 @@ export function CalendarClient({
         void recordDismissal(entityId);
       }
       revealEvent(saved);
-      toast.success(mode === "created" ? "Termin eingetragen" : "Gespeichert");
+      toast.success(
+        mode === "created"
+          ? `„${saved.title}“ ist jetzt im Familienplaner.`
+          : `„${saved.title}“ ist gespeichert.`,
+      );
     },
     [revealEvent, suggestionTemplate, recordDismissal],
-  );
-
-  const handleEventCreatedByVoice = useCallback(
-    (event: CalendarEvent) => {
-      setEvents((current) => sortEvents([...current, event]));
-      revealEvent(event);
-    },
-    [revealEvent],
   );
 
   const handleDeleteRequest = useCallback((event: CalendarEvent) => {
@@ -529,6 +532,81 @@ export function CalendarClient({
 
   return (
     <div className="space-y-5">
+      {familyId && suggestions.length > 0 && (
+        <section
+          aria-label="Terminvorschläge aus Dokumenten"
+          className="overflow-hidden rounded-ordilo-md border border-primary/20 bg-[color-mix(in_srgb,var(--wash-sage)_58%,var(--card))] shadow-card"
+          data-testid="calendar-suggestions"
+        >
+          <div className="flex items-start gap-3 px-3 pb-3 pt-3.5 sm:px-4 sm:pb-3.5">
+            <span
+              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm"
+              aria-hidden="true"
+            >
+              <Sparkles className="size-5" />
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <h2 className="text-base font-semibold text-foreground">
+                Ordilo hat etwas für euch entdeckt
+              </h2>
+              <p className="mt-0.5 text-sm leading-relaxed text-muted-foreground">
+                {suggestions.length === 1
+                  ? "In euren Dokumenten steht ein Termin, den ihr jetzt in den Familienplaner übernehmen könnt."
+                  : `In euren Dokumenten stehen ${suggestions.length} Termine, die ihr jetzt in den Familienplaner übernehmen könnt.`}
+              </p>
+            </div>
+          </div>
+
+          <div className="divide-y divide-primary/15 border-t border-primary/15 bg-card/65">
+            {suggestions.map((suggestion) => (
+              <div
+                key={suggestion.entityId}
+                className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4"
+                data-testid={`calendar-suggestion-${suggestion.entityId}`}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {suggestion.label ?? suggestion.documentTitle ?? "Termin"}
+                  </p>
+                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    <span>{formatGermanDate(suggestion.date)}</span>
+                    {suggestion.documentTitle && (
+                      <span className="inline-flex min-w-0 items-center gap-1">
+                        <FileText className="size-3 shrink-0" aria-hidden="true" />
+                        <span className="truncate">{suggestion.documentTitle}</span>
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="gap-1"
+                    onClick={() => acceptSuggestion(suggestion)}
+                    data-testid={`suggestion-accept-${suggestion.entityId}`}
+                  >
+                    <CalendarPlus className="size-3.5" aria-hidden="true" />
+                    Eintragen
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1 text-muted-foreground"
+                    onClick={() => void hideSuggestion(suggestion)}
+                    data-testid={`suggestion-dismiss-${suggestion.entityId}`}
+                  >
+                    <X className="size-3.5" aria-hidden="true" />
+                    Ausblenden
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       <section
         className="rounded-ordilo-md border border-border bg-card p-3 shadow-card sm:p-4"
         aria-label="Kalender"
@@ -569,11 +647,10 @@ export function CalendarClient({
                     }
                     aria-pressed={selected}
                     aria-label={`Nur Termine von ${member.name}`}
-                    title={member.name}
                     data-testid={`calendar-filter-${member.id}`}
                     className={cn(
-                      "flex size-9 items-center justify-center rounded-full border-2 text-sm font-semibold transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      selected ? "scale-105 text-white shadow-sm" : "bg-card",
+                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 px-2.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      selected ? "text-white shadow-sm" : "bg-card",
                     )}
                     style={
                       selected
@@ -581,7 +658,15 @@ export function CalendarClient({
                         : { borderColor: color, color }
                     }
                   >
-                    {initialOf(member.name)}
+                    <span
+                      className={cn(
+                        "flex size-5 items-center justify-center rounded-full text-xs font-semibold",
+                        !selected && "bg-secondary",
+                      )}
+                    >
+                      {initialOf(member.name)}
+                    </span>
+                    <span>{member.name}</span>
                   </button>
                 );
               })}
@@ -684,7 +769,7 @@ export function CalendarClient({
                     aria-pressed={isSelected}
                     className="flex w-11 shrink-0 flex-col items-center rounded-ordilo-sm py-1 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">
+                    <span className="text-xs font-medium text-muted-foreground">
                       {day.toLocaleDateString("de-DE", { weekday: "short" })}
                     </span>
                     <span
@@ -699,29 +784,54 @@ export function CalendarClient({
                   <div className="min-w-0 flex-1 space-y-1 py-0.5">
                     {dayEvents.length > 0 ? (
                       dayEvents.map((event) => {
-                        const color = eventColor(event);
+                        const peopleLabel = eventPeopleLabel(event);
                         return (
                           <button
                             key={event.id}
                             type="button"
                             onClick={() => openEdit(event)}
-                            className="flex w-full items-baseline gap-2 rounded-ordilo-sm border-l-[3px] border-transparent bg-secondary/60 px-2 py-1.5 text-left text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                            style={color ? { borderLeftColor: color } : undefined}
+                            aria-label={`„${event.title}“ bearbeiten`}
+                            className={cn(
+                              "group flex min-h-12 w-full items-center gap-3 rounded-ordilo-sm border border-transparent bg-secondary/60 px-3 py-2 text-left transition-all hover:border-border hover:bg-card hover:shadow-card active:translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                              celebratedEventId === event.id && "animate-card-in",
+                            )}
                             data-testid={`week-event-${event.id}`}
                           >
-                            <span className="w-11 shrink-0 text-xs tabular-nums text-muted-foreground">
+                            <span className="w-[4.75rem] shrink-0 text-xs tabular-nums text-muted-foreground">
                               {event.all_day || !event.starts_time
-                                ? "ganztags"
+                                ? "Ganztägig"
                                 : event.starts_time.slice(0, 5)}
                             </span>
-                            <span className="min-w-0 flex-1 truncate font-medium text-foreground">
-                              {event.title}
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-sm font-medium text-foreground">
+                                {event.title}
+                              </span>
+                              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                                {event.location && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <MapPin className="size-3 shrink-0" aria-hidden="true" />
+                                    {event.location}
+                                  </span>
+                                )}
+                                {peopleLabel && (
+                                  <span className="inline-flex items-center gap-1">
+                                    <Users className="size-3 shrink-0" aria-hidden="true" />
+                                    {peopleLabel}
+                                  </span>
+                                )}
+                              </span>
                               {event.is_new && (
                                 <span
-                                  className="ml-1.5 inline-block size-1.5 rounded-full bg-[var(--apricot,#E46018)] align-middle"
+                                  className="mt-1 inline-flex items-center gap-1 rounded-full bg-[var(--apricot-light)] px-1.5 py-0.5 text-xs font-medium text-[var(--apricot-text)]"
                                   aria-label="Neu"
-                                />
+                                >
+                                  Neu
+                                </span>
                               )}
+                            </span>
+                            <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                              <span className="hidden sm:inline">Bearbeiten</span>
+                              <Pencil className="size-3.5" aria-hidden="true" />
                             </span>
                           </button>
                         );
@@ -752,7 +862,7 @@ export function CalendarClient({
           {WEEKDAYS.map((weekday) => (
             <span
               key={weekday}
-              className="py-1 text-[11px] font-medium text-muted-foreground"
+              className="py-1 text-xs font-medium text-muted-foreground"
             >
               {weekday}
             </span>
@@ -787,27 +897,17 @@ export function CalendarClient({
                   {day.getDate()}
                 </span>
                 {dayEvents.length > 0 && (
-                  <span className="mt-auto hidden w-full truncate text-left text-[10px] font-medium text-primary sm:block">
+                  <span className="mt-auto hidden w-full truncate text-left text-xs font-medium text-primary sm:block">
                     {dayEvents[0].title}
                     {dayEvents.length > 1 && ` +${dayEvents.length - 1}`}
                   </span>
                 )}
                 {dayEvents.length > 0 && (
                   <span
-                    className="mt-auto flex items-center gap-0.5 sm:hidden"
+                    className="mt-auto rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary sm:hidden"
                     aria-hidden="true"
                   >
-                    {dayEvents.slice(0, 3).map((event) => (
-                      <span
-                        key={event.id}
-                        className="size-1.5 rounded-full bg-primary"
-                        style={
-                          eventColor(event)
-                            ? { backgroundColor: eventColor(event)! }
-                            : undefined
-                        }
-                      />
-                    ))}
+                    {dayEvents.length}
                   </span>
                 )}
               </button>
@@ -825,7 +925,7 @@ export function CalendarClient({
             {dayHeading(selectedDate)}
           </h2>
           {memberFilter && (
-            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">
               nur {memberNames.get(memberFilter) ?? "…"}
             </span>
           )}
@@ -834,175 +934,121 @@ export function CalendarClient({
         {selectedEvents.length > 0 ? (
           <div className="space-y-2">
             {selectedEvents.map((event) => {
-              const color = eventColor(event);
-              const responsibleName = event.responsible_member_id
-                ? memberNames.get(event.responsible_member_id)
-                : null;
+              const peopleLabel = eventPeopleLabel(event);
               return (
                 <button
                   key={event.id}
                   type="button"
                   onClick={() => openEdit(event)}
-                  className="block w-full rounded-ordilo-sm border border-border border-l-[3px] bg-card px-3 py-2.5 text-left shadow-card transition-shadow hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  style={color ? { borderLeftColor: color } : undefined}
+                  aria-label={`„${event.title}“ bearbeiten`}
+                  className={cn(
+                    "group flex w-full items-start gap-3 rounded-ordilo-sm border border-border bg-card px-3 py-3 text-left shadow-card transition-all hover:-translate-y-px hover:border-primary/30 hover:shadow-card-hover active:translate-y-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    celebratedEventId === event.id && "animate-card-in",
+                  )}
                   data-testid={`calendar-event-${event.id}`}
                 >
-                  <p className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    {event.title}
-                    {event.is_new && (
-                      <span
-                        className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary"
-                        data-testid={`calendar-event-new-${event.id}`}
-                      >
-                        Neu
-                      </span>
-                    )}
-                  </p>
-                  <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                    {event.starts_on !== event.ends_on && (
-                      <span>
-                        {formatGermanDate(event.starts_on)} bis{" "}
-                        {formatGermanDate(event.ends_on)}
-                      </span>
-                    )}
-                    {!event.all_day && event.starts_time && (
-                      <span>
-                        {event.starts_time.slice(0, 5)}
-                        {event.ends_time && ` bis ${event.ends_time.slice(0, 5)}`} Uhr
-                      </span>
-                    )}
-                    {event.location && (
-                      <span className="inline-flex items-center gap-1">
-                        <MapPin className="size-3" aria-hidden="true" />
-                        {event.location}
-                      </span>
-                    )}
-                    {event.recurrence !== "none" && (
-                      <span className="inline-flex items-center gap-1">
-                        <Repeat className="size-3" aria-hidden="true" />
-                        {RECURRENCE_LABELS[event.recurrence]}
-                      </span>
-                    )}
-                    {responsibleName && (
-                      <span className="inline-flex items-center gap-1">
-                        <UserCheck className="size-3" aria-hidden="true" />
-                        {responsibleName} kümmert sich
-                      </span>
-                    )}
-                    {event.attendees.length > 0 && (
-                      <span className="inline-flex items-center gap-1">
-                        <Users className="size-3" aria-hidden="true" />
-                        {event.attendees.map((a) => a.name).join(", ")}
-                      </span>
-                    )}
-                  </p>
-                  {event.note && (
-                    <p className="mt-1 text-sm text-muted-foreground">{event.note}</p>
-                  )}
-                  {event.document_id && (
-                    <span
-                      className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] text-muted-foreground"
-                      data-testid={`calendar-event-document-${event.id}`}
-                    >
-                      <FileText className="size-3" aria-hidden="true" />
-                      {event.document_title ?? "Aus einem Dokument"}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                      {event.title}
+                      {event.is_new && (
+                        <span
+                          className="rounded-full bg-[var(--apricot-light)] px-1.5 py-0.5 text-xs font-medium text-[var(--apricot-text)]"
+                          data-testid={`calendar-event-new-${event.id}`}
+                        >
+                          Neu
+                        </span>
+                      )}
                     </span>
-                  )}
+                    <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                      {event.starts_on !== event.ends_on && (
+                        <span>
+                          {formatGermanDate(event.starts_on)} bis{" "}
+                          {formatGermanDate(event.ends_on)}
+                        </span>
+                      )}
+                      {!event.all_day && event.starts_time && (
+                        <span>
+                          {event.starts_time.slice(0, 5)}
+                          {event.ends_time && ` bis ${event.ends_time.slice(0, 5)} Uhr`}
+                        </span>
+                      )}
+                      {event.location && (
+                        <span className="inline-flex items-center gap-1">
+                          <MapPin className="size-3" aria-hidden="true" />
+                          {event.location}
+                        </span>
+                      )}
+                      {event.recurrence !== "none" && (
+                        <span className="inline-flex items-center gap-1">
+                          <Repeat className="size-3" aria-hidden="true" />
+                          {RECURRENCE_LABELS[event.recurrence]}
+                        </span>
+                      )}
+                      {peopleLabel && (
+                        <span className="inline-flex items-center gap-1">
+                          <Users className="size-3" aria-hidden="true" />
+                          {peopleLabel}
+                        </span>
+                      )}
+                    </span>
+                    {event.note && (
+                      <span className="mt-1 block text-sm text-muted-foreground">
+                        {event.note}
+                      </span>
+                    )}
+                    {event.document_id && (
+                      <span
+                        className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground"
+                        data-testid={`calendar-event-document-${event.id}`}
+                      >
+                        <FileText className="size-3" aria-hidden="true" />
+                        {event.document_title ?? "Aus einem Dokument"}
+                      </span>
+                    )}
+                  </span>
+                  <span className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1.5 text-xs font-medium text-muted-foreground transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
+                    <span className="hidden sm:inline">Bearbeiten</span>
+                    <Pencil className="size-3.5" aria-hidden="true" />
+                  </span>
                 </button>
               );
             })}
           </div>
         ) : (
-          <div className="flex flex-col items-start gap-2 rounded-ordilo-sm bg-secondary/60 px-3 py-3">
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-col items-start gap-3 rounded-ordilo-sm bg-secondary/70 px-4 py-4">
+            <span
+              className="flex size-9 items-center justify-center rounded-full bg-card text-primary"
+              aria-hidden="true"
+            >
+              <CalendarDays className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-medium text-foreground">
               {memberFilter
-                ? `Für ${memberNames.get(memberFilter) ?? "diese Person"} steht hier nichts an.`
-                : "Noch nichts geplant an diesem Tag."}
-            </p>
+                ? `Für ${memberNames.get(memberFilter) ?? "diese Person"} ist noch nichts geplant.`
+                : "Dieser Tag ist noch frei."}
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                {memberFilter
+                  ? "Wähl eine andere Person oder zeig wieder alle Termine."
+                  : "Trag einen Termin ein, wenn ihr soweit seid."}
+              </p>
+            </div>
             {familyId && !memberFilter && (
               <Button
                 type="button"
-                variant="outline"
                 size="sm"
                 className="gap-1.5"
                 onClick={openCreate}
                 data-testid="calendar-empty-day-create"
               >
-                <Plus className="size-3.5" aria-hidden="true" />
-                Termin am {formatGermanDate(toCalendarDate(selectedDate))} eintragen
+                <CalendarPlus className="size-3.5" aria-hidden="true" />
+                Termin eintragen
               </Button>
             )}
           </div>
         )}
       </section>
-
-      {familyId && (
-        <VoicePlannerCard
-          familyId={familyId}
-          members={members}
-          onEventCreated={handleEventCreatedByVoice}
-        />
-      )}
-
-      {familyId && suggestions.length > 0 && (
-        <section
-          aria-label="Terminvorschläge aus Dokumenten"
-          data-testid="calendar-suggestions"
-        >
-          <div className="mb-2 flex items-center gap-2">
-            <Sparkles className="size-4 text-primary" aria-hidden="true" />
-            <h2 className="text-sm font-semibold text-foreground">
-              Aus euren Dokumenten
-            </h2>
-          </div>
-          <div className="space-y-2">
-            {suggestions.map((suggestion) => (
-              <div
-                key={suggestion.entityId}
-                className="rounded-ordilo-sm border border-border bg-card px-3 py-2.5 shadow-card"
-                data-testid={`calendar-suggestion-${suggestion.entityId}`}
-              >
-                <p className="text-sm font-medium text-foreground">
-                  {suggestion.label ?? suggestion.documentTitle ?? "Termin"}
-                </p>
-                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-                  <span>{formatGermanDate(suggestion.date)}</span>
-                  {suggestion.documentTitle && (
-                    <span className="inline-flex min-w-0 items-center gap-1">
-                      <FileText className="size-3 shrink-0" aria-hidden="true" />
-                      <span className="truncate">{suggestion.documentTitle}</span>
-                    </span>
-                  )}
-                </p>
-                <div className="mt-2 flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="gap-1"
-                    onClick={() => acceptSuggestion(suggestion)}
-                    data-testid={`suggestion-accept-${suggestion.entityId}`}
-                  >
-                    <CalendarPlus className="size-3.5" aria-hidden="true" />
-                    Eintragen
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1 text-muted-foreground"
-                    onClick={() => void hideSuggestion(suggestion)}
-                    data-testid={`suggestion-dismiss-${suggestion.entityId}`}
-                  >
-                    <X className="size-3.5" aria-hidden="true" />
-                    Ausblenden
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {familyId && (
         <EventSheet
