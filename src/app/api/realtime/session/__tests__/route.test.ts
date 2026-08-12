@@ -68,7 +68,8 @@ beforeEach(() => {
   mockFetch.mockResolvedValue(
     new Response(
       JSON.stringify({
-        client_secret: { value: "secret-1", expires_at: 123 },
+        value: "secret-1",
+        expires_at: 123,
       }),
       { status: 200 },
     ),
@@ -125,6 +126,7 @@ describe("POST /api/realtime/session", () => {
 
     expect(response.status).toBe(200);
     expect(body.client_secret).toBe("secret-1");
+    expect(body.expires_at).toBe(123);
     expect(mockFetch).toHaveBeenCalledWith(
       "https://api.openai.com/v1/realtime/client_secrets",
       expect.objectContaining({ method: "POST" }),
