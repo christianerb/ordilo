@@ -1,4 +1,4 @@
-import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { cn } from "@/lib/utils";
 
 interface OrdiloWordmarkProps {
@@ -8,7 +8,7 @@ interface OrdiloWordmarkProps {
 }
 
 /**
- * The product mark is a quiet, static composition (halo, mascot, name) for
+ * The product mark is a quiet, static composition (halo, mark, name) for
  * navigation and entry surfaces. Per DESIGN.md it carries no decorative
  * motion — the only response is a subtle 240ms hover state transition.
  */
@@ -19,12 +19,11 @@ export function OrdiloWordmark({
 }: OrdiloWordmarkProps) {
   return (
     <span className={cn("ordilo-wordmark", className)}>
-      <span className="ordilo-wordmark__mascot" aria-hidden="true">
-        <OrdiloMascot
+      <span className="ordilo-wordmark__mark" aria-hidden="true">
+        <OrdiloMark
           size={mascotSize}
-          mood="greeting"
           animate={false}
-          style={{ color: "var(--petrol)" }}
+          className="text-[var(--petrol)]"
         />
       </span>
       <span className={cn("ordilo-wordmark__label", labelClassName)}>

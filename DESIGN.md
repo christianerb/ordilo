@@ -218,6 +218,17 @@ The system is flat by default. Shadows appear on cards and interactive surfaces 
 
 ## 5. Components
 
+### Brand Character System
+
+Ordilo has one elephant in two levels of expression:
+
+- **Ordilo Mark:** A filled elephant profile inside a hexagon. The hexagon represents the family's safe home; the large ear, single profile eye, warm tusk, and hooked trunk must remain legible at 20–32px. Use it for wordmarks, navigation, favicon, app icons, and compact AI avatars.
+- **Ordilo Character:** The same elephant outside the hexagon, with a filled body, oversized ear, visible feet, expressive eye, and moving trunk. Use it in onboarding, empty states, processing, help, and celebrations where emotional presence matters.
+- **Recognition floor:** Never reduce the elephant to a symmetrical face or abstract line flourish. At every size, the ear, profile eye, and trunk must be identifiable without the word "Ordilo."
+- **Personality:** Ordilo notices the family. The eyes may look around, blink, close happily, or follow the current task; the trunk may greet or point. Motion is brief and contextual, never constant attention-seeking.
+- **Color:** Harbor Blue defines the silhouette, Sage softens the ear/body, Warm White keeps the face open, and Apricot is reserved for the tiny tusk or a brief happy accent.
+- **Accessibility:** The mark stays static in persistent navigation and only animates when a contextual brand moment opts in. All autonomous character motion stops under `prefers-reduced-motion`. The mark is decorative when adjacent to the visible Ordilo name.
+
 ### Buttons
 
 Tactile and confident. Harbor Blue primaries, ghost secondaries, outlined tertiaries — one shape, three weights.

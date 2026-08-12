@@ -18,31 +18,33 @@ describe("OrdiloMascot", () => {
     expect(svg?.getAttribute("width")).toBe("40");
   });
 
-  it("renders a single open profile eye for idle mood", () => {
+  it("renders a clear profile eye for idle mood", () => {
     const { container } = render(<OrdiloMascot mood="idle" />);
-    expect(container.querySelectorAll("circle").length).toBe(1);
+    expect(container.querySelector('[data-part="eye"]')?.tagName).toBe("circle");
   });
 
-  it("renders closed eyes (no eye dots) for sleepy mood", () => {
+  it("renders a closed profile eye for sleepy mood", () => {
     const { container } = render(<OrdiloMascot mood="sleepy" />);
-    // Sleepy has no open-eye dots and no apricot blush dot.
-    expect(container.querySelectorAll("circle").length).toBe(0);
+    expect(container.querySelector('[data-part="eye"]')?.tagName).toBe("path");
   });
 
   it("renders an apricot blush accent for greeting mood", () => {
     const { container } = render(<OrdiloMascot mood="greeting" />);
-    const accent = Array.from(container.querySelectorAll("circle")).find(
-      (c) => c.getAttribute("fill") === "var(--apricot)",
-    );
-    expect(accent).toBeDefined();
+    expect(container.querySelector('[data-part="blush"]')).not.toBeNull();
   });
 
   it("does not render an apricot accent for idle mood", () => {
     const { container } = render(<OrdiloMascot mood="idle" />);
-    const accent = Array.from(container.querySelectorAll("circle")).find(
-      (c) => c.getAttribute("fill") === "var(--apricot)",
-    );
-    expect(accent).toBeUndefined();
+    expect(container.querySelector('[data-part="blush"]')).toBeNull();
+  });
+
+  it("uses filled elephant anatomy instead of an abstract line face", () => {
+    const { container } = render(<OrdiloMascot />);
+
+    expect(container.querySelector('[data-part="body"]')?.getAttribute("fill")).toBe("currentColor");
+    expect(container.querySelector('[data-part="ear"]')).not.toBeNull();
+    expect(container.querySelector('[data-part="trunk"]')).not.toBeNull();
+    expect(container.querySelector('[data-part="tusk"]')).not.toBeNull();
   });
 
   it("applies the breathing animation class by default", () => {
