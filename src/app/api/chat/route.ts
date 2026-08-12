@@ -10,6 +10,7 @@ import {
 import type { ToolContext } from "@/lib/ai/tools";
 import {
   chatRequestSchema,
+  mergeConfirmationProposal,
   type ChatErrorResponse,
 } from "@/lib/schemas/chat";
 import {
@@ -315,10 +316,14 @@ export async function POST(request: Request): Promise<Response> {
                     data.action_args &&
                     typeof data.action_args === "object"
                   ) {
+                    // Persist the SAME merged proposal the live card
+                    // renders (args + server-resolved preview fields like
+                    // task_title or existing_value) — a restored card must
+                    // disclose everything the live card did.
                     pendingActions.push({
                       action_id: data.action_id,
                       tool_name: data.tool_name,
-                      action_args: data.action_args as Record<string, unknown>,
+                      action_args: mergeConfirmationProposal(data),
                     });
                   }
                 } else if (data.type === "tool" && data.state === "start") {

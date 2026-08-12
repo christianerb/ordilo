@@ -86,25 +86,41 @@ export async function POST(request: Request): Promise<Response> {
       });
     }
 
-    if (existing?.status === "failed") {
+    if (!existing) {
+      // A 23505 without a visible row is a transient inconsistency — never
+      // continue without holding a claim.
+      return jsonError(
+        "Die Aktion konnte nicht übernommen werden. Bitte versuche es erneut.",
+        "CHAT_ACTION_FAILED",
+        500,
+      );
+    }
+
+    if (existing.status === "failed") {
       // Safe to reclaim: every tool reports an error only BEFORE its
       // write commits (single inserts fail atomically; post-insert steps
       // like note analysis swallow their own errors and still report
       // success). A failed row therefore proves no write happened.
-      await ledgerTable()
-        .delete()
+      //
+      // The reclaim is a single conditional UPDATE (compare-and-swap on
+      // status), not a delete+insert pair: two concurrent retries must
+      // not be able to delete each other's fresh claim and both execute
+      // the write. Exactly one of them flips failed → running; the other
+      // matches no row and backs off with 409.
+      const { data: reclaimed, error: reclaimError } = await ledgerTable()
+        .update({ status: "running", executed_at: new Date().toISOString() })
         .eq("family_id", familyId)
-        .eq("action_id", actionId);
-      const { error: reclaimError } = await ledgerTable().insert(claim);
-      if (reclaimError) {
-        // Lost the reclaim race — another request is executing right now.
+        .eq("action_id", actionId)
+        .eq("status", "failed")
+        .select("id");
+      if (reclaimError || !reclaimed?.length) {
         return jsonError(
           "Diese Aktion wird gerade übernommen. Warte einen Moment und tippe dann nochmal.",
           "CHAT_ACTION_IN_PROGRESS",
           409,
         );
       }
-    } else if (existing?.status === "running") {
+    } else if (existing.status === "running") {
       // NEVER replay a running claim, no matter how old: the request may
       // still be executing, or may have crashed between the write and the
       // settle update — in that case the write DID commit and replaying

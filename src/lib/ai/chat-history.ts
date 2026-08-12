@@ -28,6 +28,12 @@ type ServerClient = Awaited<
 export interface PersistedChatAction {
   action_id: string;
   tool_name: string;
+  /**
+   * The merged proposal: validated tool args plus the server-resolved
+   * preview fields (task_title, existing_value, fact_type_label, …), via
+   * `mergeConfirmationProposal`. Storing the merged form keeps a restored
+   * card as explicit as the live one was.
+   */
   action_args: Record<string, unknown>;
 }
 

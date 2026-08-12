@@ -35,7 +35,6 @@ function request(body: unknown) {
 /** Tracks the idempotency-ledger interactions of the admin client mock. */
 const ledger = {
   insert: vi.fn(),
-  delete: vi.fn(),
   select: vi.fn(),
   update: vi.fn(),
 };
@@ -43,12 +42,15 @@ const ledger = {
 function mockLedgerClaim({
   claimError = null,
   existing = null,
+  reclaimed = [{ id: "row-1" }],
 }: {
   claimError?: { code?: string; message?: string } | null;
   existing?: { status: string; executed_at: string } | null;
+  /** Rows the failed→running compare-and-swap returns ([] = lost race). */
+  reclaimed?: { id: string }[];
 } = {}) {
-  // The claim error applies to the FIRST insert only — a reclaim insert
-  // after deleting a failed/stale row must be able to succeed.
+  // The claim error applies to the FIRST insert only — a retry after a
+  // failure goes through the conditional UPDATE, not another insert.
   if (claimError) {
     ledger.insert
       .mockResolvedValueOnce({ data: null, error: claimError })
@@ -56,15 +58,26 @@ function mockLedgerClaim({
   } else {
     ledger.insert.mockResolvedValue({ data: null, error: null });
   }
-  ledger.delete.mockReturnValue({
-    eq: vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-    }),
-  });
-  ledger.update.mockReturnValue({
-    eq: vi.fn().mockReturnValue({
-      eq: vi.fn().mockResolvedValue({ data: null, error: null }),
-    }),
+  // One chainable builder covers both update shapes: the reclaim
+  // compare-and-swap (…eq().eq().eq().select("id")) and the settle
+  // (…eq().eq(), then awaited). `delete` is intentionally NOT offered —
+  // the route must never delete ledger rows.
+  ledger.update.mockImplementation(() => {
+    const builder = {
+      eq: vi.fn(),
+      select: vi.fn().mockResolvedValue({ data: reclaimed, error: null }),
+      then: undefined as unknown,
+    };
+    builder.eq.mockReturnValue(builder);
+    builder.then = ((
+      onFulfilled?: (value: unknown) => unknown,
+      onRejected?: (reason: unknown) => unknown,
+    ) =>
+      Promise.resolve({ data: null, error: null }).then(
+        onFulfilled,
+        onRejected,
+      )) as unknown;
+    return builder;
   });
   ledger.select.mockReturnValue({
     eq: vi.fn().mockReturnValue({
@@ -78,7 +91,6 @@ function mockLedgerClaim({
       if (table !== "chat_action_executions") throw new Error(`unexpected table ${table}`);
       return {
         insert: ledger.insert,
-        delete: ledger.delete,
         select: ledger.select,
         update: ledger.update,
       };
@@ -244,10 +256,10 @@ describe("POST /api/chat/actions", () => {
     const body = await response.json();
     expect(body.code).toBe("CHAT_ACTION_UNCERTAIN");
     expect(executeTool).not.toHaveBeenCalled();
-    expect(ledger.delete).not.toHaveBeenCalled();
+    expect(ledger.update).not.toHaveBeenCalled();
   });
 
-  it("reclaims a failed claim — a failed tool never committed a write", async () => {
+  it("reclaims a failed claim atomically via a conditional update", async () => {
     mockLedgerClaim({
       claimError: { code: "23505", message: "duplicate key value" },
       existing: { status: "failed", executed_at: new Date().toISOString() },
@@ -266,8 +278,53 @@ describe("POST /api/chat/actions", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(ledger.delete).toHaveBeenCalled();
+    // Compare-and-swap: exactly one conditional update, never a delete.
+    expect(ledger.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "running" }),
+    );
+    expect(ledger.insert).toHaveBeenCalledTimes(1);
     expect(executeTool).toHaveBeenCalled();
+  });
+
+  it("backs off when the reclaim compare-and-swap loses the race", async () => {
+    mockLedgerClaim({
+      claimError: { code: "23505", message: "duplicate key value" },
+      existing: { status: "failed", executed_at: new Date().toISOString() },
+      reclaimed: [],
+    });
+
+    const response = await POST(
+      request({
+        family_id: FAMILY_ID,
+        action_id: "msg-1-add_task-0",
+        tool_name: "add_task",
+        args: { title: "Anmeldung abschicken" },
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.code).toBe("CHAT_ACTION_IN_PROGRESS");
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("refuses to continue when the conflicting row is not visible", async () => {
+    mockLedgerClaim({
+      claimError: { code: "23505", message: "duplicate key value" },
+      existing: null,
+    });
+
+    const response = await POST(
+      request({
+        family_id: FAMILY_ID,
+        action_id: "msg-1-add_task-0",
+        tool_name: "add_task",
+        args: { title: "Anmeldung abschicken" },
+      }),
+    );
+
+    expect(response.status).toBe(500);
+    expect(executeTool).not.toHaveBeenCalled();
   });
 
   it("marks the claim as failed when execution fails so a retry can run", async () => {
@@ -288,6 +345,5 @@ describe("POST /api/chat/actions", () => {
     expect(ledger.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: "failed" }),
     );
-    expect(ledger.delete).not.toHaveBeenCalled();
   });
 });

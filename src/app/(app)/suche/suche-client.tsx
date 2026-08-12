@@ -13,6 +13,7 @@ import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import {
   CHAT_ACTION_TOOL_NAMES,
+  mergeConfirmationProposal,
   type ChatAction,
   type ChatSource,
   type AnswerCard as AnswerCardData,
@@ -511,32 +512,19 @@ export function SucheClient({
                 );
               } else if (data.type === "confirmation_request") {
                 const toolName = data.tool_name;
-                const actionArgs = data.action_args;
                 if (
                   typeof toolName === "string" &&
                   CHAT_ACTION_TOOL_NAMES.includes(
                     toolName as (typeof CHAT_ACTION_TOOL_NAMES)[number],
                   ) &&
-                  actionArgs &&
-                  typeof actionArgs === "object" &&
-                  !Array.isArray(actionArgs)
+                  data.action_args &&
+                  typeof data.action_args === "object" &&
+                  !Array.isArray(data.action_args)
                 ) {
-                  const previewFields = Object.fromEntries(
-                    Object.entries(data).filter(
-                      ([key]) =>
-                        ![
-                          "type",
-                          "tool_name",
-                          "action_args",
-                          "action_id",
-                          "needs_confirmation",
-                          "message",
-                        ].includes(key),
-                    ),
-                  );
                   // A single answer can propose several writes — append each
                   // as its own card instead of overwriting the previous one.
-                  // The index keeps the id unique even for repeated tools.
+                  // The server mints and persists the same merged proposal,
+                  // so a reload restores exactly this card.
                   setMessages((prev) =>
                     prev.map((m) => {
                       if (m.id !== aiMsgId) return m;
@@ -550,10 +538,9 @@ export function SucheClient({
                             ? data.action_id
                             : `${aiMsgId}-${toolName}-${(m.actions ?? []).length}`,
                         toolName: toolName as ChatAction["toolName"],
-                        args: {
-                          ...(actionArgs as Record<string, unknown>),
-                          ...previewFields,
-                        },
+                        // Shared merge: validated args + server-resolved
+                        // preview fields (same as the persisted copy).
+                        args: mergeConfirmationProposal(data),
                         state: "ready",
                       };
                       return { ...m, actions: [...(m.actions ?? []), action] };

@@ -143,6 +143,9 @@ export default async function SuchePage({
         // Pending action cards are restored as "ready" — re-confirming is
         // safe because the confirmation endpoint deduplicates on the
         // action id, and the persisted id IS the one the live card used.
+        // The persisted args are the merged proposal (raw args + preview
+        // fields like existing_value), so the restored card discloses
+        // exactly what the live card did.
         actions: (row.actions ?? [])
           .filter(
             (action) =>
