@@ -5,7 +5,9 @@ import { toCalendarDate, type CalendarEvent } from "@/lib/calendar";
 const mockSingle = vi.fn();
 const mockSelect = vi.fn(() => ({ single: mockSingle }));
 const mockInsert = vi.fn(() => ({ select: mockSelect }));
-const mockUpdateEq = vi.fn();
+const mockUpdateSingle = vi.fn();
+const mockUpdateSelect = vi.fn(() => ({ single: mockUpdateSingle }));
+const mockUpdateEq = vi.fn(() => ({ select: mockUpdateSelect }));
 const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
 const mockAttendeeInsert = vi.fn();
 const mockAttendeeDeleteIn = vi.fn();
@@ -74,7 +76,7 @@ function renderSheet(props: Partial<Parameters<typeof EventSheet>[0]> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSingle.mockResolvedValue({ data: null, error: null });
-  mockUpdateEq.mockResolvedValue({ error: null });
+  mockUpdateSingle.mockResolvedValue({ data: makeEvent(), error: null });
   mockAttendeeInsert.mockResolvedValue({ error: null });
   mockAttendeeDeleteIn.mockResolvedValue({ error: null });
   mockEventDeleteEq.mockResolvedValue({ error: null });
@@ -128,6 +130,21 @@ describe("EventSheet", () => {
     expect(mockInsert).not.toHaveBeenCalled();
   });
 
+  it("keeps optional planning details out of the initial create flow", () => {
+    renderSheet();
+
+    expect(screen.getByRole("button", { name: /Weitere Angaben/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(screen.queryByLabelText(/^Ort/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Weitere Angaben/ }));
+
+    expect(screen.getByLabelText(/^Ort/)).toBeInTheDocument();
+    expect(screen.getByTestId("event-attendee-chip-m-1")).toBeInTheDocument();
+  });
+
   it("creates a timed recurring event with attendees", async () => {
     const { onSaved } = renderSheet();
     mockSingle.mockResolvedValueOnce({
@@ -157,6 +174,7 @@ describe("EventSheet", () => {
     fireEvent.change(screen.getByLabelText("Ende"), {
       target: { value: "17:00" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /Weitere Angaben/ }));
     fireEvent.change(screen.getByLabelText("Wiederholung"), {
       target: { value: "weekly" },
     });
@@ -228,6 +246,29 @@ describe("EventSheet", () => {
     );
   });
 
+  it("confirms a location update with the saved event", async () => {
+    const { onSaved } = renderSheet({ event: makeEvent() });
+    mockUpdateSingle.mockResolvedValueOnce({
+      data: makeEvent({ location: "Hamburg" }),
+      error: null,
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Ort/), {
+      target: { value: "Hamburg" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ location: "Hamburg" }),
+      );
+      expect(onSaved).toHaveBeenCalledWith(
+        expect.objectContaining({ location: "Hamburg" }),
+        "updated",
+      );
+    });
+  });
+
   it("rolls back the event and shows an error when attendee saving fails on create", async () => {
     const { onSaved } = renderSheet();
     mockSingle.mockResolvedValueOnce({
@@ -253,6 +294,7 @@ describe("EventSheet", () => {
     fireEvent.change(screen.getByLabelText("Was ist geplant?"), {
       target: { value: "Judo" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /Weitere Angaben/ }));
     fireEvent.click(screen.getByTestId("event-attendee-chip-m-2"));
     fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
 
@@ -316,7 +358,7 @@ describe("EventSheet", () => {
     expect(onDeleteRequest).toHaveBeenCalledWith(event);
   });
 
-  it("blocks saving while a date field shows an invalid date", () => {
+  it("blocks saving while a date field shows an invalid date", async () => {
     const { onSaved } = renderSheet();
     fireEvent.change(screen.getByLabelText("Was ist geplant?"), {
       target: { value: "Ausflug" },
@@ -335,13 +377,20 @@ describe("EventSheet", () => {
     expect(onSaved).not.toHaveBeenCalled();
 
     // Correcting the date clears the block.
+    mockSingle.mockResolvedValueOnce({
+      data: { ...makeEvent(), id: "event-2", title: "Ausflug" },
+      error: null,
+    });
     fireEvent.change(screen.getByLabelText("Von"), {
       target: { value: "28.02.2027" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
-    expect(
-      screen.queryByText("Bitte prüf das Datum — diesen Tag gibt es so nicht."),
-    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled();
+      expect(
+        screen.queryByText("Bitte prüf das Datum — diesen Tag gibt es so nicht."),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it("pulls the end date along when the start moves past it", () => {
@@ -377,6 +426,7 @@ describe("EventSheet", () => {
     fireEvent.change(screen.getByLabelText("Ende"), {
       target: { value: "17:30" },
     });
+    fireEvent.click(screen.getByRole("button", { name: /Weitere Angaben/ }));
     fireEvent.click(screen.getByTestId("event-attendee-chip-m-1"));
 
     const warning = screen.getByTestId("event-conflict-warning");
