@@ -14,7 +14,9 @@ import { toCalendarDate, type CalendarEvent } from "@/lib/calendar";
 const mockSingle = vi.fn();
 const mockSelect = vi.fn(() => ({ single: mockSingle }));
 const mockInsert = vi.fn(() => ({ select: mockSelect }));
-const mockUpdateEq = vi.fn();
+const mockUpdateSingle = vi.fn();
+const mockUpdateSelect = vi.fn(() => ({ single: mockUpdateSingle }));
+const mockUpdateEq = vi.fn(() => ({ select: mockUpdateSelect }));
 const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
 const mockDeleteEq = vi.fn();
 const mockDelete = vi.fn(() => ({ eq: mockDeleteEq }));
@@ -88,7 +90,7 @@ function makeEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent {
 beforeEach(() => {
   vi.clearAllMocks();
   mockSingle.mockResolvedValue({ data: null, error: null });
-  mockUpdateEq.mockResolvedValue({ error: null });
+  mockUpdateSingle.mockResolvedValue({ data: makeEvent(), error: null });
   mockDeleteEq.mockResolvedValue({ error: null });
   mockAttendeeInsert.mockResolvedValue({ error: null });
   mockAttendeeDeleteIn.mockResolvedValue({ error: null });
@@ -109,6 +111,31 @@ describe("CalendarClient", () => {
     const dayEvents = within(screen.getByTestId("calendar-day-events"));
     expect(dayEvents.getByText("Kita geschlossen")).toBeInTheDocument();
     expect(dayEvents.getByText("Fortbildung")).toBeInTheDocument();
+    expect(screen.getByTestId("calendar-event-event-1")).toHaveAttribute(
+      "aria-label",
+      "„Kita geschlossen“ bearbeiten",
+    );
+    expect(screen.getByTestId("calendar-event-event-1")).not.toHaveClass(
+      "border-l-[3px]",
+    );
+  });
+
+  it("makes all-day events clearly editable in the week view", () => {
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[makeEvent({ attendees: [{ id: "m-1", name: "Emma" }] })]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Woche" }));
+
+    const event = screen.getByTestId("week-event-event-1");
+    expect(event).toHaveTextContent("Ganztägig");
+    expect(event).toHaveTextContent("Für Emma");
+    expect(event).toHaveTextContent("Bearbeiten");
+    expect(event).not.toHaveClass("border-l-[3px]");
   });
 
   it("saves a new shared event", async () => {
@@ -172,9 +199,17 @@ describe("CalendarClient", () => {
         ),
       ).toBeInTheDocument();
     });
+    expect(screen.getByTestId("calendar-event-event-2")).toHaveClass(
+      "animate-card-in",
+    );
   });
 
   it("opens an event for editing and saves the changes", async () => {
+    mockUpdateSingle.mockResolvedValueOnce({
+      data: makeEvent({ title: "Kita zu (Fortbildung)" }),
+      error: null,
+    });
+
     render(
       <CalendarClient
         familyId="family-1"
@@ -203,6 +238,43 @@ describe("CalendarClient", () => {
         within(screen.getByTestId("calendar-day-events")).getByText(
           "Kita zu (Fortbildung)",
         ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("shows the saved location and who the event is for", async () => {
+    mockUpdateSingle.mockResolvedValueOnce({
+      data: makeEvent({
+        location: "Hamburg",
+        responsible_member_id: "m-1",
+      }),
+      error: null,
+    });
+
+    render(
+      <CalendarClient
+        familyId="family-1"
+        members={MEMBERS}
+        initialEvents={[makeEvent({ location: "Berlin" })]}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("calendar-event-event-1"));
+    fireEvent.change(screen.getByLabelText(/^Ort/), {
+      target: { value: "Hamburg" },
+    });
+    fireEvent.change(screen.getByTestId("event-responsible-select"), {
+      target: { value: "m-1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Termin speichern" }));
+
+    await waitFor(() => {
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ location: "Hamburg", responsible_member_id: "m-1" }),
+      );
+      expect(within(screen.getByTestId("calendar-day-events")).getByText("Hamburg")).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId("calendar-day-events")).getByText("Für Emma"),
       ).toBeInTheDocument();
     });
   });
@@ -374,6 +446,9 @@ describe("CalendarClient", () => {
     );
 
     expect(screen.getByText("Elternabend")).toBeInTheDocument();
+    expect(screen.getByTestId("calendar-suggestions").compareDocumentPosition(
+      screen.getByTestId("family-calendar"),
+    )).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     fireEvent.click(screen.getByTestId("suggestion-dismiss-entity-1"));
 
     await waitFor(() => {
