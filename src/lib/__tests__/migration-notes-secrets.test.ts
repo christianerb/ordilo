@@ -14,6 +14,11 @@ describe("0053_notes_and_secrets migration", () => {
     expect(migration).toContain("jsonb_pretty(i.metadata)");
   });
 
+  it("deduplicates migrated inventory by its source UUID", () => {
+    expect(migration).toContain("i.id,");
+    expect(migration).toContain("where d.id = i.id");
+  });
+
   it("guards the removed inventory relation on reruns", () => {
     expect(migration).toContain("to_regclass('public.family_inventory_items') is not null");
     expect(migration).toContain(

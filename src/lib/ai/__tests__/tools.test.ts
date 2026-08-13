@@ -1952,6 +1952,36 @@ describe("query_calendar_events", () => {
     expect(result.events[0].von).toMatch(/^2026-08-/);
   });
 
+  it("includes multi-day recurring occurrences overlapping an all-range", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-recurring-overlap",
+        title: "Wochenendseminar",
+        starts_on: "2020-01-06",
+        ends_on: "2020-01-08",
+        recurrence: "weekly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        {
+          direction: "all",
+          from: "2026-08-04",
+          to: "2026-08-04",
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      von: "2026-08-03",
+      bis: "2026-08-05",
+    });
+  });
+
   it("uses Berlin's date at the UTC day boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-12T22:30:00Z"));

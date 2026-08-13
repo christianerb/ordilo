@@ -41,10 +41,11 @@ comment on column public.documents.secret is
 -- 2. Inventory -> note documents
 -- ---------------------------------------------------------------------------
 
--- Move each inventory item into a confirmed note document. The source table
--- is deliberately checked at runtime: migrations may be replayed after it
--- has been dropped. The note keeps all useful context, rather than reducing
--- an item such as "Emmas Krankenversicherung" to only its name and tags.
+-- Move each inventory item into a confirmed note document. The inventory UUID
+-- becomes the document UUID, providing a deterministic source identity for
+-- idempotency without confusing an unrelated, same-titled manual note for an
+-- already migrated inventory item. The source table is deliberately checked
+-- at runtime: migrations may be replayed after it has been dropped.
 do $$
 begin
   if to_regclass('public.family_inventory_items') is not null then
@@ -62,7 +63,7 @@ begin
       created_at
     )
     select
-      gen_random_uuid(),
+      i.id,
       i.family_id,
       f.created_by,
       'confirmed',
@@ -93,10 +94,7 @@ begin
       and not exists (
         select 1
         from public.documents d
-        where d.family_id = i.family_id
-          and d.title = i.name
-          and d.document_type = 'note'
-          and d.source = 'manual'
+        where d.id = i.id
       );
   end if;
 end $$;

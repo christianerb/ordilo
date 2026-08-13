@@ -1414,10 +1414,14 @@ function addDays(date: string, days: number): string {
 }
 
 function occurrenceEndsOn(event: CalendarQueryEvent, startsOn: string): string {
+  return addDays(startsOn, occurrenceDurationDays(event));
+}
+
+function occurrenceDurationDays(event: CalendarQueryEvent): number {
   const durationMs =
     new Date(`${event.ends_on}T12:00:00`).getTime() -
     new Date(`${event.starts_on}T12:00:00`).getTime();
-  return addDays(startsOn, Math.round(durationMs / 86_400_000));
+  return Math.round(durationMs / 86_400_000);
 }
 
 function occursOn(event: CalendarQueryEvent, date: string): boolean {
@@ -1435,6 +1439,7 @@ function findOccurrence(
   from: string,
   to: string,
   direction: "forward" | "backward",
+  overlapsFrom?: string,
 ): CalendarOccurrence | null {
   const step = direction === "forward" ? 1 : -1;
   let date = direction === "forward" ? from : to;
@@ -1444,10 +1449,15 @@ function findOccurrence(
     (direction === "backward" && date >= from)
   ) {
     if (occursOn(event, date) && !occursOn(event, addDays(date, -1))) {
+      const occurrenceEndsOnDate = occurrenceEndsOn(event, date);
+      if (overlapsFrom && occurrenceEndsOnDate < overlapsFrom) {
+        date = addDays(date, step);
+        continue;
+      }
       return {
         ...event,
         occurrence_starts_on: date,
-        occurrence_ends_on: occurrenceEndsOn(event, date),
+        occurrence_ends_on: occurrenceEndsOnDate,
       };
     }
     date = addDays(date, step);
@@ -1511,7 +1521,11 @@ function findRelevantOccurrence(
     const rangeStart = from ?? event.starts_on;
     const rangeEnd = to ?? event.recurrence_until ?? nextYear(rangeStart);
     if (rangeEnd < rangeStart) return null;
-    return findOccurrence(event, rangeStart, rangeEnd, "forward");
+    // Start slightly before the requested window, so a Tuesday-only query
+    // still finds a Monday–Wednesday recurring occurrence. `overlapsFrom`
+    // rejects any earlier occurrence that ends before the requested range.
+    const searchStart = addDays(rangeStart, -occurrenceDurationDays(event));
+    return findOccurrence(event, searchStart, rangeEnd, "forward", rangeStart);
   }
 
   return {
