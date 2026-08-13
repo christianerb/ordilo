@@ -474,6 +474,8 @@ export type Database = {
           extraction_version: number | null;
           /** Best-effort in-progress extraction preview while status = analyzing (see 0043). */
           partial_analysis: Record<string, unknown> | null;
+          /** AES-256-GCM envelope (ciphertext only) for a hidden value; plaintext never stored. */
+          secret: string | null;
         };
         Insert: {
           id?: string;
@@ -499,6 +501,7 @@ export type Database = {
           source?: string;
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
+          secret?: string | null;
         };
         Update: {
           id?: string;
@@ -524,6 +527,7 @@ export type Database = {
           source?: string;
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
+          secret?: string | null;
         };
         Relationships: [];
       };

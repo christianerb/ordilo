@@ -17,17 +17,12 @@ import {
 } from "@/components/ui/dialog";
 import {
   addFamilyMember,
-  addInventoryItem,
-  confirmSuggestedInventoryItem,
   removeFamilyMember,
-  removeInventoryItem,
   updateFamilyMember,
 } from "./actions";
 import { FamilyBanner } from "./family-banner";
-import { FamilyInventoryPanel } from "./family-inventory-panel";
 import { FamilyMemberRowMenu } from "./family-member-row-menu";
 import { FamilyMemberSheet } from "./family-member-sheet";
-import { type InventoryItemDisplay } from "./inventory-shared";
 import { MemberAvatar } from "./member-avatar";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
@@ -36,7 +31,6 @@ export interface FamilieClientProps {
   familyName: string;
   members: MemberRow[];
   documentCounts?: Record<string, number>;
-  inventoryItems?: InventoryItemDisplay[];
   /** Signed URLs for members that have an uploaded photo, keyed by member ID. */
   photoUrls?: Record<string, string>;
   fetchError?: boolean;
@@ -46,14 +40,12 @@ export function FamilieClient({
   familyName,
   members,
   documentCounts = {},
-  inventoryItems = [],
   photoUrls = {},
   fetchError = false,
 }: FamilieClientProps) {
   const router = useRouter();
   const [memberList, setMemberList] = useState<MemberRow[]>(members);
   const [photoUrlMap, setPhotoUrlMap] = useState<Record<string, string>>(photoUrls);
-  const [inventoryList, setInventoryList] = useState<InventoryItemDisplay[]>(inventoryItems);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
@@ -64,80 +56,6 @@ export function FamilieClient({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
-
-  // Inventory state
-  const [inventorySheetOpen, setInventorySheetOpen] = useState(false);
-  const [invName, setInvName] = useState("");
-  const [invType, setInvType] = useState("vehicle");
-  const [invMember, setInvMember] = useState("");
-  const [invTags, setInvTags] = useState<string[]>([]);
-  const [invSubmitting, setInvSubmitting] = useState(false);
-  const [invError, setInvError] = useState<string | null>(null);
-  const [invDeleteId, setInvDeleteId] = useState<string | null>(null);
-
-  const resetInvForm = useCallback(() => {
-    setInvName("");
-    setInvType("vehicle");
-    setInvMember("");
-    setInvTags([]);
-    setInvError(null);
-  }, []);
-
-  const handleAddInventory = useCallback(async () => {
-    if (!invName.trim()) {
-      setInvError("Bitte einen Namen eingeben.");
-      return;
-    }
-    setInvSubmitting(true);
-    const result = await addInventoryItem({
-      name: invName.trim(),
-      item_type: invType,
-      tags: invTags,
-      linked_member_id: invMember || null,
-    });
-    setInvSubmitting(false);
-    if (!result.success) {
-      setInvError(result.error);
-      return;
-    }
-    setInventoryList((prev) => [
-      {
-        id: result.data.id,
-        name: result.data.name,
-        item_type: result.data.item_type,
-        tags: result.data.tags ?? [],
-        linked_member_id: result.data.linked_member_id ?? null,
-        status: result.data.status,
-      },
-      ...prev,
-    ]);
-    setInventorySheetOpen(false);
-    resetInvForm();
-    toast.success(`${result.data.name} ist dabei`);
-  }, [invName, invType, invTags, invMember, resetInvForm]);
-
-  const handleRemoveInventory = useCallback(async (id: string) => {
-    const result = await removeInventoryItem(id);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    setInventoryList((prev) => prev.filter((i) => i.id !== id));
-    setInvDeleteId(null);
-    toast.success("Entfernt");
-  }, []);
-
-  const handleConfirmSuggested = useCallback(async (id: string) => {
-    const result = await confirmSuggestedInventoryItem(id);
-    if (!result.success) {
-      toast.error(result.error);
-      return;
-    }
-    setInventoryList((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: "confirmed" } : i)),
-    );
-    toast.success(`${result.data.name} bestätigt`);
-  }, []);
 
   const resetErrors = useCallback(() => {
     setValidationError(null);
@@ -361,29 +279,6 @@ export function FamilieClient({
           Noch niemand hier. Füge die erste Person hinzu — Ordilo erkennt sie dann automatisch auf gescannten Dokumenten.
         </p>
       )}
-
-      <FamilyInventoryPanel
-        inventoryList={inventoryList}
-        members={memberList}
-        inventorySheetOpen={inventorySheetOpen}
-        setInventorySheetOpen={setInventorySheetOpen}
-        invName={invName}
-        setInvName={setInvName}
-        invType={invType}
-        setInvType={setInvType}
-        invMember={invMember}
-        setInvMember={setInvMember}
-        invTags={invTags}
-        setInvTags={setInvTags}
-        invSubmitting={invSubmitting}
-        invError={invError}
-        invDeleteId={invDeleteId}
-        setInvDeleteId={setInvDeleteId}
-        resetInvForm={resetInvForm}
-        handleAddInventory={handleAddInventory}
-        handleRemoveInventory={handleRemoveInventory}
-        handleConfirmSuggested={handleConfirmSuggested}
-      />
 
       <FamilyMemberSheet
         open={addSheetOpen}

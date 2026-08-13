@@ -117,7 +117,7 @@ export function buildSystemPrompt(familyContext: FamilyContext): string {
   // Extraction instructions.
   parts.push(`
 Aufgaben:
-1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, other).
+1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, note, other). "note" für handschriftliche oder freie Notizen.
 2. Erstelle einen kurzen, aussagekräftigen Titel.
 3. Fasse den Inhalt in 1-3 Sätzen zusammen. Nenne DABEI KONKRETE Werte aus dem Dokument: Uhrzeiten, Daten, Betraege, Namen, Orte, Flugnummern, Verspätungen. Nicht nur "es gibt Zeiten" sondern "Abflug 19:25, Ankunft 20:55". Nicht nur "ein Betrag" sondern "45,30 EUR". Diese Details sind fuer die Suchfunktion entscheidend.
 4. Identifiziere erwähnte Familienmitglieder und ordne sie zu.

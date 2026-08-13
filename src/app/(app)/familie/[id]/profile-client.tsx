@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   ArrowLeft,
   Cake,
-  Package,
   Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -29,8 +28,6 @@ import {
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { updateFamilyMember } from "../actions";
 import { FamilyMemberSheet } from "../family-member-sheet";
-import type { ProfileInventoryItem } from "./page";
-import { INVENTORY_ICONS, INVENTORY_LABELS } from "../inventory-shared";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
@@ -40,7 +37,6 @@ export interface ProfileClientProps {
   tasks: ProfileTask[];
   dateEntities: ProfileDateEntity[];
   documentTitles?: Map<string, string | null>;
-  inventoryItems?: ProfileInventoryItem[];
   /** A short-lived signed URL for the member's uploaded photo, if any. */
   photoUrl?: string | null;
   /** Names of the members referenced by related_member_ids, if any. */
@@ -55,7 +51,6 @@ export function ProfileClient({
   tasks,
   dateEntities,
   documentTitles,
-  inventoryItems = [],
   photoUrl: initialPhotoUrl,
   relatedMemberNames: initialRelatedMemberNames = [],
   otherMembers = [],
@@ -159,9 +154,6 @@ export function ProfileClient({
   const birthdaySoon =
     !birthdayToday && daysUntilBirthday !== null && daysUntilBirthday <= 7;
 
-  const confirmedInventory = inventoryItems.filter((i) => i.status === "confirmed");
-  const suggestedInventory = inventoryItems.filter((i) => i.status === "suggested");
-
   return (
     <div className="app-page-stack">
       {/* Back link + edit */}
@@ -249,76 +241,10 @@ export function ProfileClient({
             <div className="mt-2 flex gap-3 text-xs text-muted-foreground">
               <span>{documents.length} Dokumente</span>
               {tasks.length > 0 && <span>· {tasks.length} offen</span>}
-              {confirmedInventory.length > 0 && (
-                <span>· {confirmedInventory.length} Inventar</span>
-              )}
             </div>
           </div>
         </div>
       </div>
-
-      {/* Suggested inventory items — alert-style */}
-      {suggestedInventory.length > 0 && (
-        <div className="rounded-ordilo-sm border border-[var(--apricot)]/30 bg-[var(--apricot)]/[0.06] p-3" data-testid="suggested-inventory">
-          <p className="text-sm font-medium text-foreground">
-            Ordilo hat etwas Neues erkannt
-          </p>
-          <div className="mt-2 space-y-1.5">
-            {suggestedInventory.map((item) => {
-              const Icon = INVENTORY_ICONS[item.item_type] ?? Package;
-              return (
-                <div key={item.id} className="flex items-center gap-2">
-                  <Icon className="size-4 shrink-0 text-[var(--apricot)]" strokeWidth={1.75} />
-                  <span className="text-sm text-foreground">{item.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({INVENTORY_LABELS[item.item_type] ?? "Sonstiges"})
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Inventory section */}
-      {confirmedInventory.length > 0 && (
-        <section className="space-y-2" data-testid="profile-inventory">
-          <h2 className="text-sm font-semibold text-muted-foreground">Inventar</h2>
-          <div className="divide-y divide-border rounded-ordilo-sm border border-border bg-card">
-            {confirmedInventory.map((item) => {
-              const Icon = INVENTORY_ICONS[item.item_type] ?? Package;
-              return (
-                <div
-                  key={item.id}
-                  className="flex items-center gap-2.5 px-3 py-2.5"
-                >
-                  <div className="flex size-8 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)]/8">
-                    <Icon className="size-4 text-[var(--petrol)]" strokeWidth={1.75} />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">{item.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {INVENTORY_LABELS[item.item_type] ?? "Sonstiges"}
-                    </p>
-                  </div>
-                  {item.tags.length > 0 && (
-                    <div className="flex shrink-0 gap-1">
-                      {item.tags.slice(0, 2).map((tag) => (
-                        <span
-                          key={tag}
-                          className="rounded-full bg-[var(--sand-warm)] px-2 py-0.5 text-xs text-muted-foreground"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
 
       {/* Documents section */}
       <section className="space-y-2" data-testid="profile-documents">

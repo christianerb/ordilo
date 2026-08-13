@@ -45,7 +45,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
 // ---------------------------------------------------------------------------
 
 describe("DOCUMENT_TYPES", () => {
-  it("includes all 8 document types from the PRD", () => {
+  it("includes all 9 document types from the PRD", () => {
     expect(DOCUMENT_TYPES).toEqual([
       "invoice",
       "letter",
@@ -54,6 +54,7 @@ describe("DOCUMENT_TYPES", () => {
       "school",
       "insurance",
       "tax",
+      "note",
       "other",
     ]);
   });

@@ -226,6 +226,7 @@ export function useDocumentActions({
       title: string;
       content: string;
       documentType: DocumentType;
+      secret: string;
       file: File | null;
     }) => {
       const fid = familyIdRef.current ?? await ensureFamilyId();
@@ -237,6 +238,7 @@ export function useDocumentActions({
         documentType: params.documentType,
         familyId: fid,
         category: createNoteCategory ?? undefined,
+        secret: params.secret || undefined,
         file: params.file,
       });
 

@@ -42,6 +42,7 @@ export const DOCUMENT_TYPES = [
   "school",
   "insurance",
   "tax",
+  "note",
   "other",
 ] as const;
 
@@ -58,6 +59,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   school: "Schule",
   insurance: "Versicherung",
   tax: "Steuer",
+  note: "Notiz",
   other: "Sonstiges",
 };
 
@@ -508,5 +510,6 @@ export const DOCUMENT_TYPE_ICONS: Record<DocumentType, LucideIcon> = {
   school: GraduationCap,
   insurance: Shield,
   tax: Landmark,
+  note: FileText,
   other: FileText,
 };

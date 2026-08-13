@@ -7,6 +7,9 @@ import {
   Images,
   Loader2,
   FileText,
+  Eye,
+  EyeOff,
+  Lock,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -45,6 +48,7 @@ export interface CreateNoteSheetProps {
     title: string;
     content: string;
     documentType: DocumentType;
+    secret: string;
     file: File | null;
   }) => Promise<void>;
 }
@@ -119,6 +123,8 @@ export function CreateNoteSheet({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("other");
+  const [secret, setSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -131,6 +137,8 @@ export function CreateNoteSheet({
     setTitle("");
     setContent("");
     setDocumentType("other");
+    setSecret("");
+    setShowSecret(false);
     setImageFile(null);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview(null);
@@ -182,6 +190,7 @@ export function CreateNoteSheet({
         title: trimmedTitle,
         content: trimmedContent,
         documentType,
+        secret: secret.trim(),
         file: imageFile,
       });
       reset();
@@ -195,7 +204,7 @@ export function CreateNoteSheet({
     } finally {
       setSubmitting(false);
     }
-  }, [title, content, documentType, imageFile, onSubmit, reset, onOpenChange]);
+  }, [title, content, documentType, secret, imageFile, onSubmit, reset, onOpenChange]);
 
   const canSubmit = title.trim() && content.trim() && !submitting;
 
@@ -265,6 +274,41 @@ export function CreateNoteSheet({
                 imagePreview={imagePreview}
                 onRemoveImage={handleRemoveImage}
               />
+            </div>
+
+            {/* Hidden secret (e.g. password) — encrypted server-side, never stored in plain text */}
+            <div className="space-y-1.5">
+              <Label htmlFor="note-secret" className="flex items-center gap-1.5">
+                <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                Passwort / Geheim (optional)
+              </Label>
+              <div className="relative">
+                <input
+                  id="note-secret"
+                  type={showSecret ? "text" : "password"}
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  placeholder="z. B. Passwort, PIN, Zugangscode"
+                  autoComplete="off"
+                  className="w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  data-testid="note-secret-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowSecret((s) => !s)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  aria-label={showSecret ? "Geheim verbergen" : "Geheim anzeigen"}
+                >
+                  {showSecret ? (
+                    <EyeOff className="size-4" aria-hidden="true" />
+                  ) : (
+                    <Eye className="size-4" aria-hidden="true" />
+                  )}
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
+              </p>
             </div>
 
             {/* Image attachment */}
