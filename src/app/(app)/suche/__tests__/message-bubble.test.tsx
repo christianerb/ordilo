@@ -17,6 +17,20 @@ function buildMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 const passesAllFilters = () => true;
 
 describe("MessageBubble — Markdown rendering", () => {
+  it("uses the Ordilo elephant mark for assistant answers", () => {
+    const { container } = render(
+      <MessageBubble
+        message={buildMessage({ content: "Antwort" })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(
+      container.querySelector('[data-part="elephant-silhouette"]'),
+    ).not.toBeNull();
+  });
+
   it("renders **bold** Markdown as an actual <strong>, not literal asterisks", async () => {
     render(
       <MessageBubble
@@ -491,6 +505,9 @@ describe("MessageBubble — feedback icons", () => {
     expect(up.getAttribute("aria-pressed")).toBe("false");
     fireEvent.click(up);
     expect(up.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByTestId("feedback-thanks").textContent).toBe(
+      "Danke, gespeichert.",
+    );
   });
 
   it("copies the answer text to the clipboard when the copy button is clicked", async () => {

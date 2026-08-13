@@ -1,11 +1,20 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import {
+  useState,
+  useCallback,
+  useRef,
+  useSyncExternalStore,
+} from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { Sparkles, ArrowUp, Mic, MicOff } from "lucide-react";
+import { ArrowUp, Mic, MicOff } from "lucide-react";
 import { toast } from "sonner";
-import { useRealtimeTranscription } from "@/lib/realtime/use-realtime-transcription";
+import {
+  createLevelTracker,
+  useRealtimeTranscription,
+} from "@/lib/realtime/use-realtime-transcription";
 import { cn } from "@/lib/utils";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 
 /**
  * Props for the AISearchBar component.
@@ -75,6 +84,116 @@ interface SpeechRecognitionEventLike {
 
 type SpeechRecognitionConstructor = new () => SpeechRecognitionLike;
 type VoiceMode = "native" | "realtime" | null;
+
+const NATIVE_LEVEL_HISTORY_LENGTH = 12;
+
+/**
+ * A compact, live meter for native browser speech recognition. Web Speech
+ * only returns recognized text, so it needs its own local-only mic stream to
+ * provide the same "I can hear you" feedback as the Realtime path.
+ */
+function useNativeAudioMeter() {
+  const [levels, setLevels] = useState<number[]>(
+    () => new Array(NATIVE_LEVEL_HISTORY_LENGTH).fill(0),
+  );
+  const micRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const generationRef = useRef(0);
+
+  const stop = useCallback(() => {
+    generationRef.current += 1;
+    if (frameRef.current !== null) {
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      void audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+    for (const track of micRef.current?.getTracks() ?? []) track.stop();
+    micRef.current = null;
+    setLevels(new Array(NATIVE_LEVEL_HISTORY_LENGTH).fill(0));
+  }, []);
+
+  const start = useCallback(async () => {
+    stop();
+    const generation = generationRef.current;
+    const AudioContextCtor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioContextCtor || !navigator.mediaDevices?.getUserMedia) return;
+
+    try {
+      const mic = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+      if (generation !== generationRef.current) {
+        for (const track of mic.getTracks()) track.stop();
+        return;
+      }
+
+      const audioContext = new AudioContextCtor();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 512;
+      audioContext.createMediaStreamSource(mic).connect(analyser);
+      micRef.current = mic;
+      audioContextRef.current = audioContext;
+
+      const tracker = createLevelTracker({
+        historyLength: NATIVE_LEVEL_HISTORY_LENGTH,
+      });
+      const data = new Uint8Array(analyser.fftSize);
+      const tick = (now: number) => {
+        if (generation !== generationRef.current) return;
+        analyser.getByteTimeDomainData(data);
+        const snapshot = tracker.sample(data, now);
+        if (snapshot) setLevels(snapshot);
+        frameRef.current = requestAnimationFrame(tick);
+      };
+      frameRef.current = requestAnimationFrame(tick);
+    } catch {
+      // Native speech recognition may still have its own microphone access.
+      // The meter is optional feedback, never a reason to stop dictation.
+    }
+  }, [stop]);
+
+  useMountEffect(() => stop);
+
+  return { levels, start, stop };
+}
+
+function VoiceLevelBars({ levels }: { levels: number[] }) {
+  return (
+    <div
+      className="flex h-6 w-11 shrink-0 items-center justify-center gap-0.5"
+      data-testid="voice-level-meter"
+      aria-hidden="true"
+    >
+      {levels.map((level, index) => (
+        <span
+          key={index}
+          className="w-0.5 rounded-full bg-[var(--petrol)] transition-transform duration-75"
+          style={{
+            height: `${Math.max(5, 6 + level * 18)}px`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function RealtimeVoiceLevelBars({
+  subscribeLevels,
+  getLevels,
+}: Pick<
+  ReturnType<typeof useRealtimeTranscription>,
+  "subscribeLevels" | "getLevels"
+>) {
+  const levels = useSyncExternalStore(subscribeLevels, getLevels, getLevels);
+  return <VoiceLevelBars levels={levels} />;
+}
 
 /** Resolve the SpeechRecognition constructor (Chrome/Safari prefix-aware). */
 function getSpeechRecognition(): SpeechRecognitionConstructor | null {
@@ -148,6 +267,11 @@ export function AISearchBar({
 
   const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const {
+    levels: nativeLevels,
+    start: startNativeMeter,
+    stop: stopNativeMeter,
+  } = useNativeAudioMeter();
 
   useMountEffect(() => {
     const el = inputRef.current;
@@ -162,6 +286,7 @@ export function AISearchBar({
       const recognition = recognitionRef.current;
       recognitionRef.current = null;
       recognition?.abort();
+      stopNativeMeter();
     };
   });
 
@@ -211,7 +336,14 @@ export function AISearchBar({
     setMultiline(oneLine !== null && natural > oneLine + 4);
   }, []);
 
-  const { status: voiceStatus, start, stop, cancel } = useRealtimeTranscription({
+  const {
+    status: voiceStatus,
+    subscribeLevels,
+    getLevels,
+    start,
+    stop,
+    cancel,
+  } = useRealtimeTranscription({
     onTranscript: (transcript) => {
       setVoiceMode(null);
       setValue(transcript);
@@ -268,18 +400,31 @@ export function AISearchBar({
     };
     recognition.onerror = () => {
       recognitionRef.current = null;
+      stopNativeMeter();
       setVoiceMode("realtime");
       void start();
     };
     recognition.onend = () => {
       recognitionRef.current = null;
+      stopNativeMeter();
       setVoiceMode(null);
     };
 
     recognitionRef.current = recognition;
     setVoiceMode("native");
+    void startNativeMeter();
     recognition.start();
-  }, [cancel, handleSubmit, setValue, start, stop, voiceMode, voiceStatus]);
+  }, [
+    cancel,
+    handleSubmit,
+    setValue,
+    start,
+    startNativeMeter,
+    stop,
+    stopNativeMeter,
+    voiceMode,
+    voiceStatus,
+  ]);
 
   return (
     <div
@@ -297,10 +442,10 @@ export function AISearchBar({
       )}
     >
       {!stacked && (
-        <Sparkles
-          className="size-5 shrink-0 animate-sparkle-pulse"
-          style={{ color: "var(--petrol)" }}
-          aria-hidden="true"
+        <OrdiloMark
+          size={24}
+          animate={false}
+          className="shrink-0 text-[var(--petrol)]"
         />
       )}
 
@@ -311,6 +456,12 @@ export function AISearchBar({
         onChange={(e) => {
           setValue(e.target.value);
           handleInput();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && event.ctrlKey) {
+            event.preventDefault();
+            handleSubmit();
+          }
         }}
         onFocus={onFocus}
         disabled={isLoading}
@@ -330,16 +481,26 @@ export function AISearchBar({
         )}
       >
         {stacked && (
-          <Sparkles
-            className="size-5 shrink-0 animate-sparkle-pulse"
-            style={{ color: "var(--petrol)" }}
-            aria-hidden="true"
+          <OrdiloMark
+            size={24}
+            animate={false}
+            className="shrink-0 text-[var(--petrol)]"
           />
         )}
 
         {/* Push the mic and send to the trailing edge (stacked only — in
             the inline layout the row is content-sized). */}
         {stacked && <span className="flex-1" aria-hidden="true" />}
+
+        {listening &&
+          (voiceMode === "native" ? (
+            <VoiceLevelBars levels={nativeLevels} />
+          ) : (
+            <RealtimeVoiceLevelBars
+              subscribeLevels={subscribeLevels}
+              getLevels={getLevels}
+            />
+          ))}
 
         <button
           type="button"
