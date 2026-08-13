@@ -599,11 +599,16 @@ describe("AppShell sidebar personality touches", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    });
     mockUsePathname.mockReturnValue("/home");
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("applies an ambient gradient background to the sidebar surface", () => {
@@ -641,12 +646,14 @@ describe("AppShell sidebar personality touches", () => {
       </AppShell>,
     );
     // Wait for profile to load — the family name appears in the greeting.
-    await screen.findAllByText("Familie Müller");
-    const greetingEl = screen.getByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
-    // The opacity class lives on the greeting container div, not the span.
-    const greetingContainer = greetingEl.closest("div");
-    expect(greetingContainer?.className).toContain("opacity-100");
-    expect(greetingContainer?.textContent).toContain("Familie Müller");
+    await waitFor(() => {
+      const greetingEl = screen.getByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
+      // The greeting is calculated in a post-render effect, so wait for its
+      // visible state rather than just the independently rendered profile.
+      const greetingContainer = greetingEl.closest("div");
+      expect(greetingContainer?.className).toContain("opacity-100");
+      expect(greetingContainer?.textContent).toContain("Familie Müller");
+    });
   });
 
   it("does not render a greeting when no profile is given", () => {
