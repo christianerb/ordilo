@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
+import { ScanLine } from "lucide-react";
 import { toast } from "sonner";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
@@ -251,14 +252,27 @@ export function HomeClient({
             <FirstSuccessGuide familyId={familyId} onScan={openWizard} />
           ) : null}
 
-          {/* One page, one frame: header, hero band, then hairline-divided
-              groups. The frame carries the single shadow; nothing inside
-              nests a card (No-Shadow-Stacking). The hero keeps its tinted
-              band — it is the visual peak; the groups below stay quiet. */}
-          <div className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">
-            {/* Header — dateline + greeting + family, nothing else. The
-                facts of the day live where they are actionable. */}
-            <header className="flex items-center justify-between gap-3 p-4">
+          {/* One page, one frame: a warm story-surface header sits above the
+              frame, then hero band + hairline-divided groups inside it. The
+              frame carries the single shadow; nothing inside nests a card
+              (No-Shadow-Stacking). The hero keeps its tinted band — it is
+              the visual peak; the groups below stay quiet. */}
+
+          {/* Header — a warm story surface (Sage Wash + organic field) that
+              opens the page like a family journal entry. Combines greeting,
+              family context, and the primary scan action per the Page Header
+              pattern. */}
+          <header
+            className="relative overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--surface-story)] shadow-card"
+            data-testid="home-header"
+          >
+            {/* Atmospheric organic field — a barely-visible sage circle,
+                decorative only, hidden from assistive tech. */}
+            <div
+              className="pointer-events-none absolute -right-10 -top-14 size-40 rounded-full bg-[var(--wash-sage)]/60"
+              aria-hidden="true"
+            />
+            <div className="relative flex items-center justify-between gap-3 p-4">
               <div className="min-w-0">
                 {/* A family journal entry starts with the date. */}
                 <p
@@ -270,41 +284,60 @@ export function HomeClient({
                 <h1 className="text-xl font-semibold text-foreground">
                   {greeting}
                 </h1>
+                {familyName && (
+                  <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                    {familyName}
+                  </p>
+                )}
               </div>
-              {members.length > 0 && (
-                <Link
-                  href="/familie"
-                  className="flex shrink-0 -space-x-2 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-full"
-                  data-testid="member-list"
-                  aria-label={`Familie ${familyName}`}
+              <div className="flex shrink-0 items-center gap-2">
+                {members.length > 0 && (
+                  <Link
+                    href="/familie"
+                    className="flex -space-x-2 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-full"
+                    data-testid="member-list"
+                    aria-label={`Familie ${familyName}`}
+                  >
+                    {members.slice(0, 5).map((m) => (
+                      <div
+                        key={m.id}
+                        className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--surface-story)] text-xs font-semibold"
+                        style={{
+                          backgroundColor: resolveAvatarColor(m.avatar_color),
+                          color: getAvatarTextColor(m.avatar_color),
+                        }}
+                        title={m.name}
+                        aria-label={m.name}
+                      >
+                        {m.name.charAt(0).toUpperCase()}
+                      </div>
+                    ))}
+                    {members.length > 5 && (
+                      <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--surface-story)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
+                        +{members.length - 5}
+                      </div>
+                    )}
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 press-scale"
+                  aria-label="Dokument scannen"
+                  data-testid="home-scan-button"
                 >
-                  {members.slice(0, 5).map((m) => (
-                    <div
-                      key={m.id}
-                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold"
-                      style={{
-                        backgroundColor: resolveAvatarColor(m.avatar_color),
-                        color: getAvatarTextColor(m.avatar_color),
-                      }}
-                      title={m.name}
-                      aria-label={m.name}
-                    >
-                      {m.name.charAt(0).toUpperCase()}
-                    </div>
-                  ))}
-                  {members.length > 5 && (
-                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
-                      +{members.length - 5}
-                    </div>
-                  )}
-                </Link>
-              )}
-            </header>
+                  <ScanLine className="size-4" aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+          </header>
 
+          {/* The frame: hero + sections, all in one calm surface. */}
+          <div className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">
             {/* The "Heute" hero — the peak of the page. Silent: the
                 Erledigt beat in the band IS the confirmation, a toast on
                 top would be the same signal twice. */}
-            <div className="px-4 pb-4">
+            <div className="px-4 pb-4 pt-4">
               <TodayHero
                 state={hero}
                 flat
