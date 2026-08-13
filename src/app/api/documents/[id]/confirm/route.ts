@@ -651,7 +651,6 @@ function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
     // Unsanitised, a value like "Montag" reaches a Postgres `date` column
     // and rolls the whole confirm back as CONFIRM_RPC_FAILED.
     due_date: toIsoDateOrNull(task.due_date),
-    priority: task.priority,
     confidence: task.confidence,
   }));
 }

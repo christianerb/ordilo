@@ -123,7 +123,7 @@ async function main() {
         { entity_type: "category", entity_value: "Kita", normalized_value: "kita", confidence: 1.0, linked_object_id: null },
       ],
       p_tasks: [
-        { title: "Sportsachen einpacken", due_date: "2026-07-06", priority: "medium", confidence: 0.8 },
+        { title: "Sportsachen einpacken", due_date: "2026-07-06", confidence: 0.8 },
       ],
     });
 

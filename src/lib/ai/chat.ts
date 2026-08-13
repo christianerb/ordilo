@@ -326,7 +326,7 @@ function formatCurrentDateTime(now: Date): {
 export function buildAgenticSystemPrompt(
   familyContext?: {
     members: Array<{ name: string; role: string | null }>;
-    upcomingTasks: Array<{ title: string; dueDate: string | null; priority: string }>;
+    upcomingTasks: Array<{ title: string; dueDate: string | null }>;
     documentCount: number;
     speakerName?: string | null;
   },
@@ -358,7 +358,7 @@ export function buildAgenticSystemPrompt(
         `Anstehende Aufgaben: ${familyContext.upcomingTasks
           .map(
             (t) =>
-              `${t.title}${t.dueDate ? ` (faellig ${t.dueDate})` : ""}${t.priority === "high" ? ", HOCH" : ""}`,
+              `${t.title}${t.dueDate ? ` (faellig ${t.dueDate})` : ""}`,
           )
           .join("; ")}`,
       );
@@ -401,7 +401,7 @@ STRENGE REGELN:
 2. Verwende VERBOTENE Formulierungen: ${forbiddenList}. Formuliere bestimmt und direkt.
 3. Verwende NIEMALS interne Fachbegriffe: "Knowledge Graph", "pgvector", "embedding", "HNSW", "Vektor", "Vektordatenbank", "Knoten", "Kanten".
 4. Wenn du Dokumente durchsucht hast, beziehe dich auf das Dokument (z.B. "Laut dem Kita-Brief..." oder "Das Dokument 'Stromrechnung' zeigt...").
-5. Wenn du Aufgaben auflistest, nenne Titel, Frist (falls vorhanden) und Prioritaet.
+5. Wenn du Aufgaben auflistest, nenne Titel und Frist (falls vorhanden).
 6. Bei allgemeinen Fragen (Begruessung, Dank, Smalltalk) antworte natuerlich und freundlich, ohne Tools aufzurufen.
 6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
 6b. Rufe so wenige Tools wie moeglich auf — in der Regel GENAU EINS pro Frage. Mehrere Tools nur, wenn die Frage klar verschiedene Informationsarten verlangt (z.B. Dokumenteninhalt UND Aufgabenstatus).
@@ -410,7 +410,7 @@ STRENGE REGELN:
 7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast. Die Ausfuehrung siehst du nicht — sie passiert in der Aktionskarte, ausserhalb dieses Gespraechs. Sag niemals "Ich lege das fuer dich an" oder "Erledigt" — frage stattdessen nach der Bestaetigung (siehe Regel 7) oder verweise auf die Karte.
 8. Halte die Antwort praezise und hilfreich. Verwende Aufzaehlungen wenn es sinnvoll ist.
 9. Formatiere deine Antwort als Markdown: **fett** fuer wichtige Begriffe wie Fristen und Betraege, "-" fuer einfache Aufzaehlungen.
-10. WICHTIG: Wenn du mehrere Elemente mit MEHREREN Detail-Eigenschaften auflistest (z.B. mehrere Aufgaben mit Frist UND Prioritaet, mehrere Rechnungen mit Betrag UND Faelligkeit), formatiere die Antwort als Markdown-Tabelle mit sprechenden Spaltenkoepfen (z.B. "| Aufgabe | Frist |") statt als Fliesstext. AUSNAHME: Wenn du als Ergebnis einer Dokumentensuche einfach mehrere GEFUNDENE DOKUMENTE auflistest (ohne weitere Detailfelder pro Dokument), schreibe KEINE Tabelle und KEINE Aufzaehlung — nenne die gefundenen Dokumente stattdessen in ein bis zwei kurzen Saetzen namentlich (z.B. "Ich habe den Kita-Brief und den Schulbrief zum Sommerfest gefunden."), denn die Dokumente selbst werden dem Nutzer bereits separat als Karten angezeigt.
+10. WICHTIG: Wenn du mehrere Elemente mit MEHREREN Detail-Eigenschaften auflistest (z.B. mehrere Aufgaben mit Frist, mehrere Rechnungen mit Betrag UND Faelligkeit), formatiere die Antwort als Markdown-Tabelle mit sprechenden Spaltenkoepfen (z.B. "| Aufgabe | Frist |") statt als Fliesstext. AUSNAHME: Wenn du als Ergebnis einer Dokumentensuche einfach mehrere GEFUNDENE DOKUMENTE auflistest (ohne weitere Detailfelder pro Dokument), schreibe KEINE Tabelle und KEINE Aufzaehlung — nenne die gefundenen Dokumente stattdessen in ein bis zwei kurzen Saetzen namentlich (z.B. "Ich habe den Kita-Brief und den Schulbrief zum Sommerfest gefunden."), denn die Dokumente selbst werden dem Nutzer bereits separat als Karten angezeigt.
 11. Erwaehne dasselbe Dokument nur einmal, auch wenn es mehrfach in den Quellen auftaucht.
 12. Beginne die Antwort direkt mit dem Inhalt — keine Einleitung wie "Hier ist die Antwort".
 13. Wenn die Antwort GENAU EIN konkretes Ergebnis mit mehreren Detailfeldern ist (ein Termin, eine Frist, eine Rechnung, eine einzelne Aufgabe), rufe present_answer_card auf statt Fliesstext zu schreiben. Bei Listen, allgemeinen Erklaerungen oder Smalltalk NICHT present_answer_card verwenden.
@@ -470,7 +470,7 @@ STRENGE REGELN:
  */
 async function loadFamilyContext(toolContext: ToolContext): Promise<{
   members: Array<{ name: string; role: string | null }>;
-  upcomingTasks: Array<{ title: string; dueDate: string | null; priority: string }>;
+  upcomingTasks: Array<{ title: string; dueDate: string | null }>;
   documentCount: number;
   speakerName: string | null;
 }> {
@@ -485,7 +485,7 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
       .limit(20),
     client
       .from("tasks")
-      .select("title, due_date, priority")
+      .select("title, due_date")
       .eq("family_id", familyId)
       .eq("status", "open")
       .eq("confirmed", true)
@@ -506,7 +506,6 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
     upcomingTasks: (tasksResult.data ?? []).map((t) => ({
       title: t.title,
       dueDate: t.due_date ? t.due_date.slice(0, 10) : null,
-      priority: t.priority,
     })),
     documentCount: docsResult.count ?? 0,
     speakerName: toolContext.speakerName,

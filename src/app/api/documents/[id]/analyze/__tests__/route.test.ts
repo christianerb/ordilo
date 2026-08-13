@@ -62,7 +62,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     ],
     amounts: [],
     tasks: [
-      { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
+      { title: "Elternabend besuchen", due_date: "2026-07-15", confidence: 0.8 },
     ],
     facts: [],
     suggested_category: "Kita",
@@ -879,7 +879,6 @@ describe("POST /api/documents/[id]/analyze", () => {
     const insertArg = client._tasksBuilder.insert.mock.calls[0][0];
     expect(insertArg).toHaveLength(1);
     expect(insertArg[0].title).toBe("Elternabend besuchen");
-    expect(insertArg[0].priority).toBe("medium");
     expect(insertArg[0].status).toBe("open");
     expect(insertArg[0].family_id).toBe(FAMILY_ID);
     expect(insertArg[0].document_id).toBe(VALID_DOC_ID);

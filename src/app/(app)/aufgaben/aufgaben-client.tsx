@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  sortTasksByPriorityAndDate,
+  sortTasksByDate,
   getTaskDropUpdates,
   type TaskBoardColumnId,
   type TaskDropUpdates,
@@ -99,7 +99,7 @@ function BoardColumn({
   onDragOverColumn?: (columnId: string | null) => void;
 }) {
   const sortedTasks = useMemo(
-    () => sortTasksByPriorityAndDate(tasks),
+    () => sortTasksByDate(tasks),
     [tasks],
   );
 
@@ -196,8 +196,8 @@ function BoardColumn({
         )}
 
         {/* Drop placeholder — shows where the dragged task will land.
-            Sorting is automatic (priority, then date), so the placeholder
-            sits at the end of the list rather than under the finger. */}
+            Sorting is automatic (by date), so the placeholder sits at the
+            end of the list rather than under the finger. */}
         {highlighted && (
           <div
             data-testid={`drop-placeholder-${column.id}`}

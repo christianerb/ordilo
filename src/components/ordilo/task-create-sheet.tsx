@@ -13,18 +13,7 @@ import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
 import { recordProductEvent } from "@/lib/analytics/product-events";
-import { cn } from "@/lib/utils";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
-
-const PRIORITIES: {
-  value: string;
-  label: string;
-  dot: string;
-}[] = [
-  { value: "high", label: "Hoch", dot: "bg-[var(--warm-apricot)]" },
-  { value: "medium", label: "Mittel", dot: "bg-[var(--petrol)]" },
-  { value: "low", label: "Niedrig", dot: "bg-[var(--mist)]" },
-];
 
 function todayAsIsoDate(): string {
   const today = new Date();
@@ -51,7 +40,6 @@ export function TaskCreateSheet({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState("medium");
   const [assignedTo, setAssignedTo] = useState<string>("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +49,6 @@ export function TaskCreateSheet({
     setTitle("");
     setDescription("");
     setDueDate("");
-    setPriority("medium");
     setAssignedTo("");
     setError(null);
   }, []);
@@ -96,7 +83,6 @@ export function TaskCreateSheet({
         title: title.trim(),
         description: description.trim() || null,
         due_date: dueDate || null,
-        priority,
         status: "open",
         confidence: 1.0,
         confirmed: true,
@@ -129,7 +115,7 @@ export function TaskCreateSheet({
     } finally {
       setSaving(false);
     }
-  }, [title, description, dueDate, priority, assignedTo, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
+  }, [title, description, dueDate, assignedTo, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -177,66 +163,23 @@ export function TaskCreateSheet({
               data-testid="task-create-description"
             />
 
-            {/* Meta row — due date + priority */}
-            <div className="mt-3 grid gap-3 min-[480px]:grid-cols-2">
-              <div>
-                <label
-                  htmlFor="task-create-due-date"
-                  className="mb-2 block text-sm font-medium text-foreground"
-                >
-                  Fällig am
-                </label>
-                <DateInput
-                  id="task-create-due-date"
-                  value={dueDate}
-                  onChange={setDueDate}
-                  minDate={minDueDate}
-                  className="h-12"
-                  aria-label="Fällig am"
-                  data-testid="task-create-due-date"
-                />
-              </div>
-
-              <fieldset>
-                <legend className="mb-2 text-sm font-medium text-foreground">
-                  Priorität
-                </legend>
-                <div
-                  className="grid grid-cols-3 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] p-1"
-                  role="radiogroup"
-                  aria-label="Priorität"
-                  data-testid="task-create-priority"
-                >
-                  {PRIORITIES.map((p) => (
-                    <button
-                      key={p.value}
-                      type="button"
-                      role="radio"
-                      aria-checked={priority === p.value}
-                      aria-label={p.label}
-                      onClick={() => setPriority(p.value)}
-                      className={cn(
-                        "flex h-10 min-w-0 items-center justify-center gap-1 rounded-[8px] px-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        priority === p.value
-                          ? "bg-primary font-medium text-primary-foreground"
-                          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                      )}
-                      data-testid={`task-create-priority-${p.value}`}
-                    >
-                      <span
-                        className={cn(
-                          "size-2 shrink-0 rounded-full",
-                          priority === p.value && p.value === "medium"
-                            ? "bg-primary-foreground/80"
-                            : p.dot,
-                        )}
-                        aria-hidden="true"
-                      />
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </fieldset>
+            {/* Due date */}
+            <div className="mt-3">
+              <label
+                htmlFor="task-create-due-date"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Fällig am
+              </label>
+              <DateInput
+                id="task-create-due-date"
+                value={dueDate}
+                onChange={setDueDate}
+                minDate={minDueDate}
+                className="h-12"
+                aria-label="Fällig am"
+                data-testid="task-create-due-date"
+              />
             </div>
 
             {/* Assignee picker — select dropdown matching the detail sheet */}

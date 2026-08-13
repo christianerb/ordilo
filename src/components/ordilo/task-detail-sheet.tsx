@@ -27,20 +27,6 @@ import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { TagInput } from "@/components/ordilo/tag-input";
 
-// ---------------------------------------------------------------------------
-// Priority config — compact, color-dotted
-// ---------------------------------------------------------------------------
-
-const PRIORITIES: {
-  value: string;
-  label: string;
-  dot: string;
-}[] = [
-  { value: "high", label: "Hoch", dot: "bg-[var(--warm-apricot)]" },
-  { value: "medium", label: "Mittel", dot: "bg-[var(--petrol)]" },
-  { value: "low", label: "Niedrig", dot: "bg-[var(--mist)]" },
-];
-
 /** Order-insensitive comparison of two tag arrays. */
 function areTagsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
@@ -87,7 +73,6 @@ export function TaskDetailSheet({
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
   const [dueDate, setDueDate] = useState(task?.due_date ?? "");
-  const [priority, setPriority] = useState(task?.priority ?? "medium");
   const [tags, setTags] = useState<string[]>(task?.tags ?? []);
   const [assignedTo, setAssignedTo] = useState<string>(task?.assigned_to ?? "");
   const [showMore, setShowMore] = useState((task?.tags?.length ?? 0) > 0);
@@ -107,7 +92,6 @@ export function TaskDetailSheet({
     (title !== task.title ||
       description !== (task.description ?? "") ||
       dueDate !== (task.due_date ?? "") ||
-      priority !== task.priority ||
       assignedTo !== (task.assigned_to ?? "") ||
       !areTagsEqual(tags, task.tags ?? []));
 
@@ -130,7 +114,6 @@ export function TaskDetailSheet({
           title: title.trim() || task.title,
           description: description.trim() || null,
           due_date: dueDate || null,
-          priority,
           tags,
           assigned_to: assignedTo || null,
         })
@@ -148,7 +131,7 @@ export function TaskDetailSheet({
     } finally {
       setSaving(false);
     }
-  }, [task, title, description, dueDate, priority, tags, assignedTo, supabase, onSaved, onOpenChange, minDueDate]);
+  }, [task, title, description, dueDate, tags, assignedTo, supabase, onSaved, onOpenChange, minDueDate]);
 
   const handleToggle = useCallback(() => {
     if (!task) return;
@@ -250,65 +233,22 @@ export function TaskDetailSheet({
                 className="mt-5 overflow-hidden rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)]"
                 aria-label="Aufgabenplanung"
               >
-                <div className="grid gap-4 p-4 min-[480px]:grid-cols-2">
-                  <div>
-                    <label
-                      htmlFor="task-detail-due-date"
-                      className="mb-2 block text-sm font-medium text-foreground"
-                    >
-                      Fällig am
-                    </label>
-                    <DateInput
-                      id="task-detail-due-date"
-                      value={dueDate}
-                      onChange={setDueDate}
-                      minDate={minDueDate}
-                      className="h-12"
-                      aria-label="Fällig am"
-                      data-testid="task-detail-due-date"
-                    />
-                  </div>
-
-                  <fieldset>
-                    <legend className="mb-2 text-sm font-medium text-foreground">
-                      Priorität
-                    </legend>
-                    <div
-                      className="grid grid-cols-3 rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] p-1"
-                      role="radiogroup"
-                      aria-label="Priorität"
-                      data-testid="task-detail-priority"
-                    >
-                      {PRIORITIES.map((p) => (
-                        <button
-                          key={p.value}
-                          type="button"
-                          role="radio"
-                          aria-checked={priority === p.value}
-                          aria-label={p.label}
-                          onClick={() => setPriority(p.value)}
-                          className={cn(
-                            "flex h-10 min-w-0 items-center justify-center gap-1 rounded-[8px] px-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                            priority === p.value
-                              ? "bg-primary font-medium text-primary-foreground"
-                              : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-                          )}
-                          data-testid={`task-detail-priority-${p.value}`}
-                        >
-                          <span
-                            className={cn(
-                              "size-2 shrink-0 rounded-full",
-                              priority === p.value && p.value === "medium"
-                                ? "bg-primary-foreground/80"
-                                : p.dot,
-                            )}
-                            aria-hidden="true"
-                          />
-                          {p.label}
-                        </button>
-                      ))}
-                    </div>
-                  </fieldset>
+                <div className="p-4">
+                  <label
+                    htmlFor="task-detail-due-date"
+                    className="mb-2 block text-sm font-medium text-foreground"
+                  >
+                    Fällig am
+                  </label>
+                  <DateInput
+                    id="task-detail-due-date"
+                    value={dueDate}
+                    onChange={setDueDate}
+                    minDate={minDueDate}
+                    className="h-12"
+                    aria-label="Fällig am"
+                    data-testid="task-detail-due-date"
+                  />
                 </div>
 
                 {members.length > 0 && (

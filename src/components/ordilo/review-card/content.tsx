@@ -17,20 +17,16 @@ import {
   ArrowLeft,
   Undo2,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   DOCUMENT_TYPE_LABELS,
   FACT_TYPE_LABELS,
   type DocumentAnalysis,
-  type TaskPriority,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import type { EditState } from "./helpers";
 import {
-  getPriorityLabel,
-  getPriorityBadgeClasses,
   shouldRenderSummary,
   FieldRow,
   EditedTag,
@@ -41,7 +37,6 @@ import {
   CategoryEditControl,
   DateEditControl,
   FactEditControl,
-  TaskPriorityEditControl,
   TextEditControl,
   FieldEditButton,
 } from "./edit-controls";
@@ -83,7 +78,6 @@ export function ReviewCardContent({
   onEditOrganization,
   onEditAmount,
   onEditTaskTitle,
-  onEditTaskPriority,
   onEditTaskDueDate,
   onEditFact,
   onDeleteTask,
@@ -113,7 +107,6 @@ export function ReviewCardContent({
   onEditOrganization: (entityIndex: number, value: string) => void;
   onEditAmount: (entityIndex: number, value: string) => void;
   onEditTaskTitle: (taskIndex: number, value: string) => void;
-  onEditTaskPriority: (taskIndex: number, priority: TaskPriority) => void;
   onEditTaskDueDate: (taskIndex: number, dueDate: string) => void;
   onEditFact: (factIndex: number, value: string) => void;
   onDeleteTask: (taskIndex: number) => void;
@@ -433,12 +426,9 @@ export function ReviewCardContent({
             {activeTasks.map(({ task, index }) => {
               const editedDueDate = edits.taskDueDates.get(index);
               const editedTitle = edits.taskTitles.get(index);
-              const editedPriority = edits.taskPriorities.get(index);
-              const isEdited = Boolean(editedDueDate || editedTitle || editedPriority);
+              const isEdited = Boolean(editedDueDate || editedTitle);
               const displayDueDate = editedDueDate ?? task.due_date;
               const displayTitle = editedTitle ?? task.title;
-              const displayPriority = editedPriority ?? task.priority;
-              const priorityLabel = getPriorityLabel(displayPriority);
               return (
                 <FieldRow
                   key={index}
@@ -453,10 +443,6 @@ export function ReviewCardContent({
                         label="Aufgabe korrigieren"
                         onChange={(value) => onEditTaskTitle(index, value)}
                         testId="task-title-edit"
-                      />
-                      <TaskPriorityEditControl
-                        value={displayPriority}
-                        onChange={(priority) => onEditTaskPriority(index, priority)}
                       />
                       <button
                         type="button"
@@ -494,14 +480,6 @@ export function ReviewCardContent({
                         showAddButton
                       />
                     )}
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-xs font-medium",
-                        getPriorityBadgeClasses(displayPriority),
-                      )}
-                    >
-                      {priorityLabel}
-                    </span>
                     {isEdited && <EditedTag />}
                   </div>
                 </FieldRow>

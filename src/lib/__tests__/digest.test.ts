@@ -16,7 +16,6 @@ function task(overrides: Partial<DigestTask> = {}): DigestTask {
     id: "task-1",
     title: "Rechnung bezahlen",
     due_date: "2026-07-14",
-    priority: "high",
     ...overrides,
   };
 }

@@ -149,7 +149,7 @@ A restrained palette where one teal carries authority and one apricot carries wa
 
 ### Secondary
 
-- **Warm Apricot** (#E46018): The emotional pulse. Used exclusively for the active nav tab, high-priority task badges, and sparingly as a warm highlight. Its rarity is the point — when apricot appears, it means "this is where you are" or "this needs attention."
+- **Warm Apricot** (#E46018): The emotional pulse. Used exclusively for the active nav tab, overdue task indicators, and sparingly as a warm highlight. Its rarity is the point — when apricot appears, it means "this is where you are" or "this needs attention."
 - **Warm Apricot Light** (#F0B4A0): A soft, baked-clay tint for subtle apricot backgrounds or disabled apricot states.
 
 ### Neutral
@@ -327,7 +327,7 @@ The most-seen component in the app. Horizontal layout: file-type icon (40px sand
 
 ### Signature: Task Card
 
-Horizontal layout: circular checkbox (24px, harbor blue when checked) → title + due date + priority badge → dismiss button. Done tasks get strikethrough and muted foreground. Due dates use German format (DD.MM.YYYY) with a calendar icon.
+Horizontal layout: circular checkbox (24px, harbor blue when checked) → title + due date → dismiss button. Done tasks get strikethrough and muted foreground. Due dates use German format (DD.MM.YYYY) with a calendar icon; overdue due dates turn apricot.
 
 ## 6. Do's and Don'ts
 

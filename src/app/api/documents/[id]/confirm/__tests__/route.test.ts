@@ -71,7 +71,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     ],
     amounts: [],
     tasks: [
-      { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
+      { title: "Elternabend besuchen", due_date: "2026-07-15", confidence: 0.8 },
     ],
     facts: [],
     suggested_category: "Kita",
@@ -774,19 +774,18 @@ describe("POST /api/documents/[id]/confirm", () => {
     expect(types).toContain("tag");
   });
 
-  it("passes tasks with due_date and priority to the RPC", async () => {
+  it("passes tasks with due_date to the RPC", async () => {
     const client = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     await POST(createRequest(validPayload()), createParams());
 
     const params = client._rpcCalls[0].params as {
-      p_tasks: { title: string; due_date: string | null; priority: string }[];
+      p_tasks: { title: string; due_date: string | null }[];
     };
     expect(params.p_tasks).toHaveLength(1);
     expect(params.p_tasks[0].title).toBe("Elternabend besuchen");
     expect(params.p_tasks[0].due_date).toBe("2026-07-15");
-    expect(params.p_tasks[0].priority).toBe("medium");
   });
 
   // --- Empty OCR text ---

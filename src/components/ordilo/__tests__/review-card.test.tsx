@@ -67,7 +67,6 @@ const fullAnalysis: DocumentAnalysis = {
     {
       title: "Anmeldung abschicken",
       due_date: "2026-08-15",
-      priority: "high",
       confidence: 0.91,
     },
   ],
@@ -123,13 +122,11 @@ const groupedAnalysis: DocumentAnalysis = {
     {
       title: "Anmeldung abschicken",
       due_date: "2026-08-15",
-      priority: "high",
       confidence: 0.91,
     },
     {
       title: "Betreuung bestätigen",
       due_date: null,
-      priority: "medium",
       confidence: 0.89,
     },
   ],
@@ -950,7 +947,7 @@ describe("ReviewCard", () => {
     });
   });
 
-  it("edits organization, amount, task title, and task priority before confirming", async () => {
+  it("edits organization, amount, and task title before confirming", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
     const onDirtyChange = vi.fn();
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
@@ -992,10 +989,6 @@ describe("ReviewCard", () => {
     fireEvent.change(screen.getByTestId("task-title-edit-input"), {
       target: { value: "Unterlagen senden" },
     });
-    fireEvent.click(screen.getByTestId("task-priority-edit-button"));
-    fireEvent.change(screen.getByTestId("task-priority-edit-select"), {
-      target: { value: "medium" },
-    });
 
     fireEvent.click(screen.getByTestId("confirm-button"));
 
@@ -1010,7 +1003,6 @@ describe("ReviewCard", () => {
       expect(payload.organizations[0].name).toBe("Kita Zukunft");
       expect(payload.amounts[0].amount).toBe("175");
       expect(payload.tasks[0].title).toBe("Unterlagen senden");
-      expect(payload.tasks[0].priority).toBe("medium");
     });
     expect(onDirtyChange).toHaveBeenCalledWith(true);
 

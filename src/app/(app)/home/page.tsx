@@ -190,7 +190,7 @@ export default async function HomePage({
     supabase
       .from("tasks")
       .select(
-        "id, family_id, title, description, due_date, priority, status, confidence, confirmed, created_at, document_id, tags",
+        "id, family_id, title, description, due_date, status, confidence, confirmed, created_at, document_id, tags",
       )
       .eq("family_id", family.id)
       .eq("confirmed", true)
@@ -257,7 +257,6 @@ export default async function HomePage({
     title: t.title,
     description: t.description,
     due_date: t.due_date,
-    priority: t.priority,
     status: t.status,
     confidence: t.confidence,
     confirmed: t.confirmed,

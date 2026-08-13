@@ -1129,7 +1129,7 @@ async function searchTasks(
   let query = serverClient
     .from("tasks")
     .select(
-      "id, document_id, title, due_date, priority, status, confidence",
+      "id, document_id, title, due_date, status, confidence",
     )
     .eq("family_id", familyId)
     .eq("status", "open");

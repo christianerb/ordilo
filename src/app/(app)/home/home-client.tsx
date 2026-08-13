@@ -152,7 +152,7 @@ export function HomeClient({
     JOURNAL_DOCS_LIMIT,
   );
 
-  // ONE priority list: open, confirmed, dated tasks sorted by due date —
+  // ONE list: open, confirmed, dated tasks sorted by due date —
   // overdue lands first by construction. totalTasks counts the WHOLE
   // list (the server passes all confirmed open tasks unsliced), so
   // "Alle N Aufgaben anzeigen" never promises a number /aufgaben can't
@@ -212,7 +212,6 @@ export function HomeClient({
     title: t.title,
     description: t.description,
     due_date: t.due_date,
-    priority: t.priority,
     status: t.status,
     confidence: t.confidence,
     confirmed: t.confirmed,

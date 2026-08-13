@@ -1,7 +1,6 @@
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import {
   DOCUMENT_TYPE_LABELS,
-  type TaskPriority,
 } from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import { cn } from "@/lib/utils";
@@ -44,8 +43,6 @@ export interface EditState {
   amountValues: Map<number, string>;
   /** Edited task titles (by task index). */
   taskTitles: Map<number, string>;
-  /** Edited task priorities (by task index). */
-  taskPriorities: Map<number, TaskPriority>;
   /** Edited task due dates (by task index). */
   taskDueDates: Map<number, string>;
   /** Deleted task indices. */
@@ -154,12 +151,10 @@ export function buildConfirmPayload(
   const tasks = analysis.tasks
     .map((t, i) => {
       const title = edits.taskTitles.get(i) ?? t.title;
-      const priority = edits.taskPriorities.get(i) ?? t.priority;
       const dueDate = edits.taskDueDates.get(i);
       return {
         ...t,
         title,
-        priority,
         due_date: dueDate ?? t.due_date,
       };
     })
@@ -196,7 +191,6 @@ export function hasReviewEdits(edits: EditState): boolean {
     edits.organizationNames.size > 0 ||
     edits.amountValues.size > 0 ||
     edits.taskTitles.size > 0 ||
-    edits.taskPriorities.size > 0 ||
     edits.taskDueDates.size > 0 ||
     edits.deletedTasks.size > 0
   );
@@ -255,38 +249,6 @@ export function shouldRenderSummary(summary: string, needsReview: boolean): bool
     return false;
   }
   return true;
-}
-
-// ---------------------------------------------------------------------------
-// Priority helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Get the German label for a task priority.
- */
-export function getPriorityLabel(priority: string): string {
-  switch (priority) {
-    case "high":
-      return "Hoch";
-    case "low":
-      return "Niedrig";
-    default:
-      return "Mittel";
-  }
-}
-
-/**
- * Get the badge classes for a task priority.
- */
-export function getPriorityBadgeClasses(priority: string): string {
-  switch (priority) {
-    case "high":
-      return "bg-[#FFEBEE] text-[#C62828]";
-    case "low":
-      return "bg-[#E8F5E9] text-[#2E7D32]";
-    default:
-      return "bg-[#FFF3E0] text-[#E65100]";
-  }
 }
 
 // ---------------------------------------------------------------------------

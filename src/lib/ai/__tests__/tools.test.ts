@@ -1185,14 +1185,14 @@ describe("update_task confirmation gate", () => {
     });
     const result = await executeTool(
       "update_task",
-      { task_id: "task-1", due_date: "2026-09-01", priority: "high" },
+      { task_id: "task-1", due_date: "2026-09-01" },
       ctx,
     );
     const parsed = JSON.parse(result);
 
     expect(parsed.needs_confirmation).toBe(true);
     expect(parsed.task_title).toBe("Steuererklaerung");
-    expect(parsed.aenderungen).toEqual(["Frist: 2026-09-01", "Prioritaet: Hoch"]);
+    expect(parsed.aenderungen).toEqual(["Frist: 2026-09-01"]);
     expect(getUpdate()).toBeNull();
   });
 
@@ -1311,7 +1311,7 @@ describe("update_task confirmation gate", () => {
     });
     const result = await executeTool(
       "update_task",
-      { task_id: "task-1", priority: "low", confirmed: true },
+      { task_id: "task-1", title: "Neuer Titel", confirmed: true },
       ctx,
     );
     const parsed = JSON.parse(result);

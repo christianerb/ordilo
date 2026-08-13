@@ -34,7 +34,6 @@ export interface ProfileTask {
   id: string;
   title: string;
   due_date: string | null;
-  priority: string;
   status: string;
   document_id: string | null;
 }
@@ -71,7 +70,7 @@ export interface TimelineEvent {
   date: string;
   /** The event title (e.g. document title or task title). */
   title: string;
-  /** Optional description (e.g. document type label or task priority). */
+  /** Optional description (e.g. document type label). */
   description?: string;
   /** The linked document ID (for navigation to the document detail). */
   documentId?: string;

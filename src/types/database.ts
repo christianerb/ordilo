@@ -70,7 +70,6 @@ export type ConfirmRpcTask = {
   title: string;
   /** ISO date string "YYYY-MM-DD", or null. */
   due_date: string | null;
-  priority: string;
   confidence: number;
 };
 
@@ -620,7 +619,6 @@ export type Database = {
           title: string;
           description: string | null;
           due_date: string | null;
-          priority: string;
           status: string;
           confidence: number;
           confirmed: boolean;
@@ -635,7 +633,6 @@ export type Database = {
           title: string;
           description?: string | null;
           due_date?: string | null;
-          priority?: string;
           status?: string;
           confidence?: number;
           confirmed?: boolean;
@@ -650,7 +647,6 @@ export type Database = {
           title?: string;
           description?: string | null;
           due_date?: string | null;
-          priority?: string;
           status?: string;
           confidence?: number;
           confirmed?: boolean;

@@ -10,7 +10,6 @@ function emptyEdits(): EditState {
     organizationNames: new Map(),
     amountValues: new Map(),
     taskTitles: new Map(),
-    taskPriorities: new Map(),
     taskDueDates: new Map(),
     deletedTasks: new Set(),
     factValues: new Map(),

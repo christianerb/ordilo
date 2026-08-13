@@ -62,17 +62,6 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// Task priority enum
-// ---------------------------------------------------------------------------
-
-/**
- * Task priority levels extracted by the LLM.
- */
-export const TASK_PRIORITIES = ["low", "medium", "high"] as const;
-
-export type TaskPriority = (typeof TASK_PRIORITIES)[number];
-
-// ---------------------------------------------------------------------------
 // Fact types
 // ---------------------------------------------------------------------------
 
@@ -218,7 +207,6 @@ const amountSchema = z.object({
 const taskSchema = z.object({
   title: z.string().min(1),
   due_date: z.string().nullable(),
-  priority: z.enum(TASK_PRIORITIES),
   confidence: z.number().min(0).max(1),
 });
 
@@ -359,13 +347,9 @@ export const documentAnalysisJsonSchema = {
         properties: {
           title: { type: "string" },
           due_date: { type: ["string", "null"] },
-          priority: {
-            type: "string",
-            enum: [...TASK_PRIORITIES],
-          },
           confidence: { type: "number" },
         },
-        required: ["title", "due_date", "priority", "confidence"],
+        required: ["title", "due_date", "confidence"],
         additionalProperties: false,
       },
     },

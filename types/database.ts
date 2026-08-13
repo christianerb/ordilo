@@ -421,7 +421,6 @@ export type Database = {
           due_date: string | null
           family_id: string
           id: string
-          priority: string
           status: string
           title: string
         }
@@ -433,7 +432,6 @@ export type Database = {
           due_date?: string | null
           family_id: string
           id?: string
-          priority?: string
           status?: string
           title: string
         }
@@ -445,7 +443,6 @@ export type Database = {
           due_date?: string | null
           family_id?: string
           id?: string
-          priority?: string
           status?: string
           title?: string
         }

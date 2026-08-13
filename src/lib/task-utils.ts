@@ -1,6 +1,6 @@
 /**
- * Task utility functions — pure helpers for task labels, priority badge
- * styling, and status filtering.
+ * Task utility functions — pure helpers for task labels and status
+ * filtering.
  *
  * All labels are in German (UI text). Code and comments are in English.
  */
@@ -17,7 +17,6 @@ export interface TaskRow {
   title: string;
   description: string | null;
   due_date: string | null;
-  priority: string;
   status: string;
   confidence: number;
   confirmed: boolean;
@@ -28,83 +27,6 @@ export interface TaskRow {
 
 /** The three status filter options shown in the Aufgaben tab. */
 export type TaskStatusFilter = "open" | "done" | "all";
-
-// ---------------------------------------------------------------------------
-// Priority labels and styling
-// ---------------------------------------------------------------------------
-
-/** German labels for each priority level. */
-export const PRIORITY_LABELS: Record<string, string> = {
-  high: "Hoch",
-  medium: "Mittel",
-  low: "Niedrig",
-};
-
-/** Numeric ranking for sorting tasks by priority (high > medium > low). */
-export const PRIORITY_RANK: Record<string, number> = {
-  high: 3,
-  medium: 2,
-  low: 1,
-};
-
-/** Default priority label for unknown values. */
-const DEFAULT_PRIORITY_LABEL = "Mittel";
-
-/**
- * Get the German label for a priority value.
- *
- * @param priority - One of "high", "medium", "low" (or any string).
- * @returns The German label, defaulting to "Mittel" for unknown values.
- */
-export function getPriorityLabel(priority: string): string {
-  return PRIORITY_LABELS[priority] ?? DEFAULT_PRIORITY_LABEL;
-}
-
-/**
- * Whether a priority level should render as a solid colored badge.
- *
- * Only "high" gets a filled pill (Warm Apricot) — per the DESIGN.md
- * "Apricot Scarcity Rule", color should mark the exception, not the norm.
- * Medium/low priority render as quiet text instead, so a list of tasks
- * doesn't turn into a wall of colored blocks (most tasks are medium/low).
- *
- * @param priority - One of "high", "medium", "low" (or any string).
- */
-export function isHighPriority(priority: string): boolean {
-  return priority === "high";
-}
-
-/**
- * Get the Tailwind className string for a priority badge, color-coded
- * according to the Ordilo design system:
- * - High:   warm apricot (#E46018) background, white text — the one
- *   priority worth a visual interrupt
- * - Medium/Low: no background, mist-dark text — quiet by default
- *
- * @param priority - One of "high", "medium", "low" (or any string).
- * @returns A className string for the badge.
- */
-export function getPriorityBadgeClasses(priority: string): string {
-  return isHighPriority(priority) ? "text-white" : "text-[var(--mist-dark)]";
-}
-
-/**
- * Get the inline background style for a priority badge.
- *
- * Returns a React style object with the appropriate CSS variable or color.
- * This is used alongside `getPriorityBadgeClasses` for the text color.
- * Medium/low priorities get no background (quiet text, not a badge).
- *
- * @param priority - One of "high", "medium", "low" (or any string).
- * @returns A React CSSProperties object with the background color.
- */
-export function getPriorityBadgeStyle(
-  priority: string,
-): React.CSSProperties {
-  return isHighPriority(priority)
-    ? { backgroundColor: "var(--apricot)" }
-    : {};
-}
 
 // ---------------------------------------------------------------------------
 // Task status labels
@@ -164,23 +86,16 @@ export function filterTasksByStatus<
 }
 
 /**
- * Sort tasks by priority (high first) then by due date (soonest first).
- * Tasks without a due date are placed after those with a due date within
- * the same priority group.
+ * Sort tasks by due date (soonest first). Tasks without a due date are
+ * placed after those with a due date.
  *
  * @param tasks - The list of tasks to sort.
  * @returns A new sorted array (does not mutate the input).
  */
-export function sortTasksByPriorityAndDate<
-  T extends { priority: string; due_date: string | null },
+export function sortTasksByDate<
+  T extends { due_date: string | null },
 >(tasks: T[]): T[] {
   return [...tasks].sort((a, b) => {
-    const rankDiff =
-      (PRIORITY_RANK[b.priority] ?? 2) - (PRIORITY_RANK[a.priority] ?? 2);
-    if (rankDiff !== 0) return rankDiff;
-
-    // Within the same priority, sort by due date (soonest first).
-    // Tasks without a due date go last.
     if (!a.due_date && !b.due_date) return 0;
     if (!a.due_date) return 1;
     if (!b.due_date) return -1;

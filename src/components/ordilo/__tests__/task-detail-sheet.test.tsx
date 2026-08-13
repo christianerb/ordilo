@@ -19,7 +19,6 @@ const task: TaskCardData = {
   title: "Klassenfahrt bezahlen",
   description: null,
   due_date: null,
-  priority: "medium",
   status: "open",
   confidence: 1,
   confirmed: true,
@@ -61,7 +60,6 @@ describe("TaskDetailSheet", () => {
     renderSheet();
 
     expect(screen.getByText("Fällig am")).toBeInTheDocument();
-    expect(screen.getByText("Priorität")).toBeInTheDocument();
     expect(screen.getByText("Verantwortlich")).toBeInTheDocument();
     expect(screen.getByText("Nicht festgelegt")).toBeInTheDocument();
     expect(screen.queryByText("Stichwörter")).not.toBeInTheDocument();

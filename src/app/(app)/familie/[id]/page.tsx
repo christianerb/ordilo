@@ -177,7 +177,7 @@ export default async function PersonProfilePage({
   // 4. Fetch open, confirmed tasks linked to this person via their documents.
   const { data: taskData } = await supabase
     .from("tasks")
-    .select("id, title, due_date, priority, status, document_id")
+    .select("id, title, due_date, status, document_id")
     .in("document_id", documentIds)
     .eq("confirmed", true)
     .eq("status", "open")
@@ -207,13 +207,12 @@ export default async function PersonProfilePage({
   const tasks: ProfileTask[] = (taskData ?? []).map((t) => {
     const task = t as Pick<
       TaskRow,
-      "id" | "title" | "due_date" | "priority" | "status" | "document_id"
+      "id" | "title" | "due_date" | "status" | "document_id"
     >;
     return {
       id: task.id,
       title: task.title,
       due_date: task.due_date,
-      priority: task.priority,
       status: task.status,
       document_id: task.document_id,
     };

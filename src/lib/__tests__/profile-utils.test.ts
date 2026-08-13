@@ -32,7 +32,6 @@ function makeTask(overrides: Partial<ProfileTask> = {}): ProfileTask {
     id: "task-1",
     title: "Rechnung bezahlen",
     due_date: "2026-07-15",
-    priority: "high",
     status: "open",
     document_id: "doc-1",
     ...overrides,

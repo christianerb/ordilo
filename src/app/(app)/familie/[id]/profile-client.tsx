@@ -26,7 +26,6 @@ import {
   DOCUMENT_TYPE_LABELS,
   type DocumentType,
 } from "@/lib/schemas/extraction";
-import { getPriorityLabel } from "@/lib/task-utils";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { updateFamilyMember } from "../actions";
 import { FamilyMemberSheet } from "../family-member-sheet";
@@ -124,13 +123,6 @@ export function ProfileClient({
     docTypeMap.set(doc.id, label);
   }
 
-  const taskPriorityMap = new Map<string, string>();
-  for (const task of tasks) {
-    if (task.document_id) {
-      taskPriorityMap.set(task.document_id, getPriorityLabel(task.priority));
-    }
-  }
-
   const timelineEvents = sortTimelineEvents(
     buildTimelineEvents(documents, tasks, dateEntities),
     "desc",
@@ -138,9 +130,6 @@ export function ProfileClient({
     let description: string | undefined;
     if (event.type === "document" && event.documentId) {
       description = docTypeMap.get(event.documentId) ?? undefined;
-    } else if (event.type === "task" && event.documentId) {
-      const priorityLabel = taskPriorityMap.get(event.documentId);
-      if (priorityLabel) description = `Priorität: ${priorityLabel}`;
     }
     return { ...event, description };
   });
@@ -152,7 +141,6 @@ export function ProfileClient({
     title: task.title,
     description: null,
     due_date: task.due_date,
-    priority: task.priority,
     status: task.status,
     confidence: 0,
     confirmed: true,

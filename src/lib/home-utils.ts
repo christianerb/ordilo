@@ -16,7 +16,6 @@ export interface HomeTask {
   title: string;
   description: string | null;
   due_date: string | null;
-  priority: string;
   status: string;
   confidence: number;
   confirmed: boolean;

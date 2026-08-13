@@ -5,10 +5,6 @@ import { ChevronDown, Calendar, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDateInputValue } from "@/lib/format";
 import { DateInput } from "@/components/ordilo/date-input";
-import {
-  TASK_PRIORITIES,
-  type TaskPriority,
-} from "@/lib/schemas/extraction";
 
 /**
  * Shared "edit" affordance — a small pencil button. By default every field
@@ -238,51 +234,6 @@ export function TextEditControl({
       aria-label={label}
       data-testid={`${testId}-input`}
     />
-  );
-}
-
-export function TaskPriorityEditControl({
-  value,
-  onChange,
-}: {
-  value: TaskPriority;
-  onChange: (priority: TaskPriority) => void;
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-
-  if (!isEditing) {
-    return (
-      <FieldEditButton
-        onClick={() => setIsEditing(true)}
-        label="Priorität ändern"
-        testId="task-priority-edit-button"
-      />
-    );
-  }
-
-  return (
-    <select
-      value={value}
-      autoFocus
-      onChange={(event) => {
-        onChange(event.target.value as TaskPriority);
-        setIsEditing(false);
-      }}
-      onBlur={() => setIsEditing(false)}
-      className="rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      aria-label="Priorität wählen"
-      data-testid="task-priority-edit-select"
-    >
-      {TASK_PRIORITIES.map((priority) => (
-        <option key={priority} value={priority}>
-          {priority === "high"
-            ? "Hoch"
-            : priority === "medium"
-              ? "Mittel"
-              : "Niedrig"}
-        </option>
-      ))}
-    </select>
   );
 }
 
