@@ -82,7 +82,6 @@ const noteSchema = z.object({
   // in documents.secret; the plaintext is never persisted.
   secret: z
     .string()
-    .trim()
     .max(10_000, "Geheim ist zu lang (max. 10 000 Zeichen).")
     .optional(),
 });
@@ -123,7 +122,7 @@ export async function POST(request: Request): Promise<Response> {
         : undefined,
     secret:
       typeof secretRaw === "string" && secretRaw.trim()
-        ? secretRaw.trim()
+        ? secretRaw
         : undefined,
   });
   if (!parsed.success) {

@@ -190,7 +190,10 @@ export function CreateNoteSheet({
         title: trimmedTitle,
         content: trimmedContent,
         documentType,
-        secret: secret.trim(),
+        // Secrets are opaque credentials. Whitespace decides only whether
+        // the optional field is empty; meaningful leading/trailing bytes
+        // must reach the encrypted server-side storage unchanged.
+        secret,
         file: imageFile,
       });
       reset();

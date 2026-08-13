@@ -41,53 +41,65 @@ comment on column public.documents.secret is
 -- 2. Inventory -> note documents
 -- ---------------------------------------------------------------------------
 
--- Move each inventory item into a confirmed note document. Guarded by a
--- NOT EXISTS check on the document title + family so a re-run does not
--- create duplicates (inventory items have no stable external id we can
--- reuse as the document id, so we guard by (family_id, title, 'note')).
-insert into public.documents (
-  id,
-  family_id,
-  uploaded_by,
-  status,
-  confirmed_at,
-  source,
-  document_type,
-  title,
-  ocr_text,
-  page_count,
-  created_at
-)
-select
-  gen_random_uuid(),
-  i.family_id,
-  f.created_by,
-  'confirmed',
-  now(),
-  'manual',
-  'note',
-  i.name,
-  coalesce(
-    i.name ||
-    case when coalesce(array_to_string(i.tags, ', '), '') <> ''
-      then E'\nStichwörter: ' || array_to_string(i.tags, ', ')
-      else ''
-    end,
-    i.name
-  ),
-  1,
-  coalesce(i.created_at, now())
-from public.family_inventory_items i
-join public.families f on f.id = i.family_id
-where i.status = 'confirmed'
-  and not exists (
-    select 1
-    from public.documents d
-    where d.family_id = i.family_id
-      and d.title = i.name
-      and d.document_type = 'note'
-      and d.source = 'manual'
-  );
+-- Move each inventory item into a confirmed note document. The source table
+-- is deliberately checked at runtime: migrations may be replayed after it
+-- has been dropped. The note keeps all useful context, rather than reducing
+-- an item such as "Emmas Krankenversicherung" to only its name and tags.
+do $$
+begin
+  if to_regclass('public.family_inventory_items') is not null then
+    insert into public.documents (
+      id,
+      family_id,
+      uploaded_by,
+      status,
+      confirmed_at,
+      source,
+      document_type,
+      title,
+      ocr_text,
+      page_count,
+      created_at
+    )
+    select
+      gen_random_uuid(),
+      i.family_id,
+      f.created_by,
+      'confirmed',
+      now(),
+      'manual',
+      'note',
+      i.name,
+      i.name ||
+      E'\nArt: ' || i.item_type ||
+      case when m.name is not null
+        then E'\nGehört zu: ' || m.name
+        else ''
+      end ||
+      case when i.metadata <> '{}'::jsonb
+        then E'\nDetails: ' || jsonb_pretty(i.metadata)
+        else ''
+      end ||
+      case when coalesce(array_to_string(i.tags, ', '), '') <> ''
+        then E'\nStichwörter: ' || array_to_string(i.tags, ', ')
+        else ''
+      end,
+      1,
+      coalesce(i.created_at, now())
+    from public.family_inventory_items i
+    join public.families f on f.id = i.family_id
+    left join public.family_members m on m.id = i.linked_member_id
+    where i.status = 'confirmed'
+      and not exists (
+        select 1
+        from public.documents d
+        where d.family_id = i.family_id
+          and d.title = i.name
+          and d.document_type = 'note'
+          and d.source = 'manual'
+      );
+  end if;
+end $$;
 
 -- A page row per migrated note so re-analysis / reindex can read the text
 -- the same way as a manually authored note.
@@ -118,9 +130,16 @@ on conflict do nothing;
 delete from public.extracted_entities
   where entity_type = 'inventory_item';
 
--- Drop the inventory table and its policies.
-drop policy if exists "inventory_items_select" on public.family_inventory_items;
-drop policy if exists "inventory_items_insert" on public.family_inventory_items;
-drop policy if exists "inventory_items_update" on public.family_inventory_items;
-drop policy if exists "inventory_items_delete" on public.family_inventory_items;
-drop table if exists public.family_inventory_items;
+-- Drop the inventory table and its policies only while the source relation
+-- exists. `drop policy if exists ... on missing_table` still errors in
+-- PostgreSQL, so this must be guarded separately from `drop table if exists`.
+do $$
+begin
+  if to_regclass('public.family_inventory_items') is not null then
+    execute 'drop policy if exists "inventory_items_select" on public.family_inventory_items';
+    execute 'drop policy if exists "inventory_items_insert" on public.family_inventory_items';
+    execute 'drop policy if exists "inventory_items_update" on public.family_inventory_items';
+    execute 'drop policy if exists "inventory_items_delete" on public.family_inventory_items';
+    execute 'drop table public.family_inventory_items';
+  end if;
+end $$;

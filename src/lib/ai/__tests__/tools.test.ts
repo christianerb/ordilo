@@ -1925,6 +1925,33 @@ describe("query_calendar_events", () => {
     expect(result.events[0].von >= result.heute).toBe(true);
   });
 
+  it("resolves recurring events inside an all-direction date range", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-recurring-range",
+        title: "Klavierunterricht",
+        starts_on: "2020-01-06",
+        ends_on: "2020-01-06",
+        recurrence: "weekly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        {
+          direction: "all",
+          from: "2026-08-01",
+          to: "2026-08-31",
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].von).toMatch(/^2026-08-/);
+  });
+
   it("uses Berlin's date at the UTC day boundary", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-12T22:30:00Z"));

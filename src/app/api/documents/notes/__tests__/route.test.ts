@@ -199,6 +199,21 @@ describe("POST /api/documents/notes", () => {
     expect(decryptSecret(insertPayload.secret as string)).toBe("super-secret-123");
   });
 
+  it("preserves meaningful whitespace in a secret", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+    const secret = "  0420 Zugangscode  ";
+
+    const response = await POST(
+      createNoteRequest({ ...VALID_FIELDS, secret }),
+    );
+
+    expect(response.status).toBe(200);
+    const insertPayload = serverClient._documentsInsertMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(decryptSecret(insertPayload.secret as string)).toBe(secret);
+  });
+
   it("omits the secret column when no secret is provided", async () => {
     const serverClient = mockServerClient({});
     (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);

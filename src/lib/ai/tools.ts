@@ -1503,6 +1503,17 @@ function findRelevantOccurrence(
     return findOccurrence(event, rangeStart, rangeEnd, "forward");
   }
 
+  // "All" with a requested time range must still resolve a concrete
+  // recurrence inside that range. Returning the original series row would
+  // otherwise surface a 2020 start date for an August 2026 question, or
+  // include a series with no occurrence in the requested interval.
+  if (from || to) {
+    const rangeStart = from ?? event.starts_on;
+    const rangeEnd = to ?? event.recurrence_until ?? nextYear(rangeStart);
+    if (rangeEnd < rangeStart) return null;
+    return findOccurrence(event, rangeStart, rangeEnd, "forward");
+  }
+
   return {
     ...event,
     occurrence_starts_on: event.starts_on,
