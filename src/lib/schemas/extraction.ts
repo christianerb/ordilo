@@ -17,7 +17,7 @@ import type { ApiErrorResponse } from "@/lib/schemas/api";
  *
  * This module defines:
  *   - The Zod schema used to validate the OpenAI structured output response
- *   - The JSON schema sent to OpenAI with `response_format: json_schema` (strict mode)
+ *   - The JSON schema sent to OpenAI Responses API with `text.format` (strict mode)
  *   - The confidence threshold for `needs_user_review`
  *   - Response types for the analyze API route
  *
@@ -263,11 +263,11 @@ export const documentAnalysisSchema = z.object({
 export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
 
 // ---------------------------------------------------------------------------
-// JSON schema (for OpenAI strict mode response_format)
+// JSON schema (for OpenAI Responses API strict mode)
 // ---------------------------------------------------------------------------
 
 /**
- * The JSON schema sent to OpenAI with `response_format: json_schema`.
+ * The JSON schema sent to OpenAI with `text.format: json_schema`.
  *
  * OpenAI strict mode requires:
  *   - `additionalProperties: false` on every object

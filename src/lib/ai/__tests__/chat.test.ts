@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the OpenAI module.
-// We replace the default export with a mock class that has a
-// chat.completions.create method we control per-test via `mockCreate`.
+// Mock the OpenAI module. The Responses API create method is controlled per
+// test through `mockCreate`.
 const mockCreate = vi.fn();
 vi.mock("openai", () => {
   // Reproduce a minimal APIError shape for testing error handling.
@@ -19,13 +18,11 @@ vi.mock("openai", () => {
   // here for the `instanceof OpenAI.APIError` check in chat.ts.
   class MockOpenAI {
     static APIError = MockAPIError;
-    chat: { completions: { create: typeof mockCreate } };
+    responses: { create: typeof mockCreate };
     constructor(_config: { apiKey: string }) {
       void _config;
-      this.chat = {
-        completions: {
-          create: mockCreate,
-        },
+      this.responses = {
+        create: mockCreate,
       };
     }
   }
@@ -108,15 +105,13 @@ function makeGraphTaskResult(
   };
 }
 
-function mockChatResponse(content: string): {
-  choices: { message: { content: string } }[];
-} {
+function mockResponse(content: string): { output_text: string } {
   return {
-    choices: [{ message: { content } }],
+    output_text: content,
   };
 }
 
-// --- Fake OpenAI streaming responses (for streamAgenticAnswer tests) -----
+// --- Fake Responses API streaming responses (for streamAgenticAnswer tests) -----
 
 type FakeStreamChunk =
   | { content: string }
@@ -130,37 +125,44 @@ type FakeStreamChunk =
     };
 
 /**
- * Build a fake async-iterable OpenAI streaming response from a simple
- * chunk description, matching the `chunk.choices[0].delta` shape that
- * `streamAgenticAnswer` reads.
+ * Build a fake async-iterable Responses API stream from a simple chunk
+ * description, including the completed response that carries tool calls.
  */
 function fakeOpenAIStream(chunks: FakeStreamChunk[]) {
   async function* generator() {
+    const toolCalls = new Map<
+      number,
+      { call_id: string; name: string; arguments: string }
+    >();
+
     for (const chunk of chunks) {
       if ("content" in chunk) {
-        yield { choices: [{ delta: { content: chunk.content } }] };
+        yield { type: "response.output_text.delta", delta: chunk.content };
       } else {
         const { index, id, name, argumentsChunk } = chunk.toolCall;
-        yield {
-          choices: [
-            {
-              delta: {
-                tool_calls: [
-                  {
-                    index,
-                    id,
-                    function: {
-                      name,
-                      arguments: argumentsChunk,
-                    },
-                  },
-                ],
-              },
-            },
-          ],
+        const existing = toolCalls.get(index) ?? {
+          call_id: id ?? `call_${index}`,
+          name: "",
+          arguments: "",
         };
+        if (id) existing.call_id = id;
+        if (name) existing.name += name;
+        if (argumentsChunk) existing.arguments += argumentsChunk;
+        toolCalls.set(index, existing);
       }
     }
+
+    yield {
+      type: "response.completed",
+      response: {
+        output: [...toolCalls.entries()]
+          .sort(([left], [right]) => left - right)
+          .map(([, toolCall]) => ({
+            type: "function_call",
+            ...toolCall,
+          })),
+      },
+    };
   }
   return generator();
 }
@@ -978,7 +980,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     ]);
   });
 
-  it("calls the model with low reasoning effort for snappy answers", async () => {
+  it("uses low reasoning with the tool-enabled Responses API", async () => {
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([{ content: "Hallo!" }]),
     );
@@ -987,7 +989,10 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     await readNdjsonStream(stream);
 
     expect(mockCreate).toHaveBeenCalledWith(
-      expect.objectContaining({ reasoning_effort: "low" }),
+      expect.objectContaining({
+        reasoning: { effort: "low" },
+        store: false,
+      }),
     );
   });
 
@@ -1002,7 +1007,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         ]),
       )
       .mockResolvedValueOnce(
-        mockChatResponse("Die Frist ist der 15. August."),
+        mockResponse("Die Frist ist der 15. August."),
       );
 
     const stream = await streamAgenticAnswer(
@@ -1025,7 +1030,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         fakeOpenAIStream([{ content: "Vermutlich ist die Frist bald." }]),
       )
       .mockResolvedValueOnce(
-        mockChatResponse("Wahrscheinlich ist die Frist bald."),
+        mockResponse("Wahrscheinlich ist die Frist bald."),
       );
 
     const stream = await streamAgenticAnswer("Wann?", [], makeToolContext());
@@ -1055,7 +1060,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         ]),
       )
       .mockResolvedValueOnce(
-        mockChatResponse("Die Frist ist der 15. August."),
+        mockResponse("Die Frist ist der 15. August."),
       );
 
     const stream = await streamAgenticAnswer(
@@ -1093,7 +1098,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         ]),
       )
       .mockResolvedValueOnce(
-        mockChatResponse("Die Frist ist der 15. August."),
+        mockResponse("Die Frist ist der 15. August."),
       );
 
     const stream = await streamAgenticAnswer("Wann?", [], makeToolContext());
@@ -1157,5 +1162,114 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
       type: "error",
       code: "CHAT_FAILED",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// streamAgenticAnswer — confirmation requests
+// ---------------------------------------------------------------------------
+
+describe("streamAgenticAnswer — confirmation requests", () => {
+  beforeEach(() => {
+    setApiKey();
+    mockCreate.mockReset();
+  });
+
+  it("emits one confirmation_request per proposed write in the same round", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "add_task",
+              argumentsChunk: JSON.stringify({ title: "Anmeldung abschicken" }),
+            },
+          },
+          {
+            toolCall: {
+              index: 1,
+              id: "call_2",
+              name: "add_task",
+              argumentsChunk: JSON.stringify({ title: "Elternabend eintragen" }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Ich habe beide Aufgaben vorbereitet." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Leg zwei Aufgaben an",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    const confirmations = lines.filter(
+      (line) => line.type === "confirmation_request",
+    );
+    expect(confirmations).toHaveLength(2);
+    expect(confirmations[0]).toMatchObject({
+      tool_name: "add_task",
+      needs_confirmation: true,
+      action_args: { title: "Anmeldung abschicken" },
+    });
+    expect(confirmations[1]).toMatchObject({
+      tool_name: "add_task",
+      needs_confirmation: true,
+      action_args: { title: "Elternabend eintragen" },
+    });
+    // Each proposal carries a stable, unique idempotency key.
+    for (const confirmation of confirmations) {
+      expect(typeof confirmation.action_id).toBe("string");
+      expect(confirmation.action_id).toBeTruthy();
+    }
+    expect(confirmations[0].action_id).not.toBe(confirmations[1].action_id);
+  });
+
+  it("refuses a model-originated confirmed=true call and points to the card", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "add_task",
+              argumentsChunk: JSON.stringify({
+                title: "Anmeldung abschicken",
+                confirmed: true,
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Tippe dazu oben auf Übernehmen." }]),
+      );
+
+    const stream = await streamAgenticAnswer(
+      "Ja, leg die Aufgabe an",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    // The tool result fed back to the model is a refusal, not a write.
+    const secondRoundInput = mockCreate.mock.calls[1][0]
+      .input as Array<{ type?: string; output?: string }>;
+    const toolOutput = secondRoundInput.find(
+      (item) => item.type === "function_call_output",
+    );
+    expect(toolOutput?.output).toContain("Aktionskarte");
+    expect(toolOutput?.output).not.toContain('"success":true');
+
+    // No card confirmation event, no second confirmation round.
+    expect(
+      lines.some((line) => line.type === "confirmation_request"),
+    ).toBe(false);
   });
 });

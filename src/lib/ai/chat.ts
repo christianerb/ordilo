@@ -63,7 +63,7 @@ const MAX_SOURCES = MAX_RESULTS;
 // ---------------------------------------------------------------------------
 
 /**
- * Error thrown when the chat completion call fails (API error, timeout,
+ * Error thrown when the Responses API call fails (API error, timeout,
  * or unexpected response shape).
  */
 export class ChatError extends Error {
@@ -244,6 +244,19 @@ export interface HistoryMessage {
   content: string;
 }
 
+function isResponseContextItem(
+  item: OpenAI.Responses.ResponseOutputItem,
+): item is
+  | OpenAI.Responses.ResponseOutputMessage
+  | OpenAI.Responses.ResponseFunctionToolCall
+  | OpenAI.Responses.ResponseReasoningItem {
+  return (
+    item.type === "message" ||
+    item.type === "function_call" ||
+    item.type === "reasoning"
+  );
+}
+
 /**
  * Maximum number of tool-call rounds before forcing a final answer.
  * Prevents infinite loops if the model keeps calling tools without
@@ -272,13 +285,6 @@ const HEDGE_TAIL_LENGTH =
  */
 const FIRST_RELEASE_THRESHOLD = 48;
 
-/**
- * Format "now" for the system prompt in the family's timezone
- * (Europe/Berlin). The model gets the German long form for natural
- * language, the ISO form for tool arguments (YYYY-MM-DD), and the clock
- * time for expressions like "heute Abend". Without this the model has no
- * idea what "heute" means and asks the user for today's date.
- */
 function formatCurrentDateTime(now: Date): {
   long: string;
   iso: string;
@@ -293,7 +299,6 @@ function formatCurrentDateTime(now: Date): {
       month: "2-digit",
       year: "numeric",
     }),
-    // sv-SE formats as YYYY-MM-DD — the ISO form the tools expect.
     iso: now.toLocaleDateString("sv-SE", { timeZone }),
     time: now.toLocaleTimeString("de-DE", {
       timeZone,
@@ -317,13 +322,6 @@ function formatCurrentDateTime(now: Date): {
  * terminology. But it allows general conversation (greetings, thanks) and
  * relaxes the strict "only sources" rule — the assistant can use tool
  * results to answer questions about tasks and family, not just documents.
- *
- * The current date and time (Europe/Berlin) are always included so the
- * model resolves relative expressions like "heute" or "morgen" itself
- * instead of asking the user which day it is.
- *
- * @param familyContext - Optional live family data for proactive answers.
- * @param now - Injectable clock for deterministic tests.
  */
 export function buildAgenticSystemPrompt(
   familyContext?: {
@@ -337,7 +335,6 @@ export function buildAgenticSystemPrompt(
   const forbiddenList = FORBIDDEN_HEDGING_PHRASES.map(
     (p) => `"${p}"`,
   ).join(", ");
-
   const currentDate = formatCurrentDateTime(now);
 
   let contextSection = "";
@@ -384,8 +381,6 @@ Du hast folgende Werkzeuge zur Verfuegung:
 - graph_query: Durchsucht den Knowledge Graph nach verwandten Entitaeten. Bevorzugt fuer relationale Fragen wie "Was muss Emma tun?", "Welche Dokumente von der Kita haben Fristen?", "Zeig mir alles von Emmas Arzt". Gibt Dokumente + Aufgaben + Fristen in einer Antwort.
 - search_documents: Semantische Dokumentensuche. Verwende dies fuer Stichwortsuche wie "Stromrechnung", "Kita-Brief" oder wenn graph_query keine Treffer liefert.
 - list_tasks: Listet Aufgaben auf, gefiltert nach Status oder Frist
-- query_calendar_events: Liest Termine aus dem Familienkalender (vergangene und kommende), optional nach Stichwort oder Person gefiltert. Verwende dies fuer Fragen wie "Wann war der letzte Zahnarzttermin?" oder "Was steht naechste Woche an?"
-- add_calendar_event: Traegt einen neuen Termin in den Familienkalender ein
 - add_task: Legt eine neue Aufgabe/Erinnerung an
 - list_family_members: Listet Familienmitglieder auf
 - mark_task_done: Markiert eine Aufgabe als erledigt
@@ -410,9 +405,9 @@ STRENGE REGELN:
 6. Bei allgemeinen Fragen (Begruessung, Dank, Smalltalk) antworte natuerlich und freundlich, ohne Tools aufzurufen.
 6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
 6b. Rufe so wenige Tools wie moeglich auf — in der Regel GENAU EINS pro Frage. Mehrere Tools nur, wenn die Frage klar verschiedene Informationsarten verlangt (z.B. Dokumenteninhalt UND Aufgabenstatus).
-7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, update_task, mark_task_done, add_family_member, create_collection, create_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe das Tool zuerst mit confirmed=false auf. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen willst (z.B. "Soll ich die Aufgabe 'Kita-Ausflug' (faellig 12.9.) anlegen?", "Soll ich '<aufgabentitel>' als erledigt markieren?", "Soll ich '<name>' als neues Familienmitglied hinzufuegen?"). Erst wenn der Nutzer eindeutig zustimmt ("Ja", "Erledigt", "Mach das", "Passt so"), rufe das Tool erneut mit confirmed=true auf. Rufe niemals eine dieser Aktionen ohne vorherige, explizite Bestaetigung des Nutzers aus.
+7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, update_task, mark_task_done, add_family_member, create_collection, create_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe das Tool GENAU EINMAL mit confirmed=false auf. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen willst (z.B. "Soll ich die Aufgabe 'Kita-Ausflug' (faellig 12.9.) anlegen?", "Soll ich '<aufgabentitel>' als erledigt markieren?", "Soll ich '<name>' als neues Familienmitglied hinzufuegen?"). Die App zeigt dem Nutzer dazu eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karte (z.B. "Tippe oben auf Uebernehmen").
 7a. move_document_to_collection und add_document_tags brauchen eine document_id — hole diese immer zuerst ueber search_documents oder graph_query, bevor du eines der beiden Tools aufrufst. update_task braucht eine task_id — hole sie zuerst ueber list_tasks oder graph_query.
-7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast, ohne dass das entsprechende Tool tatsaechlich mit confirmed=true aufgerufen wurde und einen Erfolg zurueckgegeben hat. Sag niemals "Ich lege das fuer dich an" oder Aehnliches, ohne im selben oder naechsten Schritt das passende Tool aufzurufen — frage stattdessen direkt nach der Bestaetigung (siehe Regel 7).
+7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast. Die Ausfuehrung siehst du nicht — sie passiert in der Aktionskarte, ausserhalb dieses Gespraechs. Sag niemals "Ich lege das fuer dich an" oder "Erledigt" — frage stattdessen nach der Bestaetigung (siehe Regel 7) oder verweise auf die Karte.
 8. Halte die Antwort praezise und hilfreich. Verwende Aufzaehlungen wenn es sinnvoll ist.
 9. Formatiere deine Antwort als Markdown: **fett** fuer wichtige Begriffe wie Fristen und Betraege, "-" fuer einfache Aufzaehlungen.
 10. WICHTIG: Wenn du mehrere Elemente mit MEHREREN Detail-Eigenschaften auflistest (z.B. mehrere Aufgaben mit Frist UND Prioritaet, mehrere Rechnungen mit Betrag UND Faelligkeit), formatiere die Antwort als Markdown-Tabelle mit sprechenden Spaltenkoepfen (z.B. "| Aufgabe | Frist |") statt als Fliesstext. AUSNAHME: Wenn du als Ergebnis einer Dokumentensuche einfach mehrere GEFUNDENE DOKUMENTE auflistest (ohne weitere Detailfelder pro Dokument), schreibe KEINE Tabelle und KEINE Aufzaehlung — nenne die gefundenen Dokumente stattdessen in ein bis zwei kurzen Saetzen namentlich (z.B. "Ich habe den Kita-Brief und den Schulbrief zum Sommerfest gefunden."), denn die Dokumente selbst werden dem Nutzer bereits separat als Karten angezeigt.
@@ -535,10 +530,9 @@ export async function streamAgenticAnswer(
   const familyContext = await loadFamilyContext(toolContext);
   const systemPrompt = buildAgenticSystemPrompt(familyContext);
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt },
+  const input: OpenAI.Responses.ResponseInput = [
     ...truncatedHistory.map((m) => ({
-      role: m.role as "user" | "assistant",
+      role: m.role,
       content: m.content,
     })),
     { role: "user", content: query },
@@ -565,23 +559,22 @@ export async function streamAgenticAnswer(
 
       try {
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-          const openaiStream = await client.chat.completions.create({
+          const openaiStream = await client.responses.create({
             model: CHAT_MODEL,
-            messages,
+            instructions: systemPrompt,
+            input,
             tools: TOOL_DEFINITIONS,
             stream: true,
-            reasoning_effort: CHAT_REASONING_EFFORT,
+            reasoning: { effort: CHAT_REASONING_EFFORT },
+            // Family documents and conversations must not be retained by
+            // OpenAI. Reasoning items are explicitly included so they can
+            // be returned with the next tool output in this stateless loop.
+            store: false,
+            include: ["reasoning.encrypted_content"],
           });
 
           const contentChunks: string[] = [];
-          const toolCallsMap = new Map<
-            number,
-            {
-              id: string;
-              type: "function";
-              function: { name: string; arguments: string };
-            }
-          >();
+          let responseOutput: OpenAI.Responses.ResponseOutputItem[] = [];
 
           // Rolling hedging-guardrail state for this round. Every text
           // piece is checked together with the tail of the text already
@@ -594,26 +587,29 @@ export async function streamAgenticAnswer(
           // the way to a tool call never flash on screen.
           let pendingRelease = "";
 
-          for await (const chunk of openaiStream) {
-            const delta = chunk.choices[0]?.delta;
-            if (!delta) continue;
-
-            // Accumulate tool calls (streamed in pieces).
-            if (delta.tool_calls) {
-              for (const tc of delta.tool_calls) {
-                if (tc.index === undefined) continue;
-                const existing = toolCallsMap.get(tc.index) ?? {
-                  id: "",
-                  type: "function" as const,
-                  function: { name: "", arguments: "" },
-                };
-                if (tc.id) existing.id = tc.id;
-                if (tc.function?.name)
-                  existing.function.name += tc.function.name;
-                if (tc.function?.arguments)
-                  existing.function.arguments += tc.function.arguments;
-                toolCallsMap.set(tc.index, existing);
-              }
+          for await (const event of openaiStream) {
+            if (event.type === "error") {
+              throw new ChatError(
+                event.message,
+                event.code ?? "OPENAI_API_ERROR",
+              );
+            }
+            if (event.type === "response.failed") {
+              throw new ChatError(
+                event.response.error?.message ??
+                  "OpenAI konnte die Antwort nicht erstellen.",
+                event.response.error?.code ?? "OPENAI_API_ERROR",
+              );
+            }
+            if (event.type === "response.incomplete") {
+              throw new ChatError(
+                "OpenAI hat die Antwort nicht vollständig erstellt.",
+                "OPENAI_INCOMPLETE_RESPONSE",
+              );
+            }
+            if (event.type === "response.completed") {
+              responseOutput = event.response.output;
+              continue;
             }
 
             // Release text as soon as the round proves to be a real
@@ -622,8 +618,8 @@ export async function streamAgenticAnswer(
             // round still ends with tool calls, released text is
             // retracted below; text still in the hold-back buffer is
             // discarded silently and never appears at all.
-            if (delta.content) {
-              pendingRelease += delta.content;
+            if (event.type === "response.output_text.delta") {
+              pendingRelease += event.delta;
               if (
                 answerTextVisible ||
                 pendingRelease.length >= FIRST_RELEASE_THRESHOLD
@@ -643,9 +639,12 @@ export async function streamAgenticAnswer(
             }
           }
 
-          const toolCalls = [...toolCallsMap.entries()]
-            .sort(([a], [b]) => a - b)
-            .map(([, v]) => v);
+          const toolCalls = responseOutput.filter(
+            (
+              item,
+            ): item is OpenAI.Responses.ResponseFunctionToolCall =>
+              item.type === "function_call",
+          );
 
           // If we got tool calls, execute them and continue the loop.
           // Any text streamed this round was preamble on the way to the
@@ -653,16 +652,11 @@ export async function streamAgenticAnswer(
           // context but is retracted from the client before the tools run.
           // (Skipped when the round was stopped early by the hedging
           // guardrail — then the regeneration path below handles it.)
-          if (!hedgingDetected && toolCalls.length > 0 && toolCalls.some((tc) => tc.id)) {
-            // The model's preamble (released parts AND the held-back
-            // buffer) stays in its message for context — but only the
-            // released part was ever visible, so only that needs
-            // retraction; the buffer simply disappears.
-            messages.push({
-              role: "assistant",
-              tool_calls: toolCalls,
-              content: [...contentChunks, pendingRelease].join("") || null,
-            });
+          if (!hedgingDetected && toolCalls.length > 0) {
+            // Responses includes reasoning items and function calls in its
+            // output. Both must be returned with function results on the
+            // next turn so the reasoning chain remains valid.
+            input.push(...responseOutput.filter(isResponseContextItem));
 
             if (answerTextVisible) {
               send({ type: "replace", content: "" });
@@ -681,7 +675,10 @@ export async function streamAgenticAnswer(
             // document_id/collection_name, etc.) — the client currently
             // only relies on the model's text to ask for confirmation, so
             // this stays a loose record rather than a per-tool union.
-            let confirmationToSend: Record<string, unknown> | null = null;
+            // One entry per confirmation-seeking tool call — a round can
+            // propose several writes (e.g. two add_task calls) and each of
+            // them must reach the client as its own confirmation request.
+            const confirmationsToSend: Record<string, unknown>[] = [];
 
             // Results aligned with the toolCalls order — tool messages
             // must be fed back in the order the model emitted the calls,
@@ -696,16 +693,35 @@ export async function streamAgenticAnswer(
 
             for (let i = 0; i < toolCalls.length; i++) {
               const toolCall = toolCalls[i];
-              if (toolCall.type !== "function") continue;
               let args: Record<string, unknown>;
               try {
-                args = JSON.parse(toolCall.function.arguments || "{}");
+                args = JSON.parse(toolCall.arguments || "{}");
               } catch {
                 args = {};
               }
               toolArguments.set(i, args);
 
-              if (toolCall.function.name === "present_answer_card") {
+              // A mutating tool with confirmed=true came from the model
+              // itself (e.g. after the user typed "Ja" instead of tapping
+              // the card). Executing it here would bypass the action card
+              // AND the idempotency ledger, leaving the card in "ready" so
+              // a later tap would repeat the write. Refuse and let the
+              // model point the user to the card instead.
+              if (
+                CONFIRMATION_TOOLS.has(toolCall.name) &&
+                args.confirmed === true
+              ) {
+                results[i] = JSON.stringify({
+                  error:
+                    "Direkte Ausfuehrung mit confirmed=true ist nicht moeglich. " +
+                    "Die Bestaetigung laeuft ausschliesslich ueber die " +
+                    "Aktionskarte in der App. Bitte den Nutzer freundlich, " +
+                    "in der Karte auf 'Uebernehmen' zu tippen.",
+                });
+                continue;
+              }
+
+              if (toolCall.name === "present_answer_card") {
                 const card = parseAnswerCardArgs(args);
                 if (card) {
                   // Never trust an unverified document reference — only
@@ -731,7 +747,7 @@ export async function streamAgenticAnswer(
                 continue;
               }
 
-              executable.push({ index: i, name: toolCall.function.name, args });
+              executable.push({ index: i, name: toolCall.name, args });
             }
 
             // Independent calls from the same round run in parallel: the
@@ -764,7 +780,6 @@ export async function streamAgenticAnswer(
 
             for (let i = 0; i < toolCalls.length; i++) {
               const toolCall = toolCalls[i];
-              if (toolCall.type !== "function") continue;
               const resultContent =
                 results[i] ??
                 JSON.stringify({ error: "Tool-Ausfuehrung fehlgeschlagen." });
@@ -774,19 +789,23 @@ export async function streamAgenticAnswer(
               // confirmation_request event to the client so it can render
               // a confirmation UI. The model also receives the tool result
               // and will ask the user to confirm in its text response.
-              if (CONFIRMATION_TOOLS.has(toolCall.function.name)) {
+              if (CONFIRMATION_TOOLS.has(toolCall.name)) {
                 try {
                   const parsed = JSON.parse(resultContent);
                   if (parsed.needs_confirmation) {
-                    confirmationToSend = {
-                      tool_name: toolCall.function.name,
+                    confirmationsToSend.push({
+                      tool_name: toolCall.name,
                       // The tool result intentionally contains only the
                       // friendly preview fields. The action card also needs
                       // the original, already validated proposal to execute
                       // exactly what it showed after a person taps confirm.
                       action_args: toolArguments.get(i) ?? {},
                       ...parsed,
-                    };
+                      // Stable proposal id, minted here so the live card,
+                      // the persisted message and a restored card after a
+                      // reload all share one idempotency key.
+                      action_id: crypto.randomUUID(),
+                    });
                   }
                 } catch {
                   // Ignore parse errors — the tool result is still fed
@@ -794,27 +813,32 @@ export async function streamAgenticAnswer(
                 }
               }
 
-              messages.push({
-                role: "tool",
-                tool_call_id: toolCall.id,
-                content: resultContent,
+              input.push({
+                type: "function_call_output",
+                call_id: toolCall.call_id,
+                output: resultContent,
               });
             }
 
             if (cardToSend) {
               send({ type: "card", card: cardToSend });
               send({ type: "sources", sources: toolContext.sources });
+              // A round can end in an answer card AND still carry pending
+              // write proposals — emit those confirmations before closing.
+              for (const confirmation of confirmationsToSend) {
+                send({ type: "confirmation_request", ...confirmation });
+              }
               send({ type: "done" });
               controller.close();
               return;
             }
 
-            // Emit a confirmation request event if a destructive tool
+            // Emit one confirmation request event per destructive tool that
             // requires user confirmation. The model will also ask the
-            // user in its text response, but this event lets the client
-            // render a confirmation UI (buttons) alongside the text.
-            if (confirmationToSend) {
-              send({ type: "confirmation_request", ...confirmationToSend });
+            // user in its text response, but these events let the client
+            // render a confirmation UI (action cards) alongside the text.
+            for (const confirmation of confirmationsToSend) {
+              send({ type: "confirmation_request", ...confirmation });
             }
 
             continue;
@@ -845,22 +869,18 @@ export async function streamAgenticAnswer(
             // instruction. If part of the hedged draft already reached the
             // client, the corrected answer REPLACES it; the remainder of
             // the draft never left the server.
-            messages.push({
-              role: "user",
-              content:
+            const retryResponse = await client.responses.create({
+              model: CHAT_MODEL,
+              instructions:
+                `${systemPrompt}\n\n` +
                 "HINWEIS: Deine Antwort enthielt verbotene Formulierungen. " +
                 "Formuliere unbedingt, direkt und bestimmt. Verwende keine unsicheren Ausdrücke.",
+              input,
+              reasoning: { effort: CHAT_REASONING_EFFORT },
+              store: false,
             });
 
-            const retryResponse = await client.chat.completions.create({
-              model: CHAT_MODEL,
-              messages,
-              tools: TOOL_DEFINITIONS,
-              reasoning_effort: CHAT_REASONING_EFFORT,
-            });
-
-            const retryContent =
-              retryResponse.choices[0]?.message?.content;
+            const retryContent = retryResponse.output_text;
             const finalText =
               retryContent &&
               retryContent.trim() &&

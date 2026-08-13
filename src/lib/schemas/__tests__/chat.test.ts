@@ -12,6 +12,7 @@ import {
   MIN_CONTENT_FRAGMENT_WORDS,
   MIN_CONTENT_FRAGMENT_CHARS,
   parseAnswerCardArgs,
+  mergeConfirmationProposal,
   type ChatSource,
 } from "@/lib/schemas/chat";
 
@@ -785,5 +786,78 @@ describe("parseAnswerCardArgs", () => {
     expect(parseAnswerCardArgs(undefined)).toBeNull();
     expect(parseAnswerCardArgs("not an object")).toBeNull();
     expect(parseAnswerCardArgs({})).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// mergeConfirmationProposal
+// ---------------------------------------------------------------------------
+
+describe("mergeConfirmationProposal", () => {
+  it("merges validated args with server-resolved preview fields", () => {
+    // The exact shape of a save_document_fact correction event.
+    const merged = mergeConfirmationProposal({
+      type: "confirmation_request",
+      tool_name: "save_document_fact",
+      action_id: "proposal-1",
+      needs_confirmation: true,
+      message: "Bitte bestätige: …",
+      action_args: { document_id: "doc-1", fact_type: "iban", value: "DE44" },
+      document_title: "Kontoauszug",
+      fact_type_label: "IBAN",
+      existing_value: "DE12",
+    });
+
+    expect(merged).toEqual({
+      document_id: "doc-1",
+      fact_type: "iban",
+      value: "DE44",
+      document_title: "Kontoauszug",
+      fact_type_label: "IBAN",
+      existing_value: "DE12",
+    });
+  });
+
+  it("never leaks transport keys into the proposal", () => {
+    const merged = mergeConfirmationProposal({
+      type: "confirmation_request",
+      tool_name: "mark_task_done",
+      action_id: "proposal-2",
+      needs_confirmation: true,
+      message: "Bitte bestätige: …",
+      action_args: { task_id: "task-1" },
+      task_title: "Anmeldung abschicken",
+    });
+
+    expect(merged).toEqual({ task_id: "task-1", task_title: "Anmeldung abschicken" });
+    expect(merged).not.toHaveProperty("type");
+    expect(merged).not.toHaveProperty("tool_name");
+    expect(merged).not.toHaveProperty("action_id");
+    expect(merged).not.toHaveProperty("needs_confirmation");
+    expect(merged).not.toHaveProperty("message");
+  });
+
+  it("lets server-resolved preview fields win over raw args", () => {
+    const merged = mergeConfirmationProposal({
+      type: "confirmation_request",
+      tool_name: "add_calendar_event",
+      action_id: "proposal-3",
+      needs_confirmation: true,
+      message: "…",
+      action_args: { title: "Elternabend", starts_time: "18:00:00" },
+      // The tool normalizes the time before previewing it.
+      starts_time: "18:00",
+    });
+
+    expect(merged.starts_time).toBe("18:00");
+  });
+
+  it("tolerates a missing or malformed action_args", () => {
+    expect(
+      mergeConfirmationProposal({ type: "confirmation_request", task_title: "X" }),
+    ).toEqual({ task_title: "X" });
+    expect(
+      mergeConfirmationProposal({ action_args: "nope", task_title: "X" }),
+    ).toEqual({ task_title: "X" });
   });
 });

@@ -9,7 +9,7 @@ import {
   type FactType,
 } from "@/lib/schemas/extraction";
 import { expandQuery } from "@/lib/ai/query-expansion";
-import { CHAT_MODEL } from "@/lib/ai/models";
+import { SEARCH_AUGMENTATION_MODEL } from "@/lib/ai/models";
 import {
   findMentionedMembers,
   isTaskQuery,
@@ -293,11 +293,11 @@ V2: <variante>
 HYDE: <hypothetischer antworttext>`;
 
     const response = await Promise.race([
-      client.chat.completions.create({
-        model: CHAT_MODEL,
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 300,
-        temperature: 0,
+      client.responses.create({
+        model: SEARCH_AUGMENTATION_MODEL,
+        input: prompt,
+        max_output_tokens: 300,
+        store: false,
       }),
       new Promise<null>((resolve) =>
         setTimeout(() => resolve(null), MULTI_QUERY_BUDGET_MS),
@@ -306,7 +306,7 @@ HYDE: <hypothetischer antworttext>`;
 
     if (!response) return [];
 
-    const text = response.choices[0]?.message?.content ?? "";
+    const text = response.output_text;
     const variants: string[] = [];
 
     for (const line of text.split("\n")) {

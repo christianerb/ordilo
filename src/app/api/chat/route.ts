@@ -10,6 +10,7 @@ import {
 import type { ToolContext } from "@/lib/ai/tools";
 import {
   chatRequestSchema,
+  mergeConfirmationProposal,
   type ChatErrorResponse,
 } from "@/lib/schemas/chat";
 import {
@@ -20,6 +21,7 @@ import {
   rowsToHistory,
   autoGenerateTitle,
   updateConversationTitle,
+  type PersistedChatAction,
 } from "@/lib/ai/chat-history";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
 import { recordProductEvent } from "@/lib/analytics/product-events";
@@ -272,6 +274,10 @@ export async function POST(request: Request): Promise<Response> {
         let fullAnswer = "";
         let answerCard = null;
         let streamError = false;
+        // Write proposals emitted this round — persisted with the message
+        // so a page reload restores the action cards instead of leaving
+        // answer text that points at cards that no longer exist.
+        const pendingActions: PersistedChatAction[] = [];
         // Latency/activity metrics, logged once per request so chat speed
         // is measurable instead of guessed (time-to-first-visible-word
         // from the user's perspective, tool calls per answer).
@@ -309,6 +315,23 @@ export async function POST(request: Request): Promise<Response> {
                 } else if (data.type === "card") {
                   answerCard = data.card;
                   firstVisibleAt ??= Date.now();
+                } else if (data.type === "confirmation_request") {
+                  if (
+                    typeof data.tool_name === "string" &&
+                    typeof data.action_id === "string" &&
+                    data.action_args &&
+                    typeof data.action_args === "object"
+                  ) {
+                    // Persist the SAME merged proposal the live card
+                    // renders (args + server-resolved preview fields like
+                    // task_title or existing_value) — a restored card must
+                    // disclose everything the live card did.
+                    pendingActions.push({
+                      action_id: data.action_id,
+                      tool_name: data.tool_name,
+                      action_args: mergeConfirmationProposal(data),
+                    });
+                  }
                 } else if (data.type === "tool" && data.state === "start") {
                   toolCallCount += 1;
                 } else if (data.type === "error") {
@@ -337,6 +360,7 @@ export async function POST(request: Request): Promise<Response> {
             fullAnswer,
             toolContext.sources,
             answerCard,
+            pendingActions,
           );
         }
 

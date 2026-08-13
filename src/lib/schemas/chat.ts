@@ -183,6 +183,15 @@ export const chatActionConfirmationSchema = z.object({
     .trim()
     .min(1, "family_id ist erforderlich.")
     .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
+  /**
+   * Stable, client-generated idempotency key for the proposal. A retried
+   * confirmation reuses it, so the server executes the write at most once.
+   */
+  action_id: z
+    .string()
+    .trim()
+    .min(1, "action_id ist erforderlich.")
+    .max(120, "action_id ist zu lang."),
   tool_name: z.enum(CHAT_ACTION_TOOL_NAMES),
   args: z.record(z.string(), z.unknown()),
 });
@@ -190,6 +199,36 @@ export const chatActionConfirmationSchema = z.object({
 export type ChatActionConfirmationInput = z.infer<
   typeof chatActionConfirmationSchema
 >;
+
+const CONFIRMATION_EVENT_META_KEYS = new Set([
+  "type",
+  "tool_name",
+  "action_args",
+  "action_id",
+  "needs_confirmation",
+  "message",
+]);
+
+/**
+ * Combines raw proposed arguments and server-resolved display fields for an
+ * action card. This is shared by live streaming and restored messages.
+ */
+export function mergeConfirmationProposal(
+  event: Record<string, unknown>,
+): Record<string, unknown> {
+  const base =
+    event.action_args &&
+    typeof event.action_args === "object" &&
+    !Array.isArray(event.action_args)
+      ? (event.action_args as Record<string, unknown>)
+      : {};
+  const preview = Object.fromEntries(
+    Object.entries(event).filter(
+      ([key]) => !CONFIRMATION_EVENT_META_KEYS.has(key),
+    ),
+  );
+  return { ...base, ...preview };
+}
 
 // ---------------------------------------------------------------------------
 // Chat feedback schema (POST /api/chat/feedback)

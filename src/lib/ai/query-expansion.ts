@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { CHAT_MODEL } from "@/lib/ai/models";
+import { SEARCH_AUGMENTATION_MODEL } from "@/lib/ai/models";
 
 /**
  * LLM-based query expansion.
@@ -68,14 +68,14 @@ Beispiele:
 
 Antworte NUR mit den Begriffen, einer pro Zeile. Keine Erklaerung.`;
 
-    const response = await client.chat.completions.create({
-      model: CHAT_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 100,
-      temperature: 0,
+    const response = await client.responses.create({
+      model: SEARCH_AUGMENTATION_MODEL,
+      input: prompt,
+      max_output_tokens: 100,
+      store: false,
     });
 
-    const text = response.choices[0]?.message?.content ?? "";
+    const text = response.output_text;
 
     // Parse terms (one per line)
     const expansions: string[] = [];

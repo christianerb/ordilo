@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   checkRateLimit: vi.fn(),
   recordUsage: vi.fn(),
   membershipMaybeSingle: vi.fn(),
+  sentryMessage: vi.fn(),
+  sentryException: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/require-user", () => ({
@@ -33,6 +35,11 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/ai/rate-limit", () => ({
   checkRateLimit: (...args: unknown[]) => mocks.checkRateLimit(...args),
   recordUsage: (...args: unknown[]) => mocks.recordUsage(...args),
+}));
+
+vi.mock("@sentry/nextjs", () => ({
+  captureMessage: (...args: unknown[]) => mocks.sentryMessage(...args),
+  captureException: (...args: unknown[]) => mocks.sentryException(...args),
 }));
 
 import { POST } from "@/app/api/realtime/session/route";
@@ -157,5 +164,60 @@ describe("POST /api/realtime/session", () => {
 
     expect(response.status).toBe(502);
     expect(mocks.recordUsage).not.toHaveBeenCalled();
+  });
+
+  // An installed PWA may still be running a JS bundle from its last cold
+  // start, so the sentence the user reports cannot be trusted to identify
+  // which branch fired. Every refusal has to be recognisable server-side.
+  it.each([
+    [
+      "UNAUTHENTICATED",
+      () =>
+        mocks.requireUser.mockResolvedValue({
+          user: null,
+          status: 401,
+          json: { error: "Nicht authentifiziert.", code: "UNAUTHENTICATED" },
+        }),
+    ],
+    [
+      "NO_FAMILY",
+      () => mocks.membershipMaybeSingle.mockResolvedValue({ data: null, error: null }),
+    ],
+    [
+      "RATE_LIMIT_EXCEEDED",
+      () =>
+        mocks.checkRateLimit.mockResolvedValue({
+          allowed: false,
+          used: 50,
+          remaining: 0,
+        }),
+    ],
+    ["REALTIME_UNAVAILABLE", () => vi.stubEnv("OPENAI_API_KEY", "")],
+  ])("tags a %s refusal so it is identifiable server-side", async (code, arrange) => {
+    arrange();
+
+    await POST();
+
+    expect(mocks.sentryMessage).toHaveBeenCalledWith(
+      expect.stringContaining(code),
+      expect.objectContaining({
+        tags: expect.objectContaining({ realtime_refusal: code }),
+      }),
+    );
+  });
+
+  it("tags the OpenAI refusal with the same key", async () => {
+    mockFetch.mockResolvedValue(new Response("nope", { status: 500 }));
+
+    await POST();
+
+    expect(mocks.sentryException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: expect.objectContaining({
+          realtime_refusal: "REALTIME_SESSION_FAILED",
+        }),
+      }),
+    );
   });
 });

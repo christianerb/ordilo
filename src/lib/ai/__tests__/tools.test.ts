@@ -861,6 +861,38 @@ describe("save_document_fact", () => {
     expect(ctx.updated).toHaveLength(0);
   });
 
+  it("discloses the overwrite scope in the preview when a fact exists", async () => {
+    const ctx = makeSaveFactCtx({
+      doc: { id: "doc-1", title: "Rechnung Waschmaschine" },
+      existingFacts: [{ id: "fact-1", label: "Seriennummer", value: "WM-4B2" }],
+    });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.needs_confirmation).toBe(true);
+    // The action card renders these to show the correction, not just an add.
+    expect(parsed.fact_type).toBe("serial_number");
+    expect(parsed.fact_type_label).toBe("Seriennummer");
+    expect(parsed.existing_value).toBe("WM-4B2");
+    expect(parsed.value).toBe("WM-482");
+  });
+
+  it("reports existing_value null in the preview for a brand-new fact", async () => {
+    const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
+    const result = await executeTool(
+      "save_document_fact",
+      { document_id: "doc-1", fact_type: "iban", value: "DE12 3456" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.existing_value).toBeNull();
+    expect(parsed.fact_type_label).toBe("IBAN");
+  });
+
   it("adds a new fact when none of the same type exists", async () => {
     const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
     const result = await executeTool(

@@ -28,6 +28,7 @@ import {
   deriveSuggestionChips,
 } from "@/lib/home-briefing";
 import { TodayHero } from "./today-hero";
+import { FirstSuccessGuide } from "@/components/ordilo/first-success-guide";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +42,7 @@ export interface HomeMember {
 }
 
 export interface HomeClientProps {
+  familyId: string;
   greeting: string;
   familyName: string;
   members: HomeMember[];
@@ -50,6 +52,8 @@ export interface HomeClientProps {
   unconfirmedDocCount: number;
   /** Total non-failed documents — the "… sicher im Familienbuch" line. */
   journalDocCount: number;
+  /** Exact confirmed-document count, used for one-time first-success help. */
+  confirmedDocumentCount: number;
   upcomingTasks: HomeTask[];
   recentDocuments: HomeDocument[];
   /** Signed thumbnail URLs keyed by document id (image documents only). */
@@ -69,12 +73,14 @@ const HOME_JOURNAL_LIMIT = 3;
 // ---------------------------------------------------------------------------
 
 export function HomeClient({
+  familyId,
   greeting,
   familyName,
   members,
   analyzedDocuments,
   unconfirmedDocCount,
   journalDocCount,
+  confirmedDocumentCount,
   upcomingTasks,
   recentDocuments,
   thumbUrls,
@@ -241,6 +247,10 @@ export function HomeClient({
             key={suggestionChips.join("\n")}
             chips={suggestionChips}
           />
+
+          {confirmedDocumentCount === 1 ? (
+            <FirstSuccessGuide familyId={familyId} onScan={openWizard} />
+          ) : null}
 
           {/* One page, one frame: header, hero band, then hairline-divided
               groups. The frame carries the single shadow; nothing inside

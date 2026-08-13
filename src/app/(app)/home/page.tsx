@@ -143,6 +143,7 @@ export default async function HomePage({
     { data: analyzedRows },
     { count: unconfirmedDocCount },
     { count: journalDocCount },
+    { count: confirmedDocumentCount },
     { data: taskRows },
     { data: recentRows },
   ] = await Promise.all([
@@ -176,6 +177,13 @@ export default async function HomePage({
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
       .neq("status", "failed"),
+    // The first-success nudge is deliberately based on confirmed documents
+    // only: an uploaded or pending scan is not a lasting family result yet.
+    supabase
+      .from("documents")
+      .select("id", { count: "exact", head: true })
+      .eq("family_id", family.id)
+      .eq("status", "confirmed"),
     // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
     //    "Fristen"). We fetch all confirmed open tasks and let the client
     //    component filter them into the two sections.
@@ -281,12 +289,14 @@ export default async function HomePage({
 
   return (
     <HomeClient
+      familyId={family.id}
       greeting={getGreeting()}
       familyName={family.name}
       members={members}
       analyzedDocuments={analyzedDocuments}
       unconfirmedDocCount={unconfirmedDocCount ?? 0}
       journalDocCount={journalDocCount ?? 0}
+      confirmedDocumentCount={confirmedDocumentCount ?? 0}
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
       thumbUrls={thumbUrls}

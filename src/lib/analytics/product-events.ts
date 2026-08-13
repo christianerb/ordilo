@@ -13,11 +13,11 @@ export type ProductEventName =
   | "onboarding_scan_started"
   | "document_upload_succeeded"
   | "document_confirmed"
-  | "search_completed"
+  | "calendar_event_created"
   | "chat_question_sent"
+  | "search_completed"
   | "task_created"
-  | "task_completed"
-  | "calendar_event_created";
+  | "task_completed";
 
 export async function recordProductEvent(
   client: SupabaseClient<Database>,
