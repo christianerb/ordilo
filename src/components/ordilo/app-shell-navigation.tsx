@@ -39,9 +39,12 @@ import {
 export function Topbar({
   showNav,
   pathname,
+  profileName,
 }: {
   showNav: boolean;
   pathname: string;
+  /** Small personal anchor on mobile, matching the app's family feel. */
+  profileName?: string;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const currentTab = useSearchParams().get("tab");
@@ -76,6 +79,19 @@ export function Topbar({
           >
             <OrdiloWordmark mascotSize={24} />
           </Link>
+          {profileName && (
+            <Link
+              href="/familie/einstellungen"
+              aria-label={`Profil von ${profileName}`}
+              className="relative ml-auto flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-sm font-semibold text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {profileName.charAt(0).toUpperCase()}
+              <span
+                className="absolute -right-0.5 top-0.5 size-2 rounded-full border-2 border-[var(--wash-sage-soft)] bg-[var(--apricot)]"
+                aria-hidden="true"
+              />
+            </Link>
+          )}
         </div>
       </div>
 
@@ -251,20 +267,25 @@ function SuggestionChipsRow({
   const chips = useSuggestionChips();
   if (chips.length === 0) return null;
   return (
-    <div
-      data-testid="suggestion-chips"
-      className="flex gap-2 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-    >
-      {chips.map((chip) => (
-        <button
-          key={chip}
-          type="button"
-          onClick={() => onSelect(chip)}
-          className="shrink-0 rounded-full bg-[var(--sand-warm)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--mist-light)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          {chip}
-        </button>
-      ))}
+    <div className="pb-2">
+      <p className="mb-1.5 text-xs font-medium text-[var(--mist-dark)]">
+        Häufig gefragt
+      </p>
+      <div
+        data-testid="suggestion-chips"
+        className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {chips.map((chip) => (
+          <button
+            key={chip}
+            type="button"
+            onClick={() => onSelect(chip)}
+            className="shrink-0 rounded-full border border-border/70 bg-[var(--surface-box)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

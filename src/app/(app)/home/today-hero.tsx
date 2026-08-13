@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { CalendarClock, Check, type LucideIcon } from "lucide-react";
+import { CalendarClock, Check, ChevronRight, type LucideIcon } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { cn } from "@/lib/utils";
 import type { HomeHeroState } from "@/lib/home-briefing";
@@ -66,7 +66,7 @@ export function TodayHero({
       <section
         data-testid="today-hero"
         className={cn(
-          "flex items-center gap-4 rounded-ordilo-md bg-[var(--wash-sage)] p-4",
+          "flex items-center gap-3 rounded-ordilo-sm bg-[var(--wash-sage)] px-3 py-3.5",
           !flat && "shadow-card",
         )}
       >
@@ -95,12 +95,12 @@ export function TodayHero({
     <section
       data-testid="today-hero"
       className={cn(
-        "rounded-ordilo-md p-3",
+        "rounded-ordilo-sm px-3 py-3.5",
         isOverdue
-          ? "bg-[var(--apricot)]/[0.06]"
+          ? "bg-[var(--wash-apricot)]"
           : urgency === "today"
-            ? "bg-[var(--petrol)]/[0.06]"
-            : "bg-card",
+            ? "bg-[var(--wash-blue)]"
+            : "bg-[var(--sand-light)]",
         !flat &&
           (isOverdue
             ? "border border-[var(--apricot)]/30 shadow-card"
@@ -109,10 +109,8 @@ export function TodayHero({
               : "border border-border shadow-card"),
       )}
     >
-      {/* One horizontal row, same vocabulary as the task card: circular
-          checkbox on the left, title + meta in the center. Turns the
-          former four stacked lines (label, title, date, buttons) into
-          two quiet ones. */}
+      {/* One horizontal row, modeled on a journal margin note: date icon,
+          task, then one compact way into the details. */}
       <div className="flex items-center gap-2.5">
         <button
           type="button"
@@ -122,14 +120,16 @@ export function TodayHero({
           onClick={handleComplete}
           disabled={completing !== null}
           data-testid="today-hero-done"
-          className="flex size-11 shrink-0 items-center justify-center rounded-full transition-transform press-scale hover:[&>span]:border-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[var(--mist-light)] bg-[var(--surface-box)] transition-transform press-scale hover:border-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <span
             className={cn(
-              "flex size-6 items-center justify-center rounded-full border-2 transition-colors",
+              "flex size-7 items-center justify-center rounded-full transition-colors",
               completing
-                ? "border-[var(--petrol)] bg-[var(--petrol)]"
-                : "border-[var(--mist)] bg-transparent",
+                ? "bg-[var(--petrol)]"
+                : isOverdue
+                  ? "text-[var(--apricot-text)]"
+                  : "text-[var(--petrol)]",
             )}
             aria-hidden="true"
           >
@@ -138,6 +138,9 @@ export function TodayHero({
                 className="size-3.5 animate-check-pop text-[var(--warm-white)]"
                 strokeWidth={3}
               />
+            )}
+            {!completing && (
+              <CalendarClock className="size-5" strokeWidth={1.8} />
             )}
           </span>
         </button>
@@ -151,7 +154,7 @@ export function TodayHero({
           >
             {task.title}
           </p>
-          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+          <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
             <HeroLabel
               icon={completing ? Check : CalendarClock}
               text={
@@ -173,23 +176,15 @@ export function TodayHero({
                 </span>
               </>
             )}
-            {task.document_title && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="max-w-40 truncate">
-                  {task.document_title}
-                </span>
-              </>
-            )}
-            <span aria-hidden="true">·</span>
-            <Link
-              href={`/aufgaben?task=${task.id}`}
-              className="-my-2 inline-flex items-center rounded-ordilo-sm px-1 py-2 font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              Details
-            </Link>
           </div>
         </div>
+        <Link
+          href={`/aufgaben?task=${task.id}`}
+          className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-[var(--surface-box)] px-2.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          Details
+          <ChevronRight className="size-3.5" aria-hidden="true" />
+        </Link>
       </div>
     </section>
   );
