@@ -4,6 +4,10 @@ import { act, render, screen, fireEvent } from "@testing-library/react";
 const mockStart = vi.fn();
 const mockStop = vi.fn();
 const mockCancel = vi.fn();
+const mockSubscribeLevels = vi.fn(() => () => {});
+const mockLevels = new Array(24).fill(0);
+const mockGetLevels = vi.fn(() => mockLevels);
+let mockVoiceStatus = "idle";
 let voiceCallbacks: {
   onTranscript: (text: string) => void;
   onError: (message: string) => void;
@@ -40,10 +44,12 @@ vi.mock("@/lib/realtime/use-realtime-transcription", () => ({
     (callbacks: typeof voiceCallbacks) => {
       voiceCallbacks = callbacks;
       return {
-        status: "idle",
+        status: mockVoiceStatus,
         start: mockStart,
         stop: mockStop,
         cancel: mockCancel,
+        subscribeLevels: mockSubscribeLevels,
+        getLevels: mockGetLevels,
       };
     },
   ),
@@ -55,6 +61,7 @@ describe("AISearchBar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     MockSpeechRecognition.instance = null;
+    mockVoiceStatus = "idle";
   });
 
   afterEach(() => {
@@ -66,11 +73,11 @@ describe("AISearchBar", () => {
     expect(screen.getByRole("textbox")).toBeDefined();
   });
 
-  it("renders the AI sparkle icon", () => {
+  it("renders the Ordilo elephant mark", () => {
     const { container } = render(<AISearchBar onSubmit={vi.fn()} />);
-    // The sparkle icon is an SVG element inside the component.
-    const svg = container.querySelector("svg");
-    expect(svg).not.toBeNull();
+    expect(
+      container.querySelector('[data-part="elephant-silhouette"]'),
+    ).not.toBeNull();
   });
 
   it("renders a send button", () => {
@@ -94,6 +101,16 @@ describe("AISearchBar", () => {
     fireEvent.change(input, { target: { value: "Mehrzeilige\nEingabe" } });
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("calls onSubmit when Ctrl+Enter is pressed", () => {
+    const onSubmit = vi.fn();
+    render(<AISearchBar onSubmit={onSubmit} />);
+    const input = screen.getByRole("textbox") as HTMLTextAreaElement;
+    fireEvent.change(input, { target: { value: "Finde die letzte Rechnung" } });
+    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+
+    expect(onSubmit).toHaveBeenCalledWith("Finde die letzte Rechnung");
   });
 
   it("calls onSubmit when the send button is clicked", () => {
@@ -182,6 +199,7 @@ describe("AISearchBar", () => {
     expect(recognition).not.toBeNull();
     expect(recognition?.start).toHaveBeenCalledOnce();
     expect(mockStart).not.toHaveBeenCalled();
+    expect(screen.getByTestId("voice-level-meter").children).toHaveLength(12);
 
     act(() => {
       recognition?.emitFinal("Zeig mir Rechnungen von gestern");
@@ -201,6 +219,13 @@ describe("AISearchBar", () => {
 
     expect(mockStart).toHaveBeenCalledOnce();
     expect(MockSpeechRecognition.instance).toBeNull();
+  });
+
+  it("renders the Realtime waveform while listening", () => {
+    mockVoiceStatus = "connecting";
+    render(<AISearchBar onSubmit={vi.fn()} />);
+
+    expect(screen.getByTestId("voice-level-meter").children).toHaveLength(24);
   });
 
   it("falls back to Realtime when native speech recognition fails", () => {
