@@ -316,7 +316,6 @@ export function useRealtimeTranscription({
 
     // 1. Ephemeral client secret (auth-gated, server mints it).
     let clientSecret: string;
-    let model: string;
     try {
       const sessionResponse = await fetch("/api/realtime/session", {
         method: "POST",
@@ -340,7 +339,6 @@ export function useRealtimeTranscription({
         return;
       }
       clientSecret = session.client_secret;
-      model = session.model;
     } catch {
       // Network-level failure — the request never reached the route, so
       // there is no body to quote. Deliberately worded differently from
@@ -408,8 +406,11 @@ export function useRealtimeTranscription({
     try {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
+      // GA Realtime WebRTC endpoint: the model is already bound to the
+      // ephemeral client secret, so the SDP POST goes to /v1/realtime/calls
+      // (the beta-era /v1/realtime?model=… query-param path is deprecated).
       const sdpResponse = await fetch(
-        `https://api.openai.com/v1/realtime?model=${encodeURIComponent(model)}`,
+        "https://api.openai.com/v1/realtime/calls",
         {
           method: "POST",
           body: offer.sdp,
