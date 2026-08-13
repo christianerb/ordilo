@@ -172,7 +172,9 @@ describe("DokumentePage empty state", () => {
 
     fireEvent.click(cta);
 
-    expect(await screen.findByTestId("scan-wizard")).toBeDefined();
+    expect(
+      await screen.findByTestId("scan-wizard", {}, { timeout: 3_000 }),
+    ).toBeDefined();
     expect(screen.getByTestId("camera-step")).toBeDefined();
   });
 

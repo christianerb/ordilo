@@ -35,7 +35,6 @@ import {
   isTabActive,
   NAV_TABS,
 } from "./app-shell-shared";
-import { SidebarCollections } from "./app-shell-sidebar";
 
 export function Topbar({
   showNav,
@@ -173,8 +172,6 @@ export function Topbar({
                 <span className="flex-1">Chat-Verlauf</span>
                 <ChevronRight className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
               </Link>
-              <div className="my-2 border-t border-border/70" />
-              <SidebarCollections activePathname={pathname} collapsed={false} />
             </nav>
           )}
 

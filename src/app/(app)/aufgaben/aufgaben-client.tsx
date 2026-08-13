@@ -215,18 +215,27 @@ export function AufgabenClient({
   members,
   familyId,
   initialError = null,
+  openTaskId = null,
 }: {
   initialTasks: TaskCardData[];
   members: AssigneeOption[];
   familyId: string | null;
   initialError?: string | null;
+  /** Deep link (/aufgaben?task=<id>): open this task's detail sheet once. */
+  openTaskId?: string | null;
 }) {
   const router = useRouter();
   const { openWizard } = useScanActions();
   const [tasks, setTasks] = useState<TaskCardData[]>(initialTasks);
   const [error] = useState<string | null>(initialError);
-  const [selectedTask, setSelectedTask] = useState<TaskCardData | null>(null);
-  const [sheetOpen, setSheetOpen] = useState(false);
+  // Deep link: /aufgaben?task=<id> preselects that task and opens its
+  // detail sheet right away (the home hero's "Details" link targets this).
+  const [selectedTask, setSelectedTask] = useState<TaskCardData | null>(
+    () => initialTasks.find((t) => t.id === openTaskId) ?? null,
+  );
+  const [sheetOpen, setSheetOpen] = useState(() =>
+    initialTasks.some((t) => t.id === openTaskId),
+  );
   const [createSheetOpen, setCreateSheetOpen] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
@@ -381,17 +390,15 @@ export function AufgabenClient({
     [reschedule],
   );
 
-  /** Restore a dismissed task to its exact prior schedule and status. */
+  /** Restore a dismissed task to its exact prior schedule. */
   const handleUndoDismiss = useCallback(
     async (task: TaskCardData) => {
       const dismissed: TaskDropUpdates = {
         status: "dismissed",
         due_date: task.due_date,
       };
-      // The captured task carries the status it had before the dismiss —
-      // a task dismissed from "Erledigt" goes back to done, not to open.
       const restored: TaskDropUpdates = {
-        status: task.status === "dismissed" ? "open" : task.status,
+        status: "open",
         due_date: task.due_date,
       };
       const ok = await reschedule(task.id, restored, dismissed);

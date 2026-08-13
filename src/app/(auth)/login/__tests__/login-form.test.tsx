@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { LoginForm } from "../login-form";
 
-const { signInWithOtp, verifyOtp, recordProductEvent } = vi.hoisted(() => ({
+const {
+  signInWithOtp,
+  verifyOtp,
+  recordProductEvent,
+  getPostAuthDestination,
+} = vi.hoisted(() => ({
   signInWithOtp: vi.fn(),
   verifyOtp: vi.fn(),
   recordProductEvent: vi.fn(),
+  getPostAuthDestination: vi.fn(),
 }));
 
 vi.mock("@/lib/supabase/client", () => ({
@@ -16,6 +22,10 @@ vi.mock("@/lib/supabase/client", () => ({
 
 vi.mock("@/lib/analytics/product-events", () => ({
   recordProductEvent,
+}));
+
+vi.mock("@/lib/auth/routing", () => ({
+  getPostAuthDestination,
 }));
 
 describe("LoginForm", () => {
@@ -29,6 +39,10 @@ describe("LoginForm", () => {
     signInWithOtp.mockResolvedValue({ error: null });
     verifyOtp.mockResolvedValue({ error: null });
     recordProductEvent.mockResolvedValue(undefined);
+    getPostAuthDestination.mockResolvedValue({
+      destination: "/onboarding",
+      isFirstTime: true,
+    });
   });
 
   it("sends a code with the same-site auth callback", async () => {
@@ -131,6 +145,36 @@ describe("LoginForm", () => {
         },
       );
     });
+  });
+
+  it("does not record onboarding start for a returning family", async () => {
+    verifyOtp.mockResolvedValue({
+      data: { user: { id: "user-1" } },
+      error: null,
+    });
+    getPostAuthDestination.mockResolvedValue({
+      destination: "/home",
+      isFirstTime: false,
+    });
+    render(<LoginForm />);
+
+    fireEvent.change(screen.getByLabelText("E-Mail-Adresse"), {
+      target: { value: "familie@example.com" },
+    });
+    fireEvent.submit(
+      screen.getByRole("button", { name: /loslegen/i }).closest("form")!,
+    );
+    await screen.findByLabelText("Ziffer 1 des Anmelde-Codes");
+
+    fireEvent.change(screen.getByLabelText("Ziffer 1 des Anmelde-Codes"), {
+      target: { value: "123456" },
+    });
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Anmelden" }).closest("form")!,
+    );
+
+    await waitFor(() => expect(verifyOtp).toHaveBeenCalled());
+    expect(recordProductEvent).not.toHaveBeenCalled();
   });
 
   it("opens webmail in the same context on mobile so the mail app can take over", async () => {

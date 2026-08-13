@@ -1,19 +1,17 @@
 /**
- * Home briefing and "Heute" hero logic — pure, testable functions that
- * turn the data the home page already loads into two things:
+ * "Heute" hero logic — pure, testable functions that turn the data the
+ * home page already loads into the hero state for the big "Heute" card:
+ * the single most important thing right now (overdue task > due today >
+ * due tomorrow > urgent insight > calm). Deterministic by design: no
+ * LLM, no hallucination risk, same input → same hero.
  *
- *   1. A one-sentence German daily briefing shown under the greeting
- *      ("Heute ist 'Kita-Ausflug' fällig — außerdem warten 2 Dokumente
- *      auf dein OK."). Deterministic by design: no LLM, no hallucination
- *      risk, same input → same sentence.
- *   2. The hero state for the big "Heute" card: the single most
- *      important thing right now (overdue task > due today > due
- *      tomorrow > urgent insight > calm).
+ * (The one-sentence daily briefing under the greeting was cut in the
+ * distill pass: it repeated exactly what the hero card and the journal
+ * header line already show.)
  *
  * All user-facing strings are German (Hauptschul-Niveau, warm, direct).
  */
 
-import type { HomeInsight } from "@/lib/ai/insights";
 import { toLocalDateStr, type HomeTask } from "@/lib/home-utils";
 
 // ---------------------------------------------------------------------------
@@ -35,7 +33,6 @@ export interface BriefingFacts {
 /** The state the "Heute" hero card renders. */
 export type HomeHeroState =
   | { kind: "task"; urgency: "overdue" | "today" | "tomorrow"; task: HomeTask }
-  | { kind: "insight"; insight: HomeInsight }
   | { kind: "calm" };
 
 // ---------------------------------------------------------------------------
@@ -80,65 +77,6 @@ export function deriveBriefingFacts(
 }
 
 // ---------------------------------------------------------------------------
-// Briefing sentence
-// ---------------------------------------------------------------------------
-
-/** German plural helper for the document clause. */
-function documentClause(count: number): string {
-  return count === 1
-    ? "1 Dokument wartet auf dein OK"
-    : `${count} Dokumente warten auf dein OK`;
-}
-
-/**
- * Compose the one-sentence daily briefing.
- *
- * Priority: overdue > due today > due tomorrow > unconfirmed documents >
- * calm. A task-based main clause picks up the document clause as a
- * secondary sentence when documents are also waiting.
- *
- * @param facts - The derived briefing facts.
- * @returns One or two short German sentences.
- */
-export function composeBriefing(facts: BriefingFacts): string {
-  const { overdueTasks, dueTodayTasks, dueTomorrowTasks, unconfirmedDocCount } =
-    facts;
-
-  // Verb-second word order after "Außerdem" ("Außerdem warten 2 Dokumente
-  // auf dein OK.") — documentClause keeps subject-first order for the
-  // standalone, docs-first sentence below.
-  const docsSuffix =
-    unconfirmedDocCount > 0
-      ? unconfirmedDocCount === 1
-        ? " Außerdem wartet 1 Dokument auf dein OK."
-        : ` Außerdem warten ${unconfirmedDocCount} Dokumente auf dein OK.`
-      : "";
-
-  if (overdueTasks.length === 1) {
-    return `„${overdueTasks[0].title}" ist überfällig — am besten heute erledigen.${docsSuffix}`;
-  }
-  if (overdueTasks.length > 1) {
-    return `${overdueTasks.length} Aufgaben sind überfällig — „${overdueTasks[0].title}" zuerst.${docsSuffix}`;
-  }
-  if (dueTodayTasks.length === 1) {
-    return `Heute ist „${dueTodayTasks[0].title}" fällig.${docsSuffix}`;
-  }
-  if (dueTodayTasks.length > 1) {
-    return `Heute sind ${dueTodayTasks.length} Aufgaben fällig — „${dueTodayTasks[0].title}" zuerst.${docsSuffix}`;
-  }
-  if (dueTomorrowTasks.length === 1) {
-    return `Morgen ist „${dueTomorrowTasks[0].title}" fällig — heute ist noch alles ruhig.${docsSuffix}`;
-  }
-  if (dueTomorrowTasks.length > 1) {
-    return `Morgen sind ${dueTomorrowTasks.length} Aufgaben fällig — heute ist noch alles ruhig.${docsSuffix}`;
-  }
-  if (unconfirmedDocCount > 0) {
-    return `${documentClause(unconfirmedDocCount)} — sonst ist alles ruhig.`;
-  }
-  return "Alles erledigt — die Woche sieht ruhig aus.";
-}
-
-// ---------------------------------------------------------------------------
 // Hero selection
 // ---------------------------------------------------------------------------
 
@@ -146,16 +84,14 @@ export function composeBriefing(facts: BriefingFacts): string {
  * Select the hero state for the "Heute" card.
  *
  * Priority chain: overdue task > task due today > task due tomorrow >
- * first urgent insight > calm. Tasks due later than tomorrow stay in the
- * "Als Nächstes" list — the hero only speaks up when something is close.
+ * calm. Tasks due later than tomorrow stay in the "Als Nächstes" list —
+ * the hero only speaks up when something is close. (The insight variant
+ * was cut together with the "Hinweise" section: the count-based insights
+ * were trivia, and the deadline ones duplicated this very hero.)
  *
  * @param facts - The derived briefing facts.
- * @param insights - The proactive insights (already urgency-sorted).
  */
-export function selectHomeHero(
-  facts: BriefingFacts,
-  insights: HomeInsight[],
-): HomeHeroState {
+export function selectHomeHero(facts: BriefingFacts): HomeHeroState {
   if (facts.overdueTasks.length > 0) {
     return { kind: "task", urgency: "overdue", task: facts.overdueTasks[0] };
   }
@@ -164,10 +100,6 @@ export function selectHomeHero(
   }
   if (facts.dueTomorrowTasks.length > 0) {
     return { kind: "task", urgency: "tomorrow", task: facts.dueTomorrowTasks[0] };
-  }
-  const urgent = insights.find((i) => i.tone === "urgent");
-  if (urgent) {
-    return { kind: "insight", insight: urgent };
   }
   return { kind: "calm" };
 }

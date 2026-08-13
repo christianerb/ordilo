@@ -300,7 +300,14 @@ async function loadInitialData(): Promise<{
   };
 }
 
-export default async function AufgabenPage() {
+export default async function AufgabenPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ task?: string }>;
+}) {
+  // Deep link from the /home hero: /aufgaben?task=<id> opens that task's
+  // detail sheet directly instead of just showing the board.
+  const { task: openTaskId } = await searchParams;
   const {
     tasks: initialTasks,
     members,
@@ -327,6 +334,7 @@ export default async function AufgabenPage() {
             members={members}
             familyId={familyId}
             initialError={error}
+            openTaskId={openTaskId}
           />
         }
         calendar={

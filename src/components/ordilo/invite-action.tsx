@@ -1,18 +1,25 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { Check, Copy, Loader2, Share2, UserPlus } from "lucide-react";
+import { Check, Copy, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createFamilyInvite } from "@/app/(app)/familie/actions";
 
 /**
- * Invite card — lets the family owner create and share an invite link.
+ * Invite action — a compact button inside the family banner that creates
+ * and shares an invite link. Replaces the former standalone invite card,
+ * which took up a full screen section for a single action.
  *
  * One tap creates the link; sharing uses the system share sheet where
  * available (mobile) and falls back to copy-to-clipboard. The link is
  * valid for 14 days and can be used by several people.
+ *
+ * The component renders a fragment: the button sits in the banner's
+ * header row, and once a link exists, the copy panel wraps below the row
+ * (the banner uses flex-wrap) with an internal divider — one grouped
+ * surface instead of two stacked cards.
  */
-export function InviteCard({ className }: { className?: string }) {
+export function InviteAction() {
   const [creating, setCreating] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -59,48 +66,37 @@ export function InviteCard({ className }: { className?: string }) {
   }, [inviteUrl]);
 
   return (
-    <div
-      data-testid="invite-card"
-      className={`rounded-ordilo-sm border border-border bg-card p-4 ${className ?? ""}`}
-    >
-      <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--sand)]/80">
-          <UserPlus className="size-4 text-[var(--petrol)]" aria-hidden="true" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">
-            Familie einladen
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Teile einen Link, damit dein Partner oder deine Partnerin alle
-            Dokumente mitnutzen kann.
-          </p>
-
-          {!inviteUrl && (
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleCreate}
-              disabled={creating}
-              className="mt-3 rounded-ordilo-sm"
-              data-testid="create-invite-button"
-            >
-              {creating ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  Wird erstellt …
-                </>
-              ) : (
-                <>
-                  <Share2 className="size-4" aria-hidden="true" />
-                  Einladungslink erstellen
-                </>
-              )}
-            </Button>
+    <>
+      {!inviteUrl && (
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleCreate}
+          disabled={creating}
+          className="shrink-0 rounded-ordilo-sm"
+          data-testid="create-invite-button"
+        >
+          {creating ? (
+            <>
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Wird erstellt …
+            </>
+          ) : (
+            <>
+              <UserPlus className="size-4" aria-hidden="true" />
+              Einladen
+            </>
           )}
+        </Button>
+      )}
 
+      {(inviteUrl || error) && (
+        <div
+          className="w-full space-y-2 border-t border-border/60 pt-3 animate-card-in"
+          data-testid="invite-link-panel"
+        >
           {inviteUrl && (
-            <div className="mt-3 space-y-2 animate-card-in">
+            <>
               <div className="flex items-center gap-2">
                 <input
                   type="text"
@@ -109,7 +105,7 @@ export function InviteCard({ className }: { className?: string }) {
                   onFocus={(e) => e.target.select()}
                   aria-label="Einladungslink"
                   data-testid="invite-link-input"
-                  className="min-w-0 flex-1 truncate rounded-ordilo-sm border border-border bg-[var(--sand-light)] px-2.5 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="min-w-0 flex-1 truncate rounded-ordilo-sm border border-border bg-[var(--warm-white)]/70 px-2.5 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 />
                 <Button
                   type="button"
@@ -136,16 +132,16 @@ export function InviteCard({ className }: { className?: string }) {
                 Der Link ist 14 Tage gültig und kann von mehreren Personen
                 genutzt werden.
               </p>
-            </div>
+            </>
           )}
 
           {error && (
-            <p className="mt-2 text-sm text-destructive" role="alert">
+            <p className="text-sm text-destructive" role="alert">
               {error}
             </p>
           )}
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

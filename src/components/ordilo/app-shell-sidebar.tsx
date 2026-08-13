@@ -1,21 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   ChevronsLeft,
   ChevronsRight,
   ChevronsUpDown,
   History,
   LogOut,
-  Plus,
   Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { logout } from "@/app/(app)/actions";
-import type { CollectionFormValues } from "@/components/ordilo/collection-form";
-import { useCollections } from "@/lib/collections/collections-context";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import {
@@ -24,15 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { getCollectionColor, getCollectionIcon } from "@/lib/schemas/collections";
 import { cn } from "@/lib/utils";
 import {
   DESKTOP_SHELL_SURFACE_STYLE,
@@ -46,159 +34,6 @@ import {
   type TimeOfDay,
   TIME_REFRESH_INTERVAL_MS,
 } from "./app-shell-shared";
-
-const CollectionForm = dynamic(() =>
-  import("@/components/ordilo/collection-form").then((m) => m.CollectionForm),
-);
-
-export function SidebarCollections({
-  activePathname,
-  collapsed,
-}: {
-  activePathname: string;
-  collapsed: boolean;
-}) {
-  const router = useRouter();
-  const { collections: list, addCollection } = useCollections();
-  const [addOpen, setAddOpen] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [serverError, setServerError] = useState<string | null>(null);
-
-  const handleAddSubmit = async (values: CollectionFormValues) => {
-    setServerError(null);
-    setIsSubmitting(true);
-    const result = await addCollection(values);
-    setIsSubmitting(false);
-
-    if (!result.success) {
-      setServerError(result.error);
-      return;
-    }
-
-    setAddOpen(false);
-    router.refresh();
-  };
-
-  return (
-    <div>
-      {collapsed ? (
-        <div className="mx-3 border-t border-border/60" aria-hidden="true" />
-      ) : (
-        <p className="px-3 text-xs font-medium text-muted-foreground">
-          Sammlungen
-        </p>
-      )}
-      <ul className="mt-1 space-y-px">
-        {list.map((collection) => {
-          const href = `/sammlungen/${collection.id}`;
-          const active =
-            activePathname === href || activePathname.startsWith(`${href}/`);
-          const Icon = getCollectionIcon(collection.icon);
-          const colorOption = getCollectionColor(collection.color);
-          return (
-            <li key={collection.id}>
-              <Link
-                href={href}
-                aria-current={active ? "page" : undefined}
-                title={collapsed ? collection.name : undefined}
-                className={cn(
-                  "flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 transition-[background-color,box-shadow,color] duration-150",
-                  collapsed ? "justify-center" : "justify-start",
-                  active
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground hover:bg-[var(--sand-warm)] hover:text-foreground",
-                )}
-                style={{
-                  backgroundColor: active
-                    ? `color-mix(in srgb, ${colorOption.bg} 38%, var(--sand-light))`
-                    : undefined,
-                  boxShadow: active
-                    ? `inset 0 0 0 1px color-mix(in srgb, ${colorOption.fg} 28%, transparent)`
-                    : undefined,
-                }}
-              >
-                <span
-                  className="flex size-6 shrink-0 items-center justify-center rounded-lg"
-                  style={{ backgroundColor: colorOption.bg }}
-                  aria-hidden="true"
-                >
-                  <Icon
-                    className="size-3.5"
-                    style={{ color: colorOption.fg }}
-                    strokeWidth={1.75}
-                  />
-                </span>
-                <span
-                  className={cn(
-                    "overflow-hidden truncate text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
-                    collapsed
-                      ? "ml-0 max-w-0 opacity-0"
-                      : "ml-2.5 max-w-[8rem] opacity-100",
-                  )}
-                >
-                  {collection.name}
-                </span>
-                {!collapsed && active && (
-                  <span
-                    className="ml-auto size-1.5 shrink-0 rounded-full bg-[var(--apricot)] animate-nav-dot"
-                    aria-hidden="true"
-                  />
-                )}
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-
-      <button
-        type="button"
-        onClick={() => {
-          setServerError(null);
-          setAddOpen(true);
-        }}
-        aria-label="Sammlung hinzufügen"
-        title={collapsed ? "Sammlung hinzufügen" : undefined}
-        className={cn(
-          "mt-1 flex min-h-10 w-full items-center rounded-ordilo-sm px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          collapsed ? "justify-center" : "justify-start",
-        )}
-      >
-        <Plus className="size-4 shrink-0" aria-hidden="true" strokeWidth={1.75} />
-        <span
-          className={cn(
-            "overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin-left] duration-200 ease-out",
-            collapsed ? "ml-0 max-w-0 opacity-0" : "ml-2.5 max-w-[10rem] opacity-100",
-          )}
-        >
-          Neue Sammlung
-        </span>
-      </button>
-
-      <Sheet open={addOpen} onOpenChange={setAddOpen}>
-        <SheetContent
-          side="bottom"
-          className="mx-auto max-h-[85dvh] max-w-md overflow-y-auto rounded-t-ordilo-xl"
-        >
-          <SheetHeader>
-            <SheetTitle>Sammlung hinzufügen</SheetTitle>
-            <SheetDescription>
-              Gib der Sammlung einen Namen, ein Icon und eine Farbe.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 pb-6">
-            <CollectionForm
-              submitLabel="Sammlung hinzufügen"
-              onSubmit={handleAddSubmit}
-              isSubmitting={isSubmitting}
-              serverError={serverError}
-              onClearServerError={() => setServerError(null)}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
-    </div>
-  );
-}
 
 function SidebarFooter({
   profile,
@@ -409,7 +244,6 @@ export function SidebarNav({
   });
 
   const displayName = profile ? getProfileDisplayName(profile) : null;
-  const hasActiveCollection = pathname.startsWith("/sammlungen/");
   const currentTab = useSearchParams().get("tab");
 
   return (
@@ -476,8 +310,7 @@ export function SidebarNav({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-3">
         <ul className="space-y-px">
           {NAV_TABS.map((tab) => {
-            const active = isTabActive(tab, pathname);
-            const selected = active && !hasActiveCollection;
+            const selected = isTabActive(tab, pathname);
             const Icon = tab.icon;
             return (
               <li key={tab.href}>
@@ -565,10 +398,6 @@ export function SidebarNav({
           </li>
         </ul>
 
-        <SidebarCollections
-          activePathname={pathname}
-          collapsed={collapsed}
-        />
       </div>
 
       <SidebarScenery timeOfDay={timeOfDay} collapsed={collapsed} />

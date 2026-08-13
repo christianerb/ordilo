@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  act,
   render as rtlRender,
   screen,
   fireEvent,
@@ -77,6 +78,7 @@ const analyzedDocuments = [
     mime_type: "application/pdf",
     status: "analyzed",
     created_at: "2026-07-06T10:00:00Z",
+    summary: "Elternabend am 12.07. und neues Essensgeld",
   },
   {
     id: "doc-2",
@@ -85,6 +87,7 @@ const analyzedDocuments = [
     mime_type: "application/pdf",
     status: "analyzed",
     created_at: "2026-07-05T14:00:00Z",
+    summary: null,
   },
 ];
 
@@ -144,6 +147,7 @@ const recentDocuments = [
     mime_type: "application/pdf",
     status: "confirmed",
     created_at: "2026-07-06T14:30:00Z",
+    summary: "Blutwerte unauffällig, Kontrolle in 6 Monaten",
   },
   {
     id: "doc-4",
@@ -152,38 +156,23 @@ const recentDocuments = [
     mime_type: "application/pdf",
     status: "confirmed",
     created_at: "2026-07-04T09:00:00Z",
+    summary: null,
   },
 ];
 
 const defaultProps: HomeClientProps = {
-  familyId: "fam-1",
+  familyId: "family-1",
   greeting: "Guten Abend",
   familyName: "Erb",
   members,
   analyzedDocuments,
   unconfirmedDocCount: 2,
+  journalDocCount: 6,
   confirmedDocumentCount: 2,
   upcomingTasks,
   recentDocuments,
   thumbUrls: {},
-  insights: [],
 };
-
-function makeLocalStorageMock() {
-  let store: Record<string, string> = {};
-  return {
-    getItem: (key: string) => store[key] ?? null,
-    setItem: (key: string, value: string) => {
-      store[key] = value;
-    },
-    removeItem: (key: string) => {
-      delete store[key];
-    },
-    clear: () => {
-      store = {};
-    },
-  };
-}
 
 // Reference date for test data: 2026-07-06 (matches system date)
 // Test task due dates are relative to this date.
@@ -196,7 +185,6 @@ beforeEach(() => {
   mockPush.mockClear();
   mockUpdate.mockClear();
   mockEq.mockClear();
-  vi.stubGlobal("localStorage", makeLocalStorageMock());
   mockUpdate.mockReturnValue({ eq: mockEq });
   mockEq.mockResolvedValue({ error: null });
   vi.mocked(toast.success).mockClear();
@@ -250,30 +238,23 @@ describe("HomeClient — Briefing", () => {
     vi.useRealTimers();
   });
 
-  it("shows the daily briefing under the greeting", () => {
+  it("keeps the greeting free of repeated facts", () => {
     render(<HomeClient {...defaultProps} />);
-    const briefing = screen.getByTestId("home-briefing");
-    // Reference date 2026-07-06: "Alter Task" (due 2026-06-01) is overdue,
-    // and 2 documents wait for confirmation.
-    expect(briefing.textContent).toBe(
-      "„Alter Task\" ist überfällig — am besten heute erledigen. " +
-        "Außerdem warten 2 Dokumente auf dein OK.",
+    // The briefing sentence was cut in the distill pass: the hero card and
+    // the journal header already carry the overdue task and the waiting
+    // documents — a third telling is noise, not warmth.
+    expect(screen.queryByTestId("home-briefing")).toBeNull();
+  });
+
+  it("dates the day like a journal entry", () => {
+    render(<HomeClient {...defaultProps} />);
+    // System time is 2026-07-06 — the dateline anchors the day (weekday
+    // varies with the runner's timezone, so assert day + month only).
+    expect(screen.getByTestId("home-dateline").textContent).toMatch(
+      /6\. Juli/,
     );
   });
 
-  it("has a warm calm state when nothing is going on", () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-        unconfirmedDocCount={0}
-        analyzedDocuments={[]}
-      />,
-    );
-    expect(screen.getByTestId("home-briefing").textContent).toBe(
-      "Alles erledigt — die Woche sieht ruhig aus.",
-    );
-  });
 });
 
 describe("HomeClient — Heute hero", () => {
@@ -295,24 +276,44 @@ describe("HomeClient — Heute hero", () => {
     expect(within(hero).getByText("Alter Task")).toBeDefined();
   });
 
-  it("marks the hero task as done via the hero action", async () => {
+  it("marks the hero task as done via the hero action", () => {
     render(<HomeClient {...defaultProps} />);
     fireEvent.click(screen.getByTestId("today-hero-done"));
     expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
-    // vi.waitFor (not waitFor): it advances the fake timers this describe
-    // block installs instead of deadlocking on them.
-    await vi.waitFor(() => {
-      expect(toast.success).toHaveBeenCalledWith("Erledigt — gut gemacht!");
+    // No toast on hero completions — the Erledigt beat in the card is the
+    // confirmation; a toast on top would be the same signal twice.
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("holds an Erledigt beat before the next hero arrives", () => {
+    render(<HomeClient {...defaultProps} />);
+    fireEvent.click(screen.getByTestId("today-hero-done"));
+    // The completed hero stays visible for a moment: checked, struck
+    // through, labelled — the save already fired (no fake delay).
+    const button = screen.getByTestId("today-hero-done");
+    expect(button.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByTestId("today-hero-label").textContent).toContain(
+      "Erledigt",
+    );
+    // After the beat, the latch releases and the next hero renders.
+    act(() => {
+      vi.advanceTimersByTime(700);
     });
+    expect(
+      screen.getByTestId("today-hero-label").textContent,
+    ).not.toContain("Erledigt");
   });
 
   it("gives hero actions a one-thumb target", () => {
     render(<HomeClient {...defaultProps} />);
     const hero = screen.getByTestId("today-hero");
+    // 44px circular hit area, same vocabulary as the task-card checkbox
     expect(within(hero).getByTestId("today-hero-done").className).toContain(
-      "h-11",
+      "size-11",
     );
-    expect(within(hero).getByText("Details").className).toContain("h-11");
+    // Details stays a real deep link that opens the task on the board
+    const details = within(hero).getByRole("link", { name: "Details" });
+    expect(details.getAttribute("href")).toMatch(/^\/aufgaben\?task=.+/);
   });
 
   it("labels a task due today as 'Heute fällig'", () => {
@@ -329,28 +330,6 @@ describe("HomeClient — Heute hero", () => {
       "Heute fällig",
     );
     expect(within(hero).getByText("Rechnung bezahlen")).toBeDefined();
-  });
-
-  it("promotes an urgent insight when no task is close", () => {
-    const urgentInsight = {
-      id: "ins-1",
-      icon: "alert" as const,
-      title: "Frist läuft in 2 Tagen ab",
-      detail: "Schulranzen kaufen",
-      href: "/aufgaben",
-      tone: "urgent" as const,
-    };
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-        insights={[urgentInsight]}
-      />,
-    );
-    const hero = screen.getByTestId("today-hero");
-    expect(within(hero).getByText("Frist läuft in 2 Tagen ab")).toBeDefined();
-    // The hero insight is not duplicated in the Hinweise section.
-    expect(screen.queryByTestId("home-section-insights")).toBeNull();
   });
 
   it("shows the calm hero when nothing is going on", () => {
@@ -471,16 +450,71 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
     expect(within(section).getAllByText("Bitte bestätigen")).toHaveLength(2);
   });
 
-  it("shows recent documents with their status label", () => {
+  it("shows only the three newest documents, then a Mehr anzeigen link", () => {
     render(<HomeClient {...defaultProps} />);
     const section = screen
       .getByText("Deine Dokumente")
       .closest("[data-testid='home-section-journal']") as HTMLElement;
+    // 2 awaiting confirmation + 1 most recent confirmed = the 3-row cap.
     expect(within(section).getByText("Arztbrief")).toBeDefined();
-    expect(within(section).getByText("Versicherungsschreiben")).toBeDefined();
+    // The 4th document stays on /dokumente, reachable via the footer link.
+    expect(within(section).queryByText("Versicherungsschreiben")).toBeNull();
+    const moreLink = within(section).getByText("Mehr anzeigen");
+    expect(moreLink.getAttribute("href")).toBe("/dokumente");
+  });
+
+  it("hides Mehr anzeigen when everything fits", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        recentDocuments={[]}
+        journalDocCount={2}
+      />,
+    );
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    expect(within(section).queryByText("Mehr anzeigen")).toBeNull();
+  });
+
+  it("shows the AI one-liner as the row subtitle", () => {
+    render(<HomeClient {...defaultProps} />);
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
     expect(
-      within(section).getAllByText("Im Familienbuch").length,
-    ).toBeGreaterThan(0);
+      within(section).getByText("Blutwerte unauffällig, Kontrolle in 6 Monaten"),
+    ).toBeDefined();
+    expect(
+      within(section).getByText("Elternabend am 12.07. und neues Essensgeld"),
+    ).toBeDefined();
+  });
+
+  it("summarizes the family book in the journal header", () => {
+    render(<HomeClient {...defaultProps} />);
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    // Unconfirmed docs exist → the line leads with what needs attention.
+    expect(
+      within(section).getByText("2 warten auf dein OK · 6 im Familienbuch"),
+    ).toBeDefined();
+  });
+
+  it("reassures when nothing waits for confirmation", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        analyzedDocuments={[]}
+        unconfirmedDocCount={0}
+      />,
+    );
+    const section = screen
+      .getByText("Deine Dokumente")
+      .closest("[data-testid='home-section-journal']") as HTMLElement;
+    expect(
+      within(section).getByText("6 Dokumente sicher im Familienbuch"),
+    ).toBeDefined();
   });
 
   it("renders a thumbnail image when a signed URL exists", () => {
@@ -510,6 +544,7 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
             mime_type: "application/pdf",
             status: "failed",
             created_at: "2026-07-06T15:00:00Z",
+            summary: null,
           },
         ]}
       />,
@@ -557,121 +592,6 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
     fireEvent.click(cta);
     await waitFor(() => {
       expect(screen.getByTestId("scan-wizard")).toBeDefined();
-    });
-  });
-});
-
-describe("HomeClient — first success guide", () => {
-  const firstConfirmedDocument = [recentDocuments[0]];
-
-  it("celebrates the first confirmed document with useful next actions", async () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-        unconfirmedDocCount={0}
-        confirmedDocumentCount={1}
-        analyzedDocuments={[]}
-        recentDocuments={firstConfirmedDocument}
-      />,
-    );
-
-    const guide = await screen.findByTestId("first-success-guide");
-    expect(within(guide).getByText("Dein Familienbuch wächst")).toBeDefined();
-    expect(
-      within(guide).getByRole("button", { name: "Nächstes Dokument scannen" }),
-    ).toBeDefined();
-    expect(within(guide).getByRole("link", { name: "Etwas fragen" })).toHaveAttribute(
-      "href",
-      "/suche",
-    );
-  });
-
-  it("opens the scanner from the first-success guide", async () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-        unconfirmedDocCount={0}
-        confirmedDocumentCount={1}
-        analyzedDocuments={[]}
-        recentDocuments={firstConfirmedDocument}
-      />,
-    );
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Nächstes Dokument scannen" }),
-    );
-    await waitFor(() => {
-      expect(screen.getByTestId("scan-wizard")).toBeDefined();
-    });
-  });
-
-  it("does not show again after dismissal", async () => {
-    const props = {
-      ...defaultProps,
-      upcomingTasks: [],
-      unconfirmedDocCount: 0,
-      confirmedDocumentCount: 1,
-      analyzedDocuments: [],
-      recentDocuments: firstConfirmedDocument,
-    };
-    const firstRender = render(<HomeClient {...props} />);
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Hinweis schließen" }),
-    );
-    expect(screen.queryByTestId("first-success-guide")).toBeNull();
-    firstRender.unmount();
-
-    render(<HomeClient {...props} />);
-    await waitFor(() => {
-      expect(screen.queryByTestId("first-success-guide")).toBeNull();
-    });
-
-    render(<HomeClient {...props} familyId="fam-2" />);
-    expect(await screen.findByTestId("first-success-guide")).toBeDefined();
-  });
-
-  it("uses the confirmed count when another document is still processing", async () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-        unconfirmedDocCount={0}
-        confirmedDocumentCount={1}
-        analyzedDocuments={[]}
-        recentDocuments={[
-          ...firstConfirmedDocument,
-          {
-            id: "doc-processing",
-            title: "Noch wird gelesen",
-            original_filename: "neu.pdf",
-            mime_type: "application/pdf",
-            status: "uploaded",
-            created_at: "2026-07-06T15:30:00Z",
-          },
-        ]}
-      />,
-    );
-
-    expect(await screen.findByTestId("first-success-guide")).toBeDefined();
-  });
-
-  it("does not show after the second confirmed document", async () => {
-    render(
-      <HomeClient
-        {...defaultProps}
-        upcomingTasks={[]}
-        unconfirmedDocCount={0}
-        confirmedDocumentCount={2}
-        analyzedDocuments={[]}
-        recentDocuments={firstConfirmedDocument}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.queryByTestId("first-success-guide")).toBeNull();
     });
   });
 });

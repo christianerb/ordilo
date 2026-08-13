@@ -28,6 +28,7 @@ import { validateCollectionInput } from "@/lib/schemas/collections";
 import { validateMember } from "@/lib/schemas/onboarding";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
 import { markDocumentFailed } from "@/lib/supabase/document-helpers";
+import { eventOccursOn, type EventOccurrenceSource } from "@/lib/calendar";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -86,6 +87,49 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           confirmed: { type: "boolean" },
         },
         required: ["title", "starts_on"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "query_calendar_events",
+      description:
+        "Beantwortet Fragen zum Familienkalender — vergangene UND kommende " +
+        "Termine. Verwende dies IMMER fuer Fragen wie 'Wann war der letzte " +
+        "Zahnarzttermin?', 'Wann hatte Emma das letzte Mal Training?', " +
+        "'Was steht naechste Woche an?' oder 'Haben wir im August was vor?'. " +
+        "Rate niemals Termine, ohne dieses Tool aufzurufen.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Stichwort, das im Titel oder der Notiz vorkommt, z.B. 'Zahnarzt'. Optional.",
+          },
+          person: {
+            type: "string",
+            description:
+              "Name eines Familienmitglieds — nur Termine mit diesem Teilnehmer. Optional.",
+          },
+          direction: {
+            type: "string",
+            enum: ["past", "upcoming", "all"],
+            description:
+              "past = vergangene Termine (neueste zuerst, fuer 'wann war der letzte...'), " +
+              "upcoming = kommende (naechste zuerst), all = beides. Standard: all.",
+          },
+          from: {
+            type: "string",
+            description: "Fruehestes Datum, ISO YYYY-MM-DD. Optional.",
+          },
+          to: {
+            type: "string",
+            description: "Spaetestes Datum, ISO YYYY-MM-DD. Optional.",
+          },
+        },
+        required: [],
       },
     },
   },
@@ -773,6 +817,8 @@ export async function executeTool(
   switch (name) {
     case "add_calendar_event":
       return executeAddCalendarEvent(args, ctx);
+    case "query_calendar_events":
+      return executeQueryCalendarEvents(args, ctx);
     case "search_documents":
       return executeSearchDocuments(args, ctx);
     case "query_payments":
@@ -1343,6 +1389,259 @@ async function executeAddTask(
     task_id: task.id,
     titel: task.title,
     message: `Aufgabe '${task.title}' wurde angelegt.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// query_calendar_events (read-only)
+// ---------------------------------------------------------------------------
+
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+const RECURRENCE_LABELS: Record<string, string> = {
+  none: "einmalig",
+  weekly: "wöchentlich",
+  biweekly: "alle 2 Wochen",
+  monthly: "monatlich",
+  yearly: "jährlich",
+};
+
+type CalendarQueryEvent = {
+  id: string;
+  title: string;
+  note: string | null;
+  starts_on: string;
+  ends_on: string;
+  all_day: boolean;
+  starts_time: string | null;
+  ends_time: string | null;
+  recurrence: "none" | "weekly" | "biweekly" | "monthly" | "yearly";
+  recurrence_until: string | null;
+  recurrence_exceptions: string[];
+};
+
+type CalendarOccurrence = CalendarQueryEvent & {
+  occurrence_starts_on: string;
+  occurrence_ends_on: string;
+};
+
+function addDays(date: string, days: number): string {
+  const result = new Date(`${date}T12:00:00`);
+  result.setDate(result.getDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
+function occurrenceEndsOn(event: CalendarQueryEvent, startsOn: string): string {
+  const durationMs =
+    new Date(`${event.ends_on}T12:00:00`).getTime() -
+    new Date(`${event.starts_on}T12:00:00`).getTime();
+  return addDays(startsOn, Math.round(durationMs / 86_400_000));
+}
+
+function occursOn(event: CalendarQueryEvent, date: string): boolean {
+  return eventOccursOn(
+    {
+      ...event,
+      recurrence_exceptions: event.recurrence_exceptions ?? [],
+    } as EventOccurrenceSource,
+    date,
+  );
+}
+
+function findOccurrence(
+  event: CalendarQueryEvent,
+  from: string,
+  to: string,
+  direction: "forward" | "backward",
+): CalendarOccurrence | null {
+  const step = direction === "forward" ? 1 : -1;
+  let date = direction === "forward" ? from : to;
+
+  while (
+    (direction === "forward" && date <= to) ||
+    (direction === "backward" && date >= from)
+  ) {
+    if (occursOn(event, date) && !occursOn(event, addDays(date, -1))) {
+      return {
+        ...event,
+        occurrence_starts_on: date,
+        occurrence_ends_on: occurrenceEndsOn(event, date),
+      };
+    }
+    date = addDays(date, step);
+  }
+
+  return null;
+}
+
+function nextYear(date: string): string {
+  const result = new Date(`${date}T12:00:00`);
+  result.setFullYear(result.getFullYear() + 1);
+  return result.toISOString().slice(0, 10);
+}
+
+function findRelevantOccurrence(
+  event: CalendarQueryEvent,
+  direction: string,
+  today: string,
+  from: string | null,
+  to: string | null,
+): CalendarOccurrence | null {
+  if (event.recurrence === "none") {
+    const startsOn = event.starts_on;
+    const endsOn = event.ends_on;
+    if ((from && endsOn < from) || (to && startsOn > to)) return null;
+    if (direction === "past" && startsOn >= today) return null;
+    if (direction === "upcoming" && endsOn < today) return null;
+    return {
+      ...event,
+      occurrence_starts_on: startsOn,
+      occurrence_ends_on: endsOn,
+    };
+  }
+
+  if (direction === "past") {
+    const rangeStart = from ?? event.starts_on;
+    const rangeEnd = [to, addDays(today, -1), event.recurrence_until]
+      .filter((value): value is string => Boolean(value))
+      .sort()[0];
+    if (rangeEnd < rangeStart) return null;
+    return findOccurrence(event, rangeStart, rangeEnd, "backward");
+  }
+
+  if (direction === "upcoming") {
+    const rangeStart = [from, today, event.starts_on]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1)!;
+    const rangeEnd = [to, event.recurrence_until, nextYear(rangeStart)]
+      .filter((value): value is string => Boolean(value))
+      .sort()[0];
+    if (rangeEnd < rangeStart) return null;
+    return findOccurrence(event, rangeStart, rangeEnd, "forward");
+  }
+
+  return {
+    ...event,
+    occurrence_starts_on: event.starts_on,
+    occurrence_ends_on: event.ends_on,
+  };
+}
+
+async function executeQueryCalendarEvents(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const queryText = String(args.query ?? "").trim();
+  const person = String(args.person ?? "").trim();
+  const direction = ["past", "upcoming", "all"].includes(String(args.direction))
+    ? String(args.direction)
+    : "all";
+  const from = typeof args.from === "string" && DATE_PATTERN.test(args.from) ? args.from : null;
+  const to = typeof args.to === "string" && DATE_PATTERN.test(args.to) ? args.to : null;
+  const today = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Berlin",
+  }).format(new Date());
+
+  // Resolve a person filter to the set of event ids they attend.
+  let personEventIds: Set<string> | null = null;
+  if (person) {
+    const { data: members } = await ctx.client
+      .from("family_members")
+      .select("id, name")
+      .eq("family_id", ctx.familyId)
+      .ilike("name", `%${person}%`);
+    if (!members?.length) {
+      return JSON.stringify({ events: [], message: `Kein Familienmitglied namens '${person}' gefunden.` });
+    }
+    const { data: attendeeRows } = await ctx.client
+      .from("calendar_event_attendees")
+      .select("event_id")
+      .in("family_member_id", members.map((m) => m.id));
+    personEventIds = new Set((attendeeRows ?? []).map((r) => r.event_id));
+    if (personEventIds.size === 0) {
+      return JSON.stringify({ events: [], message: `Keine Termine mit ${members[0].name} gefunden.` });
+    }
+  }
+
+  let query = ctx.client
+    .from("calendar_events")
+    .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions")
+    .eq("family_id", ctx.familyId);
+
+  // Apply the attendee constraint before the cap. Date constraints are
+  // resolved below because a recurring event can occur long after its
+  // original starts_on and ends_on values.
+  if (personEventIds) query = query.in("id", [...personEventIds]);
+  if (queryText) {
+    // Commas would break PostgREST's or() syntax — strip them.
+    const safe = queryText.replace(/[(),]/g, " ").trim();
+    if (safe) query = query.or(`title.ilike.%${safe}%,note.ilike.%${safe}%`);
+  }
+
+  const { data, error } = await query.limit(500);
+  if (error) return JSON.stringify({ error: "Termine konnten nicht geladen werden." });
+
+  const events = (data ?? []) as CalendarQueryEvent[];
+  // The database already receives this constraint above. Retain the local
+  // guard too, so an inconsistent join response can never leak unrelated
+  // family events into the answer.
+  const personEvents = personEventIds
+    ? events.filter((event) => personEventIds.has(event.id))
+    : events;
+  const occurrences = personEvents
+    .map((event) => findRelevantOccurrence(event, direction, today, from, to))
+    .filter((event): event is CalendarOccurrence => event !== null)
+    .sort((left, right) =>
+      direction === "past"
+        ? right.occurrence_starts_on.localeCompare(left.occurrence_starts_on)
+        : left.occurrence_starts_on.localeCompare(right.occurrence_starts_on),
+    )
+    .slice(0, 20);
+  if (occurrences.length === 0) {
+    return JSON.stringify({
+      heute: today,
+      events: [],
+      message: "Keine passenden Termine gefunden.",
+    });
+  }
+
+  // Enrich with attendee names (two steps — the FK embed join is brittle).
+  const eventIds = occurrences.map((e) => e.id);
+  const { data: attendees } = await ctx.client
+    .from("calendar_event_attendees")
+    .select("event_id, family_member_id")
+    .in("event_id", eventIds);
+  const memberIds = [...new Set((attendees ?? []).map((a) => a.family_member_id))];
+  const memberNameMap = new Map<string, string>();
+  if (memberIds.length > 0) {
+    const { data: memberRows } = await ctx.client
+      .from("family_members")
+      .select("id, name")
+      .in("id", memberIds);
+    for (const m of memberRows ?? []) memberNameMap.set(m.id, m.name);
+  }
+  const eventAttendees = new Map<string, string[]>();
+  for (const a of attendees ?? []) {
+    const name = memberNameMap.get(a.family_member_id);
+    if (!name) continue;
+    if (!eventAttendees.has(a.event_id)) eventAttendees.set(a.event_id, []);
+    eventAttendees.get(a.event_id)!.push(name);
+  }
+
+  return JSON.stringify({
+    heute: today,
+    events: occurrences.map((e) => ({
+      titel: e.title,
+      notiz: e.note ?? undefined,
+      von: e.occurrence_starts_on,
+      bis: e.occurrence_ends_on !== e.occurrence_starts_on
+        ? e.occurrence_ends_on
+        : undefined,
+      uhrzeit: e.all_day ? "ganztägig" : `${e.starts_time}–${e.ends_time}`,
+      wiederholung: RECURRENCE_LABELS[e.recurrence] ?? e.recurrence,
+      teilnehmer: eventAttendees.get(e.id) ?? [],
+    })),
   });
 }
 

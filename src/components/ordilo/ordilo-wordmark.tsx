@@ -8,9 +8,9 @@ interface OrdiloWordmarkProps {
 }
 
 /**
- * The product mark is a quiet, static composition (halo, mark, name) for
- * navigation and entry surfaces. Per DESIGN.md it carries no decorative
- * motion — the only response is a subtle 240ms hover state transition.
+ * The product mark is a small, authored hello from Ordilo. It is deliberately
+ * reserved for brand moments (navigation and entry surfaces), not used as a
+ * generic animated icon throughout the app.
  */
 export function OrdiloWordmark({
   mascotSize = 28,
@@ -22,12 +22,16 @@ export function OrdiloWordmark({
       <span className="ordilo-wordmark__mark" aria-hidden="true">
         <OrdiloMark
           size={mascotSize}
-          animate={false}
           className="text-[var(--petrol)]"
         />
       </span>
       <span className={cn("ordilo-wordmark__label", labelClassName)}>
         Ordilo
+      </span>
+      <span className="ordilo-wordmark__sparkles" aria-hidden="true">
+        <i className="ordilo-wordmark__sparkle ordilo-wordmark__sparkle--one" />
+        <i className="ordilo-wordmark__sparkle ordilo-wordmark__sparkle--two" />
+        <i className="ordilo-wordmark__sparkle ordilo-wordmark__sparkle--three" />
       </span>
     </span>
   );

@@ -13,7 +13,7 @@ interface OrdiloMarkProps {
  */
 export function OrdiloMark({
   size = 32,
-  animate = false,
+  animate = true,
   className,
 }: OrdiloMarkProps) {
   return (

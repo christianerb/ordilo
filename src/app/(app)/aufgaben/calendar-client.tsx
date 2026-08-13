@@ -41,6 +41,7 @@ import {
 import { formatGermanDate } from "@/lib/format";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { createClient } from "@/lib/supabase/client";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 import { cn } from "@/lib/utils";
 import { usePlannerActionsOptional } from "./planner-actions-context";
 
@@ -460,6 +461,13 @@ export function CalendarClient({
         setSuggestionTemplate(null);
         void recordDismissal(entityId);
       }
+      if (mode === "created" && currentUserId) {
+        void recordProductEvent(supabase, {
+          userId: currentUserId,
+          familyId,
+          eventName: "calendar_event_created",
+        });
+      }
       revealEvent(saved);
       toast.success(
         mode === "created"
@@ -467,7 +475,7 @@ export function CalendarClient({
           : `„${saved.title}“ ist gespeichert.`,
       );
     },
-    [revealEvent, suggestionTemplate, recordDismissal],
+    [currentUserId, familyId, recordDismissal, revealEvent, suggestionTemplate, supabase],
   );
 
   const handleDeleteRequest = useCallback((event: CalendarEvent) => {

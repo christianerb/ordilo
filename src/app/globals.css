@@ -69,6 +69,79 @@
     }
   }
 
+  /* The wordmark opens like a small family-journal flourish: the mascot
+     settles first, then the name arrives. It is for a genuine brand moment,
+     not a repeated page-loading effect. */
+  @keyframes ordilo-wordmark-label-in {
+    from {
+      opacity: 0;
+      transform: translateX(-5px);
+      filter: blur(3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+      filter: blur(0);
+    }
+  }
+
+  @keyframes ordilo-wordmark-mascot-in {
+    from {
+      opacity: 0;
+      transform: rotate(-10deg) scale(0.76);
+    }
+    58% {
+      opacity: 1;
+      transform: rotate(3deg) scale(1.06);
+    }
+    to {
+      opacity: 1;
+      transform: rotate(0) scale(1);
+    }
+  }
+
+  @keyframes ordilo-wordmark-halo-in {
+    from {
+      opacity: 0;
+      transform: translateY(-50%) scale(0.55);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(-50%) scale(1);
+    }
+  }
+
+  /* Three tiny "paper stars" keep the wordmark from feeling like a static
+     corporate logo. They appear once with the greeting, then only return
+     when somebody intentionally hovers or focuses the mark. */
+  @keyframes ordilo-wordmark-sparkle-in {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 4px, 0) scale(0.25) rotate(21deg);
+    }
+    62% {
+      opacity: 1;
+      transform: translate3d(0, -1px, 0) scale(1.12) rotate(53deg);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, -4px, 0) scale(0.55) rotate(45deg);
+    }
+  }
+
+  @keyframes ordilo-wordmark-greet {
+    0% { transform: rotate(0) translateY(0); }
+    28% { transform: rotate(-7deg) translateY(-2px); }
+    56% { transform: rotate(4deg) translateY(-1px); }
+    100% { transform: rotate(0) translateY(0); }
+  }
+
+  @keyframes ordilo-wordmark-name-delight {
+    0%, 100% { transform: translateX(0) rotate(0); }
+    42% { transform: translateX(2px) rotate(-1.2deg); }
+    70% { transform: translateX(-1px) rotate(0.7deg); }
+  }
+
   /* A status change has a directional arrival. This keeps "Ordilo works on
      it" legible when the AI changes from one real tool call to the next. */
   @keyframes status-line-in {
@@ -124,13 +197,6 @@
       opacity: 1;
       transform: translateY(0);
     }
-  }
-
-  /* Streaming cursor — communicates that a real server response is still
-     arriving without delaying, blurring, or re-animating the answer text. */
-  @keyframes stream-caret {
-    0%, 42% { opacity: 1; }
-    43%, 100% { opacity: 0; }
   }
 
   /* Card list item entrance — fade + slide up, used with stagger delays */
@@ -294,22 +360,26 @@
     50% { transform: rotate(6deg); }
   }
 
-  /* The compact mark is static in navigation. Contextual brand moments may
-     opt into one brief arrival and glance, never an autonomous loop. */
   @keyframes ordilo-mark-arrive {
     from {
       opacity: 0;
-      transform: translateY(2px) scale(0.94);
+      transform: translateY(3px) scale(0.9);
+    }
+    62% {
+      opacity: 1;
+      transform: translateY(-1px) scale(1.035);
     }
     to {
       opacity: 1;
       transform: translateY(0) scale(1);
     }
   }
+
   @keyframes ordilo-mark-look {
-    0%, 35%, 100% { transform: translateX(0); }
-    55% { transform: translateX(-1.2px); }
-    75% { transform: translateX(0.9px); }
+    0%, 30%, 100% { transform: translateX(0); }
+    36%, 42% { transform: translateX(-1.7px); }
+    48%, 54% { transform: translateX(1.4px); }
+    60% { transform: translateX(0); }
   }
 
   /* Banner ambient glow — barely-visible breathing pulse */
@@ -635,9 +705,6 @@
   .animate-message-in {
     animation: message-in 0.25s var(--ease-out-quart);
   }
-  .animate-stream-caret {
-    animation: stream-caret 850ms steps(1, end) infinite;
-  }
   .animate-card-in {
     animation: card-in 0.25s var(--ease-out-quart) backwards;
   }
@@ -746,11 +813,11 @@
   }
 
   .ordilo-mark--alive .ordilo-mark__elephant {
-    animation: ordilo-mark-arrive 0.24s var(--ease-out-quart) both;
+    animation: ordilo-mark-arrive 0.56s var(--ease-out-expo) both;
   }
 
   .ordilo-mark--alive .ordilo-mark__eye {
-    animation: ordilo-mark-look 0.9s var(--ease-out-quart) 0.12s both;
+    animation: ordilo-mark-look 5.8s ease-in-out infinite;
     transform-box: fill-box;
     transform-origin: center;
   }
@@ -806,10 +873,6 @@
     gap: 0.5rem;
   }
 
-  /* The wordmark is a static composition (halo, mark, name). Per
-     DESIGN.md it gets no entrance or decorative motion — it lives in
-     persistent navigation, where repeated flourishes would be noise.
-     The only motion is the 240ms hover state transition below. */
   .ordilo-wordmark::before {
     position: absolute;
     z-index: -1;
@@ -820,6 +883,7 @@
     border-radius: 9999px;
     background: color-mix(in srgb, var(--wash-sage) 82%, transparent);
     content: "";
+    animation: ordilo-wordmark-halo-in 0.5s var(--ease-out-expo) both;
     transition: transform 0.24s var(--ease-out-quart),
       background-color 0.24s var(--ease-out-quart);
     transform: translateY(-50%);
@@ -827,12 +891,56 @@
 
   .ordilo-wordmark__mark {
     display: inline-flex;
+    animation: ordilo-wordmark-mascot-in 0.5s var(--ease-out-expo) both;
     transition: transform 0.24s var(--ease-out-quart);
     transform-origin: 50% 62%;
   }
 
   .ordilo-wordmark__label {
     display: inline-block;
+    animation: ordilo-wordmark-label-in 0.36s var(--ease-out-expo) 70ms both;
+  }
+
+  .ordilo-wordmark__sparkles {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
+
+  .ordilo-wordmark__sparkle {
+    position: absolute;
+    display: block;
+    width: 0.34rem;
+    height: 0.34rem;
+    border-radius: 1px;
+    background: var(--apricot);
+    opacity: 0;
+    animation: ordilo-wordmark-sparkle-in 0.46s var(--ease-out-expo) both;
+  }
+
+  .ordilo-wordmark__sparkle--one {
+    left: 0.72rem;
+    top: -0.18rem;
+    animation-delay: 100ms;
+  }
+
+  .ordilo-wordmark__sparkle--two {
+    left: 1.66rem;
+    top: 0.2rem;
+    width: 0.23rem;
+    height: 0.23rem;
+    background: var(--petrol);
+    animation-delay: 170ms;
+  }
+
+  .ordilo-wordmark__sparkle--three {
+    left: 0.08rem;
+    top: 1.15rem;
+    width: 0.2rem;
+    height: 0.2rem;
+    background: var(--apricot-light);
+    animation-delay: 230ms;
   }
 }
 
@@ -842,15 +950,29 @@
 
 /* Fine pointer + hover support (mouse, trackpad): full hover effects */
 @media (hover: hover) and (pointer: fine) {
-  /* Hover is a state change, so the wordmark may respond — but only as a
-     quiet 240ms transition, never as a keyframe flourish. */
   .ordilo-wordmark:hover::before {
     background-color: color-mix(in srgb, var(--wash-sage) 96%, transparent);
     transform: translateY(-50%) scale(1.16);
   }
 
   .ordilo-wordmark:hover .ordilo-wordmark__mark {
-    transform: rotate(-4deg);
+    animation: ordilo-wordmark-greet 0.58s var(--ease-out-expo);
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__label {
+    animation: ordilo-wordmark-name-delight 0.48s var(--ease-out-quart);
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__sparkle {
+    animation: ordilo-wordmark-sparkle-in 0.46s var(--ease-out-expo) both;
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__sparkle--two {
+    animation-delay: 70ms;
+  }
+
+  .ordilo-wordmark:hover .ordilo-wordmark__sparkle--three {
+    animation-delay: 130ms;
   }
 
   .card-lift:hover {
@@ -888,7 +1010,6 @@
 
   .animate-page-fade-in,
   .animate-message-in,
-  .animate-stream-caret,
   .animate-card-in,
   .animate-check-pop,
   .animate-task-done,
@@ -909,6 +1030,8 @@
   .ordilo-mascot-greet,
   .ordilo-mascot-success,
   .ordilo-mascot-ear-wiggle,
+  .ordilo-mark__elephant,
+  .ordilo-mark__eye,
   .animate-banner-glow,
   .animate-avatar-pop,
   .animate-citation-flash,
@@ -919,7 +1042,11 @@
   .animate-board-settle,
   .animate-composer-overlay,
   .animate-status-line,
-  .animate-scan-step {
+  .animate-scan-step,
+  .ordilo-wordmark::before,
+  .ordilo-wordmark__mark,
+  .ordilo-wordmark__label,
+  .ordilo-wordmark__sparkle {
     animation: none;
   }
 

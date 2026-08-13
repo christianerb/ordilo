@@ -173,6 +173,25 @@ export type Database = {
         };
         Relationships: [];
       };
+      // admin_access_attempts ---------------------------------------------
+      admin_access_attempts: {
+        Row: {
+          id: string;
+          user_id: string;
+          attempted_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          attempted_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          attempted_at?: string;
+        };
+        Relationships: [];
+      };
       // chat_action_executions ---------------------------------------------
       chat_action_executions: {
         Row: {

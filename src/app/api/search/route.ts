@@ -13,6 +13,7 @@ import {
   graphSearch,
   resolveAutoMode,
 } from "@/lib/ai/search";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
  * POST /api/search
@@ -76,6 +77,12 @@ export async function POST(
   const requestData = parsed.data;
 
   const serverClient = await createServerClient();
+  const recordSearch = () =>
+    recordProductEvent(serverClient, {
+      userId: auth.user.id,
+      familyId: requestData.family_id,
+      eventName: "search_completed",
+    });
 
   // 3. Execute the search based on mode ------------------------------------
   try {
@@ -88,6 +95,7 @@ export async function POST(
         requestData.family_id,
       );
       const body: SearchSuccessResponse = { results, mode: "semantic" };
+      await recordSearch();
       return Response.json(body, { status: 200 });
     }
 
@@ -98,6 +106,7 @@ export async function POST(
         requestData.family_id,
       );
       const body: SearchSuccessResponse = { results, mode: "graph" };
+      await recordSearch();
       return Response.json(body, { status: 200 });
     }
 
@@ -115,6 +124,7 @@ export async function POST(
         requestData.family_id,
       );
       const body: SearchSuccessResponse = { results, mode: "graph" };
+      await recordSearch();
       return Response.json(body, { status: 200 });
     }
 
@@ -124,6 +134,7 @@ export async function POST(
       requestData.family_id,
     );
     const body: SearchSuccessResponse = { results, mode: "semantic" };
+    await recordSearch();
     return Response.json(body, { status: 200 });
   } catch (err) {
     // EmbeddingError from OpenAI failures → 502

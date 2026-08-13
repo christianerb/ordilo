@@ -24,7 +24,6 @@ import {
   updateFamilyMember,
 } from "./actions";
 import { FamilyBanner } from "./family-banner";
-import { InviteCard } from "@/components/ordilo/invite-card";
 import { FamilyInventoryPanel } from "./family-inventory-panel";
 import { FamilyMemberRowMenu } from "./family-member-row-menu";
 import { FamilyMemberSheet } from "./family-member-sheet";
@@ -272,8 +271,6 @@ export function FamilieClient({
         members={memberList}
         photoUrls={photoUrlMap}
       />
-
-      <InviteCard />
 
       {memberList.length > 0 && (
         <div

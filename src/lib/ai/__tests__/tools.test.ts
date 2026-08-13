@@ -94,7 +94,7 @@ function makeCtxWithTask(task: { id: string; title: string } | null, updateError
  */
 function makeThenableChain(data: unknown, error: unknown = null) {
   const chain: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "order", "in", "limit", "not", "or", "ilike", "gte", "lte"]) {
+  for (const m of ["select", "eq", "order", "in", "limit", "not", "or", "ilike", "gte", "lte", "lt"]) {
     chain[m] = vi.fn(() => chain);
   }
   const single = Array.isArray(data) ? (data[0] ?? null) : data;
@@ -1784,5 +1784,210 @@ describe("add_calendar_event", () => {
     expect(attendeesInsert).toHaveBeenCalledWith([
       { event_id: "ev-1", family_member_id: "m-1" },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// query_calendar_events
+// ---------------------------------------------------------------------------
+
+/**
+ * Ctx for query_calendar_events: `.from("calendar_events")` resolves to the
+ * event rows, `.from("family_members")` and `.from("calendar_event_attendees")`
+ * resolve the person filter and attendee enrichment.
+ */
+function makeCalendarQueryCtx({
+  events = [],
+  members = [],
+  attendees = [],
+}: {
+  events?: Array<Record<string, unknown>>;
+  members?: Array<{ id: string; name: string }>;
+  attendees?: Array<{ event_id: string; family_member_id: string }>;
+}) {
+  const from = vi.fn((table: string) => {
+    if (table === "calendar_events") return makeThenableChain(events);
+    if (table === "family_members") return makeThenableChain(members);
+    if (table === "calendar_event_attendees") return makeThenableChain(attendees);
+    return makeThenableChain(null);
+  });
+
+  return {
+    client: { from } as unknown as ToolContext["client"],
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  } as ToolContext;
+}
+
+const DENTIST_EVENT = {
+  id: "ev-1",
+  title: "Zahnarzt Emma",
+  note: "Kontrolle",
+  starts_on: "2026-07-10",
+  ends_on: "2026-07-10",
+  all_day: false,
+  starts_time: "15:00",
+  ends_time: "15:30",
+  recurrence: "none",
+  recurrence_until: null,
+  recurrence_exceptions: [],
+};
+
+describe("query_calendar_events", () => {
+  it("returns matching events with dates, time and attendee names", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [DENTIST_EVENT],
+      members: [{ id: "m-1", name: "Emma" }],
+      attendees: [{ event_id: "ev-1", family_member_id: "m-1" }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        { query: "Zahnarzt", direction: "past" },
+        ctx,
+      ),
+    );
+
+    expect(result.heute).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      titel: "Zahnarzt Emma",
+      notiz: "Kontrolle",
+      von: "2026-07-10",
+      uhrzeit: "15:00–15:30",
+      wiederholung: "einmalig",
+      teilnehmer: ["Emma"],
+    });
+    expect(result.events[0].bis).toBeUndefined();
+  });
+
+  it("filters events by person via the attendee join", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [
+        DENTIST_EVENT,
+        { ...DENTIST_EVENT, id: "ev-2", title: "Elternabend" },
+      ],
+      members: [{ id: "m-1", name: "Emma" }],
+      attendees: [{ event_id: "ev-1", family_member_id: "m-1" }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        { person: "Emma", direction: "all" },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].titel).toBe("Zahnarzt Emma");
+  });
+
+  it("applies the attendee ids to the calendar query before limiting results", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [DENTIST_EVENT],
+      members: [{ id: "m-1", name: "Emma" }],
+      attendees: [{ event_id: "ev-1", family_member_id: "m-1" }],
+    });
+    await executeTool(
+      "query_calendar_events",
+      { person: "Emma", direction: "all" },
+      ctx,
+    );
+
+    const calendarQuery = (ctx.client.from as ReturnType<typeof vi.fn>).mock.results
+      .find((result) => result.value?.select?.mock?.calls?.[0]?.[0]?.includes("starts_on"))
+      ?.value;
+    expect(calendarQuery.in).toHaveBeenCalledWith("id", ["ev-1"]);
+    expect(calendarQuery.limit).toHaveBeenCalledWith(500);
+  });
+
+  it("expands an older recurring event to its next occurrence", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-recurring",
+        title: "Klavierunterricht",
+        starts_on: "2020-01-06",
+        ends_on: "2020-01-06",
+        recurrence: "weekly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      titel: "Klavierunterricht",
+      wiederholung: "wöchentlich",
+    });
+    expect(result.events[0].von >= result.heute).toBe(true);
+  });
+
+  it("uses Berlin's date at the UTC day boundary", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T22:30:00Z"));
+    const ctx = makeCalendarQueryCtx({ events: [] });
+
+    const result = JSON.parse(
+      await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
+    );
+
+    expect(result.heute).toBe("2026-08-13");
+    vi.useRealTimers();
+  });
+
+  it("says so when the named family member does not exist", async () => {
+    const ctx = makeCalendarQueryCtx({ members: [] });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        { person: "Zoe" },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toEqual([]);
+    expect(result.message).toContain("Zoe");
+  });
+
+  it("says so when nothing matches", async () => {
+    const ctx = makeCalendarQueryCtx({ events: [] });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        { query: "Zahnarzt" },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toEqual([]);
+    expect(result.message).toMatch(/Keine passenden Termine/);
+  });
+
+  it("labels multi-day and all-day events without a time", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-3",
+        title: "Herbstferien",
+        starts_on: "2026-10-12",
+        ends_on: "2026-10-18",
+        all_day: true,
+        starts_time: null,
+        ends_time: null,
+        recurrence: "yearly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
+    );
+
+    expect(result.events[0]).toMatchObject({
+      bis: "2026-10-18",
+      uhrzeit: "ganztägig",
+      wiederholung: "jährlich",
+    });
   });
 });

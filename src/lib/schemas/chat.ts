@@ -185,8 +185,7 @@ export const chatActionConfirmationSchema = z.object({
     .regex(UUID_REGEX, "family_id muss eine gültige UUID sein."),
   /**
    * Stable, client-generated idempotency key for the proposal. A retried
-   * confirm reuses it, so the server executes the write at most once even
-   * if the first response was lost on the way back.
+   * confirmation reuses it, so the server executes the write at most once.
    */
   action_id: z
     .string()
@@ -201,13 +200,6 @@ export type ChatActionConfirmationInput = z.infer<
   typeof chatActionConfirmationSchema
 >;
 
-/**
- * Keys of a `confirmation_request` stream event that describe transport,
- * not the proposal itself. Everything else on the event is a
- * server-resolved preview field (e.g. `task_title`, `existing_value`,
- * `fact_type_label`, `document_title`) that the action card renders but
- * that is not part of the raw, model-supplied tool arguments.
- */
 const CONFIRMATION_EVENT_META_KEYS = new Set([
   "type",
   "tool_name",
@@ -218,11 +210,8 @@ const CONFIRMATION_EVENT_META_KEYS = new Set([
 ]);
 
 /**
- * Merges the validated proposal args of a `confirmation_request` event with
- * its server-resolved preview fields into the single object the action card
- * renders and the confirmation endpoint executes. Client (live stream) and
- * server (persistence for reloads) MUST use this same merge, otherwise a
- * restored card shows less than the live card did.
+ * Combines raw proposed arguments and server-resolved display fields for an
+ * action card. This is shared by live streaming and restored messages.
  */
 export function mergeConfirmationProposal(
   event: Record<string, unknown>,

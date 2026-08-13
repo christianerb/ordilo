@@ -24,25 +24,6 @@ function asText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-const PRIORITY_LABELS: Record<string, string> = {
-  high: "Hoch",
-  medium: "Mittel",
-  low: "Niedrig",
-};
-
-const RECURRENCE_LABELS: Record<string, string> = {
-  weekly: "Wöchentlich",
-  biweekly: "Alle 14 Tage",
-  monthly: "Monatlich",
-  yearly: "Jährlich",
-};
-
-function asStringList(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-    : [];
-}
-
 function getActionContent(action: ChatAction): {
   icon: typeof ListPlus;
   eyebrow: string;
@@ -55,7 +36,6 @@ function getActionContent(action: ChatAction): {
     case "add_task": {
       const dueDate = asText(args.due_date);
       const assignee = asText(args.assignee_name);
-      const description = asText(args.description);
       return {
         icon: ListPlus,
         eyebrow: "Aufgabe vorbereiten",
@@ -65,23 +45,13 @@ function getActionContent(action: ChatAction): {
             ? [{ label: "Frist", value: formatGermanDate(dueDate) || dueDate }]
             : []),
           ...(assignee ? [{ label: "Für", value: assignee }] : []),
-          // The server defaults a missing priority to "medium" — show the
-          // value that will actually be written, not just explicit ones.
-          {
-            label: "Priorität",
-            value: PRIORITY_LABELS[args.priority as string] ?? "Mittel",
-          },
-          ...(description ? [{ label: "Beschreibung", value: description }] : []),
         ],
       };
     }
     case "add_calendar_event": {
       const start = asText(args.starts_on);
       const end = asText(args.ends_on);
-      const startTime = asText(args.starts_time);
-      const endTime = asText(args.ends_time);
-      const recurrence = asText(args.recurrence);
-      const attendees = asStringList(args.attendee_names);
+      const time = asText(args.starts_time);
       const date =
         start && end && end !== start
           ? `${formatGermanDate(start) || start} bis ${formatGermanDate(end) || end}`
@@ -94,21 +64,7 @@ function getActionContent(action: ChatAction): {
         title: asText(args.title) ?? "Neuer Termin",
         details: [
           ...(date ? [{ label: "Wann", value: date }] : []),
-          ...(args.all_day === true ? [{ label: "Ganztägig", value: "Ja" }] : []),
-          ...(startTime
-            ? [
-                {
-                  label: "Uhrzeit",
-                  value: endTime ? `${startTime} bis ${endTime}` : startTime,
-                },
-              ]
-            : []),
-          ...(recurrence && recurrence !== "none" && RECURRENCE_LABELS[recurrence]
-            ? [{ label: "Wiederholung", value: RECURRENCE_LABELS[recurrence] }]
-            : []),
-          ...(attendees.length
-            ? [{ label: "Mit", value: attendees.join(", ") }]
-            : []),
+          ...(time ? [{ label: "Uhrzeit", value: time }] : []),
         ],
       };
     }
@@ -119,48 +75,27 @@ function getActionContent(action: ChatAction): {
         title: asText(args.task_title) ?? "Aufgabe erledigen",
         details: [],
       };
-    case "add_family_member": {
-      const role = asText(args.role);
-      const birthdate = asText(args.birthdate);
+    case "add_family_member":
       return {
         icon: UserPlus,
         eyebrow: "Familie ergänzen",
         title: `${asText(args.name) ?? asText(args.member_name) ?? "Neue Person"} hinzufügen`,
-        details: [
-          ...(role ? [{ label: "Rolle", value: role }] : []),
-          ...(birthdate
-            ? [
-                {
-                  label: "Geburtstag",
-                  value: formatGermanDate(birthdate) || birthdate,
-                },
-              ]
-            : []),
-        ],
+        details: [],
       };
-    }
-    case "create_collection": {
-      const iconName = asText(args.icon);
-      const color = asText(args.color);
+    case "create_collection":
       return {
         icon: FolderPlus,
         eyebrow: "Sammlung anlegen",
         title: asText(args.name) ?? asText(args.collection_name) ?? "Neue Sammlung",
-        details: [
-          ...(iconName ? [{ label: "Icon", value: iconName }] : []),
-          ...(color ? [{ label: "Farbe", value: color }] : []),
-        ],
+        details: [],
       };
-    }
-    case "create_note": {
-      const content = asText(args.content);
+    case "create_note":
       return {
         icon: FilePenLine,
         eyebrow: "Notiz anlegen",
         title: asText(args.title) ?? "Neue Notiz",
-        details: content ? [{ label: "Inhalt", value: content }] : [],
+        details: [],
       };
-    }
     case "move_document_to_collection":
       return {
         icon: FolderPlus,
@@ -181,83 +116,22 @@ function getActionContent(action: ChatAction): {
         details: tags.length ? [{ label: "Schlagworte", value: tags.join(", ") }] : [],
       };
     }
-    case "save_document_fact": {
-      // The tool preview tells us when this proposal overwrites an existing
-      // fact of the same type — the card must disclose that correction,
-      // including the value being replaced, before "Übernehmen" is tapped.
-      const factTypeLabel = asText(args.fact_type_label);
-      const label = asText(args.label);
-      const value = asText(args.value);
-      const existingValue = asText(args.existing_value);
-      const isCorrection = Boolean(existingValue);
-      const details: Detail[] = [];
-      if (factTypeLabel) details.push({ label: "Typ", value: factTypeLabel });
-      if (label && label !== factTypeLabel) {
-        details.push({ label: "Bezeichnung", value: label });
-      }
-      if (existingValue) {
-        details.push({ label: "Bisheriger Wert", value: existingValue });
-      }
-      if (value) {
-        details.push({
-          label: isCorrection ? "Neuer Wert" : "Angabe",
-          value,
-        });
-      }
+    case "save_document_fact":
       return {
         icon: FilePenLine,
-        eyebrow: isCorrection ? "Angabe korrigieren" : "Angabe merken",
+        eyebrow: "Angabe merken",
         title: asText(args.document_title) ?? "Angabe speichern",
-        details,
+        details: asText(args.value)
+          ? [{ label: asText(args.label) ?? "Angabe", value: asText(args.value)! }]
+          : [],
       };
-    }
-    case "update_task": {
-      // Trust rule: every field the confirmation endpoint will write must be
-      // visible before "Übernehmen" is enabled. Only fields actually present
-      // in the proposal change — absent fields stay untouched server-side.
-      const details: Detail[] = [];
-      const newTitle = asText(args.title);
-      if (newTitle) details.push({ label: "Neuer Titel", value: newTitle });
-      if (typeof args.description === "string") {
-        const description = args.description.trim();
-        details.push({
-          label: "Beschreibung",
-          value: description || "wird entfernt",
-        });
-      }
-      if (typeof args.due_date === "string") {
-        const dueDate = args.due_date.trim();
-        details.push({
-          label: "Frist",
-          value: dueDate
-            ? formatGermanDate(dueDate) || dueDate
-            : "wird entfernt",
-        });
-      }
-      if (typeof args.priority === "string") {
-        const priority = PRIORITY_LABELS[args.priority];
-        if (priority) details.push({ label: "Priorität", value: priority });
-      }
-      if (typeof args.assignee_name === "string") {
-        const assignee = args.assignee_name.trim();
-        details.push({
-          label: "Zuständig",
-          value: assignee || "wird entfernt",
-        });
-      }
-      if (args.status === "open" || args.status === "done") {
-        details.push({
-          label: "Status",
-          value: args.status === "done" ? "Erledigt" : "Wieder offen",
-        });
-      }
+    case "update_task":
       return {
         icon: Pencil,
         eyebrow: "Aufgabe ändern",
-        title: asText(args.task_title) ?? newTitle ?? "Aufgabe anpassen",
-        details,
+        title: asText(args.task_title) ?? "Aufgabe anpassen",
+        details: [],
       };
-    }
   }
 }
 
@@ -320,8 +194,8 @@ export function OrdiloActionCard({
           <dl className="mt-3 divide-y divide-border/60 rounded-ordilo-sm bg-card/60 px-3">
             {details.map((detail) => (
               <div key={detail.label} className="flex items-baseline justify-between gap-3 py-2">
-                <dt className="shrink-0 text-xs text-[var(--mist-dark)]">{detail.label}</dt>
-                <dd className="min-w-0 break-words text-right text-xs font-medium text-foreground">
+                <dt className="text-xs text-[var(--mist-dark)]">{detail.label}</dt>
+                <dd className="min-w-0 text-right text-xs font-medium text-foreground">
                   {detail.value}
                 </dd>
               </div>

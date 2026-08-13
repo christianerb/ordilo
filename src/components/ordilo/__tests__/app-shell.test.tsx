@@ -30,12 +30,6 @@ vi.mock("@/app/(app)/actions", () => ({
   logout: vi.fn(),
 }));
 
-// The collections server actions cannot run in a unit-test environment
-// (they use the Supabase server client) — stub them.
-vi.mock("@/app/(app)/sammlungen/actions", () => ({
-  createCollection: vi.fn(),
-}));
-
 // AppShell now mounts ScanProvider internally, which resolves the family
 // ID via the browser Supabase client on mount. AppShellContent also fetches
 // collections + profile client-side. We provide a configurable mock so
@@ -113,23 +107,8 @@ vi.mock("@/lib/ocr", () => ({ triggerOcr: vi.fn() }));
 
 // Import AFTER mocks are registered.
 import { AppShell, NAV_TABS } from "@/components/ordilo/app-shell";
-import { createCollection } from "@/app/(app)/sammlungen/actions";
 
 // --- Helpers ---------------------------------------------------------------
-
-/**
- * Reset persisted UI preferences (e.g. the sidebar collapse flag) between
- * tests. Storage may be partially unavailable in some environments, so this
- * is guarded — where localStorage works (CI), the collapse click in one test
- * must never leak into the next test's render.
- */
-function clearStoredPreferences() {
-  try {
-    window.localStorage?.clear();
-  } catch {
-    // Storage unavailable — nothing to reset.
-  }
-}
 
 /** Render the shell with a given pathname and simple children. */
 function renderShell(pathname: string) {
@@ -192,9 +171,6 @@ describe("AppShell", () => {
     mockSearchParamsGet.mockReturnValue(null);
     mockPush.mockClear();
     mockSupabaseData();
-    // The sidebar collapse preference persists in localStorage — reset it
-    // so one test's click never leaks into the next test's render.
-    clearStoredPreferences();
     // Pretend prefers-reduced-motion is active so the CameraStep's
     // auto-capture sampler doesn't call canvas.getContext (not
     // implemented in jsdom) when the scan wizard opens.
@@ -544,134 +520,6 @@ describe("AppShell", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sidebar Sammlungen (collections) section
-// ---------------------------------------------------------------------------
-
-describe("AppShell sidebar collections", () => {
-  const collections = [
-    { id: "col-1", name: "Rechnungen", icon: "receipt", color: "petrol" },
-    { id: "col-2", name: "Schule", icon: "graduation-cap", color: "apricot" },
-  ];
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockUsePathname.mockReturnValue("/home");
-    clearStoredPreferences();
-    mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
-  });
-
-  it("renders a Sammlungen heading and one link per collection", async () => {
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    expect(await screen.findByText("Sammlungen")).toBeDefined();
-    expect(screen.getByRole("link", { name: /Rechnungen/i }).getAttribute("href")).toBe(
-      "/sammlungen/col-1",
-    );
-    expect(screen.getByRole("link", { name: /Schule/i }).getAttribute("href")).toBe(
-      "/sammlungen/col-2",
-    );
-  });
-
-  it("marks a collection link active when its detail route is current", async () => {
-    mockUsePathname.mockReturnValue("/sammlungen/col-1");
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    expect(
-      (await screen.findByRole("link", { name: /Rechnungen/i })).getAttribute("aria-current"),
-    ).toBe("page");
-    expect(
-      screen.getByRole("link", { name: /Schule/i }).getAttribute("aria-current"),
-    ).toBeNull();
-  });
-
-  it("renders no collection links when the list is empty", async () => {
-    mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections: [] });
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    expect(await screen.findByText("Sammlungen")).toBeDefined();
-    expect(screen.queryByRole("link", { name: /Rechnungen/i })).toBeNull();
-  });
-
-  it("opens the add-collection sheet when clicking 'Sammlung hinzufügen'", async () => {
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    await screen.findByText("Sammlungen");
-    fireEvent.click(screen.getByRole("button", { name: /Sammlung hinzufügen/i }));
-    expect(screen.getByText("Gib der Sammlung einen Namen, ein Icon und eine Farbe.")).toBeDefined();
-    expect(await screen.findByLabelText("Name")).toBeDefined();
-  });
-
-  it("creates a collection and appends it to the sidebar list on success", async () => {
-    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: true,
-      data: { id: "col-3", name: "Verträge", icon: "shield", color: "blue-soft" },
-    });
-
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    await screen.findByText("Sammlungen");
-
-    fireEvent.click(screen.getByRole("button", { name: /Sammlung hinzufügen/i }));
-    fireEvent.change(await screen.findByLabelText("Name"), {
-      target: { value: "Verträge" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^Sammlung hinzufügen$/ }));
-
-    await waitFor(() => {
-      expect(createCollection).toHaveBeenCalledWith({
-        name: "Verträge",
-        icon: expect.any(String),
-        color: expect.any(String),
-      });
-    });
-    await waitFor(() => {
-      expect(screen.getByRole("link", { name: /Verträge/i })).toBeDefined();
-    });
-  });
-
-  it("shows a German server error and keeps the sheet open on failure", async () => {
-    (createCollection as ReturnType<typeof vi.fn>).mockResolvedValue({
-      success: false,
-      error: "Diese Sammlung gibt es schon.",
-    });
-
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    await screen.findByText("Sammlungen");
-
-    fireEvent.click(screen.getByRole("button", { name: /Sammlung hinzufügen/i }));
-    fireEvent.change(await screen.findByLabelText("Name"), {
-      target: { value: "Rechnungen" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^Sammlung hinzufügen$/ }));
-
-    await waitFor(() => {
-      expect(screen.getByText("Diese Sammlung gibt es schon.")).toBeDefined();
-    });
-    // Sheet stays open — the name input is still present.
-    expect(screen.getByLabelText("Name")).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Sidebar profile footer
 // ---------------------------------------------------------------------------
 
@@ -679,7 +527,6 @@ describe("AppShell sidebar profile footer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePathname.mockReturnValue("/home");
-    clearStoredPreferences();
   });
 
   it("falls back to a plain logout button when no profile is given", () => {
@@ -749,21 +596,19 @@ describe("AppShell sidebar profile footer", () => {
 // ---------------------------------------------------------------------------
 
 describe("AppShell sidebar personality touches", () => {
-  const collections = [
-    { id: "col-1", name: "Rechnungen", icon: "receipt", color: "petrol" },
-    { id: "col-2", name: "Schule", icon: "graduation-cap", color: "apricot" },
-  ];
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("localStorage", {
+      getItem: vi.fn(() => null),
+      setItem: vi.fn(),
+    });
     mockUsePathname.mockReturnValue("/home");
-    // Reset the persisted sidebar collapse preference — a collapse click in
-    // one test must not start the next test with a collapsed sidebar.
-    clearStoredPreferences();
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("applies an ambient gradient background to the sidebar surface", () => {
@@ -801,12 +646,14 @@ describe("AppShell sidebar personality touches", () => {
       </AppShell>,
     );
     // Wait for profile to load — the family name appears in the greeting.
-    await screen.findAllByText("Familie Müller");
-    const greetingEl = screen.getByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
-    // The opacity class lives on the greeting container div, not the span.
-    const greetingContainer = greetingEl.closest("div");
-    expect(greetingContainer?.className).toContain("opacity-100");
-    expect(greetingContainer?.textContent).toContain("Familie Müller");
+    await waitFor(() => {
+      const greetingEl = screen.getByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
+      // The greeting is calculated in a post-render effect, so wait for its
+      // visible state rather than just the independently rendered profile.
+      const greetingContainer = greetingEl.closest("div");
+      expect(greetingContainer?.className).toContain("opacity-100");
+      expect(greetingContainer?.textContent).toContain("Familie Müller");
+    });
   });
 
   it("does not render a greeting when no profile is given", () => {
@@ -837,45 +684,6 @@ describe("AppShell sidebar personality touches", () => {
     expect(dot?.className).toContain("bg-[var(--apricot)]");
   });
 
-  it("shows an apricot dot on the active collection row", async () => {
-    mockUsePathname.mockReturnValue("/sammlungen/col-1");
-    mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    const activeCollectionLink = await screen.findByRole("link", { name: /Rechnungen/i });
-    const dot = activeCollectionLink.querySelector(".animate-nav-dot");
-    expect(dot?.className).toContain("bg-[var(--apricot)]");
-  });
-
-  it("keeps inactive collection rows flat", async () => {
-    mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    const link = await screen.findByRole("link", { name: /Rechnungen/i });
-    expect(link.getAttribute("style") ?? "").not.toContain("background-color");
-  });
-
-  it("uses one current-page marker when a collection is active", async () => {
-    mockUsePathname.mockReturnValue("/sammlungen/col-1");
-    mockSupabaseData({ family: { id: "fam-1", name: "Test" }, collections });
-    const { container } = render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    await screen.findByRole("link", { name: /Rechnungen/i });
-    const currentLinks = container.querySelectorAll(
-      'aside a[aria-current="page"]',
-    );
-    expect(currentLinks).toHaveLength(1);
-    expect(currentLinks[0]?.textContent).toContain("Rechnungen");
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -891,11 +699,10 @@ describe("AppShell server-provided data", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUsePathname.mockReturnValue("/home");
-    clearStoredPreferences();
     mockSupabaseData();
   });
 
-  it("renders the server-provided profile and collections immediately", () => {
+  it("renders the server-provided profile immediately", () => {
     render(
       <AppShell
         profile={{ familyName: "Familie Server", email: "server@example.com" }}
@@ -905,9 +712,9 @@ describe("AppShell server-provided data", () => {
       </AppShell>,
     );
     // No async fetch needed — the data is there on first render.
+    // (Collections are no longer listed in the nav; they still hydrate the
+    // shared provider for /dokumente and the "+" sheet.)
     expect(screen.getAllByText("Familie Server").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole("link", { name: /Rechnungen/i })).toBeDefined();
-    expect(screen.getByRole("link", { name: /Schule/i })).toBeDefined();
   });
 
   it("skips the client-side profile and collections fetches when server data is given", async () => {

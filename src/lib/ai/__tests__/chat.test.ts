@@ -544,6 +544,32 @@ describe("buildAgenticSystemPrompt", () => {
   });
 });
 
+describe("buildAgenticSystemPrompt — current date context", () => {
+  // 14:30 UTC = 16:30 Europe/Berlin (CEST in August).
+  const fixedNow = new Date("2026-08-12T14:30:00Z");
+  const prompt = buildAgenticSystemPrompt(undefined, fixedNow);
+
+  it("includes today's date in German long form and ISO format", () => {
+    expect(prompt).toContain("Heute ist Mittwoch, 12.08.2026 (2026-08-12)");
+  });
+
+  it("includes the current time in Europe/Berlin", () => {
+    expect(prompt).toContain("16:30 Uhr (Zeitzone Europe/Berlin)");
+  });
+
+  it("instructs to resolve relative dates itself and never ask for today's date", () => {
+    expect(prompt).toContain("SELBST in ein konkretes Datum um");
+    expect(prompt).toContain("NIEMALS, welches Datum heute ist");
+  });
+
+  it("defaults to the real clock when no date is injected", () => {
+    // No fixed date — the prompt must still contain a plausible date line.
+    expect(buildAgenticSystemPrompt()).toMatch(
+      /Heute ist \w+, \d{2}\.\d{2}\.\d{4} \(\d{4}-\d{2}-\d{2}\), \d{2}:\d{2} Uhr/,
+    );
+  });
+});
+
 // ---------------------------------------------------------------------------
 // streamAgenticAnswer — present_answer_card (structured answer cards)
 // ---------------------------------------------------------------------------

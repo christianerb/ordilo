@@ -14,6 +14,11 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // `server-only` throws when bundled for the client; Vitest never does
+      // that, so resolve it to an empty stub instead of installing the pkg.
+      "server-only": fileURLToPath(
+        new URL("./src/lib/test-stubs/server-only.ts", import.meta.url),
+      ),
     },
   },
 });

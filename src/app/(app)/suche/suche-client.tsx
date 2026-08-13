@@ -13,7 +13,6 @@ import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import {
   CHAT_ACTION_TOOL_NAMES,
-  mergeConfirmationProposal,
   type ChatAction,
   type ChatSource,
   type AnswerCard as AnswerCardData,
@@ -46,7 +45,6 @@ export interface InitialMessage {
   content: string;
   sources: ChatSource[];
   card?: AnswerCardData;
-  actions?: ChatAction[];
   feedback?: "positive" | "negative" | null;
 }
 
@@ -115,7 +113,6 @@ export function SucheClient({
       content: m.content,
       sources: m.sources,
       card: m.card,
-      actions: m.actions,
       feedback: m.feedback ?? null,
     })),
   );
@@ -512,39 +509,41 @@ export function SucheClient({
                 );
               } else if (data.type === "confirmation_request") {
                 const toolName = data.tool_name;
+                const actionArgs = data.action_args;
                 if (
                   typeof toolName === "string" &&
                   CHAT_ACTION_TOOL_NAMES.includes(
                     toolName as (typeof CHAT_ACTION_TOOL_NAMES)[number],
                   ) &&
-                  data.action_args &&
-                  typeof data.action_args === "object" &&
-                  !Array.isArray(data.action_args)
+                  actionArgs &&
+                  typeof actionArgs === "object" &&
+                  !Array.isArray(actionArgs)
                 ) {
-                  // A single answer can propose several writes — append each
-                  // as its own card instead of overwriting the previous one.
-                  // The server mints and persists the same merged proposal,
-                  // so a reload restores exactly this card.
+                  const previewFields = Object.fromEntries(
+                    Object.entries(data).filter(
+                      ([key]) =>
+                        ![
+                          "type",
+                          "tool_name",
+                          "action_args",
+                          "needs_confirmation",
+                          "message",
+                        ].includes(key),
+                    ),
+                  );
+                  const action: ChatAction = {
+                    id: `${aiMsgId}-${toolName}`,
+                    toolName: toolName as ChatAction["toolName"],
+                    args: {
+                      ...(actionArgs as Record<string, unknown>),
+                      ...previewFields,
+                    },
+                    state: "ready",
+                  };
                   setMessages((prev) =>
-                    prev.map((m) => {
-                      if (m.id !== aiMsgId) return m;
-                      const action: ChatAction = {
-                        // The server mints a stable id per proposal (also
-                        // persisted with the message) so a reload restores
-                        // the same idempotency key. The derived fallback
-                        // covers streams from older server versions.
-                        id:
-                          typeof data.action_id === "string"
-                            ? data.action_id
-                            : `${aiMsgId}-${toolName}-${(m.actions ?? []).length}`,
-                        toolName: toolName as ChatAction["toolName"],
-                        // Shared merge: validated args + server-resolved
-                        // preview fields (same as the persisted copy).
-                        args: mergeConfirmationProposal(data),
-                        state: "ready",
-                      };
-                      return { ...m, actions: [...(m.actions ?? []), action] };
-                    }),
+                    prev.map((m) =>
+                      m.id === aiMsgId ? { ...m, action } : m,
+                    ),
                   );
                 }
               } else if (data.type === "conversation") {
@@ -627,18 +626,12 @@ export function SucheClient({
   const updateAction = useCallback(
     (
       messageId: string,
-      actionId: string,
       update: (action: ChatAction) => ChatAction,
     ) => {
       setMessages((previous) =>
         previous.map((message) =>
-          message.id === messageId
-            ? {
-                ...message,
-                actions: message.actions?.map((action) =>
-                  action.id === actionId ? update(action) : action,
-                ),
-              }
+          message.id === messageId && message.action
+            ? { ...message, action: update(message.action) }
             : message,
         ),
       );
@@ -649,11 +642,10 @@ export function SucheClient({
   const runAction = useCallback(
     async (
       messageId: string,
-      actionId: string,
       action: ChatAction,
       mode: "confirm" | "undo",
     ) => {
-      updateAction(messageId, actionId, (current) => ({
+      updateAction(messageId, (current) => ({
         ...current,
         state: mode === "confirm" ? "confirming" : "undoing",
         error: undefined,
@@ -668,9 +660,6 @@ export function SucheClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             family_id: familyId,
-            // Stable idempotency key: a retried tap reuses it, so the
-            // server executes the write at most once per proposal.
-            action_id: mode === "undo" ? `${action.id}:undo` : action.id,
             tool_name: proposal.toolName,
             args: proposal.args,
           }),
@@ -684,7 +673,7 @@ export function SucheClient({
           );
         }
 
-        updateAction(messageId, actionId, (current) => {
+        updateAction(messageId, (current) => {
           if (mode === "undo") return { ...current, state: "undone" };
 
           const taskId =
@@ -704,7 +693,7 @@ export function SucheClient({
           };
         });
       } catch (error) {
-        updateAction(messageId, actionId, (current) => ({
+        updateAction(messageId, (current) => ({
           ...current,
           state: "error",
           error:
@@ -717,55 +706,42 @@ export function SucheClient({
     [familyId, updateAction],
   );
 
-  const findAction = useCallback(
-    (messageId: string, actionId: string) =>
-      messages
-        .find((message) => message.id === messageId)
-        ?.actions?.find((action) => action.id === actionId),
-    [messages],
-  );
-
   const handleActionConfirm = useCallback(
-    (messageId: string, actionId: string) => {
-      const action = findAction(messageId, actionId);
-      if (action) void runAction(messageId, actionId, action, "confirm");
+    (messageId: string) => {
+      const action = messages.find((message) => message.id === messageId)?.action;
+      if (action) void runAction(messageId, action, "confirm");
     },
-    [findAction, runAction],
+    [messages, runAction],
   );
 
   const handleActionUndo = useCallback(
-    (messageId: string, actionId: string) => {
-      const action = findAction(messageId, actionId);
-      if (action?.undo) void runAction(messageId, actionId, action, "undo");
+    (messageId: string) => {
+      const action = messages.find((message) => message.id === messageId)?.action;
+      if (action?.undo) void runAction(messageId, action, "undo");
     },
-    [findAction, runAction],
+    [messages, runAction],
   );
 
   const handleActionDismiss = useCallback(
-    (messageId: string, actionId: string) => {
-      updateAction(messageId, actionId, (action) => ({
-        ...action,
-        state: "dismissed",
-      }));
+    (messageId: string) => {
+      updateAction(messageId, (action) => ({ ...action, state: "dismissed" }));
     },
     [updateAction],
   );
 
-  const handleActionAdjust = useCallback(
-    (_message: ChatMessage, action: ChatAction) => {
-      const title =
-        typeof action.args.title === "string"
-          ? action.args.title
-          : action.toolName === "mark_task_done" &&
-              typeof action.args.task_title === "string"
-            ? action.args.task_title
-            : "diesen Vorschlag";
-      setQuotedMessage({
-        text: `Vorschlag von Ordilo: ${title}`,
-      });
-    },
-    [],
-  );
+  const handleActionAdjust = useCallback((message: ChatMessage) => {
+    if (!message.action) return;
+    const title =
+      typeof message.action.args.title === "string"
+        ? message.action.args.title
+        : message.action.toolName === "mark_task_done" &&
+            typeof message.action.args.task_title === "string"
+          ? message.action.args.task_title
+          : "diesen Vorschlag";
+    setQuotedMessage({
+      text: `Vorschlag von Ordilo: ${title}`,
+    });
+  }, []);
 
   // -------------------------------------------------------------------------
   // Quote a message — the excerpt shows above the composer until the next
@@ -895,7 +871,6 @@ export function SucheClient({
                   passesFilters={passesFilters}
                   onSourceCardClick={handleSourceCardClick}
                   onQuote={handleQuoteMessage}
-                  onFollowUp={handleExampleClick}
                   onActionConfirm={handleActionConfirm}
                   onActionDismiss={handleActionDismiss}
                   onActionAdjust={handleActionAdjust}

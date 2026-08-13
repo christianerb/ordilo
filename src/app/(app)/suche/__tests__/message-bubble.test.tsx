@@ -112,7 +112,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
     expect(screen.queryByText("Passende Dokumente")).toBeNull();
   });
 
-  it("renders the source label and count when sources are visible", () => {
+  it("renders the document suggestions label and count when sources are visible", () => {
     render(
       <MessageBubble
         message={buildMessage({ content: "Antwort", sources })}
@@ -120,7 +120,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("Diese Antwort basiert auf")).toBeDefined();
+    expect(screen.getByText("Passende Dokumente")).toBeDefined();
     expect(screen.getByTestId("source-count-badge").textContent).toBe("2");
   });
 
@@ -311,19 +311,6 @@ describe("MessageBubble — loading checklist", () => {
     expect(screen.queryByTestId("processing-checklist")).toBeNull();
   });
 
-  it("shows a quiet status message and caret while an answer streams", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({ content: "Teilantwort" })}
-        isStreaming
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("Ordilo schreibt noch.")).toBeDefined();
-    expect(document.querySelector(".animate-stream-caret")).not.toBeNull();
-  });
-
   it("hides the processing checklist once a card has arrived", () => {
     render(
       <MessageBubble
@@ -344,48 +331,6 @@ describe("MessageBubble — loading checklist", () => {
     );
     expect(screen.queryByTestId("processing-checklist")).toBeNull();
     expect(screen.getByTestId("answer-card")).toBeDefined();
-  });
-});
-
-describe("MessageBubble — source-aware follow-ups", () => {
-  it("offers follow-ups only for completed answers with sources", () => {
-    const onFollowUp = vi.fn();
-    render(
-      <MessageBubble
-        message={buildMessage({
-          content: "Antwort",
-          sources: [
-            { document_id: "doc-1", title: "Kita-Brief", excerpt: "x", score: 0.9 },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-        onFollowUp={onFollowUp}
-      />,
-    );
-    expect(screen.getByTestId("source-follow-ups")).toBeDefined();
-    fireEvent.click(screen.getByText("Gibt es in „Kita-Brief“ eine Frist?"));
-    expect(onFollowUp).toHaveBeenCalledWith(
-      "Gibt es in „Kita-Brief“ eine Frist?",
-    );
-  });
-
-  it("waits to offer follow-ups until streaming and source lookup finish", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          content: "Teilantwort",
-          sources: [
-            { document_id: "doc-1", title: "Kita-Brief", excerpt: "x", score: 0.9 },
-          ],
-        })}
-        isStreaming
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-        onFollowUp={vi.fn()}
-      />,
-    );
-    expect(screen.queryByTestId("source-follow-ups")).toBeNull();
   });
 });
 
@@ -453,7 +398,7 @@ describe("MessageBubble — Ordilo Action Card", () => {
       <MessageBubble
         message={buildMessage({
           content: "Ich habe das für dich vorbereitet.",
-          actions: [taskAction],
+          action: taskAction,
         })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
@@ -469,127 +414,13 @@ describe("MessageBubble — Ordilo Action Card", () => {
     );
   });
 
-  it("shows priority and description an add_task proposal will write", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          actions: [
-            {
-              id: "action-4",
-              toolName: "add_task" as const,
-              args: {
-                title: "Anmeldung abschicken",
-                priority: "high",
-                description: "Formular liegt in der Mappe",
-              },
-              state: "ready" as const,
-            },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-
-    const card = screen.getByTestId("ordilo-action-card");
-    expect(card.textContent).toContain("Hoch");
-    expect(card.textContent).toContain("Formular liegt in der Mappe");
-  });
-
-  it("shows the default priority the server will write when none is proposed", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          actions: [
-            {
-              id: "action-5",
-              toolName: "add_task" as const,
-              args: { title: "Anmeldung abschicken" },
-              state: "ready" as const,
-            },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByTestId("ordilo-action-card").textContent).toContain(
-      "Mittel",
-    );
-  });
-
-  it("discloses the existing value when a fact proposal is a correction", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          actions: [
-            {
-              id: "action-7",
-              toolName: "save_document_fact" as const,
-              args: {
-                document_title: "Kontoauszug",
-                fact_type: "iban",
-                fact_type_label: "IBAN",
-                label: "IBAN",
-                value: "DE44 5001 0517 5407 3249 31",
-                existing_value: "DE12 3456 7890 1234 5678 90",
-              },
-              state: "ready" as const,
-            },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-
-    const card = screen.getByTestId("ordilo-action-card");
-    expect(card.textContent).toContain("Angabe korrigieren");
-    expect(card.textContent).toContain("Bisheriger Wert");
-    expect(card.textContent).toContain("DE12 3456 7890 1234 5678 90");
-    expect(card.textContent).toContain("Neuer Wert");
-    expect(card.textContent).toContain("DE44 5001 0517 5407 3249 31");
-  });
-
-  it("shows end time, recurrence and attendees on a calendar proposal", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          actions: [
-            {
-              id: "action-6",
-              toolName: "add_calendar_event" as const,
-              args: {
-                title: "Elternabend",
-                starts_on: "2026-09-10",
-                starts_time: "18:00",
-                ends_time: "19:30",
-                recurrence: "monthly",
-                attendee_names: ["Anna", "Emma"],
-              },
-              state: "ready" as const,
-            },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-
-    const card = screen.getByTestId("ordilo-action-card");
-    expect(card.textContent).toContain("18:00 bis 19:30");
-    expect(card.textContent).toContain("Monatlich");
-    expect(card.textContent).toContain("Anna, Emma");
-  });
-
   it("routes the card controls to the message action callbacks", () => {
     const onConfirm = vi.fn();
     const onDismiss = vi.fn();
     const onAdjust = vi.fn();
     render(
       <MessageBubble
-        message={buildMessage({ actions: [taskAction] })}
+        message={buildMessage({ action: taskAction })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
         onActionConfirm={onConfirm}
@@ -602,72 +433,11 @@ describe("MessageBubble — Ordilo Action Card", () => {
     fireEvent.click(screen.getByTestId("action-card-adjust"));
     fireEvent.click(screen.getByTestId("action-card-dismiss"));
 
-    expect(onConfirm).toHaveBeenCalledWith("msg-1", "action-1");
+    expect(onConfirm).toHaveBeenCalledWith("msg-1");
     expect(onAdjust).toHaveBeenCalledWith(
       expect.objectContaining({ id: "msg-1" }),
-      expect.objectContaining({ id: "action-1" }),
     );
-    expect(onDismiss).toHaveBeenCalledWith("msg-1", "action-1");
-  });
-
-  it("renders one card per proposed action when an answer carries several", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          content: "Ich habe zwei Aufgaben vorbereitet.",
-          actions: [
-            taskAction,
-            {
-              id: "action-2",
-              toolName: "add_task" as const,
-              args: { title: "Elternabend eintragen" },
-              state: "ready" as const,
-            },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-
-    expect(screen.getAllByTestId("ordilo-action-card")).toHaveLength(2);
-    expect(screen.getByText("Anmeldung abschicken")).toBeDefined();
-    expect(screen.getByText("Elternabend eintragen")).toBeDefined();
-  });
-
-  it("shows every field an update_task proposal will write", () => {
-    render(
-      <MessageBubble
-        message={buildMessage({
-          actions: [
-            {
-              id: "action-3",
-              toolName: "update_task" as const,
-              args: {
-                task_id: "task-1",
-                task_title: "Steuererklärung",
-                title: "Steuererklärung abgeben",
-                due_date: "2026-09-01",
-                priority: "high",
-                assignee_name: "Emma",
-                status: "open",
-              },
-              state: "ready" as const,
-            },
-          ],
-        })}
-        passesFilters={passesAllFilters}
-        onSourceCardClick={vi.fn()}
-      />,
-    );
-
-    const card = screen.getByTestId("ordilo-action-card");
-    expect(card.textContent).toContain("Steuererklärung");
-    expect(card.textContent).toContain("Steuererklärung abgeben");
-    expect(card.textContent).toContain("01.09.2026");
-    expect(card.textContent).toContain("Hoch");
-    expect(card.textContent).toContain("Emma");
-    expect(card.textContent).toContain("Wieder offen");
+    expect(onDismiss).toHaveBeenCalledWith("msg-1");
   });
 });
 

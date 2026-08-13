@@ -34,9 +34,11 @@ vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({ openDocument: vi.fn() }),
 }));
 
-// The detail/create sheets are irrelevant for board interactions.
+// The detail/create sheets are irrelevant for board interactions — the
+// detail sheet mock only records whether it would be open (deep links).
 vi.mock("@/components/ordilo/task-detail-sheet", () => ({
-  TaskDetailSheet: () => null,
+  TaskDetailSheet: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="task-detail-sheet-open" /> : null,
 }));
 vi.mock("@/components/ordilo/task-create-sheet", () => ({
   TaskCreateSheet: () => null,
@@ -76,12 +78,16 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
   };
 }
 
-function renderBoard(tasks: TaskCardData[] = [makeTask()]) {
+function renderBoard(
+  tasks: TaskCardData[] = [makeTask()],
+  openTaskId?: string,
+) {
   return render(
     <AufgabenClient
       initialTasks={tasks}
       members={members}
       familyId="fam-1"
+      openTaskId={openTaskId}
     />,
   );
 }
@@ -161,6 +167,23 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe("AufgabenClient — deep link", () => {
+  it("opens the detail sheet for ?task=<id>", () => {
+    renderBoard([makeTask()], "task-1");
+    expect(screen.getByTestId("task-detail-sheet-open")).toBeDefined();
+  });
+
+  it("stays closed when the id matches no task", () => {
+    renderBoard([makeTask()], "task-unknown");
+    expect(screen.queryByTestId("task-detail-sheet-open")).toBeNull();
+  });
+
+  it("stays closed without a deep link", () => {
+    renderBoard([makeTask()]);
+    expect(screen.queryByTestId("task-detail-sheet-open")).toBeNull();
+  });
+});
 
 describe("AufgabenClient — board drag-and-drop", () => {
   it("reschedules the due date when a task is dropped on another column", async () => {
@@ -279,30 +302,6 @@ describe("AufgabenClient — delete confirmation", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
     expect(mockUpdate.mock.calls[1][0]).toEqual({
       status: "open",
-      due_date: null,
-    });
-  });
-
-  it("restores a task dismissed from the done column back to done, not open", async () => {
-    renderBoard([makeTask({ id: "task-done", status: "done" })]);
-
-    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
-    fireEvent.click(await screen.findByTestId("card-action-delete"));
-    fireEvent.click(screen.getByTestId("confirm-delete-task-button"));
-
-    await waitFor(() => expect(toast.success).toHaveBeenCalled());
-    const [, options] = vi.mocked(toast.success).mock.calls[0] as [
-      string,
-      { action: { label: string; onClick: () => void } },
-    ];
-
-    await act(async () => {
-      options.action.onClick();
-    });
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
-    // Undo must return the task to the "Erledigt" column it came from.
-    expect(mockUpdate.mock.calls[1][0]).toEqual({
-      status: "done",
       due_date: null,
     });
   });

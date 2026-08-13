@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
+import { recordProductEvent } from "@/lib/analytics/product-events";
 import { cn } from "@/lib/utils";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 
@@ -109,6 +110,18 @@ export function TaskCreateSheet({
         return;
       }
 
+      void Promise.resolve()
+        .then(() => supabase.auth.getUser())
+        .then(({ data: { user } }) =>
+          user
+            ? recordProductEvent(supabase, {
+                userId: user.id,
+                familyId,
+                eventName: "task_created",
+              })
+            : undefined,
+        )
+        .catch(() => undefined);
       onCreated();
       handleOpenChange(false);
     } catch {
