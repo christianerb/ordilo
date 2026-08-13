@@ -3,7 +3,6 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import {
-  Sparkles,
   ListChecks,
   Users,
   FileText,
@@ -17,6 +16,7 @@ import { SourceCard, type SourceCardKind } from "@/components/ordilo/source-card
 import { SourceMatchCard } from "@/components/ordilo/source-match-card";
 import { AnswerCard } from "@/components/ordilo/answer-card";
 import { cn } from "@/lib/utils";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import type {
   ChatAction,
   ChatSource,
@@ -177,8 +177,12 @@ export function MessageBubble({
   return (
     <div className="flex flex-col items-start gap-2 animate-message-in">
       <div className="flex items-start gap-2">
-        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)]">
-          <Sparkles className="size-4 text-white" aria-hidden="true" />
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-[var(--sand-light)]">
+          <OrdiloMark
+            size={27}
+            animate={false}
+            className="text-[var(--petrol)]"
+          />
         </div>
 
         <div className="max-w-[85%] rounded-ordilo-md rounded-tl-sm bg-card px-4 py-3 shadow-card lg:max-w-full">
@@ -381,6 +385,8 @@ function AnswerFeedback({
       if (next === "up") {
         setPanelOpen(false);
         sendFeedback("positive");
+        setThanked(true);
+        setTimeout(() => setThanked(false), 2500);
       } else if (next === "down") {
         // The detail panel is the sender for thumbs-down — reasons and an
         // optional comment turn a bare signal into something we can act on.
@@ -432,10 +438,14 @@ function AnswerFeedback({
         data-testid="feedback-up"
         className={cn(
           "rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          feedback === "up" && "text-[var(--petrol)]",
+          feedback === "up" && "bg-[var(--petrol)]/10 text-[var(--petrol)]",
         )}
       >
-        <ThumbsUp className="size-3.5" aria-hidden="true" />
+        <ThumbsUp
+          className="size-3.5"
+          fill={feedback === "up" ? "currentColor" : "none"}
+          aria-hidden="true"
+        />
       </button>
       <button
         type="button"
@@ -482,8 +492,9 @@ function AnswerFeedback({
           <span
             className="text-xs text-muted-foreground animate-message-in"
             data-testid="feedback-thanks"
+            aria-live="polite"
           >
-            Danke — das hilft Ordilo besser zu werden.
+            Danke, gespeichert.
           </span>
         )}
       </div>

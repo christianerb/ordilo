@@ -550,7 +550,7 @@ describe("AppShell sidebar profile footer", () => {
         <div>content</div>
       </AppShell>,
     );
-    // The greeting and footer both use the family name, not the email prefix.
+    // The footer uses the family name, not the email prefix.
     const familyNameEls = await screen.findAllByText("Familie Müller");
     expect(familyNameEls.length).toBeGreaterThanOrEqual(1);
   });
@@ -592,7 +592,7 @@ describe("AppShell sidebar profile footer", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Sidebar visual polish — ambient surface, greeting, and focused active states
+// Sidebar visual polish — ambient surface and focused active states
 // ---------------------------------------------------------------------------
 
 describe("AppShell sidebar personality touches", () => {
@@ -633,42 +633,6 @@ describe("AppShell sidebar personality touches", () => {
     expect(screen.getByTestId("sidebar-scenery")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Seitenleiste einklappen"));
     expect(screen.queryByTestId("sidebar-scenery")).toBeNull();
-  });
-
-  it("shows a time-appropriate greeting with the display name when a profile is given", async () => {
-    mockSupabaseData({
-      family: { id: "fam-1", name: "Familie Müller" },
-      userEmail: "anna@example.com",
-    });
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    // Wait for profile to load — the family name appears in the greeting.
-    await waitFor(() => {
-      const greetingEl = screen.getByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
-      // The greeting is calculated in a post-render effect, so wait for its
-      // visible state rather than just the independently rendered profile.
-      const greetingContainer = greetingEl.closest("div");
-      expect(greetingContainer?.className).toContain("opacity-100");
-      expect(greetingContainer?.textContent).toContain("Familie Müller");
-    });
-  });
-
-  it("does not render a greeting when no profile is given", () => {
-    mockSupabaseData();
-    render(
-      <AppShell>
-        <div>content</div>
-      </AppShell>,
-    );
-    // Greeting element exists in DOM but is CSS-hidden (opacity-0).
-    // jsdom doesn't compute Tailwind styles, so check the class directly.
-    const greetingEl = screen.queryByText(/Guten (Morgen|Tag|Abend)|Gute Nacht/);
-    if (greetingEl) {
-      expect(greetingEl.closest("div")?.className).toContain("opacity-0");
-    }
   });
 
   it("uses apricot for the active nav indicator dot", () => {
