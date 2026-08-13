@@ -24,7 +24,6 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
 import {
   DESKTOP_SHELL_SURFACE_STYLE,
-  getGreeting,
   getProfileDisplayName,
   isSubItemActive,
   isTabActive,
@@ -229,13 +228,11 @@ export function SidebarNav({
   collapsed: boolean;
   onToggleCollapse: () => void;
 }) {
-  const [greeting, setGreeting] = useState<string | null>(null);
   const [timeOfDay, setTimeOfDay] = useState<TimeOfDay>("day");
 
   useMountEffect(() => {
     const refresh = () => {
       const now = new Date();
-      setGreeting(getGreeting(now));
       setTimeOfDay(getTimeOfDay(now));
     };
     refresh();
@@ -243,7 +240,6 @@ export function SidebarNav({
     return () => window.clearInterval(interval);
   });
 
-  const displayName = profile ? getProfileDisplayName(profile) : null;
   const currentTab = useSearchParams().get("tab");
 
   return (
@@ -292,19 +288,6 @@ export function SidebarNav({
             <ChevronsLeft className="size-4" aria-hidden="true" />
           )}
         </button>
-      </div>
-
-      <div
-        className={cn(
-          "overflow-hidden px-3 text-sm leading-tight transition-[max-height,opacity,padding-bottom] duration-200 ease-out",
-          collapsed || !greeting || !displayName
-            ? "max-h-0 pb-0 opacity-0"
-            : "max-h-12 pb-4 opacity-100",
-        )}
-      >
-        <span className="text-muted-foreground">{greeting},</span>
-        <br />
-        <span className="font-medium text-foreground">{displayName}</span>
       </div>
 
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-3">
