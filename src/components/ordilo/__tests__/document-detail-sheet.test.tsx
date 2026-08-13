@@ -40,6 +40,18 @@ describe("DocumentDetailSheet", () => {
     expect(screen.getByText("Bereit zum Durchsehen")).toBeDefined();
   });
 
+  it("shows the on-demand reveal control when an encrypted secret exists", () => {
+    render(
+      <DocumentDetailSheet
+        document={{ ...document, secret: "v1:encrypted-envelope" } as never}
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("document-secret-reveal")).toBeDefined();
+  });
+
   it("protects unsaved corrections when the sheet is closed", async () => {
     const onOpenChange = vi.fn();
     render(

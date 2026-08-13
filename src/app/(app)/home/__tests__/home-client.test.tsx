@@ -98,7 +98,6 @@ const upcomingTasks: HomeTask[] = [
     title: "Rechnung bezahlen",
     description: null,
     due_date: "2026-07-07",
-    priority: "high",
     status: "open",
     confidence: 0.9,
     confirmed: true,
@@ -113,7 +112,6 @@ const upcomingTasks: HomeTask[] = [
     title: "Anmeldung Kita",
     description: null,
     due_date: "2026-07-15",
-    priority: "medium",
     status: "open",
     confidence: 0.85,
     confirmed: true,
@@ -128,7 +126,6 @@ const upcomingTasks: HomeTask[] = [
     title: "Alter Task",
     description: null,
     due_date: "2026-06-01",
-    priority: "low",
     status: "open",
     confidence: 0.7,
     confirmed: true,
@@ -255,6 +252,13 @@ describe("HomeClient — Briefing", () => {
     );
   });
 
+  it("groups the greeting and the immediate priority in one card", () => {
+    render(<HomeClient {...defaultProps} />);
+    const card = screen.getByTestId("home-priority-card");
+    expect(within(card).getByTestId("today-hero")).toBeDefined();
+    expect(within(card).getByText("Familie Erb")).toBeDefined();
+  });
+
 });
 
 describe("HomeClient — Heute hero", () => {
@@ -307,9 +311,9 @@ describe("HomeClient — Heute hero", () => {
   it("gives hero actions a one-thumb target", () => {
     render(<HomeClient {...defaultProps} />);
     const hero = screen.getByTestId("today-hero");
-    // 44px circular hit area, same vocabulary as the task-card checkbox
+    // 48px circular hit area, generous for one-thumb use in the day card.
     expect(within(hero).getByTestId("today-hero-done").className).toContain(
-      "size-11",
+      "size-12",
     );
     // Details stays a real deep link that opens the task on the board
     const details = within(hero).getByRole("link", { name: "Details" });
@@ -490,14 +494,14 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
     ).toBeDefined();
   });
 
-  it("summarizes the family book in the journal header", () => {
+  it("shows the confirmation count as a compact journal header badge", () => {
     render(<HomeClient {...defaultProps} />);
     const section = screen
       .getByText("Deine Dokumente")
       .closest("[data-testid='home-section-journal']") as HTMLElement;
-    // Unconfirmed docs exist → the line leads with what needs attention.
+    // Unconfirmed docs exist → the compact badge leads with what needs attention.
     expect(
-      within(section).getByText("2 warten auf dein OK · 6 im Familienbuch"),
+      within(section).getByText("2 warten auf dein OK"),
     ).toBeDefined();
   });
 
@@ -513,7 +517,7 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
       .getByText("Deine Dokumente")
       .closest("[data-testid='home-section-journal']") as HTMLElement;
     expect(
-      within(section).getByText("6 Dokumente sicher im Familienbuch"),
+      within(section).getByText("6 Dokumente im Familienbuch"),
     ).toBeDefined();
   });
 
@@ -602,8 +606,8 @@ describe("HomeClient — Layout", () => {
     const sections = screen.getAllByTestId(/^home-section-/);
     const sectionIds = sections.map((s) => s.getAttribute("data-testid"));
     expect(sectionIds).toEqual([
-      "home-section-aufgaben",
       "home-section-journal",
+      "home-section-aufgaben",
     ]);
   });
 });
@@ -641,7 +645,7 @@ describe("HomeClient — Family avatar overflow", () => {
     ];
     render(<HomeClient {...defaultProps} members={manyMembers} />);
     const memberList = screen.getByTestId("member-list");
-    expect(within(memberList).getByText("+1")).toBeDefined();
+    expect(within(memberList).getByText("+3")).toBeDefined();
   });
 });
 

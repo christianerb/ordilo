@@ -26,7 +26,6 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     title: "Schulsachen",
     description: null,
     due_date: null,
-    priority: "medium",
     status: "open",
     confidence: 0.9,
     confirmed: true,

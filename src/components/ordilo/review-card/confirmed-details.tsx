@@ -38,8 +38,6 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
   FieldRow,
   ReviewFieldSection,
-  getPriorityLabel,
-  getPriorityBadgeClasses,
 } from "./helpers";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
@@ -225,19 +223,7 @@ export function ConfirmedAnalysisDetails({
         {analysis.tasks.length > 0 && (
           <ReviewFieldSection icon={ListTodo} title={countedTitle(analysis.tasks.length, "Aufgabe", "Aufgaben")} testId="confirmed-tasks">
             {analysis.tasks.map((task, i) => (
-              <FieldRow
-                key={i}
-                editControl={
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-2 py-0.5 text-xs font-medium",
-                      getPriorityBadgeClasses(task.priority),
-                    )}
-                  >
-                    {getPriorityLabel(task.priority)}
-                  </span>
-                }
-              >
+              <FieldRow key={i}>
                 <p className="text-foreground">{task.title}</p>
                 {task.due_date && (
                   <p className="mt-0.5 font-normal text-muted-foreground">

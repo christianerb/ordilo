@@ -1185,14 +1185,14 @@ describe("update_task confirmation gate", () => {
     });
     const result = await executeTool(
       "update_task",
-      { task_id: "task-1", due_date: "2026-09-01", priority: "high" },
+      { task_id: "task-1", due_date: "2026-09-01" },
       ctx,
     );
     const parsed = JSON.parse(result);
 
     expect(parsed.needs_confirmation).toBe(true);
     expect(parsed.task_title).toBe("Steuererklaerung");
-    expect(parsed.aenderungen).toEqual(["Frist: 2026-09-01", "Prioritaet: Hoch"]);
+    expect(parsed.aenderungen).toEqual(["Frist: 2026-09-01"]);
     expect(getUpdate()).toBeNull();
   });
 
@@ -1311,7 +1311,7 @@ describe("update_task confirmation gate", () => {
     });
     const result = await executeTool(
       "update_task",
-      { task_id: "task-1", priority: "low", confirmed: true },
+      { task_id: "task-1", title: "Neuer Titel", confirmed: true },
       ctx,
     );
     const parsed = JSON.parse(result);
@@ -1923,6 +1923,63 @@ describe("query_calendar_events", () => {
       wiederholung: "wöchentlich",
     });
     expect(result.events[0].von >= result.heute).toBe(true);
+  });
+
+  it("resolves recurring events inside an all-direction date range", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-recurring-range",
+        title: "Klavierunterricht",
+        starts_on: "2020-01-06",
+        ends_on: "2020-01-06",
+        recurrence: "weekly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        {
+          direction: "all",
+          from: "2026-08-01",
+          to: "2026-08-31",
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0].von).toMatch(/^2026-08-/);
+  });
+
+  it("includes multi-day recurring occurrences overlapping an all-range", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-recurring-overlap",
+        title: "Wochenendseminar",
+        starts_on: "2020-01-06",
+        ends_on: "2020-01-08",
+        recurrence: "weekly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool(
+        "query_calendar_events",
+        {
+          direction: "all",
+          from: "2026-08-04",
+          to: "2026-08-04",
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      von: "2026-08-03",
+      bis: "2026-08-05",
+    });
   });
 
   it("uses Berlin's date at the UTC day boundary", async () => {

@@ -11,6 +11,7 @@ import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { SuggestionChipsRegistrar } from "@/lib/search/suggestion-chips-context";
+import { cn } from "@/lib/utils";
 import {
   getAvatarTextColor,
   resolveAvatarColor,
@@ -152,7 +153,7 @@ export function HomeClient({
     JOURNAL_DOCS_LIMIT,
   );
 
-  // ONE priority list: open, confirmed, dated tasks sorted by due date —
+  // ONE list: open, confirmed, dated tasks sorted by due date —
   // overdue lands first by construction. totalTasks counts the WHOLE
   // list (the server passes all confirmed open tasks unsliced), so
   // "Alle N Aufgaben anzeigen" never promises a number /aufgaben can't
@@ -212,7 +213,6 @@ export function HomeClient({
     title: t.title,
     description: t.description,
     due_date: t.due_date,
-    priority: t.priority,
     status: t.status,
     confidence: t.confidence,
     confirmed: t.confirmed,
@@ -252,37 +252,44 @@ export function HomeClient({
             <FirstSuccessGuide familyId={familyId} onScan={openWizard} />
           ) : null}
 
-          {/* One page, one frame: header, hero band, then hairline-divided
-              groups. The frame carries the single shadow; nothing inside
-              nests a card (No-Shadow-Stacking). The hero keeps its tinted
-              band — it is the visual peak; the groups below stay quiet. */}
-          <div className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">
-            {/* Header — dateline + greeting + family, nothing else. The
-                facts of the day live where they are actionable. */}
-            <header className="flex items-center justify-between gap-3 p-4">
+          {/* The day starts as one journal entry: date, greeting and the
+              one thing that needs attention belong together. */}
+          <section
+            className="relative overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--surface-box)] p-4 shadow-card"
+            data-testid="home-priority-card"
+          >
+            <div
+              className="pointer-events-none absolute -right-12 -top-16 size-40 rounded-full bg-[var(--wash-sage)]/65"
+              aria-hidden="true"
+            />
+            <header className="relative flex items-start justify-between gap-3">
               <div className="min-w-0">
-                {/* A family journal entry starts with the date. */}
                 <p
                   className="text-xs text-muted-foreground"
                   data-testid="home-dateline"
                 >
                   {dateline}
                 </p>
-                <h1 className="text-xl font-semibold text-foreground">
+                <h1 className="mt-1 text-[1.35rem] font-semibold leading-tight text-foreground">
                   {greeting}
                 </h1>
+                {familyName && (
+                  <p className="mt-1 truncate text-sm text-muted-foreground">
+                    Familie {familyName}
+                  </p>
+                )}
               </div>
               {members.length > 0 && (
                 <Link
                   href="/familie"
-                  className="flex shrink-0 -space-x-2 transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-full"
+                  className="relative z-10 flex shrink-0 -space-x-2 rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   data-testid="member-list"
                   aria-label={`Familie ${familyName}`}
                 >
-                  {members.slice(0, 5).map((m) => (
+                  {members.slice(0, 3).map((m) => (
                     <div
                       key={m.id}
-                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] text-xs font-semibold"
+                      className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--surface-box)] text-xs font-semibold"
                       style={{
                         backgroundColor: resolveAvatarColor(m.avatar_color),
                         color: getAvatarTextColor(m.avatar_color),
@@ -293,113 +300,117 @@ export function HomeClient({
                       {m.name.charAt(0).toUpperCase()}
                     </div>
                   ))}
-                  {members.length > 5 && (
-                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--wash-sage)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
-                      +{members.length - 5}
+                  {members.length > 3 && (
+                    <div className="flex size-8 items-center justify-center rounded-full border-2 border-[var(--surface-box)] bg-[var(--mist-light)] text-xs font-semibold text-[var(--mist-dark)]">
+                      +{members.length - 3}
                     </div>
                   )}
                 </Link>
               )}
             </header>
 
-            {/* The "Heute" hero — the peak of the page. Silent: the
-                Erledigt beat in the band IS the confirmation, a toast on
-                top would be the same signal twice. */}
-            <div className="px-4 pb-4">
+            {/* The "Heute" task is embedded in the greeting card, as the
+                reference's one clear priority rather than a second dashboard
+                panel. */}
+            <div className="relative mt-4">
               <TodayHero
                 state={hero}
                 flat
                 onMarkDone={(taskId) => void handleToggleDone(taskId, "done", true)}
               />
             </div>
+          </section>
 
-            {/* Aufgaben — starts after the task the hero already covers;
-                the full list lives one tap away on /aufgaben. */}
-            {nextTasks.length > 0 && (
-              <section
-                data-testid="home-section-aufgaben"
-                className="border-t border-border/60 px-4 py-3"
-              >
-                <h2 className="pb-1 text-sm font-semibold text-foreground">Als Nächstes</h2>
-                <div className="divide-y divide-[var(--mist-light)]/60" data-testid="home-tasks-next">
-                  {nextTasks.map((task) => (
-                    <TaskCard
-                      key={task.id}
-                      flat
-                      task={toTaskCardData(task)}
-                      onToggleDone={(newStatus) =>
-                        handleToggleDone(task.id, newStatus)
-                      }
-                      onDismiss={() => handleDismiss(task.id)}
-                      showConfidence={false}
-                    />
-                  ))}
-                </div>
-                {hiddenTaskCount > 0 && (
-                  <Link
-                    href="/aufgaben"
-                    className="mt-1 inline-flex items-center gap-1 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    data-testid="home-tasks-show-all"
-                  >
-                    Alle {totalTasks} Aufgaben anzeigen
-                  </Link>
-                )}
-              </section>
-            )}
-
-            {/* Deine Dokumente — the journal: awaiting confirmation first
-                (with a chip), then the most recent scans. */}
-            <section
-              data-testid="home-section-journal"
-              className="border-t border-border/60 px-4 py-3"
-            >
-              <div className="pb-1">
+          {/* Documents are their own quiet book surface, with the one item
+              that needs confirmation gently lifted inside the list. */}
+          <section
+            data-testid="home-section-journal"
+            className="overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--surface-box)] px-4 py-3 shadow-card"
+          >
+            <div className="flex items-start justify-between gap-3 pb-2">
+              <div>
                 <h2 className="text-sm font-semibold text-foreground">
                   Deine Dokumente
                 </h2>
-                {/* The one line a family actually wants here: is anything
-                    waiting on me, and is everything safely stored? */}
-                {journalDocCount > 0 && (
+                {journalDocCount > 0 && !unconfirmedDocCount && (
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {unconfirmedDocCount > 0
-                      ? `${unconfirmedDocCount} ${unconfirmedDocCount === 1 ? "wartet" : "warten"} auf dein OK · ${journalDocCount} im Familienbuch`
-                      : `${journalDocCount} ${journalDocCount === 1 ? "Dokument" : "Dokumente"} sicher im Familienbuch`}
+                    {journalDocCount} {journalDocCount === 1 ? "Dokument" : "Dokumente"} im Familienbuch
                   </p>
                 )}
               </div>
-              {journalDocs.length > 0 ? (
-                <div className="divide-y divide-[var(--mist-light)]/60">
-                  {journalDocs.map((doc) => (
-                    <JournalDocRow
-                      key={doc.id}
-                      doc={doc}
-                      thumbUrl={thumbUrls[doc.id] ?? null}
-                      onOpenDocument={openDocument}
-                    />
-                  ))}
-                  {hasMoreJournalDocs && (
-                    <Link
-                      href="/dokumente"
-                      className="-mx-4 block px-4 py-2.5 text-center text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--sand-warm)]/60 hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                    >
-                      Mehr anzeigen
-                    </Link>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-3 py-1">
-                  <p className="text-sm text-muted-foreground">Noch keine Dokumente</p>
-                  <button
-                    type="button"
-                    onClick={openWizard}
-                    className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              {unconfirmedDocCount > 0 && (
+                <span className="shrink-0 rounded-full bg-[var(--wash-sage)] px-2.5 py-1 text-xs font-medium text-[var(--petrol)]">
+                  {unconfirmedDocCount} {unconfirmedDocCount === 1 ? "wartet" : "warten"} auf dein OK
+                </span>
+              )}
+            </div>
+            {journalDocs.length > 0 ? (
+              <div className="overflow-hidden rounded-ordilo-sm border border-border/70">
+                {journalDocs.map((doc, index) => (
+                  <JournalDocRow
+                    key={doc.id}
+                    doc={doc}
+                    thumbUrl={thumbUrls[doc.id] ?? null}
+                    highlighted={index === 0 && doc.status === "analyzed"}
+                    onOpenDocument={openDocument}
+                  />
+                ))}
+                {hasMoreJournalDocs && (
+                  <Link
+                    href="/dokumente"
+                    className="block border-t border-border/70 px-4 py-2.5 text-center text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--sand-warm)]/60 hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   >
-                    Dokument scannen
-                  </button>
-                </div>
+                    Mehr anzeigen
+                  </Link>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 py-1">
+                <p className="text-sm text-muted-foreground">Noch keine Dokumente</p>
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  Dokument scannen
+                </button>
+              </div>
+            )}
+          </section>
+
+          {/* Aufgaben stay available below the immediate briefing. They are
+              intentionally lighter than the day card and document journal. */}
+          {nextTasks.length > 0 && (
+            <section
+              data-testid="home-section-aufgaben"
+              className="overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--surface-story)] px-4 py-3 shadow-card"
+            >
+              <h2 className="pb-1 text-sm font-semibold text-foreground">Als Nächstes</h2>
+              <div className="divide-y divide-[var(--mist-light)]/60" data-testid="home-tasks-next">
+                {nextTasks.map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    flat
+                    task={toTaskCardData(task)}
+                    onToggleDone={(newStatus) =>
+                      handleToggleDone(task.id, newStatus)
+                    }
+                    onDismiss={() => handleDismiss(task.id)}
+                    showConfidence={false}
+                  />
+                ))}
+              </div>
+              {hiddenTaskCount > 0 && (
+                <Link
+                  href="/aufgaben"
+                  className="mt-1 inline-flex items-center gap-1 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  data-testid="home-tasks-show-all"
+                >
+                  Alle {totalTasks} Aufgaben anzeigen
+                </Link>
               )}
             </section>
-          </div>
+          )}
         </>
       )}
     </div>
@@ -419,10 +430,13 @@ export function HomeClient({
 function JournalDocRow({
   doc,
   thumbUrl,
+  highlighted = false,
   onOpenDocument,
 }: {
   doc: HomeDocument;
   thumbUrl: string | null;
+  /** The first document waiting on a review gets a calm contextual lift. */
+  highlighted?: boolean;
   onOpenDocument: (documentId: string) => Promise<void>;
 }) {
   const displayTitle = doc.title?.trim() || doc.original_filename || "Dokument";
@@ -449,7 +463,12 @@ function JournalDocRow({
         e.preventDefault();
         void onOpenDocument(doc.id);
       }}
-      className="-mx-4 flex cursor-pointer items-center gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--sand-warm)]/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className={cn(
+        "flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        highlighted
+          ? "bg-[var(--wash-sage-soft)] hover:bg-[var(--wash-sage)]"
+          : "border-t border-border/70 first:border-t-0 hover:bg-[var(--sand-warm)]/60",
+      )}
     >
       {showThumb ? (
         // Signed URLs are already resized by Supabase image transforms;
@@ -460,10 +479,10 @@ function JournalDocRow({
           alt=""
           loading="lazy"
           onError={() => setThumbFailed(true)}
-          className="size-10 shrink-0 rounded-ordilo-sm border border-[var(--mist-light)] object-cover"
+          className="size-11 shrink-0 rounded-ordilo-sm border border-[var(--mist-light)] object-cover"
         />
       ) : (
-        <div className="w-8 shrink-0">
+        <div className="w-9 shrink-0">
           <PaperPreview mimeType={doc.mime_type} />
         </div>
       )}
@@ -479,7 +498,7 @@ function JournalDocRow({
         )}
       </div>
       {needsConfirmation ? (
-        <span className="shrink-0 rounded-full bg-[var(--petrol)]/10 px-2 py-0.5 text-xs font-medium text-[var(--petrol)]">
+        <span className="shrink-0 rounded-full bg-[var(--petrol)] px-2.5 py-1 text-xs font-medium text-white">
           Bitte bestätigen
         </span>
       ) : relativeTime ? (

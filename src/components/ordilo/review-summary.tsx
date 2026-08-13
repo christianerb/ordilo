@@ -50,6 +50,7 @@ const DOCUMENT_TYPE_ICONS: Record<DocumentType, LucideIcon> = {
   school: GraduationCap,
   insurance: Shield,
   tax: Landmark,
+  note: FileText,
   other: FileText,
 };
 

@@ -41,12 +41,6 @@ export interface TaskCardProps {
   deleteLabel?: string;
 }
 
-const PRIORITY_DOT: Record<string, string> = {
-  high: "bg-[var(--warm-apricot)]",
-  medium: "bg-[var(--petrol)]",
-  low: "bg-[var(--mist)]",
-};
-
 export function TaskCard({
   task,
   onToggleDone,
@@ -70,7 +64,6 @@ export function TaskCard({
     task.due_date !== null &&
     task.due_date < new Date().toLocaleDateString("sv-SE");
   const hasDocument = Boolean(task.document_id);
-  const prioDot = PRIORITY_DOT[task.priority] ?? PRIORITY_DOT.medium;
   const hasMeta = Boolean(dueDate || hasDocument || Boolean(task.assigned_member_name));
 
   const handleToggle = (e: React.MouseEvent) => {
@@ -83,7 +76,6 @@ export function TaskCard({
     <div
       data-testid="task-card"
       data-status={task.status}
-      data-priority={task.priority}
       role="group"
       className={cn(
         "flex items-start gap-2.5",
@@ -127,11 +119,11 @@ export function TaskCard({
           className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
           aria-label={`Aufgabe öffnen: ${task.title}`}
         >
-          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} prioDot={prioDot} hasMeta={hasMeta} />
+          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} hasMeta={hasMeta} />
         </button>
       ) : (
         <div className="min-w-0 flex-1">
-          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} prioDot={prioDot} hasMeta={hasMeta} />
+          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} hasMeta={hasMeta} />
         </div>
       )}
 
@@ -171,14 +163,12 @@ function CardContent({
   isDone,
   isOverdue,
   dueDate,
-  prioDot,
   hasMeta,
 }: {
   task: TaskCardData;
   isDone: boolean;
   isOverdue: boolean;
   dueDate: string | false | null;
-  prioDot: string;
   hasMeta: boolean;
 }) {
   return (
@@ -201,7 +191,7 @@ function CardContent({
           data-testid="task-meta"
         >
           <span
-            className={cn("size-1.5 shrink-0 rounded-full", prioDot)}
+            className="size-1.5 shrink-0 rounded-full bg-[var(--mist)]"
             aria-hidden="true"
           />
           {dueDate && (

@@ -520,16 +520,6 @@ export async function POST(
 
   // Success ---------------------------------------------------------------
 
-  // Auto-detect inventory items: check if extracted text mentions any
-  // existing inventory item by name. If so, create an extracted_entity
-  // link. Also check for potential new items (organizations, specific
-  // patterns) that could be suggested.
-  try {
-    await autoDetectInventoryItems(serverClient, documentId, payload, familyId);
-  } catch {
-    // Non-critical — confirmation already succeeded.
-  }
-
   await recordProductEvent(serverClient, {
     userId: auth.user.id,
     familyId,
@@ -651,7 +641,6 @@ function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
     // Unsanitised, a value like "Montag" reaches a Postgres `date` column
     // and rolls the whole confirm back as CONFIRM_RPC_FAILED.
     due_date: toIsoDateOrNull(task.due_date),
-    priority: task.priority,
     confidence: task.confidence,
   }));
 }
@@ -678,75 +667,4 @@ function buildFactRows(payload: ConfirmPayload): ConfirmRpcFact[] {
  */
 export async function GET(): Promise<Response> {
   return methodNotAllowed();
-}
-
-// ---------------------------------------------------------------------------
-// Auto-detect inventory items from confirmed document content
-// ---------------------------------------------------------------------------
-
-/**
- * After a document is confirmed, check if its content mentions any existing
- * family inventory items by name. If so, create an extracted_entity link
- * (entity_type = 'inventory_item') so the document shows up on the item's
- * profile.
- *
- * Also checks extracted organizations — if an org name matches an inventory
- * item name, link them.
- *
- * Non-critical: errors are swallowed by the caller.
- */
-async function autoDetectInventoryItems(
-  serverClient: Awaited<ReturnType<typeof createServerClient>>,
-  documentId: string,
-  payload: ConfirmPayload,
-  familyId: string,
-): Promise<void> {
-  // Fetch all confirmed inventory items for this family.
-  const { data: items } = await serverClient
-    .from("family_inventory_items")
-    .select("id, name, item_type, status")
-    .eq("family_id", familyId);
-
-  if (!items || items.length === 0) return;
-
-  // Build a lookup: lowercase name → item
-  const itemMap = new Map<string, { id: string; name: string }>();
-  for (const item of items) {
-    itemMap.set(item.name.toLowerCase().trim(), { id: item.id, name: item.name });
-  }
-
-  // Collect all text to search: title, category, org names, tags
-  const searchTexts: string[] = [
-    payload.title ?? "",
-    payload.suggested_category ?? "",
-    ...payload.organizations.map((o) => o.name),
-    ...payload.tags,
-  ];
-  const fullText = searchTexts.join(" ").toLowerCase();
-
-  // Find matching items
-  const matchedItems: { id: string; name: string }[] = [];
-  for (const [lowerName, item] of itemMap) {
-    if (fullText.includes(lowerName)) {
-      matchedItems.push(item);
-    }
-  }
-
-  if (matchedItems.length === 0) return;
-
-  // Create extracted_entity links for each matched item
-  const entityRows = matchedItems.map((item) => ({
-    document_id: documentId,
-    family_id: familyId,
-    entity_type: "inventory_item",
-    entity_value: item.name,
-    normalized_value: item.name.toLowerCase().trim(),
-    confidence: 1.0,
-    confirmed: true,
-    linked_object_id: item.id,
-  }));
-
-  await serverClient
-    .from("extracted_entities")
-    .insert(entityRows);
 }

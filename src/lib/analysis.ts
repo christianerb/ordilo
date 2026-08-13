@@ -3,13 +3,11 @@ import { getFamilyId } from "@/lib/supabase/client-helpers";
 import {
   computeNeedsUserReview,
   DOCUMENT_TYPES,
-  TASK_PRIORITIES,
   FACT_TYPES,
   AMOUNT_KINDS,
   type AmountKind,
   type DocumentAnalysis,
   type DocumentType,
-  type TaskPriority,
   type FactType,
 } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
@@ -275,7 +273,6 @@ function reconstructAnalysis(
   const taskEntries = tasks.map((t) => ({
     title: t.title,
     due_date: t.due_date,
-    priority: isTaskPriority(t.priority) ? t.priority : "medium",
     confidence: t.confidence ?? 0,
   }));
 
@@ -320,14 +317,4 @@ function isAmountKind(
 function isFactType(value: string | null | undefined): value is FactType {
   if (!value) return false;
   return (FACT_TYPES as readonly string[]).includes(value);
-}
-
-/**
- * Type guard for TaskPriority.
- */
-function isTaskPriority(
-  value: string | null | undefined,
-): value is TaskPriority {
-  if (!value) return false;
-  return (TASK_PRIORITIES as readonly string[]).includes(value);
 }

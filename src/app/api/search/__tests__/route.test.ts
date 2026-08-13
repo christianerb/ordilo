@@ -115,7 +115,6 @@ function mockServerClient(options: {
     document_id: string;
     title: string;
     due_date: string | null;
-    priority: string;
     status: string;
     confidence: number;
   }[];
@@ -547,7 +546,6 @@ describe("POST /api/search", () => {
             document_id: DOC_ID_1,
             title: "Elternabend besuchen",
             due_date: futureDateStr,
-            priority: "medium",
             status: "open",
             confidence: 0.8,
           },
@@ -664,7 +662,6 @@ describe("POST /api/search", () => {
             document_id: DOC_ID_1,
             title: "Schulranzen kaufen",
             due_date: null,
-            priority: "high",
             status: "open",
             confidence: 0.85,
           },
@@ -859,7 +856,6 @@ describe("POST /api/search", () => {
             document_id: DOC_ID_1,
             title: "Frist abgeben",
             due_date: futureDateStr,
-            priority: "high",
             status: "open",
             confidence: 0.9,
           },

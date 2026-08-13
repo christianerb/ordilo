@@ -16,15 +16,6 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type EntityRow = Database["public"]["Tables"]["extracted_entities"]["Row"];
-type InventoryItemRow = Database["public"]["Tables"]["family_inventory_items"]["Row"];
-
-export interface ProfileInventoryItem {
-  id: string;
-  name: string;
-  item_type: string;
-  tags: string[];
-  status: string;
-}
 
 /**
  * Person profile page (`/familie/[id]`).
@@ -104,24 +95,6 @@ export default async function PersonProfilePage({
 
   // If no documents are linked, pass empty data to the client component
   // (which will render empty states for each section).
-  // Still fetch inventory items linked to this person.
-  const { data: inventoryData } = await supabase
-    .from("family_inventory_items")
-    .select("id, name, item_type, tags, status")
-    .eq("linked_member_id", typedMember.id)
-    .order("created_at", { ascending: false });
-
-  const inventoryItems: ProfileInventoryItem[] = (inventoryData ?? []).map((i) => {
-    const item = i as Pick<InventoryItemRow, "id" | "name" | "item_type" | "tags" | "status">;
-    return {
-      id: item.id,
-      name: item.name,
-      item_type: item.item_type,
-      tags: item.tags ?? [],
-      status: item.status,
-    };
-  });
-
   const [photoUrl, relatedMemberNames, otherMembers] = await Promise.all([
     photoUrlPromise,
     relatedMemberNamesPromise,
@@ -135,7 +108,6 @@ export default async function PersonProfilePage({
         documents={[]}
         tasks={[]}
         dateEntities={[]}
-        inventoryItems={inventoryItems}
         photoUrl={photoUrl}
         relatedMemberNames={relatedMemberNames}
         otherMembers={otherMembers}
@@ -177,7 +149,7 @@ export default async function PersonProfilePage({
   // 4. Fetch open, confirmed tasks linked to this person via their documents.
   const { data: taskData } = await supabase
     .from("tasks")
-    .select("id, title, due_date, priority, status, document_id")
+    .select("id, title, due_date, status, document_id")
     .in("document_id", documentIds)
     .eq("confirmed", true)
     .eq("status", "open")
@@ -207,13 +179,12 @@ export default async function PersonProfilePage({
   const tasks: ProfileTask[] = (taskData ?? []).map((t) => {
     const task = t as Pick<
       TaskRow,
-      "id" | "title" | "due_date" | "priority" | "status" | "document_id"
+      "id" | "title" | "due_date" | "status" | "document_id"
     >;
     return {
       id: task.id,
       title: task.title,
       due_date: task.due_date,
-      priority: task.priority,
       status: task.status,
       document_id: task.document_id,
     };
@@ -246,7 +217,6 @@ export default async function PersonProfilePage({
       tasks={tasks}
       dateEntities={dateEntities}
       documentTitles={docTitleMap}
-      inventoryItems={inventoryItems}
       photoUrl={photoUrl}
       relatedMemberNames={relatedMemberNames}
       otherMembers={otherMembers}

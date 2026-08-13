@@ -197,7 +197,14 @@ function AppShellContent({
           showNav && (collapsed ? "lg:pl-[76px]" : "lg:pl-[224px]"),
         )}
       >
-        <Topbar showNav={showNav} pathname={pathname} />
+        <Topbar
+          showNav={showNav}
+          pathname={pathname}
+          profileName={
+            profile?.email?.split("@")[0] ||
+            (profile ? getProfileDisplayName(profile) : undefined)
+          }
+        />
 
         <div data-testid="app-content-surface" className="flex min-h-0 flex-1 flex-col">
           <div className="mx-auto flex h-full min-h-0 w-full max-w-md flex-col md:max-w-2xl lg:max-w-none">

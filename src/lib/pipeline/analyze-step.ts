@@ -510,7 +510,6 @@ export async function storeExtractionResults(
     document_id: documentId,
     title: task.title,
     due_date: sanitizeDate(task.due_date),
-    priority: task.priority,
     status: "open",
     confidence: task.confidence,
   }));

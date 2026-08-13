@@ -23,7 +23,6 @@ import {
 import { formatMinorAsGerman } from "@/lib/analysis-cleanup";
 import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
-import { getPriorityLabel } from "@/lib/task-utils";
 import { validateCollectionInput } from "@/lib/schemas/collections";
 import { validateMember } from "@/lib/schemas/onboarding";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
@@ -236,7 +235,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "(Titel, ggf. Frist) klar und eindeutig bestaetigt hat (z.B. 'Ja, leg " +
         "an' oder 'Passt so'). Wenn der Nutzer nur fragt oder unklar ist, setze " +
         "confirmed auf false — nenne dann in deiner Antwort DIREKT den " +
-        "vorgeschlagenen Titel (und Frist/Prioritaet falls vorhanden) und " +
+        "vorgeschlagenen Titel (und Frist falls vorhanden) und " +
         "frage kurz, ob das so passt. Erfinde niemals, die Aufgabe sei bereits " +
         "angelegt, bevor du dieses Tool mit confirmed=true aufgerufen hast.",
       parameters: {
@@ -253,11 +252,6 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           due_date: {
             type: "string",
             description: "Optionale Frist im Format YYYY-MM-DD.",
-          },
-          priority: {
-            type: "string",
-            enum: ["high", "medium", "low"],
-            description: "Prioritaet. Standard: 'medium'.",
           },
           assignee_name: {
             type: "string",
@@ -615,10 +609,9 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
       name: "update_task",
       description:
         "Aendert eine bestehende Aufgabe: Titel, Beschreibung, Frist, " +
-        "Prioritaet, zustaendige Person oder Status. " +
-        "Verwende dies fuer 'Verschieb die Frist auf naechste Woche', " +
-        "'Mach die Steuererklaerung hochprior' oder 'Das war doch noch " +
-        "nicht erledigt' (status 'open' oeffnet wieder). " +
+        "zustaendige Person oder Status. " +
+        "Verwende dies fuer 'Verschieb die Frist auf naechste Woche' " +
+        "oder 'Das war doch noch nicht erledigt' (status 'open' oeffnet wieder). " +
         "Die Aufgaben-ID muss aus einem vorherigen list_tasks- oder " +
         "graph_query-Aufruf stammen — hole sie dort, wenn du sie noch " +
         "nicht hast. " +
@@ -646,11 +639,6 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
             description:
               "Neue Frist im Format YYYY-MM-DD. Optional. " +
               "Leerer String entfernt die Frist.",
-          },
-          priority: {
-            type: "string",
-            enum: ["high", "medium", "low"],
-            description: "Neue Prioritaet. Optional.",
           },
           assignee_name: {
             type: "string",
@@ -1211,7 +1199,7 @@ async function executeListTasks(
 
   let query = ctx.client
     .from("tasks")
-    .select("id, title, due_date, priority, status, confirmed, document_id")
+    .select("id, title, due_date, status, confirmed, document_id")
     .eq("family_id", ctx.familyId)
     .eq("confirmed", true);
 
@@ -1279,7 +1267,6 @@ async function executeListTasks(
       id: t.id,
       titel: t.title,
       frist: t.due_date,
-      prioritaet: t.priority,
       status: t.status,
       dokument: t.document_id ? (docTitleMap.get(t.document_id) ?? undefined) : undefined,
       personen: t.document_id ? (taskPersonMap.get(t.document_id) ?? undefined) : undefined,
@@ -1335,9 +1322,6 @@ async function executeAddTask(
     typeof args.due_date === "string" && args.due_date.trim()
       ? args.due_date.trim()
       : null;
-  const priority = ["high", "medium", "low"].includes(args.priority as string)
-    ? (args.priority as string)
-    : "medium";
   const assigneeName =
     typeof args.assignee_name === "string" ? args.assignee_name.trim() : "";
 
@@ -1347,7 +1331,6 @@ async function executeAddTask(
       needs_confirmation: true,
       task_title: title,
       due_date: dueDate,
-      priority,
       message: `Bitte bestaetige: Soll ich die Aufgabe '${title}'${dueDate ? ` (faellig ${dueDate})` : ""} anlegen?`,
     });
   }
@@ -1370,7 +1353,6 @@ async function executeAddTask(
       title,
       description,
       due_date: dueDate,
-      priority,
       status: "open",
       confidence: 1.0,
       confirmed: true,
@@ -1432,10 +1414,14 @@ function addDays(date: string, days: number): string {
 }
 
 function occurrenceEndsOn(event: CalendarQueryEvent, startsOn: string): string {
+  return addDays(startsOn, occurrenceDurationDays(event));
+}
+
+function occurrenceDurationDays(event: CalendarQueryEvent): number {
   const durationMs =
     new Date(`${event.ends_on}T12:00:00`).getTime() -
     new Date(`${event.starts_on}T12:00:00`).getTime();
-  return addDays(startsOn, Math.round(durationMs / 86_400_000));
+  return Math.round(durationMs / 86_400_000);
 }
 
 function occursOn(event: CalendarQueryEvent, date: string): boolean {
@@ -1453,6 +1439,7 @@ function findOccurrence(
   from: string,
   to: string,
   direction: "forward" | "backward",
+  overlapsFrom?: string,
 ): CalendarOccurrence | null {
   const step = direction === "forward" ? 1 : -1;
   let date = direction === "forward" ? from : to;
@@ -1462,10 +1449,15 @@ function findOccurrence(
     (direction === "backward" && date >= from)
   ) {
     if (occursOn(event, date) && !occursOn(event, addDays(date, -1))) {
+      const occurrenceEndsOnDate = occurrenceEndsOn(event, date);
+      if (overlapsFrom && occurrenceEndsOnDate < overlapsFrom) {
+        date = addDays(date, step);
+        continue;
+      }
       return {
         ...event,
         occurrence_starts_on: date,
-        occurrence_ends_on: occurrenceEndsOn(event, date),
+        occurrence_ends_on: occurrenceEndsOnDate,
       };
     }
     date = addDays(date, step);
@@ -1519,6 +1511,21 @@ function findRelevantOccurrence(
       .sort()[0];
     if (rangeEnd < rangeStart) return null;
     return findOccurrence(event, rangeStart, rangeEnd, "forward");
+  }
+
+  // "All" with a requested time range must still resolve a concrete
+  // recurrence inside that range. Returning the original series row would
+  // otherwise surface a 2020 start date for an August 2026 question, or
+  // include a series with no occurrence in the requested interval.
+  if (from || to) {
+    const rangeStart = from ?? event.starts_on;
+    const rangeEnd = to ?? event.recurrence_until ?? nextYear(rangeStart);
+    if (rangeEnd < rangeStart) return null;
+    // Start slightly before the requested window, so a Tuesday-only query
+    // still finds a Monday–Wednesday recurring occurrence. `overlapsFrom`
+    // rejects any earlier occurrence that ends before the requested range.
+    const searchStart = addDays(rangeStart, -occurrenceDurationDays(event));
+    return findOccurrence(event, searchStart, rangeEnd, "forward", rangeStart);
   }
 
   return {
@@ -1819,7 +1826,7 @@ async function executeMarkTaskDone(
  *   1. Find knowledge_nodes matching the entity name (ILIKE on label).
  *   2. Follow edges to find connected document IDs and task nodes.
  *   3. Fetch documents with metadata (type, category, summary, persons).
- *   4. Fetch tasks with metadata (title, due_date, priority, document).
+ *   4. Fetch tasks with metadata (title, due_date, document).
  *   5. Return everything in one structured response.
  *
  * This leverages the graph's relational structure so the LLM doesn't need
@@ -1979,7 +1986,7 @@ async function executeGraphQuery(
     const docIds = [...documentIds];
     let taskQuery = ctx.client
       .from("tasks")
-      .select("id, title, due_date, priority, status, document_id")
+      .select("id, title, due_date, status, document_id")
       .eq("family_id", ctx.familyId)
       .eq("confirmed", true)
       .in("document_id", docIds);
@@ -2026,7 +2033,6 @@ async function executeGraphQuery(
       id: t.id,
       titel: t.title,
       frist: t.due_date,
-      prioritaet: t.priority,
       status: t.status,
       dokument: t.document_id ? (docTitleMap.get(t.document_id) ?? undefined) : undefined,
     }));
@@ -2391,7 +2397,7 @@ async function executeSaveDocumentFact(
 
 /**
  * Update an existing task's fields — the chat counterpart of the task
- * detail sheet (title, description, due date, priority, assignee) plus
+ * detail sheet (title, description, due date, assignee) plus
  * reopening a done task. Only provided fields are changed; an empty
  * string for due_date / description / assignee_name CLEARS the value,
  * so "die Frist kann weg" works as well as "neue Frist".
@@ -2435,13 +2441,6 @@ async function executeUpdateTask(
     changes.push(dueDate ? `Frist: ${dueDate}` : "Frist entfernt");
   }
   if (
-    typeof args.priority === "string" &&
-    ["high", "medium", "low"].includes(args.priority)
-  ) {
-    updates.priority = args.priority;
-    changes.push(`Prioritaet: ${getPriorityLabel(args.priority)}`);
-  }
-  if (
     typeof args.status === "string" &&
     ["open", "done"].includes(args.status)
   ) {
@@ -2480,7 +2479,7 @@ async function executeUpdateTask(
     return JSON.stringify({
       error:
         "Keine Aenderung angegeben. Nenne mindestens ein Feld " +
-        "(Titel, Beschreibung, Frist, Prioritaet, Person oder Status).",
+        "(Titel, Beschreibung, Frist, Person oder Status).",
     });
   }
 

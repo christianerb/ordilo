@@ -70,7 +70,6 @@ export type ConfirmRpcTask = {
   title: string;
   /** ISO date string "YYYY-MM-DD", or null. */
   due_date: string | null;
-  priority: string;
   confidence: number;
 };
 
@@ -475,6 +474,8 @@ export type Database = {
           extraction_version: number | null;
           /** Best-effort in-progress extraction preview while status = analyzing (see 0043). */
           partial_analysis: Record<string, unknown> | null;
+          /** AES-256-GCM envelope (ciphertext only) for a hidden value; plaintext never stored. */
+          secret: string | null;
         };
         Insert: {
           id?: string;
@@ -500,6 +501,7 @@ export type Database = {
           source?: string;
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
+          secret?: string | null;
         };
         Update: {
           id?: string;
@@ -525,6 +527,7 @@ export type Database = {
           source?: string;
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
+          secret?: string | null;
         };
         Relationships: [];
       };
@@ -620,7 +623,6 @@ export type Database = {
           title: string;
           description: string | null;
           due_date: string | null;
-          priority: string;
           status: string;
           confidence: number;
           confirmed: boolean;
@@ -635,7 +637,6 @@ export type Database = {
           title: string;
           description?: string | null;
           due_date?: string | null;
-          priority?: string;
           status?: string;
           confidence?: number;
           confirmed?: boolean;
@@ -650,7 +651,6 @@ export type Database = {
           title?: string;
           description?: string | null;
           due_date?: string | null;
-          priority?: string;
           status?: string;
           confidence?: number;
           confirmed?: boolean;

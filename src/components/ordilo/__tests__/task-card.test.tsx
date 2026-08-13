@@ -23,7 +23,6 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     title: "Rechnung bezahlen",
     description: null,
     due_date: "2026-07-15",
-    priority: "high",
     status: "open",
     confidence: 0.9,
     confirmed: true,
@@ -57,31 +56,6 @@ describe("TaskCard", () => {
   it("does not render a due date label when due_date is null", () => {
     render(<TaskCard task={makeTask({ due_date: null })} />);
     expect(screen.queryByText(/Fällig/)).toBeNull();
-  });
-
-  it("renders priority as a colored dot (no text label in compact mode)", () => {
-    render(<TaskCard task={makeTask({ priority: "high" })} />);
-    // Priority is shown as a dot, not a text label
-    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("high");
-    expect(screen.queryByText("Hoch")).toBeNull();
-  });
-
-  it("renders data-priority for medium priority", () => {
-    render(<TaskCard task={makeTask({ priority: "medium" })} />);
-    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("medium");
-  });
-
-  it("renders data-priority for low priority", () => {
-    render(<TaskCard task={makeTask({ priority: "low" })} />);
-    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("low");
-  });
-
-  it("applies different priority dot colors for high vs low priority", () => {
-    const { rerender } = render(<TaskCard task={makeTask({ priority: "high" })} />);
-    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("high");
-
-    rerender(<TaskCard task={makeTask({ priority: "low" })} />);
-    expect(screen.getByTestId("task-card").getAttribute("data-priority")).toBe("low");
   });
 
   // ---------------------------------------------------------------------------
@@ -233,13 +207,6 @@ describe("TaskCard", () => {
     expect(screen.getByTestId("task-card").getAttribute("data-status")).toBe(
       "open",
     );
-  });
-
-  it("has data-priority attribute matching the task priority", () => {
-    render(<TaskCard task={makeTask({ priority: "high" })} />);
-    expect(
-      screen.getByTestId("task-card").getAttribute("data-priority"),
-    ).toBe("high");
   });
 
   // ---------------------------------------------------------------------------

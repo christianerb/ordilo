@@ -83,22 +83,14 @@ export default async function FamiliePage() {
     redirect("/onboarding");
   }
 
-  // Members and inventory items only depend on the family id, not on each
-  // other — fetch them concurrently instead of as a sequential waterfall.
+  // Members only depend on the family id.
   // Capture the member error so a transient failure is not masked as
   // "no members".
-  const [memberResult, inventoryResult] = await Promise.all([
-    supabase
-      .from("family_members")
-      .select("*")
-      .eq("family_id", family.id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("family_inventory_items")
-      .select("id, name, item_type, tags, linked_member_id, status")
-      .eq("family_id", family.id)
-      .order("created_at", { ascending: false }),
-  ]);
+  const memberResult = await supabase
+    .from("family_members")
+    .select("*")
+    .eq("family_id", family.id)
+    .order("created_at", { ascending: true });
 
   const { data: memberData, error: memberError } = memberResult;
 
@@ -148,21 +140,11 @@ export default async function FamiliePage() {
     documentCounts[memberId] = docIds.size;
   }
 
-  const inventoryItems = (inventoryResult.data ?? []).map((i) => ({
-    id: i.id as string,
-    name: i.name as string,
-    item_type: i.item_type as string,
-    tags: (i.tags as string[]) ?? [],
-    linked_member_id: i.linked_member_id as string | null,
-    status: i.status as string,
-  }));
-
   return (
     <FamilieClient
       familyName={family.name}
       members={members}
       documentCounts={documentCounts}
-      inventoryItems={inventoryItems}
       photoUrls={photoUrls}
     />
   );

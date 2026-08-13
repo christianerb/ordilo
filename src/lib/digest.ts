@@ -21,7 +21,6 @@ export interface DigestTask {
   title: string;
   /** ISO date (yyyy-mm-dd). */
   due_date: string;
-  priority: string;
 }
 
 /** A calendar entry happening today or tomorrow, ready for the email. */

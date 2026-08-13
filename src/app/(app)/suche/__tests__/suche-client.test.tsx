@@ -333,7 +333,6 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
             action_args: {
               title: "Anmeldung abschicken",
               due_date: "2026-08-15",
-              priority: "high",
             },
           },
           { type: "text", content: "Ich habe die Aufgabe vorbereitet." },

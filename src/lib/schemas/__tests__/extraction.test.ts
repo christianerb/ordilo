@@ -2,7 +2,6 @@ import { describe, it, expect } from "vitest";
 import {
   DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
-  TASK_PRIORITIES,
   LOW_CONFIDENCE_THRESHOLD,
   documentAnalysisSchema,
   documentAnalysisJsonSchema,
@@ -31,7 +30,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     ],
     amounts: [],
     tasks: [
-      { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
+      { title: "Elternabend besuchen", due_date: "2026-07-15", confidence: 0.8 },
     ],
     facts: [],
     suggested_category: "Kita",
@@ -46,7 +45,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
 // ---------------------------------------------------------------------------
 
 describe("DOCUMENT_TYPES", () => {
-  it("includes all 8 document types from the PRD", () => {
+  it("includes all 9 document types from the PRD", () => {
     expect(DOCUMENT_TYPES).toEqual([
       "invoice",
       "letter",
@@ -55,6 +54,7 @@ describe("DOCUMENT_TYPES", () => {
       "school",
       "insurance",
       "tax",
+      "note",
       "other",
     ]);
   });
@@ -64,16 +64,6 @@ describe("DOCUMENT_TYPES", () => {
       expect(DOCUMENT_TYPE_LABELS[type]).toBeDefined();
       expect(typeof DOCUMENT_TYPE_LABELS[type]).toBe("string");
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TASK_PRIORITIES
-// ---------------------------------------------------------------------------
-
-describe("TASK_PRIORITIES", () => {
-  it("includes low, medium, high", () => {
-    expect(TASK_PRIORITIES).toEqual(["low", "medium", "high"]);
   });
 });
 
@@ -114,7 +104,7 @@ describe("documentAnalysisSchema", () => {
 
   it("accepts null due_date on tasks", () => {
     const analysis = validAnalysis({
-      tasks: [{ title: "Formular ausfüllen", due_date: null, priority: "low", confidence: 0.7 }],
+      tasks: [{ title: "Formular ausfüllen", due_date: null, confidence: 0.7 }],
     });
     const result = documentAnalysisSchema.safeParse(analysis);
     expect(result.success).toBe(true);
@@ -131,14 +121,6 @@ describe("documentAnalysisSchema", () => {
   it("rejects confidence below 0", () => {
     const analysis = validAnalysis({
       organizations: [{ name: "Kita", type: "Kita", confidence: -0.1 }],
-    });
-    const result = documentAnalysisSchema.safeParse(analysis);
-    expect(result.success).toBe(false);
-  });
-
-  it("rejects an out-of-enum task priority", () => {
-    const analysis = validAnalysis({
-      tasks: [{ title: "Task", due_date: null, priority: "urgent" as never, confidence: 0.8 }],
     });
     const result = documentAnalysisSchema.safeParse(analysis);
     expect(result.success).toBe(false);
@@ -287,11 +269,6 @@ describe("documentAnalysisJsonSchema", () => {
     expect(task.due_date.type).toEqual(["string", "null"]);
   });
 
-  it("constrains task priority to the enum", () => {
-    const task = documentAnalysisJsonSchema.properties.tasks.items.properties;
-    expect(task.priority.enum).toEqual([...TASK_PRIORITIES]);
-  });
-
   it("has additionalProperties: false on nested objects", () => {
     const fm = documentAnalysisJsonSchema.properties.family_members.items;
     expect(fm.additionalProperties).toBe(false);
@@ -311,7 +288,7 @@ describe("computeNeedsUserReview", () => {
     const analysis = validAnalysis({
       family_members: [{ person_id: "m1", name: "Emma", confidence: 0.95 }],
       organizations: [{ name: "Kita", type: "Kita", confidence: 0.9 }],
-      tasks: [{ title: "Task", due_date: null, priority: "low", confidence: 0.85 }],
+      tasks: [{ title: "Task", due_date: null, confidence: 0.85 }],
     });
     expect(computeNeedsUserReview(analysis)).toBe(false);
   });
@@ -346,7 +323,7 @@ describe("computeNeedsUserReview", () => {
 
   it("returns true when a task has low confidence", () => {
     const analysis = validAnalysis({
-      tasks: [{ title: "Unklare Aufgabe", due_date: null, priority: "low", confidence: 0.1 }],
+      tasks: [{ title: "Unklare Aufgabe", due_date: null, confidence: 0.1 }],
     });
     expect(computeNeedsUserReview(analysis)).toBe(true);
   });

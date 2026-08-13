@@ -84,7 +84,7 @@ function validAnalysis(): DocumentAnalysis {
     ],
     amounts: [],
     tasks: [
-      { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
+      { title: "Elternabend besuchen", due_date: "2026-07-15", confidence: 0.8 },
     ],
     facts: [],
     suggested_category: "Kita",

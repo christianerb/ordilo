@@ -31,6 +31,7 @@ export async function createNote({
   documentType,
   familyId,
   category,
+  secret,
   file,
 }: {
   title: string;
@@ -43,6 +44,12 @@ export async function createNote({
    * preserved by the analyze step, so the note appears in that collection.
    */
   category?: string;
+  /**
+   * Optional hidden value (e.g. a password). Sent to the server, which
+   * encrypts it (AES-256-GCM) before storing; the plaintext is never
+   * persisted in the database.
+   */
+  secret?: string;
   file?: File | null;
 }): Promise<NoteSuccessResponse> {
   const formData = new FormData();
@@ -52,6 +59,9 @@ export async function createNote({
   formData.append("family_id", familyId);
   if (category) {
     formData.append("category", category);
+  }
+  if (secret) {
+    formData.append("secret", secret);
   }
   if (file) {
     formData.append("file", file);

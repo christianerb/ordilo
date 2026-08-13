@@ -86,12 +86,6 @@ function mockServerClient(options: {
     in: vi.fn().mockResolvedValue({ data: [], error: null }),
   };
 
-  // Inventory items — chainable .eq().order(), empty by default.
-  const inventoryChain = {
-    eq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockResolvedValue({ data: [], error: null }),
-  };
-
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
       return { select: vi.fn(() => familiesChain) };
@@ -104,9 +98,6 @@ function mockServerClient(options: {
     }
     if (table === "extracted_entities") {
       return { select: vi.fn(() => entitiesChain) };
-    }
-    if (table === "family_inventory_items") {
-      return { select: vi.fn(() => inventoryChain) };
     }
     throw new Error(`Unexpected table: ${table}`);
   });

@@ -25,6 +25,7 @@ export interface ScanActionsValue {
     title: string;
     content: string;
     documentType: import("@/lib/schemas/extraction").DocumentType;
+    secret: string;
     file: File | null;
   }) => Promise<void>;
 }
@@ -103,6 +104,7 @@ export interface ScanProviderState {
     title: string;
     content: string;
     documentType: import("@/lib/schemas/extraction").DocumentType;
+    secret: string;
     file: File | null;
   }) => Promise<void>;
 }

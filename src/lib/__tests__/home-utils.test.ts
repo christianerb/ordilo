@@ -22,7 +22,6 @@ function makeTask(overrides: Partial<HomeTask> = {}): HomeTask {
     title: "Rechnung bezahlen",
     description: null,
     due_date: "2026-07-10",
-    priority: "high",
     status: "open",
     confidence: 0.9,
     confirmed: true,

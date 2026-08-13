@@ -94,7 +94,7 @@ async function handleDigest(request: Request): Promise<Response> {
 
   const { data: tasks, error: tasksError } = await admin
     .from("tasks")
-    .select("id, family_id, title, due_date, priority")
+    .select("id, family_id, title, due_date")
     .eq("status", "open")
     .eq("confirmed", true)
     .not("due_date", "is", null)
@@ -118,7 +118,6 @@ async function handleDigest(request: Request): Promise<Response> {
       id: task.id,
       title: task.title,
       due_date: task.due_date,
-      priority: task.priority,
     });
     byFamily.set(task.family_id, list);
   }

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { decryptSecret } from "@/lib/secrets";
 
 // Mock the supabase clients before importing the route.
 vi.mock("@/lib/supabase/server", () => ({
@@ -107,8 +108,20 @@ const VALID_FIELDS = {
 };
 
 describe("POST /api/documents/notes", () => {
+  const originalKey = process.env.SECRETS_ENCRYPTION_KEY;
+
   beforeEach(() => {
     vi.clearAllMocks();
+    // Provide a valid 32-byte key so encryptSecret works when a secret is sent.
+    process.env.SECRETS_ENCRYPTION_KEY = Buffer.alloc(32, 0x42).toString("base64");
+  });
+
+  afterEach(() => {
+    if (originalKey === undefined) {
+      delete process.env.SECRETS_ENCRYPTION_KEY;
+    } else {
+      process.env.SECRETS_ENCRYPTION_KEY = originalKey;
+    }
   });
 
   it("stores the collection category on the document when provided", async () => {
@@ -163,5 +176,53 @@ describe("POST /api/documents/notes", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  it("encrypts a secret and never stores the plaintext", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(
+      createNoteRequest({ ...VALID_FIELDS, secret: "super-secret-123" }),
+    );
+
+    expect(response.status).toBe(200);
+    const insertPayload = serverClient._documentsInsertMock.mock.calls[0][0] as Record<string, unknown>;
+    // The secret column is set, but it is NOT the plaintext.
+    expect(insertPayload.secret).toBeDefined();
+    expect(insertPayload.secret).not.toBe("super-secret-123");
+    expect(String(insertPayload.secret)).not.toContain("super-secret-123");
+    // The ocr_text must not contain the plaintext either.
+    expect(String(insertPayload.ocr_text)).not.toContain("super-secret-123");
+    // The stored envelope round-trips back to the plaintext.
+    expect(decryptSecret(insertPayload.secret as string)).toBe("super-secret-123");
+  });
+
+  it("preserves meaningful whitespace in a secret", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+    const secret = "  0420 Zugangscode  ";
+
+    const response = await POST(
+      createNoteRequest({ ...VALID_FIELDS, secret }),
+    );
+
+    expect(response.status).toBe(200);
+    const insertPayload = serverClient._documentsInsertMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(decryptSecret(insertPayload.secret as string)).toBe(secret);
+  });
+
+  it("omits the secret column when no secret is provided", async () => {
+    const serverClient = mockServerClient({});
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(serverClient);
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+
+    expect(response.status).toBe(200);
+    const insertPayload = serverClient._documentsInsertMock.mock.calls[0][0] as Record<string, unknown>;
+    expect(insertPayload.secret).toBeUndefined();
   });
 });

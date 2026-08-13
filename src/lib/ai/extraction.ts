@@ -117,7 +117,7 @@ export function buildSystemPrompt(familyContext: FamilyContext): string {
   // Extraction instructions.
   parts.push(`
 Aufgaben:
-1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, other).
+1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, note, other). "note" für handschriftliche oder freie Notizen.
 2. Erstelle einen kurzen, aussagekräftigen Titel.
 3. Fasse den Inhalt in 1-3 Sätzen zusammen. Nenne DABEI KONKRETE Werte aus dem Dokument: Uhrzeiten, Daten, Betraege, Namen, Orte, Flugnummern, Verspätungen. Nicht nur "es gibt Zeiten" sondern "Abflug 19:25, Ankunft 20:55". Nicht nur "ein Betrag" sondern "45,30 EUR". Diese Details sind fuer die Suchfunktion entscheidend.
 4. Identifiziere erwähnte Familienmitglieder und ordne sie zu.
@@ -129,7 +129,7 @@ Aufgaben:
    - value_date: bei kind "paid" das Datum, AN DEM gezahlt wurde; bei "outstanding" das Fälligkeitsdatum. ISO-Format YYYY-MM-DD. Wenn das Dokument dazu nichts sagt: null.
    - label: die konkrete Bezeichnung aus dem Dokument (z.B. "Empfohlener Beitrag pro Kind", "Monatsbeitrag Kita") — NIEMALS generisch "Betrag" oder "Summe".
    Jeden Betrag nur EINMAL extrahieren, auch wenn er mehrfach im Dokument steht. kind und value_date sind entscheidend: Familien fragen später "Wann habe ich was gezahlt?" und "Wie viel habe ich insgesamt bezahlt?" — das ist nur beantwortbar, wenn bei jedem Betrag steht, ob er gezahlt wurde und wann.
-8. Identifiziere Aufgaben (To-dos) mit Frist und Priorität (low, medium, high). Fristen im ISO-Format YYYY-MM-DD angeben. Wenn die Frist kein konkretes Datum ist (z.B. "Montag", "nächste Woche"), setze due_date auf null.
+8. Identifiziere Aufgaben (To-dos) mit Frist. Fristen im ISO-Format YYYY-MM-DD angeben. Wenn die Frist kein konkretes Datum ist (z.B. "Montag", "nächste Woche"), setze due_date auf null.
 9. Extrahiere eindeutige Identifikatoren als facts: Seriennummern (serial_number), Vertragsnummern (contract_number), Policennummern (policy_number), Kundennummern (customer_number), Rechnungsnummern (invoice_number), IBAN (iban), Kfz-Kennzeichen (license_plate), Mitgliedsnummern (member_id), Flugnummern (other), sonstige Kennungen (other). Übernimm den Wert EXAKT wie im Dokument (inkl. Bindestriche/Leerzeichen). Das Label beschreibt, wozu die Kennung gehört (z.B. "Seriennummer Waschmaschine", "Vertragsnummer Stromvertrag", "Flugnummer").
 10. Schlage eine Kategorie vor.
 11. Vergibe IMMER 2-5 passende Tags (Schlüsselwörter), die typische Suchanfragen abdecken. Beispiele: "Flug", "Reise", "Rechnung", "Strom", "Versicherung", "Arzt", "Kita", "Schule", "Steuer", "Verspätung", "Abflug", "Terminal".

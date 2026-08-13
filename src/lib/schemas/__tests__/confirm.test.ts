@@ -26,7 +26,7 @@ function validAnalysis(overrides: Partial<DocumentAnalysis> = {}): DocumentAnaly
     ],
     amounts: [],
     tasks: [
-      { title: "Elternabend besuchen", due_date: "2026-07-15", priority: "medium", confidence: 0.8 },
+      { title: "Elternabend besuchen", due_date: "2026-07-15", confidence: 0.8 },
     ],
     facts: [],
     suggested_category: "Kita",
@@ -111,16 +111,6 @@ describe("confirmPayloadSchema", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects task with invalid priority", () => {
-    const payload = validPayload({
-      tasks: [
-        { title: "Test", due_date: null, priority: "urgent" as DocumentAnalysis["tasks"][0]["priority"], confidence: 0.9 },
-      ],
-    });
-    const result = confirmPayloadSchema.safeParse(payload);
-    expect(result.success).toBe(false);
-  });
-
   it("validates payload with empty arrays", () => {
     const payload = validPayload({
       family_members: [],
@@ -147,7 +137,7 @@ describe("confirmPayloadSchema", () => {
   it("validates payload with null task due_date", () => {
     const payload = validPayload({
       tasks: [
-        { title: "No deadline task", due_date: null, priority: "low", confidence: 0.8 },
+        { title: "No deadline task", due_date: null, confidence: 0.8 },
       ],
     });
     const result = confirmPayloadSchema.safeParse(payload);

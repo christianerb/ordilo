@@ -10,6 +10,7 @@ import {
 import { DOCUMENT_TYPES } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
 import { jsonError, methodNotAllowed } from "@/lib/api/respond";
+import { encryptSecret } from "@/lib/secrets";
 import {
   buildStoragePath,
   readFileHeaderBytes,
@@ -77,6 +78,12 @@ const noteSchema = z.object({
     .min(1, "Kategorie darf nicht leer sein.")
     .max(100, "Kategorie ist zu lang (max. 100 Zeichen).")
     .optional(),
+  // Optional hidden value (e.g. a password). Stored AES-256-GCM encrypted
+  // in documents.secret; the plaintext is never persisted.
+  secret: z
+    .string()
+    .max(10_000, "Geheim ist zu lang (max. 10 000 Zeichen).")
+    .optional(),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -101,6 +108,7 @@ export async function POST(request: Request): Promise<Response> {
   const documentType = formData.get("document_type");
   const familyIdRaw = formData.get("family_id");
   const categoryRaw = formData.get("category");
+  const secretRaw = formData.get("secret");
   const file = formData.get("file");
 
   const parsed = noteSchema.safeParse({
@@ -112,6 +120,10 @@ export async function POST(request: Request): Promise<Response> {
       typeof categoryRaw === "string" && categoryRaw.trim()
         ? categoryRaw.trim()
         : undefined,
+    secret:
+      typeof secretRaw === "string" && secretRaw.trim()
+        ? secretRaw
+        : undefined,
   });
   if (!parsed.success) {
     const firstError = parsed.error.issues[0];
@@ -122,7 +134,7 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const { title: validTitle, content: validContent, document_type: validType, family_id: familyId, category: validCategory } = parsed.data;
+  const { title: validTitle, content: validContent, document_type: validType, family_id: familyId, category: validCategory, secret: validSecret } = parsed.data;
 
   // 3. Verify family ownership (RLS) --------------------------------------
   const serverClient = await createServerClient();
@@ -210,6 +222,20 @@ export async function POST(request: Request): Promise<Response> {
   };
   if (storagePath) {
     insertPayload.file_url = storagePath;
+  }
+  if (validSecret) {
+    try {
+      insertPayload.secret = encryptSecret(validSecret);
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Geheim konnte nicht verschlüsselt werden.";
+      if (storagePath) {
+        await adminClient.storage.from("documents").remove([storagePath]).catch(() => {});
+      }
+      return jsonError(message, "SECRET_ENCRYPT_FAILED", 500);
+    }
   }
 
   const { data: docRow, error: insertError } = await serverClient

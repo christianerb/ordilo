@@ -123,7 +123,6 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
         {
           title: "Anmeldung abschicken",
           due_date: "2026-08-15",
-          priority: "high",
           confidence: 0.45,
         },
       ],

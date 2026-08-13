@@ -9,7 +9,6 @@ import {
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import {
   LOW_CONFIDENCE_THRESHOLD,
-  type TaskPriority,
 } from "@/lib/schemas/extraction";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import {
@@ -146,7 +145,6 @@ export function ReviewCard({
     organizationNames: new Map(),
     amountValues: new Map(),
     taskTitles: new Map(),
-    taskPriorities: new Map(),
     taskDueDates: new Map(),
     deletedTasks: new Set(),
   });
@@ -374,21 +372,6 @@ export function ReviewCard({
     [analysis, updateEdits],
   );
 
-  const handleEditTaskPriority = useCallback(
-    (taskIndex: number, priority: TaskPriority) => {
-      updateEdits((prev) => {
-        const taskPriorities = new Map(prev.taskPriorities);
-        if (priority === analysis?.tasks[taskIndex]?.priority) {
-          taskPriorities.delete(taskIndex);
-        } else {
-          taskPriorities.set(taskIndex, priority);
-        }
-        return { ...prev, taskPriorities };
-      });
-    },
-    [analysis, updateEdits],
-  );
-
   const handleEditTaskDueDate = useCallback(
     (taskIndex: number, dueDate: string) => {
       updateEdits((prev) => {
@@ -540,7 +523,6 @@ export function ReviewCard({
         organizationNames: new Map(),
         amountValues: new Map(),
         taskTitles: new Map(),
-        taskPriorities: new Map(),
         taskDueDates: new Map(),
         deletedTasks: new Set(),
       });
@@ -741,7 +723,6 @@ export function ReviewCard({
       onEditOrganization={handleEditOrganization}
       onEditAmount={handleEditAmount}
       onEditTaskTitle={handleEditTaskTitle}
-      onEditTaskPriority={handleEditTaskPriority}
       onEditTaskDueDate={handleEditTaskDueDate}
       onEditFact={handleEditFact}
       onDeleteTask={handleDeleteTask}
