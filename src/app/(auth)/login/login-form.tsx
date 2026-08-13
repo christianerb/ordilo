@@ -22,6 +22,7 @@ import { AuthShell } from "@/components/ordilo/auth-shell";
 import { webmailFor } from "@/lib/auth/webmail";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { recordProductEvent } from "@/lib/analytics/product-events";
+import { getPostAuthDestination } from "@/lib/auth/routing";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
@@ -248,7 +249,8 @@ export function LoginForm() {
       return;
     }
 
-    if (data.user) {
+    const { isFirstTime } = await getPostAuthDestination(supabase);
+    if (isFirstTime && data.user) {
       await recordProductEvent(supabase, {
         userId: data.user.id,
         eventName: "onboarding_started",

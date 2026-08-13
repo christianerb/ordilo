@@ -28,6 +28,7 @@ import { validateCollectionInput } from "@/lib/schemas/collections";
 import { validateMember } from "@/lib/schemas/onboarding";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
 import { markDocumentFailed } from "@/lib/supabase/document-helpers";
+import { eventOccursOn, type EventOccurrenceSource } from "@/lib/calendar";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1405,6 +1406,128 @@ const RECURRENCE_LABELS: Record<string, string> = {
   yearly: "jährlich",
 };
 
+type CalendarQueryEvent = {
+  id: string;
+  title: string;
+  note: string | null;
+  starts_on: string;
+  ends_on: string;
+  all_day: boolean;
+  starts_time: string | null;
+  ends_time: string | null;
+  recurrence: "none" | "weekly" | "biweekly" | "monthly" | "yearly";
+  recurrence_until: string | null;
+  recurrence_exceptions: string[];
+};
+
+type CalendarOccurrence = CalendarQueryEvent & {
+  occurrence_starts_on: string;
+  occurrence_ends_on: string;
+};
+
+function addDays(date: string, days: number): string {
+  const result = new Date(`${date}T12:00:00`);
+  result.setDate(result.getDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
+function occurrenceEndsOn(event: CalendarQueryEvent, startsOn: string): string {
+  const durationMs =
+    new Date(`${event.ends_on}T12:00:00`).getTime() -
+    new Date(`${event.starts_on}T12:00:00`).getTime();
+  return addDays(startsOn, Math.round(durationMs / 86_400_000));
+}
+
+function occursOn(event: CalendarQueryEvent, date: string): boolean {
+  return eventOccursOn(
+    {
+      ...event,
+      recurrence_exceptions: event.recurrence_exceptions ?? [],
+    } as EventOccurrenceSource,
+    date,
+  );
+}
+
+function findOccurrence(
+  event: CalendarQueryEvent,
+  from: string,
+  to: string,
+  direction: "forward" | "backward",
+): CalendarOccurrence | null {
+  const step = direction === "forward" ? 1 : -1;
+  let date = direction === "forward" ? from : to;
+
+  while (
+    (direction === "forward" && date <= to) ||
+    (direction === "backward" && date >= from)
+  ) {
+    if (occursOn(event, date) && !occursOn(event, addDays(date, -1))) {
+      return {
+        ...event,
+        occurrence_starts_on: date,
+        occurrence_ends_on: occurrenceEndsOn(event, date),
+      };
+    }
+    date = addDays(date, step);
+  }
+
+  return null;
+}
+
+function nextYear(date: string): string {
+  const result = new Date(`${date}T12:00:00`);
+  result.setFullYear(result.getFullYear() + 1);
+  return result.toISOString().slice(0, 10);
+}
+
+function findRelevantOccurrence(
+  event: CalendarQueryEvent,
+  direction: string,
+  today: string,
+  from: string | null,
+  to: string | null,
+): CalendarOccurrence | null {
+  if (event.recurrence === "none") {
+    const startsOn = event.starts_on;
+    const endsOn = event.ends_on;
+    if ((from && endsOn < from) || (to && startsOn > to)) return null;
+    if (direction === "past" && startsOn >= today) return null;
+    if (direction === "upcoming" && endsOn < today) return null;
+    return {
+      ...event,
+      occurrence_starts_on: startsOn,
+      occurrence_ends_on: endsOn,
+    };
+  }
+
+  if (direction === "past") {
+    const rangeStart = from ?? event.starts_on;
+    const rangeEnd = [to, addDays(today, -1), event.recurrence_until]
+      .filter((value): value is string => Boolean(value))
+      .sort()[0];
+    if (rangeEnd < rangeStart) return null;
+    return findOccurrence(event, rangeStart, rangeEnd, "backward");
+  }
+
+  if (direction === "upcoming") {
+    const rangeStart = [from, today, event.starts_on]
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1)!;
+    const rangeEnd = [to, event.recurrence_until, nextYear(rangeStart)]
+      .filter((value): value is string => Boolean(value))
+      .sort()[0];
+    if (rangeEnd < rangeStart) return null;
+    return findOccurrence(event, rangeStart, rangeEnd, "forward");
+  }
+
+  return {
+    ...event,
+    occurrence_starts_on: event.starts_on,
+    occurrence_ends_on: event.ends_on,
+  };
+}
+
 async function executeQueryCalendarEvents(
   args: Record<string, unknown>,
   ctx: ToolContext,
@@ -1416,7 +1539,9 @@ async function executeQueryCalendarEvents(
     : "all";
   const from = typeof args.from === "string" && DATE_PATTERN.test(args.from) ? args.from : null;
   const to = typeof args.to === "string" && DATE_PATTERN.test(args.to) ? args.to : null;
-  const today = new Date().toLocaleDateString("sv-SE");
+  const today = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Europe/Berlin",
+  }).format(new Date());
 
   // Resolve a person filter to the set of event ids they attend.
   let personEventIds: Set<string> | null = null;
@@ -1441,37 +1566,48 @@ async function executeQueryCalendarEvents(
 
   let query = ctx.client
     .from("calendar_events")
-    .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence")
+    .select("id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions")
     .eq("family_id", ctx.familyId);
 
-  // Range filters use overlap semantics: an event counts if any day of it
-  // falls inside [from, to].
-  if (from) query = query.gte("ends_on", from);
-  if (to) query = query.lte("starts_on", to);
-  if (direction === "past") {
-    query = query.lt("starts_on", today).order("starts_on", { ascending: false });
-  } else if (direction === "upcoming") {
-    query = query.gte("ends_on", today).order("starts_on", { ascending: true });
-  } else {
-    query = query.order("starts_on", { ascending: false });
-  }
+  // Apply the attendee constraint before the cap. Date constraints are
+  // resolved below because a recurring event can occur long after its
+  // original starts_on and ends_on values.
+  if (personEventIds) query = query.in("id", [...personEventIds]);
   if (queryText) {
     // Commas would break PostgREST's or() syntax — strip them.
     const safe = queryText.replace(/[(),]/g, " ").trim();
     if (safe) query = query.or(`title.ilike.%${safe}%,note.ilike.%${safe}%`);
   }
 
-  const { data, error } = await query.limit(20);
+  const { data, error } = await query.limit(500);
   if (error) return JSON.stringify({ error: "Termine konnten nicht geladen werden." });
 
-  let events = data ?? [];
-  if (personEventIds) events = events.filter((e) => personEventIds!.has(e.id));
-  if (events.length === 0) {
-    return JSON.stringify({ events: [], message: "Keine passenden Termine gefunden." });
+  const events = (data ?? []) as CalendarQueryEvent[];
+  // The database already receives this constraint above. Retain the local
+  // guard too, so an inconsistent join response can never leak unrelated
+  // family events into the answer.
+  const personEvents = personEventIds
+    ? events.filter((event) => personEventIds.has(event.id))
+    : events;
+  const occurrences = personEvents
+    .map((event) => findRelevantOccurrence(event, direction, today, from, to))
+    .filter((event): event is CalendarOccurrence => event !== null)
+    .sort((left, right) =>
+      direction === "past"
+        ? right.occurrence_starts_on.localeCompare(left.occurrence_starts_on)
+        : left.occurrence_starts_on.localeCompare(right.occurrence_starts_on),
+    )
+    .slice(0, 20);
+  if (occurrences.length === 0) {
+    return JSON.stringify({
+      heute: today,
+      events: [],
+      message: "Keine passenden Termine gefunden.",
+    });
   }
 
   // Enrich with attendee names (two steps — the FK embed join is brittle).
-  const eventIds = events.map((e) => e.id);
+  const eventIds = occurrences.map((e) => e.id);
   const { data: attendees } = await ctx.client
     .from("calendar_event_attendees")
     .select("event_id, family_member_id")
@@ -1495,11 +1631,13 @@ async function executeQueryCalendarEvents(
 
   return JSON.stringify({
     heute: today,
-    events: events.map((e) => ({
+    events: occurrences.map((e) => ({
       titel: e.title,
       notiz: e.note ?? undefined,
-      von: e.starts_on,
-      bis: e.ends_on !== e.starts_on ? e.ends_on : undefined,
+      von: e.occurrence_starts_on,
+      bis: e.occurrence_ends_on !== e.occurrence_starts_on
+        ? e.occurrence_ends_on
+        : undefined,
       uhrzeit: e.all_day ? "ganztägig" : `${e.starts_time}–${e.ends_time}`,
       wiederholung: RECURRENCE_LABELS[e.recurrence] ?? e.recurrence,
       teilnehmer: eventAttendees.get(e.id) ?? [],

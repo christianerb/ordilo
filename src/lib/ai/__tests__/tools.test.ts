@@ -1830,6 +1830,8 @@ const DENTIST_EVENT = {
   starts_time: "15:00",
   ends_time: "15:30",
   recurrence: "none",
+  recurrence_until: null,
+  recurrence_exceptions: [],
 };
 
 describe("query_calendar_events", () => {
@@ -1879,6 +1881,61 @@ describe("query_calendar_events", () => {
 
     expect(result.events).toHaveLength(1);
     expect(result.events[0].titel).toBe("Zahnarzt Emma");
+  });
+
+  it("applies the attendee ids to the calendar query before limiting results", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [DENTIST_EVENT],
+      members: [{ id: "m-1", name: "Emma" }],
+      attendees: [{ event_id: "ev-1", family_member_id: "m-1" }],
+    });
+    await executeTool(
+      "query_calendar_events",
+      { person: "Emma", direction: "all" },
+      ctx,
+    );
+
+    const calendarQuery = (ctx.client.from as ReturnType<typeof vi.fn>).mock.results
+      .find((result) => result.value?.select?.mock?.calls?.[0]?.[0]?.includes("starts_on"))
+      ?.value;
+    expect(calendarQuery.in).toHaveBeenCalledWith("id", ["ev-1"]);
+    expect(calendarQuery.limit).toHaveBeenCalledWith(500);
+  });
+
+  it("expands an older recurring event to its next occurrence", async () => {
+    const ctx = makeCalendarQueryCtx({
+      events: [{
+        ...DENTIST_EVENT,
+        id: "ev-recurring",
+        title: "Klavierunterricht",
+        starts_on: "2020-01-06",
+        ends_on: "2020-01-06",
+        recurrence: "weekly",
+      }],
+    });
+    const result = JSON.parse(
+      await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
+    );
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      titel: "Klavierunterricht",
+      wiederholung: "wöchentlich",
+    });
+    expect(result.events[0].von >= result.heute).toBe(true);
+  });
+
+  it("uses Berlin's date at the UTC day boundary", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-12T22:30:00Z"));
+    const ctx = makeCalendarQueryCtx({ events: [] });
+
+    const result = JSON.parse(
+      await executeTool("query_calendar_events", { direction: "upcoming" }, ctx),
+    );
+
+    expect(result.heute).toBe("2026-08-13");
+    vi.useRealTimers();
   });
 
   it("says so when the named family member does not exist", async () => {
