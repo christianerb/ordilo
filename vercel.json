@@ -11,10 +11,6 @@
     {
       "path": "/api/admin/cleanup",
       "schedule": "30 5 * * *"
-    },
-    {
-      "path": "/api/family-invites/notifications/run",
-      "schedule": "0 7 * * *"
     }
   ]
 }

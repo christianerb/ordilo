@@ -13,9 +13,6 @@ export type InviteNotificationDeliveryStatus =
   | "not_configured"
   | "retry_later";
 
-const NOTIFICATION_BATCH_SIZE = 50;
-const NOTIFICATION_CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
-
 /**
  * Atomically claim and deliver an invite-created notification.
  *
@@ -29,17 +26,6 @@ export async function deliverInviteNotification(
   appUrl: string,
 ): Promise<InviteNotificationDeliveryStatus> {
   const admin = createAdminClient();
-  // A crashed serverless invocation must not leave a notification claimed
-  // forever. Resend calls below are bounded by its HTTP response, so a
-  // ten-minute lease leaves ample room for normal delivery.
-  await admin
-    .from("family_invite_notifications")
-    .update({ email_claimed_at: null })
-    .is("email_sent_at", null)
-    .lt(
-      "email_claimed_at",
-      new Date(Date.now() - NOTIFICATION_CLAIM_TIMEOUT_MS).toISOString(),
-    );
   const { data: notification } = await admin
     .from("family_invite_notifications")
     .update({ email_claimed_at: new Date().toISOString() })
@@ -86,8 +72,7 @@ export async function deliverInviteNotification(
     },
     body: JSON.stringify({
       from:
-        process.env.INVITE_NOTIFICATION_FROM_EMAIL
-        ?? process.env.DIGEST_FROM_EMAIL
+        process.env.DIGEST_FROM_EMAIL
         ?? "Ordilo <onboarding@resend.dev>",
       to: recipient.user.email,
       subject: inviteNotificationSubject(email),
@@ -106,37 +91,4 @@ export async function deliverInviteNotification(
     .update({ email_sent_at: new Date().toISOString() })
     .eq("id", notification.id);
   return "sent";
-}
-
-/**
- * Deliver a bounded batch of queued notifications from the scheduler.
- * Rows are still claimed by {@link deliverInviteNotification}, so this is
- * safe alongside immediate client and post-response delivery attempts.
- */
-export async function deliverPendingInviteNotifications(
-  appUrl: string,
-): Promise<{ sent: number; retryLater: number; skipped: number }> {
-  const admin = createAdminClient();
-  const { data: pending } = await admin
-    .from("family_invite_notifications")
-    .select("id, actor_user_id")
-    .is("email_sent_at", null)
-    .is("email_claimed_at", null)
-    .order("created_at", { ascending: true })
-    .limit(NOTIFICATION_BATCH_SIZE);
-
-  let sent = 0;
-  let retryLater = 0;
-  let skipped = 0;
-  for (const notification of pending ?? []) {
-    const status = await deliverInviteNotification(
-      notification.id,
-      notification.actor_user_id,
-      appUrl,
-    );
-    if (status === "sent") sent++;
-    else if (status === "retry_later" || status === "not_configured") retryLater++;
-    else skipped++;
-  }
-  return { sent, retryLater, skipped };
 }
