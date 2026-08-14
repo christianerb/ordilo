@@ -4,12 +4,17 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/components/ordilo/review-card", () => ({
   ReviewCard: ({
     onDirtyChange,
+    hasOriginalFile,
   }: {
     onDirtyChange?: (dirty: boolean) => void;
+    hasOriginalFile?: boolean;
   }) => (
-    <button type="button" onClick={() => onDirtyChange?.(true)}>
-      Änderung machen
-    </button>
+    <>
+      <button type="button" onClick={() => onDirtyChange?.(true)}>
+        Änderung machen
+      </button>
+      <span data-testid="has-original-file">{String(hasOriginalFile)}</span>
+    </>
   ),
 }));
 
@@ -50,6 +55,18 @@ describe("DocumentDetailSheet", () => {
     );
 
     expect(screen.getByTestId("document-secret-reveal")).toBeDefined();
+  });
+
+  it("does not offer an original comparison for a text-only note", () => {
+    render(
+      <DocumentDetailSheet
+        document={{ ...document, original_filename: null, mime_type: null, file_url: null } as never}
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("has-original-file")).toHaveTextContent("false");
   });
 
   it("protects unsaved corrections when the sheet is closed", async () => {

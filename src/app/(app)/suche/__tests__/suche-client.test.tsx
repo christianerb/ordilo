@@ -329,6 +329,7 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
         streamResponse([
           {
             type: "confirmation_request",
+            action_id: "proposal-add-task-1",
             tool_name: "add_task",
             action_args: {
               title: "Anmeldung abschicken",
@@ -362,7 +363,7 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
         "/api/chat/actions",
         expect.objectContaining({
           method: "POST",
-          body: expect.stringContaining('"tool_name":"add_task"'),
+          body: expect.stringContaining('"action_id":"proposal-add-task-1"'),
         }),
       );
     });

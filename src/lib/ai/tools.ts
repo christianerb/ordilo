@@ -2595,13 +2595,9 @@ const NOTE_CONTENT_MAX = 10_000;
 /**
  * Save a free-text note as a manual document — the agentic path for
  * "Notier dir: …". Mirrors the note editor flow: insert with status
- * "ocr_done" (the text already exists, no OCR needed), then run the
- * shared analyze step right away so the note lands in the review queue
- * instead of waiting for the user to open Dokumente.
- *
- * The note is NOT auto-confirmed: like every other document it goes
- * through the review step, and the tool result says so — the model must
- * not promise the note is already searchable.
+ * "confirmed" because the person supplied its text. It may still run the
+ * shared analyze step for search and organization, but keeps that confirmed
+ * status and never joins the review queue.
  */
 async function executeCreateNote(
   args: Record<string, unknown>,
@@ -2648,7 +2644,7 @@ async function executeCreateNote(
       id: documentId,
       family_id: ctx.familyId,
       uploaded_by: user.id,
-      status: "ocr_done",
+      status: "confirmed",
       source: "manual",
       title,
       document_type: "other",
@@ -2669,13 +2665,13 @@ async function executeCreateNote(
     ocr_markdown: content,
   });
 
-  // Transition to analyzing and run the shared analyze step, exactly like
-  // the note editor does via POST /api/documents/[id]/analyze.
+  // Enrich the confirmed note with the shared analysis step. The final
+  // status remains confirmed because wasConfirmed is true.
   const { data: transitioned } = await ctx.client
     .from("documents")
     .update({ status: "analyzing" })
     .eq("id", documentId)
-    .eq("status", "ocr_done")
+    .eq("status", "confirmed")
     .select("id")
     .maybeSingle();
 
@@ -2695,7 +2691,7 @@ async function executeCreateNote(
       id: documentId,
       family_id: ctx.familyId,
       ocr_text: content,
-      wasConfirmed: false,
+      wasConfirmed: true,
     });
   } catch (err) {
     await markDocumentFailed(
@@ -2715,9 +2711,8 @@ async function executeCreateNote(
       titel: title,
       analysiert: false,
       message:
-        `Notiz '${title}' wurde gespeichert, aber die automatische ` +
-        "Analyse hat nicht geklappt. Du findest die Notiz in den " +
-        "Dokumenten und kannst die Analyse dort erneut starten.",
+      `Notiz '${title}' wurde gespeichert. Die automatische ` +
+        "Sortierung hat nicht geklappt, aber deine Notiz ist sicher gespeichert.",
     });
   }
 
@@ -2726,9 +2721,6 @@ async function executeCreateNote(
     document_id: documentId,
     titel: title,
     analysiert: true,
-    message:
-      `Notiz '${title}' wurde gespeichert und analysiert. Sie liegt in ` +
-      "den Dokumenten zur Bestaetigung bereit — erst danach ist sie " +
-      "durchsuchbar und ihre Aufgaben und Fristen aktiv.",
+    message: `Notiz '${title}' wurde gespeichert.`,
   });
 }

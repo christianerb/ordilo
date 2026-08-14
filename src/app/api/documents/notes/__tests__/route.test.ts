@@ -137,7 +137,7 @@ describe("POST /api/documents/notes", () => {
     const insertPayload = serverClient._documentsInsertMock.mock.calls[0][0] as Record<string, unknown>;
     expect(insertPayload.category).toBe("Unterlagen");
     expect(insertPayload.source).toBe("manual");
-    expect(insertPayload.status).toBe("ocr_done");
+    expect(insertPayload.status).toBe("confirmed");
   });
 
   it("stores a null category when no collection is given", async () => {
