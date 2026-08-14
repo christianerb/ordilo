@@ -172,6 +172,8 @@ export interface ChatAction {
   error?: string;
   /** Only supplied for actions that have a safe, supported undo path. */
   undo?: {
+    /** Separate idempotency key: undo is a distinct write from confirmation. */
+    id: string;
     toolName: ChatActionToolName;
     args: Record<string, unknown>;
   };

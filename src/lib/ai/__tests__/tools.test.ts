@@ -1486,7 +1486,7 @@ describe("create_collection confirmation gate", () => {
 
 /**
  * Ctx for create_note: the client carries `auth.getUser`, `.from("documents")`
- * supports the insert (select/single) and the analyzing transition
+ * supports the insert (select/single) and the confirmed-note analysis transition
  * (update/eq/eq/select/maybeSingle), `.from("document_pages")` the page insert.
  */
 function makeNoteCtx({
@@ -1597,7 +1597,7 @@ describe("create_note confirmation gate", () => {
     expect(result.error).toContain("zu lang");
   });
 
-  it("inserts the note and runs the analysis when confirmed", async () => {
+  it("keeps a manually supplied note confirmed while it is analyzed", async () => {
     const ctx = makeNoteCtx();
     const result = await executeTool(
       "create_note",
@@ -1615,7 +1615,7 @@ describe("create_note confirmation gate", () => {
       expect.objectContaining({
         family_id: "fam-1",
         ocr_text: "Passwort haengt am Kuehlschrank",
-        wasConfirmed: false,
+        wasConfirmed: true,
       }),
     );
   });

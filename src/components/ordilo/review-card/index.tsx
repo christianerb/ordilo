@@ -78,6 +78,8 @@ export interface ReviewCardProps {
   onOriginalPreviewChange?: (open: boolean) => void;
   /** Notifies a containing detail sheet about unsaved review changes. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Whether the document has an uploaded original file to compare. */
+  hasOriginalFile?: boolean;
   /** Optional additional className. */
   className?: string;
 }
@@ -130,6 +132,7 @@ export function ReviewCard({
   onBack,
   onOriginalPreviewChange,
   onDirtyChange,
+  hasOriginalFile = true,
   className,
 }: ReviewCardProps) {
   // --- State ---
@@ -681,7 +684,7 @@ export function ReviewCard({
         askTitle={confirmed ? (analysis?.title ?? null) : null}
         onReanalyze={requestReanalyze}
         reanalyzing={reanalyzing}
-        onViewOriginal={handleOpenOriginal}
+        onViewOriginal={hasOriginalFile ? handleOpenOriginal : undefined}
       />
     );
   }
@@ -731,7 +734,7 @@ export function ReviewCard({
       onConfirm={handleConfirm}
       onReanalyze={requestReanalyze}
       documentId={documentId}
-      onViewOriginal={handleOpenOriginal}
+      onViewOriginal={hasOriginalFile ? handleOpenOriginal : undefined}
       onBack={onBack ? () => onBack(edits) : undefined}
     />
   );

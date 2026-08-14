@@ -45,6 +45,7 @@ export interface InitialMessage {
   content: string;
   sources: ChatSource[];
   card?: AnswerCardData;
+  action?: ChatAction;
   feedback?: "positive" | "negative" | null;
 }
 
@@ -113,6 +114,7 @@ export function SucheClient({
       content: m.content,
       sources: m.sources,
       card: m.card,
+      action: m.action,
       feedback: m.feedback ?? null,
     })),
   );
@@ -526,13 +528,20 @@ export function SucheClient({
                           "type",
                           "tool_name",
                           "action_args",
+                          "action_id",
                           "needs_confirmation",
                           "message",
                         ].includes(key),
                     ),
                   );
                   const action: ChatAction = {
-                    id: `${aiMsgId}-${toolName}`,
+                    // The server mints this idempotency key with the
+                    // proposal. Reuse it for retries and restored cards so
+                    // the confirmation API can safely execute the write.
+                    id:
+                      typeof data.action_id === "string" && data.action_id
+                        ? data.action_id
+                        : `${aiMsgId}-${toolName}`,
                     toolName: toolName as ChatAction["toolName"],
                     args: {
                       ...(actionArgs as Record<string, unknown>),
@@ -660,6 +669,7 @@ export function SucheClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             family_id: familyId,
+            action_id: proposal.id,
             tool_name: proposal.toolName,
             args: proposal.args,
           }),
@@ -686,6 +696,7 @@ export function SucheClient({
             state: "confirmed",
             undo: taskId
               ? {
+                  id: `${current.id}-undo`,
                   toolName: "update_task",
                   args: { task_id: taskId, status: "open" },
                 }

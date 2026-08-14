@@ -146,7 +146,7 @@ export default async function SuchePage({
         // The persisted args are the merged proposal (raw args + preview
         // fields like existing_value), so the restored card discloses
         // exactly what the live card did.
-        actions: (row.actions ?? [])
+        action: (row.actions ?? [])
           .filter(
             (action) =>
               typeof action?.tool_name === "string" &&
@@ -161,7 +161,7 @@ export default async function SuchePage({
             toolName: action.tool_name as ChatActionToolName,
             args: action.action_args,
             state: "ready" as const,
-          })),
+          }))[0],
         feedback: (row.feedback as "positive" | "negative" | null) ?? null,
       }));
     } catch {

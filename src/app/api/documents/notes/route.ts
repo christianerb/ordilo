@@ -19,11 +19,11 @@ import {
 
 /**
  * Success response for POST /api/documents/notes.
- * Status is "ocr_done" because the note text is already available (no OCR needed).
+ * Status is "confirmed" because the note text was entered by the user.
  */
 type NoteSuccessResponse = {
   document_id: string;
-  status: "ocr_done";
+  status: "confirmed";
 };
 
 /**
@@ -32,9 +32,10 @@ type NoteSuccessResponse = {
  * Creates a manually-authored document (a "note") with user-written text
  * and an optional image attachment. The note text is stored as ocr_text
  * and a document_pages row so the existing analysis pipeline can process
- * it without modification — the document is created with status
- * "ocr_done" (text already available, no OCR needed), then the client
- * triggers analysis via POST /api/documents/[id]/analyze.
+ * it without modification. A manual note is created as "confirmed": the
+ * user already entered and saw its contents, so it must not join the review
+ * queue. The client may still trigger background analysis for search and
+ * organization; that analysis preserves the confirmed status.
  *
  * Accepts multipart form data with:
  *   - title:         the note title (required, 1–200 chars)
@@ -48,7 +49,7 @@ type NoteSuccessResponse = {
  *   2. Validate form fields with Zod
  *   3. Verify family ownership (RLS)
  *   4. If image provided: validate + upload to Storage
- *   5. Insert documents row (status = "ocr_done", source = "manual",
+ *   5. Insert documents row (status = "confirmed", source = "manual",
  *      ocr_text = content)
  *   6. Insert document_pages row (page_number = 1, ocr_markdown = content)
  *   7. Return { document_id, status: "ocr_done" }
@@ -210,7 +211,7 @@ export async function POST(request: Request): Promise<Response> {
     id: documentId,
     family_id: familyId,
     uploaded_by: user.id,
-    status: "ocr_done",
+    status: "confirmed",
     source: "manual",
     title: validTitle,
     document_type: validType,
@@ -275,7 +276,7 @@ export async function POST(request: Request): Promise<Response> {
   // 7. Success ------------------------------------------------------------
   const body: NoteSuccessResponse = {
     document_id: documentId,
-    status: "ocr_done",
+    status: "confirmed",
   };
   return Response.json(body, { status: 200 });
 }

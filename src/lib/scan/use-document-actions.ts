@@ -257,9 +257,9 @@ export function useDocumentActions({
         await fetchDocumentsRef.current(fid);
       }
 
-      // Trigger analysis (same as the scan pipeline does after OCR).
-      // The scan context's polling will pick up the "analyzing" → "analyzed"
-      // transition and the document will appear in the review queue.
+      // Enrich the manually entered note for search and organization. It was
+      // created as confirmed, so the analyze route returns it to confirmed
+      // and it never appears in the review queue.
       try {
         const response = await fetch(`/api/documents/${result.document_id}/analyze`, {
           method: "POST",

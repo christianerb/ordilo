@@ -6,7 +6,7 @@ import { DOCUMENT_TYPES, type DocumentType } from "@/lib/schemas/extraction";
  */
 type NoteSuccessResponse = {
   document_id: string;
-  status: "ocr_done";
+  status: "confirmed";
 };
 
 /**
@@ -14,8 +14,8 @@ type NoteSuccessResponse = {
  *
  * Sends multipart form data with title, content (markdown), document_type,
  * family_id, and an optional image attachment. The server creates the
- * document with status "ocr_done" so the analysis pipeline can pick it
- * up immediately.
+ * document already marked "confirmed". Optional background analysis keeps
+ * that status, so a manually written note never needs a review step.
  *
  * @param params.title       The note title.
  * @param params.content     Markdown text body.

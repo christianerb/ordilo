@@ -274,6 +274,7 @@ export function DocumentDetailSheet({
               onRetry={onRetry ? () => onRetry(document.id) : undefined}
               onOriginalPreviewChange={setComparisonOpen}
               onDirtyChange={setDirty}
+              hasOriginalFile={Boolean(document.file_url)}
             />
           </div>
         )}
