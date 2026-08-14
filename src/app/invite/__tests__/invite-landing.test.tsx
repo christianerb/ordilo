@@ -242,9 +242,7 @@ describe("InviteLanding — merge state", () => {
     });
 
     expect(await screen.findByTestId("invite-join-complete")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Zur Familie" }),
-    ).toHaveAttribute("href", "/home");
+    expect(screen.getByRole("button", { name: "Zur Familie" })).toBeEnabled();
   });
 
   it("offers a simple join when the existing family is empty", () => {

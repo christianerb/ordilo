@@ -342,8 +342,14 @@ export function InviteLanding({
               Du bist jetzt Teil von „{familyName ?? "eurer gemeinsamen Familie"}“. Alles Wichtige ist ab jetzt gemeinsam an einem Ort.
             </p>
           </div>
-          <Button asChild size="lg" className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:180ms]">
-            <Link href="/home">Zur Familie<ArrowRight className="size-5" aria-hidden="true" /></Link>
+          <Button
+            type="button"
+            size="lg"
+            onClick={() => window.location.assign("/home")}
+            className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:180ms]"
+          >
+            Zur Familie
+            <ArrowRight className="size-5" aria-hidden="true" />
           </Button>
         </div>
       </AuthShell>
