@@ -305,6 +305,28 @@ describe("DocumentsTable", () => {
     expect(fetchDocumentsTableMeta).toHaveBeenCalledTimes(2);
   });
 
+  it("acknowledges a document when its background processing completes", async () => {
+    const doc = buildDoc({ id: "doc-1", status: "analyzing" });
+    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
+
+    const { rerender } = render(<DocumentsTable documents={[doc]} />);
+    await screen.findAllByTestId("documents-table-row");
+
+    for (const icon of screen.getAllByTestId("document-file-icon-doc-1")) {
+      expect(icon).not.toHaveClass("animate-document-ready");
+    }
+
+    rerender(
+      <DocumentsTable documents={[{ ...doc, status: "analyzed" }]} />,
+    );
+
+    await waitFor(() => {
+      for (const icon of screen.getAllByTestId("document-file-icon-doc-1")) {
+        expect(icon).toHaveClass("animate-document-ready");
+      }
+    });
+  });
+
   it("keeps filter and sort state when the document set changes", async () => {
     const docs = [
       buildDoc({ id: "doc-1", title: "Zebra" }),

@@ -10,7 +10,7 @@ import { Check, X } from "lucide-react";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
-import { vibrate } from "@/lib/haptics";
+import { haptic } from "@/lib/haptics";
 
 /**
  * SwipeableTaskCard — wraps a TaskCard with touch swipe gestures,
@@ -147,7 +147,7 @@ export function SwipeableTaskCard({
     onDragStateChange?.(task.id);
     // Haptic bump where supported (Android; iOS Safari has none — the
     // animate-drag-pop class is the visual haptic there).
-    vibrate(10);
+    haptic("light");
 
     // Continuous edge auto-scroll: keeps scrolling while the finger rests
     // in an edge zone, and re-hit-tests after each step because scrolling
@@ -261,7 +261,7 @@ export function SwipeableTaskCard({
         dx > SWIPE_THRESHOLD ? 1 : dx < -SWIPE_THRESHOLD ? -1 : 0;
       if (direction !== 0 && armed.current !== direction) {
         armed.current = direction;
-        vibrate(8);
+        haptic("selection");
       } else if (direction === 0) {
         armed.current = 0;
       }
@@ -279,7 +279,7 @@ export function SwipeableTaskCard({
     swiping.current = false;
 
     if (offset > SWIPE_THRESHOLD) {
-      vibrate(14);
+      haptic("success");
       if (reducedMotion.current) {
         onToggleDone("done");
         return;
@@ -288,7 +288,7 @@ export function SwipeableTaskCard({
       setOffset(SLIDE_OFF_DISTANCE);
       window.setTimeout(() => onToggleDone("done"), SLIDE_OFF_DURATION);
     } else if (offset < -SWIPE_THRESHOLD) {
-      vibrate(14);
+      haptic("warning");
       if (reducedMotion.current) {
         onDismiss();
         return;

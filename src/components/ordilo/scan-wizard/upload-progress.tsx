@@ -5,12 +5,16 @@ import {
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  CloudUploadIcon,
+  type CloudUploadIconHandle,
+} from "@/components/ui/cloud-upload";
 import {
   isImageMimeType,
   isPdfMimeType,
 } from "@/lib/schemas/document";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 
 /**
@@ -63,6 +67,24 @@ function RotatingProcessingMessage() {
   );
 }
 
+function AnimatedUploadIcon() {
+  const iconRef = useRef<CloudUploadIconHandle>(null);
+
+  useMountEffect(() => {
+    iconRef.current?.startAnimation();
+  });
+
+  return (
+    <CloudUploadIcon
+      ref={iconRef}
+      size={24}
+      className="size-6 text-[var(--petrol)]"
+      data-testid="animated-upload-icon"
+      aria-hidden="true"
+    />
+  );
+}
+
 /**
  * UploadProgressCard — shows upload progress, processing animation, or error.
  */
@@ -101,7 +123,9 @@ export function UploadProgressCard({
         className="flex size-12 shrink-0 items-center justify-center rounded-ordilo-sm"
         style={{ backgroundColor: "var(--secondary)" }}
       >
-        {isUploading || isProcessing ? (
+        {isUploading ? (
+          <AnimatedUploadIcon />
+        ) : isProcessing ? (
           <Loader2
             key={upload.phase}
             className="size-6 animate-spin"

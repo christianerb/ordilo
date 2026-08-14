@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { OriginalDocumentPreview } from "../original-document-preview";
 
 afterEach(() => {
@@ -123,7 +123,43 @@ describe("OriginalDocumentPreview", () => {
 
     const image = await screen.findByAltText("Original von Kita-Gutschein");
     expect(image).toHaveClass("h-auto", "w-full");
-    expect(image.parentElement?.parentElement).toHaveClass("overflow-auto");
+    expect(image.closest(".overflow-auto")).not.toBeNull();
+  });
+
+  it("zooms an image after a double tap", async () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        matches: false,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      }),
+    );
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          url: "https://storage.example.com/signed",
+          mimeType: "image/jpeg",
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <OriginalDocumentPreview
+        documentId="doc-1"
+        title="Kita-Gutschein"
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    const image = await screen.findByTestId("zoomable-document-image");
+    fireEvent.doubleClick(image);
+
+    expect(screen.getByTestId("zoomable-document-image-content")).toHaveStyle(
+      { transform: "translate(0px, 0px) scale(2)" },
+    );
   });
 
   it("recognizes older image records from the signed URL when MIME data is missing", async () => {

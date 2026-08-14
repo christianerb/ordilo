@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { ArrowLeft, FileText, Loader2, RotateCw } from "lucide-react";
 import {
   Dialog,
@@ -10,6 +16,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { haptic } from "@/lib/haptics";
 import { cn } from "@/lib/utils";
 import type { SourceLocation } from "@/lib/source-locations";
 
@@ -285,13 +292,7 @@ function DocumentFrame({
       )}
     >
       {isImage ? (
-        <div className="relative mx-auto w-full">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={file.url}
-            alt={`Original von ${title}`}
-            className="block h-auto w-full rounded-ordilo-sm bg-[var(--warm-white)] shadow-card"
-          />
+        <ZoomableImage title={title} src={file.url}>
           {sourceText && (
             <SourceHighlight
               key={sourceText}
@@ -299,7 +300,7 @@ function DocumentFrame({
               sourceText={sourceText}
             />
           )}
-        </div>
+        </ZoomableImage>
       ) : (
         <iframe
           src={file.url}
@@ -307,6 +308,139 @@ function DocumentFrame({
           className="size-full border-0 bg-[var(--warm-white)]"
         />
       )}
+    </div>
+  );
+}
+
+function ZoomableImage({
+  src,
+  title,
+  children,
+}: {
+  src: string;
+  title: string;
+  children: ReactNode;
+}) {
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const lastTap = useRef<{ time: number; x: number; y: number } | null>(null);
+  const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
+  const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isInteracting, setIsInteracting] = useState(false);
+
+  const resetZoom = useCallback(() => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }, []);
+
+  const toggleZoom = useCallback(() => {
+    if (scale > 1) {
+      resetZoom();
+    } else {
+      setScale(2);
+      haptic("light");
+    }
+  }, [resetZoom, scale]);
+
+  const handlePointerDown = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      const now = Date.now();
+      const previousTap = lastTap.current;
+      const isDoubleTap =
+        previousTap &&
+        now - previousTap.time < 280 &&
+        Math.hypot(event.clientX - previousTap.x, event.clientY - previousTap.y) < 28;
+
+      if (isDoubleTap) {
+        lastTap.current = null;
+        toggleZoom();
+        return;
+      }
+
+      lastTap.current = { time: now, x: event.clientX, y: event.clientY };
+      pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      setIsInteracting(true);
+
+      if (pointers.current.size === 2) {
+        const [first, second] = [...pointers.current.values()];
+        pinchStart.current = {
+          distance: Math.hypot(first.x - second.x, first.y - second.y),
+          scale,
+        };
+        dragStart.current = null;
+      } else if (scale > 1) {
+        dragStart.current = {
+          x: event.clientX,
+          y: event.clientY,
+          offsetX: offset.x,
+          offsetY: offset.y,
+        };
+      }
+    },
+    [offset.x, offset.y, scale, toggleZoom],
+  );
+
+  const handlePointerMove = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    if (!pointers.current.has(event.pointerId)) return;
+    pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+    if (pointers.current.size === 2 && pinchStart.current) {
+      const [first, second] = [...pointers.current.values()];
+      const distance = Math.hypot(first.x - second.x, first.y - second.y);
+      setScale(Math.min(3, Math.max(1, pinchStart.current.scale * (distance / pinchStart.current.distance))));
+      return;
+    }
+
+    if (dragStart.current) {
+      setOffset({
+        x: dragStart.current.offsetX + event.clientX - dragStart.current.x,
+        y: dragStart.current.offsetY + event.clientY - dragStart.current.y,
+      });
+    }
+  }, []);
+
+  const handlePointerEnd = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    pointers.current.delete(event.pointerId);
+    if (pointers.current.size < 2) pinchStart.current = null;
+    if (pointers.current.size === 0) {
+      dragStart.current = null;
+      setIsInteracting(false);
+    }
+  }, []);
+
+  return (
+    <div
+      className="relative mx-auto w-full overflow-hidden rounded-ordilo-sm touch-none"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+      onDoubleClick={(event) => {
+        event.preventDefault();
+        toggleZoom();
+      }}
+      data-testid="zoomable-document-image"
+      aria-label="Dokumentbild, mit zwei Fingern oder zweimal Tippen zoomen"
+    >
+      <div
+        data-testid="zoomable-document-image-content"
+        className="relative origin-center"
+        style={{
+          transform: `translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+          transition: isInteracting ? "none" : "transform 220ms var(--ease-out-quart)",
+        }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={`Original von ${title}`}
+          className="block h-auto w-full bg-[var(--warm-white)] shadow-card"
+          draggable={false}
+        />
+        {children}
+      </div>
     </div>
   );
 }

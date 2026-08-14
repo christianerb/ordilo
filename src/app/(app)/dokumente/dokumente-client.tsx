@@ -34,6 +34,7 @@ import { useScan } from "@/lib/scan/scan-context";
 import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import { toast } from "sonner";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { PullToRefresh } from "@/components/ordilo/pull-to-refresh";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -150,14 +151,15 @@ export function DokumenteClient({
   );
 
   return (
-    <div
-      ref={dropZoneRef}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="app-page-stack overflow-x-hidden"
-    >
+    <PullToRefresh onRefresh={loadDocuments}>
+      <div
+        ref={dropZoneRef}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+        className="app-page-stack overflow-x-hidden"
+      >
       <h1 className="text-lg font-semibold tracking-tight text-foreground">
         Dokumente
         <span className="ml-2 text-sm font-normal text-muted-foreground">
@@ -322,7 +324,8 @@ export function DokumenteClient({
           </div>
         </SheetContent>
       </Sheet>
-    </div>
+      </div>
+    </PullToRefresh>
   );
 }
 
