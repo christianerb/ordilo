@@ -21,7 +21,7 @@ const cloudVariants: Variants = {
   normal: { transform: 'translateY(0px)' },
   animate: {
     transform: ['translateY(0px) scaleY(1)', 'translateY(0.45px) scaleY(0.98)', 'translateY(-1px) scaleY(1.03)', 'translateY(0px) scaleY(1)'],
-    transition: { duration: 0.56, ease: [0.23, 1, 0.32, 1], times: [0, 0.2, 0.56, 1] },
+    transition: { duration: 0.24, ease: [0.23, 1, 0.32, 1], times: [0, 0.2, 0.56, 1] },
   },
 };
 
@@ -29,7 +29,7 @@ const uploadVariants: Variants = {
   normal: { transform: 'translateY(0px)' },
   animate: {
     transform: ['translateY(2.4px)', 'translateY(-2.2px)', 'translateY(0.35px)', 'translateY(0px)'],
-    transition: { duration: 0.56, ease: [0.23, 1, 0.32, 1], times: [0, 0.5, 0.78, 1] },
+    transition: { duration: 0.24, ease: [0.23, 1, 0.32, 1], times: [0, 0.5, 0.78, 1] },
   },
 };
 

@@ -23,4 +23,26 @@ describe("PullToRefresh", () => {
 
     await waitFor(() => expect(onRefresh).toHaveBeenCalledTimes(1));
   });
+
+  it("does not refresh while the app scroll container is scrolled", () => {
+    const onRefresh = vi.fn();
+
+    render(
+      <main>
+        <PullToRefresh onRefresh={onRefresh}>
+          <p>Dokumente</p>
+        </PullToRefresh>
+      </main>,
+    );
+
+    const main = screen.getByRole("main");
+    Object.defineProperty(main, "scrollTop", { configurable: true, value: 20 });
+
+    const surface = screen.getByTestId("pull-to-refresh");
+    fireEvent.touchStart(surface, { touches: [{ clientY: 20 }] });
+    fireEvent.touchMove(surface, { touches: [{ clientY: 220 }] });
+    fireEvent.touchEnd(surface);
+
+    expect(onRefresh).not.toHaveBeenCalled();
+  });
 });

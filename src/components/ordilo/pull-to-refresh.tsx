@@ -35,7 +35,9 @@ export function PullToRefresh({
   }, []);
 
   const handleTouchStart = useCallback((event: TouchEvent<HTMLDivElement>) => {
-    if (window.scrollY > 0 || refreshing) return;
+    const scrollContainer = event.currentTarget.closest("main");
+    const scrollTop = scrollContainer?.scrollTop ?? window.scrollY;
+    if (scrollTop > 0 || refreshing) return;
     startY.current = event.touches[0]?.clientY ?? null;
   }, [refreshing]);
 

@@ -323,6 +323,7 @@ function ZoomableImage({
 }) {
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const lastTap = useRef<{ time: number; x: number; y: number } | null>(null);
+  const lastTouchZoom = useRef(0);
   const pinchStart = useRef<{ distance: number; scale: number } | null>(null);
   const dragStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
   const [scale, setScale] = useState(1);
@@ -348,17 +349,21 @@ function ZoomableImage({
       const now = Date.now();
       const previousTap = lastTap.current;
       const isDoubleTap =
+        event.pointerType === "touch" &&
         previousTap &&
         now - previousTap.time < 280 &&
         Math.hypot(event.clientX - previousTap.x, event.clientY - previousTap.y) < 28;
 
       if (isDoubleTap) {
         lastTap.current = null;
+        lastTouchZoom.current = now;
         toggleZoom();
         return;
       }
 
-      lastTap.current = { time: now, x: event.clientX, y: event.clientY };
+      if (event.pointerType === "touch") {
+        lastTap.current = { time: now, x: event.clientX, y: event.clientY };
+      }
       pointers.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
       event.currentTarget.setPointerCapture?.(event.pointerId);
       setIsInteracting(true);
@@ -412,13 +417,16 @@ function ZoomableImage({
 
   return (
     <div
-      className="relative mx-auto w-full overflow-hidden rounded-ordilo-sm touch-none"
+      className={cn(
+        "relative mx-auto w-full overflow-hidden rounded-ordilo-sm",
+        scale > 1 ? "touch-none" : "touch-pan-y",
+      )}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerEnd}
       onPointerCancel={handlePointerEnd}
-      onDoubleClick={(event) => {
-        event.preventDefault();
+      onDoubleClick={() => {
+        if (Date.now() - lastTouchZoom.current < 350) return;
         toggleZoom();
       }}
       data-testid="zoomable-document-image"

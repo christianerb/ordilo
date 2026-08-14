@@ -160,6 +160,7 @@ describe("OriginalDocumentPreview", () => {
     expect(screen.getByTestId("zoomable-document-image-content")).toHaveStyle(
       { transform: "translate(0px, 0px) scale(2)" },
     );
+    expect(image).toHaveClass("touch-none");
   });
 
   it("recognizes older image records from the signed URL when MIME data is missing", async () => {
