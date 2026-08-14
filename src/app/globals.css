@@ -360,6 +360,27 @@
     50% { transform: rotate(6deg); }
   }
 
+  /* A one-time welcome: two Ordilos meet when a family becomes shared. */
+  @keyframes invite-family-meet-left {
+    from { opacity: 0; transform: translateX(-24px) scale(0.9); }
+    72% { opacity: 1; transform: translateX(3px) scale(1.025); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  @keyframes invite-family-meet-right {
+    from { opacity: 0; transform: translateX(24px) scale(0.9); }
+    72% { opacity: 1; transform: translateX(-3px) scale(1.025); }
+    to { opacity: 1; transform: translateX(0) scale(1); }
+  }
+  @keyframes invite-family-arrive {
+    from { opacity: 0; transform: translateY(8px) scale(0.72); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes invite-family-spark {
+    from { opacity: 0; transform: scale(0.5); }
+    65% { opacity: 1; transform: scale(1.15); }
+    to { opacity: 0.75; transform: scale(1); }
+  }
+
   @keyframes ordilo-mark-arrive {
     from {
       opacity: 0;
@@ -802,6 +823,26 @@
     animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
   }
 
+  .invite-join-celebration__glow {
+    opacity: 0;
+    animation: invite-family-arrive 360ms var(--ease-out-expo) 120ms both;
+  }
+  .invite-join-celebration__elephant--left {
+    animation: invite-family-meet-left 600ms var(--ease-out-expo) both;
+  }
+  .invite-join-celebration__elephant--right {
+    animation: invite-family-meet-right 600ms var(--ease-out-expo) 60ms both;
+  }
+  .invite-join-celebration__heart {
+    opacity: 0;
+    animation: invite-family-arrive 300ms var(--ease-out-expo) 420ms both;
+  }
+  .invite-join-celebration__spark {
+    opacity: 0;
+    animation: invite-family-spark 280ms var(--ease-out-expo) 510ms both;
+  }
+  .invite-join-celebration__spark--right { animation-delay: 560ms; }
+
   .ordilo-mark {
     display: block;
     overflow: visible;
@@ -1030,6 +1071,10 @@
   .ordilo-mascot-greet,
   .ordilo-mascot-success,
   .ordilo-mascot-ear-wiggle,
+  .invite-join-celebration__glow,
+  .invite-join-celebration__elephant,
+  .invite-join-celebration__heart,
+  .invite-join-celebration__spark,
   .ordilo-mark__elephant,
   .ordilo-mark__eye,
   .animate-banner-glow,

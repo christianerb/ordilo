@@ -27,6 +27,7 @@ import { validateLoginEmail } from "@/lib/auth/validation";
 import { webmailFor } from "@/lib/auth/webmail";
 import {
   acceptInvite,
+  getInviteMergePreparation,
   mergeOwnedFamilyIntoInvite,
   requestInviteSignIn,
 } from "../actions";
@@ -35,6 +36,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/ordilo/auth-shell";
 import { ProcessingInviteState } from "./processing-invite-state";
+import { InviteJoinCelebration } from "./invite-join-celebration";
+
+type MergePreview = {
+  sourceFamilyName: string;
+  documentCount: number;
+  taskCount: number;
+  calendarEventCount: number;
+  memberCount: number;
+  collectionCount: number;
+  inventoryItemCount: number;
+  targetAdultCount: number;
+  fingerprint: string;
+};
+
+type InviteState =
+  | "valid" | "confirm" | "merge" | "invalid" | "already_in_family"
+  | "shared_source_family" | "source_processing" | "empty_source";
 
 /**
  * Invite landing card — the signed-out view of `/invite/[token]`.
@@ -61,26 +79,8 @@ export function InviteLanding({
 }: {
   token: string;
   familyName: string | null;
-  mergePreview?: {
-    sourceFamilyName: string;
-    documentCount: number;
-    taskCount: number;
-    calendarEventCount: number;
-    memberCount: number;
-    collectionCount: number;
-    inventoryItemCount: number;
-    targetAdultCount: number;
-    fingerprint: string;
-  } | null;
-  state:
-    | "valid"
-    | "confirm"
-    | "merge"
-    | "invalid"
-    | "already_in_family"
-    | "shared_source_family"
-    | "source_processing"
-    | "empty_source";
+  mergePreview?: MergePreview | null;
+  state: InviteState;
 }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -97,7 +97,10 @@ export function InviteLanding({
   // (invalid / already_in_family) replaces the confirmation screen.
   const [accepting, setAccepting] = useState(false);
   const [mergeAcknowledged, setMergeAcknowledged] = useState(false);
-  const [mergeComplete, setMergeComplete] = useState(false);
+  const [joinComplete, setJoinComplete] = useState(false);
+  const [resolvedState, setResolvedState] = useState<InviteState>(state);
+  const [resolvedMergePreview, setResolvedMergePreview] =
+    useState<MergePreview | null>(mergePreview);
   const [joinFailure, setJoinFailure] = useState<
     | "invalid"
     | "already_in_family"
@@ -264,8 +267,8 @@ export function InviteLanding({
     const result = await acceptInvite(token);
     if (result.success) {
       notifyInviter(result.notificationId);
-      // Full reload so every screen starts from fresh server data.
-      window.location.assign("/home");
+      setJoinComplete(true);
+      setAccepting(false);
       return;
     }
 
@@ -275,7 +278,13 @@ export function InviteLanding({
       return;
     }
     if (result.reason === "merge_required") {
-      window.location.reload();
+      const preparation = await getInviteMergePreparation(token);
+      if (!preparation.success) {
+        setErrorMessage(preparation.error);
+        return;
+      }
+      setResolvedState(preparation.state);
+      if ("preview" in preparation) setResolvedMergePreview(preparation.preview);
       return;
     }
     setErrorMessage(result.error);
@@ -288,11 +297,11 @@ export function InviteLanding({
 
     const result = await mergeOwnedFamilyIntoInvite(
       token,
-      mergePreview?.fingerprint ?? "",
+      resolvedMergePreview?.fingerprint ?? "",
     );
     if (result.success) {
       notifyInviter(result.notificationId);
-      setMergeComplete(true);
+      setJoinComplete(true);
       setAccepting(false);
       return;
     }
@@ -322,7 +331,26 @@ export function InviteLanding({
   // ---------------------------------------------------------------------------
   // Invalid token (also shown when the accept click finds the invite expired)
   // ---------------------------------------------------------------------------
-  if (state === "invalid" || joinFailure === "invalid") {
+  if (joinComplete) {
+    return (
+      <AuthShell compact>
+        <div className="space-y-6 text-center" data-testid="invite-join-complete">
+          <InviteJoinCelebration />
+          <div className="space-y-3 animate-card-in [animation-delay:120ms]">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">Willkommen in der Familie</h1>
+            <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
+              Du bist jetzt Teil von „{familyName ?? "eurer gemeinsamen Familie"}“. Alles Wichtige ist ab jetzt gemeinsam an einem Ort.
+            </p>
+          </div>
+          <Button asChild size="lg" className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:180ms]">
+            <Link href="/home">Zur Familie<ArrowRight className="size-5" aria-hidden="true" /></Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (resolvedState === "invalid" || joinFailure === "invalid") {
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-invalid">
@@ -358,7 +386,7 @@ export function InviteLanding({
   // ---------------------------------------------------------------------------
   // Already in a family (also shown when the accept click reports this)
   // ---------------------------------------------------------------------------
-  if (state === "already_in_family" || joinFailure === "already_in_family") {
+  if (resolvedState === "already_in_family" || joinFailure === "already_in_family") {
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-already-in-family">
@@ -392,7 +420,7 @@ export function InviteLanding({
     );
   }
 
-  if (state === "shared_source_family" || joinFailure === "shared_source_family") {
+  if (resolvedState === "shared_source_family" || joinFailure === "shared_source_family") {
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-shared-source-family">
@@ -423,11 +451,12 @@ export function InviteLanding({
     );
   }
 
-  if (state === "source_processing" || joinFailure === "source_processing") {
+  if (resolvedState === "source_processing" || joinFailure === "source_processing") {
     return <ProcessingInviteState />;
   }
 
-  if (state === "merge" && mergePreview) {
+  if (resolvedState === "merge" && resolvedMergePreview) {
+    const mergePreview = resolvedMergePreview;
     const transferItems = [
       { label: "Dokumente", count: mergePreview.documentCount, icon: FileText },
       { label: "Aufgaben", count: mergePreview.taskCount, icon: ClipboardCheck },
@@ -436,39 +465,6 @@ export function InviteLanding({
       { label: "Sammlungen", count: mergePreview.collectionCount, icon: FolderHeart },
       { label: "Wichtige Dinge", count: mergePreview.inventoryItemCount, icon: Package },
     ].filter((item) => item.count > 0);
-
-    if (mergeComplete) {
-      return (
-        <AuthShell compact>
-          <div className="space-y-6 text-center" data-testid="invite-merge-complete">
-            <div className="flex justify-center animate-card-in">
-              <div className="flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
-                <Check className="size-7" strokeWidth={2.25} aria-hidden="true" />
-              </div>
-            </div>
-            <div className="space-y-3 animate-card-in [animation-delay:40ms]">
-              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
-                Alles ist zusammen
-              </h1>
-              <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
-                Deine Inhalte sind jetzt bei „{familyName ?? "deiner gemeinsamen Familie"}“.
-                Du findest sie dort wie gewohnt bei Dokumenten, Aufgaben und Terminen.
-              </p>
-            </div>
-            <Button
-              asChild
-              size="lg"
-              className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:80ms]"
-            >
-              <Link href="/home">
-                Zur gemeinsamen Familie
-                <ArrowRight className="size-5" aria-hidden="true" />
-              </Link>
-            </Button>
-          </div>
-        </AuthShell>
-      );
-    }
 
     return (
       <AuthShell compact>
@@ -597,7 +593,8 @@ export function InviteLanding({
     );
   }
 
-  if (state === "empty_source" && mergePreview) {
+  if (resolvedState === "empty_source" && resolvedMergePreview) {
+    const mergePreview = resolvedMergePreview;
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-empty-source">
@@ -661,7 +658,7 @@ export function InviteLanding({
   // ---------------------------------------------------------------------------
   // Signed in — explicit confirmation before joining
   // ---------------------------------------------------------------------------
-  if (state === "confirm") {
+  if (resolvedState === "confirm") {
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center" data-testid="invite-confirm">

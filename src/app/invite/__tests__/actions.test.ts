@@ -32,6 +32,7 @@ vi.mock("@/lib/supabase/server", () => ({
 
 import {
   acceptInvite,
+  getInviteMergePreparation,
   mergeOwnedFamilyIntoInvite,
   requestInviteSignIn,
 } from "../actions";
@@ -243,6 +244,27 @@ describe("acceptInvite", () => {
     expect(result).toEqual({
       success: false,
       error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    });
+  });
+});
+
+describe("getInviteMergePreparation", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns a direct join when the owned family is empty", async () => {
+    rpc.mockResolvedValue({
+      data: {
+        status: "merge_available", source_family_name: "Familie Schmidt",
+        document_count: 0, task_count: 0, calendar_event_count: 0,
+        member_count: 0, collection_count: 0, inventory_item_count: 0,
+        target_adult_count: 2, fingerprint: "preview-123",
+      },
+      error: null,
+    });
+
+    await expect(getInviteMergePreparation(TOKEN)).resolves.toMatchObject({
+      success: true, state: "empty_source",
+      preview: { sourceFamilyName: "Familie Schmidt", fingerprint: "preview-123" },
     });
   });
 });
