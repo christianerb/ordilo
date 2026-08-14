@@ -14,12 +14,18 @@ import { INVITE_COOKIE } from "@/lib/invite";
 type ActionResult = SimpleActionResult;
 
 type AcceptInviteResult =
-  | { success: true }
+  | { success: true; notificationId?: string }
   | {
       success: false;
       error: string;
       /** Machine-readable reason so the UI can switch to a dedicated screen. */
-      reason?: "invalid" | "already_in_family";
+      reason?:
+        | "invalid"
+        | "already_in_family"
+        | "merge_required"
+        | "shared_source_family"
+        | "source_processing"
+        | "preview_changed";
     };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -142,14 +148,36 @@ export async function acceptInvite(
   }
 
   const status = (data as { status?: string } | null)?.status;
+  const notificationId = (data as { notification_id?: string } | null)
+    ?.notification_id;
   switch (status) {
     case "joined":
-      return { success: true };
+      return { success: true, ...(notificationId ? { notificationId } : {}) };
     case "already_in_family":
       return {
         success: false,
         reason: "already_in_family",
         error: "Du bist schon in einer Familie.",
+      };
+    case "merge_required":
+      return {
+        success: false,
+        reason: "merge_required",
+        error: "Deine Familie muss zuerst zusammengeführt werden.",
+      };
+    case "shared_source_family":
+      return {
+        success: false,
+        reason: "shared_source_family",
+        error:
+          "Deine bisherige Familie wird schon von mehreren Konten genutzt und kann nicht automatisch zusammengeführt werden.",
+      };
+    case "source_processing":
+      return {
+        success: false,
+        reason: "source_processing",
+        error:
+          "Deine Dokumente werden noch vorbereitet. Warte bitte kurz und versuche es dann erneut.",
       };
     case "unauthenticated":
       return {
@@ -162,6 +190,86 @@ export async function acceptInvite(
         success: false,
         reason: "invalid",
         error: "Diese Einladung ist nicht mehr gültig.",
+      };
+  }
+}
+
+/**
+ * Move the authenticated owner's private family into an invited family.
+ *
+ * The database RPC transfers the related family-scoped rows in one
+ * transaction and only allows a source family with the owner as its sole
+ * account member. Storage paths remain valid because files are always served
+ * through authenticated, short-lived server-side signed URLs.
+ */
+export async function mergeOwnedFamilyIntoInvite(
+  token: string,
+  previewFingerprint: string,
+): Promise<AcceptInviteResult> {
+  if (!INVITE_TOKEN_REGEX.test(token)) {
+    return {
+      success: false,
+      reason: "invalid",
+      error: "Die Einladung ist ungültig.",
+    };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("merge_owned_family_into_invite", {
+    p_token: token,
+    p_preview_fingerprint: previewFingerprint,
+  });
+
+  if (error) {
+    return {
+      success: false,
+      error: "Das Zusammenführen hat nicht geklappt. Bitte versuche es erneut.",
+    };
+  }
+
+  const status = (data as { status?: string } | null)?.status;
+  const notificationId = (data as { notification_id?: string } | null)
+    ?.notification_id;
+  switch (status) {
+    case "merged":
+    case "joined":
+      return { success: true, ...(notificationId ? { notificationId } : {}) };
+    case "invalid":
+      return {
+        success: false,
+        reason: "invalid",
+        error: "Diese Einladung ist nicht mehr gültig.",
+      };
+    case "shared_source_family":
+      return {
+        success: false,
+        reason: "shared_source_family",
+        error:
+          "Deine bisherige Familie wird schon von mehreren Konten genutzt und kann nicht automatisch zusammengeführt werden.",
+      };
+    case "source_processing":
+      return {
+        success: false,
+        reason: "source_processing",
+        error:
+          "Deine Dokumente werden noch vorbereitet. Warte bitte kurz und versuche es dann erneut.",
+      };
+    case "preview_changed":
+      return {
+        success: false,
+        reason: "preview_changed",
+        error:
+          "Deine Inhalte haben sich gerade geändert. Wir zeigen dir die aktuelle Übersicht.",
+      };
+    case "unauthenticated":
+      return {
+        success: false,
+        error: "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.",
+      };
+    default:
+      return {
+        success: false,
+        error: "Das Zusammenführen hat nicht geklappt. Bitte versuche es erneut.",
       };
   }
 }

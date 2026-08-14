@@ -5,25 +5,36 @@ import Link from "next/link";
 import {
   ArrowRight,
   Check,
+  ClipboardCheck,
+  CalendarDays,
   ExternalLink,
+  FileText,
+  FolderHeart,
   Heart,
   Loader2,
   Mail,
   MailCheck,
+  Package,
   Pencil,
   RefreshCw,
   ShieldCheck,
   UserPlus,
+  UsersRound,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { EMAIL_OTP_RESEND_COOLDOWN_SECONDS } from "@/lib/auth/constants";
 import { validateLoginEmail } from "@/lib/auth/validation";
 import { webmailFor } from "@/lib/auth/webmail";
-import { acceptInvite, requestInviteSignIn } from "../actions";
+import {
+  acceptInvite,
+  mergeOwnedFamilyIntoInvite,
+  requestInviteSignIn,
+} from "../actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/ordilo/auth-shell";
+import { ProcessingInviteState } from "./processing-invite-state";
 
 /**
  * Invite landing card — the signed-out view of `/invite/[token]`.
@@ -45,11 +56,31 @@ import { AuthShell } from "@/components/ordilo/auth-shell";
 export function InviteLanding({
   token,
   familyName,
+  mergePreview = null,
   state,
 }: {
   token: string;
   familyName: string | null;
-  state: "valid" | "confirm" | "invalid" | "already_in_family";
+  mergePreview?: {
+    sourceFamilyName: string;
+    documentCount: number;
+    taskCount: number;
+    calendarEventCount: number;
+    memberCount: number;
+    collectionCount: number;
+    inventoryItemCount: number;
+    targetAdultCount: number;
+    fingerprint: string;
+  } | null;
+  state:
+    | "valid"
+    | "confirm"
+    | "merge"
+    | "invalid"
+    | "already_in_family"
+    | "shared_source_family"
+    | "source_processing"
+    | "empty_source";
 }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -65,13 +96,30 @@ export function InviteLanding({
   // explicit click. A failure that maps to a dedicated screen
   // (invalid / already_in_family) replaces the confirmation screen.
   const [accepting, setAccepting] = useState(false);
+  const [mergeAcknowledged, setMergeAcknowledged] = useState(false);
+  const [mergeComplete, setMergeComplete] = useState(false);
   const [joinFailure, setJoinFailure] = useState<
-    "invalid" | "already_in_family" | null
+    | "invalid"
+    | "already_in_family"
+    | "shared_source_family"
+    | "source_processing"
+    | "preview_changed"
+    | null
   >(null);
   const loginRequestInFlightRef = useRef(false);
   const resendRequestInFlightRef = useRef(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+
+  function notifyInviter(notificationId?: string) {
+    if (!notificationId) return;
+    void fetch("/api/family-invites/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ notificationId }),
+      keepalive: true,
+    });
+  }
 
   const startCooldown = useCallback(() => {
     setResendCooldown(EMAIL_OTP_RESEND_COOLDOWN_SECONDS);
@@ -215,6 +263,7 @@ export function InviteLanding({
 
     const result = await acceptInvite(token);
     if (result.success) {
+      notifyInviter(result.notificationId);
       // Full reload so every screen starts from fresh server data.
       window.location.assign("/home");
       return;
@@ -223,6 +272,42 @@ export function InviteLanding({
     setAccepting(false);
     if (result.reason === "already_in_family" || result.reason === "invalid") {
       setJoinFailure(result.reason);
+      return;
+    }
+    if (result.reason === "merge_required") {
+      window.location.reload();
+      return;
+    }
+    setErrorMessage(result.error);
+  }
+
+  async function handleMerge() {
+    if (accepting) return;
+    setAccepting(true);
+    setErrorMessage(null);
+
+    const result = await mergeOwnedFamilyIntoInvite(
+      token,
+      mergePreview?.fingerprint ?? "",
+    );
+    if (result.success) {
+      notifyInviter(result.notificationId);
+      setMergeComplete(true);
+      setAccepting(false);
+      return;
+    }
+
+    setAccepting(false);
+    if (
+      result.reason === "invalid"
+      || result.reason === "shared_source_family"
+      || result.reason === "source_processing"
+    ) {
+      setJoinFailure(result.reason);
+      return;
+    }
+    if (result.reason === "preview_changed") {
+      window.location.reload();
       return;
     }
     setErrorMessage(result.error);
@@ -302,6 +387,272 @@ export function InviteLanding({
           >
             <Link href="/home">Zurück zu meiner Familie</Link>
           </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (state === "shared_source_family" || joinFailure === "shared_source_family") {
+    return (
+      <AuthShell compact>
+        <div className="space-y-6 text-center" data-testid="invite-shared-source-family">
+          <div className="flex justify-center animate-card-in">
+            <div className="flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
+              <UserPlus className="size-7" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+          </div>
+          <div className="space-y-3 animate-card-in [animation-delay:40ms]">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
+              Deine Familie wird schon geteilt
+            </h1>
+            <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
+              Mehrere Konten nutzen deine bisherige Familie. Deshalb können wir
+              ihre Inhalte nicht automatisch in eine andere Familie verschieben.
+            </p>
+          </div>
+          <Button
+            asChild
+            variant="outline"
+            size="lg"
+            className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:80ms]"
+          >
+            <Link href="/home">Zurück zu meiner Familie</Link>
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (state === "source_processing" || joinFailure === "source_processing") {
+    return <ProcessingInviteState />;
+  }
+
+  if (state === "merge" && mergePreview) {
+    const transferItems = [
+      { label: "Dokumente", count: mergePreview.documentCount, icon: FileText },
+      { label: "Aufgaben", count: mergePreview.taskCount, icon: ClipboardCheck },
+      { label: "Termine", count: mergePreview.calendarEventCount, icon: CalendarDays },
+      { label: "Personen", count: mergePreview.memberCount, icon: UserPlus },
+      { label: "Sammlungen", count: mergePreview.collectionCount, icon: FolderHeart },
+      { label: "Wichtige Dinge", count: mergePreview.inventoryItemCount, icon: Package },
+    ].filter((item) => item.count > 0);
+
+    if (mergeComplete) {
+      return (
+        <AuthShell compact>
+          <div className="space-y-6 text-center" data-testid="invite-merge-complete">
+            <div className="flex justify-center animate-card-in">
+              <div className="flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
+                <Check className="size-7" strokeWidth={2.25} aria-hidden="true" />
+              </div>
+            </div>
+            <div className="space-y-3 animate-card-in [animation-delay:40ms]">
+              <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
+                Alles ist zusammen
+              </h1>
+              <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
+                Deine Inhalte sind jetzt bei „{familyName ?? "deiner gemeinsamen Familie"}“.
+                Du findest sie dort wie gewohnt bei Dokumenten, Aufgaben und Terminen.
+              </p>
+            </div>
+            <Button
+              asChild
+              size="lg"
+              className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:80ms]"
+            >
+              <Link href="/home">
+                Zur gemeinsamen Familie
+                <ArrowRight className="size-5" aria-hidden="true" />
+              </Link>
+            </Button>
+          </div>
+        </AuthShell>
+      );
+    }
+
+    return (
+      <AuthShell compact>
+        <div className="space-y-6 text-center" data-testid="invite-merge">
+          <div className="flex justify-center animate-card-in">
+            <div className="flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
+              <UserPlus className="size-7" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+          </div>
+          <div className="space-y-3 animate-card-in [animation-delay:40ms]">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
+              Deine Familie zusammenführen?
+            </h1>
+            <p className="mx-auto max-w-sm text-base leading-relaxed text-muted-foreground">
+              Deine Inhalte aus{" "}
+              <span className="font-semibold text-foreground">
+                „{mergePreview.sourceFamilyName}“
+              </span>{" "}
+              ziehen zu{" "}
+              <span className="font-semibold text-foreground">
+                „{familyName ?? "dieser Familie"}“
+              </span>
+              . Danach gibt es nur noch diese gemeinsame Familie.
+            </p>
+          </div>
+          <div
+            className="flex items-center gap-3 rounded-ordilo-sm border border-border bg-[var(--sand)] p-3.5 text-left animate-card-in [animation-delay:60ms]"
+            aria-label={`Familie „${mergePreview.sourceFamilyName}“ wird in Familie „${familyName ?? "die Ziel-Familie"}“ übernommen`}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-muted-foreground">Deine bisherige Familie</p>
+              <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                „{mergePreview.sourceFamilyName}“
+              </p>
+            </div>
+            <ArrowRight className="size-5 shrink-0 text-[var(--petrol)]" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-muted-foreground">Deine neue Familie</p>
+              <p className="mt-1 truncate text-sm font-semibold text-foreground">
+                „{familyName ?? "Ziel-Familie"}“
+              </p>
+            </div>
+          </div>
+          <div className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-4 py-3.5 text-left animate-card-in [animation-delay:80ms]">
+            <p className="text-sm font-medium text-foreground">Das wird übernommen</p>
+            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+              {transferItems.map(({ label, count, icon: Icon }) => (
+                <div key={label} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Icon className="size-4 shrink-0 text-[var(--petrol)]" aria-hidden="true" />
+                  <dt className="sr-only">{label}</dt>
+                  <dd>{count} {label}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+          <div className="space-y-3 animate-card-in [animation-delay:120ms]">
+            <p className="flex gap-2.5 rounded-ordilo-sm bg-[var(--auth-sage)] px-4 py-3 text-left text-sm leading-relaxed text-[var(--petrol-darker)]">
+              <UsersRound className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
+              <span>
+                <span className="font-semibold">Wichtig:</span>{" "}
+                {mergePreview.targetAdultCount === 1
+                  ? "Eine erwachsene Person"
+                  : `${mergePreview.targetAdultCount} erwachsene Personen`}{" "}
+                in „{familyName ?? "dieser Familie"}“ können diese Inhalte danach
+                sehen. Deine bisherigen Chat-Verläufe werden nicht übernommen und
+                bleiben nicht erhalten.
+              </span>
+            </p>
+            <label className="flex cursor-pointer items-start gap-3 rounded-ordilo-sm border border-border px-3.5 py-3 text-left text-sm leading-relaxed text-foreground has-[:focus-visible]:ring-[3px] has-[:focus-visible]:ring-ring/50">
+              <input
+                type="checkbox"
+                checked={mergeAcknowledged}
+                onChange={(event) => setMergeAcknowledged(event.target.checked)}
+                disabled={accepting}
+                className="mt-0.5 size-4 shrink-0 rounded border-border text-primary focus:ring-ring"
+              />
+              <span>
+                Ich verstehe: Meine bisherige Familie wird übernommen. Das kann
+                ich nicht rückgängig machen.
+              </span>
+            </label>
+          </div>
+          {errorMessage && (
+            <p
+              role="alert"
+              className="rounded-ordilo-sm bg-destructive/5 px-3 py-2 text-center text-sm font-medium text-destructive"
+            >
+              {errorMessage}
+            </p>
+          )}
+          <div className="space-y-3 animate-card-in [animation-delay:160ms]">
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleMerge}
+              disabled={accepting || !mergeAcknowledged}
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
+              data-testid="merge-invite-button"
+            >
+              {accepting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Wird zusammengeführt…
+                </>
+              ) : (
+                <>
+                  Familie zusammenführen
+                  <ArrowRight className="size-5" aria-hidden="true" />
+                </>
+              )}
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              size="lg"
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
+            >
+              <Link href="/home">Abbrechen</Link>
+            </Button>
+            <p className="text-center text-xs leading-relaxed text-muted-foreground">
+              Bei „Abbrechen“ bleibt alles wie es ist.
+            </p>
+          </div>
+        </div>
+      </AuthShell>
+    );
+  }
+
+  if (state === "empty_source" && mergePreview) {
+    return (
+      <AuthShell compact>
+        <div className="space-y-6 text-center" data-testid="invite-empty-source">
+          <div className="flex justify-center animate-card-in">
+            <div className="flex size-16 items-center justify-center rounded-full bg-[var(--auth-sage)] text-[var(--petrol)]">
+              <UserPlus className="size-7" strokeWidth={1.75} aria-hidden="true" />
+            </div>
+          </div>
+          <div className="space-y-3 animate-card-in [animation-delay:40ms]">
+            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">
+              Deiner Familie beitreten?
+            </h1>
+            <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
+              Deine bisherige Familie ist leer. Du kannst direkt zu „{familyName ?? "dieser Familie"}“
+              wechseln.
+            </p>
+          </div>
+          <p className="rounded-ordilo-sm bg-[var(--auth-sage)] px-4 py-3 text-left text-sm leading-relaxed text-[var(--petrol-darker)] animate-card-in [animation-delay:80ms]">
+            {mergePreview.targetAdultCount === 1
+              ? "Eine erwachsene Person in dieser Familie kann die gemeinsamen Inhalte sehen."
+              : `${mergePreview.targetAdultCount} erwachsene Personen in dieser Familie können die gemeinsamen Inhalte sehen.`}
+          </p>
+          <div className="space-y-3 animate-card-in [animation-delay:120ms]">
+            <Button
+              type="button"
+              size="lg"
+              onClick={handleMerge}
+              disabled={accepting}
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
+              data-testid="join-empty-family-button"
+            >
+              {accepting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Wird beigetreten…
+                </>
+              ) : (
+                <>
+                  Familie beitreten
+                  <ArrowRight className="size-5" aria-hidden="true" />
+                </>
+              )}
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              size="lg"
+              className="h-12 w-full rounded-ordilo-md text-base press-scale"
+            >
+              <Link href="/home">Bei meiner Familie bleiben</Link>
+            </Button>
+            <p className="text-center text-xs leading-relaxed text-muted-foreground">
+              Bei „Bei meiner Familie bleiben“ wird nichts geändert.
+            </p>
+          </div>
         </div>
       </AuthShell>
     );

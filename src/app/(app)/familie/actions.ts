@@ -306,11 +306,12 @@ export async function removeFamilyMember(
  * Delete the user's family and their account (DSGVO Art. 17 — right to
  * erasure).
  *
- * Only the family OWNER (created_by) may delete it — this mirrors the
- * families_owner_delete RLS policy, so an invited member cannot wipe someone
- * else's family. Deleting the families row cascades to every family-scoped
- * table (documents, tasks, members, chat, collections, embeddings, …). Two
- * things are NOT covered by the cascade and are removed explicitly:
+ * A family owner deletes their whole family. An invited member, including a
+ * person who merged their own family into another one, may delete only their
+ * own account and membership — never the shared family's data. Owner deletion
+ * cascades to every family-scoped table (documents, tasks, members, chat,
+ * collections, embeddings, …). Two things are NOT covered by the cascade and
+ * are removed explicitly:
  *   - Storage files (document scans + member avatars) in the private buckets
  *   - The auth user itself (full account deletion; also removes the user's
  *     family_memberships rows for any other families via user_id cascade)
@@ -343,11 +344,39 @@ export async function deleteFamilyAccount(
     return { success: false, error: FRIENDLY_ERROR };
   }
   if (!family) {
-    return {
-      success: false,
-      error:
-        "Nur die Person, die die Familie erstellt hat, kann sie löschen.",
-    };
+    // The user is an invited member. They may erase their own account, but
+    // must never delete the shared family's records.
+    const { data: sharedFamily, error: sharedFamilyError } = await getUserFamily(
+      supabase,
+    );
+    if (sharedFamilyError || !sharedFamily) {
+      return { success: false, error: FRIENDLY_ERROR };
+    }
+    if (confirmName.trim() !== sharedFamily.name) {
+      return {
+        success: false,
+        error: "Der Name stimmt nicht mit dem Familiennamen überein.",
+      };
+    }
+
+    const admin = createAdminClient();
+    const { error: membershipError } = await admin
+      .from("family_memberships")
+      .delete()
+      .eq("family_id", sharedFamily.id)
+      .eq("user_id", user.id);
+    if (membershipError) {
+      return { success: false, error: FRIENDLY_ERROR };
+    }
+
+    const { error: deleteUserError } = await admin.auth.admin.deleteUser(user.id);
+    if (deleteUserError) {
+      console.error(
+        "deleteFamilyAccount: failed to delete invited auth user",
+        deleteUserError,
+      );
+    }
+    return { success: true, data: null };
   }
 
   // Confirmation: the typed name must match the family name exactly.

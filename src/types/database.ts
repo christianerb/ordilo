@@ -144,6 +144,63 @@ export type Database = {
         };
         Relationships: [];
       };
+      family_invite_notifications: {
+        Row: {
+          id: string;
+          recipient_user_id: string;
+          actor_user_id: string;
+          family_id: string;
+          family_name: string;
+          source_family_name: string | null;
+          created_at: string;
+          email_claimed_at: string | null;
+          email_sent_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          recipient_user_id: string;
+          actor_user_id: string;
+          family_id: string;
+          family_name: string;
+          source_family_name?: string | null;
+          created_at?: string;
+          email_claimed_at?: string | null;
+          email_sent_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          recipient_user_id?: string;
+          actor_user_id?: string;
+          family_id?: string;
+          family_name?: string;
+          source_family_name?: string | null;
+          created_at?: string;
+          email_claimed_at?: string | null;
+          email_sent_at?: string | null;
+        };
+        Relationships: [];
+      };
+      family_merge_document_paths: {
+        Row: {
+          document_id: string;
+          family_id: string;
+          file_url: string;
+          created_at: string;
+        };
+        Insert: {
+          document_id: string;
+          family_id: string;
+          file_url: string;
+          created_at?: string;
+        };
+        Update: {
+          document_id?: string;
+          family_id?: string;
+          file_url?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       // product_events -----------------------------------------------------
       product_events: {
         Row: {
@@ -1178,6 +1235,24 @@ export type Database = {
         Args: { p_token: string };
         Returns: { status: string; family_name?: string };
       };
+      // get_family_invite_merge_preview — a safe summary before moving an
+      // owned one-person family into an invited family.
+      // See supabase/migrations/0054_family_invite_merge.sql.
+      get_family_invite_merge_preview: {
+        Args: { p_token: string };
+        Returns: {
+          status: string;
+          source_family_name?: string;
+          document_count?: number;
+          task_count?: number;
+          calendar_event_count?: number;
+          member_count?: number;
+          collection_count?: number;
+          target_adult_count?: number;
+          fingerprint?: string;
+          processing_document_count?: number;
+        };
+      };
       // accept_family_invite — join the invite's family as a member.
       // See supabase/migrations/0029_family_invites.sql.
       accept_family_invite: {
@@ -1186,6 +1261,20 @@ export type Database = {
           status: string;
           family_id?: string;
           family_name?: string;
+          notification_id?: string;
+        };
+      };
+      // merge_owned_family_into_invite — transfers a sole owner's family
+      // data into an invited family, then deletes the empty source family.
+      // See supabase/migrations/0054_family_invite_merge.sql.
+      merge_owned_family_into_invite: {
+        Args: { p_token: string; p_preview_fingerprint: string };
+        Returns: {
+          status: string;
+          family_id?: string;
+          family_name?: string;
+          operation_id?: string;
+          notification_id?: string;
         };
       };
       // lexical_search — German full-text search over embedding chunks.

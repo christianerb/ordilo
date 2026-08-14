@@ -38,11 +38,15 @@ async function resolveThumbUrls(
   serverClient: ServerClient,
   familyId: string,
   docs: DocRowWithFile[],
+  mergedFilePaths: Record<string, string>,
 ): Promise<Record<string, string>> {
   const imageDocs = docs.filter(
     (d) =>
       d.file_url &&
-      d.file_url.startsWith(`${familyId}/`) &&
+      (
+        d.file_url.startsWith(`${familyId}/`)
+        || mergedFilePaths[d.id] === d.file_url
+      ) &&
       d.mime_type?.startsWith("image/"),
   );
   if (imageDocs.length === 0) return {};
@@ -281,10 +285,29 @@ export default async function HomePage({
 
   // 8. Resolve journal thumbnails for image documents (best-effort — a
   //    failure just means the icon fallback renders).
-  const thumbUrls = await resolveThumbUrls(supabase, family.id, [
+  const thumbnailDocs = [
     ...(analyzedRows ?? []),
     ...(recentRows ?? []),
-  ]);
+  ];
+  const thumbnailDocumentIds = [
+    ...new Set(thumbnailDocs.map((document) => document.id)),
+  ];
+  const { data: mergedPathRows } = thumbnailDocumentIds.length
+    ? await supabase
+      .from("family_merge_document_paths")
+      .select("document_id, file_url")
+      .eq("family_id", family.id)
+      .in("document_id", thumbnailDocumentIds)
+    : { data: [] };
+  const mergedFilePaths = Object.fromEntries(
+    (mergedPathRows ?? []).map((path) => [path.document_id, path.file_url]),
+  );
+  const thumbUrls = await resolveThumbUrls(
+    supabase,
+    family.id,
+    thumbnailDocs,
+    mergedFilePaths,
+  );
 
   return (
     <HomeClient
