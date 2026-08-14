@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { combinePagesToFile } from "@/lib/images-to-pdf";
-import { vibrate } from "@/lib/haptics";
+import { haptic } from "@/lib/haptics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -327,8 +327,9 @@ export function CameraStep({
     const video = videoRef.current;
     if (!video || video.videoWidth === 0 || finishingRef.current) return;
 
-    // Taptic feedback on supporting mobile devices.
-    vibrate(10);
+    // A semantic capture acknowledgement maps to native haptics once the
+    // same flow is hosted in the mobile app.
+    haptic("light");
 
     const viewportWidth = video.clientWidth;
     const viewportHeight = video.clientHeight;

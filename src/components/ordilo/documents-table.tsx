@@ -78,10 +78,21 @@ export function DocumentsTable({
     Record<string, { documentDate: string | null }>
   >({});
   const { openDocument } = useDocumentViewer();
+  const [justAnalyzedIds, setJustAnalyzedIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   // Sorted so a pure re-ordering of the list doesn't retrigger the fetch.
   const docIds = useMemo(() => documents.map((d) => d.id).sort(), [documents]);
   const docIdsKey = docIds.join(",");
+  const documentStatusesKey = useMemo(
+    () =>
+      documents
+        .map((document) => `${document.id}:${document.status}`)
+        .sort()
+        .join(","),
+    [documents],
+  );
 
   /**
    * Document IDs whose metadata was already fetched. The table used to be
@@ -91,6 +102,9 @@ export function DocumentsTable({
    * it has never seen are requested, everything else is served from state.
    */
   const loadedMetaIdsRef = useRef<Set<string>>(new Set());
+  const documentStatusesRef = useRef(
+    new Map(documents.map((document) => [document.id, document.status])),
+  );
 
   useChangeEffect(() => {
     const missingIds = docIds.filter((id) => !loadedMetaIdsRef.current.has(id));
@@ -119,6 +133,30 @@ export function DocumentsTable({
       cancelled = true;
     };
   }, [docIdsKey]);
+
+  // A document becomes ready in the background. Keep the acknowledgement on
+  // its file icon, once, so a refreshed list does not animate established docs.
+  useChangeEffect(() => {
+    const previousStatuses = documentStatusesRef.current;
+    const newlyAnalyzedIds = documents
+      .filter(
+        (document) =>
+          document.status === "analyzed" &&
+          previousStatuses.has(document.id) &&
+          previousStatuses.get(document.id) !== "analyzed",
+      )
+      .map((document) => document.id);
+
+    documentStatusesRef.current = new Map(
+      documents.map((document) => [document.id, document.status]),
+    );
+
+    if (newlyAnalyzedIds.length === 0) return;
+
+    setJustAnalyzedIds(new Set(newlyAnalyzedIds));
+    const timeout = window.setTimeout(() => setJustAnalyzedIds(new Set()), 280);
+    return () => window.clearTimeout(timeout);
+  }, [documents, documentStatusesKey]);
 
   // --- Filters ---
   const [search, setSearch] = useState("");
@@ -333,6 +371,7 @@ export function DocumentsTable({
         ) : (
           pageRows.map((row) => {
             const FileIcon = getFileIcon(row.doc.mime_type);
+            const isJustAnalyzed = justAnalyzedIds.has(row.doc.id);
             return (
               <div
                 key={row.doc.id}
@@ -345,7 +384,13 @@ export function DocumentsTable({
                   className="flex min-h-11 min-w-0 flex-1 items-start gap-2.5 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
                   aria-label={`${row.displayTitle} öffnen`}
                 >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)]">
+                  <span
+                    data-testid={`document-file-icon-${row.doc.id}`}
+                    className={cn(
+                      "flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)]",
+                      isJustAnalyzed && "animate-document-ready",
+                    )}
+                  >
                     <FileIcon
                       className="size-4 text-[var(--mist-dark)]"
                       aria-hidden="true"
@@ -446,6 +491,7 @@ export function DocumentsTable({
                 pageRows.map((row) => {
                   const FileIcon = getFileIcon(row.doc.mime_type);
                   const openRow = () => void openDocument(row.doc.id);
+                  const isJustAnalyzed = justAnalyzedIds.has(row.doc.id);
                   return (
                     <tr
                       key={row.doc.id}
@@ -464,7 +510,13 @@ export function DocumentsTable({
                     >
                       <td className="px-3 py-2.5">
                         <div className="flex min-w-0 items-center gap-2">
-                          <div className="flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)] transition-colors group-hover:bg-[var(--sand-warm)]/80">
+                          <div
+                            data-testid={`document-file-icon-${row.doc.id}`}
+                            className={cn(
+                              "flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)] transition-colors group-hover:bg-[var(--sand-warm)]/80",
+                              isJustAnalyzed && "animate-document-ready",
+                            )}
+                          >
                             <FileIcon
                               className="size-4 shrink-0 text-[var(--mist-dark)]"
                               aria-hidden="true"

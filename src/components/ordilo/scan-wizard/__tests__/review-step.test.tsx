@@ -161,6 +161,13 @@ describe("ScanReviewStep — manual review (uncertain analysis)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("review-step-confirmed")).toBeDefined(),
     );
+    expect(screen.getByTestId("review-step-confirmed")).toHaveClass(
+      "animate-scan-success",
+    );
+    expect(screen.getByTestId("review-step-confirmed")).toHaveAttribute(
+      "role",
+      "status",
+    );
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/documents/doc-1/confirm",
       expect.objectContaining({ method: "POST" }),

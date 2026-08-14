@@ -21,7 +21,7 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ReviewSummary } from "@/components/ordilo/review-summary";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { vibrate } from "@/lib/haptics";
+import { haptic } from "@/lib/haptics";
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.85;
 
@@ -234,7 +234,7 @@ export function ScanReviewStep({
     // Optimistic: the user's own tap, not a fabricated AI result — play
     // the success state immediately and roll back if the save fails.
     setConfirmed(true);
-    vibrate(10);
+    haptic("success");
 
     try {
       const payload = buildConfirmPayload(analysis, edits);
@@ -352,8 +352,13 @@ export function ScanReviewStep({
   if (confirmed) {
     return (
       <div
-        className={cn("flex flex-col items-center gap-6 pt-10 text-center animate-card-in", className)}
+        className={cn(
+          "flex flex-col items-center gap-6 pt-10 text-center animate-scan-success",
+          className,
+        )}
         data-testid="review-step-confirmed"
+        role="status"
+        aria-live="polite"
       >
         <div
           className="flex size-16 items-center justify-center rounded-full bg-[var(--petrol)]/10"

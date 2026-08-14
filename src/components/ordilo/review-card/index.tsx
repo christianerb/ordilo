@@ -32,7 +32,7 @@ import {
 import type { EditState, EditedAnalysisPayload } from "./helpers";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
-import { vibrate } from "@/lib/haptics";
+import { haptic } from "@/lib/haptics";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -435,7 +435,7 @@ export function ReviewCard({
     // AI output), so the celebration plays immediately instead of after a
     // round trip. Rolled back below if the request actually fails.
     setConfirmed(true);
-    vibrate(10);
+    haptic("success");
 
     try {
       // Build the edited payload.

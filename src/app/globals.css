@@ -175,6 +175,26 @@
     }
   }
 
+  /* The scan's finish is the one earned celebratory beat: the document has
+     genuinely been saved, so the result settles into the family journal. */
+  @keyframes scan-success-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.96);
+      filter: blur(3px);
+    }
+    65% {
+      opacity: 1;
+      transform: translateY(-1px) scale(1.01);
+      filter: blur(0);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+
   /* Citation jump — brief highlight when a chat citation marker scrolls
      its source card into view, so the "which one did I just click" link
      between text and card grid stays visible even after the scroll. */
@@ -430,6 +450,21 @@
     to {
       opacity: 1;
       transform: scale(1);
+    }
+  }
+
+  /* A document arriving from background processing gets one quiet visual
+     acknowledgement. Existing documents never receive this class. */
+  @keyframes document-ready {
+    from {
+      opacity: 0.45;
+      transform: translateY(3px) scale(0.88);
+      filter: blur(1px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
     }
   }
 
@@ -840,6 +875,10 @@
     animation: status-settle 0.24s var(--ease-out-quart);
   }
 
+  .animate-document-ready {
+    animation: document-ready 0.24s var(--ease-out-quart) both;
+  }
+
   .animate-pipeline-connector {
     animation: pipeline-connector-fill 0.35s var(--ease-out-quart) both;
     transform-origin: top;
@@ -863,6 +902,10 @@
 
   .animate-scan-step {
     animation: scan-step-in 0.48s var(--ease-out-expo) both;
+  }
+
+  .animate-scan-success {
+    animation: scan-success-in 0.42s var(--ease-out-expo) both;
   }
 
   .ordilo-wordmark {
@@ -1037,12 +1080,14 @@
   .animate-citation-flash,
   .animate-onboarding-step,
   .animate-status-settle,
+  .animate-document-ready,
   .animate-pipeline-connector,
   .animate-upload-phase,
   .animate-board-settle,
   .animate-composer-overlay,
   .animate-status-line,
   .animate-scan-step,
+  .animate-scan-success,
   .ordilo-wordmark::before,
   .ordilo-wordmark__mark,
   .ordilo-wordmark__label,
