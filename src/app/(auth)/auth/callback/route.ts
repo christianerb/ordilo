@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { after, NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPostAuthDestination } from "@/lib/auth/routing";
 import { INVITE_COOKIE } from "@/lib/invite";
@@ -62,11 +62,13 @@ export async function GET(request: NextRequest) {
     if (joinedViaInvite && notificationId && authData.user) {
       // Failure is deliberately non-blocking: the membership transaction is
       // already complete and the unclaimed record remains safe to retry.
-      await deliverInviteNotification(
-        notificationId,
-        authData.user.id,
-        process.env.APP_BASE_URL ?? requestUrl.origin,
-      );
+      after(async () => {
+        await deliverInviteNotification(
+          notificationId,
+          authData.user.id,
+          process.env.APP_BASE_URL ?? requestUrl.origin,
+        );
+      });
     }
     inviteNeedsDecision = !joinedViaInvite;
   }

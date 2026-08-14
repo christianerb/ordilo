@@ -81,6 +81,7 @@ declare
   v_collection_count integer;
   v_inventory_item_count integer;
   v_target_adult_count integer;
+  v_target_membership_fingerprint text;
   v_fingerprint text;
 begin
   if v_user_id is null then
@@ -152,6 +153,13 @@ begin
   where family_id = v_target_family_id
     and role in ('owner', 'adult');
 
+  select coalesce(
+    string_agg(user_id::text || ':' || role, ',' order by user_id),
+    ''
+  ) into v_target_membership_fingerprint
+  from public.family_memberships
+  where family_id = v_target_family_id;
+
   select md5(concat_ws(
     ':',
     v_source.id,
@@ -162,6 +170,8 @@ begin
     v_member_count,
     v_collection_count,
     v_inventory_item_count,
+    v_target_adult_count,
+    v_target_membership_fingerprint,
     coalesce((select max(created_at)::text from public.documents where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.tasks where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.calendar_events where family_id = v_source.id), ''),
@@ -210,6 +220,8 @@ declare
   v_member_count integer;
   v_collection_count integer;
   v_inventory_item_count integer;
+  v_target_adult_count integer;
+  v_target_membership_fingerprint text;
   v_current_fingerprint text;
   v_operation_id uuid;
   v_notification_id uuid;
@@ -250,6 +262,15 @@ begin
     return jsonb_build_object('status', 'joined');
   end if;
 
+  -- Hold the target family row while recomputing the preview fingerprint.
+  -- Membership inserts take a foreign-key key-share lock on this row, so a
+  -- newly added account cannot invalidate the reviewed access count halfway
+  -- through the merge transaction.
+  perform 1
+  from public.families
+  where id = v_invite.family_id
+  for update;
+
   select count(*) into v_membership_count
   from public.family_memberships
   where family_id = v_source.id;
@@ -285,6 +306,18 @@ begin
     v_collection_count,
     v_inventory_item_count;
 
+  select count(*) into v_target_adult_count
+  from public.family_memberships
+  where family_id = v_invite.family_id
+    and role in ('owner', 'adult');
+
+  select coalesce(
+    string_agg(user_id::text || ':' || role, ',' order by user_id),
+    ''
+  ) into v_target_membership_fingerprint
+  from public.family_memberships
+  where family_id = v_invite.family_id;
+
   select md5(concat_ws(
     ':',
     v_source.id,
@@ -295,6 +328,8 @@ begin
     v_member_count,
     v_collection_count,
     v_inventory_item_count,
+    v_target_adult_count,
+    v_target_membership_fingerprint,
     coalesce((select max(created_at)::text from public.documents where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.tasks where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.calendar_events where family_id = v_source.id), ''),

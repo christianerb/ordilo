@@ -33,6 +33,7 @@ const FRIENDLY_ERROR = "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 function mockSupabase(options: {
   user?: { id: string; email: string } | null;
   family?: { id: string; name: string; created_by: string } | null;
+  membershipFamily?: { id: string; name: string; onboarding_completed_at: string | null } | null;
   familyError?: unknown;
   members?: {
     inserted?: Partial<MemberRow>;
@@ -74,7 +75,12 @@ function mockSupabase(options: {
     eq: vi.fn().mockReturnThis(),
     order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
-    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: options.membershipFamily
+        ? { families: options.membershipFamily }
+        : null,
+      error: null,
+    }),
   };
 
   // families update chain (for renaming the family)
@@ -172,6 +178,7 @@ function mockAdmin(options: {
   avatarPaths?: (string | null)[];
   deleteError?: unknown;
   deleteUserError?: unknown;
+  membershipDeleteError?: unknown;
 }) {
   const removeDocuments = vi.fn().mockResolvedValue({ data: null, error: null });
   const removeAvatars = vi.fn().mockResolvedValue({ data: null, error: null });
@@ -194,6 +201,10 @@ function mockAdmin(options: {
   const familiesDeleteChain = {
     eq: vi.fn().mockResolvedValue({ error: options.deleteError ?? null }),
   };
+  const membershipsDeleteChain = {
+    eq: vi.fn().mockReturnThis(),
+    error: options.membershipDeleteError ?? null,
+  };
 
   const fromMock = vi.fn((table: string) => {
     if (table === "documents") {
@@ -204,6 +215,9 @@ function mockAdmin(options: {
     }
     if (table === "families") {
       return { delete: vi.fn(() => familiesDeleteChain) };
+    }
+    if (table === "family_memberships") {
+      return { delete: vi.fn(() => membershipsDeleteChain) };
     }
     throw new Error(`Unexpected table: ${table}`);
   });
@@ -224,6 +238,7 @@ function mockAdmin(options: {
     removeAvatars,
     deleteUser,
     familiesDeleteEq: familiesDeleteChain.eq,
+    membershipsDeleteEq: membershipsDeleteChain.eq,
   };
 }
 
@@ -878,7 +893,7 @@ describe("deleteFamilyAccount", () => {
     }
   });
 
-  it("returns an error when the user owns no family", async () => {
+  it("returns a friendly error when the user has no family membership", async () => {
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({ family: null }),
     );
@@ -886,10 +901,33 @@ describe("deleteFamilyAccount", () => {
     const result = await deleteFamilyAccount("Familie Müller");
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe(
-        "Nur die Person, die die Familie erstellt hat, kann sie löschen.",
-      );
+      expect(result.error).toBe(FRIENDLY_ERROR);
     }
+  });
+
+  it("deletes an invited member's account without deleting the shared family", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family: null,
+        membershipFamily: {
+          id: "shared-fam",
+          name: "Familie Müller",
+          onboarding_completed_at: "2026-08-01T00:00:00Z",
+        },
+      }),
+    );
+    const adminMock = mockAdmin({});
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      adminMock.admin,
+    );
+
+    const result = await deleteFamilyAccount("Familie Müller");
+
+    expect(result.success).toBe(true);
+    expect(adminMock.familiesDeleteEq).not.toHaveBeenCalled();
+    expect(adminMock.membershipsDeleteEq).toHaveBeenCalledWith("family_id", "shared-fam");
+    expect(adminMock.membershipsDeleteEq).toHaveBeenCalledWith("user_id", "user-1");
+    expect(adminMock.deleteUser).toHaveBeenCalledWith("user-1");
   });
 
   it("returns an error when the confirmation name does not match", async () => {
