@@ -28,6 +28,23 @@ type AcceptInviteResult =
         | "preview_changed";
     };
 
+type InviteMergePreview = {
+  sourceFamilyName: string;
+  documentCount: number;
+  taskCount: number;
+  calendarEventCount: number;
+  memberCount: number;
+  collectionCount: number;
+  inventoryItemCount: number;
+  targetAdultCount: number;
+  fingerprint: string;
+};
+
+type MergePreparationResult =
+  | { success: true; state: "merge" | "empty_source"; preview: InviteMergePreview }
+  | { success: true; state: "invalid" | "shared_source_family" | "source_processing" }
+  | { success: false; error: string };
+
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_TOKEN_REGEX = /^[a-f0-9]{16,64}$/i;
 
@@ -192,6 +209,76 @@ export async function acceptInvite(
         error: "Diese Einladung ist nicht mehr gültig.",
       };
   }
+}
+
+/**
+ * Resolves the current merge decision after accepting an invite found an
+ * owned family. This avoids reloading a stale invite page back to confirm.
+ */
+export async function getInviteMergePreparation(
+  token: string,
+): Promise<MergePreparationResult> {
+  if (!INVITE_TOKEN_REGEX.test(token)) return { success: true, state: "invalid" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("get_family_invite_merge_preview", {
+    p_token: token,
+  });
+  if (error) {
+    return {
+      success: false,
+      error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
+    };
+  }
+
+  const preview = data as {
+    status?: string;
+    source_family_name?: string;
+    document_count?: number;
+    task_count?: number;
+    calendar_event_count?: number;
+    member_count?: number;
+    collection_count?: number;
+    inventory_item_count?: number;
+    target_adult_count?: number;
+    fingerprint?: string;
+  } | null;
+
+  if (preview?.status === "merge_available") {
+    if (!preview.source_family_name || !preview.fingerprint) {
+      return {
+        success: false,
+        error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
+      };
+    }
+    const mergePreview: InviteMergePreview = {
+      sourceFamilyName: preview.source_family_name,
+      documentCount: preview.document_count ?? 0,
+      taskCount: preview.task_count ?? 0,
+      calendarEventCount: preview.calendar_event_count ?? 0,
+      memberCount: preview.member_count ?? 0,
+      collectionCount: preview.collection_count ?? 0,
+      inventoryItemCount: preview.inventory_item_count ?? 0,
+      targetAdultCount: preview.target_adult_count ?? 0,
+      fingerprint: preview.fingerprint,
+    };
+    const isEmpty = mergePreview.documentCount + mergePreview.taskCount
+      + mergePreview.calendarEventCount + mergePreview.memberCount
+      + mergePreview.collectionCount + mergePreview.inventoryItemCount === 0;
+    return { success: true, state: isEmpty ? "empty_source" : "merge", preview: mergePreview };
+  }
+
+  if (preview?.status === "shared_source_family") {
+    return { success: true, state: "shared_source_family" };
+  }
+  if (preview?.status === "source_processing") {
+    return { success: true, state: "source_processing" };
+  }
+  if (preview?.status === "invalid") return { success: true, state: "invalid" };
+  return {
+    success: false,
+    error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
+  };
 }
 
 /**

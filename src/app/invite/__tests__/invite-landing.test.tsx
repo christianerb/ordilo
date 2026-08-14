@@ -2,14 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { InviteLanding } from "../[token]/invite-landing";
 
-const { acceptInvite, mergeOwnedFamilyIntoInvite, requestInviteSignIn } = vi.hoisted(() => ({
+const { acceptInvite, getInviteMergePreparation, mergeOwnedFamilyIntoInvite, requestInviteSignIn } = vi.hoisted(() => ({
   acceptInvite: vi.fn(),
+  getInviteMergePreparation: vi.fn(),
   mergeOwnedFamilyIntoInvite: vi.fn(),
   requestInviteSignIn: vi.fn(),
 }));
 
 vi.mock("../actions", () => ({
   acceptInvite,
+  getInviteMergePreparation,
   mergeOwnedFamilyIntoInvite,
   requestInviteSignIn,
 }));
@@ -63,6 +65,26 @@ describe("InviteLanding — confirm state (signed-in user)", () => {
     await waitFor(() => {
       expect(acceptInvite).toHaveBeenCalledWith(TOKEN);
     });
+    expect(await screen.findByTestId("invite-join-complete")).toBeInTheDocument();
+    expect(screen.getByTestId("invite-join-celebration")).toBeInTheDocument();
+  });
+
+  it("shows the merge decision without reloading when the initial page was stale", async () => {
+    acceptInvite.mockResolvedValue({ success: false, reason: "merge_required", error: "Merge nötig" });
+    getInviteMergePreparation.mockResolvedValue({
+      success: true,
+      state: "empty_source",
+      preview: {
+        sourceFamilyName: "Familie Schmidt", documentCount: 0, taskCount: 0,
+        calendarEventCount: 0, memberCount: 0, collectionCount: 0,
+        inventoryItemCount: 0, targetAdultCount: 1, fingerprint: "preview-123",
+      },
+    });
+    render(<InviteLanding token={TOKEN} familyName="Familie Müller" state="confirm" />);
+    fireEvent.click(screen.getByRole("button", { name: /familie beitreten/i }));
+
+    expect(await screen.findByTestId("invite-empty-source")).toBeInTheDocument();
+    expect(getInviteMergePreparation).toHaveBeenCalledWith(TOKEN);
   });
 
   it("shows the already-in-family screen when the user has another family", async () => {
@@ -219,10 +241,8 @@ describe("InviteLanding — merge state", () => {
       expect(mergeOwnedFamilyIntoInvite).toHaveBeenCalledWith(TOKEN, "preview-123");
     });
 
-    expect(await screen.findByTestId("invite-merge-complete")).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /zur gemeinsamen Familie/i }),
-    ).toHaveAttribute("href", "/home");
+    expect(await screen.findByTestId("invite-join-complete")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Zur Familie" })).toBeEnabled();
   });
 
   it("offers a simple join when the existing family is empty", () => {
