@@ -181,6 +181,27 @@ export type Database = {
         };
         Relationships: [];
       };
+      family_merge_document_paths: {
+        Row: {
+          document_id: string;
+          family_id: string;
+          file_url: string;
+          created_at: string;
+        };
+        Insert: {
+          document_id: string;
+          family_id: string;
+          file_url: string;
+          created_at?: string;
+        };
+        Update: {
+          document_id?: string;
+          family_id?: string;
+          file_url?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       // product_events -----------------------------------------------------
       product_events: {
         Row: {

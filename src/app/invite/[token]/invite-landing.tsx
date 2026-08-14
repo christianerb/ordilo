@@ -14,6 +14,7 @@ import {
   Loader2,
   Mail,
   MailCheck,
+  Package,
   Pencil,
   RefreshCw,
   ShieldCheck,
@@ -67,6 +68,7 @@ export function InviteLanding({
     calendarEventCount: number;
     memberCount: number;
     collectionCount: number;
+    inventoryItemCount: number;
     targetAdultCount: number;
     fingerprint: string;
   } | null;
@@ -432,6 +434,7 @@ export function InviteLanding({
       { label: "Termine", count: mergePreview.calendarEventCount, icon: CalendarDays },
       { label: "Personen", count: mergePreview.memberCount, icon: UserPlus },
       { label: "Sammlungen", count: mergePreview.collectionCount, icon: FolderHeart },
+      { label: "Wichtige Dinge", count: mergePreview.inventoryItemCount, icon: Package },
     ].filter((item) => item.count > 0);
 
     if (mergeComplete) {

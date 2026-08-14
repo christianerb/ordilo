@@ -38,6 +38,29 @@ create index if not exists family_invite_notifications_actor_idx
 
 alter table public.family_invite_notifications enable row level security;
 
+-- Storage objects are deliberately not renamed during a database transaction:
+-- Supabase Storage is an external service and cannot be rolled back together
+-- with the merge. Keep the verified old path per document instead, so merged
+-- documents remain signable without turning their file_url into a cross-family
+-- signing oracle.
+create table if not exists public.family_merge_document_paths (
+  document_id uuid primary key references public.documents (id) on delete cascade,
+  family_id uuid references public.families (id) on delete cascade not null,
+  file_url text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists family_merge_document_paths_family_idx
+  on public.family_merge_document_paths (family_id);
+
+alter table public.family_merge_document_paths enable row level security;
+
+drop policy if exists "family_merge_document_paths_select"
+  on public.family_merge_document_paths;
+create policy "family_merge_document_paths_select"
+  on public.family_merge_document_paths for select
+  using (public.user_belongs_to_family(family_id));
+
 create or replace function public.get_family_invite_merge_preview(p_token text)
 returns jsonb
 language plpgsql
@@ -56,6 +79,7 @@ declare
   v_calendar_event_count integer;
   v_member_count integer;
   v_collection_count integer;
+  v_inventory_item_count integer;
   v_target_adult_count integer;
   v_fingerprint text;
 begin
@@ -113,13 +137,15 @@ begin
     (select count(*) from public.tasks where family_id = v_source.id),
     (select count(*) from public.calendar_events where family_id = v_source.id),
     (select count(*) from public.family_members where family_id = v_source.id),
-    (select count(*) from public.collections where family_id = v_source.id)
+    (select count(*) from public.collections where family_id = v_source.id),
+    (select count(*) from public.family_inventory_items where family_id = v_source.id)
   into
     v_document_count,
     v_task_count,
     v_calendar_event_count,
     v_member_count,
-    v_collection_count;
+    v_collection_count,
+    v_inventory_item_count;
 
   select count(*) into v_target_adult_count
   from public.family_memberships
@@ -135,11 +161,13 @@ begin
     v_calendar_event_count,
     v_member_count,
     v_collection_count,
+    v_inventory_item_count,
     coalesce((select max(created_at)::text from public.documents where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.tasks where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.calendar_events where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.family_members where family_id = v_source.id), ''),
-    coalesce((select max(created_at)::text from public.collections where family_id = v_source.id), '')
+    coalesce((select max(created_at)::text from public.collections where family_id = v_source.id), ''),
+    coalesce((select max(updated_at)::text from public.family_inventory_items where family_id = v_source.id), '')
   )) into v_fingerprint;
 
   return jsonb_build_object(
@@ -150,6 +178,7 @@ begin
     'calendar_event_count', v_calendar_event_count,
     'member_count', v_member_count,
     'collection_count', v_collection_count,
+    'inventory_item_count', v_inventory_item_count,
     'target_adult_count', v_target_adult_count,
     'fingerprint', v_fingerprint
   );
@@ -180,6 +209,7 @@ declare
   v_calendar_event_count integer;
   v_member_count integer;
   v_collection_count integer;
+  v_inventory_item_count integer;
   v_current_fingerprint text;
   v_operation_id uuid;
   v_notification_id uuid;
@@ -245,13 +275,15 @@ begin
     (select count(*) from public.tasks where family_id = v_source.id),
     (select count(*) from public.calendar_events where family_id = v_source.id),
     (select count(*) from public.family_members where family_id = v_source.id),
-    (select count(*) from public.collections where family_id = v_source.id)
+    (select count(*) from public.collections where family_id = v_source.id),
+    (select count(*) from public.family_inventory_items where family_id = v_source.id)
   into
     v_document_count,
     v_task_count,
     v_calendar_event_count,
     v_member_count,
-    v_collection_count;
+    v_collection_count,
+    v_inventory_item_count;
 
   select md5(concat_ws(
     ':',
@@ -262,11 +294,13 @@ begin
     v_calendar_event_count,
     v_member_count,
     v_collection_count,
+    v_inventory_item_count,
     coalesce((select max(created_at)::text from public.documents where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.tasks where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.calendar_events where family_id = v_source.id), ''),
     coalesce((select max(created_at)::text from public.family_members where family_id = v_source.id), ''),
-    coalesce((select max(created_at)::text from public.collections where family_id = v_source.id), '')
+    coalesce((select max(created_at)::text from public.collections where family_id = v_source.id), ''),
+    coalesce((select max(updated_at)::text from public.family_inventory_items where family_id = v_source.id), '')
   )) into v_current_fingerprint;
 
   if p_preview_fingerprint is null
@@ -311,6 +345,19 @@ begin
     delete from public.knowledge_nodes where id = v_duplicate.source_id;
   end loop;
 
+  insert into public.family_merge_document_paths (
+    document_id,
+    family_id,
+    file_url
+  )
+  select id, v_invite.family_id, file_url
+  from public.documents
+  where family_id = v_source.id
+    and file_url is not null
+  on conflict (document_id) do update
+  set family_id = excluded.family_id,
+      file_url = excluded.file_url;
+
   update public.documents set family_id = v_invite.family_id where family_id = v_source.id;
   update public.extracted_entities set family_id = v_invite.family_id where family_id = v_source.id;
   update public.tasks set family_id = v_invite.family_id where family_id = v_source.id;
@@ -321,8 +368,19 @@ begin
   update public.knowledge_edges set family_id = v_invite.family_id where family_id = v_source.id;
   update public.calendar_events set family_id = v_invite.family_id where family_id = v_source.id;
   update public.calendar_suggestion_dismissals set family_id = v_invite.family_id where family_id = v_source.id;
+  -- Collections link documents by their case-insensitive name. A matching
+  -- target collection already covers the source documents after the family
+  -- transfer, so retain the target row and discard only the duplicate.
+  delete from public.collections source_collection
+  using public.collections target_collection
+  where source_collection.family_id = v_source.id
+    and target_collection.family_id = v_invite.family_id
+    and lower(source_collection.name) = lower(target_collection.name);
   update public.collections set family_id = v_invite.family_id where family_id = v_source.id;
   update public.family_members set family_id = v_invite.family_id where family_id = v_source.id;
+  update public.family_inventory_items
+  set family_id = v_invite.family_id
+  where family_id = v_source.id;
 
   insert into public.family_merge_operations (
     source_family_id,
@@ -342,6 +400,7 @@ begin
       'calendar_events', v_calendar_event_count,
       'members', v_member_count,
       'collections', v_collection_count,
+      'inventory_items', v_inventory_item_count,
       'chat_history_deleted', true
     )
   )

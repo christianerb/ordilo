@@ -8,6 +8,7 @@ type MergePreview = {
   calendarEventCount: number;
   memberCount: number;
   collectionCount: number;
+  inventoryItemCount: number;
   targetAdultCount: number;
   fingerprint: string;
 };
@@ -66,6 +67,7 @@ export default async function InvitePage({
       calendar_event_count?: number;
       member_count?: number;
       collection_count?: number;
+      inventory_item_count?: number;
       target_adult_count?: number;
       fingerprint?: string;
     } | null;
@@ -82,6 +84,7 @@ export default async function InvitePage({
         calendarEventCount: preview.calendar_event_count ?? 0,
         memberCount: preview.member_count ?? 0,
         collectionCount: preview.collection_count ?? 0,
+        inventoryItemCount: preview.inventory_item_count ?? 0,
         targetAdultCount: preview.target_adult_count ?? 0,
         fingerprint: preview.fingerprint,
       };
@@ -100,6 +103,7 @@ export default async function InvitePage({
             + mergePreview.calendarEventCount
             + mergePreview.memberCount
             + mergePreview.collectionCount
+            + mergePreview.inventoryItemCount
             === 0
             ? "empty_source"
             : "merge"

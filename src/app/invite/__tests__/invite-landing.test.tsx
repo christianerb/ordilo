@@ -159,6 +159,7 @@ describe("InviteLanding — merge state", () => {
     calendarEventCount: 3,
     memberCount: 2,
     collectionCount: 5,
+    inventoryItemCount: 2,
     targetAdultCount: 2,
     fingerprint: "preview-123",
   };
@@ -178,6 +179,7 @@ describe("InviteLanding — merge state", () => {
       screen.getByRole("heading", { name: "Deine Familie zusammenführen?" }),
     ).toBeInTheDocument();
     expect(screen.getByText(/12 Dokumente/)).toBeInTheDocument();
+    expect(screen.getByText(/2 Wichtige Dinge/)).toBeInTheDocument();
     expect(screen.getByText("Deine bisherige Familie")).toBeInTheDocument();
     expect(screen.getByText("Deine neue Familie")).toBeInTheDocument();
     expect(screen.getByText(/2 erwachsene Personen/)).toBeInTheDocument();
@@ -235,6 +237,7 @@ describe("InviteLanding — merge state", () => {
           calendarEventCount: 0,
           memberCount: 0,
           collectionCount: 0,
+          inventoryItemCount: 0,
         }}
         state="empty_source"
       />,
