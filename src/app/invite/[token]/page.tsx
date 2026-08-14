@@ -1,6 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
 import { InviteLanding } from "./invite-landing";
 
+type MergePreview = {
+  sourceFamilyName: string;
+  documentCount: number;
+  taskCount: number;
+  calendarEventCount: number;
+  memberCount: number;
+  collectionCount: number;
+  targetAdultCount: number;
+  fingerprint: string;
+};
+
 /**
  * Invite landing page — `/invite/[token]`.
  *
@@ -41,11 +52,63 @@ export default async function InvitePage({
     return <InviteLanding token={token} familyName={null} state="invalid" />;
   }
 
+  let mergePreview: MergePreview | null = null;
+  let previewStatus: string | null = null;
+  if (user) {
+    const { data } = await supabase.rpc("get_family_invite_merge_preview", {
+      p_token: token,
+    });
+    const preview = data as {
+      status?: string;
+      source_family_name?: string;
+      document_count?: number;
+      task_count?: number;
+      calendar_event_count?: number;
+      member_count?: number;
+      collection_count?: number;
+      target_adult_count?: number;
+      fingerprint?: string;
+    } | null;
+    previewStatus = preview?.status ?? null;
+    if (
+      preview?.status === "merge_available"
+      && preview.source_family_name
+      && preview.fingerprint
+    ) {
+      mergePreview = {
+        sourceFamilyName: preview.source_family_name,
+        documentCount: preview.document_count ?? 0,
+        taskCount: preview.task_count ?? 0,
+        calendarEventCount: preview.calendar_event_count ?? 0,
+        memberCount: preview.member_count ?? 0,
+        collectionCount: preview.collection_count ?? 0,
+        targetAdultCount: preview.target_adult_count ?? 0,
+        fingerprint: preview.fingerprint,
+      };
+    }
+  }
+
   return (
     <InviteLanding
       token={token}
       familyName={infoResult.family_name ?? null}
-      state={user ? "confirm" : "valid"}
+      mergePreview={mergePreview}
+      state={
+        mergePreview
+          ? mergePreview.documentCount
+            + mergePreview.taskCount
+            + mergePreview.calendarEventCount
+            + mergePreview.memberCount
+            + mergePreview.collectionCount
+            === 0
+            ? "empty_source"
+            : "merge"
+          : previewStatus === "shared_source_family"
+            ? "shared_source_family"
+            : previewStatus === "source_processing"
+              ? "source_processing"
+            : "confirm"
+      }
     />
   );
 }

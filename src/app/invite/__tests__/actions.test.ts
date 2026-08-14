@@ -30,7 +30,11 @@ vi.mock("@/lib/supabase/server", () => ({
   })),
 }));
 
-import { acceptInvite, requestInviteSignIn } from "../actions";
+import {
+  acceptInvite,
+  mergeOwnedFamilyIntoInvite,
+  requestInviteSignIn,
+} from "../actions";
 import { INVITE_COOKIE } from "@/lib/invite";
 
 const TOKEN = "0123456789abcdef";
@@ -205,6 +209,21 @@ describe("acceptInvite", () => {
     });
   });
 
+  it("directs an owner to the merge flow", async () => {
+    rpc.mockResolvedValue({
+      data: { status: "merge_required" },
+      error: null,
+    });
+
+    const result = await acceptInvite(TOKEN);
+
+    expect(result).toEqual({
+      success: false,
+      reason: "merge_required",
+      error: "Deine Familie muss zuerst zusammengeführt werden.",
+    });
+  });
+
   it("asks for a reload when the session has expired", async () => {
     rpc.mockResolvedValue({ data: { status: "unauthenticated" }, error: null });
 
@@ -224,6 +243,52 @@ describe("acceptInvite", () => {
     expect(result).toEqual({
       success: false,
       error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    });
+  });
+});
+
+describe("mergeOwnedFamilyIntoInvite", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("merges an owned family with a valid invite", async () => {
+    rpc.mockResolvedValue({ data: { status: "merged" }, error: null });
+
+    await expect(mergeOwnedFamilyIntoInvite(TOKEN, "preview-123")).resolves.toEqual({
+      success: true,
+    });
+    expect(rpc).toHaveBeenCalledWith("merge_owned_family_into_invite", {
+      p_token: TOKEN,
+      p_preview_fingerprint: "preview-123",
+    });
+  });
+
+  it("shows a specific error when the source family has other members", async () => {
+    rpc.mockResolvedValue({
+      data: { status: "shared_source_family" },
+      error: null,
+    });
+
+    await expect(mergeOwnedFamilyIntoInvite(TOKEN, "preview-123")).resolves.toEqual({
+      success: false,
+      reason: "shared_source_family",
+      error:
+        "Deine bisherige Familie wird schon von mehreren Konten genutzt und kann nicht automatisch zusammengeführt werden.",
+    });
+  });
+
+  it("refreshes the review when contents changed since the preview", async () => {
+    rpc.mockResolvedValue({
+      data: { status: "preview_changed" },
+      error: null,
+    });
+
+    await expect(mergeOwnedFamilyIntoInvite(TOKEN, "preview-123")).resolves.toEqual({
+      success: false,
+      reason: "preview_changed",
+      error:
+        "Deine Inhalte haben sich gerade geändert. Wir zeigen dir die aktuelle Übersicht.",
     });
   });
 });

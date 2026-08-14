@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getPostAuthDestination } from "@/lib/auth/routing";
 import { INVITE_COOKIE } from "@/lib/invite";
 import { recordProductEvent } from "@/lib/analytics/product-events";
+import { deliverInviteNotification } from "@/lib/invite-notification-delivery";
 
 /**
  * Magic link callback route.
@@ -14,7 +15,8 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
  *
  * - Invited user (`ordilo_invite` cookie set on /invite/[token]) → the
  *   invite is accepted right here and they land on `/home`, already part
- *   of the family — no onboarding, no extra steps.
+ *   of the family. Accounts with an existing family return to the invite
+ *   page for an explicit, informed merge decision.
  * - First-time user (no `families` row) → `/onboarding`
  * - Returning user (has `families` row) → `/home`
  *
@@ -43,23 +45,38 @@ export async function GET(request: NextRequest) {
 
   // Invite flow: if the sign-in started on /invite/[token], accept the
   // invite now that the session exists. On success the user goes straight
-  // to /home as a family member. On failure (expired/revoked token, or
-  // the user already belongs to another family) fall through to the
-  // normal destination — the invite page explains the error states.
+  // to /home as a family member. Any non-success goes back to the invite
+  // page, which can explain expiry, existing membership, or an available
+  // merge without silently changing data.
   const inviteToken = request.cookies.get(INVITE_COOKIE)?.value;
   let joinedViaInvite = false;
+  let inviteNeedsDecision = false;
   if (inviteToken && /^[a-f0-9]{16,64}$/i.test(inviteToken)) {
     const { data } = await supabase.rpc("accept_family_invite", {
       p_token: inviteToken,
     });
-    joinedViaInvite =
-      (data as { status?: string } | null)?.status === "joined";
+    const status = (data as { status?: string } | null)?.status;
+    const notificationId = (data as { notification_id?: string } | null)
+      ?.notification_id;
+    joinedViaInvite = status === "joined";
+    if (joinedViaInvite && notificationId && authData.user) {
+      // Failure is deliberately non-blocking: the membership transaction is
+      // already complete and the unclaimed record remains safe to retry.
+      await deliverInviteNotification(
+        notificationId,
+        authData.user.id,
+        process.env.APP_BASE_URL ?? requestUrl.origin,
+      );
+    }
+    inviteNeedsDecision = !joinedViaInvite;
   }
 
   // Session established — determine first-time vs returning user.
   const { destination, isFirstTime } = joinedViaInvite
     ? { destination: "/home" as const, isFirstTime: false }
-    : await getPostAuthDestination(supabase);
+    : inviteNeedsDecision && inviteToken
+      ? { destination: `/invite/${inviteToken}`, isFirstTime: false }
+      : await getPostAuthDestination(supabase);
 
   if (isFirstTime && authData.user) {
     await recordProductEvent(supabase, {
