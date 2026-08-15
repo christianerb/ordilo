@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
+import { matchesWordBoundary } from "@/lib/schemas/search";
 
 /**
  * Zod schema and JSON schema for the LLM document analysis extraction.
@@ -74,32 +75,94 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
  * that must be retrievable verbatim — embeddings are unreliable for them,
  * so they are stored in `document_facts` and matched lexically.
  */
-export const FACT_TYPES = [
-  "serial_number",
-  "contract_number",
-  "policy_number",
-  "customer_number",
-  "invoice_number",
-  "iban",
-  "license_plate",
-  "member_id",
-  "other",
-] as const;
+/**
+ * The single fact type.
+ *
+ * Facts used to carry a type enum (serial_number, policy_number, iban, …),
+ * which turned out to be the wrong axis: German paperwork produces an
+ * endless tail of numbers — Steuer-ID, Versichertennummer, Zählernummer,
+ * Aktenzeichen, Bestellnummer — and every new one either needed a code
+ * change or fell into a nameless "other" bucket. What tells two numbers
+ * apart is their LABEL ("Steuer-ID Hanna", "Zählernummer Keller"), and the
+ * label is free text that anyone can write and correct.
+ *
+ * So there is one type, and the label carries the meaning. The column
+ * stays in the database (legacy rows still hold their old value) but
+ * nothing reads it for behaviour any more.
+ */
+export const IDENTIFIER_FACT_TYPE = "identifier";
 
-export type FactType = (typeof FACT_TYPES)[number];
+/** Fallback label for a fact nobody has named yet. */
+export const DEFAULT_FACT_LABEL = "Nummer";
 
-/** German labels for fact types (Review Card / search result display). */
-export const FACT_TYPE_LABELS: Record<FactType, string> = {
-  serial_number: "Seriennummer",
-  contract_number: "Vertragsnummer",
-  policy_number: "Policennummer",
-  customer_number: "Kundennummer",
-  invoice_number: "Rechnungsnummer",
-  iban: "IBAN",
-  license_plate: "Kennzeichen",
-  member_id: "Mitgliedsnummer",
-  other: "Kennung",
-};
+/**
+ * Groups of words that mean the same number to a family.
+ *
+ * Facts are matched by label, and labels are written by people and by the
+ * extraction — "Policennummer" in the document, "Versicherungsnummer" in
+ * the question. Each group is one meaning: if a question uses any word of
+ * a group, all words of that group are searched for in the labels.
+ *
+ * The Steuer group is deliberately one group, not two: the 11-stellige
+ * steuerliche Identifikationsnummer and the Steuernummer des Finanzamts
+ * are different numbers that everyday language uses interchangeably.
+ *
+ * This is a recall aid, not a taxonomy — an unlisted number ("Zählernummer
+ * Keller") is found by its own label without appearing here.
+ */
+export const IDENTIFIER_SYNONYM_GROUPS: readonly (readonly string[])[] = [
+  [
+    "steuer-id",
+    "steuerid",
+    "steuernummer",
+    "steuer-nr",
+    "steuernr",
+    "steueridentifikationsnummer",
+    "steuerliche identifikationsnummer",
+    "identifikationsnummer",
+    "idnr",
+    "id-nr",
+    "tin",
+    "finanzamtsnummer",
+  ],
+  [
+    "policennummer",
+    "policennr",
+    "police",
+    "versicherungsnummer",
+    "versicherungsschein",
+    "versicherungsscheinnummer",
+  ],
+  [
+    "versichertennummer",
+    "versichertennr",
+    "krankenversicherungsnummer",
+    "krankenkassennummer",
+    "kvnr",
+  ],
+  ["iban", "kontonummer", "bankverbindung", "kontodaten"],
+  ["kundennummer", "kundennr", "kunden-nr", "kundenkonto", "kundenkennung"],
+  [
+    "vertragsnummer",
+    "vertragsnr",
+    "vertrags-nr",
+    "vertragskonto",
+    "vertragskontonummer",
+  ],
+  ["rechnungsnummer", "rechnungsnr", "rechnungs-nr", "belegnummer"],
+  [
+    "seriennummer",
+    "seriennr",
+    "serien-nr",
+    "gerätenummer",
+    "geraetenummer",
+    "imei",
+  ],
+  ["kennzeichen", "kfz-kennzeichen", "autokennzeichen", "nummernschild"],
+  ["mitgliedsnummer", "mitgliedsnr", "mitglieds-nr", "mitgliedernummer"],
+  ["zählernummer", "zaehlernummer", "zählerstand", "zählerid"],
+  ["aktenzeichen", "geschäftszeichen", "geschaeftszeichen", "vorgangsnummer"],
+];
 
 /**
  * Normalize a fact value for exact lookup: lowercase and strip everything
@@ -107,6 +170,134 @@ export const FACT_TYPE_LABELS: Record<FactType, string> = {
  */
 export function normalizeFactValue(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/**
+ * Word endings German glues onto a thing to make it the number of that
+ * thing: Aktenzeichen → Aktenzeichennummer, Zähler → Zählernummer.
+ */
+const COMPOUND_NUMBER_SUFFIXES = ["nummern", "nummer", "nr"] as const;
+
+/** Below this a stem is too generic to search labels with. */
+const MIN_STEM_LENGTH = 4;
+
+/** Split a query into comparable words, keeping inner hyphens ("steuer-id"). */
+function queryWords(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter(Boolean);
+}
+
+/**
+ * The stems behind the compound number words in a question.
+ *
+ *   "Wie ist die Aktenzeichennummer?" → ["aktenzeichen"]
+ *   "Wie ist die Steuernummer?"       → ["steuer"]
+ *
+ * Labels are matched with a substring search, so a question that is
+ * broader than the label ("Aktenzeichennummer" vs. a label reading
+ * "Aktenzeichen Jugendamt") would otherwise miss — the stem closes that
+ * gap for every compound, not only for the ones listed in a group.
+ * "Nummer" on its own yields nothing: it would match everything.
+ */
+export function compoundNumberStems(query: string): string[] {
+  const stems = new Set<string>();
+  for (const word of queryWords(query)) {
+    for (const suffix of COMPOUND_NUMBER_SUFFIXES) {
+      if (word === suffix || !word.endsWith(suffix)) continue;
+      const stem = word.slice(0, -suffix.length).replace(/[-\s]+$/, "");
+      if (stem.length >= MIN_STEM_LENGTH) stems.add(stem);
+      break;
+    }
+  }
+  return [...stems];
+}
+
+/**
+ * Whether two words are the same word with a typo — bounded edit distance,
+ * scaled to the word's length, and only for words long enough that a typo
+ * is the likelier explanation than a different word.
+ *
+ * "steuernumer" ≈ "steuernummer", but "sohn" is not "lohn".
+ */
+export function isTypoOf(word: string, target: string): boolean {
+  if (word === target) return true;
+  if (target.length < 6) return false;
+  const budget = target.length >= 10 ? 2 : 1;
+  if (Math.abs(word.length - target.length) > budget) return false;
+
+  // Levenshtein, aborted as soon as the budget is blown.
+  const previous = Array.from({ length: target.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= word.length; i++) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    let best = previous[0];
+    for (let j = 1; j <= target.length; j++) {
+      const cost = word[i - 1] === target[j - 1] ? 0 : 1;
+      const insert = previous[j] + 1;
+      const remove = previous[j - 1] + 1;
+      const replace = diagonal + cost;
+      diagonal = previous[j];
+      previous[j] = Math.min(insert, remove, replace);
+      best = Math.min(best, previous[j]);
+    }
+    if (best > budget) return false;
+  }
+  return previous[target.length] <= budget;
+}
+
+/** Whether a question touches one of the synonym groups. */
+function matchesSynonymGroup(
+  group: readonly string[],
+  query: string,
+  words: string[],
+  stems: string[],
+): boolean {
+  return group.some(
+    (word) =>
+      matchesWordBoundary(query, word) ||
+      stems.includes(word) ||
+      // A typo in the number's name must not silence the whole group —
+      // "Steuernumer" is still a question about the Steuer-ID.
+      words.some((asked) => isTypoOf(asked, word)) ||
+      stems.some((stem) => isTypoOf(stem, word)),
+  );
+}
+
+/**
+ * Expand a question into the label terms worth searching for.
+ *
+ * Every word of every synonym group the question touches, so "Wie ist die
+ * Steuernummer von Hanna?" also looks for labels containing "Steuer-ID"
+ * or "IdNr". Compound questions reach their group through their stem
+ * ("Aktenzeichennummer" → "aktenzeichen"). Returns [] when the question
+ * is not about a specific kind of number — the plain query keywords and
+ * the stems still do their work then.
+ */
+export function expandIdentifierTerms(query: string): string[] {
+  const words = queryWords(query);
+  const stems = compoundNumberStems(query);
+  const terms = new Set<string>();
+  for (const group of IDENTIFIER_SYNONYM_GROUPS) {
+    if (matchesSynonymGroup(group, query, words, stems)) {
+      for (const word of group) terms.add(word);
+    }
+  }
+  return [...terms];
+}
+
+/**
+ * Whether a question asks for a stored number at all — used for coarse
+ * query classification, not for retrieval.
+ */
+export function asksForIdentifier(query: string): boolean {
+  const words = queryWords(query);
+  const stems = compoundNumberStems(query);
+  return IDENTIFIER_SYNONYM_GROUPS.some((group) =>
+    matchesSynonymGroup(group, query, words, stems),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -213,10 +404,15 @@ const taskSchema = z.object({
 });
 
 /**
- * Zod schema for a single extracted fact (typed identifier).
+ * Zod schema for a single extracted fact (an identifier).
+ *
+ * `fact_type` is not part of the extraction any more — it defaults to
+ * `identifier`. It stays a plain string rather than a literal so rows
+ * written before the type collapse still parse when a confirmed document
+ * is reconstructed from the database.
  */
 const factSchema = z.object({
-  fact_type: z.enum(FACT_TYPES),
+  fact_type: z.string().default(IDENTIFIER_FACT_TYPE),
   label: z.string().min(1),
   value: z.string().min(1),
   confidence: z.number().min(0).max(1),
@@ -360,15 +556,12 @@ export const documentAnalysisJsonSchema = {
       items: {
         type: "object",
         properties: {
-          fact_type: {
-            type: "string",
-            enum: [...FACT_TYPES],
-          },
+          // No type — the label carries what kind of number this is.
           label: { type: "string" },
           value: { type: "string" },
           confidence: { type: "number" },
         },
-        required: ["fact_type", "label", "value", "confidence"],
+        required: ["label", "value", "confidence"],
         additionalProperties: false,
       },
     },

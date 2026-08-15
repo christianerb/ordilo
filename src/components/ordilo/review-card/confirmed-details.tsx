@@ -19,10 +19,8 @@ import {
 import { toast } from "sonner";
 import {
   AMOUNT_KIND_LABELS,
-  FACT_TYPES,
-  FACT_TYPE_LABELS,
+  DEFAULT_FACT_LABEL,
   type DocumentAnalysis,
-  type FactType,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -264,26 +262,30 @@ export function ConfirmedAnalysisDetails({
 
 interface FactRowData {
   id: string;
-  fact_type: string;
   label: string;
   value: string;
 }
 
 /**
- * The one part of a confirmed document that stays editable: its typed
- * facts (serial numbers, contract numbers, IBANs, …). Extraction can
- * misread exactly these values (an OCR'd 8 becomes a B), and they are
+ * The one part of a confirmed document that stays editable: its numbers
+ * and identifiers. Extraction can misread exactly these values (an OCR'd
+ * 8 becomes a B) or name them badly ("Unklare Kennnummer"), and they are
  * what families come back for — so correcting or adding one must never
  * require a re-scan. Reads and writes go straight to `document_facts`
  * via /api/documents/[id]/facts; the fact search picks changes up
  * immediately.
+ *
+ * A number is a label plus a value — there is no type to pick. The label
+ * is what makes it findable ("Steuer-ID Hanna"), so it is a plain text
+ * field, not a dropdown that could never cover German paperwork anyway.
  */
 function EditableFactsSection({ documentId }: { documentId: string }) {
   const [facts, setFacts] = useState<FactRowData[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editLabel, setEditLabel] = useState("");
   const [adding, setAdding] = useState(false);
-  const [newType, setNewType] = useState<FactType>("serial_number");
+  const [newLabel, setNewLabel] = useState("");
   const [newValue, setNewValue] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -294,7 +296,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         const supabase = createClient();
         const { data } = await supabase
           .from("document_facts")
-          .select("id, fact_type, label, value")
+          .select("id, label, value")
           .eq("document_id", documentId)
           .order("created_at", { ascending: true });
         if (!cancelled && data) setFacts(data);
@@ -307,19 +309,33 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
     };
   });
 
+  /** Open the edit form for a fact, prefilled with what is stored. */
+  const startEdit = (fact: FactRowData) => {
+    setEditingId(fact.id);
+    setEditValue(fact.value);
+    setEditLabel(fact.label);
+  };
+
   const saveEdit = async (fact: FactRowData) => {
     const trimmed = editValue.trim();
     if (!trimmed || saving) return;
+    const label = editLabel.trim() || DEFAULT_FACT_LABEL;
     setSaving(true);
     try {
       const response = await fetch(`/api/documents/${documentId}/facts`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fact_id: fact.id, value: trimmed }),
+        body: JSON.stringify({
+          fact_id: fact.id,
+          value: trimmed,
+          label,
+        }),
       });
       if (!response.ok) throw new Error();
       setFacts((prev) =>
-        prev.map((f) => (f.id === fact.id ? { ...f, value: trimmed } : f)),
+        prev.map((f) =>
+          f.id === fact.id ? { ...f, value: trimmed, label } : f,
+        ),
       );
       setEditingId(null);
       toast.success("Nummer korrigiert");
@@ -333,17 +349,22 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
   const addFact = async () => {
     const trimmed = newValue.trim();
     if (!trimmed || saving) return;
+    const label = newLabel.trim();
     setSaving(true);
     try {
       const response = await fetch(`/api/documents/${documentId}/facts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fact_type: newType, value: trimmed }),
+        body: JSON.stringify({
+          value: trimmed,
+          ...(label ? { label } : {}),
+        }),
       });
       if (!response.ok) throw new Error();
       const { fact } = (await response.json()) as { fact: FactRowData };
       setFacts((prev) => [...prev, fact]);
       setNewValue("");
+      setNewLabel("");
       setAdding(false);
       toast.success("Nummer hinterlegt");
     } catch {
@@ -380,10 +401,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             editingId === fact.id ? undefined : (
               <button
                 type="button"
-                onClick={() => {
-                  setEditingId(fact.id);
-                  setEditValue(fact.value);
-                }}
+                onClick={() => startEdit(fact)}
                 aria-label={`${fact.label} korrigieren`}
                 className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 data-testid="confirmed-fact-edit-button"
@@ -395,43 +413,59 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         >
           {editingId === fact.id ? (
             <form
-              className="flex items-center gap-1.5"
+              className="flex flex-col gap-1.5"
               onSubmit={(e) => {
                 e.preventDefault();
                 void saveEdit(fact);
               }}
+              data-testid="confirmed-fact-edit-form"
             >
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  aria-label={`${fact.label} bearbeiten`}
+                  maxLength={200}
+                  autoFocus
+                  className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  data-testid="confirmed-fact-edit-input"
+                />
+                <button
+                  type="submit"
+                  disabled={saving || !editValue.trim()}
+                  aria-label="Speichern"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+                  data-testid="confirmed-fact-save-button"
+                >
+                  {saving ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Check className="size-3.5" aria-hidden="true" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  aria-label="Abbrechen"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  <X className="size-3.5" aria-hidden="true" />
+                </button>
+              </div>
+              {/* The label is what Ordilo matches questions against ("Wie
+                  ist die Steuer-ID von Hanna?"), so it stays editable — a
+                  number nobody can name is a number nobody finds again. */}
               <input
                 type="text"
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                aria-label={`${fact.label} bearbeiten`}
-                maxLength={200}
-                autoFocus
-                className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                data-testid="confirmed-fact-edit-input"
+                value={editLabel}
+                onChange={(e) => setEditLabel(e.target.value)}
+                placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna"
+                aria-label="Bezeichnung der Nummer"
+                maxLength={120}
+                className="w-full min-w-0 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                data-testid="confirmed-fact-edit-label"
               />
-              <button
-                type="submit"
-                disabled={saving || !editValue.trim()}
-                aria-label="Speichern"
-                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-                data-testid="confirmed-fact-save-button"
-              >
-                {saving ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Check className="size-3.5" aria-hidden="true" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditingId(null)}
-                aria-label="Abbrechen"
-                className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              >
-                <X className="size-3.5" aria-hidden="true" />
-              </button>
             </form>
           ) : (
             <>
@@ -446,25 +480,13 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
 
       {adding ? (
         <form
-          className="flex flex-wrap items-center gap-1.5 py-2.5"
+          className="flex flex-col gap-1.5 py-2.5"
           onSubmit={(e) => {
             e.preventDefault();
             void addFact();
           }}
           data-testid="confirmed-fact-add-form"
         >
-          <select
-            value={newType}
-            onChange={(e) => setNewType(e.target.value as FactType)}
-            aria-label="Nummerntyp"
-            className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            {FACT_TYPES.map((type) => (
-              <option key={type} value={type}>
-                {FACT_TYPE_LABELS[type]}
-              </option>
-            ))}
-          </select>
           <input
             type="text"
             value={newValue}
@@ -473,33 +495,48 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
             aria-label="Wert der Nummer"
             maxLength={200}
             autoFocus
-            className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="w-full min-w-0 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             data-testid="confirmed-fact-add-input"
           />
-          <button
-            type="submit"
-            disabled={saving || !newValue.trim()}
-            aria-label="Nummer speichern"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
-            data-testid="confirmed-fact-add-save"
-          >
-            {saving ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <Check className="size-4" aria-hidden="true" />
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAdding(false);
-              setNewValue("");
-            }}
-            aria-label="Abbrechen"
-            className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            <X className="size-4" aria-hidden="true" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            {/* This is what makes the number findable later — "Steuer-ID
+                Hanna" answers a question that a bare value cannot. */}
+            <input
+              type="text"
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna"
+              aria-label="Bezeichnung der Nummer"
+              maxLength={120}
+              className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              data-testid="confirmed-fact-add-label"
+            />
+            <button
+              type="submit"
+              disabled={saving || !newValue.trim()}
+              aria-label="Nummer speichern"
+              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+              data-testid="confirmed-fact-add-save"
+            >
+              {saving ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Check className="size-4" aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAdding(false);
+                setNewValue("");
+                setNewLabel("");
+              }}
+              aria-label="Abbrechen"
+              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          </div>
         </form>
       ) : (
         <button

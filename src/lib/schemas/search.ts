@@ -157,6 +157,54 @@ export function matchesWordBoundary(text: string, keyword: string): boolean {
 }
 
 /**
+ * Check whether a person's name appears in the text, in the forms German
+ * actually uses to talk about people.
+ *
+ * Word-boundary matching alone misses the possessive, which is how
+ * families phrase most of their questions:
+ *   - matchesPersonName("Hannas Steuer-ID", "Hanna")   → true
+ *   - matchesPersonName("Lars' Vertrag", "Lars")       → true
+ *   - matchesPersonName("Anna Marias Zeugnis", "Anna Maria") → true
+ *
+ * Still nothing but the name and its possessive — a name that is merely
+ * the beginning of a longer word is not a mention:
+ *   - matchesPersonName("Johanna", "Hanna")            → false
+ *   - matchesPersonName("Hannah", "Hanna")             → false
+ *   - matchesPersonName("Emmentaler", "Emme")          → false
+ *
+ * @param text - The text to search within.
+ * @param name - The person's name.
+ */
+export function matchesPersonName(text: string, name: string): boolean {
+  const escapedName = escapeRegExp(name.toLowerCase().trim());
+  if (!escapedName) return false;
+  // Optional possessive: a trailing "s" ("Hannas") or, for names already
+  // ending in a sibilant, an apostrophe ("Lars'", "Max’").
+  const regex = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapedName}(?:s|['’´])?(?![\\p{L}\\p{N}])`,
+    "iu",
+  );
+  return regex.test(text.toLowerCase());
+}
+
+/**
+ * Strip a possessive ending off a name that was read out of free text, so
+ * it can be looked up as itself: "Hannas" → "Hanna", "Lars'" → "Lars".
+ *
+ * Names that genuinely end in s are over-stripped ("Lars" → "Lar"), which
+ * is why the result belongs in a widening lookup (a substring filter, or
+ * `matchesPersonName`, whose optional possessive puts the s back) and
+ * never in an equality check.
+ */
+export function stripPossessive(name: string): string {
+  const trimmed = name.trim();
+  // An apostrophe marks the possessive of a name that already ends in s —
+  // dropping it is the whole job ("Lars'" → "Lars").
+  if (/['’´]$/.test(trimmed)) return trimmed.replace(/['’´]$/, "");
+  return trimmed.replace(/(?<=\p{L}{2})s$/u, "");
+}
+
+/**
  * German keywords that indicate a task-related query.
  *
  * Used by graph search (and auto mode) to detect whether the user is asking
@@ -196,14 +244,18 @@ export function isTaskQuery(query: string): boolean {
 }
 
 /**
- * Find family member names mentioned in the query.
+ * Find family member names mentioned in the query, including the
+ * possessive form families ask in ("Hannas Zeugnis", "Lars' Vertrag").
  *
- * Compares each family member's name against the query using word-boundary
- * matching (case-insensitive, Unicode-aware). Returns the names that appear
- * in the query as whole words.
+ * Matching is case-insensitive and Unicode-aware, and never matches a
+ * name that is merely part of a longer word — querying "Hanna" must not
+ * match member "Johanna", and vice versa.
  *
- * This prevents false positives where one name is a substring of another
- * (e.g. querying "Hanna" must not match member "Johanna", and vice versa).
+ * The possessive introduces one ambiguity worth resolving: with both a
+ * "Jona" and a "Jonas" in the family, "Jonas Zeugnis" reads as either.
+ * A name matched only through its possessive loses against a name that
+ * matched as itself and is exactly that possessive — "Jonas" wins, and
+ * only the loser is dropped, so "Hannas und Emma" still names both.
  *
  * @param query - The user's search query.
  * @param memberNames - The family's member names to match against.
@@ -213,34 +265,173 @@ export function findMentionedMembers(
   query: string,
   memberNames: string[],
 ): string[] {
-  return memberNames.filter((name) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return false;
-    return matchesWordBoundary(query, trimmedName);
-  });
+  const named = memberNames.filter((name) => name.trim());
+
+  const asThemselves = named.filter((name) =>
+    matchesWordBoundary(query, name.trim()),
+  );
+  const claimedPossessives = new Set(
+    asThemselves.map((name) => name.trim().toLowerCase()),
+  );
+
+  const byPossessive = named.filter(
+    (name) =>
+      !asThemselves.includes(name) &&
+      matchesPersonName(query, name.trim()) &&
+      !claimedPossessives.has(`${name.trim().toLowerCase()}s`),
+  );
+
+  // Keep the caller's order rather than exact-matches-first: callers pass
+  // these on as names, not as a ranking.
+  return named.filter(
+    (name) => asThemselves.includes(name) || byPossessive.includes(name),
+  );
+}
+
+/**
+ * A family member as the search paths need them: the name to match and
+ * the role that says how the family refers to them.
+ */
+export interface MemberRef {
+  name: string;
+  role?: string | null;
+}
+
+/**
+ * Relationship words families ask with, and the roles they cover.
+ *
+ * Nobody says "die Steuer-ID von Hanna" at home — they say "die Steuer-ID
+ * meiner Tochter". The word is matched against the member's `role`, which
+ * is what the family typed when they added the person.
+ *
+ * `roles` is what the word actually means. `fallbackRoles` is consulted
+ * ONLY when no member carries any of the exact roles: a family that typed
+ * "Tochter" for one child and "Kind" for the other must get the daughter
+ * alone, while a family that only ever typed "Kind" still gets its
+ * children scoped, which at least narrows the parents away.
+ *
+ * Fallbacks exist only where one role is genuinely the generic of the
+ * other (a Tochter is a Kind). Across relations there is none: "meine
+ * Frau" must never resolve to the Mutter, who in a family app is a
+ * different person entirely.
+ */
+const RELATIONSHIP_ROLES: ReadonlyArray<{
+  words: readonly string[];
+  roles: readonly string[];
+  fallbackRoles?: readonly string[];
+}> = [
+  {
+    words: ["tochter", "töchter", "toechter"],
+    roles: ["tochter"],
+    fallbackRoles: ["kind"],
+  },
+  {
+    words: ["sohn", "söhne", "soehne"],
+    roles: ["sohn"],
+    fallbackRoles: ["kind"],
+  },
+  { words: ["kind", "kinder"], roles: ["kind", "tochter", "sohn"] },
+  { words: ["mutter", "mama", "mami"], roles: ["mutter"] },
+  { words: ["vater", "papa", "papi"], roles: ["vater"] },
+  { words: ["eltern"], roles: ["mutter", "vater", "elternteil"] },
+  {
+    words: ["frau", "ehefrau", "partnerin", "partner", "mann", "ehemann"],
+    roles: ["partner:in", "partnerin", "partner"],
+  },
+  { words: ["oma", "großmutter", "grossmutter"], roles: ["oma"] },
+  { words: ["opa", "großvater", "grossvater"], roles: ["opa"] },
+  { words: ["bruder", "brüder", "brueder"], roles: ["bruder"] },
+  { words: ["schwester", "schwestern"], roles: ["schwester"] },
+  {
+    words: ["geschwister"],
+    roles: ["bruder", "schwester"],
+    fallbackRoles: ["kind", "tochter", "sohn"],
+  },
+];
+
+/**
+ * Find the members a query refers to by their relationship rather than
+ * their name ("meiner Tochter", "unserer Kinder").
+ *
+ * Returns [] when the query names no relationship, or when no member
+ * carries a matching role — a relationship nobody filled in must not
+ * silently resolve to the wrong person.
+ */
+export function findMembersByRelationship(
+  query: string,
+  members: MemberRef[],
+): string[] {
+  const withRole = members
+    .map((member) => ({
+      name: member.name,
+      role: member.role?.trim().toLowerCase() ?? "",
+    }))
+    .filter((member) => member.role);
+
+  const matched = new Set<string>();
+  for (const entry of RELATIONSHIP_ROLES) {
+    // Possessive-tolerant for the same reason names are: "Omas Papiere",
+    // "Mamas Termin" is how the question gets asked.
+    if (!entry.words.some((word) => matchesPersonName(query, word))) continue;
+
+    const exact = withRole.filter((member) => entry.roles.includes(member.role));
+    // The generic role answers only when the exact one names nobody.
+    const chosen =
+      exact.length > 0
+        ? exact
+        : withRole.filter((member) =>
+            (entry.fallbackRoles ?? []).includes(member.role),
+          );
+
+    for (const member of chosen) matched.add(member.name);
+  }
+
+  // Keep the caller's order.
+  return members.filter((m) => matched.has(m.name)).map((m) => m.name);
+}
+
+/**
+ * Find the people a query refers to — by name, by possessive, or by
+ * relationship. The one entry point the search paths should use.
+ *
+ * A name beats a relationship: "Hannas Zeugnis" scopes to Hanna even in a
+ * family where Hanna is one of two daughters, and "das Zeugnis meiner
+ * Tochter Hanna" does the same.
+ */
+export function findMentionedPeople(
+  query: string,
+  members: MemberRef[],
+): string[] {
+  const byName = findMentionedMembers(
+    query,
+    members.map((m) => m.name),
+  );
+  if (byName.length > 0) return byName;
+  return findMembersByRelationship(query, members);
 }
 
 /**
  * Select the appropriate search mode for an "auto" request.
  *
  * Heuristic:
- *   - If the query mentions a known family member name → "graph" (the user
- *     is likely asking about a person's documents or tasks).
- *   - If the query contains task-related keywords (and no person name) →
+ *   - If the query refers to a known family member — by name, possessive
+ *     or relationship ("meiner Tochter") → "graph" (the user is likely
+ *     asking about a person's documents or tasks).
+ *   - If the query contains task-related keywords (and no person) →
  *     "graph" (task/deadline queries are best answered via the graph/SQL
  *     tables, not semantic similarity).
  *   - Otherwise → "semantic" (content-based search over embeddings).
  *
  * @param query - The user's search query.
- * @param memberNames - The family's member names.
+ * @param members - The family's members (names, or names with roles).
  * @returns The resolved mode ("semantic" or "graph").
  */
 export function selectAutoMode(
   query: string,
-  memberNames: string[],
+  members: Array<string | MemberRef>,
 ): ExecutedSearchMode {
-  const mentioned = findMentionedMembers(query, memberNames);
-  if (mentioned.length > 0) return "graph";
+  const refs = members.map((m) => (typeof m === "string" ? { name: m } : m));
+  if (findMentionedPeople(query, refs).length > 0) return "graph";
   if (isTaskQuery(query)) return "graph";
   return "semantic";
 }

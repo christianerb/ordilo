@@ -6,11 +6,16 @@ import {
   updateFactSchema,
   deleteFactSchema,
 } from "@/lib/schemas/facts";
-import { FACT_TYPE_LABELS, normalizeFactValue } from "@/lib/schemas/extraction";
+import {
+  DEFAULT_FACT_LABEL,
+  IDENTIFIER_FACT_TYPE,
+  normalizeFactValue,
+} from "@/lib/schemas/extraction";
 
 /**
- * POST|PATCH|DELETE /api/documents/[id]/facts — manage a document's typed
- * facts (serial numbers, contract numbers, IBANs, …) AFTER confirmation.
+ * POST|PATCH|DELETE /api/documents/[id]/facts — manage a document's
+ * identifiers ("Steuer-ID Hanna", "Seriennummer Waschmaschine", …) AFTER
+ * confirmation.
  *
  * Facts are the values families come back for; when the extraction got
  * one wrong (OCR misread) or missed one, this endpoint lets the user fix
@@ -19,8 +24,8 @@ import { FACT_TYPE_LABELS, normalizeFactValue } from "@/lib/schemas/extraction";
  * confirmed detail view and the fact search read straight from
  * `document_facts`, so no reindex is needed.
  *
- *   POST   { fact_type, value, label? }            → add a fact
- *   PATCH  { fact_id, value, label? }              → correct a fact
+ *   POST   { value, label? }                       → add a fact
+ *   PATCH  { fact_id, value?, label? }             → correct a fact
  *   DELETE { fact_id }                             → remove a fact
  *
  * Auth: session client — RLS restricts every operation to the user's
@@ -83,21 +88,21 @@ export async function POST(
   const { supabase, document } = resolved;
 
   const parsed = await parseJsonBody(request, createFactSchema, {
-    invalidJson: "Bitte gib eine gültige Nummer und ihren Typ an.",
-    invalidPayload: "Bitte gib eine gültige Nummer und ihren Typ an.",
+    invalidJson: "Bitte gib eine gültige Nummer an.",
+    invalidPayload: "Bitte gib eine gültige Nummer an.",
     payloadCode: "INVALID_INPUT",
   });
   if (!parsed.ok) return parsed.response;
 
-  const { fact_type: factType, value } = parsed.data;
-  const label = parsed.data.label ?? FACT_TYPE_LABELS[factType];
+  const { value } = parsed.data;
+  const label = parsed.data.label ?? DEFAULT_FACT_LABEL;
 
   const { data: fact, error } = await supabase
     .from("document_facts")
     .insert({
       document_id: document.id,
       family_id: document.family_id,
-      fact_type: factType,
+      fact_type: IDENTIFIER_FACT_TYPE,
       label,
       value,
       normalized_value: normalizeFactValue(value),
@@ -124,18 +129,17 @@ export async function PATCH(
   const { supabase, document } = resolved;
 
   const parsed = await parseJsonBody(request, updateFactSchema, {
-    invalidJson: "Bitte gib die Nummer und einen neuen Wert an.",
-    invalidPayload: "Bitte gib die Nummer und einen neuen Wert an.",
+    invalidJson: "Bitte gib an, was an der Nummer geändert werden soll.",
+    invalidPayload: "Bitte gib an, was an der Nummer geändert werden soll.",
     payloadCode: "INVALID_INPUT",
   });
   if (!parsed.ok) return parsed.response;
 
   const { fact_id: factId, value, label } = parsed.data;
   const update = {
-    value,
-    normalized_value: normalizeFactValue(value),
     confidence: 1.0,
     confirmed: true,
+    ...(value ? { value, normalized_value: normalizeFactValue(value) } : {}),
     ...(label ? { label } : {}),
   };
 

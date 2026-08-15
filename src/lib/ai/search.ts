@@ -4,17 +4,20 @@ import {
   embeddingToVectorString,
 } from "@/lib/ai/embeddings";
 import {
-  FACT_TYPE_LABELS,
+  compoundNumberStems,
+  DEFAULT_FACT_LABEL,
+  expandIdentifierTerms,
   normalizeFactValue,
-  type FactType,
 } from "@/lib/schemas/extraction";
 import { expandQuery } from "@/lib/ai/query-expansion";
 import { SEARCH_AUGMENTATION_MODEL } from "@/lib/ai/models";
 import {
-  findMentionedMembers,
+  findMentionedPeople,
   isTaskQuery,
   selectAutoMode,
+  matchesPersonName,
   matchesWordBoundary,
+  type MemberRef,
   type SearchResult,
   type ExecutedSearchMode,
 } from "@/lib/schemas/search";
@@ -144,8 +147,8 @@ export async function resolveAutoMode(
   query: string,
   familyId: string,
 ): Promise<ExecutedSearchMode> {
-  const memberNames = await fetchMemberNames(serverClient, familyId);
-  return selectAutoMode(query, memberNames);
+  const members = await fetchMembers(serverClient, familyId);
+  return selectAutoMode(query, members);
 }
 
 // ---------------------------------------------------------------------------
@@ -367,22 +370,27 @@ export async function lexicalSearch(
 }
 
 // ---------------------------------------------------------------------------
-// Fact search (typed identifiers: serial numbers, contract numbers, ...)
+// Fact search (identifiers: "Steuer-ID Hanna", "Seriennummer Waschmaschine")
 // ---------------------------------------------------------------------------
 
 /**
- * Search `document_facts` for typed identifiers matching the query.
+ * Search `document_facts` for identifiers matching the query.
  *
  * Two match paths:
- *   1. Label / fact-type match: query keywords against the fact label
- *      ("Seriennummer Waschmaschine") and against the German fact-type
- *      labels ("Seriennummer" → serial_number).
+ *   1. Label match: query keywords against the fact label ("Seriennummer
+ *      Waschmaschine"), widened by the synonym groups so "Steuernummer"
+ *      also finds a label written as "Steuer-ID"
+ *      (see IDENTIFIER_SYNONYM_GROUPS), and by compound stems so
+ *      "Aktenzeichennummer" finds a label reading just "Aktenzeichen".
  *   2. Value match: identifier-like query tokens (containing digits) are
  *      normalized (lowercase, alphanumeric only) and matched against
  *      `normalized_value`, so "SN 4823-XK" finds "sn4823xk".
  *
  * Only facts of confirmed documents are returned. A fact hit is a precise
  * answer, so it scores high (0.9+) and ranks above fuzzy chunk matches.
+ *
+ * Candidates are finally scoped to the family members named in the query,
+ * so "die Steuer-ID von Hanna" cannot be answered with Emma's number.
  */
 export async function factSearch(
   serverClient: ServerClient,
@@ -392,14 +400,6 @@ export async function factSearch(
   const keywords = extractKeywords(query);
   if (keywords.length === 0) return [];
 
-  // Fact types whose German label appears in the query
-  // ("Wie ist die Seriennummer ...?" → serial_number).
-  const matchedTypes = (
-    Object.entries(FACT_TYPE_LABELS) as Array<[FactType, string]>
-  )
-    .filter(([, label]) => matchesWordBoundary(query, label))
-    .map(([type]) => type);
-
   // Identifier-like tokens: contain at least one digit and are ≥ 4 chars
   // after normalization ("4823", "sn4823xk", "de89370400440532013000").
   const identifierTokens = query
@@ -407,12 +407,22 @@ export async function factSearch(
     .map((t) => normalizeFactValue(t))
     .filter((t) => t.length >= 4 && /\d/.test(t));
 
+  // Query keywords, the stems behind compound number words
+  // ("Aktenzeichennummer" → "aktenzeichen"), and every synonym of the
+  // number kinds the question touches. Multi-word terms are dropped: they
+  // are bigrams of the query or long compound spellings, and neither
+  // survives a label ILIKE.
+  const labelTerms = new Set(
+    [
+      ...keywords,
+      ...compoundNumberStems(query),
+      ...expandIdentifierTerms(query),
+    ].filter((term) => !term.includes(" ")),
+  );
+
   const orFilters: string[] = [];
-  for (const kw of keywords) {
-    if (!kw.includes(" ")) orFilters.push(`label.ilike.%${kw}%`);
-  }
-  for (const type of matchedTypes) {
-    orFilters.push(`fact_type.eq.${type}`);
+  for (const term of labelTerms) {
+    orFilters.push(`label.ilike.%${term}%`);
   }
   for (const token of identifierTokens) {
     orFilters.push(`normalized_value.ilike.%${token}%`);
@@ -420,14 +430,22 @@ export async function factSearch(
 
   if (orFilters.length === 0) return [];
 
-  const { data: facts, error } = await serverClient
+  const { data: exactFacts, error } = await serverClient
     .from("document_facts")
-    .select("document_id, fact_type, label, value, normalized_value, confidence, confirmed")
+    .select("document_id, label, value, normalized_value, confidence, confirmed")
     .eq("family_id", familyId)
     .eq("confirmed", true)
     .or(orFilters.join(","));
 
-  if (error || !facts || facts.length === 0) return [];
+  // Nothing matched literally — the label may simply be spelled
+  // differently than the question ("Aktenzeihen", "Bestellnumer"). Ask
+  // the trigram index before giving up.
+  const facts =
+    !error && exactFacts && exactFacts.length > 0
+      ? exactFacts
+      : await fuzzyFactSearch(serverClient, familyId, [...labelTerms]);
+
+  if (facts.length === 0) return [];
 
   // Only facts from confirmed documents.
   const docIds = [...new Set(facts.map((f) => f.document_id))];
@@ -438,33 +456,209 @@ export async function factSearch(
   );
   const docsById = new Map(confirmedDocs.map((d) => [d.id, d]));
 
+  // The filters above are ORed for recall, so the candidates still hold
+  // the wrong kind of number and the wrong person's number. Narrowing
+  // decides between them.
+  const visibleFacts = facts
+    .filter((f) => docsById.has(f.document_id))
+    .map((fact) => ({
+      ...fact,
+      // Value matches are exact answers → top score, and they are never
+      // dropped for being the "wrong kind": asking what a number IS must
+      // stay answerable.
+      valueMatch: identifierTokens.some(
+        (t) =>
+          fact.normalized_value.includes(t) ||
+          t.includes(fact.normalized_value),
+      ),
+    }));
+
+  const scopedFacts = await narrowFactCandidates(
+    serverClient,
+    query,
+    familyId,
+    visibleFacts,
+    [...labelTerms],
+  );
+
   const results: SearchResult[] = [];
-  for (const fact of facts) {
+  for (const fact of scopedFacts) {
     const doc = docsById.get(fact.document_id);
     if (!doc) continue;
-
-    // Value matches are exact answers → top score. Label/type matches are
-    // strong but slightly below, so an exact identifier hit always wins.
-    const valueMatch = identifierTokens.some(
-      (t) =>
-        fact.normalized_value.includes(t) || t.includes(fact.normalized_value),
-    );
-    const score = valueMatch ? 0.98 : 0.9;
-
-    const typeLabel =
-      FACT_TYPE_LABELS[fact.fact_type as FactType] ?? FACT_TYPE_LABELS.other;
 
     results.push({
       document_id: fact.document_id,
       title: doc.title,
-      chunk_text: `${typeLabel} — ${fact.label}: ${fact.value}`,
-      score,
+      chunk_text: `${fact.label || DEFAULT_FACT_LABEL}: ${fact.value}`,
+      score: fact.valueMatch ? 0.98 : 0.9,
       source: "fact",
     });
   }
 
   // Best fact per document.
   return deduplicateByDocumentId(results);
+}
+
+/**
+ * Minimum word similarity for a fuzzy label hit.
+ *
+ * 0.6 is roughly "one or two characters off in a word of normal length":
+ * "aktenzeihen" still finds "Aktenzeichen", while "rechnung" does not
+ * drag in "Rechnungsnummer"-adjacent noise. Lower would start answering
+ * questions with numbers the family did not ask about, which is worse
+ * than answering none — the exact path already ran and found nothing.
+ */
+const FUZZY_LABEL_THRESHOLD = 0.6;
+
+/**
+ * Trigram lookup over fact labels, via the `fuzzy_fact_search` RPC.
+ *
+ * The fallback for a question whose wording does not literally occur in
+ * any label. Failures degrade to no results: this path only ever runs
+ * when the exact path already came back empty.
+ */
+async function fuzzyFactSearch(
+  serverClient: ServerClient,
+  familyId: string,
+  terms: string[],
+): Promise<
+  Array<{
+    document_id: string;
+    label: string;
+    value: string;
+    normalized_value: string;
+    confidence: number;
+  }>
+> {
+  // Single characters and two-letter words are noise for a trigram match.
+  const usableTerms = terms.filter((term) => term.length >= 4);
+  if (usableTerms.length === 0) return [];
+
+  const { data, error } = await serverClient.rpc("fuzzy_fact_search", {
+    p_family_id: familyId,
+    p_terms: usableTerms,
+    p_threshold: FUZZY_LABEL_THRESHOLD,
+  });
+
+  if (error || !data) return [];
+  return data;
+}
+
+/** A fact row as far as narrowing is concerned. */
+type ScopableFact = {
+  document_id: string;
+  label: string;
+  valueMatch: boolean;
+};
+
+/**
+ * Narrow the candidates of a fact search down to what was actually asked
+ * for: the right KIND of number, belonging to the right PERSON.
+ *
+ * "Wie ist die Steuer-ID von Hanna?" produces ORed filters for both
+ * "steuerid" and "hanna", so the candidates contain Hanna's Kundennummer
+ * and Emma's Steuer-ID as well. Two passes sort that out:
+ *
+ *   1. Kind — keep the facts whose label matches a term describing the
+ *      number itself. The person's name is not such a term, so
+ *      "Kundennummer Hanna" drops out of a question about the Steuer-ID.
+ *   2. Person — sort the facts by whom they belong to, by the name in the
+ *      fact's own label ("Steuer-ID Hanna") and by the persons extracted
+ *      from its document. The label is what makes this work inside ONE
+ *      document: a Steuerbescheid listing two children carries both their
+ *      numbers, and the document-level signal cannot tell them apart.
+ *
+ * The two passes fail in opposite directions, because they are not
+ * equally certain:
+ *
+ *   - A kind pass that would empty the list leaves it as it was. A label
+ *     can name the right number without using the word the question used.
+ *   - A fact that positively belongs to SOMEBODY ELSE is dropped, even if
+ *     it is the last one standing. Answering "Wie ist die Steuer-ID von
+ *     Hanna?" with the only stored Steuer-ID, Emma's, is worse than
+ *     answering nothing. A fact nobody is attached to survives — unknown
+ *     is not the same as somebody else's.
+ *
+ * Facts matched by their value survive both passes: asking what a number
+ * IS stays answerable.
+ */
+async function narrowFactCandidates<T extends ScopableFact>(
+  serverClient: ServerClient,
+  query: string,
+  familyId: string,
+  facts: T[],
+  labelTerms: string[],
+): Promise<T[]> {
+  if (facts.length === 0) return facts;
+
+  const members = await fetchMembers(serverClient, familyId);
+  const mentioned = findMentionedPeople(query, members);
+
+  // 1. Kind pass. Everything the query said that is NOT one of the named
+  //    members describes the number itself.
+  const kindTerms = labelTerms.filter(
+    (term) =>
+      !mentioned.some(
+        // Both directions: the term can be the whole name or its
+        // possessive ("hannas"), or one word of a two-word name.
+        (name) => matchesPersonName(term, name) || matchesWordBoundary(name, term),
+      ),
+  );
+  const byKind = facts.filter(
+    (f) =>
+      f.valueMatch ||
+      kindTerms.some((term) => f.label.toLowerCase().includes(term)),
+  );
+  const kindScoped = byKind.length > 0 ? byKind : facts;
+
+  if (mentioned.length === 0) return kindScoped;
+
+  // 2. Person pass. Everyone in the family who was NOT asked about is a
+  //    reason to reject a fact, not merely a weaker match.
+  const others = members
+    .map((m) => m.name.trim())
+    .filter((name) => name && !mentioned.includes(name));
+
+  const namedInLabel = (f: T, names: string[]) =>
+    names.some((name) => matchesPersonName(f.label, name));
+
+  const asked = kindScoped.filter((f) => f.valueMatch || namedInLabel(f, mentioned));
+  if (asked.length > 0) return asked;
+
+  // Nothing carries the asked-for name. Whatever positively belongs to
+  // someone else is out; the rest is undecided and needs the document.
+  const undecided = kindScoped.filter((f) => !namedInLabel(f, others));
+  if (undecided.length === 0) return [];
+
+  const { data: entities } = await serverClient
+    .from("extracted_entities")
+    .select("document_id, normalized_value")
+    .eq("family_id", familyId)
+    .eq("entity_type", "person")
+    .in("document_id", [...new Set(undecided.map((f) => f.document_id))]);
+
+  const docPersons = new Map<string, string[]>();
+  for (const entity of entities ?? []) {
+    const list = docPersons.get(entity.document_id) ?? [];
+    list.push(entity.normalized_value ?? "");
+    docPersons.set(entity.document_id, list);
+  }
+
+  const namesDoc = (documentId: string, names: string[]) =>
+    (docPersons.get(documentId) ?? []).some((value) =>
+      names.some((name) => matchesPersonName(value, name)),
+    );
+
+  const byDocument = undecided.filter(
+    (f) => f.valueMatch || namesDoc(f.document_id, mentioned),
+  );
+  if (byDocument.length > 0) return byDocument;
+
+  // Keep only what nobody else has claimed — a document about Emma alone
+  // does not answer a question about Hanna.
+  return undecided.filter(
+    (f) => f.valueMatch || !namesDoc(f.document_id, others),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -608,9 +802,10 @@ export async function graphSearch(
   query: string,
   familyId: string,
 ): Promise<SearchResult[]> {
-  // 1. Fetch family members to detect person names.
-  const memberNames = await fetchMemberNames(serverClient, familyId);
-  const mentionedMembers = findMentionedMembers(query, memberNames);
+  // 1. Fetch family members to detect who the query is about — by name,
+  //    by possessive, or by relationship ("meiner Tochter").
+  const members = await fetchMembers(serverClient, familyId);
+  const mentionedMembers = findMentionedPeople(query, members);
   const taskQuery = isTaskQuery(query);
 
   // 1b. Query expansion — generate synonyms for better graph matching.
@@ -634,12 +829,15 @@ export async function graphSearch(
   const results: SearchResult[] = [];
 
   // 2. Graph traversal: find documents connected to entities mentioned in the query.
-  //    Uses expanded terms for broader keyword matching + semantic label embeddings.
+  //    Uses expanded terms for broader keyword matching + semantic label
+  //    embeddings. The mentioned members go in by their canonical name:
+  //    "Hannas Zeugnis" leaves the word "hannas" in the query, which no
+  //    knowledge node is called.
   const traversalResults = await graphTraversalSearch(
     serverClient,
     query,
     familyId,
-    expandedTerms,
+    [...expandedTerms, ...mentionedMembers],
   );
   results.push(...traversalResults);
 
@@ -1068,11 +1266,11 @@ async function searchByPerson(
 
     if (!entities || entities.length === 0) continue;
 
-    // Word-boundary post-filter: only keep entities where the queried
-    // name appears as a whole word in the entity's normalized_value.
-    // This prevents false positives like "Hanna" matching "Johanna".
+    // Name post-filter: only keep entities that actually name the person,
+    // as themselves or in the possessive ("Hannas Zeugnis"). This prevents
+    // false positives like "Hanna" matching "Johanna".
     const filteredEntities = entities.filter((entity) =>
-      matchesWordBoundary(entity.normalized_value ?? "", name),
+      matchesPersonName(entity.normalized_value ?? "", name),
     );
 
     if (filteredEntities.length === 0) continue;
@@ -1191,22 +1389,35 @@ async function searchTasks(
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch family member names for the given family (RLS-scoped).
+ * Fetch the family's members (RLS-scoped).
+ *
+ * The role comes along because questions name people by relationship as
+ * often as by name ("die Steuer-ID meiner Tochter").
  */
-export async function fetchMemberNames(
+export async function fetchMembers(
   serverClient: ServerClient,
   familyId: string,
-): Promise<string[]> {
+): Promise<MemberRef[]> {
   const { data: members, error } = await serverClient
     .from("family_members")
-    .select("name")
+    .select("name, role")
     .eq("family_id", familyId);
 
   if (error) {
     throw new Error("Familienmitglieder konnten nicht geladen werden.");
   }
 
-  return (members ?? []).map((m) => m.name);
+  return (members ?? []).map((m) => ({ name: m.name, role: m.role }));
+}
+
+/**
+ * Fetch family member names for the given family (RLS-scoped).
+ */
+export async function fetchMemberNames(
+  serverClient: ServerClient,
+  familyId: string,
+): Promise<string[]> {
+  return (await fetchMembers(serverClient, familyId)).map((m) => m.name);
 }
 
 /**

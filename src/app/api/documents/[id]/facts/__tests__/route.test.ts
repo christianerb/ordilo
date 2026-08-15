@@ -12,8 +12,7 @@ const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 
 const INSERTED_FACT = {
   id: "fact-1",
-  fact_type: "serial_number",
-  label: "Seriennummer",
+  label: "Seriennummer Waschmaschine",
   value: "SN 4823-XK",
 };
 
@@ -31,10 +30,12 @@ function request(body: unknown, method = "POST") {
 function mockServerClient({
   user = { id: "user-1" },
   insertResult = { data: INSERTED_FACT, error: null },
+  updateResult = { data: null as unknown, error: null },
   deleteResult = { error: null },
 }: {
   user?: { id: string } | null;
   insertResult?: { data: unknown; error: unknown };
+  updateResult?: { data: unknown; error: unknown };
   deleteResult?: { error: unknown };
 } = {}) {
   const insert = vi.fn().mockReturnValue({
@@ -46,7 +47,7 @@ function mockServerClient({
     eq: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
-          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue(updateResult),
         }),
       }),
     }),
@@ -89,44 +90,23 @@ describe("/api/documents/[id]/facts", () => {
     vi.clearAllMocks();
   });
 
-  it("POST returns 400 for an unknown fact_type", async () => {
-    mockClient(mockServerClient().client);
-
-    const response = await POST(
-      request({ fact_type: "bogus", value: "123" }),
-      params(),
-    );
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib eine gültige Nummer und ihren Typ an.",
-      code: "INVALID_INPUT",
-    });
-  });
-
   it("POST returns 400 for an empty value", async () => {
     mockClient(mockServerClient().client);
 
-    const response = await POST(
-      request({ fact_type: "serial_number", value: "   " }),
-      params(),
-    );
+    const response = await POST(request({ value: "   " }), params());
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib eine gültige Nummer und ihren Typ an.",
+      error: "Bitte gib eine gültige Nummer an.",
       code: "INVALID_INPUT",
     });
   });
 
-  it("POST inserts a confirmed fact with the default label", async () => {
+  it("POST inserts a confirmed fact with the fallback label", async () => {
     const { client, insert } = mockServerClient();
     mockClient(client);
 
-    const response = await POST(
-      request({ fact_type: "serial_number", value: "SN 4823-XK" }),
-      params(),
-    );
+    const response = await POST(request({ value: "SN 4823-XK" }), params());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -137,8 +117,8 @@ describe("/api/documents/[id]/facts", () => {
       expect.objectContaining({
         document_id: DOCUMENT_ID,
         family_id: FAMILY_ID,
-        fact_type: "serial_number",
-        label: "Seriennummer",
+        fact_type: "identifier",
+        label: "Nummer",
         value: "SN 4823-XK",
         normalized_value: "sn4823xk",
         confidence: 1.0,
@@ -147,7 +127,31 @@ describe("/api/documents/[id]/facts", () => {
     );
   });
 
-  it("PATCH returns 400 without a new value", async () => {
+  it("POST keeps a user-written label and ignores a legacy type", async () => {
+    const { client, insert } = mockServerClient();
+    mockClient(client);
+
+    await POST(
+      request({
+        // An older client still sends fact_type — it is stripped, not
+        // stored, so it cannot resurrect the old taxonomy.
+        fact_type: "tax_id",
+        value: "74 031 832 353",
+        label: "Steuer-ID Hanna",
+      }),
+      params(),
+    );
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fact_type: "identifier",
+        label: "Steuer-ID Hanna",
+        normalized_value: "74031832353",
+      }),
+    );
+  });
+
+  it("PATCH returns 400 with nothing to change", async () => {
     mockClient(mockServerClient().client);
 
     const response = await PATCH(
@@ -157,9 +161,68 @@ describe("/api/documents/[id]/facts", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib die Nummer und einen neuen Wert an.",
+      error: "Bitte gib an, was an der Nummer geändert werden soll.",
       code: "INVALID_INPUT",
     });
+  });
+
+  it("PATCH corrects the label — what the fact search matches on", async () => {
+    const corrected = {
+      id: "fact-1",
+      label: "Steuer-ID Hanna",
+      value: "74 031 832 353",
+    };
+    const { client, update } = mockServerClient({
+      updateResult: { data: corrected, error: null },
+    });
+    mockClient(client);
+
+    const response = await PATCH(
+      request(
+        {
+          fact_id: "fact-1",
+          value: "74 031 832 353",
+          label: "Steuer-ID Hanna",
+        },
+        "PATCH",
+      ),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "ok",
+      fact: corrected,
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: "74 031 832 353",
+        normalized_value: "74031832353",
+        label: "Steuer-ID Hanna",
+        confirmed: true,
+      }),
+    );
+  });
+
+  it("PATCH renames a fact without touching its value", async () => {
+    const { client, update } = mockServerClient({
+      updateResult: {
+        data: { ...INSERTED_FACT, label: "Steuer-ID Hanna" },
+        error: null,
+      },
+    });
+    mockClient(client);
+
+    const response = await PATCH(
+      request({ fact_id: "fact-1", label: "Steuer-ID Hanna" }, "PATCH"),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    const [payload] = update.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.label).toBe("Steuer-ID Hanna");
+    expect(payload).not.toHaveProperty("value");
+    expect(payload).not.toHaveProperty("normalized_value");
   });
 
   it("DELETE returns 400 without a fact_id", async () => {

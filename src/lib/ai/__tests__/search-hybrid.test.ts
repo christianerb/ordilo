@@ -3,6 +3,10 @@ import { fuseResultsRrf } from "@/lib/ai/search";
 import {
   normalizeFactValue,
   documentAnalysisSchema,
+  expandIdentifierTerms,
+  compoundNumberStems,
+  asksForIdentifier,
+  isTypoOf,
 } from "@/lib/schemas/extraction";
 import type { SearchResult } from "@/lib/schemas/search";
 
@@ -124,7 +128,24 @@ describe("documentAnalysisSchema facts", () => {
     expect(parsed.facts).toEqual([]);
   });
 
-  it("accepts valid facts", () => {
+  it("accepts a fact as label plus value", () => {
+    const parsed = documentAnalysisSchema.parse({
+      ...base,
+      facts: [
+        {
+          label: "Seriennummer Waschmaschine",
+          value: "SN 4823-XK",
+          confidence: 0.92,
+        },
+      ],
+    });
+    expect(parsed.facts).toHaveLength(1);
+    expect(parsed.facts[0].fact_type).toBe("identifier");
+  });
+
+  it("keeps the stored type of rows written before the type collapse", () => {
+    // Confirmed documents are reconstructed from document_facts rows, and
+    // those still carry their old value until the migration runs.
     const parsed = documentAnalysisSchema.parse({
       ...base,
       facts: [
@@ -136,22 +157,125 @@ describe("documentAnalysisSchema facts", () => {
         },
       ],
     });
-    expect(parsed.facts).toHaveLength(1);
     expect(parsed.facts[0].fact_type).toBe("serial_number");
   });
 
-  it("rejects unknown fact types", () => {
+  it("rejects a fact without a label", () => {
     const parsed = documentAnalysisSchema.safeParse({
       ...base,
-      facts: [
-        {
-          fact_type: "phone_number",
-          label: "Telefon",
-          value: "030 1234567",
-          confidence: 0.9,
-        },
-      ],
+      facts: [{ label: "", value: "030 1234567", confidence: 0.9 }],
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// expandIdentifierTerms — the words families actually use
+// ---------------------------------------------------------------------------
+
+describe("expandIdentifierTerms", () => {
+  it("expands a colloquial 'Steuernummer' question to the Steuer-ID spellings", () => {
+    const terms = expandIdentifierTerms("Wie ist die Steuernummer von Hanna?");
+    expect(terms).toContain("steuer-id");
+    expect(terms).toContain("steuerid");
+    expect(terms).toContain("idnr");
+  });
+
+  it("works from every spelling in the group", () => {
+    for (const query of [
+      "Wo ist Hannas Steuer-ID?",
+      "Zeig mir die steuerliche Identifikationsnummer",
+      "Wie lautet die IdNr von Hanna?",
+    ]) {
+      expect(expandIdentifierTerms(query)).toContain("steuernummer");
+    }
+  });
+
+  it("expands synonyms of the other number kinds", () => {
+    expect(expandIdentifierTerms("Wie ist die Versicherungsnummer?")).toContain(
+      "policennummer",
+    );
+    expect(expandIdentifierTerms("Was ist unsere Kontonummer?")).toContain(
+      "iban",
+    );
+    expect(expandIdentifierTerms("Wie ist das Nummernschild?")).toContain(
+      "kennzeichen",
+    );
+  });
+
+  it("returns nothing for a question about no particular number", () => {
+    expect(expandIdentifierTerms("Was steht in dem Kita-Brief?")).toEqual([]);
+    // A number kind nobody listed is found by its own label, not by
+    // expansion — the groups are a recall aid, not a taxonomy.
+    expect(expandIdentifierTerms("Wie ist die Bestellnummer?")).toEqual([]);
+  });
+
+  it("does not match keywords inside longer words", () => {
+    // "tin" must not fire on "Termin", "police" not on "Polizei".
+    expect(expandIdentifierTerms("Wann ist der Termin?")).toEqual([]);
+    expect(expandIdentifierTerms("Brief von der Polizei")).toEqual([]);
+  });
+
+  it("survives a typo in the number's name", () => {
+    expect(expandIdentifierTerms("Wie ist die Steuernumer?")).toContain(
+      "steuer-id",
+    );
+    expect(expandIdentifierTerms("Wie ist das Aktenzeihen?")).toContain(
+      "aktenzeichen",
+    );
+  });
+});
+
+describe("compoundNumberStems", () => {
+  it("reduces a compound number word to the thing it belongs to", () => {
+    expect(compoundNumberStems("Wie ist die Aktenzeichennummer?")).toEqual([
+      "aktenzeichen",
+    ]);
+    expect(compoundNumberStems("Wie ist die Zählernummer im Keller?")).toEqual([
+      "zähler",
+    ]);
+    expect(compoundNumberStems("Wie ist die Steuernummer?")).toEqual(["steuer"]);
+  });
+
+  it("leaves a bare 'Nummer' alone — it would match everything", () => {
+    expect(compoundNumberStems("Wie ist die Nummer?")).toEqual([]);
+    expect(compoundNumberStems("Nr. 12")).toEqual([]);
+  });
+
+  it("ignores stems too short to search labels with", () => {
+    expect(compoundNumberStems("Wie ist die Kfz-Nr?")).toEqual([]);
+  });
+
+  it("carries compounds into their synonym group", () => {
+    // "Aktenzeichen" alone is in a group; the compound has to reach it.
+    expect(expandIdentifierTerms("Wie ist die Aktenzeichennummer?")).toContain(
+      "geschäftszeichen",
+    );
+  });
+});
+
+describe("isTypoOf", () => {
+  it("accepts a slip in a long word", () => {
+    expect(isTypoOf("steuernumer", "steuernummer")).toBe(true);
+    expect(isTypoOf("aktenzeihen", "aktenzeichen")).toBe(true);
+    expect(isTypoOf("versicherungsnumer", "versicherungsnummer")).toBe(true);
+  });
+
+  it("refuses short words, where a typo and a different word look alike", () => {
+    expect(isTypoOf("lohn", "sohn")).toBe(false);
+    expect(isTypoOf("iban", "idnr")).toBe(false);
+  });
+
+  it("refuses words that are simply different", () => {
+    expect(isTypoOf("kundennummer", "steuernummer")).toBe(false);
+    expect(isTypoOf("rechnungsnummer", "vertragsnummer")).toBe(false);
+  });
+});
+
+describe("asksForIdentifier", () => {
+  it("recognises a question about a stored number", () => {
+    expect(asksForIdentifier("Wie ist die Steuernummer von Hanna?")).toBe(true);
+    expect(asksForIdentifier("Wie ist die Aktenzeichennummer?")).toBe(true);
+    expect(asksForIdentifier("Was steht in dem Kita-Brief?")).toBe(false);
   });
 });

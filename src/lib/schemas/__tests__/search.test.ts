@@ -5,6 +5,10 @@ import {
   isTaskQuery,
   findMentionedMembers,
   selectAutoMode,
+  matchesPersonName,
+  stripPossessive,
+  findMembersByRelationship,
+  findMentionedPeople,
 } from "@/lib/schemas/search";
 
 // ---------------------------------------------------------------------------
@@ -237,6 +241,163 @@ describe("isTaskQuery", () => {
 });
 
 // ---------------------------------------------------------------------------
+// findMembersByRelationship / findMentionedPeople
+// ---------------------------------------------------------------------------
+
+describe("findMembersByRelationship", () => {
+  const family = [
+    { name: "Hanna", role: "Tochter" },
+    { name: "Jonas", role: "Sohn" },
+    { name: "Bea", role: "Partner:in" },
+    { name: "Gerda", role: "Oma" },
+  ];
+
+  it("resolves the relationship families ask with", () => {
+    expect(
+      findMembersByRelationship("Wie ist die Steuer-ID meiner Tochter?", family),
+    ).toEqual(["Hanna"]);
+    expect(findMembersByRelationship("Zeig mir Omas Papiere", family)).toEqual([
+      "Gerda",
+    ]);
+  });
+
+  it("resolves the plural to everyone it covers", () => {
+    expect(findMembersByRelationship("Die Zeugnisse meiner Kinder", family)).toEqual([
+      "Hanna",
+      "Jonas",
+    ]);
+    expect(findMembersByRelationship("Die Steuer-IDs meiner Töchter", family)).toEqual([
+      "Hanna",
+    ]);
+  });
+
+  it("prefers the exact role over the generic one", () => {
+    // One child is filled in as "Tochter", the other only as "Kind" —
+    // "meiner Tochter" is about the daughter, not about both.
+    expect(
+      findMembersByRelationship("Steuer-ID meiner Tochter", [
+        { name: "Hanna", role: "Tochter" },
+        { name: "Jonas", role: "Kind" },
+      ]),
+    ).toEqual(["Hanna"]);
+  });
+
+  it("does not answer a partner question with a parent", () => {
+    // Across relations there is no generic: "meine Frau" is not the
+    // Mutter, who in a family app is a different person entirely.
+    expect(
+      findMembersByRelationship("Die Versichertennummer meiner Frau", [
+        { name: "Ute", role: "Mutter" },
+        { name: "Hanna", role: "Tochter" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("falls back to the generic child role when nobody is a 'Tochter'", () => {
+    // Families that only ever typed "Kind" still get their children
+    // scoped — which at least narrows the parents away.
+    const generic = [
+      { name: "Hanna", role: "Kind" },
+      { name: "Jonas", role: "Kind" },
+      { name: "Bea", role: "Partner:in" },
+    ];
+    expect(findMembersByRelationship("Steuer-ID meiner Tochter", generic)).toEqual([
+      "Hanna",
+      "Jonas",
+    ]);
+  });
+
+  it("resolves nothing when no member carries a matching role", () => {
+    // A relationship nobody filled in must not resolve to the wrong person.
+    expect(
+      findMembersByRelationship("Die Steuer-ID meines Opas", [
+        { name: "Hanna", role: "Tochter" },
+      ]),
+    ).toEqual([]);
+    expect(findMembersByRelationship("Wo ist die Stromrechnung?", family)).toEqual([]);
+  });
+
+  it("ignores members without a role", () => {
+    expect(
+      findMembersByRelationship("Steuer-ID meiner Tochter", [
+        { name: "Hanna" },
+        { name: "Jonas", role: null },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("findMentionedPeople", () => {
+  const family = [
+    { name: "Hanna", role: "Tochter" },
+    { name: "Mia", role: "Tochter" },
+  ];
+
+  it("lets a name win over the relationship", () => {
+    // "meiner Tochter Hanna" is about Hanna, not about both daughters.
+    expect(findMentionedPeople("Steuer-ID meiner Tochter Hanna", family)).toEqual([
+      "Hanna",
+    ]);
+    expect(findMentionedPeople("Hannas Steuer-ID", family)).toEqual(["Hanna"]);
+  });
+
+  it("falls back to the relationship when no name is given", () => {
+    expect(findMentionedPeople("Steuer-ID meiner Tochter", family)).toEqual([
+      "Hanna",
+      "Mia",
+    ]);
+  });
+
+  it("returns nobody for a question about no person", () => {
+    expect(findMentionedPeople("Wo ist die Stromrechnung?", family)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// matchesPersonName / stripPossessive
+// ---------------------------------------------------------------------------
+
+describe("matchesPersonName", () => {
+  it("matches the name as itself", () => {
+    expect(matchesPersonName("Zeig mir alles von Hanna", "Hanna")).toBe(true);
+  });
+
+  it("matches the possessive families actually speak in", () => {
+    expect(matchesPersonName("Hannas Steuer-ID", "Hanna")).toBe(true);
+    expect(matchesPersonName("Wo ist Emmas Zeugnis?", "Emma")).toBe(true);
+    expect(matchesPersonName("Anna Marias Zeugnis", "Anna Maria")).toBe(true);
+  });
+
+  it("matches the apostrophe form for names ending in a sibilant", () => {
+    expect(matchesPersonName("Lars' Vertrag", "Lars")).toBe(true);
+    expect(matchesPersonName("Max’ Kennzeichen", "Max")).toBe(true);
+  });
+
+  it("still refuses a name that is only part of a longer word", () => {
+    expect(matchesPersonName("Johanna", "Hanna")).toBe(false);
+    expect(matchesPersonName("Hannah", "Hanna")).toBe(false);
+    expect(matchesPersonName("Emmentaler", "Emme")).toBe(false);
+  });
+
+  it("handles empty input", () => {
+    expect(matchesPersonName("Hannas Zeugnis", "  ")).toBe(false);
+    expect(matchesPersonName("", "Hanna")).toBe(false);
+  });
+});
+
+describe("stripPossessive", () => {
+  it("removes the possessive ending", () => {
+    expect(stripPossessive("Hannas")).toBe("Hanna");
+    expect(stripPossessive("Lars'")).toBe("Lars");
+    expect(stripPossessive("Max’")).toBe("Max");
+  });
+
+  it("leaves a short name alone rather than gutting it", () => {
+    expect(stripPossessive("Jo")).toBe("Jo");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // findMentionedMembers
 // ---------------------------------------------------------------------------
 
@@ -297,6 +458,40 @@ describe("findMentionedMembers", () => {
   it("does NOT match 'Johanna' member when query mentions 'Hanna' in a sentence", () => {
     const result = findMentionedMembers("Zeig mir alles von Hanna", ["Hanna", "Johanna"]);
     expect(result).toEqual(["Hanna"]);
+  });
+
+  // --- Possessive: how families actually ask ---
+
+  it("finds a member named in the possessive", () => {
+    expect(findMentionedMembers("Hannas Steuer-ID", ["Emma", "Hanna"])).toEqual([
+      "Hanna",
+    ]);
+    expect(findMentionedMembers("Wo ist Emmas Zeugnis?", ["Emma"])).toEqual([
+      "Emma",
+    ]);
+  });
+
+  it("prefers the member who IS the possessive over the one who only fits it", () => {
+    // "Jonas Zeugnis" is Jonas' zeugnis, not Jona's.
+    expect(findMentionedMembers("Jonas Zeugnis", ["Jona", "Jonas"])).toEqual([
+      "Jonas",
+    ]);
+  });
+
+  it("drops only the ambiguous name, not every possessive in the query", () => {
+    expect(
+      findMentionedMembers("Jonas und Hannas Zeugnisse", [
+        "Jona",
+        "Jonas",
+        "Hanna",
+      ]),
+    ).toEqual(["Jonas", "Hanna"]);
+  });
+
+  it("still does not read a longer name as a possessive", () => {
+    expect(findMentionedMembers("Johannas Zeugnis", ["Hanna", "Johanna"])).toEqual([
+      "Johanna",
+    ]);
   });
 
   it("matches a name that is a whole word even when another name contains it as a substring", () => {

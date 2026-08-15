@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   DOCUMENT_TYPE_LABELS,
-  FACT_TYPE_LABELS,
+  DEFAULT_FACT_LABEL,
   type DocumentAnalysis,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
@@ -458,8 +458,7 @@ export function ReviewCardContent({
               const edited = edits.factValues.get(i);
               const isEdited = Boolean(edited);
               const displayValue = edited ?? fact.value;
-              const typeLabel =
-                FACT_TYPE_LABELS[fact.fact_type] ?? FACT_TYPE_LABELS.other;
+              const factLabel = fact.label || DEFAULT_FACT_LABEL;
               return (
                 <FieldRow
                   key={i}
@@ -472,7 +471,7 @@ export function ReviewCardContent({
                     isEditMode ? undefined : (
                       <FactEditControl
                         value={displayValue}
-                        label={fact.label || typeLabel}
+                        label={factLabel}
                         onChange={(v) => onEditFact(i, v)}
                       />
                     )
@@ -480,7 +479,7 @@ export function ReviewCardContent({
                 >
                   <span className="block truncate font-mono">{displayValue}</span>
                   <span className="block truncate font-normal text-muted-foreground">
-                    {fact.label || typeLabel}
+                    {factLabel}
                   </span>
                 </FieldRow>
               );
