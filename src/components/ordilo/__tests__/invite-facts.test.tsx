@@ -1,19 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { buildConfirmPayload, type EditState } from "@/components/ordilo/review-card/helpers";
+import {
+  buildConfirmPayload,
+  emptyEditState,
+  type EditState,
+} from "@/components/ordilo/review-card/helpers";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 
 function emptyEdits(): EditState {
-  return {
-    persons: new Map(),
-    category: null,
-    dates: new Map(),
-    organizationNames: new Map(),
-    amountValues: new Map(),
-    taskTitles: new Map(),
-    taskDueDates: new Map(),
-    deletedTasks: new Set(),
-    factValues: new Map(),
-  };
+  return emptyEditState();
 }
 
 function analysisWithFact(): DocumentAnalysis {

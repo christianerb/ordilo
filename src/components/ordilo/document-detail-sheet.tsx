@@ -10,6 +10,7 @@ import {
   SheetDescription,
 } from "@/components/ui/sheet";
 import { ReviewCard } from "@/components/ordilo/review-card";
+import { DocumentAttribution } from "@/components/ordilo/document-attribution";
 import {
   getFileIcon,
   getStatusBadgeClasses,
@@ -242,13 +243,19 @@ export function DocumentDetailSheet({
               </span>
             </span>
             {document && (
-              <span
-                className={cn(
-                  "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
-                  getStatusBadgeClasses(document.status),
-                )}
-              >
-                {getStatusLabel(document.status)}
+              <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span
+                  className={cn(
+                    "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+                    getStatusBadgeClasses(document.status),
+                  )}
+                >
+                  {getStatusLabel(document.status)}
+                </span>
+                <DocumentAttribution
+                  uploadedBy={document.uploaded_by}
+                  createdAt={document.created_at}
+                />
               </span>
             )}
           </SheetTitle>

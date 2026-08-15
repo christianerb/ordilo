@@ -26,7 +26,9 @@ import {
 } from "./states";
 import {
   buildConfirmPayload,
+  emptyEditState,
   hasReviewEdits,
+  patchDocument,
   postConfirm,
 } from "./helpers";
 import type { EditState, EditedAnalysisPayload } from "./helpers";
@@ -140,21 +142,18 @@ export function ReviewCard({
   const [loading, setLoading] = useState(true);
   const [familyMembers, setFamilyMembers] = useState<FamilyMemberOption[]>([]);
   const [existingCategories, setExistingCategories] = useState<string[]>([]);
-  const [edits, setEdits] = useState<EditState>({
-    persons: new Map(),
-    factValues: new Map(),
-    category: null,
-    dates: new Map(),
-    organizationNames: new Map(),
-    amountValues: new Map(),
-    taskTitles: new Map(),
-    taskDueDates: new Map(),
-    deletedTasks: new Set(),
-  });
+  const [edits, setEdits] = useState<EditState>(emptyEditState);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  /**
+   * True while the user is correcting a document that is already in the
+   * family book. It reuses the full review editor — the same pickers and
+   * inputs as before confirming — but saves through PATCH instead of
+   * confirming a second time.
+   */
+  const [editing, setEditing] = useState(false);
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
   const [originalSourceText, setOriginalSourceText] = useState<string | null>(null);
   const [reanalyzePromptOpen, setReanalyzePromptOpen] = useState(false);
@@ -290,6 +289,33 @@ export function ReviewCard({
       return true;
     },
     [updateEdits],
+  );
+
+  /**
+   * Edit the document title. An empty value is kept as an edit (null means
+   * "unchanged"), so clearing the field to retype does not snap the old
+   * title back under the user's cursor; saving with a blank title is
+   * blocked in the editor instead.
+   */
+  const handleEditTitle = useCallback(
+    (value: string) => {
+      updateEdits((prev) => ({
+        ...prev,
+        title: value === analysis?.title ? null : value,
+      }));
+    },
+    [analysis, updateEdits],
+  );
+
+  /** Edit the summary ("Worum geht's"). */
+  const handleEditSummary = useCallback(
+    (value: string) => {
+      updateEdits((prev) => ({
+        ...prev,
+        summary: value === analysis?.summary ? null : value,
+      }));
+    },
+    [analysis, updateEdits],
   );
 
   /** Edit category. */
@@ -491,6 +517,72 @@ export function ReviewCard({
     onDirtyChange,
   ]);
 
+  /**
+   * "Änderungen speichern" — save corrections to a document that is
+   * already in the family book. The document keeps its status and its
+   * "added" date; only the values the user changed are written.
+   */
+  const handleSaveEdits = useCallback(async () => {
+    if (!analysis || confirming) return;
+
+    setConfirming(true);
+    setConfirmError(null);
+
+    try {
+      const response = await patchDocument(
+        documentId,
+        buildConfirmPayload(analysis, edits),
+      );
+
+      if (!response.ok) {
+        let errorBody: { error?: string };
+        try {
+          errorBody = await response.json();
+        } catch {
+          errorBody = {};
+        }
+        throw new Error(
+          errorBody.error ||
+            "Speichern hat nicht geklappt. Bitte nochmal versuchen.",
+        );
+      }
+
+      setEdits(emptyEditState());
+      onDirtyChange?.(false);
+      setEditing(false);
+      vibrate(10);
+      toast.success("Änderungen gespeichert");
+
+      // Re-read so the calm view shows exactly what was persisted.
+      await loadAnalysis();
+      onConfirmSuccess?.();
+    } catch (err) {
+      setConfirmError(
+        err instanceof Error
+          ? err.message
+          : "Speichern hat nicht geklappt. Bitte nochmal versuchen.",
+      );
+    } finally {
+      setConfirming(false);
+    }
+  }, [
+    analysis,
+    confirming,
+    documentId,
+    edits,
+    loadAnalysis,
+    onConfirmSuccess,
+    onDirtyChange,
+  ]);
+
+  /** Leave edit mode, dropping every unsaved correction. */
+  const handleCancelEdits = useCallback(() => {
+    setEdits(emptyEditState());
+    onDirtyChange?.(false);
+    setConfirmError(null);
+    setEditing(false);
+  }, [onDirtyChange]);
+
   /** "Neu analysieren" — re-run extraction. */
   const handleReanalyze = useCallback(async () => {
     if (reanalyzing) return;
@@ -518,19 +610,10 @@ export function ReviewCard({
       }
 
       // Reset edits and reload analysis.
-      setEdits({
-        persons: new Map(),
-        factValues: new Map(),
-        category: null,
-        dates: new Map(),
-        organizationNames: new Map(),
-        amountValues: new Map(),
-        taskTitles: new Map(),
-        taskDueDates: new Map(),
-        deletedTasks: new Set(),
-      });
+      setEdits(emptyEditState());
       onDirtyChange?.(false);
       setConfirmed(false);
+      setEditing(false);
       await loadAnalysis();
       onReanalyzeSuccess?.();
     } catch (err) {
@@ -665,6 +748,50 @@ export function ReviewCard({
     );
   }
 
+  // --- Render: editing a confirmed document ---
+  // The same editor as the review flow, so a correction after the fact
+  // offers the full vocabulary (person picker, date picker, collection)
+  // instead of a second-class "fix one field" form.
+  if (editing && analysis) {
+    return withOriginalPreview(
+      <ReviewCardContent
+        mode="edit"
+        analysis={analysis}
+        edits={edits}
+        familyMembers={familyMembers}
+        existingCategories={existingCategories}
+        // A confirmed document has already been through review: the
+        // "Überprüfung nötig" badge and the low-confidence prompt would
+        // re-open a question the family answered when they added it, and
+        // the prompt would block saving an unrelated fix.
+        needsReview={false}
+        hasUnresolvedDisambiguation={false}
+        lowConfidencePersons={[]}
+        confirming={confirming}
+        confirmError={confirmError}
+        onEditTitle={handleEditTitle}
+        onEditSummary={handleEditSummary}
+        onEditPerson={handleEditPerson}
+        onCreateMember={handleCreateMember}
+        onEditCategory={handleEditCategory}
+        onEditDate={handleEditDate}
+        onEditOrganization={handleEditOrganization}
+        onEditAmount={handleEditAmount}
+        onEditTaskTitle={handleEditTaskTitle}
+        onEditTaskDueDate={handleEditTaskDueDate}
+        onEditFact={handleEditFact}
+        onDeleteTask={handleDeleteTask}
+        onUndoDeleteTask={handleUndoDeleteTask}
+        onResolveDisambiguation={handleResolveDisambiguation}
+        onConfirm={handleSaveEdits}
+        onCancel={handleCancelEdits}
+        onReanalyze={requestReanalyze}
+        documentId={documentId}
+        onViewOriginal={hasOriginalFile ? handleOpenOriginal : undefined}
+      />
+    );
+  }
+
   // --- Render: confirmed ---
   if (confirmed || status === "confirmed") {
     return withOriginalPreview(
@@ -682,6 +809,7 @@ export function ReviewCard({
         // celebration: right after adding, invite the next natural action —
         // asking Ordilo about the document.
         askTitle={confirmed ? (analysis?.title ?? null) : null}
+        onEdit={analysis ? () => setEditing(true) : undefined}
         onReanalyze={requestReanalyze}
         reanalyzing={reanalyzing}
         onViewOriginal={hasOriginalFile ? handleOpenOriginal : undefined}
@@ -719,6 +847,8 @@ export function ReviewCard({
       lowConfidencePersons={lowConfidencePersons}
       confirming={confirming}
       confirmError={confirmError}
+      onEditTitle={handleEditTitle}
+      onEditSummary={handleEditSummary}
       onEditPerson={handleEditPerson}
       onCreateMember={handleCreateMember}
       onEditCategory={handleEditCategory}

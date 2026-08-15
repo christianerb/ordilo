@@ -41,13 +41,10 @@ import { normalizeFactValue } from "@/lib/schemas/extraction";
 import {
   dedupeDates,
   dedupeAmounts,
-  meaningfulLabel,
-  parseAmountToMinor,
   toIsoDateOrNull,
-  GENERIC_DATE_LABELS,
-  GENERIC_AMOUNT_LABELS,
 } from "@/lib/analysis-cleanup";
-import { canonicalizeCategory } from "@/lib/categories";
+import { buildEntityRows } from "@/lib/pipeline/entity-rows";
+import { canonicalizeCategoryForFamily } from "@/lib/categories-server";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 
@@ -208,33 +205,11 @@ export async function POST(
   //     and collection names (documents.category === collection.name links
   //     a document into a collection — a canonical match files it there).
   //     Best-effort: on a read failure the suggested spelling is kept.
-  try {
-    const [{ data: categoryDocs }, { data: collectionRows }] =
-      await Promise.all([
-        serverClient
-          .from("documents")
-          .select("category")
-          .eq("family_id", familyId)
-          .not("category", "is", null),
-        serverClient
-          .from("collections")
-          .select("name")
-          .eq("family_id", familyId),
-      ]);
-    payload.suggested_category = canonicalizeCategory(
-      payload.suggested_category,
-      [
-        ...new Set(
-          (categoryDocs ?? [])
-            .map((d) => d.category)
-            .filter((c): c is string => Boolean(c)),
-        ),
-      ],
-      (collectionRows ?? []).map((c) => c.name),
-    );
-  } catch {
-    // Keep the payload's spelling — canonicalization is a bonus.
-  }
+  payload.suggested_category = await canonicalizeCategoryForFamily(
+    serverClient,
+    familyId,
+    payload.suggested_category,
+  );
 
   // 7. Fetch OCR text (with page numbers for provenance) -------------------
   const { data: pages, error: pagesError } = await serverClient
@@ -536,97 +511,6 @@ export async function POST(
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
-
-/**
- * Build the extracted_entities rows (as RPC params) from the confirm
- * payload.
- *
- * The payload contains the (possibly edited) entities. We map each into the
- * shape expected by the confirm_document RPC. The RPC inserts them with
- * `confirmed = true` after clearing prior entities for the document
- * (VAL-CONFIRM-008: edited values are used, not the original extraction).
- */
-function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
-  const entities: ConfirmRpcEntity[] = [];
-
-  // Persons.
-  for (const member of payload.family_members) {
-    entities.push({
-      entity_type: "person",
-      entity_value: member.name,
-      normalized_value: member.name.toLowerCase().trim(),
-      label: null,
-      confidence: member.confidence,
-      linked_object_id: member.person_id ?? null,
-    });
-  }
-
-  // Organizations.
-  for (const org of payload.organizations) {
-    entities.push({
-      entity_type: "organization",
-      entity_value: org.name,
-      normalized_value: org.name.toLowerCase().trim(),
-      label: null,
-      confidence: org.confidence,
-      linked_object_id: null,
-    });
-  }
-
-  // Dates.
-  for (const date of payload.dates) {
-    entities.push({
-      entity_type: "date",
-      entity_value: date.date,
-      normalized_value: date.date,
-      label: meaningfulLabel(date.label, GENERIC_DATE_LABELS),
-      confidence: date.confidence,
-      linked_object_id: null,
-    });
-  }
-
-  // Amounts.
-  for (const amount of payload.amounts) {
-    entities.push({
-      entity_type: "amount",
-      entity_value: `${amount.amount} ${amount.currency}`.trim(),
-      normalized_value: amount.amount,
-      label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
-      amount_minor: parseAmountToMinor(amount.amount),
-      currency: amount.currency.trim().toUpperCase() || "EUR",
-      amount_kind: amount.kind,
-      value_date: toIsoDateOrNull(amount.value_date),
-      confidence: amount.confidence,
-      linked_object_id: null,
-    });
-  }
-
-  // Category.
-  if (payload.suggested_category) {
-    entities.push({
-      entity_type: "category",
-      entity_value: payload.suggested_category,
-      normalized_value: payload.suggested_category.toLowerCase().trim(),
-      label: null,
-      confidence: 1.0,
-      linked_object_id: null,
-    });
-  }
-
-  // Tags.
-  for (const tag of payload.tags) {
-    entities.push({
-      entity_type: "tag",
-      entity_value: tag,
-      normalized_value: tag.toLowerCase().trim(),
-      label: null,
-      confidence: 1.0,
-      linked_object_id: null,
-    });
-  }
-
-  return entities;
-}
 
 /**
  * Build the tasks rows (as RPC params) from the confirm payload.

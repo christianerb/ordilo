@@ -1,5 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/ordilo/review-card", () => ({
   ReviewCard: ({
@@ -18,7 +24,12 @@ vi.mock("@/components/ordilo/review-card", () => ({
   ),
 }));
 
+vi.mock("@/lib/attribution", () => ({
+  fetchDocumentAttribution: vi.fn(),
+}));
+
 import { DocumentDetailSheet } from "@/components/ordilo/document-detail-sheet";
+import { fetchDocumentAttribution } from "@/lib/attribution";
 
 const document = {
   id: "doc-1",
@@ -29,7 +40,16 @@ const document = {
   error_message: null,
   failure_stage: null,
   failure_code: null,
+  uploaded_by: "user-1",
+  created_at: "2026-08-15T09:42:00.000Z",
 };
+
+beforeEach(() => {
+  vi.mocked(fetchDocumentAttribution).mockResolvedValue({
+    name: null,
+    isCurrentUser: false,
+  });
+});
 
 describe("DocumentDetailSheet", () => {
   it("shows the document status in the header", () => {
@@ -67,6 +87,43 @@ describe("DocumentDetailSheet", () => {
     );
 
     expect(screen.getByTestId("has-original-file")).toHaveTextContent("false");
+  });
+
+  it("names the family member who added the document", async () => {
+    vi.mocked(fetchDocumentAttribution).mockResolvedValue({
+      name: "Christian",
+      isCurrentUser: false,
+    });
+
+    render(
+      <DocumentDetailSheet
+        document={document as never}
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("document-attribution")).toHaveTextContent(
+        "Von Christian hinzugefügt · 15.08.2026",
+      );
+    });
+  });
+
+  it("falls back to the date when no family member is linked", async () => {
+    render(
+      <DocumentDetailSheet
+        document={document as never}
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("document-attribution")).toHaveTextContent(
+        "Hinzugefügt am 15.08.2026",
+      );
+    });
   });
 
   it("protects unsaved corrections when the sheet is closed", async () => {

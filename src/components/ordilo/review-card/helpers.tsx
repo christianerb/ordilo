@@ -27,6 +27,10 @@ export interface EditedAnalysisPayload extends DocumentAnalysis {
  * Internal type for tracking which entities have been edited.
  */
 export interface EditState {
+  /** Edited document title, or null when the extracted title stands. */
+  title: string | null;
+  /** Edited summary ("Worum geht's"), or null when unchanged. */
+  summary: string | null;
   /**
    * Edited person name (by entity index). An entry with an empty name and
    * null personId means "explicitly assigned to nobody" — the extracted
@@ -171,6 +175,8 @@ export function buildConfirmPayload(
 
   return {
     ...analysis,
+    title: edits.title ?? analysis.title,
+    summary: edits.summary ?? analysis.summary,
     family_members: familyMembers,
     suggested_category: suggestedCategory,
     dates,
@@ -182,8 +188,75 @@ export function buildConfirmPayload(
   };
 }
 
+/**
+ * An empty edit state — the single definition of "nothing changed yet",
+ * so mounting the card and resetting it after a re-analyze or a saved
+ * edit can never drift apart.
+ */
+export function emptyEditState(): EditState {
+  return {
+    title: null,
+    summary: null,
+    persons: new Map(),
+    factValues: new Map(),
+    category: null,
+    dates: new Map(),
+    organizationNames: new Map(),
+    amountValues: new Map(),
+    taskTitles: new Map(),
+    taskDueDates: new Map(),
+    deletedTasks: new Set(),
+  };
+}
+
+/**
+ * PATCH the edited analysis of a document that is already in the family
+ * book. Unlike confirm, this never re-runs extraction or embeddings: it
+ * saves exactly what the user corrected.
+ *
+ * Tasks and facts are deliberately not sent — both are edited where they
+ * live (the task sheet, the "Nummern & Kennungen" rows), and the route
+ * would otherwise reset task status and assignment.
+ */
+export async function patchDocument(
+  documentId: string,
+  payload: EditedAnalysisPayload,
+): Promise<Response> {
+  const updatable = {
+    document_type: payload.document_type,
+    title: payload.title,
+    summary: payload.summary,
+    family_members: payload.family_members,
+    organizations: payload.organizations,
+    dates: payload.dates,
+    amounts: payload.amounts,
+    suggested_category: payload.suggested_category,
+    tags: payload.tags,
+  };
+
+  try {
+    return await fetch(`/api/documents/${documentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updatable),
+      signal: AbortSignal.timeout(20_000),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "TimeoutError") {
+      throw new Error(
+        "Das Speichern dauert gerade zu lange. Bitte erneut versuchen.",
+      );
+    }
+    throw new Error(
+      "Netzwerkfehler. Bitte Verbindung überprüfen und erneut versuchen.",
+    );
+  }
+}
+
 export function hasReviewEdits(edits: EditState): boolean {
   return (
+    edits.title !== null ||
+    edits.summary !== null ||
     edits.persons.size > 0 ||
     edits.factValues.size > 0 ||
     edits.category !== null ||

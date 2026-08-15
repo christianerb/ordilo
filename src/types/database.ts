@@ -91,6 +91,14 @@ export type ConfirmRpcResult = {
   document_id?: string;
 };
 
+/** Result of the update_confirmed_document RPC (editing a confirmed document). */
+export type UpdateDocumentRpcResult = {
+  /** "updated" on success, "status_changed" when not in 'confirmed' state. */
+  status: "updated" | "status_changed";
+  /** Present when status === "updated". */
+  document_id?: string;
+};
+
 /** A single row returned by the semantic_search RPC. */
 export type SemanticSearchRow = {
   document_id: string;
@@ -1239,6 +1247,25 @@ export type Database = {
           p_pipeline_version: number;
         };
         Returns: ConfirmRpcResult;
+      };
+      // update_confirmed_document — edit a document that is already in the
+      // family book: rewrites its row, knowledge graph, and entities in one
+      // transaction, leaving status/confirmed_at, embeddings, tasks, and
+      // facts alone. See supabase/migrations/0058_update_confirmed_document.sql.
+      update_confirmed_document: {
+        Args: {
+          p_document_id: string;
+          p_family_id: string;
+          p_title: string;
+          p_summary: string;
+          p_document_type: string;
+          p_category: string;
+          p_persons: ConfirmRpcPerson[];
+          p_organizations: ConfirmRpcOrganization[];
+          p_label_embeddings: ConfirmRpcLabelEmbedding[];
+          p_entities: ConfirmRpcEntity[];
+        };
+        Returns: UpdateDocumentRpcResult;
       };
       // get_family_invite_info — family name for a valid invite token
       // (works signed-out; holding the token is the authorization).
