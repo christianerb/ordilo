@@ -216,6 +216,30 @@ describe("factSearch", () => {
     expect(results[0].chunk_text).toBe("Zählernummer Keller: 1ESY1161234567");
   });
 
+  it("finds a shorter label from a longer compound question", async () => {
+    // The question is broader than the label — "Aktenzeichennummer" has
+    // to reach a fact simply called "Aktenzeichen Jugendamt".
+    const client = mockClient({
+      facts: [
+        fact({
+          document_id: "doc-1",
+          label: "Aktenzeichen Jugendamt",
+          value: "JA-2026-4471",
+          normalized_value: "ja20264471",
+        }),
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Aktenzeichennummer?",
+      FAMILY_ID,
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].chunk_text).toBe("Aktenzeichen Jugendamt: JA-2026-4471");
+  });
+
   it("ignores facts whose document is not confirmed", async () => {
     const client = mockClient({
       facts: [fact({ document_id: "doc-1" })],

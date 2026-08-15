@@ -173,17 +173,74 @@ export function normalizeFactValue(value: string): string {
 }
 
 /**
+ * Word endings German glues onto a thing to make it the number of that
+ * thing: Aktenzeichen → Aktenzeichennummer, Zähler → Zählernummer.
+ */
+const COMPOUND_NUMBER_SUFFIXES = ["nummern", "nummer", "nr"] as const;
+
+/** Below this a stem is too generic to search labels with. */
+const MIN_STEM_LENGTH = 4;
+
+/** Split a query into comparable words, keeping inner hyphens ("steuer-id"). */
+function queryWords(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+    .filter(Boolean);
+}
+
+/**
+ * The stems behind the compound number words in a question.
+ *
+ *   "Wie ist die Aktenzeichennummer?" → ["aktenzeichen"]
+ *   "Wie ist die Steuernummer?"       → ["steuer"]
+ *
+ * Labels are matched with a substring search, so a question that is
+ * broader than the label ("Aktenzeichennummer" vs. a label reading
+ * "Aktenzeichen Jugendamt") would otherwise miss — the stem closes that
+ * gap for every compound, not only for the ones listed in a group.
+ * "Nummer" on its own yields nothing: it would match everything.
+ */
+export function compoundNumberStems(query: string): string[] {
+  const stems = new Set<string>();
+  for (const word of queryWords(query)) {
+    for (const suffix of COMPOUND_NUMBER_SUFFIXES) {
+      if (word === suffix || !word.endsWith(suffix)) continue;
+      const stem = word.slice(0, -suffix.length).replace(/[-\s]+$/, "");
+      if (stem.length >= MIN_STEM_LENGTH) stems.add(stem);
+      break;
+    }
+  }
+  return [...stems];
+}
+
+/** Whether a question touches one of the synonym groups. */
+function matchesSynonymGroup(
+  group: readonly string[],
+  query: string,
+  stems: string[],
+): boolean {
+  return group.some(
+    (word) => matchesWordBoundary(query, word) || stems.includes(word),
+  );
+}
+
+/**
  * Expand a question into the label terms worth searching for.
  *
  * Every word of every synonym group the question touches, so "Wie ist die
  * Steuernummer von Hanna?" also looks for labels containing "Steuer-ID"
- * or "IdNr". Returns [] when the question is not about a specific kind of
- * number — the plain query keywords still do their work then.
+ * or "IdNr". Compound questions reach their group through their stem
+ * ("Aktenzeichennummer" → "aktenzeichen"). Returns [] when the question
+ * is not about a specific kind of number — the plain query keywords and
+ * the stems still do their work then.
  */
 export function expandIdentifierTerms(query: string): string[] {
+  const stems = compoundNumberStems(query);
   const terms = new Set<string>();
   for (const group of IDENTIFIER_SYNONYM_GROUPS) {
-    if (group.some((word) => matchesWordBoundary(query, word))) {
+    if (matchesSynonymGroup(group, query, stems)) {
       for (const word of group) terms.add(word);
     }
   }
@@ -195,8 +252,9 @@ export function expandIdentifierTerms(query: string): string[] {
  * query classification, not for retrieval.
  */
 export function asksForIdentifier(query: string): boolean {
+  const stems = compoundNumberStems(query);
   return IDENTIFIER_SYNONYM_GROUPS.some((group) =>
-    group.some((word) => matchesWordBoundary(query, word)),
+    matchesSynonymGroup(group, query, stems),
   );
 }
 

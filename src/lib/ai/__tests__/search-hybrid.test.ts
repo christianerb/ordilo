@@ -4,6 +4,7 @@ import {
   normalizeFactValue,
   documentAnalysisSchema,
   expandIdentifierTerms,
+  compoundNumberStems,
   asksForIdentifier,
 } from "@/lib/schemas/extraction";
 import type { SearchResult } from "@/lib/schemas/search";
@@ -215,9 +216,38 @@ describe("expandIdentifierTerms", () => {
   });
 });
 
+describe("compoundNumberStems", () => {
+  it("reduces a compound number word to the thing it belongs to", () => {
+    expect(compoundNumberStems("Wie ist die Aktenzeichennummer?")).toEqual([
+      "aktenzeichen",
+    ]);
+    expect(compoundNumberStems("Wie ist die Zählernummer im Keller?")).toEqual([
+      "zähler",
+    ]);
+    expect(compoundNumberStems("Wie ist die Steuernummer?")).toEqual(["steuer"]);
+  });
+
+  it("leaves a bare 'Nummer' alone — it would match everything", () => {
+    expect(compoundNumberStems("Wie ist die Nummer?")).toEqual([]);
+    expect(compoundNumberStems("Nr. 12")).toEqual([]);
+  });
+
+  it("ignores stems too short to search labels with", () => {
+    expect(compoundNumberStems("Wie ist die Kfz-Nr?")).toEqual([]);
+  });
+
+  it("carries compounds into their synonym group", () => {
+    // "Aktenzeichen" alone is in a group; the compound has to reach it.
+    expect(expandIdentifierTerms("Wie ist die Aktenzeichennummer?")).toContain(
+      "geschäftszeichen",
+    );
+  });
+});
+
 describe("asksForIdentifier", () => {
   it("recognises a question about a stored number", () => {
     expect(asksForIdentifier("Wie ist die Steuernummer von Hanna?")).toBe(true);
+    expect(asksForIdentifier("Wie ist die Aktenzeichennummer?")).toBe(true);
     expect(asksForIdentifier("Was steht in dem Kita-Brief?")).toBe(false);
   });
 });

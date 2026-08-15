@@ -4,6 +4,7 @@ import {
   embeddingToVectorString,
 } from "@/lib/ai/embeddings";
 import {
+  compoundNumberStems,
   DEFAULT_FACT_LABEL,
   expandIdentifierTerms,
   normalizeFactValue,
@@ -377,7 +378,8 @@ export async function lexicalSearch(
  *   1. Label match: query keywords against the fact label ("Seriennummer
  *      Waschmaschine"), widened by the synonym groups so "Steuernummer"
  *      also finds a label written as "Steuer-ID"
- *      (see IDENTIFIER_SYNONYM_GROUPS).
+ *      (see IDENTIFIER_SYNONYM_GROUPS), and by compound stems so
+ *      "Aktenzeichennummer" finds a label reading just "Aktenzeichen".
  *   2. Value match: identifier-like query tokens (containing digits) are
  *      normalized (lowercase, alphanumeric only) and matched against
  *      `normalized_value`, so "SN 4823-XK" finds "sn4823xk".
@@ -403,13 +405,17 @@ export async function factSearch(
     .map((t) => normalizeFactValue(t))
     .filter((t) => t.length >= 4 && /\d/.test(t));
 
-  // Query keywords plus every synonym of the number kinds the question
-  // touches. Multi-word terms are dropped: they are bigrams of the query
-  // or long compound spellings, and neither survives a label ILIKE.
+  // Query keywords, the stems behind compound number words
+  // ("Aktenzeichennummer" → "aktenzeichen"), and every synonym of the
+  // number kinds the question touches. Multi-word terms are dropped: they
+  // are bigrams of the query or long compound spellings, and neither
+  // survives a label ILIKE.
   const labelTerms = new Set(
-    [...keywords, ...expandIdentifierTerms(query)].filter(
-      (term) => !term.includes(" "),
-    ),
+    [
+      ...keywords,
+      ...compoundNumberStems(query),
+      ...expandIdentifierTerms(query),
+    ].filter((term) => !term.includes(" ")),
   );
 
   const orFilters: string[] = [];
