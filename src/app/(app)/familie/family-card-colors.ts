@@ -9,8 +9,8 @@ const CARD_WASHES = [
   "var(--wash-apricot)",
   "var(--sand-warm)",
   "var(--wash-sage)",
-  "var(--sand-light)",
-  "var(--wash-sage-soft)",
+  "var(--wash-lavender)",
+  "var(--wash-teal)",
 ] as const;
 
 export function getFamilyCardWash(index: number): string {

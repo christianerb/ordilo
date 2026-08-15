@@ -230,7 +230,7 @@ export function FamilieClient({
           </div>
 
           {viewMode === "grid" ? (
-            <div className="grid grid-cols-2 gap-3" data-testid="member-list">
+            <div className="grid grid-cols-2 gap-4" data-testid="member-list">
               {filteredMembers.map((member, index) => (
                 <FamilyMemberCard
                   key={member.id}

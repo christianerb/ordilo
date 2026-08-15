@@ -55,7 +55,7 @@ export function FamilyMemberCard({
             name={member.name}
             color={member.avatar_color}
             photoUrl={photoUrl}
-            sizeClass="size-11"
+            sizeClass="size-12"
           />
           <div className="min-w-0">
             <p className="truncate text-sm font-semibold text-foreground">
