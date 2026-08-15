@@ -152,6 +152,73 @@ describe("factSearch", () => {
     expect(results.map((r) => r.document_id)).toEqual(["doc-1"]);
   });
 
+  it("separates two people's numbers on the SAME document", async () => {
+    // A Steuerbescheid lists both children. The document-level person
+    // signal cannot tell them apart — only the labels can.
+    const client = mockClient({
+      facts: [
+        fact({ document_id: "doc-1", label: "Steuer-ID Emma", value: "12 345 678 901", normalized_value: "12345678901" }),
+        fact({ document_id: "doc-1", label: "Steuer-ID Hanna" }),
+      ],
+      entities: [
+        { document_id: "doc-1", normalized_value: "emma" },
+        { document_id: "doc-1", normalized_value: "hanna" },
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Steuer-ID von Hanna?",
+      FAMILY_ID,
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].chunk_text).toBe("Steuer-ID Hanna: 74 031 832 353");
+  });
+
+  it("does not answer with the person's other numbers", async () => {
+    // "… von Hanna" makes "hanna" a search term too, so Hanna's other
+    // numbers come back as candidates. They are the wrong KIND.
+    const client = mockClient({
+      facts: [
+        fact({ document_id: "doc-1", label: "Kundennummer Hanna", value: "K-9912", normalized_value: "k9912" }),
+        fact({ document_id: "doc-2", label: "Versichertennummer Hanna", value: "A123456789", normalized_value: "a123456789" }),
+        fact({ document_id: "doc-3", label: "Steuer-ID Hanna" }),
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Steuer-ID von Hanna?",
+      FAMILY_ID,
+    );
+
+    expect(results.map((r) => r.chunk_text)).toEqual([
+      "Steuer-ID Hanna: 74 031 832 353",
+    ]);
+  });
+
+  it("still answers what a number IS, whatever kind it is", async () => {
+    // A value hit survives the kind filter — otherwise "wem gehört diese
+    // Nummer?" would be unanswerable for anything but the asked-for kind.
+    const client = mockClient({
+      facts: [
+        fact({ document_id: "doc-1", label: "Kundennummer Hanna", value: "74 031 832 353" }),
+        fact({ document_id: "doc-2", label: "Steuer-ID Emma", value: "12 345 678 901", normalized_value: "12345678901" }),
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Was ist die Nummer 74 031 832 353?",
+      FAMILY_ID,
+    );
+
+    expect(results.map((r) => r.chunk_text)).toContain(
+      "Kundennummer Hanna: 74 031 832 353",
+    );
+  });
+
   it("keeps every candidate when the query names nobody", async () => {
     const client = mockClient({
       facts: [

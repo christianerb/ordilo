@@ -446,16 +446,29 @@ export async function factSearch(
   );
   const docsById = new Map(confirmedDocs.map((d) => [d.id, d]));
 
-  // Every family member has their own Steuer-ID, Versichertennummer and
-  // Mitgliedsnummer. When the question names a person ("… von Hanna") and
-  // some of the candidate facts belong to that person, the others are
-  // wrong answers, not weaker ones — drop them.
-  const visibleFacts = facts.filter((f) => docsById.has(f.document_id));
-  const scopedFacts = await narrowFactsToMentionedPersons(
+  // The filters above are ORed for recall, so the candidates still hold
+  // the wrong kind of number and the wrong person's number. Narrowing
+  // decides between them.
+  const visibleFacts = facts
+    .filter((f) => docsById.has(f.document_id))
+    .map((fact) => ({
+      ...fact,
+      // Value matches are exact answers → top score, and they are never
+      // dropped for being the "wrong kind": asking what a number IS must
+      // stay answerable.
+      valueMatch: identifierTokens.some(
+        (t) =>
+          fact.normalized_value.includes(t) ||
+          t.includes(fact.normalized_value),
+      ),
+    }));
+
+  const scopedFacts = await narrowFactCandidates(
     serverClient,
     query,
     familyId,
     visibleFacts,
+    [...labelTerms],
   );
 
   const results: SearchResult[] = [];
@@ -463,19 +476,11 @@ export async function factSearch(
     const doc = docsById.get(fact.document_id);
     if (!doc) continue;
 
-    // Value matches are exact answers → top score. Label matches are
-    // strong but slightly below, so an exact identifier hit always wins.
-    const valueMatch = identifierTokens.some(
-      (t) =>
-        fact.normalized_value.includes(t) || t.includes(fact.normalized_value),
-    );
-    const score = valueMatch ? 0.98 : 0.9;
-
     results.push({
       document_id: fact.document_id,
       title: doc.title,
       chunk_text: `${fact.label || DEFAULT_FACT_LABEL}: ${fact.value}`,
-      score,
+      score: fact.valueMatch ? 0.98 : 0.9,
       source: "fact",
     });
   }
@@ -484,41 +489,79 @@ export async function factSearch(
   return deduplicateByDocumentId(results);
 }
 
-/** A fact row as far as person scoping is concerned. */
-type ScopableFact = { document_id: string; label: string };
+/** A fact row as far as narrowing is concerned. */
+type ScopableFact = {
+  document_id: string;
+  label: string;
+  valueMatch: boolean;
+};
 
 /**
- * Restrict fact candidates to the family members named in the query.
+ * Narrow the candidates of a fact search down to what was actually asked
+ * for: the right KIND of number, belonging to the right PERSON.
  *
- * A fact belongs to a person when the person is extracted from its
- * document (`extracted_entities`) or named in the fact's own label
- * ("Steuer-ID Hanna") — the label path matters because a document can
- * carry one number per person.
+ * "Wie ist die Steuer-ID von Hanna?" produces ORed filters for both
+ * "steuerid" and "hanna", so the candidates contain Hanna's Kundennummer
+ * and Emma's Steuer-ID as well. Two passes sort that out:
  *
- * Returns the full list unchanged when the query names nobody, when the
- * candidates already sit on a single document, or when none of them can
- * be tied to the named person (a wrong guess must never swallow the only
- * answer there is).
+ *   1. Kind — keep the facts whose label matches a term describing the
+ *      number itself. The person's name is not such a term, so
+ *      "Kundennummer Hanna" drops out of a question about the Steuer-ID.
+ *   2. Person — keep the facts belonging to a named member, by the name
+ *      in the fact's own label ("Steuer-ID Hanna") or, failing that, by
+ *      the persons extracted from its document. The label pass is what
+ *      makes this work inside ONE document: a Steuerbescheid listing two
+ *      children carries both their numbers, and the document-level signal
+ *      cannot tell them apart.
+ *
+ * Each pass only narrows when it has something to keep — a pass that
+ * would empty the list leaves it as it was, because a wrong guess must
+ * never swallow the only answer there is. Facts matched by their value
+ * survive both passes: asking what a number IS stays answerable.
  */
-async function narrowFactsToMentionedPersons<T extends ScopableFact>(
+async function narrowFactCandidates<T extends ScopableFact>(
   serverClient: ServerClient,
   query: string,
   familyId: string,
   facts: T[],
+  labelTerms: string[],
 ): Promise<T[]> {
-  const docIds = [...new Set(facts.map((f) => f.document_id))];
-  if (docIds.length < 2) return facts;
+  // A single candidate is the answer or nothing — no narrowing needed,
+  // and no reason to pay for the member/entity lookups.
+  if (facts.length < 2) return facts;
 
   const memberNames = await fetchMemberNames(serverClient, familyId);
   const mentioned = findMentionedMembers(query, memberNames);
-  if (mentioned.length === 0) return facts;
+
+  // 1. Kind pass. Everything the query said that is NOT one of the named
+  //    members describes the number itself.
+  const kindTerms = labelTerms.filter(
+    (term) => !mentioned.some((name) => matchesWordBoundary(name, term)),
+  );
+  const byKind = facts.filter(
+    (f) =>
+      f.valueMatch ||
+      kindTerms.some((term) => f.label.toLowerCase().includes(term)),
+  );
+  const kindScoped = byKind.length > 0 ? byKind : facts;
+
+  if (mentioned.length === 0 || kindScoped.length < 2) return kindScoped;
+
+  // 2. Person pass, by label first — the only signal that separates two
+  //    people's numbers on the same document.
+  const byLabel = kindScoped.filter(
+    (f) =>
+      f.valueMatch ||
+      mentioned.some((name) => matchesWordBoundary(f.label, name)),
+  );
+  if (byLabel.length > 0) return byLabel;
 
   const { data: entities } = await serverClient
     .from("extracted_entities")
     .select("document_id, normalized_value")
     .eq("family_id", familyId)
     .eq("entity_type", "person")
-    .in("document_id", docIds);
+    .in("document_id", [...new Set(kindScoped.map((f) => f.document_id))]);
 
   const personDocIds = new Set(
     (entities ?? [])
@@ -530,13 +573,11 @@ async function narrowFactsToMentionedPersons<T extends ScopableFact>(
       .map((e) => e.document_id),
   );
 
-  const scoped = facts.filter(
-    (f) =>
-      personDocIds.has(f.document_id) ||
-      mentioned.some((name) => matchesWordBoundary(f.label, name)),
+  const byDocument = kindScoped.filter(
+    (f) => f.valueMatch || personDocIds.has(f.document_id),
   );
 
-  return scoped.length > 0 ? scoped : facts;
+  return byDocument.length > 0 ? byDocument : kindScoped;
 }
 
 // ---------------------------------------------------------------------------
