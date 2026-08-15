@@ -31,6 +31,11 @@ verarbeitet die Queue direkt nach der Response in derselben Invocation
 serverseitig weiter, auch wenn der Client die Verbindung verliert oder
 das Handy gesperrt wird. Es ist KEIN externer Scheduler nötig.
 
+Genauso beim Anlegen einer Notiz („Dokument anlegen"): die Notiz wird
+gespeichert und sofort zurückgegeben, die Anreicherung (Tags,
+Zusammenfassung, Suche) läuft als `analyze`-Job nach der Response. Das
+Speichern wartet also nie auf das Sprachmodell.
+
 Opt-out: `PIPELINE_MODE=sync` setzen (dann treibt wieder ausschließlich
 der Client die Pipeline; die Job-Queue bleibt ungenutzt).
 

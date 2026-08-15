@@ -11,6 +11,7 @@ import { ExtractionError } from "@/lib/ai/extraction";
 import {
   loadOcrText,
   performAnalyzeStep,
+  isDestructiveAnalysisFailure,
   NoOcrTextError,
   PipelineStepError,
 } from "@/lib/pipeline/analyze-step";
@@ -175,7 +176,15 @@ export async function POST(
     // Re-analyzing a confirmed document is enrichment, not the document's
     // own processing: roll it back to `confirmed` rather than flagging a
     // finished document as failed.
-    if (wasConfirmed) {
+    //
+    // Not when the failure was destructive, though. Replacing the stored
+    // results deletes the previous entities, tasks, facts and edges before
+    // writing the new ones, so a failure in the middle of that leaves the
+    // document short of data it used to have. Such a document stays
+    // `failed`: visible in the list and retryable by the user, which is
+    // the only way it gets repaired — this route has no queued retry
+    // behind it.
+    if (wasConfirmed && !isDestructiveAnalysisFailure(err)) {
       await restoreConfirmedAfterAnalysisFailure(serverClient, documentId, {
         stage: "analysis",
         code,

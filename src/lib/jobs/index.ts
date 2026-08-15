@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { performOcrStep } from "@/lib/pipeline/ocr-step";
-import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import {
+  performAnalyzeStep,
+  isDestructiveAnalysisFailure,
+} from "@/lib/pipeline/analyze-step";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
@@ -373,7 +376,12 @@ async function executeAnalyzeJob(
     // everything the user wrote — analysis only enriches it. Roll it back
     // to `confirmed` instead of flagging it "Hat nicht geklappt"; the job
     // itself still fails, so the retry/backoff worker takes another run.
-    if (wasConfirmed) {
+    //
+    // Except after a destructive failure: replacing the stored results
+    // deletes the prior entities/tasks/facts/edges before inserting the
+    // new ones, so a document that failed mid-replacement is missing data
+    // and must stay visibly `failed` rather than look healthy.
+    if (wasConfirmed && !isDestructiveAnalysisFailure(err)) {
       await restoreConfirmedAfterAnalysisFailure(adminClient, documentId, {
         stage: "analysis",
         code: getErrorCode(err, "ANALYSIS_FAILED"),

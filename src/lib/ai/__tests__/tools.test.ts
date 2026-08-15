@@ -15,9 +15,13 @@ vi.mock("@/lib/ai/chat", () => ({
   combineSearchResults: vi.fn(() => []),
 }));
 
-vi.mock("@/lib/pipeline/analyze-step", () => ({
-  performAnalyzeStep: vi.fn().mockResolvedValue({}),
-}));
+// Partial mock: the real PipelineStepError / isDestructiveAnalysisFailure
+// pair decides how a failed enrichment is recorded.
+vi.mock("@/lib/pipeline/analyze-step", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/pipeline/analyze-step")>();
+  return { ...actual, performAnalyzeStep: vi.fn().mockResolvedValue({}) };
+});
 
 vi.mock("@/lib/supabase/document-helpers", () => ({
   markDocumentFailed: vi.fn().mockResolvedValue(undefined),
@@ -27,7 +31,10 @@ vi.mock("@/lib/supabase/document-helpers", () => ({
 import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
-import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import {
+  performAnalyzeStep,
+  PipelineStepError,
+} from "@/lib/pipeline/analyze-step";
 import {
   markDocumentFailed,
   restoreConfirmedAfterAnalysisFailure,
@@ -401,6 +408,28 @@ describe("add_family_member confirmation gate", () => {
     expect(getInsert()).toBeNull();
   });
 
+  it("marks the note failed when the enrichment broke mid-write", async () => {
+    // A destructive failure can leave the note's stored results
+    // half-replaced — the visible failed state is what gets it retried.
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new PipelineStepError("Speichern fehlgeschlagen", "DB_STORE_FAILED", {
+        destructive: true,
+      }),
+    );
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(false);
+    expect(markDocumentFailed).toHaveBeenCalled();
+    expect(restoreConfirmedAfterAnalysisFailure).not.toHaveBeenCalled();
+  });
+
   it("returns error when the insert fails", async () => {
     const { ctx } = makeMemberCtx({ insertError: { message: "RLS denied" } });
     const result = await executeTool(
@@ -511,6 +540,28 @@ describe("add_task confirmation gate", () => {
     );
 
     expect(ctx.client.from).toHaveBeenCalledWith("family_members");
+  });
+
+  it("marks the note failed when the enrichment broke mid-write", async () => {
+    // A destructive failure can leave the note's stored results
+    // half-replaced — the visible failed state is what gets it retried.
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new PipelineStepError("Speichern fehlgeschlagen", "DB_STORE_FAILED", {
+        destructive: true,
+      }),
+    );
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(false);
+    expect(markDocumentFailed).toHaveBeenCalled();
+    expect(restoreConfirmedAfterAnalysisFailure).not.toHaveBeenCalled();
   });
 
   it("returns error when the insert fails", async () => {
@@ -1656,6 +1707,28 @@ describe("create_note confirmation gate", () => {
     // not be flagged as failed in the document list.
     expect(markDocumentFailed).not.toHaveBeenCalled();
     expect(restoreConfirmedAfterAnalysisFailure).toHaveBeenCalled();
+  });
+
+  it("marks the note failed when the enrichment broke mid-write", async () => {
+    // A destructive failure can leave the note's stored results
+    // half-replaced — the visible failed state is what gets it retried.
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+      new PipelineStepError("Speichern fehlgeschlagen", "DB_STORE_FAILED", {
+        destructive: true,
+      }),
+    );
+    const ctx = makeNoteCtx();
+    const result = await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.analysiert).toBe(false);
+    expect(markDocumentFailed).toHaveBeenCalled();
+    expect(restoreConfirmedAfterAnalysisFailure).not.toHaveBeenCalled();
   });
 
   it("returns error when the insert fails", async () => {

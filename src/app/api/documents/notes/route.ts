@@ -33,10 +33,10 @@ type NoteSuccessResponse = {
    * The stored row in the same column shape the document list uses, so the
    * client can show the note immediately instead of waiting for a refetch.
    */
-  document: DocumentListRow;
+  document: DocumentRow;
 };
 
-type DocumentListRow = Record<string, unknown> & { id: string };
+type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 /**
  * POST /api/documents/notes
@@ -73,6 +73,13 @@ type DocumentListRow = Record<string, unknown> & { id: string };
  *   - If Storage upload fails, NO documents row is created (no orphan).
  *   - If the documents insert fails, the Storage object is cleaned up.
  */
+
+/**
+ * The post-response enrichment drain (see step 7) runs the LLM analysis in
+ * this same invocation — allow enough wall-clock for it. The response
+ * itself is sent long before, so this never delays the user.
+ */
+export const maxDuration = 300;
 
 const noteSchema = z.object({
   title: z
@@ -300,11 +307,13 @@ export async function POST(request: Request): Promise<Response> {
   // (`next/server` after()), exactly like the upload route: the user gets
   // their note back immediately and enrichment lands a moment later via
   // realtime. Any failure here must never fail the note itself.
-  let serverPipeline = process.env.PIPELINE_MODE !== "sync";
+  let serverPipeline = false;
 
-  if (serverPipeline) {
+  if (process.env.PIPELINE_MODE !== "sync") {
     try {
       const { enqueueJob, runPendingJobs } = await import("@/lib/jobs");
+      // Once the job is queued the work will happen — the client must not
+      // start a second analysis even if the drain below cannot be wired up.
       serverPipeline = await enqueueJob(adminClient, {
         family_id: familyId,
         document_id: documentId,
@@ -335,8 +344,10 @@ export async function POST(request: Request): Promise<Response> {
         });
       }
     } catch {
-      // Enqueue unavailable — the client falls back to its own analyze call.
-      serverPipeline = false;
+      // Enqueue itself was unavailable — the client falls back to its own
+      // analyze call. A failure while wiring up the drain leaves
+      // `serverPipeline` true on purpose: the job is queued, and the
+      // scheduled worker picks it up.
     }
   }
 
@@ -345,7 +356,7 @@ export async function POST(request: Request): Promise<Response> {
     document_id: documentId,
     status: "confirmed",
     server_pipeline: serverPipeline,
-    document: docRow as unknown as DocumentListRow,
+    document: docRow as unknown as DocumentRow,
   };
   return Response.json(body, { status: 200 });
 }

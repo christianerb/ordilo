@@ -118,11 +118,42 @@ export class NoOcrTextError extends Error {
  */
 export class PipelineStepError extends Error {
   readonly code: string;
-  constructor(message: string, code: string) {
+  /**
+   * True when the failure happened while the document's stored results
+   * were being replaced. `storeExtractionResults` deletes the previous
+   * entities, tasks, facts and knowledge edges before inserting the new
+   * ones, and that sequence is not transactional — a failure in the middle
+   * can leave a document with its old derived data already gone.
+   *
+   * Callers must keep such a document in the visible `failed` state so the
+   * user can retry it. Only a non-destructive failure (the analysis never
+   * touched the stored results — an OpenAI outage, a context read error, a
+   * failed re-embedding after the results were fully written) may be
+   * rolled back to `confirmed`.
+   */
+  readonly destructive: boolean;
+  constructor(
+    message: string,
+    code: string,
+    options: { destructive?: boolean } = {},
+  ) {
     super(message);
     this.name = "PipelineStepError";
     this.code = code;
+    this.destructive = options.destructive ?? false;
   }
+}
+
+/**
+ * Whether a failed analysis may have left the document's stored results
+ * half-replaced — see {@link PipelineStepError.destructive}.
+ *
+ * Unknown errors are treated as non-destructive: they are thrown before
+ * the storage phase is reached (extraction, family context, OCR text), and
+ * everything raised from inside that phase is a PipelineStepError.
+ */
+export function isDestructiveAnalysisFailure(err: unknown): boolean {
+  return err instanceof PipelineStepError && err.destructive;
 }
 
 /**
@@ -309,7 +340,12 @@ export async function performAnalyzeStep(
       err instanceof Error
         ? err.message
         : "Ergebnisse konnten nicht gespeichert werden.";
-    throw new PipelineStepError(message, "DB_STORE_FAILED");
+    // Destructive: the prior entities/tasks/facts/edges may already be
+    // deleted, so this document must stay visibly failed and retryable —
+    // never be quietly restored to `confirmed`.
+    throw new PipelineStepError(message, "DB_STORE_FAILED", {
+      destructive: true,
+    });
   }
 
   // When re-analyzing a confirmed document, generate new embeddings with

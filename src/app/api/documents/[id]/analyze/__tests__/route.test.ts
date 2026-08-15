@@ -801,6 +801,29 @@ describe("POST /api/documents/[id]/analyze", () => {
     });
   });
 
+  it("marks a confirmed document failed when storing the results broke halfway", async () => {
+    // Replacing the stored results deletes the prior entities, tasks,
+    // facts and edges before inserting the new ones, and that is not
+    // transactional. A document that failed inside that window is missing
+    // data it used to have, so it must stay visibly failed and retryable —
+    // rolling it back to `confirmed` would hide the loss.
+    const client = mockServerClient({ docStatus: "confirmed", storeError: true });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(new Request("http://localhost"), createParams());
+
+    expect(response.status).toBe(500);
+    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+    // No rollback to confirmed happened.
+    const restoreCall = client._documentsBuilder.update.mock.calls.find(
+      (call: unknown[]) => {
+        const payload = call[0] as Record<string, unknown>;
+        return payload.status === "confirmed" && payload.failed_at === null;
+      },
+    );
+    expect(restoreCall).toBeUndefined();
+  });
+
   // --- Re-analyze from failed status works ---
 
   it("accepts re-analyze from failed status", async () => {

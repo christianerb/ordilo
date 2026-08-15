@@ -2,12 +2,19 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
-vi.mock("@/lib/pipeline/analyze-step", () => ({
-  performAnalyzeStep: vi.fn(),
-}));
+// Partial mock: the real PipelineStepError / isDestructiveAnalysisFailure
+// pair is what the worker branches on, so only the step itself is faked.
+vi.mock("@/lib/pipeline/analyze-step", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@/lib/pipeline/analyze-step")>();
+  return { ...actual, performAnalyzeStep: vi.fn() };
+});
 
 import { runPendingJobs } from "@/lib/jobs";
-import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import {
+  performAnalyzeStep,
+  PipelineStepError,
+} from "@/lib/pipeline/analyze-step";
 
 type Client = SupabaseClient<Database>;
 
@@ -130,6 +137,23 @@ describe("analyze job failure handling", () => {
       failure_code: null,
       failed_at: null,
     });
+  });
+
+  it("marks a confirmed document failed when the failure was destructive", async () => {
+    // Replacing the stored results is not transactional: a failure inside
+    // it can leave the document without entities/tasks/facts it used to
+    // have. Such a document must stay visibly failed and retryable.
+    vi.mocked(performAnalyzeStep).mockRejectedValue(
+      new PipelineStepError("Speichern fehlgeschlagen", "DB_STORE_FAILED", {
+        destructive: true,
+      }),
+    );
+    const { client, documentUpdates } = mockWorkerClient("confirmed");
+
+    const summary = await runPendingJobs(client, 1);
+
+    expect(summary.failed).toBe(1);
+    expect(documentUpdates.at(-1)).toMatchObject({ status: "failed" });
   });
 
   it("still marks a non-confirmed document failed", async () => {

@@ -267,38 +267,46 @@ export function useDocumentActions({
 
       // Everything below is deliberately NOT awaited: the caller closes the
       // sheet as soon as this resolves, and the user stays on the page they
-      // were on while the rest catches up in the background.
+      // were on while the rest catches up in the background. Nothing in
+      // here may reject either — the note is already saved, so a failing
+      // refresh must stay silent instead of becoming an unhandled
+      // rejection long after the sheet closed.
       void (async () => {
-        // Refresh server components so pages that fetch their own documents
-        // (e.g. the collection detail page, the home counters) pick the new
-        // note up — its category is already set at creation, so it files
-        // itself into the collection before analysis even runs.
-        router.refresh();
-
-        if (documentsLoadedRef.current) {
-          await fetchDocumentsRef.current(fid);
-        }
-
-        // The server enqueues enrichment itself (`server_pipeline: true`).
-        // Only fall back to a direct analyze call when it could not.
-        if (result.server_pipeline) return;
-
         try {
-          const response = await fetch(
-            `/api/documents/${result.document_id}/analyze`,
-            { method: "POST" },
-          );
-          if (!response.ok) {
+          // Refresh server components so pages that fetch their own
+          // documents (the collection detail page, the home counters) pick
+          // the new note up — its category is already set at creation, so
+          // it files itself into the collection before analysis even runs.
+          router.refresh();
+
+          if (documentsLoadedRef.current) {
+            await fetchDocumentsRef.current(fid);
+          }
+
+          // The server enqueues enrichment itself (`server_pipeline`).
+          // Only fall back to a direct analyze call when it could not.
+          if (result.server_pipeline) return;
+
+          try {
+            const response = await fetch(
+              `/api/documents/${result.document_id}/analyze`,
+              { method: "POST" },
+            );
+            if (!response.ok) {
+              triggeredAnalysisRef.current.delete(result.document_id);
+            }
+          } catch {
+            // Trigger failed — the note itself is saved and confirmed; the
+            // polling loop and the job worker both retry the enrichment.
             triggeredAnalysisRef.current.delete(result.document_id);
           }
-        } catch {
-          // Trigger failed — the note itself is saved and confirmed; the
-          // polling loop and the job worker both retry the enrichment.
-          triggeredAnalysisRef.current.delete(result.document_id);
-        }
 
-        if (documentsLoadedRef.current) {
-          await fetchDocumentsRef.current(fid);
+          if (documentsLoadedRef.current) {
+            await fetchDocumentsRef.current(fid);
+          }
+        } catch {
+          // The note is stored; realtime and the next poll reconcile the
+          // list. Never surface this to the user.
         }
       })();
     },
