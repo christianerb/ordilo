@@ -271,6 +271,28 @@ describe("findMembersByRelationship", () => {
     ]);
   });
 
+  it("prefers the exact role over the generic one", () => {
+    // One child is filled in as "Tochter", the other only as "Kind" —
+    // "meiner Tochter" is about the daughter, not about both.
+    expect(
+      findMembersByRelationship("Steuer-ID meiner Tochter", [
+        { name: "Hanna", role: "Tochter" },
+        { name: "Jonas", role: "Kind" },
+      ]),
+    ).toEqual(["Hanna"]);
+  });
+
+  it("does not answer a partner question with a parent", () => {
+    // Across relations there is no generic: "meine Frau" is not the
+    // Mutter, who in a family app is a different person entirely.
+    expect(
+      findMembersByRelationship("Die Versichertennummer meiner Frau", [
+        { name: "Ute", role: "Mutter" },
+        { name: "Hanna", role: "Tochter" },
+      ]),
+    ).toEqual([]);
+  });
+
   it("falls back to the generic child role when nobody is a 'Tochter'", () => {
     // Families that only ever typed "Kind" still get their children
     // scoped — which at least narrows the parents away.

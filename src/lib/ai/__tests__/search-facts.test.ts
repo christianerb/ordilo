@@ -442,6 +442,61 @@ describe("factSearch", () => {
     expect(client.rpc).not.toHaveBeenCalled();
   });
 
+  it("says nothing rather than hand over the other child's number", async () => {
+    // Only Emma's Steuer-ID is stored. "Wie ist die Steuer-ID von Hanna?"
+    // must not be answered with it just because it is the only one.
+    const client = mockClient({
+      facts: [
+        fact({
+          document_id: "doc-1",
+          label: "Steuer-ID Emma",
+          value: "12 345 678 901",
+          normalized_value: "12345678901",
+        }),
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Steuer-ID von Hanna?",
+      FAMILY_ID,
+    );
+
+    expect(results).toEqual([]);
+  });
+
+  it("drops a sole fact whose document is about someone else", async () => {
+    const client = mockClient({
+      facts: [fact({ document_id: "doc-1" })],
+      entities: [{ document_id: "doc-1", normalized_value: "emma" }],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Steuer-ID von Hanna?",
+      FAMILY_ID,
+    );
+
+    expect(results).toEqual([]);
+  });
+
+  it("keeps a fact nobody is attached to — unknown is not someone else", async () => {
+    // A bare "Steuer-ID" on a document with no extracted person could be
+    // Hanna's. Withholding it would be as wrong as guessing.
+    const client = mockClient({
+      facts: [fact({ document_id: "doc-1", label: "Steuer-ID" })],
+      entities: [],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Steuer-ID von Hanna?",
+      FAMILY_ID,
+    );
+
+    expect(results).toHaveLength(1);
+  });
+
   it("ignores facts whose document is not confirmed", async () => {
     const client = mockClient({
       facts: [fact({ document_id: "doc-1" })],

@@ -304,27 +304,35 @@ export interface MemberRef {
  * meiner Tochter". The word is matched against the member's `role`, which
  * is what the family typed when they added the person.
  *
- * Each entry lists the roles that answer the word. "Tochter" and "Sohn"
- * fall back to the generic "Kind": a family that only ever typed "Kind"
- * still gets its children scoped, which narrows away the parents — and
- * every answer names the person it belongs to, so a family with two
- * children sees whose number is whose instead of a silent wrong pick.
+ * `roles` is what the word actually means. `fallbackRoles` is consulted
+ * ONLY when no member carries any of the exact roles: a family that typed
+ * "Tochter" for one child and "Kind" for the other must get the daughter
+ * alone, while a family that only ever typed "Kind" still gets its
+ * children scoped, which at least narrows the parents away.
+ *
+ * Fallbacks exist only where one role is genuinely the generic of the
+ * other (a Tochter is a Kind). Across relations there is none: "meine
+ * Frau" must never resolve to the Mutter, who in a family app is a
+ * different person entirely.
  */
 const RELATIONSHIP_ROLES: ReadonlyArray<{
   words: readonly string[];
   roles: readonly string[];
+  fallbackRoles?: readonly string[];
 }> = [
-  { words: ["tochter", "töchter", "toechter"], roles: ["tochter", "kind"] },
-  { words: ["sohn", "söhne", "soehne"], roles: ["sohn", "kind"] },
   {
-    words: ["kind", "kinder"],
-    roles: ["kind", "tochter", "sohn"],
+    words: ["tochter", "töchter", "toechter"],
+    roles: ["tochter"],
+    fallbackRoles: ["kind"],
   },
   {
-    words: ["mutter", "mama", "mami"],
-    roles: ["mutter", "partner:in", "partnerin"],
+    words: ["sohn", "söhne", "soehne"],
+    roles: ["sohn"],
+    fallbackRoles: ["kind"],
   },
-  { words: ["vater", "papa", "papi"], roles: ["vater", "partner:in"] },
+  { words: ["kind", "kinder"], roles: ["kind", "tochter", "sohn"] },
+  { words: ["mutter", "mama", "mami"], roles: ["mutter"] },
+  { words: ["vater", "papa", "papi"], roles: ["vater"] },
   { words: ["eltern"], roles: ["mutter", "vater", "elternteil"] },
   {
     words: ["frau", "ehefrau", "partnerin", "partner", "mann", "ehemann"],
@@ -336,7 +344,8 @@ const RELATIONSHIP_ROLES: ReadonlyArray<{
   { words: ["schwester", "schwestern"], roles: ["schwester"] },
   {
     words: ["geschwister"],
-    roles: ["bruder", "schwester", "kind", "tochter", "sohn"],
+    roles: ["bruder", "schwester"],
+    fallbackRoles: ["kind", "tochter", "sohn"],
   },
 ];
 
@@ -352,22 +361,33 @@ export function findMembersByRelationship(
   query: string,
   members: MemberRef[],
 ): string[] {
-  const wantedRoles = new Set<string>();
+  const withRole = members
+    .map((member) => ({
+      name: member.name,
+      role: member.role?.trim().toLowerCase() ?? "",
+    }))
+    .filter((member) => member.role);
+
+  const matched = new Set<string>();
   for (const entry of RELATIONSHIP_ROLES) {
     // Possessive-tolerant for the same reason names are: "Omas Papiere",
     // "Mamas Termin" is how the question gets asked.
-    if (entry.words.some((word) => matchesPersonName(query, word))) {
-      for (const role of entry.roles) wantedRoles.add(role);
-    }
-  }
-  if (wantedRoles.size === 0) return [];
+    if (!entry.words.some((word) => matchesPersonName(query, word))) continue;
 
-  return members
-    .filter((member) => {
-      const role = member.role?.trim().toLowerCase();
-      return Boolean(role && wantedRoles.has(role));
-    })
-    .map((member) => member.name);
+    const exact = withRole.filter((member) => entry.roles.includes(member.role));
+    // The generic role answers only when the exact one names nobody.
+    const chosen =
+      exact.length > 0
+        ? exact
+        : withRole.filter((member) =>
+            (entry.fallbackRoles ?? []).includes(member.role),
+          );
+
+    for (const member of chosen) matched.add(member.name);
+  }
+
+  // Keep the caller's order.
+  return members.filter((m) => matched.has(m.name)).map((m) => m.name);
 }
 
 /**

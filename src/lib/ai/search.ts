@@ -562,17 +562,25 @@ type ScopableFact = {
  *   1. Kind — keep the facts whose label matches a term describing the
  *      number itself. The person's name is not such a term, so
  *      "Kundennummer Hanna" drops out of a question about the Steuer-ID.
- *   2. Person — keep the facts belonging to a named member, by the name
- *      in the fact's own label ("Steuer-ID Hanna") or, failing that, by
- *      the persons extracted from its document. The label pass is what
- *      makes this work inside ONE document: a Steuerbescheid listing two
- *      children carries both their numbers, and the document-level signal
- *      cannot tell them apart.
+ *   2. Person — sort the facts by whom they belong to, by the name in the
+ *      fact's own label ("Steuer-ID Hanna") and by the persons extracted
+ *      from its document. The label is what makes this work inside ONE
+ *      document: a Steuerbescheid listing two children carries both their
+ *      numbers, and the document-level signal cannot tell them apart.
  *
- * Each pass only narrows when it has something to keep — a pass that
- * would empty the list leaves it as it was, because a wrong guess must
- * never swallow the only answer there is. Facts matched by their value
- * survive both passes: asking what a number IS stays answerable.
+ * The two passes fail in opposite directions, because they are not
+ * equally certain:
+ *
+ *   - A kind pass that would empty the list leaves it as it was. A label
+ *     can name the right number without using the word the question used.
+ *   - A fact that positively belongs to SOMEBODY ELSE is dropped, even if
+ *     it is the last one standing. Answering "Wie ist die Steuer-ID von
+ *     Hanna?" with the only stored Steuer-ID, Emma's, is worse than
+ *     answering nothing. A fact nobody is attached to survives — unknown
+ *     is not the same as somebody else's.
+ *
+ * Facts matched by their value survive both passes: asking what a number
+ * IS stays answerable.
  */
 async function narrowFactCandidates<T extends ScopableFact>(
   serverClient: ServerClient,
@@ -581,9 +589,7 @@ async function narrowFactCandidates<T extends ScopableFact>(
   facts: T[],
   labelTerms: string[],
 ): Promise<T[]> {
-  // A single candidate is the answer or nothing — no narrowing needed,
-  // and no reason to pay for the member/entity lookups.
-  if (facts.length < 2) return facts;
+  if (facts.length === 0) return facts;
 
   const members = await fetchMembers(serverClient, familyId);
   const mentioned = findMentionedPeople(query, members);
@@ -605,39 +611,54 @@ async function narrowFactCandidates<T extends ScopableFact>(
   );
   const kindScoped = byKind.length > 0 ? byKind : facts;
 
-  if (mentioned.length === 0 || kindScoped.length < 2) return kindScoped;
+  if (mentioned.length === 0) return kindScoped;
 
-  // 2. Person pass, by label first — the only signal that separates two
-  //    people's numbers on the same document.
-  const byLabel = kindScoped.filter(
-    (f) =>
-      f.valueMatch ||
-      mentioned.some((name) => matchesPersonName(f.label, name)),
-  );
-  if (byLabel.length > 0) return byLabel;
+  // 2. Person pass. Everyone in the family who was NOT asked about is a
+  //    reason to reject a fact, not merely a weaker match.
+  const others = members
+    .map((m) => m.name.trim())
+    .filter((name) => name && !mentioned.includes(name));
+
+  const namedInLabel = (f: T, names: string[]) =>
+    names.some((name) => matchesPersonName(f.label, name));
+
+  const asked = kindScoped.filter((f) => f.valueMatch || namedInLabel(f, mentioned));
+  if (asked.length > 0) return asked;
+
+  // Nothing carries the asked-for name. Whatever positively belongs to
+  // someone else is out; the rest is undecided and needs the document.
+  const undecided = kindScoped.filter((f) => !namedInLabel(f, others));
+  if (undecided.length === 0) return [];
 
   const { data: entities } = await serverClient
     .from("extracted_entities")
     .select("document_id, normalized_value")
     .eq("family_id", familyId)
     .eq("entity_type", "person")
-    .in("document_id", [...new Set(kindScoped.map((f) => f.document_id))]);
+    .in("document_id", [...new Set(undecided.map((f) => f.document_id))]);
 
-  const personDocIds = new Set(
-    (entities ?? [])
-      .filter((e) =>
-        mentioned.some((name) =>
-          matchesPersonName(e.normalized_value ?? "", name),
-        ),
-      )
-      .map((e) => e.document_id),
+  const docPersons = new Map<string, string[]>();
+  for (const entity of entities ?? []) {
+    const list = docPersons.get(entity.document_id) ?? [];
+    list.push(entity.normalized_value ?? "");
+    docPersons.set(entity.document_id, list);
+  }
+
+  const namesDoc = (documentId: string, names: string[]) =>
+    (docPersons.get(documentId) ?? []).some((value) =>
+      names.some((name) => matchesPersonName(value, name)),
+    );
+
+  const byDocument = undecided.filter(
+    (f) => f.valueMatch || namesDoc(f.document_id, mentioned),
   );
+  if (byDocument.length > 0) return byDocument;
 
-  const byDocument = kindScoped.filter(
-    (f) => f.valueMatch || personDocIds.has(f.document_id),
+  // Keep only what nobody else has claimed — a document about Emma alone
+  // does not answer a question about Hanna.
+  return undecided.filter(
+    (f) => f.valueMatch || !namesDoc(f.document_id, others),
   );
-
-  return byDocument.length > 0 ? byDocument : kindScoped;
 }
 
 // ---------------------------------------------------------------------------
