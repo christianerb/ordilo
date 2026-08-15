@@ -547,6 +547,10 @@
   --auth-sage-wash: #E6F0EC;
   --auth-blue-wash: #E5EEF1;
   --auth-apricot-wash: #F8E7D4;
+  /* Lavender and teal fill out the wash palette for surfaces (e.g. the
+     family member cards) that cycle through more than four tints. */
+  --auth-lavender-wash: #EDE9F5;
+  --auth-teal-wash: #E3EEEE;
 
   /* Shared canvas language — auth, landing, and authenticated app */
   --canvas-warm: var(--auth-background);
@@ -556,6 +560,8 @@
   --wash-sage-soft: var(--auth-sage-wash);
   --wash-blue: var(--auth-blue-wash);
   --wash-apricot: var(--auth-apricot-wash);
+  --wash-lavender: var(--auth-lavender-wash);
+  --wash-teal: var(--auth-teal-wash);
 
   /* Radius — Ordilo uses 20-28px on primary cards */
   --radius: 20px; /* base for shadcn; sm/md/lg/xl overridden above */
