@@ -209,6 +209,67 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
     ).toBe("fam-invited");
   });
 
+  // Regression: onboarding_completed_at lives on the FAMILY, but the gate
+  // read it as the USER's own progress. An invitee whose family creator was
+  // still mid-setup got bounced from /home into HER onboarding — asked to
+  // name a family they had just joined. Joining leaves nothing to onboard.
+  it("lets an invited member into /home although the creator never finished onboarding", async () => {
+    setupMock({
+      familyData: null,
+      membershipData: {
+        family_id: "fam-erb",
+        families: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: null,
+        },
+      },
+    });
+
+    const request = createMockRequest("/home");
+    const response = await updateSession(request);
+
+    expect(response.status).toBe(200);
+    expect(
+      response.headers.get("x-middleware-request-x-ordilo-family-id"),
+    ).toBe("fam-erb");
+  });
+
+  it("sends an invited member off /onboarding to /home", async () => {
+    setupMock({
+      familyData: null,
+      membershipData: {
+        family_id: "fam-erb",
+        families: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: null,
+        },
+      },
+    });
+
+    const response = await updateSession(createMockRequest("/onboarding"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/home");
+  });
+
+  // The owner's own gate is unchanged: a half-finished setup still holds.
+  it("keeps the creator in onboarding while their own marker is NULL", async () => {
+    setupMock({
+      familyData: {
+        id: "fam-own",
+        name: "Familie Schmidt",
+        onboarding_completed_at: null,
+      },
+    });
+
+    const response = await updateSession(createMockRequest("/home"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/onboarding");
+  });
+
   it("allows completed user with zero members to access /home", async () => {
     setupMock({ familyData: COMPLETED_FAMILY });
 

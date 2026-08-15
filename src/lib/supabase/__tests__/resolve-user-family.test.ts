@@ -86,7 +86,7 @@ describe("resolveUserFamily", () => {
   it("returns the owned family", async () => {
     const { client } = mockSupabase({ owned: ownedFamily });
     const result = await resolveUserFamily(client);
-    expect(result).toEqual({ data: ownedFamily, error: null });
+    expect(result).toEqual({ data: { ...ownedFamily, isOwner: true }, error: null });
   });
 
   it("prefers the owned family and never queries memberships", async () => {
@@ -98,7 +98,7 @@ describe("resolveUserFamily", () => {
       membership: { family_id: invitedFamily.id, families: invitedFamily },
     });
     const result = await resolveUserFamily(client);
-    expect(result.data).toEqual(ownedFamily);
+    expect(result.data).toEqual({ ...ownedFamily, isOwner: true });
     expect(fromSpy).not.toHaveBeenCalledWith("family_memberships");
   });
 
@@ -107,7 +107,7 @@ describe("resolveUserFamily", () => {
       membership: { family_id: invitedFamily.id, families: invitedFamily },
     });
     const result = await resolveUserFamily(client);
-    expect(result.data).toEqual(invitedFamily);
+    expect(result.data).toEqual({ ...invitedFamily, isOwner: false });
   });
 
   it("orders the fallback by membership creation, not family creation", async () => {
@@ -138,7 +138,7 @@ describe("resolveUserFamily", () => {
       owned: ownedFamily,
     });
     const result = await resolveUserFamily(client, "user-1");
-    expect(result.data).toEqual(ownedFamily);
+    expect(result.data).toEqual({ ...ownedFamily, isOwner: true });
     expect(getUserSpy).not.toHaveBeenCalled();
     expect(ownedChain.eq).toHaveBeenCalledWith("created_by", "user-1");
   });

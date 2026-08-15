@@ -6,7 +6,10 @@ import {
   FAMILY_NAME_HEADER,
   USER_EMAIL_HEADER,
 } from "@/lib/supabase/family-context";
-import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
+import {
+  isOnboardingComplete,
+  resolveUserFamily,
+} from "@/lib/supabase/resolve-user-family";
 
 /**
  * Refresh the Supabase auth session on every matched request and protect
@@ -155,10 +158,11 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
       supabaseResponse = rebuildWithRequestHeaders(request, supabaseResponse);
     }
 
-    // onboarding_complete = family exists AND onboarding_completed_at is set.
     // No family (null) → not complete (user needs to start onboarding).
-    // Family with completed_at NULL → not complete (mid-onboarding).
-    const onboardingComplete = !!(family && family.onboarding_completed_at);
+    // Owned family with completed_at NULL → not complete (mid-onboarding).
+    // JOINED family → complete: an invitee has nothing to set up, and the
+    // marker they would be judged by belongs to the creator's run.
+    const onboardingComplete = isOnboardingComplete(family);
 
     if (!onboardingComplete && isAppRoute) {
       // Not onboarded: redirect ALL app routes → /onboarding. This covers

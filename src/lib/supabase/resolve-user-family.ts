@@ -7,7 +7,30 @@ type FamilyRow = Database["public"]["Tables"]["families"]["Row"];
 export type ResolvedFamily = Pick<
   FamilyRow,
   "id" | "name" | "onboarding_completed_at"
->;
+> & {
+  /**
+   * True when the user CREATED this family, false when they JOINED it via
+   * an invite. `onboarding_completed_at` records the creator's run through
+   * the setup flow, so it only says anything about an owner.
+   */
+  isOwner: boolean;
+};
+
+/**
+ * Whether the signed-in user may pass the onboarding gate.
+ *
+ * Onboarding means "name your family, add its people". Someone who accepted
+ * an invite has neither to do — the family already exists, named and
+ * populated. Gating them on `families.onboarding_completed_at` judges them
+ * by the CREATOR's progress: while she is still mid-setup, every invitee is
+ * bounced into HER half-finished flow instead of landing in the family they
+ * just joined.
+ */
+export function isOnboardingComplete(family: ResolvedFamily | null): boolean {
+  if (!family) return false;
+  if (!family.isOwner) return true;
+  return !!family.onboarding_completed_at;
+}
 
 const QUERY_ERROR_MESSAGE =
   "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
@@ -75,7 +98,7 @@ export async function resolveUserFamily(
     return { data: null, error: QUERY_ERROR_MESSAGE };
   }
   if (owned) {
-    return { data: owned, error: null };
+    return { data: { ...owned, isOwner: true }, error: null };
   }
 
   // Invite-only account: oldest membership wins. Ordered by the
@@ -102,5 +125,6 @@ export async function resolveUserFamily(
     return { data: null, error: null };
   }
 
-  return { data: family, error: null };
+  // Reached only when the user owns no family, so this membership is a join.
+  return { data: { ...family, isOwner: false }, error: null };
 }
