@@ -1,7 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { performOcrStep } from "@/lib/pipeline/ocr-step";
-import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
+import {
+  performAnalyzeStep,
+  isDestructiveAnalysisFailure,
+} from "@/lib/pipeline/analyze-step";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
@@ -14,6 +17,7 @@ import {
   reportPipelineFailure,
   type PipelineFailureStage,
 } from "@/lib/pipeline/failure-tracking";
+import { restoreConfirmedAfterAnalysisFailure } from "@/lib/supabase/document-helpers";
 
 /**
  * Background job queue for the document pipeline.
@@ -327,7 +331,9 @@ async function executeAnalyzeJob(
 ): Promise<"done" | "skipped"> {
   const { data: document, error: readError } = await adminClient
     .from("documents")
-    .select("id, family_id, status, ocr_text, category")
+    // `source`, `title` and `document_type` let the analyze step keep what
+    // the user typed and picked on a manual note.
+    .select("id, family_id, status, ocr_text, category, source, title, document_type")
     .eq("id", documentId)
     .maybeSingle();
 
@@ -360,14 +366,36 @@ async function executeAnalyzeJob(
       family_id: document.family_id,
       ocr_text: document.ocr_text,
       category: document.category,
+      source: document.source,
+      title: document.title,
+      document_type: document.document_type,
       wasConfirmed,
     });
   } catch (err) {
-    await markDocumentFailedAdmin(adminClient, documentId, err, {
-      stage: "analysis",
-      code: getErrorCode(err, "ANALYSIS_FAILED"),
-      familyId: document.family_id,
-    });
+    // A confirmed document (every manual note is one) already holds
+    // everything the user wrote — analysis only enriches it. Roll it back
+    // to `confirmed` instead of flagging it "Hat nicht geklappt"; the job
+    // itself still fails, so the retry/backoff worker takes another run.
+    //
+    // Except after a destructive failure: replacing the stored results
+    // deletes the prior entities/tasks/facts/edges before inserting the
+    // new ones, so a document that failed mid-replacement is missing data
+    // and must stay visibly `failed` rather than look healthy.
+    if (wasConfirmed && !isDestructiveAnalysisFailure(err)) {
+      await restoreConfirmedAfterAnalysisFailure(adminClient, documentId, {
+        stage: "analysis",
+        code: getErrorCode(err, "ANALYSIS_FAILED"),
+        cause: err,
+        familyId: document.family_id,
+        source: "job",
+      });
+    } else {
+      await markDocumentFailedAdmin(adminClient, documentId, err, {
+        stage: "analysis",
+        code: getErrorCode(err, "ANALYSIS_FAILED"),
+        familyId: document.family_id,
+      });
+    }
     throw err;
   }
 

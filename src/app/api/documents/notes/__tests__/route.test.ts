@@ -8,10 +8,26 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createClient: vi.fn(),
 }));
+// The route enqueues the enrichment analysis instead of running it inline,
+// and drains the queue after the response is sent.
+vi.mock("@/lib/jobs", () => ({
+  enqueueJob: vi.fn().mockResolvedValue(true),
+  runPendingJobs: vi.fn().mockResolvedValue({
+    claimed: 0,
+    succeeded: 0,
+    failed: 0,
+    results: [],
+  }),
+}));
+vi.mock("next/server", () => ({
+  after: vi.fn(),
+}));
 
 import { POST } from "@/app/api/documents/notes/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { enqueueJob } from "@/lib/jobs";
+import { after } from "next/server";
 
 const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 
@@ -23,7 +39,8 @@ const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 function mockServerClient(options: {
   user?: { id: string; email: string } | null;
   family?: { id: string } | null;
-  docInsert?: { id: string } | null;
+  /** The row the insert returns — the route selects the full list shape. */
+  docInsert?: Record<string, unknown> | null;
   docInsertError?: unknown;
 } = {}) {
   const {
@@ -212,6 +229,59 @@ describe("POST /api/documents/notes", () => {
     expect(response.status).toBe(200);
     const insertPayload = serverClient._documentsInsertMock.mock.calls[0][0] as Record<string, unknown>;
     expect(decryptSecret(insertPayload.secret as string)).toBe(secret);
+  });
+
+  // --- Enrichment runs in the background, not inside the save ------------
+
+  it("queues the analysis instead of running it inside the request", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.status).toBe("confirmed");
+    // The client must skip its own analyze call when the server queued one.
+    expect(body.server_pipeline).toBe(true);
+
+    const enqueueCall = (enqueueJob as ReturnType<typeof vi.fn>).mock.calls[0][1];
+    expect(enqueueCall.job_type).toBe("analyze");
+    expect(enqueueCall.family_id).toBe(FAMILY_ID);
+    expect(enqueueCall.document_id).toBe(body.document_id);
+    // The queue is drained only after the response is sent.
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the stored row so the client can render the note at once", async () => {
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({ docInsert: { id: "doc-1", title: "Arzt Dr. Müller" } }),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.document).toMatchObject({ id: "doc-1", title: "Arzt Dr. Müller" });
+  });
+
+  it("still saves the note when the analysis cannot be queued", async () => {
+    (enqueueJob as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({}),
+    );
+    (createAdminClient as ReturnType<typeof vi.fn>).mockReturnValue(mockAdminClient());
+
+    const response = await POST(createNoteRequest(VALID_FIELDS));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    // The client falls back to triggering the analysis itself.
+    expect(body.server_pipeline).toBe(false);
+    expect(after).not.toHaveBeenCalled();
   });
 
   it("omits the secret column when no secret is provided", async () => {

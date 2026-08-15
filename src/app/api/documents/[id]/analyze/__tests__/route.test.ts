@@ -113,6 +113,11 @@ function mockServerClient(options: {
   docStatus?: string;
   docOcrText?: string | null;
   docCategory?: string | null;
+  /** documents.source — "manual" marks a hand-written note. */
+  docSource?: string | null;
+  /** The user-given title/type on a manual note. */
+  docTitle?: string | null;
+  docType?: string | null;
   docNotFound?: boolean;
   pages?: { ocr_markdown: string | null }[];
   members?: { id: string; name: string; role: string | null }[];
@@ -128,6 +133,9 @@ function mockServerClient(options: {
     docStatus = "ocr_done",
     docOcrText = "OCR text from document",
     docCategory = null,
+    docSource = "upload",
+    docTitle = null,
+    docType = null,
     docNotFound = false,
     pages = [{ ocr_markdown: "# Page 1\n\nOCR content" }],
     members = [{ id: "member-1", name: "Emma", role: "Kind" }],
@@ -172,6 +180,9 @@ function mockServerClient(options: {
                 status: docStatus,
                 ocr_text: docOcrText,
                 category: docCategory,
+                source: docSource,
+                title: docTitle,
+                document_type: docType,
               },
               error: null,
             }),
@@ -757,6 +768,62 @@ describe("POST /api/documents/[id]/analyze", () => {
     expect(body.status).toBe("confirmed");
   });
 
+  // --- A confirmed document never gets flagged as failed ------------------
+
+  it("keeps a confirmed document confirmed when extraction fails", async () => {
+    // Manual notes are created as `confirmed`, and analysis only enriches
+    // them. A failing OpenAI call used to repaint the note as "Hat nicht
+    // geklappt" even though the text the user typed was stored perfectly.
+    (runExtraction as ReturnType<typeof vi.fn>).mockRejectedValue(
+      new ExtractionError("OpenAI error", "OPENAI_API_ERROR", 500),
+    );
+    const client = mockServerClient({ docStatus: "confirmed" });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(new Request("http://localhost"), createParams());
+
+    expect(response.status).toBe(502);
+    // No `failed` status write at all …
+    expect(client._operations.markFailed ?? 0).toBe(0);
+    // … instead the document is rolled back to `confirmed` with the
+    // failure fields cleared, so the list shows it as filed, not broken.
+    const restoreCall = client._documentsBuilder.update.mock.calls.find(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).status === "confirmed",
+    );
+    expect(restoreCall).toBeDefined();
+    expect(restoreCall![0]).toMatchObject({
+      status: "confirmed",
+      error_message: null,
+      failure_stage: null,
+      failure_code: null,
+      failed_at: null,
+    });
+  });
+
+  it("marks a confirmed document failed when storing the results broke halfway", async () => {
+    // Replacing the stored results deletes the prior entities, tasks,
+    // facts and edges before inserting the new ones, and that is not
+    // transactional. A document that failed inside that window is missing
+    // data it used to have, so it must stay visibly failed and retryable —
+    // rolling it back to `confirmed` would hide the loss.
+    const client = mockServerClient({ docStatus: "confirmed", storeError: true });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const response = await POST(new Request("http://localhost"), createParams());
+
+    expect(response.status).toBe(500);
+    expect(client._operations.markFailed).toBeGreaterThanOrEqual(1);
+    // No rollback to confirmed happened.
+    const restoreCall = client._documentsBuilder.update.mock.calls.find(
+      (call: unknown[]) => {
+        const payload = call[0] as Record<string, unknown>;
+        return payload.status === "confirmed" && payload.failed_at === null;
+      },
+    );
+    expect(restoreCall).toBeUndefined();
+  });
+
   // --- Re-analyze from failed status works ---
 
   it("accepts re-analyze from failed status", async () => {
@@ -923,6 +990,39 @@ describe("POST /api/documents/[id]/analyze", () => {
     expect(finalUpdateCall).toBeDefined();
     const payload = finalUpdateCall![0] as Record<string, unknown>;
     expect(payload.category).toBe("Unterlagen");
+  });
+
+  it("keeps the title, type and collection the user gave a manual note", async () => {
+    // "Dokument anlegen" asks for a title, a type (dropdown) and, from a
+    // collection, files the note there. Enrichment must not overwrite any
+    // of the three with the model's guesses — it only adds summary, tags,
+    // dates and search data. Manual notes are `confirmed` from the start,
+    // which is why they need their own guard.
+    const client = mockServerClient({
+      docStatus: "confirmed",
+      docSource: "manual",
+      docTitle: "Steuer ID Hanna",
+      docType: "tax",
+      docCategory: "Unterlagen",
+    });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    await POST(new Request("http://localhost"), createParams());
+
+    const updateCalls = client._documentsBuilder.update.mock.calls;
+    const finalUpdateCall = updateCalls.find(
+      (call: unknown[]) =>
+        (call[0] as Record<string, unknown>).status === "confirmed",
+    );
+    expect(finalUpdateCall).toBeDefined();
+    const payload = finalUpdateCall![0] as Record<string, unknown>;
+    expect(payload.title).toBe("Steuer ID Hanna");
+    expect(payload.document_type).toBe("tax");
+    expect(payload.category).toBe("Unterlagen");
+    // The enrichment the note is analyzed for still lands.
+    expect(payload.summary).toBe(
+      "Elternabend in der Kita Sonnenblume am 15. Juli 2026.",
+    );
   });
 
   it("re-categorizes on re-analysis of a confirmed document even when a category is set", async () => {

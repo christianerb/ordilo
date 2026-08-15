@@ -1,7 +1,10 @@
 import type { Database } from "@/types/database";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
-import { createClient as createServerClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@/lib/supabase/admin";
+// Type-only: the helpers accept whichever client the caller already built.
+// A value import would drag `next/headers` into the job worker, which runs
+// outside a request scope.
+import type { createClient as createServerClient } from "@/lib/supabase/server";
+import type { createClient as createAdminClient } from "@/lib/supabase/admin";
 import {
   reportPipelineFailure,
   type PipelineFailureStage,
@@ -103,6 +106,76 @@ export async function markDocumentFailed(
       documentId,
       familyId: options.familyId,
       source: "api",
+    });
+  }
+}
+
+/**
+ * Roll a document that was already `confirmed` back to `confirmed` after a
+ * failed (re-)analysis, instead of marking it `failed`.
+ *
+ * Analysis of a confirmed document is pure enrichment — tags, summary,
+ * search embeddings. The document itself is intact and the user has
+ * already seen and confirmed its contents, so a transient OpenAI hiccup
+ * must not repaint it as "Hat nicht geklappt" in the list. That is what
+ * happened to every manually written note whose enrichment failed: the
+ * note was perfectly saved, yet showed up as an error the user could not
+ * act on.
+ *
+ * The failure is still reported to Sentry, and the queued job retries with
+ * backoff, so nothing is silently swallowed.
+ *
+ * Best-effort: a secondary DB error is reported, never thrown.
+ */
+export async function restoreConfirmedAfterAnalysisFailure(
+  client: ServerClient | AdminClient,
+  documentId: string,
+  options: {
+    stage: PipelineFailureStage;
+    code: string;
+    cause: unknown;
+    familyId?: string | null;
+    source?: "api" | "job";
+  },
+): Promise<void> {
+  const source = options.source ?? "api";
+
+  reportPipelineFailure(options.cause, {
+    stage: options.stage,
+    code: options.code,
+    documentId,
+    familyId: options.familyId,
+    source,
+  });
+
+  try {
+    const { error } = await client
+      .from("documents")
+      .update({
+        status: "confirmed",
+        error_message: null,
+        failure_stage: null,
+        failure_code: null,
+        failed_at: null,
+        partial_analysis: null,
+      })
+      .eq("id", documentId);
+    if (error) {
+      reportPipelineFailure(error, {
+        stage: options.stage,
+        code: "FAILURE_PERSIST_FAILED",
+        documentId,
+        familyId: options.familyId,
+        source,
+      });
+    }
+  } catch (error) {
+    reportPipelineFailure(error, {
+      stage: options.stage,
+      code: "FAILURE_PERSIST_FAILED",
+      documentId,
+      familyId: options.familyId,
+      source,
     });
   }
 }

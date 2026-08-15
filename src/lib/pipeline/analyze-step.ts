@@ -13,6 +13,7 @@ import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
   computeNeedsUserReview,
   normalizeFactValue,
+  DOCUMENT_TYPES,
   type DocumentAnalysis,
   type FamilyContext,
 } from "@/lib/schemas/extraction";
@@ -87,6 +88,17 @@ export interface AnalyzeStepDocument {
    * (before analysis runs) — see the preservation guard below.
    */
   category?: string | null;
+  /**
+   * How the document entered the app. `"manual"` marks a hand-written
+   * note: its title, type and collection come from the user, so analysis
+   * enriches it (summary, tags, entities, search) without rewriting what
+   * the user typed and picked.
+   */
+  source?: string | null;
+  /** The user-given title, preserved for manual notes. */
+  title?: string | null;
+  /** The user-picked document type, preserved for manual notes. */
+  document_type?: string | null;
   /** Whether the document was previously confirmed (re-analyze support). */
   wasConfirmed: boolean;
 }
@@ -106,11 +118,42 @@ export class NoOcrTextError extends Error {
  */
 export class PipelineStepError extends Error {
   readonly code: string;
-  constructor(message: string, code: string) {
+  /**
+   * True when the failure happened while the document's stored results
+   * were being replaced. `storeExtractionResults` deletes the previous
+   * entities, tasks, facts and knowledge edges before inserting the new
+   * ones, and that sequence is not transactional — a failure in the middle
+   * can leave a document with its old derived data already gone.
+   *
+   * Callers must keep such a document in the visible `failed` state so the
+   * user can retry it. Only a non-destructive failure (the analysis never
+   * touched the stored results — an OpenAI outage, a context read error, a
+   * failed re-embedding after the results were fully written) may be
+   * rolled back to `confirmed`.
+   */
+  readonly destructive: boolean;
+  constructor(
+    message: string,
+    code: string,
+    options: { destructive?: boolean } = {},
+  ) {
     super(message);
     this.name = "PipelineStepError";
     this.code = code;
+    this.destructive = options.destructive ?? false;
   }
+}
+
+/**
+ * Whether a failed analysis may have left the document's stored results
+ * half-replaced — see {@link PipelineStepError.destructive}.
+ *
+ * Unknown errors are treated as non-destructive: they are thrown before
+ * the storage phase is reached (extraction, family context, OCR text), and
+ * everything raised from inside that phase is a PipelineStepError.
+ */
+export function isDestructiveAnalysisFailure(err: unknown): boolean {
+  return err instanceof PipelineStepError && err.destructive;
 }
 
 /**
@@ -253,15 +296,32 @@ export async function performAnalyzeStep(
     familyContext.collections ?? [],
   );
 
+  // What the user typed and picked wins over what the model guesses.
+  //
   // A note created inside a collection is pinned to that collection's
   // category at creation time (documents.category is set before analysis
-  // runs). Preserve it on the first analysis instead of letting the LLM
-  // file the note somewhere else — the user explicitly chose the
-  // collection. Scanned documents have no category before their first
-  // analysis, so this guard only ever fires for pinned manual notes.
-  // Re-analysis of a confirmed document may still re-categorize.
-  if (!document.wasConfirmed && document.category) {
+  // runs). Preserve it instead of letting the LLM file the note somewhere
+  // else — the user explicitly chose the collection. Manual notes are
+  // created as `confirmed`, so the wasConfirmed check alone stopped
+  // covering them and the model quietly re-filed pinned notes.
+  const isManualNote = document.source === "manual";
+  if (document.category && (isManualNote || !document.wasConfirmed)) {
     analysis.suggested_category = document.category;
+  }
+
+  // Same for the title and the type: on a note they are the user's own
+  // input (the title field and the type dropdown in "Dokument anlegen"),
+  // not something extracted from a scan. Everything else the analysis
+  // produces — summary, tags, dates, tasks, search embeddings — still
+  // lands on the note.
+  if (isManualNote) {
+    if (document.title) analysis.title = document.title;
+    if (document.document_type) {
+      const userType = document.document_type;
+      if ((DOCUMENT_TYPES as readonly string[]).includes(userType)) {
+        analysis.document_type = userType as DocumentAnalysis["document_type"];
+      }
+    }
   }
 
   // Override the LLM's self-assessment with the deterministic threshold.
@@ -280,7 +340,12 @@ export async function performAnalyzeStep(
       err instanceof Error
         ? err.message
         : "Ergebnisse konnten nicht gespeichert werden.";
-    throw new PipelineStepError(message, "DB_STORE_FAILED");
+    // Destructive: the prior entities/tasks/facts/edges may already be
+    // deleted, so this document must stay visibly failed and retryable —
+    // never be quietly restored to `confirmed`.
+    throw new PipelineStepError(message, "DB_STORE_FAILED", {
+      destructive: true,
+    });
   }
 
   // When re-analyzing a confirmed document, generate new embeddings with

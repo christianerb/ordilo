@@ -25,8 +25,14 @@ import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
 import { validateCollectionInput } from "@/lib/schemas/collections";
 import { validateMember } from "@/lib/schemas/onboarding";
-import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
-import { markDocumentFailed } from "@/lib/supabase/document-helpers";
+import {
+  performAnalyzeStep,
+  isDestructiveAnalysisFailure,
+} from "@/lib/pipeline/analyze-step";
+import {
+  markDocumentFailed,
+  restoreConfirmedAfterAnalysisFailure,
+} from "@/lib/supabase/document-helpers";
 import { eventOccursOn, type EventOccurrenceSource } from "@/lib/calendar";
 
 // ---------------------------------------------------------------------------
@@ -2691,20 +2697,41 @@ async function executeCreateNote(
       id: documentId,
       family_id: ctx.familyId,
       ocr_text: content,
+      // The user named this note in the chat — analysis must not rename
+      // it. The type is a placeholder here, so the analysis may still set
+      // it; it is not passed in.
+      source: "manual",
+      title,
       wasConfirmed: true,
     });
   } catch (err) {
-    await markDocumentFailed(
-      ctx.client,
-      documentId,
-      err instanceof Error ? err.message : "Analyse ist fehlgeschlagen.",
-      {
+    // The note itself is saved and confirmed — only the enrichment failed.
+    // Marking it `failed` would show the user an unusable error card for a
+    // note that is perfectly intact (the message below says as much).
+    //
+    // A destructive failure is the exception: it can leave the note's
+    // stored results half-replaced, and only the visible failed state gets
+    // the user to retry it.
+    if (isDestructiveAnalysisFailure(err)) {
+      await markDocumentFailed(
+        ctx.client,
+        documentId,
+        err instanceof Error ? err.message : "Analyse ist fehlgeschlagen.",
+        {
+          stage: "analysis",
+          code: "ANALYSIS_FAILED",
+          cause: err,
+          familyId: ctx.familyId,
+        },
+      );
+    } else {
+      await restoreConfirmedAfterAnalysisFailure(ctx.client, documentId, {
         stage: "analysis",
         code: "ANALYSIS_FAILED",
         cause: err,
         familyId: ctx.familyId,
-      },
-    );
+      });
+    }
     return JSON.stringify({
       success: true,
       document_id: documentId,

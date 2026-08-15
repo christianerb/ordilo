@@ -1,12 +1,23 @@
 import type { UploadErrorResponse } from "@/lib/schemas/document";
 import { DOCUMENT_TYPES, type DocumentType } from "@/lib/schemas/extraction";
+import type { Database } from "@/types/database";
+
+type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 /**
  * Success response from POST /api/documents/notes.
+ *
+ * `server_pipeline` is true when the server queued the enrichment analysis
+ * itself — the client must then not fire its own analyze request.
+ * `document` is the stored row (document-list column shape) so the caller
+ * can render the note immediately without a refetch. Both are optional in
+ * the type so an older cached response still parses.
  */
 type NoteSuccessResponse = {
   document_id: string;
   status: "confirmed";
+  server_pipeline?: boolean;
+  document?: DocumentRow;
 };
 
 /**

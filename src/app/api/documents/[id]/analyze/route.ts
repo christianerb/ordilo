@@ -5,11 +5,13 @@ import { methodNotAllowed } from "@/lib/api/respond";
 import {
   resolveDocumentWithOwnership,
   markDocumentFailed,
+  restoreConfirmedAfterAnalysisFailure,
 } from "@/lib/supabase/document-helpers";
 import { ExtractionError } from "@/lib/ai/extraction";
 import {
   loadOcrText,
   performAnalyzeStep,
+  isDestructiveAnalysisFailure,
   NoOcrTextError,
   PipelineStepError,
 } from "@/lib/pipeline/analyze-step";
@@ -151,6 +153,9 @@ export async function POST(
       family_id: document.family_id,
       ocr_text: document.ocr_text,
       category: document.category,
+      source: document.source,
+      title: document.title,
+      document_type: document.document_type,
       wasConfirmed,
     });
   } catch (err) {
@@ -168,12 +173,32 @@ export async function POST(
           ? "ANALYSIS_FAILED"
           : "EXTRACTION_FAILED";
 
-    await markDocumentFailed(serverClient, documentId, message, {
-      stage: "analysis",
-      code,
-      cause: err,
-      familyId: document.family_id,
-    });
+    // Re-analyzing a confirmed document is enrichment, not the document's
+    // own processing: roll it back to `confirmed` rather than flagging a
+    // finished document as failed.
+    //
+    // Not when the failure was destructive, though. Replacing the stored
+    // results deletes the previous entities, tasks, facts and edges before
+    // writing the new ones, so a failure in the middle of that leaves the
+    // document short of data it used to have. Such a document stays
+    // `failed`: visible in the list and retryable by the user, which is
+    // the only way it gets repaired — this route has no queued retry
+    // behind it.
+    if (wasConfirmed && !isDestructiveAnalysisFailure(err)) {
+      await restoreConfirmedAfterAnalysisFailure(serverClient, documentId, {
+        stage: "analysis",
+        code,
+        cause: err,
+        familyId: document.family_id,
+      });
+    } else {
+      await markDocumentFailed(serverClient, documentId, message, {
+        stage: "analysis",
+        code,
+        cause: err,
+        familyId: document.family_id,
+      });
+    }
 
     const statusCode =
       isExtractionError && err instanceof ExtractionError

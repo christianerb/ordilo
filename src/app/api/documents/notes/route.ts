@@ -16,15 +16,27 @@ import {
   readFileHeaderBytes,
   sanitizeFilename,
 } from "@/lib/api/storage";
+import { DOCUMENT_LIST_COLUMNS } from "@/lib/scan/document-list-columns";
 
 /**
  * Success response for POST /api/documents/notes.
  * Status is "confirmed" because the note text was entered by the user.
+ *
+ * `server_pipeline` tells the client that enrichment is already queued
+ * server-side, so it must not fire its own analyze request.
  */
 type NoteSuccessResponse = {
   document_id: string;
   status: "confirmed";
+  server_pipeline: boolean;
+  /**
+   * The stored row in the same column shape the document list uses, so the
+   * client can show the note immediately instead of waiting for a refetch.
+   */
+  document: DocumentRow;
 };
+
+type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
 /**
  * POST /api/documents/notes
@@ -34,8 +46,10 @@ type NoteSuccessResponse = {
  * and a document_pages row so the existing analysis pipeline can process
  * it without modification. A manual note is created as "confirmed": the
  * user already entered and saw its contents, so it must not join the review
- * queue. The client may still trigger background analysis for search and
- * organization; that analysis preserves the confirmed status.
+ * queue. Enrichment (search index, tags, summary) runs afterwards in the
+ * background job queue and preserves the confirmed status — the response
+ * returns as soon as the note is stored, so saving a note never waits for
+ * an LLM round trip.
  *
  * Accepts multipart form data with:
  *   - title:         the note title (required, 1–200 chars)
@@ -52,12 +66,20 @@ type NoteSuccessResponse = {
  *   5. Insert documents row (status = "confirmed", source = "manual",
  *      ocr_text = content)
  *   6. Insert document_pages row (page_number = 1, ocr_markdown = content)
- *   7. Return { document_id, status: "ocr_done" }
+ *   7. Enqueue the `analyze` job and drain it after the response is sent
+ *   8. Return { document_id, status: "confirmed", server_pipeline }
  *
  * Error handling mirrors the upload route:
  *   - If Storage upload fails, NO documents row is created (no orphan).
  *   - If the documents insert fails, the Storage object is cleaned up.
  */
+
+/**
+ * The post-response enrichment drain (see step 7) runs the LLM analysis in
+ * this same invocation — allow enough wall-clock for it. The response
+ * itself is sent long before, so this never delays the user.
+ */
+export const maxDuration = 300;
 
 const noteSchema = z.object({
   title: z
@@ -239,10 +261,13 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
+  // Select the full list column set (not just the id): the response hands
+  // the stored row straight back so the client can render the note without
+  // a follow-up round trip.
   const { data: docRow, error: insertError } = await serverClient
     .from("documents")
     .insert(insertPayload)
-    .select("id")
+    .select(DOCUMENT_LIST_COLUMNS)
     .single();
 
   if (insertError || !docRow) {
@@ -273,10 +298,65 @@ export async function POST(request: Request): Promise<Response> {
     // Log but don't fail the request.
   }
 
-  // 7. Success ------------------------------------------------------------
+  // 7. Async enrichment: enqueue the analyze job -------------------------
+  // The note is already complete and readable for the user — analysis only
+  // adds tags, a summary and search embeddings. Running it here (as the
+  // client used to, by POSTing /analyze right after the save) kept the
+  // "Wird gespeichert ..." spinner on screen for the entire LLM round trip.
+  // Enqueue instead and drain the queue AFTER the response is sent
+  // (`next/server` after()), exactly like the upload route: the user gets
+  // their note back immediately and enrichment lands a moment later via
+  // realtime. Any failure here must never fail the note itself.
+  let serverPipeline = false;
+
+  if (process.env.PIPELINE_MODE !== "sync") {
+    try {
+      const { enqueueJob, runPendingJobs } = await import("@/lib/jobs");
+      // Once the job is queued the work will happen — the client must not
+      // start a second analysis even if the drain below cannot be wired up.
+      serverPipeline = await enqueueJob(adminClient, {
+        family_id: familyId,
+        document_id: documentId,
+        job_type: "analyze",
+      });
+
+      if (serverPipeline) {
+        const { after } = await import("next/server");
+        after(async () => {
+          try {
+            for (let round = 0; round < 3; round++) {
+              const summary = await runPendingJobs(adminClient, 3);
+              if (summary.claimed === 0) break;
+            }
+          } catch (err) {
+            // Jobs stay pending — the retry/backoff worker covers for this.
+            const { reportPipelineFailure, getErrorCode } = await import(
+              "@/lib/pipeline/failure-tracking"
+            );
+            reportPipelineFailure(err, {
+              stage: "analysis",
+              code: getErrorCode(err, "PIPELINE_DRAIN_FAILED"),
+              documentId,
+              familyId,
+              source: "job",
+            });
+          }
+        });
+      }
+    } catch {
+      // Enqueue itself was unavailable — the client falls back to its own
+      // analyze call. A failure while wiring up the drain leaves
+      // `serverPipeline` true on purpose: the job is queued, and the
+      // scheduled worker picks it up.
+    }
+  }
+
+  // 8. Success ------------------------------------------------------------
   const body: NoteSuccessResponse = {
     document_id: documentId,
     status: "confirmed",
+    server_pipeline: serverPipeline,
+    document: docRow as unknown as DocumentRow,
   };
   return Response.json(body, { status: 200 });
 }
