@@ -97,9 +97,10 @@ export function ReviewCardContent({
   /**
    * "review" — the document is not in the family book yet; the primary
    * action adds it. "edit" — it already is, and the primary action saves
-   * the correction. Tasks are read-only in edit mode: they live in the
-   * task list with their own status and assignee, which a document edit
-   * must not silently rewrite.
+   * the correction. Tasks and numbers are read-only in edit mode: both
+   * are owned elsewhere (the task list keeps its own status and assignee,
+   * numbers are written row by row from the calm confirmed view), and
+   * this screen's save does not touch either table.
    */
   mode?: "review" | "edit";
   analysis: DocumentAnalysis;
@@ -440,7 +441,13 @@ export function ReviewCardContent({
 
         {/* Facts — exact identifiers (serial numbers, contract numbers, …).
             Shown monospaced so single-character OCR errors are easy to
-            spot, with a one-tap correction input. */}
+            spot, with a one-tap correction input.
+
+            In edit mode they are read-only: a confirmed document's numbers
+            are corrected row by row in the calm view, which writes them
+            straight to `document_facts` (this screen's save deliberately
+            leaves that table alone, so an edit here would look saved and
+            silently revert). */}
         {analysis.facts.length > 0 && (
           <ReviewFieldSection
             icon={Hash}
@@ -462,11 +469,13 @@ export function ReviewCardContent({
                   sourceText={fact.value}
                   onShowSource={onViewOriginal}
                   editControl={
-                    <FactEditControl
-                      value={displayValue}
-                      label={fact.label || typeLabel}
-                      onChange={(v) => onEditFact(i, v)}
-                    />
+                    isEditMode ? undefined : (
+                      <FactEditControl
+                        value={displayValue}
+                        label={fact.label || typeLabel}
+                        onChange={(v) => onEditFact(i, v)}
+                      />
+                    )
                   }
                 >
                   <span className="block truncate font-mono">{displayValue}</span>
@@ -476,6 +485,12 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
+            {isEditMode && (
+              <p className="py-2 text-xs text-muted-foreground">
+                Nummern korrigierst du in der Übersicht — dort werden sie
+                sofort gespeichert.
+              </p>
+            )}
           </ReviewFieldSection>
         )}
 

@@ -6,15 +6,35 @@ vi.mock("@/lib/supabase/server", () => ({
 vi.mock("@/lib/supabase/admin", () => ({
   createClient: vi.fn(),
 }));
+vi.mock("@/lib/pipeline/document-embeddings", () => ({
+  buildDocumentEmbeddings: vi.fn(),
+  buildLabelEmbeddings: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("@/lib/ai/embeddings", () => ({
-  generateEmbeddings: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]),
-  embeddingToVectorString: vi.fn((emb: number[]) => `[${emb.join(",")}]`),
+  EmbeddingError: class EmbeddingError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = "EmbeddingError";
+      this.code = code;
+    }
+  },
 }));
 
 import { PATCH } from "@/app/api/documents/[id]/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
-import type { ConfirmRpcEntity } from "@/types/database";
+import { buildDocumentEmbeddings } from "@/lib/pipeline/document-embeddings";
+import type { ConfirmRpcEmbedding, ConfirmRpcEntity } from "@/types/database";
+
+const REBUILT_EMBEDDING: ConfirmRpcEmbedding = {
+  chunk_text: "Notiz zum Stundenlohn",
+  embedding: "[0.1,0.2,0.3]",
+  page_number: 1,
+  chunk_index: 0,
+  chunk_total: 1,
+  chunk_type: "chunk",
+};
 
 const DOCUMENT_ID = "550e8400-e29b-41d4-a716-446655440000";
 const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
@@ -80,6 +100,7 @@ function mockServerClient({
                 family_id: FAMILY_ID,
                 status: docStatus,
                 title: "Notiz zum Stundenlohn",
+                ocr_text: "Der Stundenlohn beträgt 17 EUR.",
               }
             : null,
           error: null,
@@ -88,10 +109,19 @@ function mockServerClient({
     })),
   };
 
+  const pagesBuilder = {
+    select: vi.fn().mockReturnValue({
+      eq: vi.fn().mockReturnValue({
+        order: vi.fn().mockResolvedValue({ data: [], error: null }),
+      }),
+    }),
+  };
+
   const client = {
     auth: { getUser: vi.fn().mockResolvedValue({ data: { user } }) },
     from: vi.fn((table: string) => {
       if (table === "documents") return documentsBuilder;
+      if (table === "document_pages") return pagesBuilder;
       // The category canonicalization reads collections too; it is
       // best-effort, so an unmocked table simply falls back.
       throw new Error(`Unexpected table: ${table}`);
@@ -123,6 +153,7 @@ function mockAdminClient(exists = true) {
 describe("PATCH /api/documents/[id]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(buildDocumentEmbeddings).mockResolvedValue([REBUILT_EMBEDDING]);
   });
 
   it("rejects an unauthenticated request", async () => {
@@ -186,6 +217,34 @@ describe("PATCH /api/documents/[id]", () => {
     expect(amount?.amount_minor).toBe(1700);
     const person = entities.find((e) => e.entity_type === "person");
     expect(person?.entity_value).toBe("Emma");
+  });
+
+  it("rebuilds the search embeddings from the corrected metadata", async () => {
+    const { client, rpcCalls } = mockServerClient();
+    vi.mocked(createServerClient).mockResolvedValue(client as never);
+    vi.mocked(createAdminClient).mockReturnValue(mockAdminClient() as never);
+
+    await PATCH(request(validPayload()), params());
+
+    // The vectors carry the title and the metadata-derived questions, so a
+    // corrected title must not keep answering searches with the old one.
+    expect(vi.mocked(buildDocumentEmbeddings).mock.calls[0][0].metadata).toEqual(
+      expect.objectContaining({ title: "Notiz zum Stundenlohn" }),
+    );
+    expect(rpcCalls[0].params.p_embeddings).toEqual([REBUILT_EMBEDDING]);
+  });
+
+  it("keeps the document untouched when the embeddings cannot be rebuilt", async () => {
+    const { client, rpcCalls } = mockServerClient();
+    vi.mocked(createServerClient).mockResolvedValue(client as never);
+    vi.mocked(createAdminClient).mockReturnValue(mockAdminClient() as never);
+    vi.mocked(buildDocumentEmbeddings).mockRejectedValue(new Error("openai down"));
+
+    const response = await PATCH(request(validPayload()), params());
+
+    expect(response.status).toBe(502);
+    // Nothing was written — the old values stay readable.
+    expect(rpcCalls).toHaveLength(0);
   });
 
   it("never sends tasks or facts — those are edited where they live", async () => {

@@ -104,6 +104,22 @@ export function sortTasksByDate<
 }
 
 // ---------------------------------------------------------------------------
+// Today
+// ---------------------------------------------------------------------------
+
+/**
+ * Today as the user's calendar sees it (YYYY-MM-DD, local time).
+ *
+ * Never `toISOString()`: that is UTC, so between local midnight and the
+ * UTC day roll a task due today would be grouped under "Diese Woche"
+ * while its own row reads "Heute". Grouping, drop targets, and due labels
+ * all take their "today" from here.
+ */
+export function todayLocalDate(now = new Date()): string {
+  return now.toLocaleDateString("sv-SE");
+}
+
+// ---------------------------------------------------------------------------
 // Board drag-and-drop
 // ---------------------------------------------------------------------------
 

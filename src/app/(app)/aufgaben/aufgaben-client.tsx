@@ -26,6 +26,7 @@ import {
   sortTasksByDate,
   getTaskDropUpdates,
   getTaskGroup,
+  todayLocalDate,
   type TaskBoardColumnId,
   type TaskDropUpdates,
 } from "@/lib/task-utils";
@@ -363,8 +364,9 @@ export function AufgabenClient({
   });
 
   // Fresh "today" on every render so overdue/today/this-week groups stay
-  // correct across long sessions (module-level dates would freeze).
-  const nowStr = new Date().toISOString().split("T")[0];
+  // correct across long sessions (module-level dates would freeze), and
+  // in the user's own calendar day so grouping and the row labels agree.
+  const nowStr = todayLocalDate();
 
   const { toggleDone, dismiss, reschedule } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>

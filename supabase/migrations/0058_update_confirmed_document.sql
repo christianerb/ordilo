@@ -10,8 +10,6 @@
 --
 --   * status / confirmed_at stay as they are (the document was added once;
 --     editing it later is not a second "added" moment)
---   * document_embeddings are left alone — the OCR text did not change, so
---     the chunks (and their vectors) are still correct
 --   * tasks and document_facts are left alone — both have their own edit
 --     surfaces (task detail sheet, "Nummern & Kennungen"), and rewriting
 --     tasks here would reset their status and assignee
@@ -20,10 +18,21 @@
 --   * documents: title, summary, document_type, category
 --   * the knowledge graph for this document (document node + person and
 --     organization nodes/edges), so search follows the corrected names
+--   * document_embeddings — the OCR text is unchanged, but the vectors are
+--     not built from it alone: chunks are contextualized with the title and
+--     the synthetic question rows are generated from title, summary, type,
+--     persons, organization and tags. Leaving them would keep answering
+--     searches with the old name.
 --   * extracted_entities (persons, organizations, dates, amounts, category,
 --     tags) — the same replace-all semantics as confirm
 --
--- Idempotent: `create or replace`.
+-- Idempotent: `create or replace`, plus a defensive drop of the earlier
+-- signature (this function gained `p_embeddings` before its first release,
+-- and an overload would make the PostgREST call ambiguous).
+
+drop function if exists public.update_confirmed_document(
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb
+);
 
 create or replace function public.update_confirmed_document(
   p_document_id      uuid,
@@ -34,8 +43,10 @@ create or replace function public.update_confirmed_document(
   p_category         text,
   p_persons          jsonb default '[]'::jsonb,
   p_organizations    jsonb default '[]'::jsonb,
+  p_embeddings       jsonb default '[]'::jsonb,
   p_label_embeddings jsonb default '[]'::jsonb,
-  p_entities         jsonb default '[]'::jsonb
+  p_entities         jsonb default '[]'::jsonb,
+  p_pipeline_version int default 1
 )
 returns jsonb
 language plpgsql
@@ -46,6 +57,7 @@ declare
   v_org_node_id      uuid;
   v_person           jsonb;
   v_org              jsonb;
+  v_emb              jsonb;
   v_entity           jsonb;
   v_label_emb        jsonb;
   v_updated          int;
@@ -212,6 +224,35 @@ begin
     );
   end loop;
 
+  delete from public.document_embeddings
+    where document_id = p_document_id;
+
+  for v_emb in select * from jsonb_array_elements(p_embeddings)
+  loop
+    insert into public.document_embeddings (
+      document_id,
+      family_id,
+      chunk_text,
+      embedding,
+      metadata_json,
+      pipeline_version
+    )
+    values (
+      p_document_id,
+      p_family_id,
+      v_emb->>'chunk_text',
+      (v_emb->>'embedding')::vector,
+      jsonb_build_object(
+        'document_id', p_document_id,
+        'page_number', coalesce((v_emb->>'page_number')::int, 1),
+        'chunk_index', coalesce((v_emb->>'chunk_index')::int, 0),
+        'chunk_total', coalesce((v_emb->>'chunk_total')::int, 0),
+        'chunk_type', coalesce(v_emb->>'chunk_type', 'chunk')
+      ),
+      p_pipeline_version
+    );
+  end loop;
+
   delete from public.extracted_entities
     where document_id = p_document_id;
 
@@ -259,9 +300,9 @@ end;
 $$;
 
 revoke execute on function public.update_confirmed_document(
-  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, int
 ) from public;
 
 grant execute on function public.update_confirmed_document(
-  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, int
 ) to authenticated;

@@ -1249,8 +1249,8 @@ export type Database = {
         Returns: ConfirmRpcResult;
       };
       // update_confirmed_document — edit a document that is already in the
-      // family book: rewrites its row, knowledge graph, and entities in one
-      // transaction, leaving status/confirmed_at, embeddings, tasks, and
+      // family book: rewrites its row, knowledge graph, embeddings, and
+      // entities in one transaction, leaving status/confirmed_at, tasks, and
       // facts alone. See supabase/migrations/0058_update_confirmed_document.sql.
       update_confirmed_document: {
         Args: {
@@ -1262,8 +1262,10 @@ export type Database = {
           p_category: string;
           p_persons: ConfirmRpcPerson[];
           p_organizations: ConfirmRpcOrganization[];
+          p_embeddings: ConfirmRpcEmbedding[];
           p_label_embeddings: ConfirmRpcLabelEmbedding[];
           p_entities: ConfirmRpcEntity[];
+          p_pipeline_version: number;
         };
         Returns: UpdateDocumentRpcResult;
       };

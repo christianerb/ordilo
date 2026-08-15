@@ -4,7 +4,11 @@ import Link from "next/link";
 import { CalendarDays, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
-import { formatTaskDueLabel, type TaskRow } from "@/lib/task-utils";
+import {
+  formatTaskDueLabel,
+  todayLocalDate,
+  type TaskRow,
+} from "@/lib/task-utils";
 import { CardActions } from "@/components/ordilo/card-actions";
 import { MemberAvatar } from "@/components/ordilo/member-avatar";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
@@ -70,7 +74,7 @@ export function TaskCard({
   const { openDocument } = useDocumentViewer();
   const isDone = task.status === "done";
   const isOpen = task.status === "open";
-  const todayStr = new Date().toLocaleDateString("sv-SE");
+  const todayStr = todayLocalDate();
   // "Heute", "Morgen", "Do" — the long date only once it is far enough
   // away that a weekday would be ambiguous.
   const dueLabel = formatTaskDueLabel(task.due_date, todayStr);

@@ -14,11 +14,14 @@ import {
 import { dedupeDates, dedupeAmounts } from "@/lib/analysis-cleanup";
 import { canonicalizeCategoryForFamily } from "@/lib/categories-server";
 import { buildEntityRows } from "@/lib/pipeline/entity-rows";
+import { PIPELINE_VERSION } from "@/lib/ai/models";
+import { EmbeddingError } from "@/lib/ai/embeddings";
 import {
-  generateEmbeddings,
-  embeddingToVectorString,
-} from "@/lib/ai/embeddings";
+  buildDocumentEmbeddings,
+  buildLabelEmbeddings,
+} from "@/lib/pipeline/document-embeddings";
 import type {
+  ConfirmRpcEmbedding,
   ConfirmRpcLabelEmbedding,
   UpdateDocumentRpcResult,
 } from "@/types/database";
@@ -128,15 +131,17 @@ export async function DELETE(
  *      still in review is edited through the review + confirm flow
  *   5. Clean the payload the same way confirm does (duplicate dates and
  *      amounts, generic labels, canonical collection spelling)
- *   6. Embed the graph labels (title, person and organization names) so
- *      semantic graph matching keeps working after a rename — best-effort
+ *   6. Rebuild the search embeddings from the document's OCR text and the
+ *      corrected metadata (the chunk vectors carry the title, the synthetic
+ *      questions carry persons, organization and tags), plus the graph
+ *      label embeddings so a rename stays semantically matchable
  *   7. Call `update_confirmed_document`, which rewrites the document row,
- *      its knowledge graph, and its extracted entities in one transaction
+ *      its knowledge graph, its embeddings, and its extracted entities in
+ *      one transaction
  *
  * Deliberately untouched: `confirmed_at` and `status` (the document was
- * added once), `document_embeddings` (the OCR text did not change), tasks,
- * and facts — the latter two have their own edit surfaces, and rewriting
- * tasks here would reset their status and assignee.
+ * added once), tasks, and facts — both have their own edit surfaces, and
+ * rewriting tasks here would reset their status and assignee.
  *
  * A failed update never marks the document failed: it stays confirmed and
  * readable with its previous values, and the user can simply try again.
@@ -205,28 +210,48 @@ export async function PATCH(
     payload.suggested_category,
   );
 
+  // Search embeddings carry the metadata, not just the OCR text: chunk
+  // vectors are contextualized with the title, and the synthetic question
+  // vectors are generated from title, summary, type, persons, organization
+  // and tags. A corrected name would otherwise keep matching the old one,
+  // so every edit rebuilds them from the OCR the document already has.
+  const { data: pages, error: pagesError } = await serverClient
+    .from("document_pages")
+    .select("ocr_markdown, page_number")
+    .eq("document_id", documentId)
+    .order("page_number", { ascending: true });
+
+  if (pagesError) {
+    return jsonError(
+      "Dokument konnte nicht gelesen werden. Bitte nochmal versuchen.",
+      "DB_READ_FAILED",
+      500,
+    );
+  }
+
+  let embeddings: ConfirmRpcEmbedding[];
+  try {
+    embeddings = await buildDocumentEmbeddings({
+      pages: pages ?? [],
+      ocrTextFallback: document.ocr_text,
+      metadata: payload,
+    });
+  } catch (err) {
+    // The document keeps its previous values and stays confirmed — this
+    // failed before any write, so there is nothing to roll back.
+    console.error(`[documents] Embedding rebuild failed for ${documentId}:`, err);
+    return jsonError(
+      "Änderungen konnten nicht gespeichert werden. Bitte nochmal versuchen.",
+      err instanceof EmbeddingError ? err.code : "EMBEDDING_FAILED",
+      502,
+    );
+  }
+
   // Label embeddings keep the knowledge graph semantically searchable
   // ("Kita" → "Kindergarten") after a rename. A failure here costs fuzzy
   // matching for the renamed node, not the edit.
-  const labelEmbeddings: ConfirmRpcLabelEmbedding[] = [];
-  try {
-    const labels = [
-      payload.title || "Dokument",
-      ...payload.family_members.map((m) => m.name).filter(Boolean),
-      ...payload.organizations.map((o) => o.name).filter(Boolean),
-    ];
-    const vectors = await generateEmbeddings(
-      labels.map((text, index) => ({ text, index })),
-    );
-    for (let i = 0; i < labels.length; i++) {
-      labelEmbeddings.push({
-        label: labels[i],
-        embedding: embeddingToVectorString(vectors[i]),
-      });
-    }
-  } catch {
-    // Continue without them.
-  }
+  const labelEmbeddings: ConfirmRpcLabelEmbedding[] =
+    await buildLabelEmbeddings(payload);
 
   const { data: rpcResult, error: rpcError } = await serverClient.rpc(
     "update_confirmed_document",
@@ -247,8 +272,13 @@ export async function PATCH(
         type: org.type,
         confidence: org.confidence,
       })),
+      p_embeddings: embeddings,
       p_label_embeddings: labelEmbeddings,
       p_entities: buildEntityRows(payload),
+      // The vectors were just regenerated with the current model, so they
+      // carry today's pipeline version — the reindex job must not treat
+      // them as stale.
+      p_pipeline_version: PIPELINE_VERSION,
     },
   );
 

@@ -454,6 +454,30 @@ describe("ReviewCard", () => {
     expect(await screen.findByTestId("review-card-confirmed")).toBeDefined();
   });
 
+  it("keeps numbers read-only while editing — they are saved elsewhere", async () => {
+    const withFact = {
+      ...fullAnalysis,
+      facts: [
+        {
+          fact_type: "serial_number" as const,
+          label: "Seriennummer",
+          value: "SN 4823-XK",
+          confidence: 0.9,
+        },
+      ],
+    };
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(withFact);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    // The calm view owns fact editing (it writes straight to the facts
+    // endpoint); the edit screen must not offer a control whose value it
+    // would silently drop on save.
+    fireEvent.click(await screen.findByTestId("confirmed-edit-button"));
+    expect(screen.getByText("SN 4823-XK")).toBeDefined();
+    expect(screen.queryByTestId("edit-fact-button")).toBeNull();
+  });
+
   it("does not let a document be saved without a title", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
 
