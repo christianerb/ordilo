@@ -108,6 +108,40 @@ export function isBirthdayToday(
 }
 
 /**
+ * Calculate a person's current age in full years from their birthdate.
+ *
+ * Timezone-safe: parses the ISO date string manually instead of using
+ * `new Date()` to avoid UTC offsets shifting the day.
+ *
+ * @param iso - An ISO date string (YYYY-MM-DD), or null/undefined.
+ * @returns Age in full years, or null when the birthdate is invalid.
+ */
+export function getAgeInYears(
+  iso: string | null | undefined,
+): number | null {
+  if (!iso) return null;
+
+  const dateOnly = iso.split(/[T ]/)[0];
+  const parts = dateOnly.split("-");
+  if (parts.length !== 3) return null;
+
+  const [birthYear, birthMonth, birthDay] = parts.map(Number);
+  if (!birthYear || !birthMonth || !birthDay) return null;
+
+  const now = new Date();
+  const currentMonth = now.getMonth() + 1;
+  const currentDay = now.getDate();
+
+  let age = now.getFullYear() - birthYear;
+  const beforeBirthdayThisYear =
+    currentMonth < birthMonth ||
+    (currentMonth === birthMonth && currentDay < birthDay);
+  if (beforeBirthdayThisYear) age -= 1;
+
+  return age >= 0 ? age : null;
+}
+
+/**
  * Format an ISO timestamp as a human-readable relative time in German.
  *
  * Produces strings like "gerade eben", "vor 2 Stunden", "vor 3 Tagen",
