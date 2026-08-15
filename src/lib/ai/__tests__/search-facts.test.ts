@@ -18,7 +18,6 @@ const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 
 type FactRow = {
   document_id: string;
-  fact_type: string;
   label: string;
   value: string;
   normalized_value: string;
@@ -79,7 +78,6 @@ function mockClient(options: {
 
 function fact(overrides: Partial<FactRow> & { document_id: string }): FactRow {
   return {
-    fact_type: "tax_id",
     label: "Steuer-ID",
     value: "74 031 832 353",
     normalized_value: "74031832353",
@@ -192,6 +190,30 @@ describe("factSearch", () => {
     );
 
     expect(results).toHaveLength(2);
+  });
+
+  it("finds a number nobody put in a category, by its label alone", async () => {
+    // There is no type list to fall into — "Zählernummer Keller" is found
+    // because that is what it is called.
+    const client = mockClient({
+      facts: [
+        fact({
+          document_id: "doc-1",
+          label: "Zählernummer Keller",
+          value: "1ESY1161234567",
+          normalized_value: "1esy1161234567",
+        }),
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Zählernummer im Keller?",
+      FAMILY_ID,
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].chunk_text).toBe("Zählernummer Keller: 1ESY1161234567");
   });
 
   it("ignores facts whose document is not confirmed", async () => {

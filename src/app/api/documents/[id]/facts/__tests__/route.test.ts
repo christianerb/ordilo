@@ -12,8 +12,7 @@ const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 
 const INSERTED_FACT = {
   id: "fact-1",
-  fact_type: "serial_number",
-  label: "Seriennummer",
+  label: "Seriennummer Waschmaschine",
   value: "SN 4823-XK",
 };
 
@@ -91,44 +90,23 @@ describe("/api/documents/[id]/facts", () => {
     vi.clearAllMocks();
   });
 
-  it("POST returns 400 for an unknown fact_type", async () => {
-    mockClient(mockServerClient().client);
-
-    const response = await POST(
-      request({ fact_type: "bogus", value: "123" }),
-      params(),
-    );
-
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib eine gültige Nummer und ihren Typ an.",
-      code: "INVALID_INPUT",
-    });
-  });
-
   it("POST returns 400 for an empty value", async () => {
     mockClient(mockServerClient().client);
 
-    const response = await POST(
-      request({ fact_type: "serial_number", value: "   " }),
-      params(),
-    );
+    const response = await POST(request({ value: "   " }), params());
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib eine gültige Nummer und ihren Typ an.",
+      error: "Bitte gib eine gültige Nummer an.",
       code: "INVALID_INPUT",
     });
   });
 
-  it("POST inserts a confirmed fact with the default label", async () => {
+  it("POST inserts a confirmed fact with the fallback label", async () => {
     const { client, insert } = mockServerClient();
     mockClient(client);
 
-    const response = await POST(
-      request({ fact_type: "serial_number", value: "SN 4823-XK" }),
-      params(),
-    );
+    const response = await POST(request({ value: "SN 4823-XK" }), params());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
@@ -139,8 +117,8 @@ describe("/api/documents/[id]/facts", () => {
       expect.objectContaining({
         document_id: DOCUMENT_ID,
         family_id: FAMILY_ID,
-        fact_type: "serial_number",
-        label: "Seriennummer",
+        fact_type: "identifier",
+        label: "Nummer",
         value: "SN 4823-XK",
         normalized_value: "sn4823xk",
         confidence: 1.0,
@@ -149,12 +127,14 @@ describe("/api/documents/[id]/facts", () => {
     );
   });
 
-  it("POST keeps a user-written label", async () => {
+  it("POST keeps a user-written label and ignores a legacy type", async () => {
     const { client, insert } = mockServerClient();
     mockClient(client);
 
     await POST(
       request({
+        // An older client still sends fact_type — it is stripped, not
+        // stored, so it cannot resurrect the old taxonomy.
         fact_type: "tax_id",
         value: "74 031 832 353",
         label: "Steuer-ID Hanna",
@@ -164,7 +144,7 @@ describe("/api/documents/[id]/facts", () => {
 
     expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({
-        fact_type: "tax_id",
+        fact_type: "identifier",
         label: "Steuer-ID Hanna",
         normalized_value: "74031832353",
       }),
@@ -181,15 +161,14 @@ describe("/api/documents/[id]/facts", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Bitte gib die Nummer und einen neuen Wert an.",
+      error: "Bitte gib an, was an der Nummer geändert werden soll.",
       code: "INVALID_INPUT",
     });
   });
 
-  it("PATCH corrects label and type — what the fact search matches on", async () => {
+  it("PATCH corrects the label — what the fact search matches on", async () => {
     const corrected = {
       id: "fact-1",
-      fact_type: "tax_id",
       label: "Steuer-ID Hanna",
       value: "74 031 832 353",
     };
@@ -204,7 +183,6 @@ describe("/api/documents/[id]/facts", () => {
           fact_id: "fact-1",
           value: "74 031 832 353",
           label: "Steuer-ID Hanna",
-          fact_type: "tax_id",
         },
         "PATCH",
       ),
@@ -221,7 +199,6 @@ describe("/api/documents/[id]/facts", () => {
         value: "74 031 832 353",
         normalized_value: "74031832353",
         label: "Steuer-ID Hanna",
-        fact_type: "tax_id",
         confirmed: true,
       }),
     );

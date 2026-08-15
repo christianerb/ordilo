@@ -3,12 +3,11 @@ import { getFamilyId } from "@/lib/supabase/client-helpers";
 import {
   computeNeedsUserReview,
   DOCUMENT_TYPES,
-  FACT_TYPES,
+  IDENTIFIER_FACT_TYPE,
   AMOUNT_KINDS,
   type AmountKind,
   type DocumentAnalysis,
   type DocumentType,
-  type FactType,
 } from "@/lib/schemas/extraction";
 import type { Database } from "@/types/database";
 
@@ -261,9 +260,11 @@ function reconstructAnalysis(
   // Reconstruct tags.
   const tags = tagEntities.map((t) => t.entity_value);
 
-  // Reconstruct facts (typed identifiers).
+  // Reconstruct facts (identifiers). The stored type is carried through
+  // untouched — legacy rows still hold the pre-collapse value and nothing
+  // reads it any more.
   const factEntries = facts.map((f) => ({
-    fact_type: isFactType(f.fact_type) ? f.fact_type : "other",
+    fact_type: f.fact_type || IDENTIFIER_FACT_TYPE,
     label: f.label,
     value: f.value,
     confidence: f.confidence ?? 0,
@@ -306,15 +307,10 @@ function isDocumentType(value: string | null | undefined): value is DocumentType
 }
 
 /**
- * Type guard for FactType.
+ * Type guard for AmountKind.
  */
 function isAmountKind(
   value: string | null | undefined,
 ): value is AmountKind {
   return !!value && (AMOUNT_KINDS as readonly string[]).includes(value);
-}
-
-function isFactType(value: string | null | undefined): value is FactType {
-  if (!value) return false;
-  return (FACT_TYPES as readonly string[]).includes(value);
 }

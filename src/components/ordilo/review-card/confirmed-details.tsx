@@ -19,10 +19,8 @@ import {
 import { toast } from "sonner";
 import {
   AMOUNT_KIND_LABELS,
-  FACT_TYPES,
-  FACT_TYPE_LABELS,
+  DEFAULT_FACT_LABEL,
   type DocumentAnalysis,
-  type FactType,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -264,28 +262,29 @@ export function ConfirmedAnalysisDetails({
 
 interface FactRowData {
   id: string;
-  fact_type: string;
   label: string;
   value: string;
 }
 
 /**
- * The one part of a confirmed document that stays editable: its typed
- * facts (serial numbers, contract numbers, IBANs, …). Extraction can
- * misread exactly these values (an OCR'd 8 becomes a B), and they are
+ * The one part of a confirmed document that stays editable: its numbers
+ * and identifiers. Extraction can misread exactly these values (an OCR'd
+ * 8 becomes a B) or name them badly ("Unklare Kennnummer"), and they are
  * what families come back for — so correcting or adding one must never
  * require a re-scan. Reads and writes go straight to `document_facts`
  * via /api/documents/[id]/facts; the fact search picks changes up
  * immediately.
+ *
+ * A number is a label plus a value — there is no type to pick. The label
+ * is what makes it findable ("Steuer-ID Hanna"), so it is a plain text
+ * field, not a dropdown that could never cover German paperwork anyway.
  */
 function EditableFactsSection({ documentId }: { documentId: string }) {
   const [facts, setFacts] = useState<FactRowData[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [editLabel, setEditLabel] = useState("");
-  const [editType, setEditType] = useState<FactType>("serial_number");
   const [adding, setAdding] = useState(false);
-  const [newType, setNewType] = useState<FactType>("serial_number");
   const [newLabel, setNewLabel] = useState("");
   const [newValue, setNewValue] = useState("");
   const [saving, setSaving] = useState(false);
@@ -297,7 +296,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         const supabase = createClient();
         const { data } = await supabase
           .from("document_facts")
-          .select("id, fact_type, label, value")
+          .select("id, label, value")
           .eq("document_id", documentId)
           .order("created_at", { ascending: true });
         if (!cancelled && data) setFacts(data);
@@ -315,30 +314,12 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
     setEditingId(fact.id);
     setEditValue(fact.value);
     setEditLabel(fact.label);
-    setEditType(
-      (FACT_TYPES as readonly string[]).includes(fact.fact_type)
-        ? (fact.fact_type as FactType)
-        : "other",
-    );
-  };
-
-  /**
-   * Switching the type carries the default label along, but only while the
-   * label still IS a default — a label the family wrote themselves
-   * ("Steuer-ID Hanna") is never overwritten.
-   */
-  const changeEditType = (type: FactType) => {
-    const wasDefault =
-      !editLabel.trim() ||
-      Object.values(FACT_TYPE_LABELS).includes(editLabel.trim());
-    setEditType(type);
-    if (wasDefault) setEditLabel(FACT_TYPE_LABELS[type]);
   };
 
   const saveEdit = async (fact: FactRowData) => {
     const trimmed = editValue.trim();
     if (!trimmed || saving) return;
-    const label = editLabel.trim() || FACT_TYPE_LABELS[editType];
+    const label = editLabel.trim() || DEFAULT_FACT_LABEL;
     setSaving(true);
     try {
       const response = await fetch(`/api/documents/${documentId}/facts`, {
@@ -348,15 +329,12 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           fact_id: fact.id,
           value: trimmed,
           label,
-          fact_type: editType,
         }),
       });
       if (!response.ok) throw new Error();
       setFacts((prev) =>
         prev.map((f) =>
-          f.id === fact.id
-            ? { ...f, value: trimmed, label, fact_type: editType }
-            : f,
+          f.id === fact.id ? { ...f, value: trimmed, label } : f,
         ),
       );
       setEditingId(null);
@@ -378,7 +356,6 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fact_type: newType,
           value: trimmed,
           ...(label ? { label } : {}),
         }),
@@ -476,35 +453,19 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                   <X className="size-3.5" aria-hidden="true" />
                 </button>
               </div>
-              {/* Type and label are what Ordilo matches questions against
-                  ("Wie ist die Steuer-ID von Hanna?"), so both stay
-                  editable — a number nobody can name is a number nobody
-                  finds again. */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                <select
-                  value={editType}
-                  onChange={(e) => changeEditType(e.target.value as FactType)}
-                  aria-label="Nummerntyp"
-                  className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="confirmed-fact-edit-type"
-                >
-                  {FACT_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {FACT_TYPE_LABELS[type]}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="text"
-                  value={editLabel}
-                  onChange={(e) => setEditLabel(e.target.value)}
-                  placeholder={`z. B. ${FACT_TYPE_LABELS[editType]} Hanna`}
-                  aria-label="Bezeichnung der Nummer"
-                  maxLength={120}
-                  className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="confirmed-fact-edit-label"
-                />
-              </div>
+              {/* The label is what Ordilo matches questions against ("Wie
+                  ist die Steuer-ID von Hanna?"), so it stays editable — a
+                  number nobody can name is a number nobody finds again. */}
+              <input
+                type="text"
+                value={editLabel}
+                onChange={(e) => setEditLabel(e.target.value)}
+                placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna"
+                aria-label="Bezeichnung der Nummer"
+                maxLength={120}
+                className="w-full min-w-0 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                data-testid="confirmed-fact-edit-label"
+              />
             </form>
           ) : (
             <>
@@ -526,39 +487,25 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
           }}
           data-testid="confirmed-fact-add-form"
         >
-          <div className="flex flex-wrap items-center gap-1.5">
-            <select
-              value={newType}
-              onChange={(e) => setNewType(e.target.value as FactType)}
-              aria-label="Nummerntyp"
-              className="rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              {FACT_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {FACT_TYPE_LABELS[type]}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              value={newValue}
-              onChange={(e) => setNewValue(e.target.value)}
-              placeholder="z. B. WM-482-A93816"
-              aria-label="Wert der Nummer"
-              maxLength={200}
-              autoFocus
-              className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              data-testid="confirmed-fact-add-input"
-            />
-          </div>
+          <input
+            type="text"
+            value={newValue}
+            onChange={(e) => setNewValue(e.target.value)}
+            placeholder="z. B. WM-482-A93816"
+            aria-label="Wert der Nummer"
+            maxLength={200}
+            autoFocus
+            className="w-full min-w-0 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 font-mono text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="confirmed-fact-add-input"
+          />
           <div className="flex items-center gap-1.5">
-            {/* Optional, but it is what makes the number findable later —
-                "Steuer-ID Hanna" answers a question the bare type cannot. */}
+            {/* This is what makes the number findable later — "Steuer-ID
+                Hanna" answers a question that a bare value cannot. */}
             <input
               type="text"
               value={newLabel}
               onChange={(e) => setNewLabel(e.target.value)}
-              placeholder={`Wozu gehört sie? z. B. ${FACT_TYPE_LABELS[newType]} Hanna`}
+              placeholder="Wozu gehört sie? z. B. Steuer-ID Hanna"
               aria-label="Bezeichnung der Nummer"
               maxLength={120}
               className="min-w-0 flex-1 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 py-1.5 text-base sm:text-sm focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"

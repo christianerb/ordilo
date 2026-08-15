@@ -14,11 +14,10 @@ import { matchesWordBoundary } from "@/lib/schemas/search";
 import {
   AMOUNT_KINDS,
   AMOUNT_KIND_LABELS,
-  FACT_TYPES,
-  FACT_TYPE_LABELS,
+  DEFAULT_FACT_LABEL,
+  IDENTIFIER_FACT_TYPE,
   normalizeFactValue,
   type AmountKind,
-  type FactType,
 } from "@/lib/schemas/extraction";
 import { formatMinorAsGerman } from "@/lib/analysis-cleanup";
 import { formatGermanDate } from "@/lib/format";
@@ -559,29 +558,24 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
     function: {
       name: "save_document_fact",
       description:
-        "Speichert oder korrigiert eine Nummer/Kennung (Seriennummer, " +
-        "Vertragsnummer, IBAN, Kennzeichen, ...) an einem Dokument. " +
-        "Verwende dies, wenn der Nutzer eine Nummer nachtragen will " +
-        "('Merk dir: die Seriennummer der Waschmaschine ist ...') oder " +
-        "eine falsch erkannte Nummer korrigiert ('die Seriennummer ist " +
-        "falsch, richtig ist ...'). Die Dokument-ID muss aus einem " +
+        "Speichert oder korrigiert eine Nummer/Kennung (Steuer-ID, " +
+        "Seriennummer, IBAN, Kennzeichen, Zaehlernummer, ...) an einem " +
+        "Dokument. Verwende dies, wenn der Nutzer eine Nummer nachtragen " +
+        "will ('Merk dir: die Seriennummer der Waschmaschine ist ...') " +
+        "oder eine falsch erkannte Nummer korrigiert ('die Seriennummer " +
+        "ist falsch, richtig ist ...'). Die Dokument-ID muss aus einem " +
         "vorherigen search_documents-/list_documents-Aufruf stammen — " +
         "suche das Dokument zuerst, wenn du die ID noch nicht hast. " +
-        "Existiert am Dokument bereits eine Nummer desselben Typs, wird " +
-        "sie korrigiert, sonst neu angelegt. Setze confirmed erst auf " +
-        "true, wenn der Nutzer die Aktion klar bestaetigt hat.",
+        "Existiert am Dokument bereits eine Nummer mit derselben " +
+        "Bezeichnung, wird sie korrigiert, sonst neu angelegt. Setze " +
+        "confirmed erst auf true, wenn der Nutzer die Aktion klar " +
+        "bestaetigt hat.",
       parameters: {
         type: "object",
         properties: {
           document_id: {
             type: "string",
             description: "Die ID des Dokuments (aus vorherigen Suchergebnissen).",
-          },
-          fact_type: {
-            type: "string",
-            enum: [...FACT_TYPES],
-            description:
-              "Typ der Nummer, z.B. serial_number, contract_number, iban.",
           },
           value: {
             type: "string",
@@ -590,7 +584,9 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           label: {
             type: "string",
             description:
-              "Optionale Beschreibung, z.B. 'Seriennummer Waschmaschine'.",
+              "Wozu die Nummer gehoert — danach wird sie spaeter " +
+              "gefunden. Nenne Art und Bezug, z.B. 'Seriennummer " +
+              "Waschmaschine' oder 'Steuer-ID Hanna'.",
           },
           confirmed: {
             type: "boolean",
@@ -599,7 +595,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
               "hat. false (Standard) fordert eine Bestaetigung an.",
           },
         },
-        required: ["document_id", "fact_type", "value"],
+        required: ["document_id", "value", "label"],
       },
     },
   },
@@ -2282,12 +2278,9 @@ async function executeSaveDocumentFact(
 ): Promise<string> {
   const documentId = String(args.document_id ?? "").trim();
   const value = String(args.value ?? "").trim();
-  const factType = FACT_TYPES.includes(args.fact_type as FactType)
-    ? (args.fact_type as FactType)
-    : null;
-  if (!documentId || !value || !factType) {
+  if (!documentId || !value) {
     return JSON.stringify({
-      error: "Dokument-ID, Nummerntyp oder Wert fehlt.",
+      error: "Dokument-ID oder Wert fehlt.",
     });
   }
 
@@ -2306,22 +2299,22 @@ async function executeSaveDocumentFact(
     typeof args.label === "string" && args.label.trim()
       ? args.label.trim()
       : null;
-  const typeLabel = FACT_TYPE_LABELS[factType];
+  const factLabel = requestedLabel ?? DEFAULT_FACT_LABEL;
   const documentTitle = doc.title ?? "Das Dokument";
 
-  // Existing fact of the same type → this is a correction, not an add.
+  // Existing fact with the same label → this is a correction, not an add.
+  // Without a label to match on, a save must never guess which of the
+  // document's numbers it is supposed to overwrite — it adds one.
   const { data: existingFacts } = await ctx.client
     .from("document_facts")
     .select("id, label, value")
     .eq("document_id", doc.id)
-    .eq("family_id", ctx.familyId)
-    .eq("fact_type", factType);
-  const existing =
-    (requestedLabel
-      ? existingFacts?.find(
-          (f) => f.label.toLowerCase() === requestedLabel.toLowerCase(),
-        )
-      : undefined) ?? existingFacts?.[0];
+    .eq("family_id", ctx.familyId);
+  const existing = requestedLabel
+    ? existingFacts?.find(
+        (f) => f.label.toLowerCase() === requestedLabel.toLowerCase(),
+      )
+    : undefined;
 
   const confirmed = args.confirmed === true;
   if (!confirmed) {
@@ -2330,16 +2323,15 @@ async function executeSaveDocumentFact(
       document_id: doc.id,
       document_title: documentTitle,
       // The card must disclose when this "add" actually overwrites an
-      // existing fact of the same type — otherwise a person would confirm
-      // a correction (e.g. of an IBAN) without ever seeing the old value.
-      fact_type: factType,
-      fact_type_label: typeLabel,
-      label: requestedLabel ?? typeLabel,
+      // existing number of the same name — otherwise a person would
+      // confirm a correction (e.g. of an IBAN) without ever seeing the
+      // old value.
+      label: factLabel,
       value,
       existing_value: existing ? existing.value : null,
       message: existing
-        ? `Bitte bestaetige: Soll die ${typeLabel} von '${documentTitle}' von '${existing.value}' zu '${value}' korrigiert werden?`
-        : `Bitte bestaetige: Soll die ${typeLabel} '${value}' bei '${documentTitle}' hinterlegt werden?`,
+        ? `Bitte bestaetige: Soll die ${factLabel} von '${documentTitle}' von '${existing.value}' zu '${value}' korrigiert werden?`
+        : `Bitte bestaetige: Soll die ${factLabel} '${value}' bei '${documentTitle}' hinterlegt werden?`,
     });
   }
 
@@ -2363,7 +2355,7 @@ async function executeSaveDocumentFact(
       action: "corrected",
       document_id: doc.id,
       document_title: documentTitle,
-      message: `Die ${typeLabel} von '${documentTitle}' wurde zu '${value}' korrigiert (vorher: '${existing.value}').`,
+      message: `Die ${factLabel} von '${documentTitle}' wurde zu '${value}' korrigiert (vorher: '${existing.value}').`,
     });
   }
 
@@ -2372,8 +2364,8 @@ async function executeSaveDocumentFact(
     .insert({
       document_id: doc.id,
       family_id: ctx.familyId,
-      fact_type: factType,
-      label: requestedLabel ?? typeLabel,
+      fact_type: IDENTIFIER_FACT_TYPE,
+      label: factLabel,
       value,
       normalized_value: normalizeFactValue(value),
       confidence: 1.0,
@@ -2387,7 +2379,7 @@ async function executeSaveDocumentFact(
     action: "added",
     document_id: doc.id,
     document_title: documentTitle,
-    message: `Die ${typeLabel} '${value}' wurde bei '${documentTitle}' hinterlegt.`,
+    message: `Die ${factLabel} '${value}' wurde bei '${documentTitle}' hinterlegt.`,
   });
 }
 

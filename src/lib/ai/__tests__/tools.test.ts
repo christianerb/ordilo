@@ -842,7 +842,7 @@ describe("save_document_fact", () => {
     const ctx = makeSaveFactCtx({ doc: null });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "serial_number", value: "SN-1", confirmed: true },
+      { document_id: "doc-1", label: "Seriennummer", value: "SN-1", confirmed: true },
       ctx,
     );
     expect(JSON.parse(result).error).toBe("Dokument nicht gefunden.");
@@ -852,7 +852,7 @@ describe("save_document_fact", () => {
     const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482" },
+      { document_id: "doc-1", label: "Seriennummer", value: "WM-482" },
       ctx,
     );
     const parsed = JSON.parse(result);
@@ -868,14 +868,13 @@ describe("save_document_fact", () => {
     });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482" },
+      { document_id: "doc-1", label: "Seriennummer", value: "WM-482" },
       ctx,
     );
     const parsed = JSON.parse(result);
     expect(parsed.needs_confirmation).toBe(true);
     // The action card renders these to show the correction, not just an add.
-    expect(parsed.fact_type).toBe("serial_number");
-    expect(parsed.fact_type_label).toBe("Seriennummer");
+    expect(parsed.label).toBe("Seriennummer");
     expect(parsed.existing_value).toBe("WM-4B2");
     expect(parsed.value).toBe("WM-482");
   });
@@ -884,20 +883,50 @@ describe("save_document_fact", () => {
     const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "iban", value: "DE12 3456" },
+      { document_id: "doc-1", label: "IBAN", value: "DE12 3456" },
       ctx,
     );
     const parsed = JSON.parse(result);
     expect(parsed.needs_confirmation).toBe(true);
     expect(parsed.existing_value).toBeNull();
-    expect(parsed.fact_type_label).toBe("IBAN");
+    expect(parsed.label).toBe("IBAN");
   });
 
-  it("adds a new fact when none of the same type exists", async () => {
+  it("does not overwrite a differently named number on the same document", async () => {
+    // One document can carry the Steuer-ID of two people. Without a
+    // matching label, saving must add — never guess which one to replace.
+    const ctx = makeSaveFactCtx({
+      doc: { id: "doc-1", title: "Steuerbescheid" },
+      existingFacts: [
+        { id: "fact-1", label: "Steuer-ID Emma", value: "12 345 678 901" },
+      ],
+    });
+    const result = await executeTool(
+      "save_document_fact",
+      {
+        document_id: "doc-1",
+        label: "Steuer-ID Hanna",
+        value: "74 031 832 353",
+        confirmed: true,
+      },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+    expect(parsed.action).toBe("added");
+    expect(ctx.inserted).toHaveLength(1);
+    expect(ctx.updated).toHaveLength(0);
+  });
+
+  it("adds a new fact when the document has none by that name", async () => {
     const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Rechnung Waschmaschine" } });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482-B93816", confirmed: true },
+      {
+        document_id: "doc-1",
+        label: "Seriennummer Waschmaschine",
+        value: "WM-482-B93816",
+        confirmed: true,
+      },
       ctx,
     );
     const parsed = JSON.parse(result);
@@ -905,21 +934,22 @@ describe("save_document_fact", () => {
     expect(parsed.action).toBe("added");
     expect(ctx.inserted).toHaveLength(1);
     expect(ctx.inserted[0]).toMatchObject({
-      fact_type: "serial_number",
+      fact_type: "identifier",
+      label: "Seriennummer Waschmaschine",
       value: "WM-482-B93816",
       normalized_value: "wm482b93816",
       confirmed: true,
     });
   });
 
-  it("corrects the existing fact of the same type instead of duplicating", async () => {
+  it("corrects the existing fact of the same name instead of duplicating", async () => {
     const ctx = makeSaveFactCtx({
       doc: { id: "doc-1", title: "Rechnung Waschmaschine" },
       existingFacts: [{ id: "fact-1", label: "Seriennummer", value: "WM-4B2" }],
     });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "serial_number", value: "WM-482", confirmed: true },
+      { document_id: "doc-1", label: "seriennummer", value: "WM-482", confirmed: true },
       ctx,
     );
     const parsed = JSON.parse(result);
@@ -930,11 +960,11 @@ describe("save_document_fact", () => {
     expect(ctx.inserted).toHaveLength(0);
   });
 
-  it("rejects an unknown fact type", async () => {
+  it("rejects a save without a value", async () => {
     const ctx = makeSaveFactCtx({ doc: { id: "doc-1", title: "Doc" } });
     const result = await executeTool(
       "save_document_fact",
-      { document_id: "doc-1", fact_type: "nonsense", value: "x", confirmed: true },
+      { document_id: "doc-1", label: "Kundennummer", confirmed: true },
       ctx,
     );
     expect(JSON.parse(result).error).toBeDefined();

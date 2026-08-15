@@ -10,7 +10,6 @@ import {
 describe("createFactSchema", () => {
   it("accepts a valid fact and trims the value", () => {
     const result = createFactSchema.safeParse({
-      fact_type: "iban",
       value: "  DE02120300000000202051  ",
     });
     expect(result.success).toBe(true);
@@ -22,26 +21,27 @@ describe("createFactSchema", () => {
 
   it("accepts an optional label", () => {
     const result = createFactSchema.safeParse({
-      fact_type: "contract_number",
       value: "12345",
-      label: "Vertragsnummer",
+      label: "Vertragsnummer Stromvertrag",
     });
     expect(result.success).toBe(true);
   });
 
-  it("rejects unknown fact types", () => {
-    expect(
-      createFactSchema.safeParse({ fact_type: "nope", value: "x" }).success,
-    ).toBe(false);
+  it("strips a fact_type from an older client instead of failing on it", () => {
+    const result = createFactSchema.safeParse({
+      fact_type: "iban",
+      value: "DE02120300000000202051",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty("fact_type");
+    }
   });
 
   it("rejects empty or oversized values", () => {
-    expect(
-      createFactSchema.safeParse({ fact_type: "iban", value: "   " }).success,
-    ).toBe(false);
+    expect(createFactSchema.safeParse({ value: "   " }).success).toBe(false);
     expect(
       createFactSchema.safeParse({
-        fact_type: "iban",
         value: "x".repeat(MAX_FACT_VALUE_LENGTH + 1),
       }).success,
     ).toBe(false);
@@ -50,7 +50,6 @@ describe("createFactSchema", () => {
   it("rejects oversized labels", () => {
     expect(
       createFactSchema.safeParse({
-        fact_type: "iban",
         value: "x",
         label: "y".repeat(MAX_FACT_LABEL_LENGTH + 1),
       }).success,
@@ -59,12 +58,19 @@ describe("createFactSchema", () => {
 });
 
 describe("updateFactSchema", () => {
-  it("requires fact_id and value", () => {
+  it("requires fact_id plus something to change", () => {
     expect(
       updateFactSchema.safeParse({ fact_id: "f1", value: "neu" }).success,
     ).toBe(true);
     expect(updateFactSchema.safeParse({ value: "neu" }).success).toBe(false);
     expect(updateFactSchema.safeParse({ fact_id: "f1" }).success).toBe(false);
+  });
+
+  it("accepts a rename without a new value", () => {
+    expect(
+      updateFactSchema.safeParse({ fact_id: "f1", label: "Steuer-ID Hanna" })
+        .success,
+    ).toBe(true);
   });
 });
 

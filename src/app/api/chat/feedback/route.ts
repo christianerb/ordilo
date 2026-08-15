@@ -3,7 +3,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { parseJsonBody } from "@/lib/api/parse-json";
 import { chatFeedbackSchema, type ChatErrorResponse } from "@/lib/schemas/chat";
 import { isTaskQuery, findMentionedMembers } from "@/lib/schemas/search";
-import { FACT_TYPE_LABELS } from "@/lib/schemas/extraction";
+import { asksForIdentifier } from "@/lib/schemas/extraction";
 
 /**
  * POST /api/chat/feedback — Submit feedback (thumbs up/down) on a chat message.
@@ -36,10 +36,7 @@ function classifyQueryKind(
   question: string,
   memberNames: string[],
 ): "fristen" | "nummern" | "personen" | "suche" {
-  const lower = question.toLowerCase();
-  for (const label of Object.values(FACT_TYPE_LABELS)) {
-    if (lower.includes(label.toLowerCase())) return "nummern";
-  }
+  if (asksForIdentifier(question)) return "nummern";
   if (isTaskQuery(question)) return "fristen";
   if (findMentionedMembers(question, memberNames).length > 0) {
     return "personen";

@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
 import {
   DOCUMENT_TYPE_LABELS,
-  FACT_TYPE_LABELS,
+  DEFAULT_FACT_LABEL,
   type DocumentAnalysis,
   type DocumentType,
 } from "@/lib/schemas/extraction";
@@ -108,7 +108,7 @@ function buildHighlights(
     highlights.push({
       icon: Hash,
       value: topFact.value,
-      caption: topFact.label || FACT_TYPE_LABELS[topFact.fact_type],
+      caption: topFact.label || DEFAULT_FACT_LABEL,
       isVerifiable: true,
     });
   }

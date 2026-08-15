@@ -3,7 +3,8 @@ import { fuseResultsRrf } from "@/lib/ai/search";
 import {
   normalizeFactValue,
   documentAnalysisSchema,
-  factTypesForQuery,
+  expandIdentifierTerms,
+  asksForIdentifier,
 } from "@/lib/schemas/extraction";
 import type { SearchResult } from "@/lib/schemas/search";
 
@@ -125,7 +126,24 @@ describe("documentAnalysisSchema facts", () => {
     expect(parsed.facts).toEqual([]);
   });
 
-  it("accepts valid facts", () => {
+  it("accepts a fact as label plus value", () => {
+    const parsed = documentAnalysisSchema.parse({
+      ...base,
+      facts: [
+        {
+          label: "Seriennummer Waschmaschine",
+          value: "SN 4823-XK",
+          confidence: 0.92,
+        },
+      ],
+    });
+    expect(parsed.facts).toHaveLength(1);
+    expect(parsed.facts[0].fact_type).toBe("identifier");
+  });
+
+  it("keeps the stored type of rows written before the type collapse", () => {
+    // Confirmed documents are reconstructed from document_facts rows, and
+    // those still carry their old value until the migration runs.
     const parsed = documentAnalysisSchema.parse({
       ...base,
       facts: [
@@ -137,74 +155,69 @@ describe("documentAnalysisSchema facts", () => {
         },
       ],
     });
-    expect(parsed.facts).toHaveLength(1);
     expect(parsed.facts[0].fact_type).toBe("serial_number");
   });
 
-  it("rejects unknown fact types", () => {
+  it("rejects a fact without a label", () => {
     const parsed = documentAnalysisSchema.safeParse({
       ...base,
-      facts: [
-        {
-          fact_type: "phone_number",
-          label: "Telefon",
-          value: "030 1234567",
-          confidence: 0.9,
-        },
-      ],
+      facts: [{ label: "", value: "030 1234567", confidence: 0.9 }],
     });
     expect(parsed.success).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------------
-// factTypesForQuery — the words families actually use
+// expandIdentifierTerms — the words families actually use
 // ---------------------------------------------------------------------------
 
-describe("factTypesForQuery", () => {
-  it("finds both tax types for a colloquial 'Steuernummer' question", () => {
-    const types = factTypesForQuery("Wie ist die Steuernummer von Hanna?");
-    expect(types).toContain("tax_id");
-    expect(types).toContain("tax_number");
+describe("expandIdentifierTerms", () => {
+  it("expands a colloquial 'Steuernummer' question to the Steuer-ID spellings", () => {
+    const terms = expandIdentifierTerms("Wie ist die Steuernummer von Hanna?");
+    expect(terms).toContain("steuer-id");
+    expect(terms).toContain("steuerid");
+    expect(terms).toContain("idnr");
   });
 
-  it("matches the Steuer-ID spellings families use", () => {
+  it("works from every spelling in the group", () => {
     for (const query of [
       "Wo ist Hannas Steuer-ID?",
       "Zeig mir die steuerliche Identifikationsnummer",
       "Wie lautet die IdNr von Hanna?",
     ]) {
-      expect(factTypesForQuery(query)).toContain("tax_id");
+      expect(expandIdentifierTerms(query)).toContain("steuernummer");
     }
   });
 
-  it("maps synonyms to their type", () => {
-    expect(factTypesForQuery("Wie ist die Versicherungsnummer?")).toContain(
-      "policy_number",
+  it("expands synonyms of the other number kinds", () => {
+    expect(expandIdentifierTerms("Wie ist die Versicherungsnummer?")).toContain(
+      "policennummer",
     );
-    expect(factTypesForQuery("Was ist unsere Kontonummer?")).toContain("iban");
-    expect(factTypesForQuery("Wie ist das Nummernschild?")).toContain(
-      "license_plate",
+    expect(expandIdentifierTerms("Was ist unsere Kontonummer?")).toContain(
+      "iban",
     );
-    expect(
-      factTypesForQuery("Wie ist die Versichertennummer von Hanna?"),
-    ).toContain("health_insurance_number");
+    expect(expandIdentifierTerms("Wie ist das Nummernschild?")).toContain(
+      "kennzeichen",
+    );
   });
 
   it("returns nothing for a question about no particular number", () => {
-    expect(factTypesForQuery("Was steht in dem Kita-Brief?")).toEqual([]);
+    expect(expandIdentifierTerms("Was steht in dem Kita-Brief?")).toEqual([]);
+    // A number kind nobody listed is found by its own label, not by
+    // expansion — the groups are a recall aid, not a taxonomy.
+    expect(expandIdentifierTerms("Wie ist die Bestellnummer?")).toEqual([]);
   });
 
   it("does not match keywords inside longer words", () => {
     // "tin" must not fire on "Termin", "police" not on "Polizei".
-    expect(factTypesForQuery("Wann ist der Termin?")).toEqual([]);
-    expect(factTypesForQuery("Brief von der Polizei")).toEqual([]);
+    expect(expandIdentifierTerms("Wann ist der Termin?")).toEqual([]);
+    expect(expandIdentifierTerms("Brief von der Polizei")).toEqual([]);
   });
+});
 
-  it("keeps a bare 'Nummer' question out of the untyped bucket", () => {
-    // FACT_TYPE_KEYWORDS.other is deliberately narrow — otherwise every
-    // question containing "Nummer" would drag in every untyped fact.
-    expect(factTypesForQuery("Wie ist die Nummer?")).toEqual([]);
-    expect(factTypesForQuery("Wie ist die Kennnummer?")).toEqual(["other"]);
+describe("asksForIdentifier", () => {
+  it("recognises a question about a stored number", () => {
+    expect(asksForIdentifier("Wie ist die Steuernummer von Hanna?")).toBe(true);
+    expect(asksForIdentifier("Was steht in dem Kita-Brief?")).toBe(false);
   });
 });

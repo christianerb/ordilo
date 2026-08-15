@@ -8,8 +8,8 @@ import type { DocumentAnalysis } from "@/lib/schemas/extraction";
  * The "Nummern & Kennungen" section of a confirmed document.
  *
  * A number Ordilo could not name ("Unklare Kennnummer") is a number nobody
- * finds again — type and label are exactly what the fact search matches
- * questions against, so both have to be correctable without a re-scan.
+ * finds again — the label is what the fact search matches questions
+ * against, so it has to be correctable without a re-scan.
  */
 
 vi.mock("@/lib/analysis", () => ({
@@ -26,7 +26,6 @@ import {
 
 const UNCLEAR_FACT = {
   id: "fact-1",
-  fact_type: "other",
   label: "Unklare Kennnummer",
   value: "74 031 832 353",
 };
@@ -66,9 +65,7 @@ const analysis: DocumentAnalysis = {
  * The card also fetches the document file — pick the /facts write out of
  * the calls rather than assuming it came first.
  */
-function factsCall(
-  spy: ReturnType<typeof vi.spyOn<typeof globalThis, "fetch">>,
-): RequestInit {
+function factsCall(spy: { mock: { calls: unknown[][] } }): RequestInit {
   const call = spy.mock.calls.find(
     ([url]) => String(url) === "/api/documents/doc-1/facts",
   );
@@ -84,7 +81,7 @@ describe("confirmed document — Nummern & Kennungen", () => {
     vi.mocked(fetchExistingCategories).mockResolvedValue([]);
   });
 
-  it("lets the family give an unclear number a type and a name", async () => {
+  it("lets the family give an unclear number a name", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(
@@ -96,9 +93,6 @@ describe("confirmed document — Nummern & Kennungen", () => {
     await screen.findByText("Unklare Kennnummer");
     fireEvent.click(screen.getByTestId("confirmed-fact-edit-button"));
 
-    fireEvent.change(screen.getByTestId("confirmed-fact-edit-type"), {
-      target: { value: "tax_id" },
-    });
     fireEvent.change(screen.getByTestId("confirmed-fact-edit-label"), {
       target: { value: "Steuer-ID Hanna" },
     });
@@ -110,7 +104,6 @@ describe("confirmed document — Nummern & Kennungen", () => {
       fact_id: "fact-1",
       value: "74 031 832 353",
       label: "Steuer-ID Hanna",
-      fact_type: "tax_id",
     });
 
     // The corrected label is what the row shows from now on.
@@ -118,39 +111,14 @@ describe("confirmed document — Nummern & Kennungen", () => {
     fetchSpy.mockRestore();
   });
 
-  it("carries the default label along when only the type changes", async () => {
-    const fetchSpy = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
-      );
-
+  it("offers no type to pick — the label is the whole story", async () => {
     render(<ReviewCard documentId="doc-1" status="confirmed" />);
 
     await screen.findByText("Unklare Kennnummer");
     fireEvent.click(screen.getByTestId("confirmed-fact-edit-button"));
-    // "Unklare Kennnummer" is not a default label, so it survives …
-    fireEvent.change(screen.getByTestId("confirmed-fact-edit-type"), {
-      target: { value: "tax_id" },
-    });
-    expect(
-      (screen.getByTestId("confirmed-fact-edit-label") as HTMLInputElement)
-        .value,
-    ).toBe("Unklare Kennnummer");
 
-    // … but a default one is replaced by the new type's default.
-    fireEvent.change(screen.getByTestId("confirmed-fact-edit-label"), {
-      target: { value: "Kennung" },
-    });
-    fireEvent.change(screen.getByTestId("confirmed-fact-edit-type"), {
-      target: { value: "tax_number" },
-    });
-    expect(
-      (screen.getByTestId("confirmed-fact-edit-label") as HTMLInputElement)
-        .value,
-    ).toBe("Steuernummer");
-
-    fetchSpy.mockRestore();
+    expect(screen.queryByLabelText("Nummerntyp")).toBeNull();
+    expect(screen.getByTestId("confirmed-fact-edit-label")).toBeDefined();
   });
 
   it("sends a user-written label when a number is added", async () => {
@@ -160,7 +128,6 @@ describe("confirmed document — Nummern & Kennungen", () => {
           status: "ok",
           fact: {
             id: "fact-2",
-            fact_type: "tax_id",
             label: "Steuer-ID Hanna",
             value: "74 031 832 353",
           },
@@ -184,7 +151,6 @@ describe("confirmed document — Nummern & Kennungen", () => {
     const init = await waitFor(() => factsCall(fetchSpy));
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
-      fact_type: "serial_number",
       value: "74 031 832 353",
       label: "Steuer-ID Hanna",
     });

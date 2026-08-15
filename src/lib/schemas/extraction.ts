@@ -75,59 +75,82 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
  * that must be retrievable verbatim — embeddings are unreliable for them,
  * so they are stored in `document_facts` and matched lexically.
  */
-export const FACT_TYPES = [
-  "serial_number",
-  "contract_number",
-  "policy_number",
-  "customer_number",
-  "invoice_number",
-  "iban",
-  "license_plate",
-  "member_id",
-  "tax_id",
-  "tax_number",
-  "health_insurance_number",
-  "other",
-] as const;
+/**
+ * The single fact type.
+ *
+ * Facts used to carry a type enum (serial_number, policy_number, iban, …),
+ * which turned out to be the wrong axis: German paperwork produces an
+ * endless tail of numbers — Steuer-ID, Versichertennummer, Zählernummer,
+ * Aktenzeichen, Bestellnummer — and every new one either needed a code
+ * change or fell into a nameless "other" bucket. What tells two numbers
+ * apart is their LABEL ("Steuer-ID Hanna", "Zählernummer Keller"), and the
+ * label is free text that anyone can write and correct.
+ *
+ * So there is one type, and the label carries the meaning. The column
+ * stays in the database (legacy rows still hold their old value) but
+ * nothing reads it for behaviour any more.
+ */
+export const IDENTIFIER_FACT_TYPE = "identifier";
 
-export type FactType = (typeof FACT_TYPES)[number];
-
-/** German labels for fact types (Review Card / search result display). */
-export const FACT_TYPE_LABELS: Record<FactType, string> = {
-  serial_number: "Seriennummer",
-  contract_number: "Vertragsnummer",
-  policy_number: "Policennummer",
-  customer_number: "Kundennummer",
-  invoice_number: "Rechnungsnummer",
-  iban: "IBAN",
-  license_plate: "Kennzeichen",
-  member_id: "Mitgliedsnummer",
-  tax_id: "Steuer-ID",
-  tax_number: "Steuernummer",
-  health_insurance_number: "Versichertennummer",
-  other: "Kennung",
-};
+/** Fallback label for a fact nobody has named yet. */
+export const DEFAULT_FACT_LABEL = "Nummer";
 
 /**
- * Search keywords per fact type — the words a family actually uses when
- * asking for one of these numbers.
+ * Groups of words that mean the same number to a family.
  *
- * Matching only against `FACT_TYPE_LABELS` misses every question that does
- * not happen to use the label verbatim: "Wie ist die Steuernummer von
- * Hanna?" must find a fact stored as Steuer-ID, and "Versicherungsnummer"
- * must find a Policennummer. Each list therefore contains the label itself
- * plus the common synonyms, abbreviations and misspellings.
+ * Facts are matched by label, and labels are written by people and by the
+ * extraction — "Policennummer" in the document, "Versicherungsnummer" in
+ * the question. Each group is one meaning: if a question uses any word of
+ * a group, all words of that group are searched for in the labels.
  *
- * Deliberately cross-listed: `tax_id` (11-stellige steuerliche
- * Identifikationsnummer) and `tax_number` (Steuernummer des Finanzamts)
- * are two different numbers that everyday language uses interchangeably,
- * so a question for one has to surface the other.
+ * The Steuer group is deliberately one group, not two: the 11-stellige
+ * steuerliche Identifikationsnummer and the Steuernummer des Finanzamts
+ * are different numbers that everyday language uses interchangeably.
  *
- * Keywords are matched with word boundaries (see `matchesWordBoundary`),
- * so short entries like "tin" or "idnr" do not match inside longer words.
+ * This is a recall aid, not a taxonomy — an unlisted number ("Zählernummer
+ * Keller") is found by its own label without appearing here.
  */
-export const FACT_TYPE_KEYWORDS: Record<FactType, string[]> = {
-  serial_number: [
+export const IDENTIFIER_SYNONYM_GROUPS: readonly (readonly string[])[] = [
+  [
+    "steuer-id",
+    "steuerid",
+    "steuernummer",
+    "steuer-nr",
+    "steuernr",
+    "steueridentifikationsnummer",
+    "steuerliche identifikationsnummer",
+    "identifikationsnummer",
+    "idnr",
+    "id-nr",
+    "tin",
+    "finanzamtsnummer",
+  ],
+  [
+    "policennummer",
+    "policennr",
+    "police",
+    "versicherungsnummer",
+    "versicherungsschein",
+    "versicherungsscheinnummer",
+  ],
+  [
+    "versichertennummer",
+    "versichertennr",
+    "krankenversicherungsnummer",
+    "krankenkassennummer",
+    "kvnr",
+  ],
+  ["iban", "kontonummer", "bankverbindung", "kontodaten"],
+  ["kundennummer", "kundennr", "kunden-nr", "kundenkonto", "kundenkennung"],
+  [
+    "vertragsnummer",
+    "vertragsnr",
+    "vertrags-nr",
+    "vertragskonto",
+    "vertragskontonummer",
+  ],
+  ["rechnungsnummer", "rechnungsnr", "rechnungs-nr", "belegnummer"],
+  [
     "seriennummer",
     "seriennr",
     "serien-nr",
@@ -135,84 +158,11 @@ export const FACT_TYPE_KEYWORDS: Record<FactType, string[]> = {
     "geraetenummer",
     "imei",
   ],
-  contract_number: [
-    "vertragsnummer",
-    "vertragsnr",
-    "vertrags-nr",
-    "vertragskonto",
-    "vertragskontonummer",
-  ],
-  policy_number: [
-    "policennummer",
-    "policennr",
-    "policen-nr",
-    "police",
-    "versicherungsnummer",
-    "versicherungsscheinnummer",
-    "versicherungsschein",
-  ],
-  customer_number: [
-    "kundennummer",
-    "kundennr",
-    "kunden-nr",
-    "kundenkonto",
-    "kundenkennung",
-  ],
-  invoice_number: [
-    "rechnungsnummer",
-    "rechnungsnr",
-    "rechnungs-nr",
-    "belegnummer",
-  ],
-  iban: ["iban", "kontonummer", "bankverbindung", "kontodaten"],
-  license_plate: [
-    "kennzeichen",
-    "kfz-kennzeichen",
-    "autokennzeichen",
-    "nummernschild",
-  ],
-  member_id: [
-    "mitgliedsnummer",
-    "mitgliedsnr",
-    "mitglieds-nr",
-    "mitgliedernummer",
-  ],
-  tax_id: [
-    "steuer-id",
-    "steuerid",
-    "steueridentifikationsnummer",
-    "steuerliche identifikationsnummer",
-    "identifikationsnummer",
-    "idnr",
-    "id-nr",
-    "tin",
-    // Colloquially the same thing for most families.
-    "steuernummer",
-    "steuer-nr",
-    "steuernr",
-  ],
-  tax_number: [
-    "steuernummer",
-    "steuer-nr",
-    "steuernr",
-    "finanzamtsnummer",
-    // Colloquially the same thing for most families.
-    "steuer-id",
-    "steuerid",
-    "steueridentifikationsnummer",
-    "identifikationsnummer",
-  ],
-  health_insurance_number: [
-    "versichertennummer",
-    "versichertennr",
-    "krankenversicherungsnummer",
-    "krankenkassennummer",
-    "kvnr",
-  ],
-  // Intentionally narrow: "Nummer" alone would match every question about
-  // any number and drown the typed hits.
-  other: ["kennung", "kennnummer"],
-};
+  ["kennzeichen", "kfz-kennzeichen", "autokennzeichen", "nummernschild"],
+  ["mitgliedsnummer", "mitgliedsnr", "mitglieds-nr", "mitgliedernummer"],
+  ["zählernummer", "zaehlernummer", "zählerstand", "zählerid"],
+  ["aktenzeichen", "geschäftszeichen", "geschaeftszeichen", "vorgangsnummer"],
+];
 
 /**
  * Normalize a fact value for exact lookup: lowercase and strip everything
@@ -223,18 +173,31 @@ export function normalizeFactValue(value: string): string {
 }
 
 /**
- * Fact types a natural-language query asks for, based on
- * `FACT_TYPE_KEYWORDS` (label + synonyms), matched as whole words.
+ * Expand a question into the label terms worth searching for.
  *
- *   "Wie ist die Steuernummer von Hanna?" → ["tax_id", "tax_number"]
- *   "Seriennummer der Waschmaschine"      → ["serial_number"]
+ * Every word of every synonym group the question touches, so "Wie ist die
+ * Steuernummer von Hanna?" also looks for labels containing "Steuer-ID"
+ * or "IdNr". Returns [] when the question is not about a specific kind of
+ * number — the plain query keywords still do their work then.
  */
-export function factTypesForQuery(query: string): FactType[] {
-  return (Object.entries(FACT_TYPE_KEYWORDS) as Array<[FactType, string[]]>)
-    .filter(([, keywords]) =>
-      keywords.some((keyword) => matchesWordBoundary(query, keyword)),
-    )
-    .map(([type]) => type);
+export function expandIdentifierTerms(query: string): string[] {
+  const terms = new Set<string>();
+  for (const group of IDENTIFIER_SYNONYM_GROUPS) {
+    if (group.some((word) => matchesWordBoundary(query, word))) {
+      for (const word of group) terms.add(word);
+    }
+  }
+  return [...terms];
+}
+
+/**
+ * Whether a question asks for a stored number at all — used for coarse
+ * query classification, not for retrieval.
+ */
+export function asksForIdentifier(query: string): boolean {
+  return IDENTIFIER_SYNONYM_GROUPS.some((group) =>
+    group.some((word) => matchesWordBoundary(query, word)),
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -341,10 +304,15 @@ const taskSchema = z.object({
 });
 
 /**
- * Zod schema for a single extracted fact (typed identifier).
+ * Zod schema for a single extracted fact (an identifier).
+ *
+ * `fact_type` is not part of the extraction any more — it defaults to
+ * `identifier`. It stays a plain string rather than a literal so rows
+ * written before the type collapse still parse when a confirmed document
+ * is reconstructed from the database.
  */
 const factSchema = z.object({
-  fact_type: z.enum(FACT_TYPES),
+  fact_type: z.string().default(IDENTIFIER_FACT_TYPE),
   label: z.string().min(1),
   value: z.string().min(1),
   confidence: z.number().min(0).max(1),
@@ -488,15 +456,12 @@ export const documentAnalysisJsonSchema = {
       items: {
         type: "object",
         properties: {
-          fact_type: {
-            type: "string",
-            enum: [...FACT_TYPES],
-          },
+          // No type — the label carries what kind of number this is.
           label: { type: "string" },
           value: { type: "string" },
           confidence: { type: "number" },
         },
-        required: ["fact_type", "label", "value", "confidence"],
+        required: ["label", "value", "confidence"],
         additionalProperties: false,
       },
     },

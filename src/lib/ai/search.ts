@@ -4,10 +4,9 @@ import {
   embeddingToVectorString,
 } from "@/lib/ai/embeddings";
 import {
-  FACT_TYPE_LABELS,
-  factTypesForQuery,
+  DEFAULT_FACT_LABEL,
+  expandIdentifierTerms,
   normalizeFactValue,
-  type FactType,
 } from "@/lib/schemas/extraction";
 import { expandQuery } from "@/lib/ai/query-expansion";
 import { SEARCH_AUGMENTATION_MODEL } from "@/lib/ai/models";
@@ -368,16 +367,17 @@ export async function lexicalSearch(
 }
 
 // ---------------------------------------------------------------------------
-// Fact search (typed identifiers: serial numbers, contract numbers, ...)
+// Fact search (identifiers: "Steuer-ID Hanna", "Seriennummer Waschmaschine")
 // ---------------------------------------------------------------------------
 
 /**
- * Search `document_facts` for typed identifiers matching the query.
+ * Search `document_facts` for identifiers matching the query.
  *
  * Two match paths:
- *   1. Label / fact-type match: query keywords against the fact label
- *      ("Seriennummer Waschmaschine") and against the fact-type keywords
- *      ("Steuernummer" → tax_id, tax_number — see FACT_TYPE_KEYWORDS).
+ *   1. Label match: query keywords against the fact label ("Seriennummer
+ *      Waschmaschine"), widened by the synonym groups so "Steuernummer"
+ *      also finds a label written as "Steuer-ID"
+ *      (see IDENTIFIER_SYNONYM_GROUPS).
  *   2. Value match: identifier-like query tokens (containing digits) are
  *      normalized (lowercase, alphanumeric only) and matched against
  *      `normalized_value`, so "SN 4823-XK" finds "sn4823xk".
@@ -396,10 +396,6 @@ export async function factSearch(
   const keywords = extractKeywords(query);
   if (keywords.length === 0) return [];
 
-  // Fact types the query asks for, matched against label + synonyms
-  // ("Wie ist die Steuernummer ...?" → tax_id, tax_number).
-  const matchedTypes = factTypesForQuery(query);
-
   // Identifier-like tokens: contain at least one digit and are ≥ 4 chars
   // after normalization ("4823", "sn4823xk", "de89370400440532013000").
   const identifierTokens = query
@@ -407,12 +403,18 @@ export async function factSearch(
     .map((t) => normalizeFactValue(t))
     .filter((t) => t.length >= 4 && /\d/.test(t));
 
+  // Query keywords plus every synonym of the number kinds the question
+  // touches. Multi-word terms are dropped: they are bigrams of the query
+  // or long compound spellings, and neither survives a label ILIKE.
+  const labelTerms = new Set(
+    [...keywords, ...expandIdentifierTerms(query)].filter(
+      (term) => !term.includes(" "),
+    ),
+  );
+
   const orFilters: string[] = [];
-  for (const kw of keywords) {
-    if (!kw.includes(" ")) orFilters.push(`label.ilike.%${kw}%`);
-  }
-  for (const type of matchedTypes) {
-    orFilters.push(`fact_type.eq.${type}`);
+  for (const term of labelTerms) {
+    orFilters.push(`label.ilike.%${term}%`);
   }
   for (const token of identifierTokens) {
     orFilters.push(`normalized_value.ilike.%${token}%`);
@@ -422,7 +424,7 @@ export async function factSearch(
 
   const { data: facts, error } = await serverClient
     .from("document_facts")
-    .select("document_id, fact_type, label, value, normalized_value, confidence, confirmed")
+    .select("document_id, label, value, normalized_value, confidence, confirmed")
     .eq("family_id", familyId)
     .eq("confirmed", true)
     .or(orFilters.join(","));
@@ -455,7 +457,7 @@ export async function factSearch(
     const doc = docsById.get(fact.document_id);
     if (!doc) continue;
 
-    // Value matches are exact answers → top score. Label/type matches are
+    // Value matches are exact answers → top score. Label matches are
     // strong but slightly below, so an exact identifier hit always wins.
     const valueMatch = identifierTokens.some(
       (t) =>
@@ -463,13 +465,10 @@ export async function factSearch(
     );
     const score = valueMatch ? 0.98 : 0.9;
 
-    const typeLabel =
-      FACT_TYPE_LABELS[fact.fact_type as FactType] ?? FACT_TYPE_LABELS.other;
-
     results.push({
       document_id: fact.document_id,
       title: doc.title,
-      chunk_text: `${typeLabel} — ${fact.label}: ${fact.value}`,
+      chunk_text: `${fact.label || DEFAULT_FACT_LABEL}: ${fact.value}`,
       score,
       source: "fact",
     });
