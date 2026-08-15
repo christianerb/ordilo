@@ -8,7 +8,6 @@ type MergePreview = {
   calendarEventCount: number;
   memberCount: number;
   collectionCount: number;
-  inventoryItemCount: number;
   targetAdultCount: number;
   fingerprint: string;
 };
@@ -53,42 +52,57 @@ export default async function InvitePage({
     return <InviteLanding token={token} familyName={null} state="invalid" />;
   }
 
+  // Signed out: the email form is the only sensible screen — there is no
+  // account yet to join with, and no family of theirs to merge.
+  if (!user) {
+    return (
+      <InviteLanding
+        token={token}
+        familyName={infoResult.family_name ?? null}
+        state="valid"
+      />
+    );
+  }
+
   let mergePreview: MergePreview | null = null;
   let previewStatus: string | null = null;
-  if (user) {
-    const { data } = await supabase.rpc("get_family_invite_merge_preview", {
-      p_token: token,
-    });
-    const preview = data as {
-      status?: string;
-      source_family_name?: string;
-      document_count?: number;
-      task_count?: number;
-      calendar_event_count?: number;
-      member_count?: number;
-      collection_count?: number;
-      inventory_item_count?: number;
-      target_adult_count?: number;
-      fingerprint?: string;
-    } | null;
-    previewStatus = preview?.status ?? null;
-    if (
-      preview?.status === "merge_available"
-      && preview.source_family_name
-      && preview.fingerprint
-    ) {
-      mergePreview = {
-        sourceFamilyName: preview.source_family_name,
-        documentCount: preview.document_count ?? 0,
-        taskCount: preview.task_count ?? 0,
-        calendarEventCount: preview.calendar_event_count ?? 0,
-        memberCount: preview.member_count ?? 0,
-        collectionCount: preview.collection_count ?? 0,
-        inventoryItemCount: preview.inventory_item_count ?? 0,
-        targetAdultCount: preview.target_adult_count ?? 0,
-        fingerprint: preview.fingerprint,
-      };
-    }
+  const { data, error: previewError } = await supabase.rpc(
+    "get_family_invite_merge_preview",
+    { p_token: token },
+  );
+  if (previewError) {
+    // Fall back to the plain confirmation screen — accepting still works for
+    // everyone who has no family to merge. Logged because a silent fallback
+    // here looks exactly like a healthy invite until the user clicks.
+    console.error("[invite] merge preview RPC failed:", previewError);
+  }
+  const preview = data as {
+    status?: string;
+    source_family_name?: string;
+    document_count?: number;
+    task_count?: number;
+    calendar_event_count?: number;
+    member_count?: number;
+    collection_count?: number;
+    target_adult_count?: number;
+    fingerprint?: string;
+  } | null;
+  previewStatus = preview?.status ?? null;
+  if (
+    preview?.status === "merge_available"
+    && preview.source_family_name
+    && preview.fingerprint
+  ) {
+    mergePreview = {
+      sourceFamilyName: preview.source_family_name,
+      documentCount: preview.document_count ?? 0,
+      taskCount: preview.task_count ?? 0,
+      calendarEventCount: preview.calendar_event_count ?? 0,
+      memberCount: preview.member_count ?? 0,
+      collectionCount: preview.collection_count ?? 0,
+      targetAdultCount: preview.target_adult_count ?? 0,
+      fingerprint: preview.fingerprint,
+    };
   }
 
   return (
@@ -103,7 +117,6 @@ export default async function InvitePage({
             + mergePreview.calendarEventCount
             + mergePreview.memberCount
             + mergePreview.collectionCount
-            + mergePreview.inventoryItemCount
             === 0
             ? "empty_source"
             : "merge"

@@ -35,18 +35,31 @@ type InviteMergePreview = {
   calendarEventCount: number;
   memberCount: number;
   collectionCount: number;
-  inventoryItemCount: number;
   targetAdultCount: number;
   fingerprint: string;
 };
 
 type MergePreparationResult =
   | { success: true; state: "merge" | "empty_source"; preview: InviteMergePreview }
-  | { success: true; state: "invalid" | "shared_source_family" | "source_processing" }
+  | {
+      success: true;
+      state:
+        | "invalid"
+        | "shared_source_family"
+        | "source_processing"
+        /** Membership already exists — the join happened, nothing to merge. */
+        | "joined"
+        /** No owned family (any more) — plain accept is enough. */
+        | "joinable";
+    }
   | { success: false; error: string };
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INVITE_TOKEN_REGEX = /^[a-f0-9]{16,64}$/i;
+
+const PREPARATION_FAILED =
+  "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.";
+const SESSION_EXPIRED = "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.";
 
 /**
  * Resolve the absolute app base URL for links in auth emails.
@@ -158,6 +171,7 @@ export async function acceptInvite(
   });
 
   if (error) {
+    console.error("[invite] accept RPC failed:", error);
     return {
       success: false,
       error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
@@ -197,11 +211,7 @@ export async function acceptInvite(
           "Deine Dokumente werden noch vorbereitet. Warte bitte kurz und versuche es dann erneut.",
       };
     case "unauthenticated":
-      return {
-        success: false,
-        error:
-          "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.",
-      };
+      return { success: false, error: SESSION_EXPIRED };
     default:
       return {
         success: false,
@@ -225,10 +235,12 @@ export async function getInviteMergePreparation(
     p_token: token,
   });
   if (error) {
-    return {
-      success: false,
-      error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
-    };
+    // Log it: a raising RPC is indistinguishable from a network blip in the
+    // UI, and this is the one place that knows why. A stale function body
+    // (0054 read a table 0053 had dropped) hid behind this message for a
+    // full release.
+    console.error("[invite] merge preview RPC failed:", error);
+    return { success: false, error: PREPARATION_FAILED };
   }
 
   const preview = data as {
@@ -239,46 +251,59 @@ export async function getInviteMergePreparation(
     calendar_event_count?: number;
     member_count?: number;
     collection_count?: number;
-    inventory_item_count?: number;
     target_adult_count?: number;
     fingerprint?: string;
   } | null;
 
-  if (preview?.status === "merge_available") {
-    if (!preview.source_family_name || !preview.fingerprint) {
+  switch (preview?.status) {
+    case "merge_available": {
+      if (!preview.source_family_name || !preview.fingerprint) {
+        console.error(
+          "[invite] merge preview is missing its family name or fingerprint",
+        );
+        return { success: false, error: PREPARATION_FAILED };
+      }
+      const mergePreview: InviteMergePreview = {
+        sourceFamilyName: preview.source_family_name,
+        documentCount: preview.document_count ?? 0,
+        taskCount: preview.task_count ?? 0,
+        calendarEventCount: preview.calendar_event_count ?? 0,
+        memberCount: preview.member_count ?? 0,
+        collectionCount: preview.collection_count ?? 0,
+        targetAdultCount: preview.target_adult_count ?? 0,
+        fingerprint: preview.fingerprint,
+      };
+      const isEmpty = mergePreview.documentCount + mergePreview.taskCount
+        + mergePreview.calendarEventCount + mergePreview.memberCount
+        + mergePreview.collectionCount === 0;
       return {
-        success: false,
-        error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
+        success: true,
+        state: isEmpty ? "empty_source" : "merge",
+        preview: mergePreview,
       };
     }
-    const mergePreview: InviteMergePreview = {
-      sourceFamilyName: preview.source_family_name,
-      documentCount: preview.document_count ?? 0,
-      taskCount: preview.task_count ?? 0,
-      calendarEventCount: preview.calendar_event_count ?? 0,
-      memberCount: preview.member_count ?? 0,
-      collectionCount: preview.collection_count ?? 0,
-      inventoryItemCount: preview.inventory_item_count ?? 0,
-      targetAdultCount: preview.target_adult_count ?? 0,
-      fingerprint: preview.fingerprint,
-    };
-    const isEmpty = mergePreview.documentCount + mergePreview.taskCount
-      + mergePreview.calendarEventCount + mergePreview.memberCount
-      + mergePreview.collectionCount + mergePreview.inventoryItemCount === 0;
-    return { success: true, state: isEmpty ? "empty_source" : "merge", preview: mergePreview };
+    case "shared_source_family":
+      return { success: true, state: "shared_source_family" };
+    case "source_processing":
+      return { success: true, state: "source_processing" };
+    case "invalid":
+      return { success: true, state: "invalid" };
+    // `joined` and `joinable` mean the family situation changed between the
+    // accept call and this one. Both are recoverable, so they must not fall
+    // into the generic failure below.
+    case "joined":
+      return { success: true, state: "joined" };
+    case "joinable":
+      return { success: true, state: "joinable" };
+    case "unauthenticated":
+      return { success: false, error: SESSION_EXPIRED };
+    default:
+      console.error(
+        "[invite] merge preview returned an unknown status:",
+        preview?.status,
+      );
+      return { success: false, error: PREPARATION_FAILED };
   }
-
-  if (preview?.status === "shared_source_family") {
-    return { success: true, state: "shared_source_family" };
-  }
-  if (preview?.status === "source_processing") {
-    return { success: true, state: "source_processing" };
-  }
-  if (preview?.status === "invalid") return { success: true, state: "invalid" };
-  return {
-    success: false,
-    error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
-  };
 }
 
 /**
@@ -308,6 +333,7 @@ export async function mergeOwnedFamilyIntoInvite(
   });
 
   if (error) {
+    console.error("[invite] merge RPC failed:", error);
     return {
       success: false,
       error: "Das Zusammenführen hat nicht geklappt. Bitte versuche es erneut.",
@@ -349,10 +375,7 @@ export async function mergeOwnedFamilyIntoInvite(
           "Deine Inhalte haben sich gerade geändert. Wir zeigen dir die aktuelle Übersicht.",
       };
     case "unauthenticated":
-      return {
-        success: false,
-        error: "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.",
-      };
+      return { success: false, error: SESSION_EXPIRED };
     default:
       return {
         success: false,
