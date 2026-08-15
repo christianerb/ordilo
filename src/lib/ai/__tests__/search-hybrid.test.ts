@@ -3,6 +3,7 @@ import { fuseResultsRrf } from "@/lib/ai/search";
 import {
   normalizeFactValue,
   documentAnalysisSchema,
+  factTypesForQuery,
 } from "@/lib/schemas/extraction";
 import type { SearchResult } from "@/lib/schemas/search";
 
@@ -153,5 +154,57 @@ describe("documentAnalysisSchema facts", () => {
       ],
     });
     expect(parsed.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// factTypesForQuery — the words families actually use
+// ---------------------------------------------------------------------------
+
+describe("factTypesForQuery", () => {
+  it("finds both tax types for a colloquial 'Steuernummer' question", () => {
+    const types = factTypesForQuery("Wie ist die Steuernummer von Hanna?");
+    expect(types).toContain("tax_id");
+    expect(types).toContain("tax_number");
+  });
+
+  it("matches the Steuer-ID spellings families use", () => {
+    for (const query of [
+      "Wo ist Hannas Steuer-ID?",
+      "Zeig mir die steuerliche Identifikationsnummer",
+      "Wie lautet die IdNr von Hanna?",
+    ]) {
+      expect(factTypesForQuery(query)).toContain("tax_id");
+    }
+  });
+
+  it("maps synonyms to their type", () => {
+    expect(factTypesForQuery("Wie ist die Versicherungsnummer?")).toContain(
+      "policy_number",
+    );
+    expect(factTypesForQuery("Was ist unsere Kontonummer?")).toContain("iban");
+    expect(factTypesForQuery("Wie ist das Nummernschild?")).toContain(
+      "license_plate",
+    );
+    expect(
+      factTypesForQuery("Wie ist die Versichertennummer von Hanna?"),
+    ).toContain("health_insurance_number");
+  });
+
+  it("returns nothing for a question about no particular number", () => {
+    expect(factTypesForQuery("Was steht in dem Kita-Brief?")).toEqual([]);
+  });
+
+  it("does not match keywords inside longer words", () => {
+    // "tin" must not fire on "Termin", "police" not on "Polizei".
+    expect(factTypesForQuery("Wann ist der Termin?")).toEqual([]);
+    expect(factTypesForQuery("Brief von der Polizei")).toEqual([]);
+  });
+
+  it("keeps a bare 'Nummer' question out of the untyped bucket", () => {
+    // FACT_TYPE_KEYWORDS.other is deliberately narrow — otherwise every
+    // question containing "Nummer" would drag in every untyped fact.
+    expect(factTypesForQuery("Wie ist die Nummer?")).toEqual([]);
+    expect(factTypesForQuery("Wie ist die Kennnummer?")).toEqual(["other"]);
   });
 });

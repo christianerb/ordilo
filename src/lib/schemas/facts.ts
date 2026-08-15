@@ -22,12 +22,29 @@ export const createFactSchema = z.object({
 });
 export type CreateFactInput = z.infer<typeof createFactSchema>;
 
-/** PATCH /api/documents/[id]/facts — correct a fact. */
-export const updateFactSchema = z.object({
-  fact_id: z.string().min(1),
-  value: factValue,
-  label: factLabel.optional(),
-});
+/**
+ * PATCH /api/documents/[id]/facts — correct a fact.
+ *
+ * Value, label and type are each optional so a family can fix what is
+ * actually wrong: a misread digit, an unhelpful label ("Unklare
+ * Kennnummer" → "Steuer-ID Hanna"), or a wrong type — the label and type
+ * are what the fact search matches questions against. At least one of
+ * them has to be present.
+ */
+export const updateFactSchema = z
+  .object({
+    fact_id: z.string().min(1),
+    value: factValue.optional(),
+    label: factLabel.optional(),
+    fact_type: z.enum(FACT_TYPES).optional(),
+  })
+  .refine(
+    (data) =>
+      data.value !== undefined ||
+      data.label !== undefined ||
+      data.fact_type !== undefined,
+    { message: "Nothing to update" },
+  );
 export type UpdateFactInput = z.infer<typeof updateFactSchema>;
 
 /** DELETE /api/documents/[id]/facts — remove a fact. */

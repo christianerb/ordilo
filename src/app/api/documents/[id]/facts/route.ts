@@ -20,7 +20,7 @@ import { FACT_TYPE_LABELS, normalizeFactValue } from "@/lib/schemas/extraction";
  * `document_facts`, so no reindex is needed.
  *
  *   POST   { fact_type, value, label? }            → add a fact
- *   PATCH  { fact_id, value, label? }              → correct a fact
+ *   PATCH  { fact_id, value?, label?, fact_type? } → correct a fact
  *   DELETE { fact_id }                             → remove a fact
  *
  * Auth: session client — RLS restricts every operation to the user's
@@ -130,13 +130,13 @@ export async function PATCH(
   });
   if (!parsed.ok) return parsed.response;
 
-  const { fact_id: factId, value, label } = parsed.data;
+  const { fact_id: factId, value, label, fact_type: factType } = parsed.data;
   const update = {
-    value,
-    normalized_value: normalizeFactValue(value),
     confidence: 1.0,
     confirmed: true,
+    ...(value ? { value, normalized_value: normalizeFactValue(value) } : {}),
     ...(label ? { label } : {}),
+    ...(factType ? { fact_type: factType } : {}),
   };
 
   const { data: fact, error } = await supabase

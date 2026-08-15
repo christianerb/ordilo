@@ -5,6 +5,7 @@ import {
 } from "@/lib/ai/embeddings";
 import {
   FACT_TYPE_LABELS,
+  factTypesForQuery,
   normalizeFactValue,
   type FactType,
 } from "@/lib/schemas/extraction";
@@ -375,14 +376,17 @@ export async function lexicalSearch(
  *
  * Two match paths:
  *   1. Label / fact-type match: query keywords against the fact label
- *      ("Seriennummer Waschmaschine") and against the German fact-type
- *      labels ("Seriennummer" → serial_number).
+ *      ("Seriennummer Waschmaschine") and against the fact-type keywords
+ *      ("Steuernummer" → tax_id, tax_number — see FACT_TYPE_KEYWORDS).
  *   2. Value match: identifier-like query tokens (containing digits) are
  *      normalized (lowercase, alphanumeric only) and matched against
  *      `normalized_value`, so "SN 4823-XK" finds "sn4823xk".
  *
  * Only facts of confirmed documents are returned. A fact hit is a precise
  * answer, so it scores high (0.9+) and ranks above fuzzy chunk matches.
+ *
+ * Candidates are finally scoped to the family members named in the query,
+ * so "die Steuer-ID von Hanna" cannot be answered with Emma's number.
  */
 export async function factSearch(
   serverClient: ServerClient,
@@ -392,13 +396,9 @@ export async function factSearch(
   const keywords = extractKeywords(query);
   if (keywords.length === 0) return [];
 
-  // Fact types whose German label appears in the query
-  // ("Wie ist die Seriennummer ...?" → serial_number).
-  const matchedTypes = (
-    Object.entries(FACT_TYPE_LABELS) as Array<[FactType, string]>
-  )
-    .filter(([, label]) => matchesWordBoundary(query, label))
-    .map(([type]) => type);
+  // Fact types the query asks for, matched against label + synonyms
+  // ("Wie ist die Steuernummer ...?" → tax_id, tax_number).
+  const matchedTypes = factTypesForQuery(query);
 
   // Identifier-like tokens: contain at least one digit and are ≥ 4 chars
   // after normalization ("4823", "sn4823xk", "de89370400440532013000").
@@ -438,8 +438,20 @@ export async function factSearch(
   );
   const docsById = new Map(confirmedDocs.map((d) => [d.id, d]));
 
+  // Every family member has their own Steuer-ID, Versichertennummer and
+  // Mitgliedsnummer. When the question names a person ("… von Hanna") and
+  // some of the candidate facts belong to that person, the others are
+  // wrong answers, not weaker ones — drop them.
+  const visibleFacts = facts.filter((f) => docsById.has(f.document_id));
+  const scopedFacts = await narrowFactsToMentionedPersons(
+    serverClient,
+    query,
+    familyId,
+    visibleFacts,
+  );
+
   const results: SearchResult[] = [];
-  for (const fact of facts) {
+  for (const fact of scopedFacts) {
     const doc = docsById.get(fact.document_id);
     if (!doc) continue;
 
@@ -465,6 +477,61 @@ export async function factSearch(
 
   // Best fact per document.
   return deduplicateByDocumentId(results);
+}
+
+/** A fact row as far as person scoping is concerned. */
+type ScopableFact = { document_id: string; label: string };
+
+/**
+ * Restrict fact candidates to the family members named in the query.
+ *
+ * A fact belongs to a person when the person is extracted from its
+ * document (`extracted_entities`) or named in the fact's own label
+ * ("Steuer-ID Hanna") — the label path matters because a document can
+ * carry one number per person.
+ *
+ * Returns the full list unchanged when the query names nobody, when the
+ * candidates already sit on a single document, or when none of them can
+ * be tied to the named person (a wrong guess must never swallow the only
+ * answer there is).
+ */
+async function narrowFactsToMentionedPersons<T extends ScopableFact>(
+  serverClient: ServerClient,
+  query: string,
+  familyId: string,
+  facts: T[],
+): Promise<T[]> {
+  const docIds = [...new Set(facts.map((f) => f.document_id))];
+  if (docIds.length < 2) return facts;
+
+  const memberNames = await fetchMemberNames(serverClient, familyId);
+  const mentioned = findMentionedMembers(query, memberNames);
+  if (mentioned.length === 0) return facts;
+
+  const { data: entities } = await serverClient
+    .from("extracted_entities")
+    .select("document_id, normalized_value")
+    .eq("family_id", familyId)
+    .eq("entity_type", "person")
+    .in("document_id", docIds);
+
+  const personDocIds = new Set(
+    (entities ?? [])
+      .filter((e) =>
+        mentioned.some((name) =>
+          matchesWordBoundary(e.normalized_value ?? "", name),
+        ),
+      )
+      .map((e) => e.document_id),
+  );
+
+  const scoped = facts.filter(
+    (f) =>
+      personDocIds.has(f.document_id) ||
+      mentioned.some((name) => matchesWordBoundary(f.label, name)),
+  );
+
+  return scoped.length > 0 ? scoped : facts;
 }
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
+import { matchesWordBoundary } from "@/lib/schemas/search";
 
 /**
  * Zod schema and JSON schema for the LLM document analysis extraction.
@@ -83,6 +84,9 @@ export const FACT_TYPES = [
   "iban",
   "license_plate",
   "member_id",
+  "tax_id",
+  "tax_number",
+  "health_insurance_number",
   "other",
 ] as const;
 
@@ -98,7 +102,116 @@ export const FACT_TYPE_LABELS: Record<FactType, string> = {
   iban: "IBAN",
   license_plate: "Kennzeichen",
   member_id: "Mitgliedsnummer",
+  tax_id: "Steuer-ID",
+  tax_number: "Steuernummer",
+  health_insurance_number: "Versichertennummer",
   other: "Kennung",
+};
+
+/**
+ * Search keywords per fact type — the words a family actually uses when
+ * asking for one of these numbers.
+ *
+ * Matching only against `FACT_TYPE_LABELS` misses every question that does
+ * not happen to use the label verbatim: "Wie ist die Steuernummer von
+ * Hanna?" must find a fact stored as Steuer-ID, and "Versicherungsnummer"
+ * must find a Policennummer. Each list therefore contains the label itself
+ * plus the common synonyms, abbreviations and misspellings.
+ *
+ * Deliberately cross-listed: `tax_id` (11-stellige steuerliche
+ * Identifikationsnummer) and `tax_number` (Steuernummer des Finanzamts)
+ * are two different numbers that everyday language uses interchangeably,
+ * so a question for one has to surface the other.
+ *
+ * Keywords are matched with word boundaries (see `matchesWordBoundary`),
+ * so short entries like "tin" or "idnr" do not match inside longer words.
+ */
+export const FACT_TYPE_KEYWORDS: Record<FactType, string[]> = {
+  serial_number: [
+    "seriennummer",
+    "seriennr",
+    "serien-nr",
+    "gerätenummer",
+    "geraetenummer",
+    "imei",
+  ],
+  contract_number: [
+    "vertragsnummer",
+    "vertragsnr",
+    "vertrags-nr",
+    "vertragskonto",
+    "vertragskontonummer",
+  ],
+  policy_number: [
+    "policennummer",
+    "policennr",
+    "policen-nr",
+    "police",
+    "versicherungsnummer",
+    "versicherungsscheinnummer",
+    "versicherungsschein",
+  ],
+  customer_number: [
+    "kundennummer",
+    "kundennr",
+    "kunden-nr",
+    "kundenkonto",
+    "kundenkennung",
+  ],
+  invoice_number: [
+    "rechnungsnummer",
+    "rechnungsnr",
+    "rechnungs-nr",
+    "belegnummer",
+  ],
+  iban: ["iban", "kontonummer", "bankverbindung", "kontodaten"],
+  license_plate: [
+    "kennzeichen",
+    "kfz-kennzeichen",
+    "autokennzeichen",
+    "nummernschild",
+  ],
+  member_id: [
+    "mitgliedsnummer",
+    "mitgliedsnr",
+    "mitglieds-nr",
+    "mitgliedernummer",
+  ],
+  tax_id: [
+    "steuer-id",
+    "steuerid",
+    "steueridentifikationsnummer",
+    "steuerliche identifikationsnummer",
+    "identifikationsnummer",
+    "idnr",
+    "id-nr",
+    "tin",
+    // Colloquially the same thing for most families.
+    "steuernummer",
+    "steuer-nr",
+    "steuernr",
+  ],
+  tax_number: [
+    "steuernummer",
+    "steuer-nr",
+    "steuernr",
+    "finanzamtsnummer",
+    // Colloquially the same thing for most families.
+    "steuer-id",
+    "steuerid",
+    "steueridentifikationsnummer",
+    "identifikationsnummer",
+  ],
+  health_insurance_number: [
+    "versichertennummer",
+    "versichertennr",
+    "krankenversicherungsnummer",
+    "krankenkassennummer",
+    "kvnr",
+  ],
+  // Intentionally narrow: "Nummer" alone would match every question about
+  // any number and drown the typed hits.
+  other: ["kennung", "kennnummer"],
 };
 
 /**
@@ -107,6 +220,21 @@ export const FACT_TYPE_LABELS: Record<FactType, string> = {
  */
 export function normalizeFactValue(value: string): string {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+/**
+ * Fact types a natural-language query asks for, based on
+ * `FACT_TYPE_KEYWORDS` (label + synonyms), matched as whole words.
+ *
+ *   "Wie ist die Steuernummer von Hanna?" → ["tax_id", "tax_number"]
+ *   "Seriennummer der Waschmaschine"      → ["serial_number"]
+ */
+export function factTypesForQuery(query: string): FactType[] {
+  return (Object.entries(FACT_TYPE_KEYWORDS) as Array<[FactType, string[]]>)
+    .filter(([, keywords]) =>
+      keywords.some((keyword) => matchesWordBoundary(query, keyword)),
+    )
+    .map(([type]) => type);
 }
 
 // ---------------------------------------------------------------------------

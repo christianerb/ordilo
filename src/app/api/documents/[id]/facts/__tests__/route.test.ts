@@ -31,10 +31,12 @@ function request(body: unknown, method = "POST") {
 function mockServerClient({
   user = { id: "user-1" },
   insertResult = { data: INSERTED_FACT, error: null },
+  updateResult = { data: null as unknown, error: null },
   deleteResult = { error: null },
 }: {
   user?: { id: string } | null;
   insertResult?: { data: unknown; error: unknown };
+  updateResult?: { data: unknown; error: unknown };
   deleteResult?: { error: unknown };
 } = {}) {
   const insert = vi.fn().mockReturnValue({
@@ -46,7 +48,7 @@ function mockServerClient({
     eq: vi.fn().mockReturnValue({
       eq: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnValue({
-          maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+          maybeSingle: vi.fn().mockResolvedValue(updateResult),
         }),
       }),
     }),
@@ -147,7 +149,29 @@ describe("/api/documents/[id]/facts", () => {
     );
   });
 
-  it("PATCH returns 400 without a new value", async () => {
+  it("POST keeps a user-written label", async () => {
+    const { client, insert } = mockServerClient();
+    mockClient(client);
+
+    await POST(
+      request({
+        fact_type: "tax_id",
+        value: "74 031 832 353",
+        label: "Steuer-ID Hanna",
+      }),
+      params(),
+    );
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fact_type: "tax_id",
+        label: "Steuer-ID Hanna",
+        normalized_value: "74031832353",
+      }),
+    );
+  });
+
+  it("PATCH returns 400 with nothing to change", async () => {
     mockClient(mockServerClient().client);
 
     const response = await PATCH(
@@ -160,6 +184,68 @@ describe("/api/documents/[id]/facts", () => {
       error: "Bitte gib die Nummer und einen neuen Wert an.",
       code: "INVALID_INPUT",
     });
+  });
+
+  it("PATCH corrects label and type — what the fact search matches on", async () => {
+    const corrected = {
+      id: "fact-1",
+      fact_type: "tax_id",
+      label: "Steuer-ID Hanna",
+      value: "74 031 832 353",
+    };
+    const { client, update } = mockServerClient({
+      updateResult: { data: corrected, error: null },
+    });
+    mockClient(client);
+
+    const response = await PATCH(
+      request(
+        {
+          fact_id: "fact-1",
+          value: "74 031 832 353",
+          label: "Steuer-ID Hanna",
+          fact_type: "tax_id",
+        },
+        "PATCH",
+      ),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      status: "ok",
+      fact: corrected,
+    });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: "74 031 832 353",
+        normalized_value: "74031832353",
+        label: "Steuer-ID Hanna",
+        fact_type: "tax_id",
+        confirmed: true,
+      }),
+    );
+  });
+
+  it("PATCH renames a fact without touching its value", async () => {
+    const { client, update } = mockServerClient({
+      updateResult: {
+        data: { ...INSERTED_FACT, label: "Steuer-ID Hanna" },
+        error: null,
+      },
+    });
+    mockClient(client);
+
+    const response = await PATCH(
+      request({ fact_id: "fact-1", label: "Steuer-ID Hanna" }, "PATCH"),
+      params(),
+    );
+
+    expect(response.status).toBe(200);
+    const [payload] = update.mock.calls[0] as [Record<string, unknown>];
+    expect(payload.label).toBe("Steuer-ID Hanna");
+    expect(payload).not.toHaveProperty("value");
+    expect(payload).not.toHaveProperty("normalized_value");
   });
 
   it("DELETE returns 400 without a fact_id", async () => {
