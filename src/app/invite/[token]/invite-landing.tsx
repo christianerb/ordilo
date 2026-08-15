@@ -14,7 +14,6 @@ import {
   Loader2,
   Mail,
   MailCheck,
-  Package,
   Pencil,
   RefreshCw,
   ShieldCheck,
@@ -45,7 +44,6 @@ type MergePreview = {
   calendarEventCount: number;
   memberCount: number;
   collectionCount: number;
-  inventoryItemCount: number;
   targetAdultCount: number;
   fingerprint: string;
 };
@@ -283,6 +281,18 @@ export function InviteLanding({
         setErrorMessage(preparation.error);
         return;
       }
+      // The family situation changed between the two calls: the membership
+      // now exists, so the join already happened.
+      if (preparation.state === "joined") {
+        setJoinComplete(true);
+        return;
+      }
+      // No family left to merge — re-render from the server, which lands on
+      // a plain confirmation the next click can complete.
+      if (preparation.state === "joinable") {
+        window.location.reload();
+        return;
+      }
       setResolvedState(preparation.state);
       if ("preview" in preparation) setResolvedMergePreview(preparation.preview);
       return;
@@ -463,13 +473,14 @@ export function InviteLanding({
 
   if (resolvedState === "merge" && resolvedMergePreview) {
     const mergePreview = resolvedMergePreview;
+    // Notes ("Wichtige Dinge") became documents, so they are part of the
+    // document count rather than a row of their own.
     const transferItems = [
       { label: "Dokumente", count: mergePreview.documentCount, icon: FileText },
       { label: "Aufgaben", count: mergePreview.taskCount, icon: ClipboardCheck },
       { label: "Termine", count: mergePreview.calendarEventCount, icon: CalendarDays },
       { label: "Personen", count: mergePreview.memberCount, icon: UserPlus },
       { label: "Sammlungen", count: mergePreview.collectionCount, icon: FolderHeart },
-      { label: "Wichtige Dinge", count: mergePreview.inventoryItemCount, icon: Package },
     ].filter((item) => item.count > 0);
 
     return (

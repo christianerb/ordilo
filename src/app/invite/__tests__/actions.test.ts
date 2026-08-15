@@ -256,7 +256,7 @@ describe("getInviteMergePreparation", () => {
       data: {
         status: "merge_available", source_family_name: "Familie Schmidt",
         document_count: 0, task_count: 0, calendar_event_count: 0,
-        member_count: 0, collection_count: 0, inventory_item_count: 0,
+        member_count: 0, collection_count: 0,
         target_adult_count: 2, fingerprint: "preview-123",
       },
       error: null,
@@ -265,6 +265,58 @@ describe("getInviteMergePreparation", () => {
     await expect(getInviteMergePreparation(TOKEN)).resolves.toMatchObject({
       success: true, state: "empty_source",
       preview: { sourceFamilyName: "Familie Schmidt", fingerprint: "preview-123" },
+    });
+  });
+
+  it("offers the merge review when the owned family holds content", async () => {
+    rpc.mockResolvedValue({
+      data: {
+        status: "merge_available", source_family_name: "Familie Schmidt",
+        document_count: 3, task_count: 0, calendar_event_count: 0,
+        member_count: 0, collection_count: 0,
+        target_adult_count: 2, fingerprint: "preview-123",
+      },
+      error: null,
+    });
+
+    await expect(getInviteMergePreparation(TOKEN)).resolves.toMatchObject({
+      success: true, state: "merge", preview: { documentCount: 3 },
+    });
+  });
+
+  // Every status the RPC can answer needs its own outcome. When `joined` and
+  // `joinable` fell through to the generic failure, an invitee saw only
+  // "Wir konnten deine Familie gerade nicht prüfen" with no way forward.
+  it.each([
+    ["joined", "joined"],
+    ["joinable", "joinable"],
+    ["shared_source_family", "shared_source_family"],
+    ["source_processing", "source_processing"],
+    ["invalid", "invalid"],
+  ])("maps the %s status to a recoverable screen", async (status, state) => {
+    rpc.mockResolvedValue({ data: { status }, error: null });
+
+    await expect(getInviteMergePreparation(TOKEN)).resolves.toEqual({
+      success: true,
+      state,
+    });
+  });
+
+  it("asks for a reload when the session has expired", async () => {
+    rpc.mockResolvedValue({ data: { status: "unauthenticated" }, error: null });
+
+    await expect(getInviteMergePreparation(TOKEN)).resolves.toEqual({
+      success: false,
+      error: "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.",
+    });
+  });
+
+  it("reports a failure when the RPC raises", async () => {
+    rpc.mockResolvedValue({ data: null, error: new Error("42P01") });
+
+    await expect(getInviteMergePreparation(TOKEN)).resolves.toEqual({
+      success: false,
+      error: "Wir konnten deine Familie gerade nicht prüfen. Bitte versuche es erneut.",
     });
   });
 });
