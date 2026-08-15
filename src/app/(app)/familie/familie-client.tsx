@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
-  ChevronRight,
   Loader2,
   RefreshCw,
   SlidersHorizontal,
@@ -14,7 +13,7 @@ import { toast } from "sonner";
 import type { Database } from "@/types/database";
 import type { MemberFormValues } from "@/components/ordilo/member-form";
 import { Button } from "@/components/ui/button";
-import { CardActions } from "@/components/ordilo/card-actions";
+import { cn } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +34,6 @@ import type { FamilyFilter } from "./family-filters";
 import { isChildMember } from "./family-filters";
 import { FamilyMemberCard } from "./family-member-card";
 import { FamilyMemberSheet } from "./family-member-sheet";
-import { MemberAvatar } from "./member-avatar";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
@@ -59,7 +57,8 @@ export function FamilieClient({
   const [memberList, setMemberList] = useState<MemberRow[]>(members);
   const [photoUrlMap, setPhotoUrlMap] = useState<Record<string, string>>(photoUrls);
   const [filter, setFilter] = useState<FamilyFilter>("all");
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [documentsOnly, setDocumentsOnly] = useState(false);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
@@ -196,7 +195,15 @@ export function FamilieClient({
     );
   }
 
+  // Keyed off the member's position in the unfiltered list so a person's
+  // card color stays stable as filters are applied, instead of reshuffling
+  // whenever the filtered array's indices shift.
+  const washByMemberId = new Map(
+    memberList.map((member, index) => [member.id, getFamilyCardWash(index)]),
+  );
+
   const filteredMembers = memberList.filter((member) => {
+    if (documentsOnly && (documentCounts[member.id] ?? 0) === 0) return false;
     if (filter === "all") return true;
     return filter === "children" ? isChildMember(member) : !isChildMember(member);
   });
@@ -215,102 +222,58 @@ export function FamilieClient({
             <FamilyFilterTabs value={filter} onChange={setFilter} />
             <button
               type="button"
-              onClick={() => setViewMode((mode) => (mode === "grid" ? "list" : "grid"))}
-              aria-label={
-                viewMode === "grid" ? "Als Liste anzeigen" : "Als Kacheln anzeigen"
-              }
-              title={
-                viewMode === "grid" ? "Als Liste anzeigen" : "Als Kacheln anzeigen"
-              }
-              className="flex size-11 shrink-0 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              data-testid="family-view-toggle"
+              onClick={() => setMoreFiltersOpen((open) => !open)}
+              aria-expanded={moreFiltersOpen}
+              aria-label="Weitere Filter"
+              title="Weitere Filter"
+              className={cn(
+                "flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                moreFiltersOpen || documentsOnly
+                  ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                  : "border-border bg-card text-muted-foreground hover:text-foreground",
+              )}
+              data-testid="family-more-filters"
             >
               <SlidersHorizontal className="size-4.5" aria-hidden="true" />
             </button>
           </div>
 
-          {viewMode === "grid" ? (
-            <div className="grid grid-cols-2 gap-4" data-testid="member-list">
-              {filteredMembers.map((member, index) => (
-                <FamilyMemberCard
-                  key={member.id}
-                  member={member}
-                  wash={getFamilyCardWash(index)}
-                  photoUrl={photoUrlMap[member.id]}
-                  documentCount={documentCounts[member.id] ?? 0}
-                  onOpen={() => router.push(`/familie/${member.id}`)}
-                  onEdit={() => handleOpenEdit(member)}
-                  onRemove={() => handleOpenRemove(member)}
-                />
-              ))}
-            </div>
-          ) : (
+          {moreFiltersOpen && (
             <div
-              className="divide-y divide-border rounded-ordilo-sm border border-border bg-[var(--surface-story)] stagger-children"
-              data-testid="member-list"
+              className="flex flex-wrap items-center gap-2 rounded-ordilo-md border border-border bg-card p-3 shadow-card"
+              data-testid="family-filter-panel"
             >
-              {filteredMembers.map((member) => {
-                const docCount = documentCounts[member.id] ?? 0;
-                // The relationship (who this person is related to, e.g. "von
-                // Emma, Hanna") stays on the profile page, which has room for
-                // it — squeezed into this compact row it made the line too
-                // crowded, so only the relationship label itself shows here.
-                const meta = [
-                  member.role,
-                  member.relationship_label,
-                  docCount > 0
-                    ? docCount === 1
-                      ? "1 Dokument"
-                      : `${docCount} Dokumente`
-                    : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ");
-
-                return (
-                  <div
-                    key={member.id}
-                    className="group flex items-center gap-2 px-3 py-2.5 transition-colors hover:bg-accent/20"
-                    data-testid="member-row"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/familie/${member.id}`)}
-                      className="flex flex-1 items-center gap-2.5 rounded-ordilo-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                      aria-label={`${member.name} öffnen`}
-                    >
-                      <MemberAvatar
-                        name={member.name}
-                        color={member.avatar_color}
-                        photoUrl={photoUrlMap[member.id]}
-                        sizeClass="size-8"
-                      />
-                      <div className="min-w-0 flex-1 text-left">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {member.name}
-                        </p>
-                        {meta && (
-                          <p className="truncate text-xs text-muted-foreground">
-                            {meta}
-                          </p>
-                        )}
-                      </div>
-                      <ChevronRight
-                        className="size-4 shrink-0 text-muted-foreground/40 transition-opacity opacity-0 group-hover:opacity-100"
-                        aria-hidden="true"
-                      />
-                    </button>
-
-                    <CardActions
-                      onEdit={() => handleOpenEdit(member)}
-                      onDelete={() => handleOpenRemove(member)}
-                      testId="person-card-actions"
-                    />
-                  </div>
-                );
-              })}
+              <button
+                type="button"
+                onClick={() => setDocumentsOnly((only) => !only)}
+                aria-pressed={documentsOnly}
+                className={cn(
+                  "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  documentsOnly
+                    ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                    : "border-border bg-[var(--sand)] text-muted-foreground hover:text-foreground",
+                )}
+                data-testid="family-filter-documents-only"
+              >
+                Nur mit Dokumenten
+              </button>
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-4" data-testid="member-list">
+            {filteredMembers.map((member) => (
+              <FamilyMemberCard
+                key={member.id}
+                member={member}
+                wash={washByMemberId.get(member.id) ?? getFamilyCardWash(0)}
+                photoUrl={photoUrlMap[member.id]}
+                documentCount={documentCounts[member.id] ?? 0}
+                onOpen={() => router.push(`/familie/${member.id}`)}
+                onEdit={() => handleOpenEdit(member)}
+                onRemove={() => handleOpenRemove(member)}
+              />
+            ))}
+          </div>
 
           {filteredMembers.length === 0 && (
             <p className="pt-2 text-center text-sm text-muted-foreground">
