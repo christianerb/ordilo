@@ -35,6 +35,8 @@ function mockSupabaseClient(options: {
   /** Membership row for invite-only accounts (owned family misses). */
   membershipData?: {
     family_id: string;
+    /** NULL = the welcome intro is still pending for this member. */
+    intro_seen_at?: string | null;
     families: {
       id: string;
       name?: string;
@@ -192,6 +194,7 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
       familyData: null,
       membershipData: {
         family_id: "fam-invited",
+        intro_seen_at: "2026-07-05T10:00:00Z",
         families: {
           id: "fam-invited",
           name: "Partnerfamilie",
@@ -218,6 +221,7 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
       familyData: null,
       membershipData: {
         family_id: "fam-erb",
+        intro_seen_at: "2026-08-15T06:00:00Z",
         families: {
           id: "fam-erb",
           name: "Familie Erb",
@@ -240,6 +244,7 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
       familyData: null,
       membershipData: {
         family_id: "fam-erb",
+        intro_seen_at: "2026-08-15T06:00:00Z",
         families: {
           id: "fam-erb",
           name: "Familie Erb",
@@ -252,6 +257,85 @@ describe("updateSession — onboarding guard (onboarding_completed_at marker)", 
 
     expect(response.status).toBe(307);
     expect(response.headers.get("location")).toContain("/home");
+  });
+
+  // Welcome intro: shown once to invited members, never to creators.
+  it("sends a fresh invitee to the welcome intro before the app", async () => {
+    setupMock({
+      familyData: null,
+      membershipData: {
+        family_id: "fam-erb",
+        intro_seen_at: null,
+        families: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: "2026-08-14T10:00:00Z",
+        },
+      },
+    });
+
+    const response = await updateSession(createMockRequest("/home"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/willkommen");
+  });
+
+  it("routes an invitee off /onboarding straight to the intro, not via /home", async () => {
+    setupMock({
+      familyData: null,
+      membershipData: {
+        family_id: "fam-erb",
+        intro_seen_at: null,
+        families: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: null,
+        },
+      },
+    });
+
+    const response = await updateSession(createMockRequest("/onboarding"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/willkommen");
+  });
+
+  it("keeps a member who acknowledged the intro out of /willkommen", async () => {
+    setupMock({
+      familyData: null,
+      membershipData: {
+        family_id: "fam-erb",
+        intro_seen_at: "2026-08-15T06:00:00Z",
+        families: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: "2026-08-14T10:00:00Z",
+        },
+      },
+    });
+
+    const response = await updateSession(createMockRequest("/willkommen"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/home");
+  });
+
+  it("never shows the intro to the family creator", async () => {
+    setupMock({ familyData: COMPLETED_FAMILY });
+
+    const response = await updateSession(createMockRequest("/willkommen"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/home");
+  });
+
+  it("requires a session for /willkommen", async () => {
+    setupMock({ user: null });
+
+    const response = await updateSession(createMockRequest("/willkommen"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toContain("/login");
   });
 
   // The owner's own gate is unchanged: a half-finished setup still holds.

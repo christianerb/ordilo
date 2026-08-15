@@ -8,6 +8,7 @@ import {
 } from "@/lib/supabase/family-context";
 import {
   isOnboardingComplete,
+  needsWelcomeIntro,
   resolveUserFamily,
 } from "@/lib/supabase/resolve-user-family";
 
@@ -88,7 +89,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
 
   // Route classification
   const appPaths = ["/home", "/dokumente", "/suche", "/familie", "/aufgaben", "/sammlungen"];
-  const protectedPaths = [...appPaths, "/onboarding"];
+  const protectedPaths = [...appPaths, "/onboarding", "/willkommen"];
   const pathname = request.nextUrl.pathname;
   const isProtected = protectedPaths.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
@@ -97,6 +98,7 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     (p) => pathname === p || pathname.startsWith(`${p}/`),
   );
   const isOnboarding = pathname === "/onboarding" || pathname.startsWith("/onboarding/");
+  const isWelcome = pathname === "/willkommen" || pathname.startsWith("/willkommen/");
 
   // Unauthenticated → redirect to /login
   if (!user && isProtected) {
@@ -113,7 +115,12 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
   // are safe because the user already passed the onboarding gate on the
   // initial load. This saves a Supabase query on every tab switch.
   const isRscRequest = request.headers.get("RSC") === "1";
-  if (user && request.method === "GET" && !isRscRequest && (isAppRoute || isOnboarding)) {
+  if (
+    user
+    && request.method === "GET"
+    && !isRscRequest
+    && (isAppRoute || isOnboarding || isWelcome)
+  ) {
     // Onboarding status is determined by a DURABLE marker
     // (families.onboarding_completed_at) rather than raw member count.
     // This distinguishes "onboarding completed" from "has members":
@@ -163,6 +170,9 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     // JOINED family → complete: an invitee has nothing to set up, and the
     // marker they would be judged by belongs to the creator's run.
     const onboardingComplete = isOnboardingComplete(family);
+    // An invited member who has not acknowledged the welcome intro yet.
+    // Owners never qualify — they met Ordilo while setting the family up.
+    const introPending = needsWelcomeIntro(family);
 
     if (!onboardingComplete && isAppRoute) {
       // Not onboarded: redirect ALL app routes → /onboarding. This covers
@@ -176,7 +186,27 @@ export async function updateSession(request: NextRequest): Promise<NextResponse>
     }
 
     if (onboardingComplete && isOnboarding) {
-      // Onboarding complete: redirect /onboarding → /home
+      // Onboarding complete: leave /onboarding — via the intro when one is
+      // still pending, so an invitee is not bounced twice.
+      const url = request.nextUrl.clone();
+      url.pathname = introPending ? "/willkommen" : "/home";
+      url.search = "";
+      return redirectWithCookies(url, supabaseResponse);
+    }
+
+    if (introPending && isAppRoute) {
+      // Fresh invitee: show the intro before the app. Both join paths lead
+      // here — the invite page's own redirect and the magic-link callback.
+      const url = request.nextUrl.clone();
+      url.pathname = "/willkommen";
+      url.search = "";
+      return redirectWithCookies(url, supabaseResponse);
+    }
+
+    if (!introPending && isWelcome) {
+      // Already acknowledged (or an owner who typed the URL) → nothing to
+      // show. This is also the redirect the intro's own "Los geht's" relies
+      // on after the marker is written.
       const url = request.nextUrl.clone();
       url.pathname = "/home";
       url.search = "";

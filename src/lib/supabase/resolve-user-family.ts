@@ -14,6 +14,12 @@ export type ResolvedFamily = Pick<
    * the setup flow, so it only says anything about an owner.
    */
   isOwner: boolean;
+  /**
+   * When this member acknowledged the welcome intro; null = still pending.
+   * Always null for owners, who are never shown it — read it through
+   * {@link needsWelcomeIntro} rather than on its own.
+   */
+  introSeenAt: string | null;
 };
 
 /**
@@ -30,6 +36,19 @@ export function isOnboardingComplete(family: ResolvedFamily | null): boolean {
   if (!family) return false;
   if (!family.isOwner) return true;
   return !!family.onboarding_completed_at;
+}
+
+/**
+ * Whether to show the short welcome intro before the app itself.
+ *
+ * Creators meet Ordilo while setting their family up. Invited members are
+ * handed a link and land in a document list, sometimes without ever having
+ * heard of the product — so they get three passive, skippable cards, once.
+ */
+export function needsWelcomeIntro(family: ResolvedFamily | null): boolean {
+  if (!family) return false;
+  if (family.isOwner) return false;
+  return !family.introSeenAt;
 }
 
 const QUERY_ERROR_MESSAGE =
@@ -98,16 +117,19 @@ export async function resolveUserFamily(
     return { data: null, error: QUERY_ERROR_MESSAGE };
   }
   if (owned) {
-    return { data: { ...owned, isOwner: true }, error: null };
+    // Owners never see the welcome intro, so its marker is not read here.
+    return { data: { ...owned, isOwner: true, introSeenAt: null }, error: null };
   }
 
   // Invite-only account: oldest membership wins. Ordered by the
   // membership's created_at (when the user joined) — ordering
   // families.created_at instead would pick the family that has existed
   // longest, regardless of when the user became a member.
+  // intro_seen_at rides along on the row that is being read anyway — the
+  // welcome gate costs no extra round-trip.
   const { data: membership, error: membershipError } = await supabase
     .from("family_memberships")
-    .select("families(id, name, onboarding_completed_at)")
+    .select("intro_seen_at, families(id, name, onboarding_completed_at)")
     .eq("user_id", uid)
     .order("created_at", { ascending: true })
     .limit(1)
@@ -126,5 +148,12 @@ export async function resolveUserFamily(
   }
 
   // Reached only when the user owns no family, so this membership is a join.
-  return { data: { ...family, isOwner: false }, error: null };
+  return {
+    data: {
+      ...family,
+      isOwner: false,
+      introSeenAt: membership?.intro_seen_at ?? null,
+    },
+    error: null,
+  };
 }

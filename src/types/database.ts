@@ -339,6 +339,9 @@ export type Database = {
           user_id: string;
           role: string; // 'owner' | 'adult' | 'viewer'
           created_at: string;
+          // NULL = the welcome intro has not been acknowledged yet. Only
+          // ever set for invited members (see 0056).
+          intro_seen_at: string | null;
         };
         Insert: {
           id?: string;
@@ -346,6 +349,7 @@ export type Database = {
           user_id: string;
           role?: string;
           created_at?: string;
+          intro_seen_at?: string | null;
         };
         Update: {
           id?: string;
@@ -353,6 +357,7 @@ export type Database = {
           user_id?: string;
           role?: string;
           created_at?: string;
+          intro_seen_at?: string | null;
         };
         Relationships: [
           {
@@ -1204,6 +1209,13 @@ export type Database = {
       user_belongs_to_family: {
         Args: { fam_id: string };
         Returns: boolean;
+      };
+      // mark_family_intro_seen — stamps family_memberships.intro_seen_at for
+      // the caller. The only permitted write to a member's own row; see
+      // supabase/migrations/0056_membership_welcome_intro.sql.
+      mark_family_intro_seen: {
+        Args: Record<string, never>;
+        Returns: { status: string; updated?: number };
       };
       // confirm_document — single-transaction atomic confirm RPC.
       // See supabase/migrations/0005_confirm_rpc.sql.
