@@ -8,7 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
-import { DocumentsTable } from "@/components/ordilo/documents-table";
+import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,12 +106,14 @@ export function DokumenteClient({
       onDrop={handleDrop}
       className="app-page-stack overflow-x-hidden"
     >
-      <h1 className="text-lg font-semibold tracking-tight text-foreground">
-        Dokumente
-        <span className="ml-2 text-sm font-normal text-muted-foreground">
+      <div className="flex items-center gap-2.5">
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--petrol)]">
+          Dokumente
+        </h1>
+        <span className="rounded-full bg-[var(--sand-warm)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]">
           {displayDocuments.length}
         </span>
-      </h1>
+      </div>
 
       {/* Drag overlay */}
       {isDragOver && (
@@ -194,7 +196,7 @@ export function DokumenteClient({
         </div>
       ) : hasDocuments ? (
         <div className="space-y-3" data-testid="document-list">
-          <DocumentsTable
+          <DocumentsBrowser
             documents={displayDocuments}
             onDelete={setDeleteConfirmId}
           />
