@@ -1,42 +1,11 @@
 import { redirect } from "next/navigation";
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
+import { resolveMemberPhotoUrls } from "@/lib/member-photos";
 import { FamilieClient } from "./familie-client";
 import type { Database } from "@/types/database";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
-
-/** How long member photo signed URLs stay valid, in seconds. */
-const PHOTO_SIGNED_URL_TTL_SECONDS = 300;
-
-/**
- * Resolve short-lived signed URLs for every member that has an uploaded
- * photo. Failures are non-critical — a member simply falls back to the
- * colored-initial avatar.
- */
-async function resolvePhotoUrls(
-  members: MemberRow[],
-): Promise<Record<string, string>> {
-  const withPhoto = members.filter((m) => m.photo_url);
-  if (withPhoto.length === 0) return {};
-
-  const adminClient = createAdminClient();
-  const paths = withPhoto.map((m) => m.photo_url as string);
-  const { data } = await adminClient.storage.from("avatars").createSignedUrls(
-    paths,
-    PHOTO_SIGNED_URL_TTL_SECONDS,
-  );
-
-  const urls: Record<string, string> = {};
-  if (data) {
-    for (let i = 0; i < withPhoto.length; i++) {
-      const signedUrl = data[i]?.signedUrl;
-      if (signedUrl) urls[withPhoto[i].id] = signedUrl;
-    }
-  }
-  return urls;
-}
 
 /**
  * Family management page (server component).
@@ -123,7 +92,7 @@ export default async function FamiliePage() {
             members.map((m) => m.id),
           )
       : Promise.resolve({ data: null }),
-    resolvePhotoUrls(members),
+    resolveMemberPhotoUrls(members),
   ]);
 
   // Count unique documents per member (a member can appear on the same

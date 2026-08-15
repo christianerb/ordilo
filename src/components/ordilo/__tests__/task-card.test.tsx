@@ -48,9 +48,18 @@ describe("TaskCard", () => {
     expect(screen.getByText("Rechnung bezahlen")).toBeDefined();
   });
 
-  it("renders the due date in German format (DD.MM.YYYY)", () => {
+  it("renders a short, human due label with the full date as its title", () => {
     render(<TaskCard task={makeTask({ due_date: "2026-07-15" })} />);
-    expect(screen.getByText(/15\.07\.2026/)).toBeDefined();
+    const due = screen.getByTestId("task-due-date");
+    // Far enough out for the plain date form.
+    expect(due.textContent).toContain("15. Juli");
+    expect(due.getAttribute("title")).toBe("15.07.2026");
+  });
+
+  it("says 'Heute' for a task due today", () => {
+    const today = new Date().toLocaleDateString("sv-SE");
+    render(<TaskCard task={makeTask({ due_date: today })} />);
+    expect(screen.getByTestId("task-due-date").textContent).toContain("Heute");
   });
 
   it("does not render a due date label when due_date is null", () => {

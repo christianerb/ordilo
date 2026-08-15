@@ -4,7 +4,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 
@@ -19,6 +21,14 @@ export interface PlannerActionsContextValue {
   setCreateHandler: (handler: CreateHandler | null) => void;
   /** Open the create sheet of whichever tab view is currently mounted. */
   openCreate: () => void;
+  /**
+   * How many tasks are still open in the mounted view, for the page
+   * heading's "17 offen". Null when the view has none to report (the
+   * Planer tab), which hides the count.
+   */
+  openCount: number | null;
+  /** Report the live open count; null clears it. */
+  setOpenCount: (count: number | null) => void;
 }
 
 const PlannerActionsContext =
@@ -35,6 +45,7 @@ export function PlannerActionsProvider({
   children: ReactNode;
 }) {
   const handlerRef = useRef<CreateHandler | null>(null);
+  const [openCount, setOpenCount] = useState<number | null>(null);
 
   const setCreateHandler = useCallback((handler: CreateHandler | null) => {
     handlerRef.current = handler;
@@ -44,8 +55,13 @@ export function PlannerActionsProvider({
     handlerRef.current?.();
   }, []);
 
+  const value = useMemo(
+    () => ({ setCreateHandler, openCreate, openCount, setOpenCount }),
+    [setCreateHandler, openCreate, openCount],
+  );
+
   return (
-    <PlannerActionsContext.Provider value={{ setCreateHandler, openCreate }}>
+    <PlannerActionsContext.Provider value={value}>
       {children}
     </PlannerActionsContext.Provider>
   );

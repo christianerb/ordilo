@@ -46,27 +46,33 @@ function PlannerHeader({
   showPlaner: boolean;
   familyId: string | null;
 }) {
-  const { openCreate } = usePlannerActions();
+  const { openCreate, openCount } = usePlannerActions();
 
   return (
-    <div className="app-page-heading">
-      <div>
-        <h1 className="text-lg font-semibold text-foreground">
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <h1 className="truncate text-2xl font-semibold tracking-tight text-[var(--petrol)]">
           Familienplaner
         </h1>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Alles, was ihr gemeinsam im Blick behalten möchtet.
-        </p>
+        {!showPlaner && openCount !== null && (
+          <span
+            className="shrink-0 text-sm text-muted-foreground tabular-nums"
+            data-testid="planner-open-count"
+          >
+            {openCount} offen
+          </span>
+        )}
       </div>
       {familyId && (
         <Button
-          size="sm"
-          className="gap-1.5"
+          size="icon"
           onClick={openCreate}
+          aria-label={showPlaner ? "Neuer Termin" : "Neue Aufgabe"}
+          title={showPlaner ? "Neuer Termin" : "Neue Aufgabe"}
+          className="size-11 shrink-0 rounded-full"
           data-testid="planner-create-button"
         >
-          <Plus className="size-3.5" aria-hidden="true" />
-          {showPlaner ? "Termin" : "Neue Aufgabe"}
+          <Plus className="size-5" aria-hidden="true" />
         </Button>
       )}
     </div>

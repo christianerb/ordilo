@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { CalendarDays, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
-import type { TaskRow } from "@/lib/task-utils";
+import { formatTaskDueLabel, type TaskRow } from "@/lib/task-utils";
 import { CardActions } from "@/components/ordilo/card-actions";
+import { MemberAvatar } from "@/components/ordilo/member-avatar";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { vibrate } from "@/lib/haptics";
 
@@ -24,6 +25,14 @@ export interface AssigneeOption {
   avatar_color?: string | null;
 }
 
+/** The assignee as the card shows them: a face and a name. */
+export interface TaskAssigneeDisplay {
+  name: string | null;
+  color?: string | null;
+  /** Ready-to-use (signed) photo URL; omitted falls back to the initial. */
+  photoUrl?: string | null;
+}
+
 export interface TaskCardProps {
   task: TaskCardData;
   onToggleDone?: (newStatus: string) => void;
@@ -33,6 +42,11 @@ export interface TaskCardProps {
   onClick?: () => void;
   className?: string;
   showConfidence?: boolean;
+  /**
+   * Who the task belongs to, with their face. Without it the card falls
+   * back to the plain assignee name it already carries.
+   */
+  assignee?: TaskAssigneeDisplay;
   /** Flat row inside a grouped surface: no own card chrome (background,
       shadow, radius) — the parent surface carries those, and a divider
       separates the rows. */
@@ -51,20 +65,25 @@ export function TaskCard({
   className,
   flat = false,
   deleteLabel = "Löschen",
+  assignee,
 }: TaskCardProps) {
   const { openDocument } = useDocumentViewer();
   const isDone = task.status === "done";
   const isOpen = task.status === "open";
-  const dueDate = formatGermanDate(task.due_date);
+  const todayStr = new Date().toLocaleDateString("sv-SE");
+  // "Heute", "Morgen", "Do" — the long date only once it is far enough
+  // away that a weekday would be ambiguous.
+  const dueLabel = formatTaskDueLabel(task.due_date, todayStr);
+  const dueTitle = formatGermanDate(task.due_date) ?? undefined;
   // Overdue = open task whose due date is in the past (local calendar
   // day). This is the per-card urgency signal — apricot marks it as a
   // high-priority item wherever the card appears (Heute, /aufgaben).
   const isOverdue =
-    isOpen &&
-    task.due_date !== null &&
-    task.due_date < new Date().toLocaleDateString("sv-SE");
+    isOpen && task.due_date !== null && task.due_date < todayStr;
+  const isDueToday = isOpen && task.due_date === todayStr;
   const hasDocument = Boolean(task.document_id);
-  const hasMeta = Boolean(dueDate || hasDocument || Boolean(task.assigned_member_name));
+  const assigneeName = assignee?.name ?? task.assigned_member_name ?? null;
+  const hasMeta = Boolean(dueLabel || hasDocument || assigneeName);
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -119,11 +138,31 @@ export function TaskCard({
           className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
           aria-label={`Aufgabe öffnen: ${task.title}`}
         >
-          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} hasMeta={hasMeta} />
+          <CardContent
+            task={task}
+            isDone={isDone}
+            isOverdue={isOverdue}
+            isDueToday={isDueToday}
+            dueLabel={dueLabel}
+            dueTitle={dueTitle}
+            assignee={assignee}
+            assigneeName={assigneeName}
+            hasMeta={hasMeta}
+          />
         </button>
       ) : (
         <div className="min-w-0 flex-1">
-          <CardContent task={task} isDone={isDone} isOverdue={isOverdue} dueDate={dueDate} hasMeta={hasMeta} />
+          <CardContent
+            task={task}
+            isDone={isDone}
+            isOverdue={isOverdue}
+            isDueToday={isDueToday}
+            dueLabel={dueLabel}
+            dueTitle={dueTitle}
+            assignee={assignee}
+            assigneeName={assigneeName}
+            hasMeta={hasMeta}
+          />
         </div>
       )}
 
@@ -162,13 +201,21 @@ function CardContent({
   task,
   isDone,
   isOverdue,
-  dueDate,
+  isDueToday,
+  dueLabel,
+  dueTitle,
+  assignee,
+  assigneeName,
   hasMeta,
 }: {
   task: TaskCardData;
   isDone: boolean;
   isOverdue: boolean;
-  dueDate: string | false | null;
+  isDueToday: boolean;
+  dueLabel: string | null;
+  dueTitle: string | undefined;
+  assignee?: TaskAssigneeDisplay;
+  assigneeName: string | null;
   hasMeta: boolean;
 }) {
   return (
@@ -184,38 +231,51 @@ function CardContent({
         {task.title}
       </p>
 
-      {/* Meta — dot + plain text, no pills or icons */}
+      {/* Meta — when it is due, and whose it is */}
       {hasMeta && (
         <div
-          className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+          className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground"
           data-testid="task-meta"
         >
-          <span
-            className="size-1.5 shrink-0 rounded-full bg-[var(--mist)]"
-            aria-hidden="true"
-          />
-          {dueDate && (
+          {dueLabel && (
             <span
               className={cn(
-                "tabular-nums",
-                isOverdue && "font-medium text-[var(--apricot-text)]",
+                "inline-flex items-center gap-1",
+                isOverdue
+                  ? "font-medium text-destructive"
+                  : isDueToday
+                    ? "font-medium text-[var(--petrol)]"
+                    : "text-muted-foreground",
               )}
+              title={dueTitle}
               data-testid="task-due-date"
             >
-              {isOverdue ? `Überfällig · ${dueDate}` : dueDate}
+              <CalendarDays className="size-3.5 shrink-0" aria-hidden="true" />
+              {dueLabel}
             </span>
           )}
-          {Boolean(task.document_id) && dueDate && <span className="text-muted-foreground">·</span>}
-          {Boolean(task.document_id) && (
-            <span className="truncate text-muted-foreground">
-              {task.document_title?.trim() || "Ohne Titel"}
-            </span>
-          )}
-          {task.assigned_member_name && (
+          {assigneeName && (
             <>
-              <span className="text-muted-foreground">·</span>
-              <span className="truncate text-muted-foreground" data-testid="task-assignee">
-                {task.assigned_member_name}
+              {dueLabel && <span aria-hidden="true">·</span>}
+              <span
+                className="inline-flex min-w-0 items-center gap-1.5"
+                data-testid="task-assignee"
+              >
+                <MemberAvatar
+                  name={assigneeName}
+                  color={assignee?.color}
+                  photoUrl={assignee?.photoUrl}
+                  size="sm"
+                />
+                <span className="truncate">{assigneeName}</span>
+              </span>
+            </>
+          )}
+          {hasDocumentMeta(task) && (
+            <>
+              {(dueLabel || assigneeName) && <span aria-hidden="true">·</span>}
+              <span className="min-w-0 truncate">
+                {task.document_title?.trim() || "Ohne Titel"}
               </span>
             </>
           )}
@@ -223,4 +283,9 @@ function CardContent({
       )}
     </>
   );
+}
+
+/** Whether the task carries a source document worth naming in the meta line. */
+function hasDocumentMeta(task: TaskCardData): boolean {
+  return Boolean(task.document_id);
 }

@@ -57,7 +57,10 @@ import type { TaskCardData } from "@/components/ordilo/task-card";
 // Test data
 // ---------------------------------------------------------------------------
 
-const members = [{ id: "m1", name: "Christian", role: "Vater" }];
+const members = [
+  { id: "m1", name: "Christian", role: "Vater" },
+  { id: "m2", name: "Karina", role: "Mutter" },
+];
 
 function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
   return {
@@ -91,6 +94,13 @@ function renderBoard(
   );
 }
 
+function groupTitles(groupId: string): string[] {
+  const group = screen.getByTestId(`board-column-${groupId}`);
+  return Array.from(group.querySelectorAll("[data-testid='task-title']")).map(
+    (node) => node.textContent ?? "",
+  );
+}
+
 /** Minimal DataTransfer stand-in for jsdom drag events. */
 function makeDataTransfer() {
   const data: Record<string, string> = {};
@@ -119,6 +129,12 @@ function dragCardOverColumn(columnId: string) {
 }
 
 const TODAY_STR = new Date().toISOString().split("T")[0];
+const TOMORROW_STR = new Date(Date.now() + 86_400_000)
+  .toISOString()
+  .split("T")[0];
+const YESTERDAY_STR = new Date(Date.now() - 86_400_000)
+  .toISOString()
+  .split("T")[0];
 
 // ---------------------------------------------------------------------------
 // Setup / teardown
@@ -185,9 +201,9 @@ describe("AufgabenClient — deep link", () => {
 });
 
 describe("AufgabenClient — board drag-and-drop", () => {
-  it("reschedules the due date when a task is dropped on another column", async () => {
+  it("reschedules the due date when a task is dropped on another group", async () => {
     renderBoard();
-    const { dataTransfer, column } = dragCardOverColumn("this-week");
+    const { dataTransfer, column } = dragCardOverColumn("today");
 
     fireEvent.drop(column, { dataTransfer });
 
@@ -197,6 +213,19 @@ describe("AufgabenClient — board drag-and-drop", () => {
       due_date: TODAY_STR,
     });
     expect(column).toHaveClass("animate-board-settle");
+  });
+
+  it("schedules for tomorrow when dropped on 'Diese Woche'", async () => {
+    renderBoard();
+    const { dataTransfer, column } = dragCardOverColumn("this-week");
+
+    fireEvent.drop(column, { dataTransfer });
+
+    await waitFor(() => expect(mockEq).toHaveBeenCalledWith("id", "task-1"));
+    expect(mockUpdate).toHaveBeenCalledWith({
+      status: "open",
+      due_date: TOMORROW_STR,
+    });
   });
 
   it("shows a success toast with an undo action that reverts the drop", async () => {
@@ -303,5 +332,83 @@ describe("AufgabenClient — delete confirmation", () => {
       status: "open",
       due_date: null,
     });
+  });
+});
+
+describe("AufgabenClient — grouped list", () => {
+  it("splits tasks into überfällig, heute, diese Woche and später", () => {
+    renderBoard([
+      makeTask({ id: "t1", title: "Überfällig", due_date: YESTERDAY_STR }),
+      makeTask({ id: "t2", title: "Heute fällig", due_date: TODAY_STR }),
+      makeTask({ id: "t3", title: "Diese Woche", due_date: TOMORROW_STR }),
+      makeTask({ id: "t4", title: "Irgendwann", due_date: null }),
+    ]);
+
+    expect(groupTitles("overdue")).toEqual(["Überfällig"]);
+    expect(groupTitles("today")).toEqual(["Heute fällig"]);
+    expect(groupTitles("this-week")).toEqual(["Diese Woche"]);
+    expect(groupTitles("later")).toEqual(["Irgendwann"]);
+  });
+
+  it("hides a group that has nothing in it", () => {
+    renderBoard([makeTask({ due_date: TODAY_STR })]);
+    expect(screen.queryByTestId("board-column-overdue")).toBeNull();
+    expect(screen.getByTestId("board-column-today")).toBeDefined();
+  });
+
+  it("peeks at 'Später' and expands the rest on demand", () => {
+    renderBoard(
+      Array.from({ length: 5 }, (_, i) =>
+        makeTask({ id: `t${i}`, title: `Aufgabe ${i}`, due_date: null }),
+      ),
+    );
+
+    expect(groupTitles("later")).toHaveLength(3);
+    fireEvent.click(screen.getByTestId("board-column-expand-later"));
+    expect(groupTitles("later")).toHaveLength(5);
+  });
+
+  it("keeps done tasks collapsed until the group is opened", () => {
+    renderBoard([
+      makeTask({ id: "t1", title: "Erledigtes", status: "done" }),
+      makeTask({ id: "t2", title: "Offenes", due_date: TODAY_STR }),
+    ]);
+
+    expect(groupTitles("done")).toHaveLength(0);
+    fireEvent.click(screen.getByTestId("board-column-header-done"));
+    expect(groupTitles("done")).toEqual(["Erledigtes"]);
+  });
+
+  it("filters the list to one family member and back", () => {
+    renderBoard([
+      makeTask({ id: "t1", title: "Christians Aufgabe", due_date: TODAY_STR, assigned_to: "m1" }),
+      makeTask({ id: "t2", title: "Karinas Aufgabe", due_date: TODAY_STR, assigned_to: "m2" }),
+    ]);
+
+    fireEvent.click(screen.getByTestId("task-chip-m2"));
+    expect(groupTitles("today")).toEqual(["Karinas Aufgabe"]);
+
+    fireEvent.click(screen.getByTestId("task-chip-all"));
+    expect(groupTitles("today")).toHaveLength(2);
+  });
+
+  it("says so when a filter leaves nothing to show", () => {
+    renderBoard([
+      makeTask({ id: "t1", due_date: TODAY_STR, assigned_to: "m1" }),
+    ]);
+
+    fireEvent.click(screen.getByTestId("task-chip-m2"));
+    expect(screen.getByTestId("task-filter-empty")).toBeDefined();
+  });
+
+  it("finds tasks nobody has taken on yet", () => {
+    renderBoard([
+      makeTask({ id: "t1", title: "Zugewiesen", due_date: TODAY_STR, assigned_to: "m1" }),
+      makeTask({ id: "t2", title: "Herrenlos", due_date: TODAY_STR }),
+    ]);
+
+    fireEvent.click(screen.getByTestId("task-more-filters"));
+    fireEvent.click(screen.getByTestId("task-filter-unassigned"));
+    expect(groupTitles("today")).toEqual(["Herrenlos"]);
   });
 });
