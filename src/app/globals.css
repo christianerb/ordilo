@@ -873,8 +873,13 @@
     animation: avatar-pop 0.3s var(--ease-out-quart) backwards;
   }
 
+  /* `backwards`, never `both`: these reveals END on the natural state, so
+     retaining the final frame buys nothing and keeps its `clip-path` alive
+     forever. A retained `inset(0 0 0 0 round 20px)` rounds the step's own
+     corners — shaving the first letter off a label sitting in the top-left
+     — and crops every shadow that reaches past the border box. */
   .animate-onboarding-step {
-    animation: onboarding-step-in 0.38s var(--ease-out-expo) both;
+    animation: onboarding-step-in 0.38s var(--ease-out-expo) backwards;
   }
 
   .animate-status-settle {
@@ -895,7 +900,7 @@
   }
 
   .animate-composer-overlay {
-    animation: composer-overlay-in 0.38s var(--ease-out-expo) both;
+    animation: composer-overlay-in 0.38s var(--ease-out-expo) backwards;
   }
 
   .animate-status-line {
@@ -903,7 +908,7 @@
   }
 
   .animate-scan-step {
-    animation: scan-step-in 0.48s var(--ease-out-expo) both;
+    animation: scan-step-in 0.48s var(--ease-out-expo) backwards;
   }
 
   .ordilo-wordmark {

@@ -261,8 +261,11 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
   return (
     <main className="flex min-h-[calc(100dvh-60px)] flex-col bg-background">
       <div className="flex-1 overflow-y-auto px-4 pb-8">
-        <div className="mx-auto max-w-md space-y-4 pt-4">
-          <div key={step} className="animate-onboarding-step">
+        {/* The step wrapper carries the rhythm: it holds the progress bar,
+            the mascot bubble and the card. On the parent (whose only child
+            is this wrapper) space-y had nothing to space out. */}
+        <div className="mx-auto max-w-md pt-4">
+          <div key={step} className="animate-onboarding-step space-y-4">
             {/* Step 1: family + self */}
             {step === "family-name" && (
               <>

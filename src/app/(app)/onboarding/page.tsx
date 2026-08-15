@@ -1,5 +1,9 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import {
+  isOnboardingComplete,
+  resolveUserFamily,
+} from "@/lib/supabase/resolve-user-family";
 import { OnboardingFlow } from "./onboarding-flow";
 import type { OnboardingState } from "./onboarding-flow";
 import { OnboardingError } from "./onboarding-error";
@@ -31,14 +35,13 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 export default async function OnboardingPage() {
   const supabase = await createClient();
 
-  // Fetch the user's family with the onboarding completion marker
-  // (RLS-scoped to the authenticated user). Capture the error so a
-  // transient backend failure is NOT masked as "no family".
-  const { data: family, error: familyError } = await supabase
-    .from("families")
-    .select("id, name, onboarding_completed_at")
-    .limit(1)
-    .maybeSingle();
+  // Resolve the family with the SAME deterministic rule the middleware and
+  // the server actions use (owned first, then oldest membership). A bare
+  // `.limit(1)` here picked an arbitrary row out of everything RLS exposes,
+  // so a multi-membership account could be onboarded against one family
+  // while its writes landed in another. Capture the error so a transient
+  // backend failure is NOT masked as "no family".
+  const { data: family, error: familyError } = await resolveUserFamily(supabase);
 
   // Family query error → render the error state (NOT onboarding flow).
   // This prevents misrouting: if the user already has a family but the
@@ -48,10 +51,12 @@ export default async function OnboardingPage() {
     return <OnboardingError />;
   }
 
-  // Onboarding is complete when onboarding_completed_at is set. Redirect
-  // to /home — they should not see onboarding again, even with zero members
-  // (the user may have removed all members after completing onboarding).
-  if (family && family.onboarding_completed_at) {
+  // Redirect to /home when there is nothing left to onboard: the marker is
+  // set (even with zero members — they may have removed everyone after
+  // finishing), or the user JOINED this family and never had a setup run of
+  // their own. Without the second case an invitee is dropped into the
+  // creator's unfinished flow and asked to name a family that exists.
+  if (isOnboardingComplete(family)) {
     redirect("/home");
   }
 

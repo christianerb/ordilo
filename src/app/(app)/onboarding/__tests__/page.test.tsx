@@ -49,14 +49,33 @@ function mockServerClient(options: {
     onboarding_completed_at: string | null;
   } | null;
   familyError?: unknown;
+  /** "owned" = the user created it, "joined" = they accepted an invite. */
+  ownership?: "owned" | "joined";
   memberData?: unknown[];
   memberError?: unknown;
 }) {
+  const ownership = options.ownership ?? "owned";
+  const owned = ownership === "owned" ? (options.familyData ?? null) : null;
+  const joined = ownership === "joined" ? (options.familyData ?? null) : null;
+
+  // resolveUserFamily: owned family first, then the oldest membership.
   const familiesChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
-      data: options.familyData ?? null,
+      data: owned,
       error: options.familyError ?? null,
+    }),
+  };
+
+  const membershipsChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({
+      data: joined ? { families: joined } : null,
+      error: null,
     }),
   };
 
@@ -72,6 +91,9 @@ function mockServerClient(options: {
     if (table === "families") {
       return { select: vi.fn(() => familiesChain) };
     }
+    if (table === "family_memberships") {
+      return { select: vi.fn(() => membershipsChain) };
+    }
     if (table === "family_members") {
       return { select: vi.fn(() => membersChain) };
     }
@@ -79,6 +101,9 @@ function mockServerClient(options: {
   });
 
   return {
+    auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user: { id: "user-1" } } }),
+    },
     from: fromMock,
   } as unknown as Awaited<ReturnType<typeof createClient>>;
 }
@@ -212,6 +237,46 @@ describe("OnboardingPage (server component) — onboarding_completed_at + error 
       "data-step",
       "choose-next",
     );
+  });
+
+  // -------------------------------------------------------------------------
+  // Joined via invite → nothing to onboard, regardless of the marker.
+  //
+  // Regression: onboarding_completed_at belongs to the family, but the gate
+  // read it as if it were the USER's. An invitee whose family creator had
+  // not finished her own setup was bounced into HER flow and asked to name
+  // a family that already exists — instead of landing in it.
+  // -------------------------------------------------------------------------
+
+  it("redirects a joined member to /home even when the creator never finished onboarding", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        ownership: "joined",
+        familyData: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: null,
+        },
+      }),
+    );
+
+    await expect(OnboardingPage()).rejects.toThrow("NEXT_REDIRECT:/home");
+    expect(mockRedirect).toHaveBeenCalledWith("/home");
+  });
+
+  it("redirects a joined member to /home when the family is fully onboarded", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockServerClient({
+        ownership: "joined",
+        familyData: {
+          id: "fam-erb",
+          name: "Familie Erb",
+          onboarding_completed_at: "2026-08-14T10:00:00Z",
+        },
+      }),
+    );
+
+    await expect(OnboardingPage()).rejects.toThrow("NEXT_REDIRECT:/home");
   });
 
   // -------------------------------------------------------------------------
