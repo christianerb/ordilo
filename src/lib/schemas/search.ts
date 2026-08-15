@@ -157,6 +157,54 @@ export function matchesWordBoundary(text: string, keyword: string): boolean {
 }
 
 /**
+ * Check whether a person's name appears in the text, in the forms German
+ * actually uses to talk about people.
+ *
+ * Word-boundary matching alone misses the possessive, which is how
+ * families phrase most of their questions:
+ *   - matchesPersonName("Hannas Steuer-ID", "Hanna")   → true
+ *   - matchesPersonName("Lars' Vertrag", "Lars")       → true
+ *   - matchesPersonName("Anna Marias Zeugnis", "Anna Maria") → true
+ *
+ * Still nothing but the name and its possessive — a name that is merely
+ * the beginning of a longer word is not a mention:
+ *   - matchesPersonName("Johanna", "Hanna")            → false
+ *   - matchesPersonName("Hannah", "Hanna")             → false
+ *   - matchesPersonName("Emmentaler", "Emme")          → false
+ *
+ * @param text - The text to search within.
+ * @param name - The person's name.
+ */
+export function matchesPersonName(text: string, name: string): boolean {
+  const escapedName = escapeRegExp(name.toLowerCase().trim());
+  if (!escapedName) return false;
+  // Optional possessive: a trailing "s" ("Hannas") or, for names already
+  // ending in a sibilant, an apostrophe ("Lars'", "Max’").
+  const regex = new RegExp(
+    `(?<![\\p{L}\\p{N}])${escapedName}(?:s|['’´])?(?![\\p{L}\\p{N}])`,
+    "iu",
+  );
+  return regex.test(text.toLowerCase());
+}
+
+/**
+ * Strip a possessive ending off a name that was read out of free text, so
+ * it can be looked up as itself: "Hannas" → "Hanna", "Lars'" → "Lars".
+ *
+ * Names that genuinely end in s are over-stripped ("Lars" → "Lar"), which
+ * is why the result belongs in a widening lookup (a substring filter, or
+ * `matchesPersonName`, whose optional possessive puts the s back) and
+ * never in an equality check.
+ */
+export function stripPossessive(name: string): string {
+  const trimmed = name.trim();
+  // An apostrophe marks the possessive of a name that already ends in s —
+  // dropping it is the whole job ("Lars'" → "Lars").
+  if (/['’´]$/.test(trimmed)) return trimmed.replace(/['’´]$/, "");
+  return trimmed.replace(/(?<=\p{L}{2})s$/u, "");
+}
+
+/**
  * German keywords that indicate a task-related query.
  *
  * Used by graph search (and auto mode) to detect whether the user is asking
@@ -196,14 +244,18 @@ export function isTaskQuery(query: string): boolean {
 }
 
 /**
- * Find family member names mentioned in the query.
+ * Find family member names mentioned in the query, including the
+ * possessive form families ask in ("Hannas Zeugnis", "Lars' Vertrag").
  *
- * Compares each family member's name against the query using word-boundary
- * matching (case-insensitive, Unicode-aware). Returns the names that appear
- * in the query as whole words.
+ * Matching is case-insensitive and Unicode-aware, and never matches a
+ * name that is merely part of a longer word — querying "Hanna" must not
+ * match member "Johanna", and vice versa.
  *
- * This prevents false positives where one name is a substring of another
- * (e.g. querying "Hanna" must not match member "Johanna", and vice versa).
+ * The possessive introduces one ambiguity worth resolving: with both a
+ * "Jona" and a "Jonas" in the family, "Jonas Zeugnis" reads as either.
+ * A name matched only through its possessive loses against a name that
+ * matched as itself and is exactly that possessive — "Jonas" wins, and
+ * only the loser is dropped, so "Hannas und Emma" still names both.
  *
  * @param query - The user's search query.
  * @param memberNames - The family's member names to match against.
@@ -213,11 +265,27 @@ export function findMentionedMembers(
   query: string,
   memberNames: string[],
 ): string[] {
-  return memberNames.filter((name) => {
-    const trimmedName = name.trim();
-    if (!trimmedName) return false;
-    return matchesWordBoundary(query, trimmedName);
-  });
+  const named = memberNames.filter((name) => name.trim());
+
+  const asThemselves = named.filter((name) =>
+    matchesWordBoundary(query, name.trim()),
+  );
+  const claimedPossessives = new Set(
+    asThemselves.map((name) => name.trim().toLowerCase()),
+  );
+
+  const byPossessive = named.filter(
+    (name) =>
+      !asThemselves.includes(name) &&
+      matchesPersonName(query, name.trim()) &&
+      !claimedPossessives.has(`${name.trim().toLowerCase()}s`),
+  );
+
+  // Keep the caller's order rather than exact-matches-first: callers pass
+  // these on as names, not as a ranking.
+  return named.filter(
+    (name) => asThemselves.includes(name) || byPossessive.includes(name),
+  );
 }
 
 /**

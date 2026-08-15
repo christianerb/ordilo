@@ -10,7 +10,7 @@ import {
   filterByRelevanceThreshold,
   combineSearchResults,
 } from "@/lib/ai/chat";
-import { matchesWordBoundary } from "@/lib/schemas/search";
+import { matchesPersonName, stripPossessive } from "@/lib/schemas/search";
 import {
   AMOUNT_KINDS,
   AMOUNT_KIND_LABELS,
@@ -1102,6 +1102,9 @@ async function executeListDocuments(
   const ascending = args.sort === "oldest";
 
   // Person filter resolves to document ids first (via extracted_entities).
+  // The name may arrive in the possessive the user spoke it in ("Hannas
+  // Zeugnisse"), so look it up stripped and match it back tolerantly.
+  const lookupName = stripPossessive(personName);
   let personDocIds: string[] | null = null;
   if (personName) {
     const { data: entities } = await ctx.client
@@ -1109,12 +1112,12 @@ async function executeListDocuments(
       .select("document_id, normalized_value")
       .eq("family_id", ctx.familyId)
       .eq("entity_type", "person")
-      .ilike("normalized_value", `%${personName.toLowerCase()}%`);
+      .ilike("normalized_value", `%${lookupName.toLowerCase()}%`);
     personDocIds = [
       ...new Set(
         (entities ?? [])
           .filter((e) =>
-            matchesWordBoundary(e.normalized_value ?? "", personName),
+            matchesPersonName(e.normalized_value ?? "", lookupName),
           )
           .map((e) => e.document_id),
       ),

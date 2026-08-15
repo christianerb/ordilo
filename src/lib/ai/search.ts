@@ -15,6 +15,7 @@ import {
   findMentionedMembers,
   isTaskQuery,
   selectAutoMode,
+  matchesPersonName,
   matchesWordBoundary,
   type SearchResult,
   type ExecutedSearchMode,
@@ -536,7 +537,12 @@ async function narrowFactCandidates<T extends ScopableFact>(
   // 1. Kind pass. Everything the query said that is NOT one of the named
   //    members describes the number itself.
   const kindTerms = labelTerms.filter(
-    (term) => !mentioned.some((name) => matchesWordBoundary(name, term)),
+    (term) =>
+      !mentioned.some(
+        // Both directions: the term can be the whole name or its
+        // possessive ("hannas"), or one word of a two-word name.
+        (name) => matchesPersonName(term, name) || matchesWordBoundary(name, term),
+      ),
   );
   const byKind = facts.filter(
     (f) =>
@@ -552,7 +558,7 @@ async function narrowFactCandidates<T extends ScopableFact>(
   const byLabel = kindScoped.filter(
     (f) =>
       f.valueMatch ||
-      mentioned.some((name) => matchesWordBoundary(f.label, name)),
+      mentioned.some((name) => matchesPersonName(f.label, name)),
   );
   if (byLabel.length > 0) return byLabel;
 
@@ -567,7 +573,7 @@ async function narrowFactCandidates<T extends ScopableFact>(
     (entities ?? [])
       .filter((e) =>
         mentioned.some((name) =>
-          matchesWordBoundary(e.normalized_value ?? "", name),
+          matchesPersonName(e.normalized_value ?? "", name),
         ),
       )
       .map((e) => e.document_id),
@@ -747,12 +753,15 @@ export async function graphSearch(
   const results: SearchResult[] = [];
 
   // 2. Graph traversal: find documents connected to entities mentioned in the query.
-  //    Uses expanded terms for broader keyword matching + semantic label embeddings.
+  //    Uses expanded terms for broader keyword matching + semantic label
+  //    embeddings. The mentioned members go in by their canonical name:
+  //    "Hannas Zeugnis" leaves the word "hannas" in the query, which no
+  //    knowledge node is called.
   const traversalResults = await graphTraversalSearch(
     serverClient,
     query,
     familyId,
-    expandedTerms,
+    [...expandedTerms, ...mentionedMembers],
   );
   results.push(...traversalResults);
 
@@ -1181,11 +1190,11 @@ async function searchByPerson(
 
     if (!entities || entities.length === 0) continue;
 
-    // Word-boundary post-filter: only keep entities where the queried
-    // name appears as a whole word in the entity's normalized_value.
-    // This prevents false positives like "Hanna" matching "Johanna".
+    // Name post-filter: only keep entities that actually name the person,
+    // as themselves or in the possessive ("Hannas Zeugnis"). This prevents
+    // false positives like "Hanna" matching "Johanna".
     const filteredEntities = entities.filter((entity) =>
-      matchesWordBoundary(entity.normalized_value ?? "", name),
+      matchesPersonName(entity.normalized_value ?? "", name),
     );
 
     if (filteredEntities.length === 0) continue;

@@ -219,6 +219,27 @@ describe("factSearch", () => {
     );
   });
 
+  it("understands the possessive families ask in", async () => {
+    // "Hannas Steuer-ID" is how this question gets asked out loud.
+    const client = mockClient({
+      facts: [
+        fact({ document_id: "doc-1", label: "Steuer-ID Hanna" }),
+        fact({
+          document_id: "doc-2",
+          label: "Steuer-ID Emma",
+          value: "12 345 678 901",
+          normalized_value: "12345678901",
+        }),
+      ],
+    });
+
+    const results = await factSearch(client, "Wie ist Hannas Steuer-ID?", FAMILY_ID);
+
+    expect(results.map((r) => r.chunk_text)).toEqual([
+      "Steuer-ID Hanna: 74 031 832 353",
+    ]);
+  });
+
   it("keeps every candidate when the query names nobody", async () => {
     const client = mockClient({
       facts: [

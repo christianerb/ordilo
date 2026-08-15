@@ -5,6 +5,8 @@ import {
   isTaskQuery,
   findMentionedMembers,
   selectAutoMode,
+  matchesPersonName,
+  stripPossessive,
 } from "@/lib/schemas/search";
 
 // ---------------------------------------------------------------------------
@@ -237,6 +239,50 @@ describe("isTaskQuery", () => {
 });
 
 // ---------------------------------------------------------------------------
+// matchesPersonName / stripPossessive
+// ---------------------------------------------------------------------------
+
+describe("matchesPersonName", () => {
+  it("matches the name as itself", () => {
+    expect(matchesPersonName("Zeig mir alles von Hanna", "Hanna")).toBe(true);
+  });
+
+  it("matches the possessive families actually speak in", () => {
+    expect(matchesPersonName("Hannas Steuer-ID", "Hanna")).toBe(true);
+    expect(matchesPersonName("Wo ist Emmas Zeugnis?", "Emma")).toBe(true);
+    expect(matchesPersonName("Anna Marias Zeugnis", "Anna Maria")).toBe(true);
+  });
+
+  it("matches the apostrophe form for names ending in a sibilant", () => {
+    expect(matchesPersonName("Lars' Vertrag", "Lars")).toBe(true);
+    expect(matchesPersonName("Max’ Kennzeichen", "Max")).toBe(true);
+  });
+
+  it("still refuses a name that is only part of a longer word", () => {
+    expect(matchesPersonName("Johanna", "Hanna")).toBe(false);
+    expect(matchesPersonName("Hannah", "Hanna")).toBe(false);
+    expect(matchesPersonName("Emmentaler", "Emme")).toBe(false);
+  });
+
+  it("handles empty input", () => {
+    expect(matchesPersonName("Hannas Zeugnis", "  ")).toBe(false);
+    expect(matchesPersonName("", "Hanna")).toBe(false);
+  });
+});
+
+describe("stripPossessive", () => {
+  it("removes the possessive ending", () => {
+    expect(stripPossessive("Hannas")).toBe("Hanna");
+    expect(stripPossessive("Lars'")).toBe("Lars");
+    expect(stripPossessive("Max’")).toBe("Max");
+  });
+
+  it("leaves a short name alone rather than gutting it", () => {
+    expect(stripPossessive("Jo")).toBe("Jo");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // findMentionedMembers
 // ---------------------------------------------------------------------------
 
@@ -297,6 +343,40 @@ describe("findMentionedMembers", () => {
   it("does NOT match 'Johanna' member when query mentions 'Hanna' in a sentence", () => {
     const result = findMentionedMembers("Zeig mir alles von Hanna", ["Hanna", "Johanna"]);
     expect(result).toEqual(["Hanna"]);
+  });
+
+  // --- Possessive: how families actually ask ---
+
+  it("finds a member named in the possessive", () => {
+    expect(findMentionedMembers("Hannas Steuer-ID", ["Emma", "Hanna"])).toEqual([
+      "Hanna",
+    ]);
+    expect(findMentionedMembers("Wo ist Emmas Zeugnis?", ["Emma"])).toEqual([
+      "Emma",
+    ]);
+  });
+
+  it("prefers the member who IS the possessive over the one who only fits it", () => {
+    // "Jonas Zeugnis" is Jonas' zeugnis, not Jona's.
+    expect(findMentionedMembers("Jonas Zeugnis", ["Jona", "Jonas"])).toEqual([
+      "Jonas",
+    ]);
+  });
+
+  it("drops only the ambiguous name, not every possessive in the query", () => {
+    expect(
+      findMentionedMembers("Jonas und Hannas Zeugnisse", [
+        "Jona",
+        "Jonas",
+        "Hanna",
+      ]),
+    ).toEqual(["Jonas", "Hanna"]);
+  });
+
+  it("still does not read a longer name as a possessive", () => {
+    expect(findMentionedMembers("Johannas Zeugnis", ["Hanna", "Johanna"])).toEqual([
+      "Johanna",
+    ]);
   });
 
   it("matches a name that is a whole word even when another name contains it as a substring", () => {
