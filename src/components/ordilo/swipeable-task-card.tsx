@@ -7,7 +7,11 @@ import {
   type TouchEvent as ReactTouchEvent,
 } from "react";
 import { Check, X } from "lucide-react";
-import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
+import {
+  TaskCard,
+  type TaskAssigneeDisplay,
+  type TaskCardData,
+} from "@/components/ordilo/task-card";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
 import { vibrate } from "@/lib/haptics";
@@ -41,6 +45,18 @@ const DRAG_SCROLL_STEP_PX = 12;
 
 export interface SwipeableTaskCardProps {
   task: TaskCardData;
+  /** Who the task belongs to, with their face (see TaskCard). */
+  assignee?: TaskAssigneeDisplay;
+  /** Flat row inside a grouped surface — no own card chrome. */
+  flat?: boolean;
+  /** Extra classes for the card itself (e.g. row padding in a list). */
+  cardClassName?: string;
+  /**
+   * Background of the moving layer. A flat row is transparent, which would
+   * let the swipe-action colors behind it shine through before the swipe
+   * even starts — so in a list the row carries its own opaque surface.
+   */
+  surfaceClassName?: string;
   onToggleDone: (newStatus: string) => void;
   onDismiss: () => void;
   onEdit?: () => void;
@@ -62,6 +78,10 @@ export interface SwipeableTaskCardProps {
 
 export function SwipeableTaskCard({
   task,
+  assignee,
+  flat = false,
+  cardClassName,
+  surfaceClassName,
   onToggleDone,
   onDismiss,
   onEdit,
@@ -402,6 +422,7 @@ export function SwipeableTaskCard({
         }}
         className={cn(
           "relative",
+          flat && (surfaceClassName ?? "bg-card"),
           dragOffset &&
             "animate-drag-pop pointer-events-none z-20 rounded-ordilo-sm shadow-card-hover",
         )}
@@ -411,6 +432,9 @@ export function SwipeableTaskCard({
       >
         <TaskCard
           task={task}
+          assignee={assignee}
+          flat={flat}
+          className={cardClassName}
           onToggleDone={onToggleDone}
           onDismiss={onDismiss}
           onEdit={onEdit}

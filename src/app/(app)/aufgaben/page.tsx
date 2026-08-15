@@ -6,6 +6,7 @@ import type { Database } from "@/types/database";
 import { AufgabenClient } from "./aufgaben-client";
 import { CalendarClient, type CalendarSuggestion } from "./calendar-client";
 import { PlannerView } from "./planner-view";
+import { resolveMemberPhotoUrls } from "@/lib/member-photos";
 
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
@@ -99,6 +100,8 @@ async function loadInitialData(): Promise<{
   suggestions: CalendarSuggestion[];
   familyId: string | null;
   currentUserId: string | null;
+  /** Signed avatar URLs by member id — the list shows who owns a task. */
+  memberPhotoUrls: Record<string, string>;
   error: string | null;
 }> {
   const supabase = await createClient();
@@ -124,6 +127,7 @@ async function loadInitialData(): Promise<{
       suggestions: [],
       familyId: null,
       currentUserId: null,
+      memberPhotoUrls: {},
       error: null,
     };
   }
@@ -134,7 +138,7 @@ async function loadInitialData(): Promise<{
     await Promise.all([
       supabase
         .from("family_members")
-        .select("id, name, role, avatar_color")
+        .select("id, name, role, avatar_color, photo_url")
         .eq("family_id", family.id)
         .order("created_at", { ascending: true }),
       supabase
@@ -163,6 +167,11 @@ async function loadInitialData(): Promise<{
   );
 
   const members: AssigneeOption[] = (memberRows as MemberRow[] | null) ?? [];
+  // Non-critical: a member without a resolved URL falls back to the
+  // colored-initial avatar.
+  const memberPhotoUrls = await resolveMemberPhotoUrls(
+    (memberRows as MemberRow[] | null) ?? [],
+  ).catch(() => ({}));
   const memberNameMap = new Map<string, string>();
   for (const m of members) {
     memberNameMap.set(m.id, m.name);
@@ -231,6 +240,7 @@ async function loadInitialData(): Promise<{
       suggestions,
       familyId: family.id,
       currentUserId,
+      memberPhotoUrls,
       error: "Aufgaben konnten nicht geladen werden. Bitte versuche es später nochmal.",
     };
   }
@@ -243,6 +253,7 @@ async function loadInitialData(): Promise<{
       suggestions,
       familyId: family.id,
       currentUserId,
+      memberPhotoUrls,
       error: null,
     };
   }
@@ -296,6 +307,7 @@ async function loadInitialData(): Promise<{
     suggestions,
     familyId: family.id,
     currentUserId,
+    memberPhotoUrls,
     error: null,
   };
 }
@@ -315,6 +327,7 @@ export default async function AufgabenPage({
     suggestions,
     familyId,
     currentUserId,
+    memberPhotoUrls,
     error,
   } = await loadInitialData();
   const taskKey = initialTasks
@@ -332,6 +345,7 @@ export default async function AufgabenPage({
             key={taskKey || `empty:${error ?? "ok"}`}
             initialTasks={initialTasks}
             members={members}
+            memberPhotoUrls={memberPhotoUrls}
             familyId={familyId}
             initialError={error}
             openTaskId={openTaskId}

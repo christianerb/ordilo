@@ -135,8 +135,6 @@ export function ConfirmedAnalysisDetails({
           </ReviewFieldSection>
         )}
 
-        {documentId && <EditableFactsSection documentId={documentId} />}
-
         {analysis.organizations.length > 0 && (
           <ReviewFieldSection
             icon={Building2}
@@ -234,6 +232,11 @@ export function ConfirmedAnalysisDetails({
             ))}
           </ReviewFieldSection>
         )}
+
+        {/* Numbers sit with the other exact values, below the extracted
+            fields and above the collection — close to the amounts they
+            usually belong to, and out of the way when there are none. */}
+        {documentId && <EditableFactsSection documentId={documentId} />}
 
         <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
           <span className="block truncate">{analysis.suggested_category}</span>
@@ -349,6 +352,24 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
       setSaving(false);
     }
   };
+
+  // No numbers on this document (the common case for notes and letters):
+  // a full "Nummern & Kennungen" section with nothing under it reads like
+  // something failed to load. Until there is a number — or the user starts
+  // adding one — the section is just its quiet add action.
+  if (facts.length === 0 && !adding) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAdding(true)}
+        className="flex w-full items-center gap-2 border-b border-border/60 py-4 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        data-testid="confirmed-fact-add-button"
+      >
+        <Plus className="size-4 shrink-0" aria-hidden="true" />
+        Nummer hinzufügen
+      </button>
+    );
+  }
 
   return (
     <ReviewFieldSection icon={Hash} title="Nummern & Kennungen" testId="confirmed-facts">

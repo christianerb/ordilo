@@ -62,6 +62,7 @@ function shouldShowOrganizationType(name: string, type?: string | null): boolean
  * confidence badges, edit flows, and action buttons.
  */
 export function ReviewCardContent({
+  mode = "review",
   analysis,
   edits,
   familyMembers,
@@ -71,6 +72,8 @@ export function ReviewCardContent({
   lowConfidencePersons,
   confirming,
   confirmError,
+  onEditTitle,
+  onEditSummary,
   onEditPerson,
   onCreateMember,
   onEditCategory,
@@ -84,12 +87,22 @@ export function ReviewCardContent({
   onUndoDeleteTask,
   onResolveDisambiguation,
   onConfirm,
+  onCancel,
   onReanalyze,
   documentId,
   onViewOriginal,
   onBack,
   className,
 }: {
+  /**
+   * "review" — the document is not in the family book yet; the primary
+   * action adds it. "edit" — it already is, and the primary action saves
+   * the correction. Tasks and numbers are read-only in edit mode: both
+   * are owned elsewhere (the task list keeps its own status and assignee,
+   * numbers are written row by row from the calm confirmed view), and
+   * this screen's save does not touch either table.
+   */
+  mode?: "review" | "edit";
   analysis: DocumentAnalysis;
   edits: EditState;
   familyMembers: FamilyMemberOption[];
@@ -99,6 +112,10 @@ export function ReviewCardContent({
   lowConfidencePersons: { member: DocumentAnalysis["family_members"][0]; index: number }[];
   confirming: boolean;
   confirmError: string | null;
+  /** Correct the document title (what every list and search result shows). */
+  onEditTitle?: (value: string) => void;
+  /** Correct the summary ("Worum geht's"). */
+  onEditSummary?: (value: string) => void;
   onEditPerson: (entityIndex: number, memberId: string | null) => void;
   /** Create a new family member from an unmatched person and link them. */
   onCreateMember?: (entityIndex: number, name: string) => Promise<boolean>;
@@ -113,6 +130,8 @@ export function ReviewCardContent({
   onUndoDeleteTask: () => void;
   onResolveDisambiguation: (entityIndex: number, memberId: string | null) => void;
   onConfirm: () => void;
+  /** "Abbrechen" — leaves edit mode and drops unsaved corrections. */
+  onCancel?: () => void;
   onReanalyze: () => void;
   /** Document ID — when provided, enables original-file comparison. */
   documentId?: string;
@@ -121,9 +140,13 @@ export function ReviewCardContent({
   onBack?: () => void;
   className?: string;
 }) {
+  const isEditMode = mode === "edit";
   const activeTasks = analysis.tasks
     .map((t, i) => ({ task: t, index: i }))
     .filter(({ index }) => !edits.deletedTasks.has(index));
+  const documentTitle = edits.title ?? analysis.title;
+  const documentSummary = edits.summary ?? analysis.summary;
+  const titleMissing = isEditMode && !documentTitle.trim();
   const typeLabel = DOCUMENT_TYPE_LABELS[analysis.document_type] ?? "Dokument";
   const primaryPerson =
     edits.persons.get(0)?.name ?? analysis.family_members[0]?.name;
@@ -148,7 +171,7 @@ export function ReviewCardContent({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="text-lg font-semibold leading-tight text-foreground">
-              Auf einen Blick
+              {isEditMode ? "Angaben ändern" : "Auf einen Blick"}
             </h3>
             <p className="mt-1 text-sm text-[var(--mist-dark)]">{contextLabel}</p>
           </div>
@@ -164,7 +187,48 @@ export function ReviewCardContent({
           )}
         </div>
 
-        {shouldRenderSummary(analysis.summary, needsReview) && (
+        {/* In edit mode the two fields that name a document — its title and
+            its one-line description — are plain, always-open inputs. They
+            are the reason people open the sheet to correct something, and
+            hiding them behind a pencil would make the edit screen look
+            like it edits everything except what you came for. */}
+        {isEditMode && onEditTitle && (
+          <label className="mt-4 block" data-testid="review-title-edit">
+            <span className="text-xs font-medium text-[var(--mist-dark)]">
+              Titel
+            </span>
+            <input
+              type="text"
+              value={documentTitle}
+              onChange={(event) => onEditTitle(event.target.value)}
+              maxLength={200}
+              className="mt-1 w-full rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              data-testid="review-title-input"
+            />
+            {titleMissing && (
+              <span className="mt-1 block text-xs text-destructive">
+                Ohne Titel findet ihr das Dokument später schwer wieder.
+              </span>
+            )}
+          </label>
+        )}
+
+        {isEditMode && onEditSummary && (
+          <label className="mt-3 block" data-testid="review-summary-edit">
+            <span className="text-xs font-medium text-[var(--mist-dark)]">
+              Worum geht&apos;s?
+            </span>
+            <textarea
+              value={documentSummary}
+              onChange={(event) => onEditSummary(event.target.value)}
+              rows={3}
+              className="mt-1 w-full resize-y rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              data-testid="review-summary-input"
+            />
+          </label>
+        )}
+
+        {!isEditMode && shouldRenderSummary(analysis.summary, needsReview) && (
           <div data-testid="review-summary" className="mt-3">
             <p className="max-w-[60ch] text-sm leading-relaxed text-[var(--mist-dark)]">
               {analysis.summary}
@@ -377,7 +441,13 @@ export function ReviewCardContent({
 
         {/* Facts — exact identifiers (serial numbers, contract numbers, …).
             Shown monospaced so single-character OCR errors are easy to
-            spot, with a one-tap correction input. */}
+            spot, with a one-tap correction input.
+
+            In edit mode they are read-only: a confirmed document's numbers
+            are corrected row by row in the calm view, which writes them
+            straight to `document_facts` (this screen's save deliberately
+            leaves that table alone, so an edit here would look saved and
+            silently revert). */}
         {analysis.facts.length > 0 && (
           <ReviewFieldSection
             icon={Hash}
@@ -399,11 +469,13 @@ export function ReviewCardContent({
                   sourceText={fact.value}
                   onShowSource={onViewOriginal}
                   editControl={
-                    <FactEditControl
-                      value={displayValue}
-                      label={fact.label || typeLabel}
-                      onChange={(v) => onEditFact(i, v)}
-                    />
+                    isEditMode ? undefined : (
+                      <FactEditControl
+                        value={displayValue}
+                        label={fact.label || typeLabel}
+                        onChange={(v) => onEditFact(i, v)}
+                      />
+                    )
                   }
                 >
                   <span className="block truncate font-mono">{displayValue}</span>
@@ -413,6 +485,12 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
+            {isEditMode && (
+              <p className="py-2 text-xs text-muted-foreground">
+                Nummern korrigierst du in der Übersicht — dort werden sie
+                sofort gespeichert.
+              </p>
+            )}
           </ReviewFieldSection>
         )}
 
@@ -437,24 +515,26 @@ export function ReviewCardContent({
                   sourceText={task.title}
                   onShowSource={onViewOriginal}
                   editControl={
-                    <div className="flex items-center gap-0.5">
-                      <TextEditControl
-                        value={displayTitle}
-                        label="Aufgabe korrigieren"
-                        onChange={(value) => onEditTaskTitle(index, value)}
-                        testId="task-title-edit"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => onDeleteTask(index)}
-                        className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        aria-label="Aufgabe löschen"
-                        title="Aufgabe löschen"
-                        data-testid={`delete-task-${index}`}
-                      >
-                        <Trash2 className="size-4" aria-hidden="true" />
-                      </button>
-                    </div>
+                    isEditMode ? undefined : (
+                      <div className="flex items-center gap-0.5">
+                        <TextEditControl
+                          value={displayTitle}
+                          label="Aufgabe korrigieren"
+                          onChange={(value) => onEditTaskTitle(index, value)}
+                          testId="task-title-edit"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => onDeleteTask(index)}
+                          className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                          aria-label="Aufgabe löschen"
+                          title="Aufgabe löschen"
+                          data-testid={`delete-task-${index}`}
+                        >
+                          <Trash2 className="size-4" aria-hidden="true" />
+                        </button>
+                      </div>
+                    )
                   }
                 >
                   <p className="text-foreground">{displayTitle}</p>
@@ -463,15 +543,17 @@ export function ReviewCardContent({
                       <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                         <Calendar className="size-3.5" aria-hidden="true" />
                         {formatGermanDate(displayDueDate) || displayDueDate}
-                        <DateEditControl
-                          value={displayDueDate}
-                          label="Frist"
-                          onChange={(d) => onEditTaskDueDate(index, d)}
-                          compact
-                        />
+                        {!isEditMode && (
+                          <DateEditControl
+                            value={displayDueDate}
+                            label="Frist"
+                            onChange={(d) => onEditTaskDueDate(index, d)}
+                            compact
+                          />
+                        )}
                       </span>
                     )}
-                    {!displayDueDate && (
+                    {!isEditMode && !displayDueDate && (
                       <DateEditControl
                         value=""
                         label="Frist hinzufügen"
@@ -568,7 +650,7 @@ export function ReviewCardContent({
           type="button"
           size="lg"
           onClick={onConfirm}
-          disabled={confirming || hasUnresolvedDisambiguation}
+          disabled={confirming || hasUnresolvedDisambiguation || titleMissing}
           className="h-12 rounded-ordilo-md w-full"
           data-testid="confirm-button"
         >
@@ -585,10 +667,23 @@ export function ReviewCardContent({
           ) : (
             <>
               <Check className="size-4" aria-hidden="true" />
-              Angaben übernehmen
+              {isEditMode ? "Änderungen speichern" : "Angaben übernehmen"}
             </>
           )}
         </Button>
+        {onCancel && (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            onClick={onCancel}
+            disabled={confirming}
+            className="h-12 w-full rounded-ordilo-md"
+            data-testid="review-cancel-button"
+          >
+            Abbrechen
+          </Button>
+        )}
         {onBack && (
           <Button
             type="button"

@@ -1,24 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import {
   UploadCloud,
   Loader2,
-  Folder,
-  X,
-  Plus,
-  Settings2,
   AlertCircle,
   RefreshCw,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
-import {
-  COLLECTION_ICON_OPTIONS,
-  COLLECTION_COLOR_OPTIONS,
-} from "@/lib/schemas/collections";
-import { useCollections } from "@/lib/collections/collections-context";
-import Link from "next/link";
-import { DocumentsTable } from "@/components/ordilo/documents-table";
+import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,7 +70,6 @@ export function DokumenteClient({
     openWizard,
   } = useScan();
 
-  const { collections, addCollection } = useCollections();
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   // Seed the provider from the server-rendered list instead of refetching
@@ -98,25 +87,6 @@ export function DokumenteClient({
     }
   });
 
-  const handleCreateCollection = useCallback(
-    async (name: string) => {
-      // Same defaults as the sidebar's CollectionForm — both entry points
-      // derive them from the canonical option lists, so they can't drift.
-      const result = await addCollection({
-        name,
-        icon: COLLECTION_ICON_OPTIONS[0].key,
-        color: COLLECTION_COLOR_OPTIONS[0].key,
-      });
-      if (!result.success) {
-        toast.error(result.error);
-        return false;
-      }
-      toast.success(`Sammlung „${result.data.name}" angelegt`);
-      return true;
-    },
-    [addCollection],
-  );
-
   // Until the provider's initial load lands, fall back to the
   // server-rendered documents so the page paints instantly (no spinner).
   // After that, the provider's live list wins — including when it is
@@ -127,28 +97,6 @@ export function DokumenteClient({
   const hasDocuments = displayDocuments.length > 0;
   const hasActiveUploads = uploads.length > 0;
 
-  const collectionList = (
-    <div className="mx-auto max-w-xs space-y-1.5">
-      {collections.map((collection) => (
-        <div
-          key={collection.id}
-          className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-card px-3 py-2 text-sm text-foreground shadow-card"
-        >
-          <Folder className="size-4 shrink-0 text-[var(--petrol)]" aria-hidden="true" />
-          <span className="min-w-0 flex-1 truncate">{collection.name}</span>
-          <Link
-            href={`/sammlungen/${collection.id}`}
-            aria-label={`Sammlung „${collection.name}" verwalten`}
-            className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Settings2 className="size-4" aria-hidden="true" />
-          </Link>
-        </div>
-      ))}
-      <NewCollectionRow onCreate={handleCreateCollection} />
-    </div>
-  );
-
   return (
     <div
       ref={dropZoneRef}
@@ -158,12 +106,14 @@ export function DokumenteClient({
       onDrop={handleDrop}
       className="app-page-stack overflow-x-hidden"
     >
-      <h1 className="text-lg font-semibold tracking-tight text-foreground">
-        Dokumente
-        <span className="ml-2 text-sm font-normal text-muted-foreground">
+      <div className="flex items-center gap-2.5">
+        <h1 className="text-2xl font-semibold tracking-tight text-[var(--petrol)]">
+          Dokumente
+        </h1>
+        <span className="rounded-full bg-[var(--sand-warm)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]">
           {displayDocuments.length}
         </span>
-      </h1>
+      </div>
 
       {/* Drag overlay */}
       {isDragOver && (
@@ -246,23 +196,19 @@ export function DokumenteClient({
         </div>
       ) : hasDocuments ? (
         <div className="space-y-3" data-testid="document-list">
-          <DocumentsTable
+          <DocumentsBrowser
             documents={displayDocuments}
             onDelete={setDeleteConfirmId}
           />
-          <div className="lg:hidden">{collectionList}</div>
         </div>
       ) : (
-        <div className="space-y-4">
-          <EmptyState
-            title="Noch nichts gescannt"
-            description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
-            mascotMood="greeting"
-            actionLabel="Dokument scannen"
-            onAction={openWizard}
-          />
-          {collectionList}
-        </div>
+        <EmptyState
+          title="Noch nichts gescannt"
+          description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
+          mascotMood="greeting"
+          actionLabel="Dokument scannen"
+          onAction={openWizard}
+        />
       )}
 
       {/* Compact upload link at the bottom */}
@@ -323,97 +269,5 @@ export function DokumenteClient({
         </SheetContent>
       </Sheet>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// NewCollectionRow — inline "+ Neue Sammlung" in the empty state
-// ---------------------------------------------------------------------------
-
-function NewCollectionRow({
-  onCreate,
-}: {
-  onCreate: (name: string) => Promise<boolean>;
-}) {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-
-  const handleSubmit = async () => {
-    const trimmed = name.trim();
-    if (!trimmed || saving) return;
-    setSaving(true);
-    try {
-      const ok = await onCreate(trimmed);
-      if (ok) {
-        setName("");
-        setOpen(false);
-      }
-    } catch {
-      toast.error("Etwas ist schiefgelaufen. Bitte versuche es erneut.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2.5 rounded-ordilo-sm border border-dashed border-border px-3 py-2 text-left text-sm font-medium text-muted-foreground transition-colors hover:border-[var(--petrol)]/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        data-testid="new-collection-button"
-      >
-        <Plus className="size-4 shrink-0" aria-hidden="true" />
-        Neue Sammlung
-      </button>
-    );
-  }
-
-  return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        void handleSubmit();
-      }}
-      className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-card px-3 py-2 shadow-card"
-      data-testid="new-collection-form"
-    >
-      <Folder className="size-4 shrink-0 text-[var(--petrol)]" aria-hidden="true" />
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Name der Sammlung"
-        aria-label="Name der Sammlung"
-        maxLength={50}
-        autoFocus
-        className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
-        data-testid="new-collection-name-input"
-      />
-      <Button
-        type="submit"
-        size="sm"
-        disabled={!name.trim() || saving}
-        data-testid="new-collection-submit"
-      >
-        {saving ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        ) : (
-          "Anlegen"
-        )}
-      </Button>
-      <button
-        type="button"
-        onClick={() => {
-          setOpen(false);
-          setName("");
-        }}
-        aria-label="Abbrechen"
-        className="shrink-0 text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <X className="size-4" aria-hidden="true" />
-      </button>
-    </form>
   );
 }

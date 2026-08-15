@@ -3,14 +3,16 @@
 import { useCallback, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { X } from "lucide-react";
+import { ChevronDown, ListChecks, SlidersHorizontal, X } from "lucide-react";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import { SwipeableTaskCard } from "@/components/ordilo/swipeable-task-card";
+import { MemberAvatar } from "@/components/ordilo/member-avatar";
 import { TaskDetailSheet } from "@/components/ordilo/task-detail-sheet";
 import { TaskCreateSheet } from "@/components/ordilo/task-create-sheet";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { usePlannerActionsOptional } from "./planner-actions-context";
 import {
   Dialog,
@@ -23,6 +25,8 @@ import {
 import {
   sortTasksByDate,
   getTaskDropUpdates,
+  getTaskGroup,
+  todayLocalDate,
   type TaskBoardColumnId,
   type TaskDropUpdates,
 } from "@/lib/task-utils";
@@ -30,29 +34,46 @@ import { useScanActions } from "@/lib/scan/scan-context";
 import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { cn } from "@/lib/utils";
 
-interface ColumnConfig {
-  id: string;
+interface GroupConfig {
+  id: TaskBoardColumnId;
   label: string;
-  dot: string;
-  filter: (task: TaskCardData) => boolean;
-  emptyText: string;
+  /** Heading color — urgency read at a glance, top to bottom. */
+  tone: string;
+  /** Row wash, for the one group that must not be missed. */
+  rowSurface?: string;
+  /** Collapsed by default, with a peek at the first few tasks. */
+  collapsible?: boolean;
+  /** How many rows a collapsed group shows before "+ N weitere". */
+  peek?: number;
 }
 
 /**
- * Static column definitions (without date-dependent filters). The filters
- * are attached inside the component so they use fresh "today" values on
- * every render instead of freezing at module-load time.
+ * The list's groups, in the order a family reads them: what slipped,
+ * what is due today, what the week holds, what can wait, what is done.
  */
-const COLUMN_DEFS: Omit<ColumnConfig, "filter">[] = [
-  { id: "overdue", label: "Überfällig", dot: "bg-[var(--warm-apricot)]", emptyText: "Puh, nichts überfällig" },
-  { id: "this-week", label: "Diese Woche", dot: "bg-[var(--petrol)]", emptyText: "Nichts drängt" },
-  { id: "later", label: "Später", dot: "bg-[var(--mist)]", emptyText: "Ruhige Aussichten" },
-  { id: "done", label: "Erledigt", dot: "bg-[var(--petrol)]", emptyText: "Noch nichts geschafft" },
+const GROUPS: GroupConfig[] = [
+  {
+    id: "overdue",
+    label: "Überfällig",
+    tone: "text-destructive",
+    rowSurface: "bg-[color-mix(in_srgb,var(--destructive)_6%,var(--card))]",
+  },
+  { id: "today", label: "Heute", tone: "text-[var(--petrol)]" },
+  { id: "this-week", label: "Diese Woche", tone: "text-[var(--petrol)]" },
+  {
+    id: "later",
+    label: "Später",
+    tone: "text-[var(--apricot-text)]",
+    collapsible: true,
+    peek: 3,
+  },
+  { id: "done", label: "Erledigt", tone: "text-muted-foreground", collapsible: true, peek: 0 },
 ];
 
-/** Success toasts per drop target column (German UI copy). */
+/** Success toasts per drop target group (German UI copy). */
 const DROP_SUCCESS_TOASTS: Record<TaskBoardColumnId, string> = {
   done: "Erledigt — gut gemacht!",
+  today: "Für heute eingeplant",
   "this-week": "Für diese Woche eingeplant",
   later: "Auf später verschoben",
   overdue: "Als überfällig markiert",
@@ -64,9 +85,11 @@ const DROP_SUCCESS_TOASTS: Record<TaskBoardColumnId, string> = {
  */
 const DRAG_HINT_STORAGE_KEY = "ordilo-board-drag-hint-v1";
 
-function BoardColumn({
-  column,
+function TaskGroup({
+  group,
   tasks,
+  members,
+  memberPhotoUrls,
   canAcceptDrop,
   isTouchDragOver,
   justReceivedDrop,
@@ -80,13 +103,15 @@ function BoardColumn({
   onDragStateChange,
   onDragOverColumn,
 }: {
-  column: ColumnConfig;
+  group: GroupConfig;
   tasks: TaskCardData[];
-  /** Whether this column can accept the currently-dragged task. */
+  members: AssigneeOption[];
+  memberPhotoUrls: Record<string, string>;
+  /** Whether this group can accept the currently-dragged task. */
   canAcceptDrop: boolean;
-  /** Whether a touch drag is currently hovering this column. */
+  /** Whether a touch drag is currently hovering this group. */
   isTouchDragOver?: boolean;
-  /** Briefly confirms the task's new location after a successful drop. */
+  /** Briefly confirms the task's new place after a successful drop. */
   justReceivedDrop?: boolean;
   onToggleDone: (taskId: string, newStatus: string) => void;
   onDismiss: (taskId: string) => void;
@@ -98,26 +123,30 @@ function BoardColumn({
   onDragStateChange?: (taskId: string | null) => void;
   onDragOverColumn?: (columnId: string | null) => void;
 }) {
-  const sortedTasks = useMemo(
-    () => sortTasksByDate(tasks),
-    [tasks],
-  );
+  const sortedTasks = useMemo(() => sortTasksByDate(tasks), [tasks]);
+  const [expanded, setExpanded] = useState(false);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!canAcceptDrop) return;
-    e.preventDefault();
-    dragCounter.current++;
-    setIsDragOver(true);
-  }, [canAcceptDrop]);
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!canAcceptDrop) return;
+      e.preventDefault();
+      dragCounter.current++;
+      setIsDragOver(true);
+    },
+    [canAcceptDrop],
+  );
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!canAcceptDrop) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  }, [canAcceptDrop]);
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!canAcceptDrop) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+    },
+    [canAcceptDrop],
+  );
 
   const handleDragLeave = useCallback(() => {
     if (!canAcceptDrop) return;
@@ -128,97 +157,153 @@ function BoardColumn({
     }
   }, [canAcceptDrop]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    if (!canAcceptDrop) return;
-    e.preventDefault();
-    dragCounter.current = 0;
-    setIsDragOver(false);
-    const taskId = e.dataTransfer.getData("text/plain");
-    if (taskId) {
-      onDrop(taskId, column.id);
-    }
-  }, [canAcceptDrop, column.id, onDrop]);
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      if (!canAcceptDrop) return;
+      e.preventDefault();
+      dragCounter.current = 0;
+      setIsDragOver(false);
+      const taskId = e.dataTransfer.getData("text/plain");
+      if (taskId) {
+        onDrop(taskId, group.id);
+      }
+    },
+    [canAcceptDrop, group.id, onDrop],
+  );
 
   const highlighted = isDragOver || (canAcceptDrop && isTouchDragOver);
 
+  // An empty group is only worth its heading while something is being
+  // dragged — then it is a landing place. Otherwise it stays out of the
+  // way, so the list shows what there is instead of what there isn't.
+  if (sortedTasks.length === 0 && !canAcceptDrop) return null;
+
+  const collapsed = Boolean(group.collapsible) && !expanded;
+  const peek = group.peek ?? 0;
+  const visibleTasks = collapsed ? sortedTasks.slice(0, peek) : sortedTasks;
+  const hiddenCount = sortedTasks.length - visibleTasks.length;
+
   return (
-    <div
+    <section
       className={cn(
-        "animate-column-in flex flex-col gap-2 rounded-ordilo-sm p-1 transition-colors",
+        "animate-column-in rounded-ordilo-md transition-colors",
         highlighted && "bg-secondary/30",
         justReceivedDrop && "animate-board-settle",
       )}
-      data-testid={`board-column-${column.id}`}
-      data-column-id={column.id}
+      data-testid={`board-column-${group.id}`}
+      data-column-id={group.id}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <div className="flex items-center gap-2 px-1">
-        <span
-          className={cn("size-2 shrink-0 rounded-full", column.dot)}
-          aria-hidden="true"
-        />
-        <h2 className="flex-1 text-sm font-medium text-foreground">
-          {column.label}
+      <button
+        type="button"
+        onClick={() => group.collapsible && setExpanded((open) => !open)}
+        aria-expanded={group.collapsible ? expanded : undefined}
+        className={cn(
+          "flex w-full items-center gap-2 rounded-ordilo-sm px-1 py-2 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          !group.collapsible && "cursor-default",
+        )}
+        data-testid={`board-column-header-${group.id}`}
+      >
+        <h2 className={cn("text-base font-semibold", group.tone)}>
+          {group.label}
         </h2>
-        <span className="text-xs tabular-nums text-muted-foreground">
-          {tasks.length}
+        <span className="rounded-full bg-[var(--sand-warm)] px-2 py-0.5 text-xs font-medium tabular-nums text-[var(--mist-dark)]">
+          {sortedTasks.length}
         </span>
-      </div>
+        {group.collapsible && (
+          <ChevronDown
+            className={cn(
+              "ml-auto size-4.5 shrink-0 text-muted-foreground transition-transform",
+              expanded && "rotate-180",
+            )}
+            aria-hidden="true"
+          />
+        )}
+      </button>
 
-      <div className="flex min-h-[3rem] flex-1 flex-col gap-2">
-        {sortedTasks.length > 0 ? (
-          sortedTasks.map((task) => (
-            <SwipeableTaskCard
-              key={task.id}
-              task={task}
-              onToggleDone={(newStatus) => onToggleDone(task.id, newStatus)}
-              onDismiss={() => onDismiss(task.id)}
-              onEdit={() => onEdit(task)}
-              onDelete={() => onDelete(task.id)}
-              onClick={() => onCardClick(task)}
-              showConfidence={false}
-              deleteLabel={deleteLabel}
-              onDragStateChange={onDragStateChange}
-              onTaskDrop={onDrop}
-              onDragOverColumn={onDragOverColumn}
-            />
-          ))
-        ) : (
-          <p
-            className="px-1 py-2 text-xs text-muted-foreground"
-            data-testid={`column-empty-${column.id}`}
+      <div
+        className={cn(
+          "overflow-hidden rounded-ordilo-md",
+          sortedTasks.length > 0 && "divide-y divide-border/60",
+        )}
+      >
+        {visibleTasks.map((task) => (
+          <SwipeableTaskCard
+            key={task.id}
+            task={task}
+            assignee={
+              task.assigned_to
+                ? {
+                    name:
+                      task.assigned_member_name ??
+                      members.find((m) => m.id === task.assigned_to)?.name ??
+                      null,
+                    color: members.find((m) => m.id === task.assigned_to)
+                      ?.avatar_color,
+                    photoUrl: memberPhotoUrls[task.assigned_to],
+                  }
+                : undefined
+            }
+            flat
+            cardClassName="px-3"
+            surfaceClassName={group.rowSurface}
+            onToggleDone={(newStatus) => onToggleDone(task.id, newStatus)}
+            onDismiss={() => onDismiss(task.id)}
+            onEdit={() => onEdit(task)}
+            onDelete={() => onDelete(task.id)}
+            onClick={() => onCardClick(task)}
+            showConfidence={false}
+            deleteLabel={deleteLabel}
+            onDragStateChange={onDragStateChange}
+            onTaskDrop={onDrop}
+            onDragOverColumn={onDragOverColumn}
+          />
+        ))}
+
+        {hiddenCount > 0 && peek > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid={`board-column-expand-${group.id}`}
           >
-            {column.emptyText}
-          </p>
+            <span>
+              + {hiddenCount} weitere {hiddenCount === 1 ? "Aufgabe" : "Aufgaben"}
+            </span>
+            <ChevronDown className="size-4 shrink-0" aria-hidden="true" />
+          </button>
         )}
 
         {/* Drop placeholder — shows where the dragged task will land.
             Sorting is automatic (by date), so the placeholder sits at the
-            end of the list rather than under the finger. */}
+            end of the group rather than under the finger. */}
         {highlighted && (
           <div
-            data-testid={`drop-placeholder-${column.id}`}
+            data-testid={`drop-placeholder-${group.id}`}
             aria-hidden="true"
-            className="h-14 rounded-ordilo-sm border border-dashed border-[var(--petrol)]/50 bg-secondary/20"
+            className="m-1 h-14 rounded-ordilo-sm border border-dashed border-[var(--petrol)]/50 bg-secondary/20"
           />
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
 export function AufgabenClient({
   initialTasks,
   members,
+  memberPhotoUrls = {},
   familyId,
   initialError = null,
   openTaskId = null,
 }: {
   initialTasks: TaskCardData[];
   members: AssigneeOption[];
+  /** Signed avatar URLs by member id (photoless members show initials). */
+  memberPhotoUrls?: Record<string, string>;
   familyId: string | null;
   initialError?: string | null;
   /** Deep link (/aufgaben?task=<id>): open this task's detail sheet once. */
@@ -243,6 +328,11 @@ export function AufgabenClient({
   const [settledColumnId, setSettledColumnId] = useState<string | null>(null);
   const [showDragHint, setShowDragHint] = useState(false);
   const settleTimer = useRef<number | null>(null);
+
+  /** Member id whose tasks are shown, or null for the whole family. */
+  const [memberFilter, setMemberFilter] = useState<string | null>(null);
+  const [unassignedOnly, setUnassignedOnly] = useState(false);
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
 
   // One-time drag-and-drop hint — read localStorage after mount (not
   // during render) to avoid a server/client hydration mismatch. Optional
@@ -273,40 +363,10 @@ export function AufgabenClient({
     return () => plannerActions?.setCreateHandler(null);
   });
 
-  // Fresh "today" on every render so overdue/this-week buckets stay
-  // correct across long sessions (module-level dates would freeze).
-  const nowStr = new Date().toISOString().split("T")[0];
-  const in7DaysStr = new Date(Date.now() + 7 * 86_400_000)
-    .toISOString()
-    .split("T")[0];
-
-  const columns: ColumnConfig[] = COLUMN_DEFS.map((col) => ({
-    ...col,
-    filter:
-      col.id === "overdue"
-        ? (t: TaskCardData) =>
-            t.status === "open" && t.due_date !== null && t.due_date < nowStr
-        : col.id === "this-week"
-          ? (t: TaskCardData) =>
-              t.status === "open" &&
-              t.due_date !== null &&
-              t.due_date >= nowStr &&
-              t.due_date <= in7DaysStr
-          : col.id === "later"
-            ? (t: TaskCardData) =>
-                t.status === "open" &&
-                (t.due_date === null || t.due_date > in7DaysStr)
-            : (t: TaskCardData) => t.status === "done",
-  }));
-
-  // Which column the dragged task currently belongs to — every other
-  // column is a valid drop target.
-  const draggingColumnId = draggingTaskId
-    ? (() => {
-        const task = tasks.find((t) => t.id === draggingTaskId);
-        return task ? (columns.find((col) => col.filter(task))?.id ?? null) : null;
-      })()
-    : null;
+  // Fresh "today" on every render so overdue/today/this-week groups stay
+  // correct across long sessions (module-level dates would freeze), and
+  // in the user's own calendar day so grouping and the row labels agree.
+  const nowStr = todayLocalDate();
 
   const { toggleDone, dismiss, reschedule } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
@@ -376,7 +436,7 @@ export function AufgabenClient({
     router.refresh();
   }, [router]);
 
-  /** Revert a board drop back to the task's previous column values. */
+  /** Revert a drop back to the task's previous schedule. */
   const handleUndoDrop = useCallback(
     async (taskId: string, current: TaskDropUpdates, previous: TaskDropUpdates) => {
       setSelectedTask((prev) =>
@@ -432,9 +492,9 @@ export function AufgabenClient({
       const task = tasks.find((t) => t.id === taskId);
       if (!task) return;
 
-      // Dropping between open columns reschedules the due date; dropping
+      // Dropping between open groups reschedules the due date; dropping
       // onto "Erledigt" completes the task. No-op when the task already
-      // belongs to the target column.
+      // belongs to the target group.
       const updates = getTaskDropUpdates(
         task,
         targetColumnId as TaskBoardColumnId,
@@ -479,15 +539,47 @@ export function AufgabenClient({
     [tasks],
   );
 
-  const columnTasks = useMemo(() => {
+  const filteredTasks = useMemo(() => {
+    return visibleTasks.filter((task) => {
+      if (memberFilter && task.assigned_to !== memberFilter) return false;
+      if (unassignedOnly && task.assigned_to) return false;
+      return true;
+    });
+  }, [visibleTasks, memberFilter, unassignedOnly]);
+
+  const groupedTasks = useMemo(() => {
     const groups: Record<string, TaskCardData[]> = {};
-    for (const col of columns) {
-      groups[col.id] = visibleTasks.filter(col.filter);
+    for (const group of GROUPS) groups[group.id] = [];
+    for (const task of filteredTasks) {
+      groups[getTaskGroup(task, nowStr)].push(task);
     }
     return groups;
-  }, [visibleTasks, columns]);
+  }, [filteredTasks, nowStr]);
+
+  // Which group the dragged task currently sits in — every other group is
+  // a valid drop target.
+  const draggingGroupId = draggingTaskId
+    ? (() => {
+        const task = tasks.find((t) => t.id === draggingTaskId);
+        return task ? getTaskGroup(task, nowStr) : null;
+      })()
+    : null;
+
+  const openCount = useMemo(
+    () => filteredTasks.filter((t) => t.status === "open").length,
+    [filteredTasks],
+  );
+
+  // The page heading shows the live count ("17 offen"), so it keeps up
+  // with a task ticked off here instead of waiting for a refresh.
+  useChangeEffect(() => {
+    plannerActions?.setOpenCount(openCount);
+    return () => plannerActions?.setOpenCount(null);
+  }, [openCount, plannerActions]);
 
   const hasAnyTasks = tasks.length > 0;
+  const nothingMatchesFilter =
+    hasAnyTasks && filteredTasks.length === 0;
 
   return (
     <div className="app-page-stack">
@@ -498,6 +590,104 @@ export function AufgabenClient({
           data-testid="task-error"
         >
           {error}
+        </div>
+      )}
+
+      {hasAnyTasks && (
+        <div
+          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          data-testid="task-member-chips"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setMemberFilter(null);
+              setUnassignedOnly(false);
+            }}
+            aria-pressed={!memberFilter && !unassignedOnly}
+            className={cn(
+              "press-scale inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              !memberFilter && !unassignedOnly
+                ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                : "border-border bg-card text-muted-foreground hover:text-foreground",
+            )}
+            data-testid="task-chip-all"
+          >
+            <ListChecks className="size-4 shrink-0" aria-hidden="true" />
+            Alle
+          </button>
+
+          {members.map((member) => {
+            const active = memberFilter === member.id;
+            return (
+              <button
+                key={member.id}
+                type="button"
+                onClick={() => {
+                  setUnassignedOnly(false);
+                  setMemberFilter(active ? null : member.id);
+                }}
+                aria-pressed={active}
+                className={cn(
+                  "press-scale inline-flex h-11 shrink-0 items-center gap-2 rounded-full border py-1 pr-4 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  active
+                    ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                    : "border-border bg-card text-foreground hover:bg-accent/40",
+                )}
+                data-testid={`task-chip-${member.id}`}
+              >
+                <MemberAvatar
+                  name={member.name}
+                  color={member.avatar_color}
+                  photoUrl={memberPhotoUrls[member.id]}
+                  size="md"
+                />
+                <span className="max-w-28 truncate">{member.name}</span>
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => setMoreFiltersOpen((open) => !open)}
+            aria-expanded={moreFiltersOpen}
+            aria-label="Weitere Filter"
+            title="Weitere Filter"
+            className={cn(
+              "ml-auto flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              moreFiltersOpen || unassignedOnly
+                ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                : "border-border bg-card text-muted-foreground hover:text-foreground",
+            )}
+            data-testid="task-more-filters"
+          >
+            <SlidersHorizontal className="size-4.5" aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {moreFiltersOpen && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-ordilo-md border border-border bg-card p-3 shadow-card"
+          data-testid="task-filter-panel"
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setMemberFilter(null);
+              setUnassignedOnly((only) => !only);
+            }}
+            aria-pressed={unassignedOnly}
+            className={cn(
+              "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              unassignedOnly
+                ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                : "border-border bg-[var(--sand)] text-muted-foreground hover:text-foreground",
+            )}
+            data-testid="task-filter-unassigned"
+          >
+            Noch niemandem zugeordnet
+          </button>
         </div>
       )}
 
@@ -530,21 +720,29 @@ export function AufgabenClient({
         </div>
       )}
 
-      {hasAnyTasks && (
-        <div
-          data-testid="task-board"
-          className="space-y-4 md:grid md:grid-cols-2 md:gap-3 md:space-y-0 lg:grid-cols-4"
+      {nothingMatchesFilter && (
+        <p
+          className="rounded-ordilo-md border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card"
+          data-testid="task-filter-empty"
         >
-          {columns.map((col) => (
-            <BoardColumn
-              key={col.id}
-              column={col}
-              tasks={columnTasks[col.id]}
+          Für diese Auswahl steht gerade nichts an.
+        </p>
+      )}
+
+      {hasAnyTasks && (
+        <div data-testid="task-board" className="space-y-3">
+          {GROUPS.map((group) => (
+            <TaskGroup
+              key={group.id}
+              group={group}
+              tasks={groupedTasks[group.id]}
+              members={members}
+              memberPhotoUrls={memberPhotoUrls}
               canAcceptDrop={
-                draggingColumnId !== null && col.id !== draggingColumnId
+                draggingGroupId !== null && group.id !== draggingGroupId
               }
-              isTouchDragOver={dragOverColumnId === col.id}
-              justReceivedDrop={settledColumnId === col.id}
+              isTouchDragOver={dragOverColumnId === group.id}
+              justReceivedDrop={settledColumnId === group.id}
               onToggleDone={handleToggleDone}
               onDismiss={handleDismiss}
               onCardClick={handleCardClick}

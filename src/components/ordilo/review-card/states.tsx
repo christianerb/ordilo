@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { RefreshCw, AlertCircle, Loader2, Check, Sparkles } from "lucide-react";
+import {
+  RefreshCw,
+  AlertCircle,
+  Loader2,
+  Check,
+  Sparkles,
+  Pencil,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
@@ -221,6 +228,7 @@ export function ReviewCardConfirmed({
   analysisLoading = false,
   celebrate = false,
   askTitle = null,
+  onEdit,
   onReanalyze,
   reanalyzing = false,
   onViewOriginal,
@@ -252,6 +260,13 @@ export function ReviewCardConfirmed({
    * "added" to "asked". Null hides the CTA (e.g. when revisiting).
    */
   askTitle?: string | null;
+  /**
+   * Opens the editor for this confirmed document. "Neu lesen" throws the
+   * analysis away and asks the AI again; this fixes exactly the one value
+   * that is wrong and keeps the rest — which is what a family wants when
+   * a name or an amount was misread.
+   */
+  onEdit?: () => void;
   onReanalyze?: () => void;
   reanalyzing?: boolean;
   onViewOriginal?: () => void;
@@ -270,22 +285,37 @@ export function ReviewCardConfirmed({
           documentId={documentId ?? undefined}
           standalone
         />
-        {onReanalyze && (
-          <button
-            type="button"
-            onClick={onReanalyze}
-            disabled={reanalyzing}
-            className="mt-4 inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            data-testid="confirmed-reanalyze-button"
-          >
-            {reanalyzing ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <RefreshCw className="size-4" aria-hidden="true" />
-            )}
-            Neu lesen
-          </button>
-        )}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          {onEdit && (
+            <Button
+              type="button"
+              variant="outline"
+              size="lg"
+              onClick={onEdit}
+              className="h-11 rounded-ordilo-md"
+              data-testid="confirmed-edit-button"
+            >
+              <Pencil className="size-4" aria-hidden="true" />
+              Bearbeiten
+            </Button>
+          )}
+          {onReanalyze && (
+            <button
+              type="button"
+              onClick={onReanalyze}
+              disabled={reanalyzing}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              data-testid="confirmed-reanalyze-button"
+            >
+              {reanalyzing ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="size-4" aria-hidden="true" />
+              )}
+              Neu lesen
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -332,22 +362,35 @@ export function ReviewCardConfirmed({
             </Link>
           </Button>
         )}
-        {onReanalyze && (
-          <button
-            type="button"
-            onClick={onReanalyze}
-            disabled={reanalyzing}
-            className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
-            data-testid="confirmed-reanalyze-button"
-          >
-            {reanalyzing ? (
-              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-            ) : (
-              <RefreshCw className="size-3" aria-hidden="true" />
-            )}
-            Neu lesen
-          </button>
-        )}
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              data-testid="confirmed-edit-button"
+            >
+              <Pencil className="size-3" aria-hidden="true" />
+              Bearbeiten
+            </button>
+          )}
+          {onReanalyze && (
+            <button
+              type="button"
+              onClick={onReanalyze}
+              disabled={reanalyzing}
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+              data-testid="confirmed-reanalyze-button"
+            >
+              {reanalyzing ? (
+                <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+              ) : (
+                <RefreshCw className="size-3" aria-hidden="true" />
+              )}
+              Neu lesen
+            </button>
+          )}
+        </div>
       </div>
 
       <ConfirmedAnalysisDetails

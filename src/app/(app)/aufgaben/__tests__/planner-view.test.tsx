@@ -69,7 +69,9 @@ describe("PlannerView", () => {
       key === "tab" ? "planer" : null,
     );
     renderView();
-    expect(screen.getByRole("button", { name: "Termin" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Neuer Termin" }),
+    ).toBeInTheDocument();
   });
 
   it("hides the header action without a family", () => {

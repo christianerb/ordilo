@@ -6,19 +6,11 @@ import {
   resolveDocumentWithOwnership,
   markDocumentFailed,
 } from "@/lib/supabase/document-helpers";
+import { EmbeddingError } from "@/lib/ai/embeddings";
 import {
-  chunkPages,
-  generateEmbeddings,
-  embeddingToVectorString,
-  deduplicateChunks,
-  generateSyntheticQuestions,
-  cleanOcrForEmbedding,
-  contextualizeForEmbedding,
-  EmbeddingError,
-  type TextChunk,
-  type PageContent,
-  type PageTextChunk,
-} from "@/lib/ai/embeddings";
+  buildDocumentEmbeddings,
+  buildLabelEmbeddings,
+} from "@/lib/pipeline/document-embeddings";
 import {
   confirmPayloadSchema,
   CONFIRM_ALLOWED_SOURCE_STATUSES,
@@ -41,13 +33,10 @@ import { normalizeFactValue } from "@/lib/schemas/extraction";
 import {
   dedupeDates,
   dedupeAmounts,
-  meaningfulLabel,
-  parseAmountToMinor,
   toIsoDateOrNull,
-  GENERIC_DATE_LABELS,
-  GENERIC_AMOUNT_LABELS,
 } from "@/lib/analysis-cleanup";
-import { canonicalizeCategory } from "@/lib/categories";
+import { buildEntityRows } from "@/lib/pipeline/entity-rows";
+import { canonicalizeCategoryForFamily } from "@/lib/categories-server";
 import { getErrorCode } from "@/lib/pipeline/failure-tracking";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 
@@ -208,33 +197,11 @@ export async function POST(
   //     and collection names (documents.category === collection.name links
   //     a document into a collection — a canonical match files it there).
   //     Best-effort: on a read failure the suggested spelling is kept.
-  try {
-    const [{ data: categoryDocs }, { data: collectionRows }] =
-      await Promise.all([
-        serverClient
-          .from("documents")
-          .select("category")
-          .eq("family_id", familyId)
-          .not("category", "is", null),
-        serverClient
-          .from("collections")
-          .select("name")
-          .eq("family_id", familyId),
-      ]);
-    payload.suggested_category = canonicalizeCategory(
-      payload.suggested_category,
-      [
-        ...new Set(
-          (categoryDocs ?? [])
-            .map((d) => d.category)
-            .filter((c): c is string => Boolean(c)),
-        ),
-      ],
-      (collectionRows ?? []).map((c) => c.name),
-    );
-  } catch {
-    // Keep the payload's spelling — canonicalization is a bonus.
-  }
+  payload.suggested_category = await canonicalizeCategoryForFamily(
+    serverClient,
+    familyId,
+    payload.suggested_category,
+  );
 
   // 7. Fetch OCR text (with page numbers for provenance) -------------------
   const { data: pages, error: pagesError } = await serverClient
@@ -251,120 +218,46 @@ export async function POST(
     return Response.json(body, { status: 500 });
   }
 
-  // Build page-aware content for embedding chunking.
-  // Each non-empty page's markdown is chunked separately so that every
-  // embedding row carries its originating page_number in metadata_json
-  // (VAL-CONFIRM-005). OCR noise (image references, icon labels, rules)
-  // is stripped before chunking so embeddings capture semantic content,
-  // not formatting artifacts.
-  const pageContents: PageContent[] = (pages ?? [])
-    .filter((p) => p.ocr_markdown && p.ocr_markdown.trim())
-    .map((p) => ({
-      text: cleanOcrForEmbedding(p.ocr_markdown!),
-      page_number: p.page_number,
-    }))
-    .filter((p) => p.text.length > 0);
-
-  // Fallback: if no page markdown is available, use documents.ocr_text
-  // as a single "page" (page_number = 1) so embeddings are still generated.
-  if (pageContents.length === 0) {
-    const fallbackText = cleanOcrForEmbedding((document.ocr_text ?? "").trim());
-    if (fallbackText) {
-      pageContents.push({ text: fallbackText, page_number: 1 });
-    }
-  }
-
   // 8. Generate embeddings via OpenAI FIRST (outside the DB transaction) --
   // The external OpenAI call cannot be part of the Postgres transaction, so
   // it happens before the RPC. If it fails, no DB mutations have occurred
   // yet → no partial state. We preserve the analysis, record diagnostics,
   // and return a structured error.
-  const chunks = chunkPages(pageContents);
-  let embeddings: number[][] = [];
-  if (chunks.length > 0) {
-    try {
-      // Contextualize chunks with the document title before embedding so
-      // each embedding vector carries document-level context. The stored
-      // chunk_text remains the clean original (for FTS + display).
-      const embedChunks: TextChunk[] = chunks.map((c) => ({
-        text: contextualizeForEmbedding(c.text, payload.title),
-        index: c.index,
-      }));
-      embeddings = await generateEmbeddings(embedChunks);
-    } catch (err) {
-      const isEmbeddingError = err instanceof EmbeddingError;
-      const message = err instanceof Error
-        ? err.message
-        : "Embedding-Erzeugung fehlgeschlagen.";
-      const code = isEmbeddingError
-        ? (err as EmbeddingError).code
-        : "EMBEDDING_FAILED";
-      const statusCode =
-        isEmbeddingError &&
-        err instanceof EmbeddingError &&
-        err.statusCode &&
-        err.statusCode >= 400 &&
-        err.statusCode < 500
-          ? err.statusCode
-          : 502;
+  let embeddingsParam: ConfirmRpcEmbedding[];
+  try {
+    embeddingsParam = await buildDocumentEmbeddings({
+      pages: pages ?? [],
+      ocrTextFallback: document.ocr_text,
+      metadata: payload,
+    });
+  } catch (err) {
+    const isEmbeddingError = err instanceof EmbeddingError;
+    const message = err instanceof Error
+      ? err.message
+      : "Embedding-Erzeugung fehlgeschlagen.";
+    const code = isEmbeddingError
+      ? (err as EmbeddingError).code
+      : "EMBEDDING_FAILED";
+    const statusCode =
+      isEmbeddingError &&
+      err instanceof EmbeddingError &&
+      err.statusCode &&
+      err.statusCode >= 400 &&
+      err.statusCode < 500
+        ? err.statusCode
+        : 502;
 
-      await markDocumentFailed(serverClient, documentId, message, {
-        stage: "embedding",
-        code,
-        cause: err,
-        familyId,
-        clearConfirmedAt: true,
-        retryable: true,
-      });
+    await markDocumentFailed(serverClient, documentId, message, {
+      stage: "embedding",
+      code,
+      cause: err,
+      familyId,
+      clearConfirmedAt: true,
+      retryable: true,
+    });
 
-      const body: ConfirmErrorResponse = { error: message, code };
-      return Response.json(body, { status: statusCode });
-    }
-  }
-
-  // 8b. Semantic deduplication — remove near-duplicate chunks before storage.
-  //     Two chunks with >=85% cosine similarity are redundant: they compete
-  //     in vector search and degrade retrieval quality.
-  let finalChunks: PageTextChunk[] = chunks;
-  let finalEmbeddings: number[][] = embeddings;
-
-  if (chunks.length > 1 && embeddings.length > 1) {
-    const dedup = deduplicateChunks(chunks, embeddings);
-    finalChunks = dedup.kept as PageTextChunk[];
-    // Map kept chunks back to their original embeddings
-    const keptSet = new Set(
-      dedup.removedIndices,
-    );
-    finalEmbeddings = embeddings.filter((_, i) => !keptSet.has(i));
-  }
-
-  // 8c. Query-shaped embeddings — generate synthetic questions from the
-  //     extracted metadata and embed them alongside the chunk text.
-  //     This improves retrieval because user queries are questions, and
-  //     matching question-to-question is structurally aligned.
-  const syntheticQuestions = generateSyntheticQuestions({
-    title: payload.title,
-    summary: payload.summary,
-    documentType: payload.document_type,
-    persons: payload.family_members.map((m) => m.name).filter(Boolean),
-    organization: payload.organizations[0]?.name ?? null,
-    tags: payload.tags,
-    hasDates: payload.dates.length > 0,
-  });
-
-  let questionEmbeddings: number[][] = [];
-  if (syntheticQuestions.length > 0) {
-    try {
-      const questionChunks = syntheticQuestions.map((q, i) => ({
-        text: q,
-        index: i,
-      }));
-      questionEmbeddings = await generateEmbeddings(questionChunks);
-    } catch {
-      // Question embeddings are a bonus — if they fail, continue with
-      // chunk-only embeddings.
-      questionEmbeddings = [];
-    }
+    const body: ConfirmErrorResponse = { error: message, code };
+    return Response.json(body, { status: statusCode });
   }
 
   // 9. Build the RPC parameters --------------------------------------------
@@ -383,60 +276,9 @@ export async function POST(
       confidence: org.confidence,
     }));
 
-  // Build embeddings params: chunk embeddings + question embeddings
-  const chunkEmbeddingsParam: ConfirmRpcEmbedding[] = finalChunks.map(
-    (chunk, i) => ({
-      chunk_text: chunk.text,
-      embedding: embeddingToVectorString(finalEmbeddings[i]),
-      page_number: chunk.page_number,
-      chunk_index: chunk.index,
-      chunk_total: finalChunks.length,
-      chunk_type: "chunk",
-    }),
-  );
-
-  const questionEmbeddingsParam: ConfirmRpcEmbedding[] =
-    questionEmbeddings.map((emb, i) => ({
-      chunk_text: syntheticQuestions[i],
-      embedding: embeddingToVectorString(emb),
-      page_number: 1,
-      chunk_index: i,
-      chunk_total: questionEmbeddings.length,
-      chunk_type: "question",
-    }));
-
-  const embeddingsParam = [
-    ...chunkEmbeddingsParam,
-    ...questionEmbeddingsParam,
-  ];
-
-  // 9b. Generate label embeddings for knowledge graph nodes ---------------
-  //     Embed the document title, person names, and organization names so
-  //     the graph can do semantic matching (e.g. "Kita" → "Kindergarten").
-  const labelEmbeddingsParam: ConfirmRpcLabelEmbedding[] = [];
-  try {
-    const labelsToEmbed: string[] = [
-      payload.title || "Dokument",
-      ...payload.family_members.map((m) => m.name).filter(Boolean),
-      ...payload.organizations.map((o) => o.name).filter(Boolean),
-    ];
-
-    if (labelsToEmbed.length > 0) {
-      const labelChunks = labelsToEmbed.map((label, i) => ({
-        text: label,
-        index: i,
-      }));
-      const labelEmbs = await generateEmbeddings(labelChunks);
-      for (let i = 0; i < labelsToEmbed.length; i++) {
-        labelEmbeddingsParam.push({
-          label: labelsToEmbed[i],
-          embedding: embeddingToVectorString(labelEmbs[i]),
-        });
-      }
-    }
-  } catch {
-    // Label embeddings are a bonus — if they fail, continue without them
-  }
+  // 9b. Label embeddings for the knowledge graph nodes.
+  const labelEmbeddingsParam: ConfirmRpcLabelEmbedding[] =
+    await buildLabelEmbeddings(payload);
 
   const entitiesParam: ConfirmRpcEntity[] = buildEntityRows(payload);
   const tasksParam: ConfirmRpcTask[] = buildTaskRows(payload);
@@ -536,97 +378,6 @@ export async function POST(
 // ---------------------------------------------------------------------------
 // Helper functions
 // ---------------------------------------------------------------------------
-
-/**
- * Build the extracted_entities rows (as RPC params) from the confirm
- * payload.
- *
- * The payload contains the (possibly edited) entities. We map each into the
- * shape expected by the confirm_document RPC. The RPC inserts them with
- * `confirmed = true` after clearing prior entities for the document
- * (VAL-CONFIRM-008: edited values are used, not the original extraction).
- */
-function buildEntityRows(payload: ConfirmPayload): ConfirmRpcEntity[] {
-  const entities: ConfirmRpcEntity[] = [];
-
-  // Persons.
-  for (const member of payload.family_members) {
-    entities.push({
-      entity_type: "person",
-      entity_value: member.name,
-      normalized_value: member.name.toLowerCase().trim(),
-      label: null,
-      confidence: member.confidence,
-      linked_object_id: member.person_id ?? null,
-    });
-  }
-
-  // Organizations.
-  for (const org of payload.organizations) {
-    entities.push({
-      entity_type: "organization",
-      entity_value: org.name,
-      normalized_value: org.name.toLowerCase().trim(),
-      label: null,
-      confidence: org.confidence,
-      linked_object_id: null,
-    });
-  }
-
-  // Dates.
-  for (const date of payload.dates) {
-    entities.push({
-      entity_type: "date",
-      entity_value: date.date,
-      normalized_value: date.date,
-      label: meaningfulLabel(date.label, GENERIC_DATE_LABELS),
-      confidence: date.confidence,
-      linked_object_id: null,
-    });
-  }
-
-  // Amounts.
-  for (const amount of payload.amounts) {
-    entities.push({
-      entity_type: "amount",
-      entity_value: `${amount.amount} ${amount.currency}`.trim(),
-      normalized_value: amount.amount,
-      label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
-      amount_minor: parseAmountToMinor(amount.amount),
-      currency: amount.currency.trim().toUpperCase() || "EUR",
-      amount_kind: amount.kind,
-      value_date: toIsoDateOrNull(amount.value_date),
-      confidence: amount.confidence,
-      linked_object_id: null,
-    });
-  }
-
-  // Category.
-  if (payload.suggested_category) {
-    entities.push({
-      entity_type: "category",
-      entity_value: payload.suggested_category,
-      normalized_value: payload.suggested_category.toLowerCase().trim(),
-      label: null,
-      confidence: 1.0,
-      linked_object_id: null,
-    });
-  }
-
-  // Tags.
-  for (const tag of payload.tags) {
-    entities.push({
-      entity_type: "tag",
-      entity_value: tag,
-      normalized_value: tag.toLowerCase().trim(),
-      label: null,
-      confidence: 1.0,
-      linked_object_id: null,
-    });
-  }
-
-  return entities;
-}
 
 /**
  * Build the tasks rows (as RPC params) from the confirm payload.

@@ -14,6 +14,7 @@ import { ReviewCardSkeleton } from "@/components/ordilo/review-card/states";
 import { OriginalDocumentPreview } from "@/components/ordilo/original-document-preview";
 import {
   buildConfirmPayload,
+  emptyEditState,
   postConfirm,
   type EditState,
 } from "@/components/ordilo/review-card/helpers";
@@ -25,17 +26,7 @@ import { vibrate } from "@/lib/haptics";
 
 const HIGH_CONFIDENCE_THRESHOLD = 0.85;
 
-const EMPTY_EDITS: EditState = {
-  persons: new Map(),
-  factValues: new Map(),
-  category: null,
-  dates: new Map(),
-  organizationNames: new Map(),
-  amountValues: new Map(),
-  taskTitles: new Map(),
-  taskDueDates: new Map(),
-  deletedTasks: new Set(),
-};
+const EMPTY_EDITS: EditState = emptyEditState();
 
 type ScanConfidenceLevel = "high" | "medium" | "low";
 

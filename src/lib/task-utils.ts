@@ -104,11 +104,32 @@ export function sortTasksByDate<
 }
 
 // ---------------------------------------------------------------------------
+// Today
+// ---------------------------------------------------------------------------
+
+/**
+ * Today as the user's calendar sees it (YYYY-MM-DD, local time).
+ *
+ * Never `toISOString()`: that is UTC, so between local midnight and the
+ * UTC day roll a task due today would be grouped under "Diese Woche"
+ * while its own row reads "Heute". Grouping, drop targets, and due labels
+ * all take their "today" from here.
+ */
+export function todayLocalDate(now = new Date()): string {
+  return now.toLocaleDateString("sv-SE");
+}
+
+// ---------------------------------------------------------------------------
 // Board drag-and-drop
 // ---------------------------------------------------------------------------
 
-/** The four column ids of the Aufgaben board. */
-export type TaskBoardColumnId = "overdue" | "this-week" | "later" | "done";
+/** The groups the Aufgaben list is split into, in display order. */
+export type TaskBoardColumnId =
+  | "overdue"
+  | "today"
+  | "this-week"
+  | "later"
+  | "done";
 
 /** Fields of a task that a board drop can change. */
 export interface TaskDropUpdates {
@@ -126,18 +147,40 @@ function shiftDate(dateStr: string, days: number): string {
 }
 
 /**
- * Compute the task updates needed when a task is dropped onto a board
- * column. Returns `null` when the task already belongs to the target
- * column (no-op drop).
+ * Which group a task belongs to right now.
  *
- * Column semantics:
+ * The single source of truth for the Aufgaben list's sections, so the
+ * grouping, the drop no-op check, and any future consumer can never
+ * disagree about where a task lives.
+ *
+ * @param task - The task (only `status` and `due_date` are read).
+ * @param todayStr - Today's date as an ISO string (YYYY-MM-DD).
+ */
+export function getTaskGroup(
+  task: { status: string; due_date: string | null },
+  todayStr: string,
+): TaskBoardColumnId {
+  if (task.status === "done") return "done";
+  const in7DaysStr = shiftDate(todayStr, 7);
+  if (task.due_date === null || task.due_date > in7DaysStr) return "later";
+  if (task.due_date < todayStr) return "overdue";
+  if (task.due_date === todayStr) return "today";
+  return "this-week";
+}
+
+/**
+ * Compute the task updates needed when a task is dropped onto another
+ * group. Returns `null` when the task already belongs there (no-op drop).
+ *
+ * Group semantics:
  * - "done"       → status "done", due date kept
- * - "this-week"  → status "open", due date set to today
+ * - "today"      → status "open", due date set to today
+ * - "this-week"  → status "open", due date set to tomorrow
  * - "later"      → status "open", due date cleared (no pressure)
  * - "overdue"    → status "open", due date set to yesterday
  *
  * @param task - The dropped task (only `status` and `due_date` are read).
- * @param targetColumnId - The column the task was dropped on.
+ * @param targetColumnId - The group the task was dropped on.
  * @param todayStr - Today's date as an ISO string (YYYY-MM-DD).
  * @returns The updates to apply, or `null` for a no-op drop.
  */
@@ -146,35 +189,67 @@ export function getTaskDropUpdates(
   targetColumnId: TaskBoardColumnId,
   todayStr: string,
 ): TaskDropUpdates | null {
-  const in7DaysStr = shiftDate(todayStr, 7);
+  if (getTaskGroup(task, todayStr) === targetColumnId) return null;
 
   switch (targetColumnId) {
     case "done":
-      if (task.status === "done") return null;
       return { status: "done", due_date: task.due_date };
-    case "this-week": {
-      const isThisWeek =
-        task.status === "open" &&
-        task.due_date !== null &&
-        task.due_date >= todayStr &&
-        task.due_date <= in7DaysStr;
-      if (isThisWeek) return null;
+    case "today":
       return { status: "open", due_date: todayStr };
-    }
-    case "later": {
-      const isLater =
-        task.status === "open" &&
-        (task.due_date === null || task.due_date > in7DaysStr);
-      if (isLater) return null;
+    case "this-week":
+      return { status: "open", due_date: shiftDate(todayStr, 1) };
+    case "later":
       return { status: "open", due_date: null };
-    }
-    case "overdue": {
-      const isOverdue =
-        task.status === "open" &&
-        task.due_date !== null &&
-        task.due_date < todayStr;
-      if (isOverdue) return null;
+    case "overdue":
       return { status: "open", due_date: shiftDate(todayStr, -1) };
-    }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Due-date labels
+// ---------------------------------------------------------------------------
+
+const WEEKDAY_SHORT = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"] as const;
+const MONTH_SHORT = [
+  "Jan.",
+  "Feb.",
+  "März",
+  "Apr.",
+  "Mai",
+  "Juni",
+  "Juli",
+  "Aug.",
+  "Sep.",
+  "Okt.",
+  "Nov.",
+  "Dez.",
+] as const;
+
+/**
+ * The short, human due label a task row shows: "Heute", "Morgen", the
+ * weekday for anything else inside the coming week ("Do"), and a plain
+ * date beyond that ("10. Aug."). A family reads "Morgen" faster than
+ * "16.08.2026", and the long form carries no more information.
+ *
+ * @param due - The task's due date (YYYY-MM-DD), or null.
+ * @param todayStr - Today's date as an ISO string (YYYY-MM-DD).
+ * @returns The label, or null when the task has no due date.
+ */
+export function formatTaskDueLabel(
+  due: string | null,
+  todayStr: string,
+): string | null {
+  if (!due) return null;
+  const parsed = new Date(`${due}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  if (due === todayStr) return "Heute";
+  if (due === shiftDate(todayStr, 1)) return "Morgen";
+  if (due === shiftDate(todayStr, -1)) return "Gestern";
+
+  if (due > todayStr && due <= shiftDate(todayStr, 6)) {
+    return WEEKDAY_SHORT[parsed.getUTCDay()];
+  }
+
+  return `${parsed.getUTCDate()}. ${MONTH_SHORT[parsed.getUTCMonth()]}`;
 }

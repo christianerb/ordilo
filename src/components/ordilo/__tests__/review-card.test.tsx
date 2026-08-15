@@ -396,6 +396,125 @@ describe("ReviewCard", () => {
     expect(within(details).queryByTestId("confirmed-tags")).toBeNull();
   });
 
+  it("keeps the numbers section out of the way when there are none", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    await screen.findByTestId("confirmed-details");
+    // An empty "Nummern & Kennungen" heading reads like something failed
+    // to load — until there is a number, only the add action shows.
+    expect(screen.queryByTestId("confirmed-facts")).toBeNull();
+    expect(screen.getByTestId("confirmed-fact-add-button")).toBeDefined();
+  });
+
+  it("lets the family correct a document that is already in the family book", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ status: "updated" }), { status: 200 }),
+    );
+    const onConfirmSuccess = vi.fn();
+
+    render(
+      <ReviewCard
+        documentId="doc-1"
+        status="confirmed"
+        onConfirmSuccess={onConfirmSuccess}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId("confirmed-edit-button"));
+
+    const titleInput = screen.getByTestId("review-title-input");
+    expect((titleInput as HTMLInputElement).value).toBe("Kita-Brief für Emma");
+    fireEvent.change(titleInput, { target: { value: "Kita-Brief Emma 2026" } });
+
+    fireEvent.click(screen.getByTestId("confirm-button"));
+
+    const patchCall = await waitFor(() => {
+      const call = fetchSpy.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
+      );
+      expect(call).toBeDefined();
+      return call as [string, RequestInit];
+    });
+
+    expect(patchCall[0]).toBe("/api/documents/doc-1");
+
+    const body = JSON.parse(patchCall[1].body as string);
+    expect(body.title).toBe("Kita-Brief Emma 2026");
+    // Tasks and facts are edited where they live — never rewritten here.
+    expect(body.tasks).toBeUndefined();
+    expect(body.facts).toBeUndefined();
+
+    await waitFor(() => {
+      expect(onConfirmSuccess).toHaveBeenCalled();
+    });
+    // Back to the calm read-only view once saved.
+    expect(await screen.findByTestId("review-card-confirmed")).toBeDefined();
+  });
+
+  it("keeps numbers read-only while editing — they are saved elsewhere", async () => {
+    const withFact = {
+      ...fullAnalysis,
+      facts: [
+        {
+          fact_type: "serial_number" as const,
+          label: "Seriennummer",
+          value: "SN 4823-XK",
+          confidence: 0.9,
+        },
+      ],
+    };
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(withFact);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    // The calm view owns fact editing (it writes straight to the facts
+    // endpoint); the edit screen must not offer a control whose value it
+    // would silently drop on save.
+    fireEvent.click(await screen.findByTestId("confirmed-edit-button"));
+    expect(screen.getByText("SN 4823-XK")).toBeDefined();
+    expect(screen.queryByTestId("edit-fact-button")).toBeNull();
+  });
+
+  it("does not let a document be saved without a title", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    fireEvent.click(await screen.findByTestId("confirmed-edit-button"));
+    fireEvent.change(screen.getByTestId("review-title-input"), {
+      target: { value: "  " },
+    });
+
+    expect(
+      (screen.getByTestId("confirm-button") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("drops unsaved corrections when the edit is cancelled", async () => {
+    vi.mocked(fetchDocumentAnalysis).mockResolvedValue(fullAnalysis);
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({}), { status: 200 }),
+    );
+
+    render(<ReviewCard documentId="doc-1" status="confirmed" />);
+
+    fireEvent.click(await screen.findByTestId("confirmed-edit-button"));
+    fireEvent.change(screen.getByTestId("review-title-input"), {
+      target: { value: "Anderer Titel" },
+    });
+    fireEvent.click(screen.getByTestId("review-cancel-button"));
+
+    expect(await screen.findByTestId("review-card-confirmed")).toBeDefined();
+    expect(
+      fetchSpy.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "PATCH",
+      ),
+    ).toBe(false);
+  });
+
   it("does not render confirmed-details when the analysis has no data", async () => {
     vi.mocked(fetchDocumentAnalysis).mockResolvedValue(null);
 
