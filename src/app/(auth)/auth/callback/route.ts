@@ -73,9 +73,11 @@ export async function GET(request: NextRequest) {
     inviteNeedsDecision = !joinedViaInvite;
   }
 
-  // Session established — determine first-time vs returning user.
+  // Session established — determine first-time vs returning user. A fresh
+  // join heads to the welcome flow (celebration + product intro); the
+  // middleware forwards members who already acknowledged it to /home.
   const { destination, isFirstTime } = joinedViaInvite
-    ? { destination: "/home" as const, isFirstTime: false }
+    ? { destination: "/willkommen" as const, isFirstTime: false }
     : inviteNeedsDecision && inviteToken
       ? { destination: `/invite/${inviteToken}`, isFirstTime: false }
       : await getPostAuthDestination(supabase);
