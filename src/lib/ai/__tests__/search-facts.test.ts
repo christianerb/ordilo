@@ -44,7 +44,7 @@ function chainableQuery(result: { data: unknown; error: unknown }) {
 function mockClient(options: {
   facts: FactRow[];
   documents?: { id: string; title: string | null; status: string }[];
-  members?: { name: string }[];
+  members?: { name: string; role?: string | null }[];
   entities?: { document_id: string; normalized_value: string }[];
 }) {
   const {
@@ -237,6 +237,71 @@ describe("factSearch", () => {
 
     expect(results.map((r) => r.chunk_text)).toEqual([
       "Steuer-ID Hanna: 74 031 832 353",
+    ]);
+  });
+
+  it("answers a question asked by relationship, not by name", async () => {
+    // "die Steuer-ID meiner Tochter" — the way this actually gets asked.
+    const client = mockClient({
+      facts: [
+        fact({ document_id: "doc-1", label: "Steuer-ID Hanna" }),
+        fact({
+          document_id: "doc-2",
+          label: "Steuer-ID Papa",
+          value: "12 345 678 901",
+          normalized_value: "12345678901",
+        }),
+      ],
+      members: [
+        { name: "Hanna", role: "Tochter" },
+        { name: "Papa", role: "Vater" },
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie ist die Steuer-ID meiner Tochter?",
+      FAMILY_ID,
+    );
+
+    expect(results.map((r) => r.chunk_text)).toEqual([
+      "Steuer-ID Hanna: 74 031 832 353",
+    ]);
+  });
+
+  it("keeps both daughters when the question is plural", async () => {
+    const client = mockClient({
+      facts: [
+        fact({ document_id: "doc-1", label: "Steuer-ID Hanna" }),
+        fact({
+          document_id: "doc-2",
+          label: "Steuer-ID Mia",
+          value: "12 345 678 901",
+          normalized_value: "12345678901",
+        }),
+        fact({
+          document_id: "doc-3",
+          label: "Steuer-ID Papa",
+          value: "98 765 432 100",
+          normalized_value: "98765432100",
+        }),
+      ],
+      members: [
+        { name: "Hanna", role: "Tochter" },
+        { name: "Mia", role: "Tochter" },
+        { name: "Papa", role: "Vater" },
+      ],
+    });
+
+    const results = await factSearch(
+      client,
+      "Wie sind die Steuer-IDs meiner Töchter?",
+      FAMILY_ID,
+    );
+
+    expect(results.map((r) => r.chunk_text).sort()).toEqual([
+      "Steuer-ID Hanna: 74 031 832 353",
+      "Steuer-ID Mia: 12 345 678 901",
     ]);
   });
 

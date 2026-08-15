@@ -12,11 +12,12 @@ import {
 import { expandQuery } from "@/lib/ai/query-expansion";
 import { SEARCH_AUGMENTATION_MODEL } from "@/lib/ai/models";
 import {
-  findMentionedMembers,
+  findMentionedPeople,
   isTaskQuery,
   selectAutoMode,
   matchesPersonName,
   matchesWordBoundary,
+  type MemberRef,
   type SearchResult,
   type ExecutedSearchMode,
 } from "@/lib/schemas/search";
@@ -146,8 +147,8 @@ export async function resolveAutoMode(
   query: string,
   familyId: string,
 ): Promise<ExecutedSearchMode> {
-  const memberNames = await fetchMemberNames(serverClient, familyId);
-  return selectAutoMode(query, memberNames);
+  const members = await fetchMembers(serverClient, familyId);
+  return selectAutoMode(query, members);
 }
 
 // ---------------------------------------------------------------------------
@@ -531,8 +532,8 @@ async function narrowFactCandidates<T extends ScopableFact>(
   // and no reason to pay for the member/entity lookups.
   if (facts.length < 2) return facts;
 
-  const memberNames = await fetchMemberNames(serverClient, familyId);
-  const mentioned = findMentionedMembers(query, memberNames);
+  const members = await fetchMembers(serverClient, familyId);
+  const mentioned = findMentionedPeople(query, members);
 
   // 1. Kind pass. Everything the query said that is NOT one of the named
   //    members describes the number itself.
@@ -727,9 +728,10 @@ export async function graphSearch(
   query: string,
   familyId: string,
 ): Promise<SearchResult[]> {
-  // 1. Fetch family members to detect person names.
-  const memberNames = await fetchMemberNames(serverClient, familyId);
-  const mentionedMembers = findMentionedMembers(query, memberNames);
+  // 1. Fetch family members to detect who the query is about — by name,
+  //    by possessive, or by relationship ("meiner Tochter").
+  const members = await fetchMembers(serverClient, familyId);
+  const mentionedMembers = findMentionedPeople(query, members);
   const taskQuery = isTaskQuery(query);
 
   // 1b. Query expansion — generate synonyms for better graph matching.
@@ -1313,22 +1315,35 @@ async function searchTasks(
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch family member names for the given family (RLS-scoped).
+ * Fetch the family's members (RLS-scoped).
+ *
+ * The role comes along because questions name people by relationship as
+ * often as by name ("die Steuer-ID meiner Tochter").
  */
-export async function fetchMemberNames(
+export async function fetchMembers(
   serverClient: ServerClient,
   familyId: string,
-): Promise<string[]> {
+): Promise<MemberRef[]> {
   const { data: members, error } = await serverClient
     .from("family_members")
-    .select("name")
+    .select("name, role")
     .eq("family_id", familyId);
 
   if (error) {
     throw new Error("Familienmitglieder konnten nicht geladen werden.");
   }
 
-  return (members ?? []).map((m) => m.name);
+  return (members ?? []).map((m) => ({ name: m.name, role: m.role }));
+}
+
+/**
+ * Fetch family member names for the given family (RLS-scoped).
+ */
+export async function fetchMemberNames(
+  serverClient: ServerClient,
+  familyId: string,
+): Promise<string[]> {
+  return (await fetchMembers(serverClient, familyId)).map((m) => m.name);
 }
 
 /**

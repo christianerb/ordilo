@@ -289,26 +289,129 @@ export function findMentionedMembers(
 }
 
 /**
+ * A family member as the search paths need them: the name to match and
+ * the role that says how the family refers to them.
+ */
+export interface MemberRef {
+  name: string;
+  role?: string | null;
+}
+
+/**
+ * Relationship words families ask with, and the roles they cover.
+ *
+ * Nobody says "die Steuer-ID von Hanna" at home — they say "die Steuer-ID
+ * meiner Tochter". The word is matched against the member's `role`, which
+ * is what the family typed when they added the person.
+ *
+ * Each entry lists the roles that answer the word. "Tochter" and "Sohn"
+ * fall back to the generic "Kind": a family that only ever typed "Kind"
+ * still gets its children scoped, which narrows away the parents — and
+ * every answer names the person it belongs to, so a family with two
+ * children sees whose number is whose instead of a silent wrong pick.
+ */
+const RELATIONSHIP_ROLES: ReadonlyArray<{
+  words: readonly string[];
+  roles: readonly string[];
+}> = [
+  { words: ["tochter", "töchter", "toechter"], roles: ["tochter", "kind"] },
+  { words: ["sohn", "söhne", "soehne"], roles: ["sohn", "kind"] },
+  {
+    words: ["kind", "kinder"],
+    roles: ["kind", "tochter", "sohn"],
+  },
+  {
+    words: ["mutter", "mama", "mami"],
+    roles: ["mutter", "partner:in", "partnerin"],
+  },
+  { words: ["vater", "papa", "papi"], roles: ["vater", "partner:in"] },
+  { words: ["eltern"], roles: ["mutter", "vater", "elternteil"] },
+  {
+    words: ["frau", "ehefrau", "partnerin", "partner", "mann", "ehemann"],
+    roles: ["partner:in", "partnerin", "partner"],
+  },
+  { words: ["oma", "großmutter", "grossmutter"], roles: ["oma"] },
+  { words: ["opa", "großvater", "grossvater"], roles: ["opa"] },
+  { words: ["bruder", "brüder", "brueder"], roles: ["bruder"] },
+  { words: ["schwester", "schwestern"], roles: ["schwester"] },
+  {
+    words: ["geschwister"],
+    roles: ["bruder", "schwester", "kind", "tochter", "sohn"],
+  },
+];
+
+/**
+ * Find the members a query refers to by their relationship rather than
+ * their name ("meiner Tochter", "unserer Kinder").
+ *
+ * Returns [] when the query names no relationship, or when no member
+ * carries a matching role — a relationship nobody filled in must not
+ * silently resolve to the wrong person.
+ */
+export function findMembersByRelationship(
+  query: string,
+  members: MemberRef[],
+): string[] {
+  const wantedRoles = new Set<string>();
+  for (const entry of RELATIONSHIP_ROLES) {
+    // Possessive-tolerant for the same reason names are: "Omas Papiere",
+    // "Mamas Termin" is how the question gets asked.
+    if (entry.words.some((word) => matchesPersonName(query, word))) {
+      for (const role of entry.roles) wantedRoles.add(role);
+    }
+  }
+  if (wantedRoles.size === 0) return [];
+
+  return members
+    .filter((member) => {
+      const role = member.role?.trim().toLowerCase();
+      return Boolean(role && wantedRoles.has(role));
+    })
+    .map((member) => member.name);
+}
+
+/**
+ * Find the people a query refers to — by name, by possessive, or by
+ * relationship. The one entry point the search paths should use.
+ *
+ * A name beats a relationship: "Hannas Zeugnis" scopes to Hanna even in a
+ * family where Hanna is one of two daughters, and "das Zeugnis meiner
+ * Tochter Hanna" does the same.
+ */
+export function findMentionedPeople(
+  query: string,
+  members: MemberRef[],
+): string[] {
+  const byName = findMentionedMembers(
+    query,
+    members.map((m) => m.name),
+  );
+  if (byName.length > 0) return byName;
+  return findMembersByRelationship(query, members);
+}
+
+/**
  * Select the appropriate search mode for an "auto" request.
  *
  * Heuristic:
- *   - If the query mentions a known family member name → "graph" (the user
- *     is likely asking about a person's documents or tasks).
- *   - If the query contains task-related keywords (and no person name) →
+ *   - If the query refers to a known family member — by name, possessive
+ *     or relationship ("meiner Tochter") → "graph" (the user is likely
+ *     asking about a person's documents or tasks).
+ *   - If the query contains task-related keywords (and no person) →
  *     "graph" (task/deadline queries are best answered via the graph/SQL
  *     tables, not semantic similarity).
  *   - Otherwise → "semantic" (content-based search over embeddings).
  *
  * @param query - The user's search query.
- * @param memberNames - The family's member names.
+ * @param members - The family's members (names, or names with roles).
  * @returns The resolved mode ("semantic" or "graph").
  */
 export function selectAutoMode(
   query: string,
-  memberNames: string[],
+  members: Array<string | MemberRef>,
 ): ExecutedSearchMode {
-  const mentioned = findMentionedMembers(query, memberNames);
-  if (mentioned.length > 0) return "graph";
+  const refs = members.map((m) => (typeof m === "string" ? { name: m } : m));
+  if (findMentionedPeople(query, refs).length > 0) return "graph";
   if (isTaskQuery(query)) return "graph";
   return "semantic";
 }

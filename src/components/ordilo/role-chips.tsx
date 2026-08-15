@@ -11,6 +11,11 @@ import { cn } from "@/lib/utils";
 export const ROLE_CHIPS = [
   "Partner:in",
   "Kind",
+  // "Tochter"/"Sohn" over just "Kind": the role is what a question like
+  // "die Steuer-ID meiner Tochter" resolves against, and "Kind" cannot
+  // answer it on its own.
+  "Tochter",
+  "Sohn",
   "Mutter",
   "Vater",
   "Oma",

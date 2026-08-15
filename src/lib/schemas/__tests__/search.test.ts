@@ -7,6 +7,8 @@ import {
   selectAutoMode,
   matchesPersonName,
   stripPossessive,
+  findMembersByRelationship,
+  findMentionedPeople,
 } from "@/lib/schemas/search";
 
 // ---------------------------------------------------------------------------
@@ -235,6 +237,97 @@ describe("isTaskQuery", () => {
 
   it("returns true for 'Offen' as a standalone word (genuinely task-related)", () => {
     expect(isTaskQuery("Was ist noch offen?")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findMembersByRelationship / findMentionedPeople
+// ---------------------------------------------------------------------------
+
+describe("findMembersByRelationship", () => {
+  const family = [
+    { name: "Hanna", role: "Tochter" },
+    { name: "Jonas", role: "Sohn" },
+    { name: "Bea", role: "Partner:in" },
+    { name: "Gerda", role: "Oma" },
+  ];
+
+  it("resolves the relationship families ask with", () => {
+    expect(
+      findMembersByRelationship("Wie ist die Steuer-ID meiner Tochter?", family),
+    ).toEqual(["Hanna"]);
+    expect(findMembersByRelationship("Zeig mir Omas Papiere", family)).toEqual([
+      "Gerda",
+    ]);
+  });
+
+  it("resolves the plural to everyone it covers", () => {
+    expect(findMembersByRelationship("Die Zeugnisse meiner Kinder", family)).toEqual([
+      "Hanna",
+      "Jonas",
+    ]);
+    expect(findMembersByRelationship("Die Steuer-IDs meiner Töchter", family)).toEqual([
+      "Hanna",
+    ]);
+  });
+
+  it("falls back to the generic child role when nobody is a 'Tochter'", () => {
+    // Families that only ever typed "Kind" still get their children
+    // scoped — which at least narrows the parents away.
+    const generic = [
+      { name: "Hanna", role: "Kind" },
+      { name: "Jonas", role: "Kind" },
+      { name: "Bea", role: "Partner:in" },
+    ];
+    expect(findMembersByRelationship("Steuer-ID meiner Tochter", generic)).toEqual([
+      "Hanna",
+      "Jonas",
+    ]);
+  });
+
+  it("resolves nothing when no member carries a matching role", () => {
+    // A relationship nobody filled in must not resolve to the wrong person.
+    expect(
+      findMembersByRelationship("Die Steuer-ID meines Opas", [
+        { name: "Hanna", role: "Tochter" },
+      ]),
+    ).toEqual([]);
+    expect(findMembersByRelationship("Wo ist die Stromrechnung?", family)).toEqual([]);
+  });
+
+  it("ignores members without a role", () => {
+    expect(
+      findMembersByRelationship("Steuer-ID meiner Tochter", [
+        { name: "Hanna" },
+        { name: "Jonas", role: null },
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe("findMentionedPeople", () => {
+  const family = [
+    { name: "Hanna", role: "Tochter" },
+    { name: "Mia", role: "Tochter" },
+  ];
+
+  it("lets a name win over the relationship", () => {
+    // "meiner Tochter Hanna" is about Hanna, not about both daughters.
+    expect(findMentionedPeople("Steuer-ID meiner Tochter Hanna", family)).toEqual([
+      "Hanna",
+    ]);
+    expect(findMentionedPeople("Hannas Steuer-ID", family)).toEqual(["Hanna"]);
+  });
+
+  it("falls back to the relationship when no name is given", () => {
+    expect(findMentionedPeople("Steuer-ID meiner Tochter", family)).toEqual([
+      "Hanna",
+      "Mia",
+    ]);
+  });
+
+  it("returns nobody for a question about no person", () => {
+    expect(findMentionedPeople("Wo ist die Stromrechnung?", family)).toEqual([]);
   });
 });
 
