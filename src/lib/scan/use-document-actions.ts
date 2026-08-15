@@ -230,8 +230,17 @@ export function useDocumentActions({
       file: File | null;
     }) => {
       const fid = familyIdRef.current ?? await ensureFamilyId();
-      if (!fid) return;
+      if (!fid) {
+        throw new Error(
+          "Deine Familie konnte nicht geladen werden. Bitte Seite neu laden.",
+        );
+      }
 
+      // Only the save itself is awaited. Everything after it — list
+      // refetch, server-component refresh, LLM enrichment — used to run
+      // inside this await, so the sheet sat on "Wird gespeichert ..." for
+      // the whole analysis (many seconds on mobile) even though the note
+      // was safely stored after the first request.
       const result = await createNote({
         title: params.title,
         content: params.content,
@@ -242,41 +251,56 @@ export function useDocumentActions({
         file: params.file,
       });
 
-      // Pre-mark as triggered so fetchDocuments doesn't auto-trigger
-      // analyze in parallel with the direct call below (409 race).
+      // Pre-mark as triggered so the list's auto-analyze never races the
+      // server-side job or the fallback call below (409 race).
       triggeredAnalysisRef.current.add(result.document_id);
 
-      // Refresh server components so pages that fetch their own documents
-      // (e.g. the collection detail page) show the new note immediately —
-      // its category is already set at creation, so it files itself into
-      // the collection before analysis even runs.
-      router.refresh();
-
-      // Refresh the document list so the new note appears.
-      if (documentsLoadedRef.current) {
-        await fetchDocumentsRef.current(fid);
+      // Show the note right away. The save response carries the stored row
+      // in the list column shape, so this is the real record — not a
+      // guess — and realtime/polling simply update it in place.
+      const created = result.document;
+      if (created) {
+        setDocuments((prev) =>
+          prev.some((doc) => doc.id === created.id) ? prev : [created, ...prev],
+        );
       }
 
-      // Enrich the manually entered note for search and organization. It was
-      // created as confirmed, so the analyze route returns it to confirmed
-      // and it never appears in the review queue.
-      try {
-        const response = await fetch(`/api/documents/${result.document_id}/analyze`, {
-          method: "POST",
-        });
-        if (!response.ok) {
+      // Everything below is deliberately NOT awaited: the caller closes the
+      // sheet as soon as this resolves, and the user stays on the page they
+      // were on while the rest catches up in the background.
+      void (async () => {
+        // Refresh server components so pages that fetch their own documents
+        // (e.g. the collection detail page, the home counters) pick the new
+        // note up — its category is already set at creation, so it files
+        // itself into the collection before analysis even runs.
+        router.refresh();
+
+        if (documentsLoadedRef.current) {
+          await fetchDocumentsRef.current(fid);
+        }
+
+        // The server enqueues enrichment itself (`server_pipeline: true`).
+        // Only fall back to a direct analyze call when it could not.
+        if (result.server_pipeline) return;
+
+        try {
+          const response = await fetch(
+            `/api/documents/${result.document_id}/analyze`,
+            { method: "POST" },
+          );
+          if (!response.ok) {
+            triggeredAnalysisRef.current.delete(result.document_id);
+          }
+        } catch {
+          // Trigger failed — the note itself is saved and confirmed; the
+          // polling loop and the job worker both retry the enrichment.
           triggeredAnalysisRef.current.delete(result.document_id);
         }
-      } catch {
-        // Analysis trigger failed — the document is still in "ocr_done"
-        // and the polling loop will retry automatically.
-        triggeredAnalysisRef.current.delete(result.document_id);
-      }
 
-      // Fetch the updated document to reflect the "analyzing" status.
-      if (documentsLoadedRef.current) {
-        await fetchDocumentsRef.current(fid);
-      }
+        if (documentsLoadedRef.current) {
+          await fetchDocumentsRef.current(fid);
+        }
+      })();
     },
     [
       ensureFamilyId,
@@ -285,6 +309,7 @@ export function useDocumentActions({
       documentsLoadedRef,
       fetchDocumentsRef,
       createNoteCategory,
+      setDocuments,
       router,
     ],
   );

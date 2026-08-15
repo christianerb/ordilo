@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import {
   Camera,
+  ChevronDown,
   Folder,
   Images,
   Loader2,
@@ -10,7 +11,6 @@ import {
   Eye,
   EyeOff,
   Lock,
-  type LucideIcon,
 } from "lucide-react";
 import {
   Sheet,
@@ -57,17 +57,14 @@ export interface CreateNoteSheetProps {
 // Document type selector
 // ---------------------------------------------------------------------------
 
-const TYPE_ICONS: Partial<Record<DocumentType, LucideIcon>> = {
-  invoice: FileText,
-  letter: FileText,
-  contract: FileText,
-  medical: FileText,
-  school: FileText,
-  insurance: FileText,
-  tax: FileText,
-  other: FileText,
-};
-
+/**
+ * Type picker as a dropdown.
+ *
+ * The nine types used to be a wrapped row of chips that ate four lines on a
+ * phone and pushed the note editor below the fold. A plain `<select>` keeps
+ * it to one line and, on iOS and Android, opens the OS picker — the control
+ * people already know — instead of a custom overlay inside a bottom sheet.
+ */
 function DocumentTypeSelector({
   value,
   onChange,
@@ -76,28 +73,36 @@ function DocumentTypeSelector({
   onChange: (type: DocumentType) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {DOCUMENT_TYPES.map((type) => {
-        const Icon = TYPE_ICONS[type] ?? FileText;
-        const active = value === type;
-        return (
-          <button
-            key={type}
-            type="button"
-            onClick={() => onChange(type)}
-            className={cn(
-              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-              active
-                ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
-                : "border-border bg-card text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-            )}
-            aria-pressed={active}
-          >
-            <Icon className="size-3" aria-hidden="true" />
+    <div className="relative">
+      <FileText
+        className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[var(--mist-dark)]"
+        aria-hidden="true"
+      />
+      <select
+        id="note-type"
+        value={value}
+        onChange={(e) => onChange(e.target.value as DocumentType)}
+        className={cn(
+          // An explicit background (not `transparent` like the text inputs
+          // above): browsers paint the native option list with the select's
+          // own background, and a transparent one renders unreadable in
+          // dark mode.
+          "w-full appearance-none rounded-ordilo-sm border border-border bg-card",
+          "py-2 pl-9 pr-9 text-sm text-foreground",
+          "focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        )}
+        data-testid="note-type-select"
+      >
+        {DOCUMENT_TYPES.map((type) => (
+          <option key={type} value={type}>
             {DOCUMENT_TYPE_LABELS[type]}
-          </button>
-        );
-      })}
+          </option>
+        ))}
+      </select>
+      <ChevronDown
+        className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+        aria-hidden="true"
+      />
     </div>
   );
 }
@@ -264,7 +269,7 @@ export function CreateNoteSheet({
 
             {/* Document type */}
             <div className="space-y-1.5">
-              <Label>Typ</Label>
+              <Label htmlFor="note-type">Typ</Label>
               <DocumentTypeSelector value={documentType} onChange={setDocumentType} />
             </div>
 
@@ -399,7 +404,11 @@ export function CreateNoteSheet({
                 Wird gespeichert ...
               </>
             ) : (
-              "Anlegen & analysieren"
+              // The label used to promise "& analysieren" because the save
+              // waited for the analysis. It no longer does — the note is
+              // stored, the sheet closes, enrichment follows in the
+              // background — so the button says what it now actually does.
+              "Anlegen"
             )}
           </Button>
         </div>

@@ -21,13 +21,17 @@ vi.mock("@/lib/pipeline/analyze-step", () => ({
 
 vi.mock("@/lib/supabase/document-helpers", () => ({
   markDocumentFailed: vi.fn().mockResolvedValue(undefined),
+  restoreConfirmedAfterAnalysisFailure: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
 import { performAnalyzeStep } from "@/lib/pipeline/analyze-step";
-import { markDocumentFailed } from "@/lib/supabase/document-helpers";
+import {
+  markDocumentFailed,
+  restoreConfirmedAfterAnalysisFailure,
+} from "@/lib/supabase/document-helpers";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1620,7 +1624,21 @@ describe("create_note confirmation gate", () => {
     );
   });
 
-  it("still reports success when the analysis fails, and marks the document failed", async () => {
+  it("keeps the user's note title out of the model's hands", async () => {
+    const ctx = makeNoteCtx();
+    await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Passwort haengt am Kuehlschrank", confirmed: true },
+      ctx,
+    );
+
+    expect(performAnalyzeStep).toHaveBeenCalledWith(
+      ctx.client,
+      expect.objectContaining({ source: "manual", title: "WLAN" }),
+    );
+  });
+
+  it("keeps the note confirmed when the analysis fails", async () => {
     (performAnalyzeStep as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
       new Error("OpenAI down"),
     );
@@ -1634,7 +1652,10 @@ describe("create_note confirmation gate", () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.analysiert).toBe(false);
-    expect(markDocumentFailed).toHaveBeenCalled();
+    // The note itself is intact — only the enrichment failed, so it must
+    // not be flagged as failed in the document list.
+    expect(markDocumentFailed).not.toHaveBeenCalled();
+    expect(restoreConfirmedAfterAnalysisFailure).toHaveBeenCalled();
   });
 
   it("returns error when the insert fails", async () => {

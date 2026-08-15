@@ -13,6 +13,7 @@ import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
   computeNeedsUserReview,
   normalizeFactValue,
+  DOCUMENT_TYPES,
   type DocumentAnalysis,
   type FamilyContext,
 } from "@/lib/schemas/extraction";
@@ -87,6 +88,17 @@ export interface AnalyzeStepDocument {
    * (before analysis runs) — see the preservation guard below.
    */
   category?: string | null;
+  /**
+   * How the document entered the app. `"manual"` marks a hand-written
+   * note: its title, type and collection come from the user, so analysis
+   * enriches it (summary, tags, entities, search) without rewriting what
+   * the user typed and picked.
+   */
+  source?: string | null;
+  /** The user-given title, preserved for manual notes. */
+  title?: string | null;
+  /** The user-picked document type, preserved for manual notes. */
+  document_type?: string | null;
   /** Whether the document was previously confirmed (re-analyze support). */
   wasConfirmed: boolean;
 }
@@ -253,15 +265,32 @@ export async function performAnalyzeStep(
     familyContext.collections ?? [],
   );
 
+  // What the user typed and picked wins over what the model guesses.
+  //
   // A note created inside a collection is pinned to that collection's
   // category at creation time (documents.category is set before analysis
-  // runs). Preserve it on the first analysis instead of letting the LLM
-  // file the note somewhere else — the user explicitly chose the
-  // collection. Scanned documents have no category before their first
-  // analysis, so this guard only ever fires for pinned manual notes.
-  // Re-analysis of a confirmed document may still re-categorize.
-  if (!document.wasConfirmed && document.category) {
+  // runs). Preserve it instead of letting the LLM file the note somewhere
+  // else — the user explicitly chose the collection. Manual notes are
+  // created as `confirmed`, so the wasConfirmed check alone stopped
+  // covering them and the model quietly re-filed pinned notes.
+  const isManualNote = document.source === "manual";
+  if (document.category && (isManualNote || !document.wasConfirmed)) {
     analysis.suggested_category = document.category;
+  }
+
+  // Same for the title and the type: on a note they are the user's own
+  // input (the title field and the type dropdown in "Dokument anlegen"),
+  // not something extracted from a scan. Everything else the analysis
+  // produces — summary, tags, dates, tasks, search embeddings — still
+  // lands on the note.
+  if (isManualNote) {
+    if (document.title) analysis.title = document.title;
+    if (document.document_type) {
+      const userType = document.document_type;
+      if ((DOCUMENT_TYPES as readonly string[]).includes(userType)) {
+        analysis.document_type = userType as DocumentAnalysis["document_type"];
+      }
+    }
   }
 
   // Override the LLM's self-assessment with the deterministic threshold.

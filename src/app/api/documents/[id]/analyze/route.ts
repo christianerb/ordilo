@@ -5,6 +5,7 @@ import { methodNotAllowed } from "@/lib/api/respond";
 import {
   resolveDocumentWithOwnership,
   markDocumentFailed,
+  restoreConfirmedAfterAnalysisFailure,
 } from "@/lib/supabase/document-helpers";
 import { ExtractionError } from "@/lib/ai/extraction";
 import {
@@ -151,6 +152,9 @@ export async function POST(
       family_id: document.family_id,
       ocr_text: document.ocr_text,
       category: document.category,
+      source: document.source,
+      title: document.title,
+      document_type: document.document_type,
       wasConfirmed,
     });
   } catch (err) {
@@ -168,12 +172,24 @@ export async function POST(
           ? "ANALYSIS_FAILED"
           : "EXTRACTION_FAILED";
 
-    await markDocumentFailed(serverClient, documentId, message, {
-      stage: "analysis",
-      code,
-      cause: err,
-      familyId: document.family_id,
-    });
+    // Re-analyzing a confirmed document is enrichment, not the document's
+    // own processing: roll it back to `confirmed` rather than flagging a
+    // finished document as failed.
+    if (wasConfirmed) {
+      await restoreConfirmedAfterAnalysisFailure(serverClient, documentId, {
+        stage: "analysis",
+        code,
+        cause: err,
+        familyId: document.family_id,
+      });
+    } else {
+      await markDocumentFailed(serverClient, documentId, message, {
+        stage: "analysis",
+        code,
+        cause: err,
+        familyId: document.family_id,
+      });
+    }
 
     const statusCode =
       isExtractionError && err instanceof ExtractionError
