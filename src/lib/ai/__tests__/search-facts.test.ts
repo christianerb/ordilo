@@ -46,6 +46,8 @@ function mockClient(options: {
   documents?: { id: string; title: string | null; status: string }[];
   members?: { name: string; role?: string | null }[];
   entities?: { document_id: string; normalized_value: string }[];
+  /** Rows the fuzzy_fact_search RPC returns (trigram fallback). */
+  fuzzyFacts?: FactRow[];
 }) {
   const {
     facts,
@@ -56,9 +58,19 @@ function mockClient(options: {
     })),
     members = [{ name: "Emma" }, { name: "Hanna" }],
     entities = [],
+    fuzzyFacts = [],
   } = options;
 
+  const rpc = vi.fn((fn: string) =>
+    Promise.resolve(
+      fn === "fuzzy_fact_search"
+        ? { data: fuzzyFacts, error: null }
+        : { data: null, error: null },
+    ),
+  );
+
   return {
+    rpc,
     from: vi.fn((table: string) => {
       switch (table) {
         case "document_facts":
@@ -73,7 +85,9 @@ function mockClient(options: {
           throw new Error(`Unexpected table: ${table}`);
       }
     }),
-  } as unknown as Awaited<ReturnType<typeof createServerClient>>;
+  } as unknown as Awaited<ReturnType<typeof createServerClient>> & {
+    rpc: ReturnType<typeof vi.fn>;
+  };
 }
 
 function fact(overrides: Partial<FactRow> & { document_id: string }): FactRow {
@@ -391,6 +405,41 @@ describe("factSearch", () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].chunk_text).toBe("Aktenzeichen Jugendamt: JA-2026-4471");
+  });
+
+  it("falls back to the trigram index when the wording matches no label", async () => {
+    // Migration 0027 built document_facts_label_trgm_idx for exactly this
+    // and nothing used it: "Aktenzeihen" is one character off.
+    const client = mockClient({
+      facts: [],
+      fuzzyFacts: [
+        fact({
+          document_id: "doc-1",
+          label: "Aktenzeichen Jugendamt",
+          value: "JA-2026-4471",
+          normalized_value: "ja20264471",
+        }),
+      ],
+      documents: [{ id: "doc-1", title: "Brief Jugendamt", status: "confirmed" }],
+    });
+
+    const results = await factSearch(client, "Wie ist das Aktenzeihen?", FAMILY_ID);
+
+    expect(client.rpc).toHaveBeenCalledWith(
+      "fuzzy_fact_search",
+      expect.objectContaining({ p_family_id: FAMILY_ID }),
+    );
+    expect(results.map((r) => r.chunk_text)).toEqual([
+      "Aktenzeichen Jugendamt: JA-2026-4471",
+    ]);
+  });
+
+  it("does not pay for the fuzzy lookup when the exact one answered", async () => {
+    const client = mockClient({ facts: [fact({ document_id: "doc-1" })] });
+
+    await factSearch(client, "Wie ist die Steuer-ID?", FAMILY_ID);
+
+    expect(client.rpc).not.toHaveBeenCalled();
   });
 
   it("ignores facts whose document is not confirmed", async () => {

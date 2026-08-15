@@ -215,14 +215,54 @@ export function compoundNumberStems(query: string): string[] {
   return [...stems];
 }
 
+/**
+ * Whether two words are the same word with a typo — bounded edit distance,
+ * scaled to the word's length, and only for words long enough that a typo
+ * is the likelier explanation than a different word.
+ *
+ * "steuernumer" ≈ "steuernummer", but "sohn" is not "lohn".
+ */
+export function isTypoOf(word: string, target: string): boolean {
+  if (word === target) return true;
+  if (target.length < 6) return false;
+  const budget = target.length >= 10 ? 2 : 1;
+  if (Math.abs(word.length - target.length) > budget) return false;
+
+  // Levenshtein, aborted as soon as the budget is blown.
+  const previous = Array.from({ length: target.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= word.length; i++) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    let best = previous[0];
+    for (let j = 1; j <= target.length; j++) {
+      const cost = word[i - 1] === target[j - 1] ? 0 : 1;
+      const insert = previous[j] + 1;
+      const remove = previous[j - 1] + 1;
+      const replace = diagonal + cost;
+      diagonal = previous[j];
+      previous[j] = Math.min(insert, remove, replace);
+      best = Math.min(best, previous[j]);
+    }
+    if (best > budget) return false;
+  }
+  return previous[target.length] <= budget;
+}
+
 /** Whether a question touches one of the synonym groups. */
 function matchesSynonymGroup(
   group: readonly string[],
   query: string,
+  words: string[],
   stems: string[],
 ): boolean {
   return group.some(
-    (word) => matchesWordBoundary(query, word) || stems.includes(word),
+    (word) =>
+      matchesWordBoundary(query, word) ||
+      stems.includes(word) ||
+      // A typo in the number's name must not silence the whole group —
+      // "Steuernumer" is still a question about the Steuer-ID.
+      words.some((asked) => isTypoOf(asked, word)) ||
+      stems.some((stem) => isTypoOf(stem, word)),
   );
 }
 
@@ -237,10 +277,11 @@ function matchesSynonymGroup(
  * the stems still do their work then.
  */
 export function expandIdentifierTerms(query: string): string[] {
+  const words = queryWords(query);
   const stems = compoundNumberStems(query);
   const terms = new Set<string>();
   for (const group of IDENTIFIER_SYNONYM_GROUPS) {
-    if (matchesSynonymGroup(group, query, stems)) {
+    if (matchesSynonymGroup(group, query, words, stems)) {
       for (const word of group) terms.add(word);
     }
   }
@@ -252,9 +293,10 @@ export function expandIdentifierTerms(query: string): string[] {
  * query classification, not for retrieval.
  */
 export function asksForIdentifier(query: string): boolean {
+  const words = queryWords(query);
   const stems = compoundNumberStems(query);
   return IDENTIFIER_SYNONYM_GROUPS.some((group) =>
-    matchesSynonymGroup(group, query, stems),
+    matchesSynonymGroup(group, query, words, stems),
   );
 }
 

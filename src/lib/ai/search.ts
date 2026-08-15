@@ -430,14 +430,22 @@ export async function factSearch(
 
   if (orFilters.length === 0) return [];
 
-  const { data: facts, error } = await serverClient
+  const { data: exactFacts, error } = await serverClient
     .from("document_facts")
     .select("document_id, label, value, normalized_value, confidence, confirmed")
     .eq("family_id", familyId)
     .eq("confirmed", true)
     .or(orFilters.join(","));
 
-  if (error || !facts || facts.length === 0) return [];
+  // Nothing matched literally — the label may simply be spelled
+  // differently than the question ("Aktenzeihen", "Bestellnumer"). Ask
+  // the trigram index before giving up.
+  const facts =
+    !error && exactFacts && exactFacts.length > 0
+      ? exactFacts
+      : await fuzzyFactSearch(serverClient, familyId, [...labelTerms]);
+
+  if (facts.length === 0) return [];
 
   // Only facts from confirmed documents.
   const docIds = [...new Set(facts.map((f) => f.document_id))];
@@ -489,6 +497,51 @@ export async function factSearch(
 
   // Best fact per document.
   return deduplicateByDocumentId(results);
+}
+
+/**
+ * Minimum word similarity for a fuzzy label hit.
+ *
+ * 0.6 is roughly "one or two characters off in a word of normal length":
+ * "aktenzeihen" still finds "Aktenzeichen", while "rechnung" does not
+ * drag in "Rechnungsnummer"-adjacent noise. Lower would start answering
+ * questions with numbers the family did not ask about, which is worse
+ * than answering none — the exact path already ran and found nothing.
+ */
+const FUZZY_LABEL_THRESHOLD = 0.6;
+
+/**
+ * Trigram lookup over fact labels, via the `fuzzy_fact_search` RPC.
+ *
+ * The fallback for a question whose wording does not literally occur in
+ * any label. Failures degrade to no results: this path only ever runs
+ * when the exact path already came back empty.
+ */
+async function fuzzyFactSearch(
+  serverClient: ServerClient,
+  familyId: string,
+  terms: string[],
+): Promise<
+  Array<{
+    document_id: string;
+    label: string;
+    value: string;
+    normalized_value: string;
+    confidence: number;
+  }>
+> {
+  // Single characters and two-letter words are noise for a trigram match.
+  const usableTerms = terms.filter((term) => term.length >= 4);
+  if (usableTerms.length === 0) return [];
+
+  const { data, error } = await serverClient.rpc("fuzzy_fact_search", {
+    p_family_id: familyId,
+    p_terms: usableTerms,
+    p_threshold: FUZZY_LABEL_THRESHOLD,
+  });
+
+  if (error || !data) return [];
+  return data;
 }
 
 /** A fact row as far as narrowing is concerned. */

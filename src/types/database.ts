@@ -108,6 +108,17 @@ export type SemanticSearchRow = {
   score: number;
 };
 
+/** A single row returned by the fuzzy_fact_search RPC (trigram lookup). */
+export type FuzzyFactSearchRow = {
+  document_id: string;
+  label: string;
+  value: string;
+  normalized_value: string;
+  confidence: number;
+  /** Word similarity of the best matching term, in [0, 1]. */
+  similarity: number;
+};
+
 /** A single row returned by the lexical_search RPC (full-text search). */
 export type LexicalSearchRow = {
   document_id: string;
@@ -1327,6 +1338,18 @@ export type Database = {
           p_limit?: number;
         };
         Returns: LexicalSearchRow[];
+      };
+      // fuzzy_fact_search — trigram lookup over document_facts.label, for
+      // questions with a typo in the number's name ("Aktenzeihen").
+      // See supabase/migrations/0060_fuzzy_fact_search.sql.
+      fuzzy_fact_search: {
+        Args: {
+          p_family_id: string;
+          p_terms: string[];
+          p_threshold?: number;
+          p_limit?: number;
+        };
+        Returns: FuzzyFactSearchRow[];
       };
       // claim_processing_jobs — atomically claim due pending jobs
       // (FOR UPDATE SKIP LOCKED). Service-role only.

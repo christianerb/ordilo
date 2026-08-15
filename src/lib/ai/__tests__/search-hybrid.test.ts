@@ -6,6 +6,7 @@ import {
   expandIdentifierTerms,
   compoundNumberStems,
   asksForIdentifier,
+  isTypoOf,
 } from "@/lib/schemas/extraction";
 import type { SearchResult } from "@/lib/schemas/search";
 
@@ -214,6 +215,15 @@ describe("expandIdentifierTerms", () => {
     expect(expandIdentifierTerms("Wann ist der Termin?")).toEqual([]);
     expect(expandIdentifierTerms("Brief von der Polizei")).toEqual([]);
   });
+
+  it("survives a typo in the number's name", () => {
+    expect(expandIdentifierTerms("Wie ist die Steuernumer?")).toContain(
+      "steuer-id",
+    );
+    expect(expandIdentifierTerms("Wie ist das Aktenzeihen?")).toContain(
+      "aktenzeichen",
+    );
+  });
 });
 
 describe("compoundNumberStems", () => {
@@ -241,6 +251,24 @@ describe("compoundNumberStems", () => {
     expect(expandIdentifierTerms("Wie ist die Aktenzeichennummer?")).toContain(
       "geschäftszeichen",
     );
+  });
+});
+
+describe("isTypoOf", () => {
+  it("accepts a slip in a long word", () => {
+    expect(isTypoOf("steuernumer", "steuernummer")).toBe(true);
+    expect(isTypoOf("aktenzeihen", "aktenzeichen")).toBe(true);
+    expect(isTypoOf("versicherungsnumer", "versicherungsnummer")).toBe(true);
+  });
+
+  it("refuses short words, where a typo and a different word look alike", () => {
+    expect(isTypoOf("lohn", "sohn")).toBe(false);
+    expect(isTypoOf("iban", "idnr")).toBe(false);
+  });
+
+  it("refuses words that are simply different", () => {
+    expect(isTypoOf("kundennummer", "steuernummer")).toBe(false);
+    expect(isTypoOf("rechnungsnummer", "vertragsnummer")).toBe(false);
   });
 });
 
