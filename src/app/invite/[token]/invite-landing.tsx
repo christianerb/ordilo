@@ -35,7 +35,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/ordilo/auth-shell";
 import { ProcessingInviteState } from "./processing-invite-state";
-import { InviteJoinCelebration } from "./invite-join-celebration";
 
 type MergePreview = {
   sourceFamilyName: string;
@@ -57,14 +56,21 @@ type InviteState =
  *
  * States:
  *   - "valid": shows the family name + a one-field email form. Submitting
- *     sends a login code; after verification the invite page joins the user
- *     directly to the family.
- *   - "confirm": signed-in user — asks for an explicit "Familie beitreten"
- *     click before the invite is accepted (a shared link must never join
- *     someone silently).
+ *     sends a login code; verifying the code accepts the invite RIGHT HERE.
+ *     Requesting a code for this invite and typing it in IS the consent —
+ *     bouncing that person to yet another "Familie beitreten?" click would
+ *     make them confirm the same intent three times. (The explicit-confirm
+ *     rule below exists for a different situation.)
+ *   - "confirm": an ALREADY signed-in visitor — asks for an explicit
+ *     "Familie beitreten" click before the invite is accepted, because a
+ *     shared link opened casually must never join someone silently.
  *   - "invalid": expired/revoked/unknown token.
  *   - "already_in_family": the signed-in user already belongs to another
  *     family (one family per account for now).
+ *
+ * Every successful join leaves through /willkommen: the single welcome
+ * moment plus the product intro live there, so this page never shows its
+ * own celebration screen on top.
  *
  * The visual shell matches the login screen (AuthShell with story panel,
  * background shapes, mascot) so the first touchpoint feels like Ordilo.
@@ -95,7 +101,6 @@ export function InviteLanding({
   // (invalid / already_in_family) replaces the confirmation screen.
   const [accepting, setAccepting] = useState(false);
   const [mergeAcknowledged, setMergeAcknowledged] = useState(false);
-  const [joinComplete, setJoinComplete] = useState(false);
   const [resolvedState, setResolvedState] = useState<InviteState>(state);
   const [resolvedMergePreview, setResolvedMergePreview] =
     useState<MergePreview | null>(mergePreview);
@@ -118,8 +123,15 @@ export function InviteLanding({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ notificationId }),
+      // Survives the navigation right after — that is what keepalive is for.
       keepalive: true,
     });
+  }
+
+  /** Every successful join leaves through the welcome flow. */
+  function completeJoin(notificationId?: string) {
+    notifyInviter(notificationId);
+    window.location.assign("/willkommen");
   }
 
   const startCooldown = useCallback(() => {
@@ -240,13 +252,27 @@ export function InviteLanding({
       token: loginCode,
       type: "email",
     });
-    setVerifying(false);
 
     if (verifyError) {
+      setVerifying(false);
       setErrorMessage("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.");
       return;
     }
 
+    // The code was requested FOR this invite and typed in by hand — that is
+    // the consent. Accept right here instead of reloading into a second
+    // "Familie beitreten?" confirmation (the email-link path auto-joins for
+    // the same reason). Anything that needs a decision (merge) or a
+    // dedicated screen still gets it below.
+    const result = await acceptInvite(token);
+    if (result.success || result.reason) {
+      const navigated = await routeAcceptResult(result);
+      if (!navigated) setVerifying(false);
+      return;
+    }
+    // No mapped reason (e.g. a cookie race right after verification):
+    // reload the invite page — the server session is in place, and the
+    // signed-in confirmation can finish the join.
     window.location.assign(`/invite/${token}`);
   }
 
@@ -257,47 +283,57 @@ export function InviteLanding({
     setErrorMessage(null);
   }, []);
 
-  async function handleAccept() {
-    if (accepting) return;
-    setAccepting(true);
-    setErrorMessage(null);
-
-    const result = await acceptInvite(token);
+  /**
+   * Route an accept result to its screen. Returns true when it navigated
+   * away (the caller keeps its spinner running until the page unloads).
+   * Shared by the confirm click and the code verification, so both entry
+   * points land on identical outcomes.
+   */
+  async function routeAcceptResult(
+    result: Awaited<ReturnType<typeof acceptInvite>>,
+  ): Promise<boolean> {
     if (result.success) {
-      notifyInviter(result.notificationId);
-      setJoinComplete(true);
-      setAccepting(false);
-      return;
+      completeJoin(result.notificationId);
+      return true;
     }
 
-    setAccepting(false);
     if (result.reason === "already_in_family" || result.reason === "invalid") {
       setJoinFailure(result.reason);
-      return;
+      return false;
     }
     if (result.reason === "merge_required") {
       const preparation = await getInviteMergePreparation(token);
       if (!preparation.success) {
         setErrorMessage(preparation.error);
-        return;
+        return false;
       }
       // The family situation changed between the two calls: the membership
       // now exists, so the join already happened.
       if (preparation.state === "joined") {
-        setJoinComplete(true);
-        return;
+        completeJoin();
+        return true;
       }
       // No family left to merge — re-render from the server, which lands on
       // a plain confirmation the next click can complete.
       if (preparation.state === "joinable") {
         window.location.reload();
-        return;
+        return true;
       }
       setResolvedState(preparation.state);
       if ("preview" in preparation) setResolvedMergePreview(preparation.preview);
-      return;
+      return false;
     }
     setErrorMessage(result.error);
+    return false;
+  }
+
+  async function handleAccept() {
+    if (accepting) return;
+    setAccepting(true);
+    setErrorMessage(null);
+
+    const navigated = await routeAcceptResult(await acceptInvite(token));
+    if (!navigated) setAccepting(false);
   }
 
   async function handleMerge() {
@@ -310,9 +346,8 @@ export function InviteLanding({
       resolvedMergePreview?.fingerprint ?? "",
     );
     if (result.success) {
-      notifyInviter(result.notificationId);
-      setJoinComplete(true);
-      setAccepting(false);
+      // Keep the spinner running — the page is about to unload.
+      completeJoin(result.notificationId);
       return;
     }
 
@@ -341,31 +376,6 @@ export function InviteLanding({
   // ---------------------------------------------------------------------------
   // Invalid token (also shown when the accept click finds the invite expired)
   // ---------------------------------------------------------------------------
-  if (joinComplete) {
-    return (
-      <AuthShell compact>
-        <div className="space-y-6 text-center" data-testid="invite-join-complete">
-          <InviteJoinCelebration />
-          <div className="space-y-3 animate-card-in [animation-delay:120ms]">
-            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-foreground">Willkommen in der Familie</h1>
-            <p className="mx-auto max-w-xs text-base leading-relaxed text-muted-foreground">
-              Du bist jetzt Teil von „{familyName ?? "eurer gemeinsamen Familie"}“. Alles Wichtige ist ab jetzt gemeinsam an einem Ort.
-            </p>
-          </div>
-          <Button
-            type="button"
-            size="lg"
-            onClick={() => window.location.assign("/home")}
-            className="h-12 w-full rounded-ordilo-md text-base press-scale animate-card-in [animation-delay:180ms]"
-          >
-            Zur Familie
-            <ArrowRight className="size-5" aria-hidden="true" />
-          </Button>
-        </div>
-      </AuthShell>
-    );
-  }
-
   if (resolvedState === "invalid" || joinFailure === "invalid") {
     return (
       <AuthShell compact>

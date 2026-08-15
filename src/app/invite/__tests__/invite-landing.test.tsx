@@ -16,13 +16,27 @@ vi.mock("../actions", () => ({
   requestInviteSignIn,
 }));
 
+const { verifyOtp } = vi.hoisted(() => ({ verifyOtp: vi.fn() }));
+
 vi.mock("@/lib/supabase/client", () => ({
   createClient: vi.fn(() => ({
-    auth: { verifyOtp: vi.fn() },
+    auth: { verifyOtp },
   })),
 }));
 
 const TOKEN = "0123456789abcdef";
+
+// Successful joins leave via window.location.assign("/willkommen"), which
+// jsdom cannot perform — captured as a spy instead.
+const assign = vi.fn();
+const reload = vi.fn();
+
+beforeEach(() => {
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: { assign, reload },
+  });
+});
 
 describe("InviteLanding — confirm state (signed-in user)", () => {
   beforeEach(() => {
@@ -49,11 +63,8 @@ describe("InviteLanding — confirm state (signed-in user)", () => {
     expect(acceptInvite).not.toHaveBeenCalled();
   });
 
-  it("accepts the invite only after the explicit click", async () => {
+  it("accepts the invite only after the explicit click and leaves via the welcome flow", async () => {
     acceptInvite.mockResolvedValue({ success: true });
-    // NOTE: on success the component navigates via window.location.assign,
-    // so jsdom prints a harmless "Not implemented: navigation" warning for
-    // this test (jsdom cannot navigate; the location object is locked).
     render(
       <InviteLanding token={TOKEN} familyName="Familie Müller" state="confirm" />,
     );
@@ -65,8 +76,9 @@ describe("InviteLanding — confirm state (signed-in user)", () => {
     await waitFor(() => {
       expect(acceptInvite).toHaveBeenCalledWith(TOKEN);
     });
-    expect(await screen.findByTestId("invite-join-complete")).toBeInTheDocument();
-    expect(screen.getByTestId("invite-join-celebration")).toBeInTheDocument();
+    // The single welcome moment lives on /willkommen — this page never
+    // shows its own celebration on top.
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/willkommen"));
   });
 
   it("shows the merge decision without reloading when the initial page was stale", async () => {
@@ -238,9 +250,7 @@ describe("InviteLanding — merge state", () => {
     await waitFor(() => {
       expect(mergeOwnedFamilyIntoInvite).toHaveBeenCalledWith(TOKEN, "preview-123");
     });
-
-    expect(await screen.findByTestId("invite-join-complete")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Zur Familie" })).toBeEnabled();
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/willkommen"));
   });
 
   it("offers a simple join when the existing family is empty", () => {
@@ -278,5 +288,95 @@ describe("InviteLanding — merge state", () => {
     expect(
       screen.getByText(/Wir prüfen automatisch in 15 Sekunden erneut/),
     ).toBeInTheDocument();
+  });
+});
+
+describe("InviteLanding — code verification joins directly", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requestInviteSignIn.mockResolvedValue({ success: true });
+  });
+
+  /** Walk the signed-out path up to a filled-in code, ready to submit. */
+  async function reachFilledCodeForm() {
+    render(
+      <InviteLanding token={TOKEN} familyName="Familie Müller" state="valid" />,
+    );
+    fireEvent.change(screen.getByTestId("invite-email-input"), {
+      target: { value: "christian@example.de" },
+    });
+    fireEvent.click(screen.getByTestId("invite-submit-button"));
+    await screen.findByTestId("sent-email");
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "Ziffer 1 des Anmelde-Codes" }),
+      { target: { value: "123456" } },
+    );
+  }
+
+  // Regression: verifying the code used to reload into ANOTHER
+  // "Familie beitreten?" confirmation — the third identical click on the
+  // same path. Requesting a code for this invite and typing it in IS the
+  // consent (the email-link path auto-joins for the same reason).
+  it("accepts the invite right after the code is verified", async () => {
+    verifyOtp.mockResolvedValue({ error: null });
+    acceptInvite.mockResolvedValue({ success: true });
+    await reachFilledCodeForm();
+
+    fireEvent.click(screen.getByRole("button", { name: /familie beitreten/i }));
+
+    await waitFor(() => expect(acceptInvite).toHaveBeenCalledWith(TOKEN));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith("/willkommen"));
+  });
+
+  it("routes a needed merge decision to the merge review, not to a reload", async () => {
+    verifyOtp.mockResolvedValue({ error: null });
+    acceptInvite.mockResolvedValue({
+      success: false,
+      reason: "merge_required",
+      error: "Merge nötig",
+    });
+    getInviteMergePreparation.mockResolvedValue({
+      success: true,
+      state: "merge",
+      preview: {
+        sourceFamilyName: "Familie Schmidt", documentCount: 3, taskCount: 0,
+        calendarEventCount: 0, memberCount: 0, collectionCount: 0,
+        targetAdultCount: 1, fingerprint: "preview-123",
+      },
+    });
+    await reachFilledCodeForm();
+
+    fireEvent.click(screen.getByRole("button", { name: /familie beitreten/i }));
+
+    expect(await screen.findByTestId("invite-merge")).toBeInTheDocument();
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("keeps the code screen with a clear message on a wrong code", async () => {
+    verifyOtp.mockResolvedValue({ error: new Error("otp_expired") });
+    await reachFilledCodeForm();
+
+    fireEvent.click(screen.getByRole("button", { name: /familie beitreten/i }));
+
+    await screen.findByRole("alert");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.",
+    );
+    expect(acceptInvite).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the signed-in invite page when the accept has no mapped reason", async () => {
+    verifyOtp.mockResolvedValue({ error: null });
+    acceptInvite.mockResolvedValue({
+      success: false,
+      error: "Deine Anmeldung ist abgelaufen. Bitte lade die Seite neu.",
+    });
+    await reachFilledCodeForm();
+
+    fireEvent.click(screen.getByRole("button", { name: /familie beitreten/i }));
+
+    await waitFor(() =>
+      expect(assign).toHaveBeenCalledWith(`/invite/${TOKEN}`),
+    );
   });
 });
