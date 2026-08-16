@@ -3,6 +3,7 @@ import {
   FileSignature,
   FileText,
   GraduationCap,
+  KeyRound,
   Landmark,
   Mail,
   Receipt,
@@ -43,6 +44,10 @@ export const DOCUMENT_TYPES = [
   "school",
   "insurance",
   "tax",
+  // Logins, PINs and access codes. The only type whose documents carry an
+  // encrypted secret, so the note form shows the password field for it and
+  // hides it everywhere else.
+  "credentials",
   "note",
   "other",
 ] as const;
@@ -60,6 +65,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   school: "Schule",
   insurance: "Versicherung",
   tax: "Steuer",
+  credentials: "Zugangsdaten",
   note: "Notiz",
   other: "Sonstiges",
 };
@@ -703,6 +709,7 @@ export const DOCUMENT_TYPE_ICONS: Record<DocumentType, LucideIcon> = {
   school: GraduationCap,
   insurance: Shield,
   tax: Landmark,
+  credentials: KeyRound,
   note: FileText,
   other: FileText,
 };

@@ -15,10 +15,13 @@ import {
   AMOUNT_KINDS,
   AMOUNT_KIND_LABELS,
   DEFAULT_FACT_LABEL,
+  DOCUMENT_TYPES,
   IDENTIFIER_FACT_TYPE,
   normalizeFactValue,
   type AmountKind,
+  type DocumentType,
 } from "@/lib/schemas/extraction";
+import { buildCredentialsContent } from "@/lib/credentials";
 import { formatMinorAsGerman } from "@/lib/analysis-cleanup";
 import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
@@ -292,7 +295,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
             type: "string",
             enum: [
               "invoice", "letter", "contract", "medical",
-              "school", "insurance", "tax", "other",
+              "school", "insurance", "tax", "credentials", "other",
             ],
             description: "Filter nach Dokumenttyp. Optional.",
           },
@@ -341,13 +344,18 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "eine Rechnung, eine einzelne Aufgabe). Verwende dies NICHT fuer " +
         "Listen mit mehreren Elementen, allgemeine Erklaerungen, " +
         "Begruessungen/Smalltalk oder wenn die Quellen die Frage nicht " +
-        "beantworten (dann normal in Text antworten).",
+        "beantworten (dann normal in Text antworten). " +
+        "Bei Fragen nach Zugangsdaten (Login, Passwort, Zugang zu einem " +
+        "Portal) IMMER card_type 'zugangsdaten' mit source_document_id " +
+        "verwenden: die Karte liest URL, Benutzername und Passwort selbst " +
+        "aus dem Dokument, macht die Adresse anklickbar, die Werte " +
+        "kopierbar und blendet das Passwort auf Klick ein.",
       parameters: {
         type: "object",
         properties: {
           card_type: {
             type: "string",
-            enum: ["termin", "aufgabe", "dokument", "allgemein"],
+            enum: ["termin", "aufgabe", "dokument", "zugangsdaten", "allgemein"],
             description: "Die Art des Ergebnisses.",
           },
           title: {
@@ -361,7 +369,11 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           },
           fields: {
             type: "array",
-            description: "1-6 Detailfelder als Label/Wert-Paare.",
+            description:
+              "1-6 Detailfelder als Label/Wert-Paare. Bei card_type " +
+              "'zugangsdaten' bleibt die Liste leer bzw. wird ignoriert: " +
+              "URL, Benutzername und Passwort kennst du nicht, die Karte " +
+              "liest sie selbst aus dem Dokument.",
             items: {
               type: "object",
               properties: {
@@ -737,6 +749,10 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "WLAN-Passwort haengt am Kuehlschrank' oder 'Merk dir die Nummer " +
         "vom Kita-Traeger'). Die Notiz wird automatisch analysiert und " +
         "liegt danach in den Dokumenten zur Bestaetigung bereit. " +
+        "Legt auch Zugangsdaten an ('Leg mir die Zugangsdaten fuer X an'): " +
+        "dann document_type='credentials' plus url und username. Das " +
+        "PASSWORT gehoert NICHT hierher — es wird verschluesselt gespeichert " +
+        "und ausschliesslich in der App gesetzt, niemals ueber den Chat. " +
         "Setze confirmed erst auf true, wenn der Nutzer die Notiz klar " +
         "bestaetigt hat — nenne in der Bestaetigungsfrage Titel und Inhalt.",
       parameters: {
@@ -744,11 +760,35 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         properties: {
           title: {
             type: "string",
-            description: "Kurzer Titel der Notiz.",
+            description:
+              "Kurzer Titel der Notiz. Bei Zugangsdaten der Name des " +
+              "Zugangs, z.B. 'Netflix' oder 'Stadtwerke-Portal'.",
           },
           content: {
             type: "string",
-            description: "Der eigentliche Notiztext.",
+            description:
+              "Der eigentliche Notiztext. Bei Zugangsdaten die " +
+              "Beschreibung (optional) — URL und Benutzername gehoeren in " +
+              "ihre eigenen Felder, nicht hier hinein.",
+          },
+          document_type: {
+            type: "string",
+            enum: [...DOCUMENT_TYPES],
+            description:
+              "Dokumenttyp. Standard 'other'. 'credentials' fuer " +
+              "Zugangsdaten (Login zu einem Portal, WLAN, Konto).",
+          },
+          url: {
+            type: "string",
+            description:
+              "Nur bei document_type 'credentials': Adresse der " +
+              "Login-Seite, z.B. 'https://www.netflix.com'.",
+          },
+          username: {
+            type: "string",
+            description:
+              "Nur bei document_type 'credentials': Benutzername bzw. " +
+              "Login-Name.",
           },
           confirmed: {
             type: "boolean",
@@ -2605,13 +2645,34 @@ const NOTE_CONTENT_MAX = 10_000;
  * "confirmed" because the person supplied its text. It may still run the
  * shared analyze step for search and organization, but keeps that confirmed
  * status and never joins the review queue.
+ *
+ * With document_type "credentials" it is also the agentic path for "Leg
+ * mir die Zugangsdaten fuer X an": url and username are folded into the
+ * body by the same rule the note sheet uses. A password is never accepted
+ * here — see the note on `secret` below.
  */
 async function executeCreateNote(
   args: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<string> {
   const title = String(args.title ?? "").trim();
-  const content = String(args.content ?? "").trim();
+  const rawType = String(args.document_type ?? "other");
+  const documentType: DocumentType = (
+    DOCUMENT_TYPES as readonly string[]
+  ).includes(rawType)
+    ? (rawType as DocumentType)
+    : "other";
+  const isCredentials = documentType === "credentials";
+
+  const content = isCredentials
+    ? buildCredentialsContent({
+        title,
+        url: String(args.url ?? ""),
+        username: String(args.username ?? ""),
+        description: String(args.content ?? ""),
+      })
+    : String(args.content ?? "").trim();
+
   if (!title) return JSON.stringify({ error: "Kein Titel angegeben." });
   if (!content) return JSON.stringify({ error: "Kein Notiztext angegeben." });
   if (title.length > NOTE_TITLE_MAX) {
@@ -2630,7 +2691,9 @@ async function executeCreateNote(
     return JSON.stringify({
       needs_confirmation: true,
       note_title: title,
-      message: `Bitte bestaetige: Soll ich die Notiz '${title}' speichern?`,
+      message: isCredentials
+        ? `Bitte bestaetige: Soll ich die Zugangsdaten '${title}' anlegen?`
+        : `Bitte bestaetige: Soll ich die Notiz '${title}' speichern?`,
     });
   }
 
@@ -2654,7 +2717,11 @@ async function executeCreateNote(
       status: "confirmed",
       source: "manual",
       title,
-      document_type: "other",
+      document_type: documentType,
+      // `secret` stays null on purpose. The chat never carries a password:
+      // it would pass through the model and be persisted verbatim in the
+      // chat history, which is exactly what the encrypted column avoids.
+      // The family member sets it in the document itself.
       ocr_text: content,
       page_count: 1,
     })
@@ -2698,11 +2765,12 @@ async function executeCreateNote(
       id: documentId,
       family_id: ctx.familyId,
       ocr_text: content,
-      // The user named this note in the chat — analysis must not rename
-      // it. The type is a placeholder here, so the analysis may still set
-      // it; it is not passed in.
+      // The user named this note in the chat — analysis must not rename it.
       source: "manual",
       title,
+      // Only pinned when the user picked a real type: "Zugangsdaten" must
+      // survive the analysis, while a plain note still gets classified.
+      document_type: isCredentials ? documentType : undefined,
       wasConfirmed: true,
     });
   } catch (err) {
@@ -2749,6 +2817,9 @@ async function executeCreateNote(
     document_id: documentId,
     titel: title,
     analysiert: true,
-    message: `Notiz '${title}' wurde gespeichert.`,
+    message: isCredentials
+      ? `Zugangsdaten '${title}' wurden angelegt. Das Passwort kann im ` +
+        "Dokument selbst hinterlegt werden — ueber den Chat wird keines gespeichert."
+      : `Notiz '${title}' wurde gespeichert.`,
   });
 }

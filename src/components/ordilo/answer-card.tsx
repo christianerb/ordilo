@@ -2,6 +2,7 @@
 
 import {
   CalendarDays,
+  KeyRound,
   ListChecks,
   FileText,
   Info,
@@ -9,12 +10,17 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  CredentialRow,
+  SecretValueRow,
+} from "@/components/ordilo/credential-fields";
 import type { AnswerCard as AnswerCardData } from "@/lib/schemas/chat";
 
 const CARD_TYPE_ICON: Record<AnswerCardData["type"], LucideIcon> = {
   termin: CalendarDays,
   aufgabe: ListChecks,
   dokument: FileText,
+  zugangsdaten: KeyRound,
   allgemein: Info,
 };
 
@@ -22,6 +28,7 @@ const CARD_TYPE_ACTION_LABEL: Record<AnswerCardData["type"], string> = {
   termin: "Zum Termin",
   aufgabe: "Zur Aufgabe",
   dokument: "Zum Dokument",
+  zugangsdaten: "Zum Dokument",
   allgemein: "Zum Dokument",
 };
 
@@ -58,6 +65,11 @@ export interface AnswerCardProps {
 export function AnswerCard({ card, onActionClick, className }: AnswerCardProps) {
   const Icon = CARD_TYPE_ICON[card.type] ?? Info;
   const actionLabel = CARD_TYPE_ACTION_LABEL[card.type] ?? "Zum Dokument";
+  // A credentials card turns its rows into working controls: the address
+  // opens, every value copies, and the password can be revealed — the
+  // point of the card is that nobody has to retype a login by hand.
+  const isCredentials = card.type === "zugangsdaten";
+  const showSecretRow = isCredentials && card.hasSecret && Boolean(card.actionDocumentId);
 
   return (
     <div
@@ -84,16 +96,23 @@ export function AnswerCard({ card, onActionClick, className }: AnswerCardProps) 
         </div>
       </div>
 
-      {card.fields.length > 0 && (
+      {(card.fields.length > 0 || showSecretRow) && (
         <dl className="mt-3 space-y-1.5 border-t border-border pt-3">
-          {card.fields.map((field, i) => (
-            <div key={i} className="flex items-baseline justify-between gap-3">
-              <dt className="shrink-0 text-sm text-muted-foreground">{field.label}</dt>
-              <dd className="min-w-0 truncate text-right text-sm font-medium text-foreground">
-                {field.value}
-              </dd>
-            </div>
-          ))}
+          {card.fields.map((field, i) =>
+            isCredentials ? (
+              <CredentialRow key={i} label={field.label} value={field.value} />
+            ) : (
+              <div key={i} className="flex items-baseline justify-between gap-3">
+                <dt className="shrink-0 text-sm text-muted-foreground">
+                  {field.label}
+                </dt>
+                <dd className="min-w-0 truncate text-right text-sm font-medium text-foreground">
+                  {field.value}
+                </dd>
+              </div>
+            ),
+          )}
+          {showSecretRow && <SecretValueRow documentId={card.actionDocumentId!} />}
         </dl>
       )}
 

@@ -11,13 +11,6 @@ import {
   Calendar,
   Hash,
   ListTodo,
-  Receipt,
-  Mail,
-  FileSignature,
-  Stethoscope,
-  GraduationCap,
-  Shield,
-  Landmark,
   FileText,
   RefreshCw,
   type LucideIcon,
@@ -26,10 +19,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
 import {
+  DOCUMENT_TYPE_ICONS,
   DOCUMENT_TYPE_LABELS,
   DEFAULT_FACT_LABEL,
   type DocumentAnalysis,
-  type DocumentType,
 } from "@/lib/schemas/extraction";
 import { buildHeadline } from "@/components/ordilo/review-card/helpers";
 import {
@@ -37,22 +30,6 @@ import {
   unmatchedPersonName,
 } from "@/components/ordilo/person-picker";
 import type { FamilyMemberOption } from "@/lib/analysis";
-
-// ---------------------------------------------------------------------------
-// Document type → icon
-// ---------------------------------------------------------------------------
-
-const DOCUMENT_TYPE_ICONS: Record<DocumentType, LucideIcon> = {
-  invoice: Receipt,
-  letter: Mail,
-  contract: FileSignature,
-  medical: Stethoscope,
-  school: GraduationCap,
-  insurance: Shield,
-  tax: Landmark,
-  note: FileText,
-  other: FileText,
-};
 
 // ---------------------------------------------------------------------------
 // Derived highlight rows

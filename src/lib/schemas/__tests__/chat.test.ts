@@ -752,6 +752,32 @@ describe("parseAnswerCardArgs", () => {
     expect(parseAnswerCardArgs({ ...validArgs, fields: [] })).toBeNull();
   });
 
+  it("accepts a credentials card without fields", () => {
+    // The model is told it does not know a login's URL, user name or
+    // password — the server fills them from the document. Rejecting the
+    // card here would silently turn the answer back into plain text.
+    const card = parseAnswerCardArgs({
+      card_type: "zugangsdaten",
+      title: "Netflix",
+      fields: [],
+      source_document_id: "doc-1",
+    });
+
+    expect(card).not.toBeNull();
+    expect(card?.type).toBe("zugangsdaten");
+    expect(card?.fields).toEqual([]);
+  });
+
+  it("accepts a credentials card that omits fields entirely", () => {
+    const card = parseAnswerCardArgs({
+      card_type: "zugangsdaten",
+      title: "Netflix",
+      source_document_id: "doc-1",
+    });
+
+    expect(card?.fields).toEqual([]);
+  });
+
   it("rejects more than 6 fields", () => {
     const fields = Array.from({ length: 7 }, (_, i) => ({
       label: `Feld ${i}`,

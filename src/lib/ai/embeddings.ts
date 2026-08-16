@@ -614,6 +614,7 @@ const DOCUMENT_TYPE_QUESTION_LABELS: Record<string, string> = {
   school: "Schulbrief",
   insurance: "Versicherungsdokument",
   tax: "Steuerunterlage",
+  credentials: "Zugangsdaten",
   other: "Dokument",
 };
 

@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { FileText, Lock, Eye, EyeOff, Loader2, Copy, Check } from "lucide-react";
+import { useState } from "react";
+import {
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  FileText,
+  KeyRound,
+  Loader2,
+  Lock,
+} from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -17,6 +26,16 @@ import {
   getStatusLabel,
 } from "@/lib/schemas/document";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useSecretReveal } from "@/lib/hooks/use-secret-reveal";
+import {
+  CredentialRow,
+  SecretValueRow,
+} from "@/components/ordilo/credential-fields";
+import { createClient } from "@/lib/supabase/client";
+import {
+  parseCredentialsContent,
+  type ParsedCredentials,
+} from "@/lib/credentials";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -39,44 +58,8 @@ type DocRow = Database["public"]["Tables"]["documents"]["Row"];
 // ---------------------------------------------------------------------------
 
 function SecretReveal({ documentId }: { documentId: string }) {
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [show, setShow] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const reveal = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/documents/${documentId}/secret`, {
-        method: "POST",
-      });
-      const body = (await res.json()) as { secret?: string; error?: string };
-      if (!res.ok) {
-        throw new Error(body.error ?? "Geheim konnte nicht geladen werden.");
-      }
-      setRevealed(body.secret ?? "");
-      setShow(true);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Geheim konnte nicht geladen werden.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [documentId]);
-
-  const copy = useCallback(async () => {
-    if (revealed == null) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard may be unavailable; ignore silently.
-    }
-  }, [revealed]);
+  const { revealed, show, loading, copied, error, reveal, toggleShow, copy } =
+    useSecretReveal(documentId);
 
   return (
     <div
@@ -91,7 +74,7 @@ function SecretReveal({ documentId }: { documentId: string }) {
             <>
               <button
                 type="button"
-                onClick={() => setShow((s) => !s)}
+                onClick={toggleShow}
                 className="rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 aria-label={show ? "Geheim verbergen" : "Geheim anzeigen"}
               >
@@ -148,6 +131,292 @@ function SecretReveal({ documentId }: { documentId: string }) {
         </p>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Secret editor — set, change or remove the hidden value.
+// A secret used to be settable only while creating a note, so a mistyped
+// password could never be corrected and a document created without one
+// (the chat never carries a password) could never get one.
+// ---------------------------------------------------------------------------
+
+function SecretEditor({
+  documentId,
+  hasSecret,
+  onSaved,
+  onCancel,
+}: {
+  documentId: string;
+  hasSecret: boolean;
+  onSaved: (hasSecret: boolean) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState("");
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/documents/${documentId}/secret`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ secret: value }),
+      });
+      const body = (await res.json()) as { has_secret?: boolean; error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "Passwort konnte nicht gespeichert werden.");
+      }
+      onSaved(Boolean(body.has_secret));
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Passwort konnte nicht gespeichert werden.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="mx-5 mt-4 rounded-ordilo-sm border border-border bg-[var(--sand-light)]/60 px-3 py-2.5"
+      data-testid="document-secret-editor"
+    >
+      <div className="flex items-center gap-2">
+        <Lock className="size-3.5 shrink-0 text-[var(--mist-dark)]" aria-hidden="true" />
+        <span className="text-xs font-medium text-foreground">
+          {hasSecret ? "Passwort ändern" : "Passwort hinterlegen"}
+        </span>
+      </div>
+      <div className="relative mt-2">
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="z. B. Passwort, PIN, Zugangscode"
+          autoComplete="off"
+          className="w-full rounded-ordilo-sm border border-border bg-card px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          data-testid="secret-editor-input"
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          aria-label={show ? "Passwort verbergen" : "Passwort anzeigen"}
+        >
+          {show ? (
+            <EyeOff className="size-3.5" aria-hidden="true" />
+          ) : (
+            <Eye className="size-3.5" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+      <div className="mt-2 flex items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          onClick={save}
+          disabled={saving}
+          className="h-7 px-2.5 text-xs"
+          data-testid="secret-editor-save"
+        >
+          {saving ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : hasSecret && !value.trim() ? (
+            "Passwort entfernen"
+          ) : (
+            "Speichern"
+          )}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onCancel}
+          disabled={saving}
+          className="h-7 px-2.5 text-xs"
+        >
+          Abbrechen
+        </Button>
+      </div>
+      <p className="mt-1.5 text-xs text-muted-foreground">
+        Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
+      </p>
+      {error && (
+        <p className="mt-1.5 text-xs text-destructive" data-testid="secret-editor-error">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Credentials panel — the login itself, as working controls.
+// The document body is markdown that nothing in the app renders, so URL
+// and user name used to be visible only as the AI's paraphrase in the
+// summary. Here they are read back out of the body and shown the way the
+// chat card shows them: address opens, values copy, password reveals.
+// ---------------------------------------------------------------------------
+
+function CredentialsPanel({
+  documentId,
+  hasSecret,
+  onEditSecret,
+}: {
+  documentId: string;
+  hasSecret: boolean;
+  onEditSecret: () => void;
+}) {
+  const [fields, setFields] = useState<ParsedCredentials>({
+    url: null,
+    username: null,
+  });
+
+  useMountEffect(() => {
+    let active = true;
+    // `ocr_text` is deliberately absent from the document list columns
+    // (too heavy for every row on every poll), so it is fetched here for
+    // the one document that is open. RLS scopes the read to the family.
+    void createClient()
+      .from("documents")
+      .select("ocr_text")
+      .eq("id", documentId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active && data?.ocr_text) {
+          setFields(parseCredentialsContent(data.ocr_text));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  });
+
+  return (
+    <div
+      className="mx-5 mt-4 rounded-ordilo-sm border border-border bg-[var(--sand-light)]/60 px-3 py-2.5"
+      data-testid="document-credentials"
+    >
+      <div className="flex items-center gap-2">
+        <KeyRound
+          className="size-3.5 shrink-0 text-[var(--mist-dark)]"
+          aria-hidden="true"
+        />
+        <span className="text-xs font-medium text-foreground">Zugangsdaten</span>
+      </div>
+
+      <dl className="mt-2 space-y-1.5">
+        {fields.url && <CredentialRow label="URL" value={fields.url} />}
+        {fields.username && (
+          <CredentialRow label="Benutzername" value={fields.username} />
+        )}
+        {hasSecret ? (
+          // Remounted after a change so a previously revealed value is
+          // dropped rather than kept next to a password that no longer
+          // matches.
+          <SecretValueRow key={String(hasSecret)} documentId={documentId} />
+        ) : (
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="shrink-0 text-sm text-muted-foreground">Passwort</dt>
+            <dd>
+              <button
+                type="button"
+                onClick={onEditSecret}
+                data-testid="secret-add-button"
+                className="rounded-ordilo-sm px-1.5 py-0.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                Hinterlegen
+              </button>
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      {hasSecret && (
+        <div className="mt-1.5 flex justify-end">
+          <button
+            type="button"
+            onClick={onEditSecret}
+            className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="secret-change-button"
+          >
+            Passwort ändern
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The password area of the detail sheet: reveals an existing secret and
+ * offers to set, change or remove one.
+ *
+ * A "Zugangsdaten" document gets the full login panel; every other type
+ * only gets the reveal control, and only when a secret actually exists —
+ * an empty password field elsewhere would be noise, the same reasoning
+ * the note form follows.
+ */
+function SecretSection({
+  documentId,
+  documentType,
+  initialHasSecret,
+}: {
+  documentId: string;
+  documentType: string | null;
+  initialHasSecret: boolean;
+}) {
+  const [hasSecret, setHasSecret] = useState(initialHasSecret);
+  const [editing, setEditing] = useState(false);
+
+  if (editing) {
+    return (
+      <SecretEditor
+        documentId={documentId}
+        hasSecret={hasSecret}
+        onSaved={(next) => {
+          setHasSecret(next);
+          setEditing(false);
+        }}
+        onCancel={() => setEditing(false)}
+      />
+    );
+  }
+
+  if (documentType === "credentials") {
+    return (
+      <CredentialsPanel
+        documentId={documentId}
+        hasSecret={hasSecret}
+        onEditSecret={() => setEditing(true)}
+      />
+    );
+  }
+
+  if (!hasSecret) return null;
+
+  return (
+    <>
+      {/* Remounted on change so a previously revealed value is dropped
+          rather than kept next to a password that no longer matches. */}
+      <SecretReveal key={String(hasSecret)} documentId={documentId} />
+      <div className="mx-5 mt-1.5 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          data-testid="secret-change-button"
+        >
+          Passwort ändern
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -264,8 +533,13 @@ export function DocumentDetailSheet({
           </SheetDescription>
         </SheetHeader>
 
-        {document && document.secret && (
-          <SecretReveal documentId={document.id} />
+        {document && (
+          <SecretSection
+            key={document.id}
+            documentId={document.id}
+            documentType={document.document_type}
+            initialHasSecret={Boolean(document.secret)}
+          />
         )}
         {document && (
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">

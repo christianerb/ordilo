@@ -5,6 +5,7 @@ import {
   Check,
   CircleCheck,
   FilePenLine,
+  KeyRound,
   FolderPlus,
   ListPlus,
   Loader2,
@@ -89,13 +90,22 @@ function getActionContent(action: ChatAction): {
         title: asText(args.name) ?? asText(args.collection_name) ?? "Neue Sammlung",
         details: [],
       };
-    case "create_note":
+    case "create_note": {
+      const isCredentials = asText(args.document_type) === "credentials";
+      const details: { label: string; value: string }[] = [];
+      if (isCredentials) {
+        const url = asText(args.url);
+        const username = asText(args.username);
+        if (url) details.push({ label: "URL", value: url });
+        if (username) details.push({ label: "Benutzername", value: username });
+      }
       return {
-        icon: FilePenLine,
-        eyebrow: "Notiz anlegen",
-        title: asText(args.title) ?? "Neue Notiz",
-        details: [],
+        icon: isCredentials ? KeyRound : FilePenLine,
+        eyebrow: isCredentials ? "Zugangsdaten anlegen" : "Notiz anlegen",
+        title: asText(args.title) ?? (isCredentials ? "Neue Zugangsdaten" : "Neue Notiz"),
+        details,
       };
+    }
     case "move_document_to_collection":
       return {
         icon: FolderPlus,

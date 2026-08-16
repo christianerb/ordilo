@@ -12,6 +12,7 @@ import {
   type PageTextChunk,
   type TextChunk,
 } from "@/lib/ai/embeddings";
+import { stripCredentialFields } from "@/lib/credentials";
 
 /**
  * Shared embedding-generation step.
@@ -62,13 +63,25 @@ export async function buildDocumentEmbeddings(
     throw new Error("OCR-Seiten konnten nicht geladen werden.");
   }
 
+  // A login's URL and user name are kept out of the index: the chunk text
+  // is embedded by OpenAI and stored for full-text search, so indexing
+  // them would spread the two values that identify the login (and often
+  // the person) across the whole search layer. The document stays findable
+  // by name, description, type and its synthetic questions.
+  const forIndex = (text: string): string =>
+    cleanOcrForEmbedding(
+      document.document_type === "credentials"
+        ? stripCredentialFields(text)
+        : text,
+    );
+
   const pageContents: PageContent[] = (pages ?? [])
     .filter((p) => p.ocr_markdown && p.ocr_markdown.trim())
-    .map((p) => ({ text: cleanOcrForEmbedding(p.ocr_markdown!), page_number: p.page_number }))
+    .map((p) => ({ text: forIndex(p.ocr_markdown!), page_number: p.page_number }))
     .filter((p) => p.text.length > 0);
 
   if (pageContents.length === 0) {
-    const fallbackText = cleanOcrForEmbedding((document.ocr_text ?? "").trim());
+    const fallbackText = forIndex((document.ocr_text ?? "").trim());
     if (fallbackText) {
       pageContents.push({ text: fallbackText, page_number: 1 });
     }

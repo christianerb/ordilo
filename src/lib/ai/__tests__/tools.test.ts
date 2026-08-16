@@ -1574,6 +1574,9 @@ describe("create_collection confirmation gate", () => {
  * supports the insert (select/single) and the confirmed-note analysis transition
  * (update/eq/eq/select/maybeSingle), `.from("document_pages")` the page insert.
  */
+/** The payload of the most recent documents insert, for assertions. */
+let capturedNoteInsert: Record<string, unknown> | null = null;
+
 function makeNoteCtx({
   user = { id: "user-1" } as { id: string } | null,
   insertError = null,
@@ -1581,17 +1584,21 @@ function makeNoteCtx({
   user?: { id: string } | null;
   insertError?: unknown;
 } = {}): ToolContext {
+  capturedNoteInsert = null;
   const from = vi.fn((table: string) => {
     if (table === "documents") {
       return {
-        insert: vi.fn(() => ({
-          select: vi.fn(() => ({
-            single: vi.fn().mockResolvedValue({
-              data: insertError ? null : { id: "note-1" },
-              error: insertError,
-            }),
-          })),
-        })),
+        insert: vi.fn((payload: Record<string, unknown>) => {
+          capturedNoteInsert = payload;
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn().mockResolvedValue({
+                data: insertError ? null : { id: "note-1" },
+                error: insertError,
+              }),
+            })),
+          };
+        }),
         update: vi.fn(() => ({
           eq: vi.fn(() => ({
             eq: vi.fn(() => ({
@@ -1772,6 +1779,126 @@ describe("create_note confirmation gate", () => {
 
     expect(parsed.error).toBe("Notiz konnte nicht gespeichert werden.");
     expect(performAnalyzeStep).not.toHaveBeenCalled();
+  });
+
+  it("stores a plain note as type 'other' and lets the analysis reclassify", async () => {
+    const ctx = makeNoteCtx();
+    await executeTool(
+      "create_note",
+      { title: "WLAN", content: "Text", confirmed: true },
+      ctx,
+    );
+
+    expect(capturedNoteInsert).toMatchObject({ document_type: "other" });
+    // No type pinned → the analysis is free to classify the note.
+    expect(performAnalyzeStep).toHaveBeenCalledWith(
+      ctx.client,
+      expect.objectContaining({ document_type: undefined }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// create_note — Zugangsdaten
+// ---------------------------------------------------------------------------
+
+describe("create_note with document_type 'credentials'", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    (performAnalyzeStep as ReturnType<typeof vi.fn>).mockResolvedValue({});
+  });
+
+  it("asks for confirmation in the language of a login", async () => {
+    const ctx = makeNoteCtx();
+    const parsed = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "Netflix", document_type: "credentials", url: "https://netflix.com" },
+        ctx,
+      ),
+    );
+
+    expect(parsed.needs_confirmation).toBe(true);
+    expect(parsed.message).toContain("Zugangsdaten 'Netflix'");
+  });
+
+  it("folds URL and user name into the body, exactly like the form", async () => {
+    const ctx = makeNoteCtx();
+    await executeTool(
+      "create_note",
+      {
+        title: "Netflix",
+        document_type: "credentials",
+        url: "https://www.netflix.com",
+        username: "familie@example.de",
+        content: "Familienaccount",
+        confirmed: true,
+      },
+      ctx,
+    );
+
+    expect(capturedNoteInsert).toMatchObject({
+      document_type: "credentials",
+      ocr_text:
+        "- **URL:** https://www.netflix.com\n" +
+        "- **Benutzername:** familie@example.de\n\n" +
+        "Familienaccount",
+    });
+    // The chat never carries a password — the column stays untouched.
+    expect(capturedNoteInsert).not.toHaveProperty("secret");
+  });
+
+  it("saves a login that has nothing but a name", async () => {
+    const ctx = makeNoteCtx();
+    const parsed = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "WLAN", document_type: "credentials", confirmed: true },
+        ctx,
+      ),
+    );
+
+    expect(parsed.success).toBe(true);
+    expect(capturedNoteInsert).toMatchObject({ ocr_text: "Zugangsdaten WLAN" });
+  });
+
+  it("pins the type so the analysis cannot reclassify the login", async () => {
+    const ctx = makeNoteCtx();
+    await executeTool(
+      "create_note",
+      { title: "Netflix", document_type: "credentials", username: "a@b.de", confirmed: true },
+      ctx,
+    );
+
+    expect(performAnalyzeStep).toHaveBeenCalledWith(
+      ctx.client,
+      expect.objectContaining({ document_type: "credentials" }),
+    );
+  });
+
+  it("tells the user where the password goes", async () => {
+    const ctx = makeNoteCtx();
+    const parsed = JSON.parse(
+      await executeTool(
+        "create_note",
+        { title: "Netflix", document_type: "credentials", username: "a@b.de", confirmed: true },
+        ctx,
+      ),
+    );
+
+    expect(parsed.message).toContain("Dokument");
+    expect(parsed.message).toContain("Passwort");
+  });
+
+  it("falls back to 'other' for an unknown type", async () => {
+    const ctx = makeNoteCtx();
+    await executeTool(
+      "create_note",
+      { title: "Notiz", content: "Text", document_type: "nonsense", confirmed: true },
+      ctx,
+    );
+
+    expect(capturedNoteInsert).toMatchObject({ document_type: "other" });
   });
 });
 

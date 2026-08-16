@@ -6,11 +6,13 @@ import {
   ChevronDown,
   Folder,
   Images,
+  Link2,
   Loader2,
   FileText,
   Eye,
   EyeOff,
   Lock,
+  User,
 } from "lucide-react";
 import {
   Sheet,
@@ -22,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NoteEditor } from "@/components/ordilo/note-editor";
+import { buildCredentialsContent } from "@/lib/credentials";
 import { cn } from "@/lib/utils";
 import {
   DOCUMENT_TYPES,
@@ -46,6 +49,10 @@ export interface CreateNoteSheetProps {
   /** Called when the user submits the note. */
   onSubmit: (params: {
     title: string;
+    /**
+     * Markdown body. For "Zugangsdaten" notes this is the composed body —
+     * URL and user name followed by the description — never the password.
+     */
     content: string;
     documentType: DocumentType;
     secret: string;
@@ -107,6 +114,10 @@ function DocumentTypeSelector({
   );
 }
 
+/** Shared look of every single-line text field in this sheet. */
+const FIELD_CLASS =
+  "w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -115,6 +126,13 @@ function DocumentTypeSelector({
  * Create Note Sheet — a bottom/right slide-in panel for manually creating
  * a document with a title, markdown text body, document type selection,
  * and an optional image attachment.
+ *
+ * Picking the type "Zugangsdaten" turns the form into a login form: URL,
+ * user name and password fields appear, and the text body below becomes
+ * the description of that login. URL and user name are folded into the
+ * markdown body (see `buildCredentialsContent`) so the document stays a
+ * plain note downstream; only the password takes the separate, encrypted
+ * `secret` path.
  *
  * On submit, calls onSubmit which handles the API call and pipeline
  * triggering. The sheet shows a loading state while submitting.
@@ -130,6 +148,13 @@ export function CreateNoteSheet({
   const [documentType, setDocumentType] = useState<DocumentType>("other");
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
+  const [url, setUrl] = useState("");
+  const [username, setUsername] = useState("");
+  // "Zugangsdaten" is the one type with its own shape: a login has a URL, a
+  // user name and a password, and the free text below is a description of
+  // it. Every other type is a plain note, where those fields — the password
+  // above all — would be meaningless noise.
+  const isCredentials = documentType === "credentials";
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -144,6 +169,8 @@ export function CreateNoteSheet({
     setDocumentType("other");
     setSecret("");
     setShowSecret(false);
+    setUrl("");
+    setUsername("");
     setImageFile(null);
     if (imagePreview) URL.revokeObjectURL(imagePreview);
     setImagePreview(null);
@@ -159,6 +186,20 @@ export function CreateNoteSheet({
     },
     [onOpenChange, reset, submitting],
   );
+
+  const handleTypeChange = useCallback((type: DocumentType) => {
+    setDocumentType(type);
+    // Leaving "Zugangsdaten" hides the login fields — drop what was typed
+    // into them so values the user can no longer see, the password above
+    // all, never reach the server. The description survives: it is the same
+    // free text every other type writes.
+    if (type !== "credentials") {
+      setSecret("");
+      setShowSecret(false);
+      setUrl("");
+      setUsername("");
+    }
+  }, []);
 
   const handleImageSelect = useCallback(
     (file: File) => {
@@ -178,12 +219,25 @@ export function CreateNoteSheet({
   const handleSubmit = useCallback(async () => {
     const trimmedTitle = title.trim();
     const trimmedContent = content.trim();
+    const trimmedUrl = url.trim();
+    const trimmedUsername = username.trim();
 
     if (!trimmedTitle) {
-      setError("Bitte gib einen Titel ein.");
+      setError(
+        isCredentials ? "Bitte gib einen Namen ein." : "Bitte gib einen Titel ein.",
+      );
       return;
     }
-    if (!trimmedContent) {
+    if (isCredentials) {
+      // A login needs at least one thing worth looking up later — which of
+      // the four it is, is the user's business.
+      if (!trimmedUrl && !trimmedUsername && !secret && !trimmedContent) {
+        setError(
+          "Bitte gib mindestens URL, Benutzername, Passwort oder Beschreibung an.",
+        );
+        return;
+      }
+    } else if (!trimmedContent) {
       setError("Bitte schreib etwas in die Notiz.");
       return;
     }
@@ -193,7 +247,14 @@ export function CreateNoteSheet({
     try {
       await onSubmit({
         title: trimmedTitle,
-        content: trimmedContent,
+        content: isCredentials
+          ? buildCredentialsContent({
+              title: trimmedTitle,
+              url: trimmedUrl,
+              username: trimmedUsername,
+              description: trimmedContent,
+            })
+          : trimmedContent,
         documentType,
         // Secrets are opaque credentials. Whitespace decides only whether
         // the optional field is empty; meaningful leading/trailing bytes
@@ -212,9 +273,24 @@ export function CreateNoteSheet({
     } finally {
       setSubmitting(false);
     }
-  }, [title, content, documentType, secret, imageFile, onSubmit, reset, onOpenChange]);
+  }, [
+    title,
+    content,
+    documentType,
+    isCredentials,
+    secret,
+    url,
+    username,
+    imageFile,
+    onSubmit,
+    reset,
+    onOpenChange,
+  ]);
 
-  const canSubmit = title.trim() && content.trim() && !submitting;
+  const hasBody = isCredentials
+    ? Boolean(url.trim() || username.trim() || secret || content.trim())
+    : Boolean(content.trim());
+  const canSubmit = Boolean(title.trim()) && hasBody && !submitting;
 
   return (
     <Sheet open={open} onOpenChange={handleClose}>
@@ -252,17 +328,21 @@ export function CreateNoteSheet({
               </div>
             )}
 
-            {/* Title */}
+            {/* Title — the name of the login for credentials */}
             <div className="space-y-1.5">
-              <Label htmlFor="note-title">Titel</Label>
+              <Label htmlFor="note-title">{isCredentials ? "Name" : "Titel"}</Label>
               <input
                 id="note-title"
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="z. B. Arztbesuch Notiz, Idee fur Urlaub ..."
+                placeholder={
+                  isCredentials
+                    ? "z. B. Netflix, Stadtwerke-Portal, WLAN"
+                    : "z. B. Arztbesuch Notiz, Idee fur Urlaub ..."
+                }
                 maxLength={200}
-                className="w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={FIELD_CLASS}
                 data-testid="note-title-input"
               />
             </div>
@@ -270,53 +350,105 @@ export function CreateNoteSheet({
             {/* Document type */}
             <div className="space-y-1.5">
               <Label htmlFor="note-type">Typ</Label>
-              <DocumentTypeSelector value={documentType} onChange={setDocumentType} />
+              <DocumentTypeSelector value={documentType} onChange={handleTypeChange} />
             </div>
 
-            {/* Note editor */}
+            {/* Login fields — only "Zugangsdaten" notes have them. URL and
+                user name become part of the note text; the password does
+                not: it is stored encrypted, separately. */}
+            {isCredentials && (
+              <div className="space-y-4" data-testid="note-credentials-fields">
+                <div className="space-y-1.5">
+                  <Label htmlFor="note-url" className="flex items-center gap-1.5">
+                    <Link2 className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                    URL
+                  </Label>
+                  <input
+                    id="note-url"
+                    type="url"
+                    inputMode="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    placeholder="z. B. https://www.netflix.com"
+                    maxLength={500}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className={FIELD_CLASS}
+                    data-testid="note-url-input"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="note-username" className="flex items-center gap-1.5">
+                    <User className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                    Benutzername
+                  </Label>
+                  <input
+                    id="note-username"
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="z. B. familie@example.de"
+                    maxLength={200}
+                    autoComplete="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    className={FIELD_CLASS}
+                    data-testid="note-username-input"
+                  />
+                </div>
+
+                <div className="space-y-1.5" data-testid="note-secret-field">
+                  <Label htmlFor="note-secret" className="flex items-center gap-1.5">
+                    <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                    Passwort
+                  </Label>
+                  <div className="relative">
+                    <input
+                      id="note-secret"
+                      type={showSecret ? "text" : "password"}
+                      value={secret}
+                      onChange={(e) => setSecret(e.target.value)}
+                      placeholder="z. B. Passwort, PIN, Zugangscode"
+                      autoComplete="off"
+                      className={cn(FIELD_CLASS, "pr-10")}
+                      data-testid="note-secret-input"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecret((s) => !s)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      aria-label={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
+                    >
+                      {showSecret ? (
+                        <EyeOff className="size-4" aria-hidden="true" />
+                      ) : (
+                        <Eye className="size-4" aria-hidden="true" />
+                      )}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Free text — the note itself, or the description of a login */}
             <div className="space-y-1.5">
-              <Label>Notiz</Label>
+              <Label>{isCredentials ? "Beschreibung" : "Notiz"}</Label>
               <NoteEditor
                 value={content}
                 onChange={setContent}
                 imagePreview={imagePreview}
                 onRemoveImage={handleRemoveImage}
+                placeholder={
+                  isCredentials
+                    ? "z. B. Familienaccount, Sicherheitsfragen, wer ihn nutzt ..."
+                    : undefined
+                }
               />
-            </div>
-
-            {/* Hidden secret (e.g. password) — encrypted server-side, never stored in plain text */}
-            <div className="space-y-1.5">
-              <Label htmlFor="note-secret" className="flex items-center gap-1.5">
-                <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
-                Passwort / Geheim (optional)
-              </Label>
-              <div className="relative">
-                <input
-                  id="note-secret"
-                  type={showSecret ? "text" : "password"}
-                  value={secret}
-                  onChange={(e) => setSecret(e.target.value)}
-                  placeholder="z. B. Passwort, PIN, Zugangscode"
-                  autoComplete="off"
-                  className="w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="note-secret-input"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((s) => !s)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  aria-label={showSecret ? "Geheim verbergen" : "Geheim anzeigen"}
-                >
-                  {showSecret ? (
-                    <EyeOff className="size-4" aria-hidden="true" />
-                  ) : (
-                    <Eye className="size-4" aria-hidden="true" />
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
-              </p>
             </div>
 
             {/* Image attachment */}

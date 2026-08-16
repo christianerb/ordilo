@@ -539,6 +539,7 @@ export const ANSWER_CARD_TYPES = [
   "termin",
   "aufgabe",
   "dokument",
+  "zugangsdaten",
   "allgemein",
 ] as const;
 
@@ -566,6 +567,12 @@ export interface AnswerCard {
   fields: AnswerCardField[];
   /** UUID of the source document to link to, or null if not verifiable. */
   actionDocumentId: string | null;
+  /**
+   * Whether the source document has an encrypted secret to reveal. Set by
+   * the server from the database, never by the model — the model never
+   * sees a password and must not claim one exists.
+   */
+  hasSecret: boolean;
 }
 
 /** Maximum number of detail fields shown on an answer card. */
@@ -577,21 +584,34 @@ const MAX_ANSWER_CARD_FIELDS = 6;
  * capped to keep the card compact and to bound worst-case hallucinated
  * output.
  */
-export const answerCardArgsSchema = z.object({
-  card_type: z.enum(ANSWER_CARD_TYPES),
-  title: z.string().trim().min(1).max(80),
-  subtitle: z.string().trim().max(120).optional(),
-  fields: z
-    .array(
-      z.object({
-        label: z.string().trim().min(1).max(40),
-        value: z.string().trim().min(1).max(200),
-      }),
-    )
-    .min(1)
-    .max(MAX_ANSWER_CARD_FIELDS),
-  source_document_id: z.string().trim().min(1).optional(),
-});
+export const answerCardArgsSchema = z
+  .object({
+    card_type: z.enum(ANSWER_CARD_TYPES),
+    title: z.string().trim().min(1).max(80),
+    subtitle: z.string().trim().max(120).optional(),
+    fields: z
+      .array(
+        z.object({
+          label: z.string().trim().min(1).max(40),
+          value: z.string().trim().min(1).max(200),
+        }),
+      )
+      .max(MAX_ANSWER_CARD_FIELDS)
+      .optional(),
+    source_document_id: z.string().trim().min(1).optional(),
+  })
+  .refine(
+    (args) => args.card_type === "zugangsdaten" || (args.fields?.length ?? 0) > 0,
+    {
+      // Every other card type is only worth showing with detail rows. A
+      // credentials card is the exception: its rows are filled from the
+      // document server-side, and the model is told it does not know
+      // them — so it must be able to send none without the card being
+      // thrown away.
+      path: ["fields"],
+      message: "Mindestens ein Detailfeld erforderlich.",
+    },
+  );
 
 export type AnswerCardArgs = z.infer<typeof answerCardArgsSchema>;
 
@@ -612,14 +632,15 @@ export type AnswerCardArgs = z.infer<typeof answerCardArgsSchema>;
  * @param rawArgs - The raw (already JSON.parsed) tool-call arguments.
  * @returns The validated `AnswerCard` (with `actionDocumentId` set from
  *          `source_document_id` verbatim — the caller must still verify
- *          it against known sources), or `null` if invalid.
+ *          it against known sources, and set `hasSecret` from the
+ *          database), or `null` if invalid.
  */
 export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
   const result = answerCardArgsSchema.safeParse(rawArgs);
   if (!result.success) return null;
 
-  const { card_type, title, subtitle, fields, source_document_id } =
-    result.data;
+  const { card_type, title, subtitle, source_document_id } = result.data;
+  const fields = result.data.fields ?? [];
 
   const allText = [
     title,
@@ -634,5 +655,8 @@ export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
     subtitle: subtitle ?? null,
     fields,
     actionDocumentId: source_document_id ?? null,
+    // The model cannot know this — the caller sets it from the database
+    // once the document reference has been verified.
+    hasSecret: false,
   };
 }

@@ -18,6 +18,7 @@ import {
   type FamilyContext,
 } from "@/lib/schemas/extraction";
 import { canonicalizeCategory } from "@/lib/categories";
+import { stripCredentialFields } from "@/lib/credentials";
 import { buildDocumentEmbeddings } from "@/lib/pipeline/embed-step";
 import {
   previewFieldCount,
@@ -273,7 +274,15 @@ export async function performAnalyzeStep(
   client: Client,
   document: AnalyzeStepDocument,
 ): Promise<DocumentAnalysis> {
-  const fullOcrText = await loadOcrText(client, document);
+  const rawOcrText = await loadOcrText(client, document);
+  // A login's URL and user name never travel to the LLM: they would come
+  // back in the summary and the tags, and from there into every place a
+  // document is quoted. The description is enriched as usual; if that is
+  // all there was, the title carries the analysis.
+  const fullOcrText =
+    document.document_type === "credentials"
+      ? stripCredentialFields(rawOcrText) || document.title || "Zugangsdaten"
+      : rawOcrText;
 
   const familyContext = await fetchFamilyContext(client, document.family_id);
   // Collapse duplicate dates/amounts and strip generic labels ("Datum",

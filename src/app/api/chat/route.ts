@@ -24,6 +24,7 @@ import {
   type PersistedChatAction,
 } from "@/lib/ai/chat-history";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
+import { redactSecretsForStorage } from "@/lib/ai/pii-redact";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
@@ -216,16 +217,22 @@ export async function POST(request: Request): Promise<Response> {
     dbHistory = conversation.dbHistory;
   }
 
+  // Everything that outlives the request is stored password-free. The
+  // model still works on the message as typed — it has to, to act on it —
+  // but `documents.secret` exists so that no password sits in the
+  // database in plain text, and a chat message is stored verbatim.
+  const messageForStorage = redactSecretsForStorage(message);
+
   // Auto-generate a title for a new/untitled conversation once this is
   // its first message.
   if (conversationId && needsTitle && dbHistory.length === 0) {
-    const title = autoGenerateTitle(message);
+    const title = autoGenerateTitle(messageForStorage);
     void updateConversationTitle(serverClient, conversationId, title);
   }
 
   // 9. Save the user message to the conversation (best-effort)
   if (conversationId) {
-    void saveUserMessage(serverClient, conversationId, familyId, message);
+    void saveUserMessage(serverClient, conversationId, familyId, messageForStorage);
   }
   void recordProductEvent(serverClient, {
     userId: user.id,
@@ -357,7 +364,9 @@ export async function POST(request: Request): Promise<Response> {
             serverClient,
             conversationId,
             familyId,
-            fullAnswer,
+            // The prompt forbids repeating a password; this makes a slip
+            // stop at the screen instead of entering the history.
+            redactSecretsForStorage(fullAnswer),
             toolContext.sources,
             answerCard,
             pendingActions,
