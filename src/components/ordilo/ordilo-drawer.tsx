@@ -130,17 +130,28 @@ export function OrdiloDrawer({
   const desktop = useIsDesktop();
   // Only the detail variant leaves the bottom edge; pickers and forms stay
   // thumb-reachable at every width.
-  const direction = variant === "detail" && desktop ? "right" : "bottom";
+  const preferred = variant === "detail" && desktop ? "right" : "bottom";
+
+  // Changing the anchor remounts the drawer (see the `key` below), which would
+  // throw away the state of whatever is inside it — a half-corrected document,
+  // a half-typed form. So the anchor is frozen for as long as the drawer is
+  // open and only catches up with the viewport while it is closed. Resizing
+  // past `lg` mid-edit therefore leaves the open drawer where it is; the next
+  // time it opens, it opens on the right.
+  const [anchor, setAnchor] = React.useState<"bottom" | "right">(preferred);
+  if (!open && anchor !== preferred) setAnchor(preferred);
+
   const withClose = showCloseButton ?? variant !== "picker";
 
   return (
     <Drawer
-      // vaul reads the direction when it wires up its drag physics, so a
-      // viewport crossing `lg` has to remount rather than re-style.
-      key={direction}
+      // vaul sets up its drag physics and enter animation from the direction,
+      // so switching sides needs a fresh mount rather than a restyle. Safe
+      // here because `anchor` only ever changes while the drawer is closed.
+      key={anchor}
       open={open}
       onOpenChange={onOpenChange}
-      direction={direction}
+      direction={anchor}
       dismissible={dismissible}
     >
       <VariantContext.Provider value={variant}>

@@ -1,38 +1,35 @@
 "use client";
 
-import { useState } from "react";
-
-import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * Subscribe to a CSS media query.
  *
- * Always reports `false` on the first render — the server has no viewport, so
- * assuming the smaller layout keeps hydration deterministic and lets the
- * desktop branch appear a frame later rather than mismatching. Callers that
- * change layout on the result should therefore treat mobile as the default.
- *
- * The subscription is a browser API lifecycle, one of the sanctioned uses for
- * `useMountEffect` (see that hook's note on the no-useEffect rule).
+ * `useSyncExternalStore` rather than state plus a mount effect, because the
+ * effect version reports `false` on the first client render and corrects
+ * itself a frame later. Anything that changes layout on the result — a drawer
+ * choosing its anchor, say — would then have to either flicker or re-mount.
+ * Here the client reads the real value on its very first render, while the
+ * server snapshot stays `false` so hydration still matches.
  */
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      if (typeof window.matchMedia !== "function") return () => {};
+      const media = window.matchMedia(query);
+      media.addEventListener("change", onStoreChange);
+      return () => media.removeEventListener("change", onStoreChange);
+    },
+    [query],
+  );
 
-  useMountEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia(query);
-    const sync = () => setMatches(media.matches);
-    sync();
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", sync);
-      return () => media.removeEventListener("change", sync);
-    }
-    // Safari < 14 only has the deprecated listener API.
-    media.addListener(sync);
-    return () => media.removeListener(sync);
-  });
+  const getSnapshot = useCallback(() => {
+    if (typeof window === "undefined") return false;
+    if (typeof window.matchMedia !== "function") return false;
+    return window.matchMedia(query).matches;
+  }, [query]);
 
-  return matches;
+  return useSyncExternalStore(subscribe, getSnapshot, () => false);
 }
 
 /** The breakpoint at which a detail drawer moves from the bottom to the side. */

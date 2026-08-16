@@ -293,7 +293,7 @@ export function CreateNoteSheet({
 
   return (
     <OrdiloDrawer
-      variant="detail"
+      variant="form"
       open={open}
       onOpenChange={handleClose}
       data-testid="create-note-sheet"

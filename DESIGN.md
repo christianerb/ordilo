@@ -267,6 +267,10 @@ Every overlay in the app is a drawer, and there is one component for them: `Ordi
 - **Form** — something to fill in and submit. Bottom-anchored and centred so it stays thumb-reachable on a phone and does not sprawl on a desktop. Max height 85dvh.
 - **Detail** — a record to read and edit. The only variant that moves: bottom on a phone, right-hand panel from `lg` up. A full-height side panel on a phone is the worst of both, and a bottom sheet wastes a wide screen.
 
+Creating something is a Form, not a Detail, however much of the record it collects: "Neue Aufgabe", "Dokument anlegen" and "Neuer Termin" are all fill-and-submit. Detail is for a record that already exists.
+
+**The Fixed Anchor Rule.** A Detail drawer picks its anchor when it opens and keeps it until it closes. Switching sides mid-session means remounting, which would discard whatever the drawer is holding — a half-corrected document, a half-typed form. Resizing past `lg` while a drawer is open therefore leaves it where it is; the next open honours the new width.
+
 Shared anatomy, in this order: a header that names the thing, a body that scrolls, an optional footer that does not. The footer is pinned so the primary action never scrolls out of reach.
 
 - **Corner Style:** 28px on the top edge of bottom-anchored drawers (rounded-ordilo-xl — the DESIGN.md ceiling, and the one place it is used). Side panels have no radius; they meet the viewport edge.

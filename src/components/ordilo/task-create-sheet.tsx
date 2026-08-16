@@ -144,7 +144,7 @@ export function TaskCreateSheet({
 
   return (
     <OrdiloDrawer
-      variant="detail"
+      variant="form"
       open={open}
       onOpenChange={handleOpenChange}
       data-testid="task-create-sheet"

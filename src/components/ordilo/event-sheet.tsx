@@ -412,7 +412,7 @@ export function EventSheet({
 
   return (
     <OrdiloDrawer
-      variant="detail"
+      variant="form"
       open={open}
       onOpenChange={handleOpenChange}
     >

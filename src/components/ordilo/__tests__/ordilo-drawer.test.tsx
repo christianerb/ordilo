@@ -121,6 +121,63 @@ describe("OrdiloDrawer", () => {
     expect(content()).toHaveAttribute("data-vaul-drawer-direction", "right");
   });
 
+  it("keeps an open detail drawer where it is when the viewport crosses lg", () => {
+    // Switching anchor remounts the drawer, which would discard whatever the
+    // child is holding — a half-corrected document, a half-typed form. The
+    // anchor is therefore frozen until the drawer closes.
+    stubDesktop(false);
+    const { rerender } = render(
+      <OrdiloDrawer variant="detail" open onOpenChange={vi.fn()}>
+        <OrdiloDrawerHeader title="Dokument" description="Details" />
+        <OrdiloDrawerBody>
+          <input data-testid="draft" defaultValue="" />
+        </OrdiloDrawerBody>
+      </OrdiloDrawer>,
+    );
+    (screen.getByTestId("draft") as HTMLInputElement).value = "halb getippt";
+
+    stubDesktop(true);
+    rerender(
+      <OrdiloDrawer variant="detail" open onOpenChange={vi.fn()}>
+        <OrdiloDrawerHeader title="Dokument" description="Details" />
+        <OrdiloDrawerBody>
+          <input data-testid="draft" defaultValue="" />
+        </OrdiloDrawerBody>
+      </OrdiloDrawer>,
+    );
+
+    expect(content()).toHaveAttribute("data-vaul-drawer-direction", "bottom");
+    expect((screen.getByTestId("draft") as HTMLInputElement).value).toBe(
+      "halb getippt",
+    );
+  });
+
+  it("picks up the new anchor the next time it opens", () => {
+    stubDesktop(false);
+    const child = (
+      <OrdiloDrawerHeader title="Dokument" description="Details" />
+    );
+    const { rerender } = render(
+      <OrdiloDrawer variant="detail" open onOpenChange={vi.fn()}>
+        {child}
+      </OrdiloDrawer>,
+    );
+
+    stubDesktop(true);
+    rerender(
+      <OrdiloDrawer variant="detail" open={false} onOpenChange={vi.fn()}>
+        {child}
+      </OrdiloDrawer>,
+    );
+    rerender(
+      <OrdiloDrawer variant="detail" open onOpenChange={vi.fn()}>
+        {child}
+      </OrdiloDrawer>,
+    );
+
+    expect(content()).toHaveAttribute("data-vaul-drawer-direction", "right");
+  });
+
   it("gives the body the scroll and leaves the footer pinned", () => {
     renderDrawer({
       children: (
