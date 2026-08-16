@@ -18,11 +18,14 @@ vi.mock("@/app/(app)/familie/actions", () => ({
 }));
 
 import { FamilieClient } from "@/app/(app)/familie/familie-client";
+import type { MemberWithRelations } from "@/app/(app)/familie/actions";
 import type { Database } from "@/types/database";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
-function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
+function makeMember(
+  overrides: Partial<MemberWithRelations> = {},
+): MemberWithRelations {
   return {
     id: "mem-1",
     family_id: "fam-1",
@@ -35,8 +38,10 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations_backfilled_at: null,
+    relations: [],
     ...overrides,
-  };
+  } satisfies MemberRow & { relations: MemberWithRelations["relations"] };
 }
 
 describe("FamilieClient — fetch error state", () => {

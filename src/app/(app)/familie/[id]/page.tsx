@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { loadMemberRelations } from "@/lib/family/relations-db";
 import { ProfileClient } from "./profile-client";
 import type { Database } from "@/types/database";
 
@@ -63,15 +64,13 @@ export default async function PersonProfilePage({
         .then((res) => res.data?.signedUrl ?? null)
     : Promise.resolve(null);
 
-  const relatedMemberNamesPromise = typedMember.related_member_ids.length > 0
-    ? supabase
-        .from("family_members")
-        .select("name")
-        .in("id", typedMember.related_member_ids)
-        .then((res) => (res.data ?? []).map((m) => m.name))
-    : Promise.resolve([] as string[]);
+  // The member's relationships ("Mutter von Emma und Hanna", …). This page
+  // only displays them, so a failed read costs a line of text, nothing more.
+  const relationsPromise = loadMemberRelations(supabase, typedMember.id).then(
+    (result) => result.relations,
+  );
 
-  // Other members of the same family, for the edit form's "Beziehung zu" select.
+  // Other members of the same family — the people a relation can point at.
   const otherMembersPromise = supabase
     .from("family_members")
     .select("id, name")
@@ -95,9 +94,9 @@ export default async function PersonProfilePage({
 
   // If no documents are linked, pass empty data to the client component
   // (which will render empty states for each section).
-  const [photoUrl, relatedMemberNames, otherMembers] = await Promise.all([
+  const [photoUrl, relations, otherMembers] = await Promise.all([
     photoUrlPromise,
-    relatedMemberNamesPromise,
+    relationsPromise,
     otherMembersPromise,
   ]);
 
@@ -109,7 +108,7 @@ export default async function PersonProfilePage({
         tasks={[]}
         dateEntities={[]}
         photoUrl={photoUrl}
-        relatedMemberNames={relatedMemberNames}
+        relations={relations}
         otherMembers={otherMembers}
       />
     );
@@ -218,7 +217,7 @@ export default async function PersonProfilePage({
       dateEntities={dateEntities}
       documentTitles={docTitleMap}
       photoUrl={photoUrl}
-      relatedMemberNames={relatedMemberNames}
+      relations={relations}
       otherMembers={otherMembers}
     />
   );

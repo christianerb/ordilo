@@ -2,7 +2,9 @@ import { redirect } from "next/navigation";
 import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 import { resolveMemberPhotoUrls } from "@/lib/member-photos";
+import { loadFamilyRelations } from "@/lib/family/relations-db";
 import { FamilieClient } from "./familie-client";
+import type { MemberWithRelations } from "./actions";
 import type { Database } from "@/types/database";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
@@ -74,14 +76,14 @@ export default async function FamiliePage() {
     );
   }
 
-  const members: MemberRow[] = memberData ?? [];
+  const memberRows: MemberRow[] = memberData ?? [];
 
-  // Document counts per member and signed photo URLs both depend only on
-  // the member list — run them concurrently. Failures are non-critical
+  // Document counts, signed photo URLs and relationships all depend only
+  // on the member list — run them concurrently. Failures are non-critical
   // (the page still renders; counts simply omit, photos fall back to the
   // colored-initial avatar), so we don't surface error states for these.
-  const [{ data: personEntities }, photoUrls] = await Promise.all([
-    members.length > 0
+  const [{ data: personEntities }, photoUrls, relationsByMember] = await Promise.all([
+    memberRows.length > 0
       ? supabase
           .from("extracted_entities")
           .select("linked_object_id, document_id")
@@ -89,11 +91,17 @@ export default async function FamiliePage() {
           .eq("confirmed", true)
           .in(
             "linked_object_id",
-            members.map((m) => m.id),
+            memberRows.map((m) => m.id),
           )
       : Promise.resolve({ data: null }),
-    resolveMemberPhotoUrls(members),
+    resolveMemberPhotoUrls(memberRows),
+    loadFamilyRelations(supabase, family.id),
   ]);
+
+  const members: MemberWithRelations[] = memberRows.map((member) => ({
+    ...member,
+    relations: relationsByMember.byMember[member.id] ?? [],
+  }));
 
   // Count unique documents per member (a member can appear on the same
   // document via multiple entity rows — dedupe by document_id).

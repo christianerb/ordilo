@@ -293,11 +293,18 @@ describe("mark_task_done confirmation gate", () => {
 function makeMemberCtx({
   inserted = null,
   insertError = null,
+  relationsRpcError = null,
 }: {
   inserted?: { id: string; name: string } | null;
   insertError?: unknown;
+  /** Make the atomic relation write fail. */
+  relationsRpcError?: unknown;
 } = {}) {
   let capturedInsert: Record<string, unknown> | null = null;
+  let capturedRelations: Record<string, unknown>[] | null = null;
+  const memberDelete = vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  }));
 
   const from = vi.fn((table: string) => {
     if (table === "family_members") {
@@ -313,19 +320,52 @@ function makeMemberCtx({
             })),
           };
         }),
+        // The role is mirrored into family_member_relations, which syncs
+        // the primary role back onto the member row.
+        update: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        })),
+        delete: memberDelete,
+      };
+    }
+    if (table === "family_member_relations") {
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          in: vi.fn().mockResolvedValue({ data: [], error: null }),
+        })),
+        delete: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+          in: vi.fn().mockResolvedValue({ error: null }),
+        })),
+        insert: vi.fn().mockResolvedValue({ error: null }),
       };
     }
     return makeThenableChain(null);
   });
 
+  // The relations are written by the replace_member_relations RPC, which
+  // swaps a member's rows in one transaction.
+  const rpc = vi.fn((name: string, args: Record<string, unknown>) => {
+    if (name === "replace_member_relations") {
+      capturedRelations = args.p_relations as Record<string, unknown>[];
+    }
+    return Promise.resolve({ data: [], error: relationsRpcError ?? null });
+  });
+
   const ctx = {
-    client: { from } as unknown as ToolContext["client"],
+    client: { from, rpc } as unknown as ToolContext["client"],
     familyId: "fam-1",
     sources: [] as ChatSource[],
     speakerName: null,
   };
 
-  return { ctx, getInsert: () => capturedInsert };
+  return {
+    ctx,
+    getInsert: () => capturedInsert,
+    getRelations: () => capturedRelations,
+    memberDelete,
+  };
 }
 
 describe("add_family_member confirmation gate", () => {
@@ -375,15 +415,13 @@ describe("add_family_member confirmation gate", () => {
       role: null,
       birthdate: null,
       avatar_color: null,
-      related_member_ids: [],
-      relationship_label: null,
     });
     expect(parsed.success).toBe(true);
     expect(parsed.member_id).toBe("member-1");
   });
 
   it("passes role and birthdate through the shared validation", async () => {
-    const { ctx, getInsert } = makeMemberCtx({
+    const { ctx, getInsert, getRelations } = makeMemberCtx({
       inserted: { id: "member-2", name: "Emma" },
     });
     await executeTool(
@@ -393,6 +431,27 @@ describe("add_family_member confirmation gate", () => {
     );
 
     expect(getInsert()).toMatchObject({ role: "Kind", birthdate: "2020-04-03" });
+    // The role also becomes a relationship, so the /familie UI shows the
+    // same thing for a member added through chat.
+    expect(getRelations()).toEqual([
+      { related_member_id: null, role: "Kind", sort_order: 0 },
+    ]);
+  });
+
+  it("undoes the member when the role cannot be stored as a relation", async () => {
+    const { ctx, memberDelete } = makeMemberCtx({
+      inserted: { id: "member-3", name: "Emma" },
+      relationsRpcError: { message: "boom" },
+    });
+    const result = await executeTool(
+      "add_family_member",
+      { name: "Emma", role: "Kind", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Familienmitglied konnte nicht angelegt werden.");
+    expect(memberDelete).toHaveBeenCalled();
   });
 
   it("returns the shared validation error for an invalid birthdate", async () => {

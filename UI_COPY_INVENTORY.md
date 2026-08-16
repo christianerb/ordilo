@@ -151,7 +151,8 @@ Legend: `→` = context.
 | 3.40 | Daily briefing sentences + suggestion chips (e.g. `"Heute ist „X“ fällig."`, `"Was steht diese Woche an?"`) | `src/lib/home-briefing.ts` | Composed one-sentence briefing under the greeting + contextual composer chips (deterministic, several states) |
 | 3.41 | `"Familienname"` | `src/app/(app)/onboarding/onboarding-flow.tsx` | Field label |
 | 3.42 | `"Name"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Member-name field label |
-| 3.43 | `"Rolle"` / `"Rolle wählen"` | `src/components/ordilo/member-form.tsx` + `src/components/ordilo/role-chips.tsx` | Member-role chip group label (form) / aria-label (onboarding) |
+| 3.43 | `"Familienbeziehungen"` / `"Wer ist X für die anderen?"` / `"Rolle in der Familie"` / `"Beziehung hinzufügen"` / `"Wer ist es?"` / `"Beziehung zu X"` / `"X ist … von Y."` / `"Andere"` / `"Übernehmen"` / `"Beziehung entfernen"` / `"Noch keine Beziehung eingetragen."` / `"Beziehungen gelten für beide Seiten — die andere Person bekommt sie automatisch."` / `"Rolle wählen"` | `src/components/ordilo/relationship-list.tsx` + `src/components/ordilo/member-form.tsx` + `src/app/(app)/familie/[id]/bearbeiten/edit-member-client.tsx` + `src/components/ordilo/role-chips.tsx` | Relationship list: section label + hint, plain-role row, add/person/role pickers, reciprocity note / role chip aria-label (onboarding) |
+| 3.43a | `"Person bearbeiten"` / `"Änderungen speichern"` / `"Person entfernen"` / `"Nur für Geburtstage und Erinnerungen in Ordilo."` / `"Foto hinzufügen"` / `"Foto ändern"` / `"Foto entfernen"` | `src/app/(app)/familie/[id]/bearbeiten/edit-member-client.tsx` + `src/components/ordilo/member-photo-picker.tsx` | Edit-person page: title, primary action, "…" menu item, birthdate hint, photo actions |
 | 3.44 | `"Geburtsdatum"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Optional member-birthdate field label |
 | 3.45 | `"Farbe"` | `src/app/(app)/onboarding/onboarding-flow.tsx` + `src/components/ordilo/member-form.tsx` | Avatar color picker label |
 | 3.46 | `"Daten konnten nicht geladen werden"` | `src/app/(app)/onboarding/onboarding-error.tsx` | Onboarding error heading |
@@ -280,7 +281,7 @@ Legend: `→` = context.
 | 6.25 | `"Bitte gib einen Namen ein"` | `src/components/ordilo/collection-form.tsx` (validation) + `src/lib/schemas/collections.ts` | Collection name validation error |
 | 6.26 | `"Der Familienname ist zu lang (maximal 100 Zeichen)"` | `src/lib/schemas/onboarding.ts` | Family name length error |
 | 6.27 | `"Der Name ist zu lang (maximal 100 Zeichen)"` | `src/lib/schemas/onboarding.ts` | Member name length error |
-| 6.28 | `"Die Rolle ist zu lang (maximal 50 Zeichen)"` | `src/lib/schemas/onboarding.ts` | Member role length error |
+| 6.28 | `"Die Rolle ist zu lang (maximal 50 Zeichen)"` / `"Bitte eine Rolle wählen"` / `"Höchstens 8 Beziehungen pro Person"` / `"Eine Person kann keine Beziehung zu sich selbst haben."` / `"Beziehung konnte nicht gespeichert werden."` | `src/lib/schemas/onboarding.ts` + `src/lib/family/relations.ts` + `src/lib/family/relations-db.ts` | Member role + relationship validation errors |
 | 6.29 | `"Bitte ein gültiges Geburtsdatum eingeben"` | `src/lib/schemas/onboarding.ts` | Member birthdate validation error |
 | 6.30 | `"Bitte E-Mail-Adresse eingeben"` | `src/lib/auth/validation.ts` | Login email required error |
 | 6.31 | `"Bitte gültige E-Mail-Adresse eingeben"` | `src/lib/auth/validation.ts` | Login email invalid format error |

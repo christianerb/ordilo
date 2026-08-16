@@ -7,48 +7,238 @@ describe("MemberForm", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the Rolle chips without needing to open 'Weitere Angaben'", () => {
+  it("shows the relationship list without needing to open 'Weitere Angaben'", () => {
     render(<MemberForm submitLabel="Hinzufügen" onSubmit={vi.fn()} />);
-    expect(screen.getByRole("group", { name: "Rolle" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Kind" })).toBeInTheDocument();
+    expect(screen.getByTestId("relationship-list")).toBeInTheDocument();
   });
 
-  it("submits name and the role picked via chip", () => {
+  it("submits a plain role when there is nobody else in the family yet", () => {
     const onSubmit = vi.fn();
     render(<MemberForm submitLabel="Hinzufügen" onSubmit={onSubmit} />);
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Emma" } });
-    fireEvent.click(screen.getByRole("button", { name: "Kind" }));
+
+    // No other members → the only thing to say is a role.
+    fireEvent.click(screen.getByTestId("relationship-solo-row"));
+    fireEvent.click(screen.getByTestId("solo-role-chip-Kind"));
     fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
+
     expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Emma", role: "Kind" }),
+      expect.objectContaining({
+        name: "Emma",
+        relations: [{ role: "Kind", member_ids: [] }],
+      }),
     );
   });
 
-  it("clears the role when the selected chip is tapped again", () => {
+  it("collects one relationship per person — 'Mutter von Emma', 'Partnerin von Chris'", () => {
     const onSubmit = vi.fn();
-    render(<MemberForm submitLabel="Hinzufügen" onSubmit={onSubmit} />);
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Emma" } });
-    const chip = screen.getByRole("button", { name: "Kind" });
-    fireEvent.click(chip);
-    expect(chip).toHaveAttribute("aria-pressed", "true");
-    fireEvent.click(chip);
-    expect(chip).toHaveAttribute("aria-pressed", "false");
+    render(
+      <MemberForm
+        submitLabel="Hinzufügen"
+        onSubmit={onSubmit}
+        otherMembers={[
+          { id: "mem-2", name: "Emma" },
+          { id: "mem-3", name: "Chris" },
+        ]}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Karina" } });
+
+    fireEvent.click(screen.getByTestId("relationship-add"));
+    fireEvent.click(screen.getByTestId("relationship-pick-mem-2"));
+    fireEvent.click(screen.getByTestId("role-chip-Mutter"));
+
+    fireEvent.click(screen.getByTestId("relationship-add"));
+    fireEvent.click(screen.getByTestId("relationship-pick-mem-3"));
+    fireEvent.click(screen.getByTestId("role-chip-Partner:in"));
+
     fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
     expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({ name: "Emma", role: "" }),
+      expect.objectContaining({
+        name: "Karina",
+        relations: [
+          { role: "Mutter", member_ids: ["mem-2"] },
+          { role: "Partner:in", member_ids: ["mem-3"] },
+        ],
+      }),
     );
   });
 
-  it("shows a pre-existing custom role as an extra selected chip (edit mode)", () => {
+  it("groups two people under the same role", () => {
+    const onSubmit = vi.fn();
     render(
       <MemberForm
         submitLabel="Speichern"
-        onSubmit={vi.fn()}
-        initialValues={{ name: "Emma", role: "Tante" }}
+        onSubmit={onSubmit}
+        otherMembers={[
+          { id: "mem-2", name: "Emma" },
+          { id: "mem-3", name: "Hanna" },
+        ]}
+        initialValues={{
+          name: "Karina",
+          relations: [{ role: "Mutter", member_ids: ["mem-2"] }],
+        }}
       />,
     );
-    const customChip = screen.getByRole("button", { name: "Tante" });
-    expect(customChip).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByTestId("relationship-add"));
+    fireEvent.click(screen.getByTestId("relationship-pick-mem-3"));
+    fireEvent.click(screen.getByTestId("role-chip-Mutter"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [{ role: "Mutter", member_ids: ["mem-2", "mem-3"] }],
+      }),
+    );
+  });
+
+  it("shows saved relationships as one row per person and drops one via the picker", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={onSubmit}
+        otherMembers={[
+          { id: "mem-2", name: "Emma" },
+          { id: "mem-3", name: "Hanna" },
+        ]}
+        initialValues={{
+          name: "Karina",
+          relations: [{ role: "Mutter", member_ids: ["mem-2", "mem-3"] }],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("relationship-row-mem-2")).toHaveTextContent("Emma");
+    expect(screen.getByTestId("relationship-row-mem-3")).toHaveTextContent("Mutter");
+
+    // Removing happens where the role is picked — one affordance per row.
+    fireEvent.click(screen.getByTestId("relationship-row-mem-3"));
+    fireEvent.click(screen.getByTestId("role-remove"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [{ role: "Mutter", member_ids: ["mem-2"] }],
+      }),
+    );
+  });
+
+  it("changes an existing role instead of adding a second one for the same person", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={onSubmit}
+        otherMembers={[{ id: "mem-2", name: "Chris" }]}
+        initialValues={{
+          name: "Karina",
+          relations: [{ role: "Schwester", member_ids: ["mem-2"] }],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("relationship-row-mem-2"));
+    fireEvent.click(screen.getByTestId("role-chip-Partner:in"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [{ role: "Partner:in", member_ids: ["mem-2"] }],
+      }),
+    );
+  });
+
+  it("changes a role in place, keeping the first relationship first", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={onSubmit}
+        otherMembers={[
+          { id: "mem-2", name: "Emma" },
+          { id: "mem-3", name: "Chris" },
+        ]}
+        initialValues={{
+          name: "Karina",
+          relations: [
+            { role: "Mutter", member_ids: ["mem-2"] },
+            { role: "Schwester", member_ids: ["mem-3"] },
+          ],
+        }}
+      />,
+    );
+
+    // Re-picking Emma's role must not push her behind Chris — the first
+    // relationship is what becomes the person's primary role.
+    fireEvent.click(screen.getByTestId("relationship-row-mem-2"));
+    fireEvent.click(screen.getByTestId("role-chip-Tochter"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [
+          { role: "Tochter", member_ids: ["mem-2"] },
+          { role: "Schwester", member_ids: ["mem-3"] },
+        ],
+      }),
+    );
+  });
+
+  it("keeps relationships whose person the list does not know", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={onSubmit}
+        otherMembers={[{ id: "mem-2", name: "Emma" }]}
+        initialValues={{
+          name: "Karina",
+          relations: [
+            { role: "Mutter", member_ids: ["mem-2", "mem-unknown"] },
+            { role: "Partner:in", member_ids: ["mem-gone"] },
+          ],
+        }}
+      />,
+    );
+
+    // Editing something else must not delete what could not be rendered.
+    fireEvent.click(screen.getByTestId("relationship-solo-row"));
+    fireEvent.click(screen.getByTestId("solo-role-chip-Oma"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [
+          { role: "Oma", member_ids: [] },
+          { role: "Mutter", member_ids: ["mem-2", "mem-unknown"] },
+          { role: "Partner:in", member_ids: ["mem-gone"] },
+        ],
+      }),
+    );
+  });
+
+  it("takes a free-text role under 'Andere'", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Hinzufügen"
+        onSubmit={onSubmit}
+        otherMembers={[{ id: "mem-2", name: "Emma" }]}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Uta" } });
+    fireEvent.click(screen.getByTestId("relationship-add"));
+    fireEvent.click(screen.getByTestId("relationship-pick-mem-2"));
+    fireEvent.click(screen.getByTestId("role-chip-custom"));
+    fireEvent.change(screen.getByTestId("role-custom-input"), {
+      target: { value: "Patentante" },
+    });
+    fireEvent.click(screen.getByTestId("role-custom-confirm"));
+    fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [{ role: "Patentante", member_ids: ["mem-2"] }],
+      }),
+    );
   });
 
   it("does not show the photo section without a memberId (add mode)", () => {
@@ -159,65 +349,28 @@ describe("MemberForm", () => {
     );
   });
 
-  it("does not show the 'Beziehung zu' select when there are no other members", () => {
-    render(<MemberForm submitLabel="Hinzufügen" onSubmit={vi.fn()} />);
-    fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
-    expect(screen.queryByLabelText("Beziehung zu")).not.toBeInTheDocument();
-  });
-
-  it("shows the relationship label input only after a related member is selected", () => {
-    render(
-      <MemberForm
-        submitLabel="Hinzufügen"
-        onSubmit={vi.fn()}
-        otherMembers={[{ id: "mem-2", name: "Anna" }]}
-      />,
-    );
-    fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
-    expect(screen.queryByTestId("member-relationship-label")).not.toBeInTheDocument();
-
-    // jsdom has no native PointerEvent, so the Radix trigger's pointerdown
-    // handler can't be exercised reliably here — use its Enter-key handler
-    // instead, which opens the menu the same way for keyboard users.
-    fireEvent.keyDown(screen.getByLabelText("Beziehung zu"), { key: "Enter" });
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Anna" }));
-    expect(screen.getByTestId("member-relationship-label")).toBeInTheDocument();
-  });
-
-  it("submits the selected related members and relationship label", () => {
+  it("keeps the plain-role row available when other members exist", () => {
     const onSubmit = vi.fn();
     render(
       <MemberForm
         submitLabel="Hinzufügen"
         onSubmit={onSubmit}
-        otherMembers={[
-          { id: "mem-2", name: "Anna" },
-          { id: "mem-3", name: "Clara" },
-        ]}
+        otherMembers={[{ id: "mem-2", name: "Emma" }]}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ben" } });
-    fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
-    fireEvent.keyDown(screen.getByLabelText("Beziehung zu"), { key: "Enter" });
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Anna" }));
-    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Clara" }));
-    // Close the menu (Escape) — while it's open, Radix marks the rest of
-    // the page aria-hidden, so the submit button below is unreachable.
-    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
-    fireEvent.change(screen.getByTestId("member-relationship-label"), {
-      target: { value: "Geschwister" },
-    });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Uta" } });
+
+    // "Oma" without the grandchildren in Ordilo is still a thing to say.
+    fireEvent.click(screen.getByTestId("relationship-solo-row"));
+    fireEvent.click(screen.getByTestId("solo-role-chip-Oma"));
     fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
 
     expect(onSubmit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        related_member_ids: ["mem-2", "mem-3"],
-        relationship_label: "Geschwister",
-      }),
+      expect.objectContaining({ relations: [{ role: "Oma", member_ids: [] }] }),
     );
   });
 
-  it("excludes the member's own id from the 'Beziehung zu' options", () => {
+  it("excludes the member's own id from the people a relationship can point at", () => {
     render(
       <MemberForm
         submitLabel="Speichern"
@@ -229,10 +382,9 @@ describe("MemberForm", () => {
         ]}
       />,
     );
-    fireEvent.click(screen.getByText("Weitere Angaben (optional)"));
-    fireEvent.keyDown(screen.getByLabelText("Beziehung zu"), { key: "Enter" });
-    expect(screen.queryByRole("menuitemcheckbox", { name: "Emma" })).not.toBeInTheDocument();
-    expect(screen.getByRole("menuitemcheckbox", { name: "Anna" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("relationship-add"));
+    expect(screen.queryByTestId("relationship-pick-mem-1")).not.toBeInTheDocument();
+    expect(screen.getByTestId("relationship-pick-mem-2")).toBeInTheDocument();
   });
 });
 
