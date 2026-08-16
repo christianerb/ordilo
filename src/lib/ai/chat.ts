@@ -851,14 +851,6 @@ export async function streamAgenticAnswer(
                   const isCredentialsDoc =
                     sourceDoc?.document_type === "credentials";
 
-                  // A login's URL and user name never pass through the
-                  // model — they are kept out of its search results, so
-                  // the card reads them from the document itself. That
-                  // also makes them exact rather than model-relayed.
-                  const credentialFields = isCredentialsDoc
-                    ? credentialCardFields(sourceDoc?.ocr_text ?? "")
-                    : null;
-
                   cardToSend = {
                     ...cardToSend,
                     // The card type decides whether the row values become
@@ -866,10 +858,16 @@ export async function streamAgenticAnswer(
                     // picking the right enum: a card about a credentials
                     // document IS a credentials card.
                     type: isCredentialsDoc ? "zugangsdaten" : cardToSend.type,
-                    fields:
-                      credentialFields && credentialFields.length > 0
-                        ? credentialFields
-                        : cardToSend.fields,
+                    // A login's URL and user name never pass through the
+                    // model — they are kept out of its search results, so
+                    // the card reads them from the document itself. The
+                    // model's own fields are dropped rather than used as a
+                    // fallback: not seeing the values, anything it offers
+                    // here is a guess, and a guessed user name on a
+                    // credentials card is worse than an empty card.
+                    fields: isCredentialsDoc
+                      ? credentialCardFields(sourceDoc?.ocr_text ?? "")
+                      : cardToSend.fields,
                     hasSecret: Boolean(sourceDoc?.secret),
                   };
                 } catch {

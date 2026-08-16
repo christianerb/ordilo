@@ -742,6 +742,41 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     expect(JSON.stringify(lines[0])).not.toContain("geraten@falsch.de");
   });
 
+  it("shows no rows rather than guessed ones when the body has no fields", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "zugangsdaten",
+              title: "WLAN",
+              fields: [{ label: "Benutzername", value: "admin@erfunden.de" }],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext(
+      [{ document_id: "doc-1", title: "WLAN", excerpt: "Zettel am Router", score: 0.9 }],
+      "encrypted-envelope",
+      "credentials",
+      "Zettel am Router",
+    );
+    const stream = await streamAgenticAnswer("Zugangsdaten WLAN?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines[0]).toMatchObject({
+      type: "card",
+      card: { type: "zugangsdaten", fields: [], hasSecret: true },
+    });
+    expect(JSON.stringify(lines[0])).not.toContain("admin@erfunden.de");
+  });
+
   it("upgrades a card about a credentials document to a credentials card", async () => {
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([
