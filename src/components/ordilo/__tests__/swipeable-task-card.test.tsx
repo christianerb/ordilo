@@ -32,6 +32,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     created_at: "2026-08-01T00:00:00Z",
     tags: [],
     assigned_to: null,
+    completed_at: null,
     ...overrides,
   };
 }

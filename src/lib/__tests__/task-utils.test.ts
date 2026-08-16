@@ -9,6 +9,9 @@ import {
   formatTaskDueLabel,
   formatTaskDayHint,
   formatOverdueLabel,
+  recentDoneCutoff,
+  sortTasksByCompletion,
+  RECENT_DONE_DAYS,
   type TaskStatusFilter,
 } from "@/lib/task-utils";
 import type { TaskRow } from "@/lib/task-utils";
@@ -71,6 +74,7 @@ describe("task-utils", () => {
         created_at: "2026-07-01T00:00:00Z",
         tags: [],
         assigned_to: null,
+        completed_at: null,
       },
       {
         id: "2",
@@ -85,6 +89,7 @@ describe("task-utils", () => {
         created_at: "2026-07-02T00:00:00Z",
         tags: [],
         assigned_to: null,
+        completed_at: null,
       },
       {
         id: "3",
@@ -99,6 +104,7 @@ describe("task-utils", () => {
         created_at: "2026-07-03T00:00:00Z",
         tags: [],
         assigned_to: null,
+        completed_at: null,
       },
       {
         id: "4",
@@ -113,6 +119,7 @@ describe("task-utils", () => {
         created_at: "2026-07-04T00:00:00Z",
         tags: [],
         assigned_to: null,
+        completed_at: null,
       },
     ];
 
@@ -257,6 +264,53 @@ describe("task-utils", () => {
       expect(formatOverdueLabel(TODAY, TODAY)).toBeNull();
       expect(formatOverdueLabel("2026-08-11", TODAY)).toBeNull();
       expect(formatOverdueLabel(null, TODAY)).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Completed work
+  // ---------------------------------------------------------------------------
+
+  describe("sortTasksByCompletion", () => {
+    it("reads backwards from now — newest completion first", () => {
+      const sorted = sortTasksByCompletion([
+        { id: "a", completed_at: "2026-08-08T10:00:00Z" },
+        { id: "b", completed_at: "2026-08-10T09:00:00Z" },
+        { id: "c", completed_at: "2026-08-09T18:00:00Z" },
+      ]);
+      expect(sorted.map((t) => t.id)).toEqual(["b", "c", "a"]);
+    });
+
+    it("puts tasks completed before the column existed last", () => {
+      const sorted = sortTasksByCompletion([
+        { id: "unknown", completed_at: null },
+        { id: "known", completed_at: "2026-08-10T09:00:00Z" },
+      ]);
+      expect(sorted.map((t) => t.id)).toEqual(["known", "unknown"]);
+    });
+
+    it("does not mutate its input", () => {
+      const input = [
+        { id: "a", completed_at: "2026-08-08T10:00:00Z" },
+        { id: "b", completed_at: "2026-08-10T09:00:00Z" },
+      ];
+      sortTasksByCompletion(input);
+      expect(input.map((t) => t.id)).toEqual(["a", "b"]);
+    });
+  });
+
+  describe("recentDoneCutoff", () => {
+    it("looks exactly one window back", () => {
+      const now = new Date("2026-08-16T12:00:00.000Z");
+      expect(recentDoneCutoff(now)).toBe("2026-08-09T12:00:00.000Z");
+      expect(RECENT_DONE_DAYS).toBe(7);
+    });
+
+    it("returns a timestamp PostgREST can filter on", () => {
+      // Embedded in an `.or()` string, so it must not contain a comma.
+      expect(recentDoneCutoff(new Date("2026-08-16T12:00:00Z"))).not.toContain(
+        ",",
+      );
     });
   });
 

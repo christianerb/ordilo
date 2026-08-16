@@ -16,6 +16,31 @@ export interface TaskPatch {
   status?: string;
   due_date?: string | null;
   assigned_to?: string | null;
+  /**
+   * Usually derived, not passed. Any patch that moves `status` gets a
+   * matching `completed_at` from {@link withCompletionStamp}, so the two can
+   * never disagree. Pass it explicitly only to restore an exact earlier
+   * value — an undo putting back the original completion time.
+   */
+  completed_at?: string | null;
+}
+
+/**
+ * Keep `completed_at` in step with `status`.
+ *
+ * A task is done at a point in time, and that point is what the Erledigt
+ * list sorts and bounds by. Deriving it here rather than at each call site
+ * means no path — swipe, checkbox, detail sheet, reschedule, undo — can
+ * write one field and forget the other.
+ */
+function withCompletionStamp(updates: TaskPatch): TaskPatch {
+  if (updates.status === undefined) return updates;
+  if ("completed_at" in updates) return updates;
+  return {
+    ...updates,
+    completed_at:
+      updates.status === "done" ? new Date().toISOString() : null,
+  };
 }
 
 /**
@@ -141,7 +166,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       try {
         const { error } = await supabase
           .from("tasks")
-          .update({ status: newStatus })
+          .update(withCompletionStamp({ status: newStatus }))
           .eq("id", taskId);
 
         if (error) {
@@ -181,7 +206,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       try {
         const { error } = await supabase
           .from("tasks")
-          .update({ status: "dismissed" })
+          .update(withCompletionStamp({ status: "dismissed" }))
           .eq("id", taskId);
 
         if (error) {
@@ -212,7 +237,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       try {
         const { error } = await supabase
           .from("tasks")
-          .update(updates)
+          .update(withCompletionStamp(updates))
           .eq("id", taskId);
 
         if (error) {

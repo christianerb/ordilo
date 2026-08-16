@@ -70,6 +70,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     created_at: "2026-08-01T00:00:00Z",
     tags: [],
     assigned_to: null,
+    completed_at: null,
     ...overrides,
   };
 }
@@ -349,6 +350,7 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       status: "open",
       due_date: TODAY_STR,
+      completed_at: null,
     });
 
     const [message, options] = lastToast();
@@ -362,6 +364,7 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate.mock.calls[1][0]).toEqual({
       status: "open",
       due_date: null,
+      completed_at: null,
     });
   });
 
@@ -376,6 +379,7 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       status: "open",
       due_date: TOMORROW_STR,
+      completed_at: null,
     });
     expect(lastToast()[0]).toContain("Verschoben auf");
   });
@@ -391,6 +395,7 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       status: "open",
       due_date: null,
+      completed_at: null,
     });
     expect(lastToast()[0]).toBe("Termin entfernt");
   });
@@ -403,7 +408,10 @@ describe("AufgabenClient — abhaken", () => {
     fireEvent.click(screen.getByTestId("task-checkbox"));
 
     await waitFor(() => expect(mockEq).toHaveBeenCalledWith("id", "t1"));
-    expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
+    // The stamp rides along with the status, so the two can never disagree.
+    const completing = mockUpdate.mock.calls[0][0];
+    expect(completing.status).toBe("done");
+    expect(typeof completing.completed_at).toBe("string");
 
     // The easiest action to trigger by accident is the one that most needs
     // a way back.
@@ -415,7 +423,10 @@ describe("AufgabenClient — abhaken", () => {
       options.action?.onClick();
     });
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
-    expect(mockUpdate.mock.calls[1][0]).toEqual({ status: "open" });
+    expect(mockUpdate.mock.calls[1][0]).toEqual({
+      status: "open",
+      completed_at: null,
+    });
   });
 
   it("moves the ticked-off task into Erledigt", async () => {
@@ -468,28 +479,41 @@ describe("AufgabenClient — the shape of the screen", () => {
   });
 
   it("lists what was just finished first, not what was due longest ago", () => {
-    // Done tasks keep the incoming (newest-created-first) order rather than
-    // being re-sorted by the date they happened to be due.
     renderList([
       makeTask({
         id: "t1",
-        title: "Zuletzt erledigt",
+        title: "Vorgestern erledigt",
         status: "done",
+        // Due long ago, finished long ago — must not outrank a fresh one.
         due_date: isoInDays(-30),
+        completed_at: "2026-08-10T09:00:00Z",
       }),
       makeTask({
         id: "t2",
-        title: "Vorher erledigt",
+        title: "Gerade erledigt",
         status: "done",
         due_date: isoInDays(-1),
+        completed_at: "2026-08-16T09:00:00Z",
       }),
     ]);
 
     fireEvent.click(screen.getByTestId("task-section-header-done"));
     expect(sectionTitles("done")).toEqual([
-      "Zuletzt erledigt",
-      "Vorher erledigt",
+      "Gerade erledigt",
+      "Vorgestern erledigt",
     ]);
+  });
+
+  it("says that Erledigt only shows a window", () => {
+    renderList([makeTask({ id: "t1", status: "done" })]);
+
+    // Bounded on purpose — so it says so rather than letting the family
+    // wonder where last month's tasks went.
+    expect(screen.queryByTestId("task-done-window-note")).toBeNull();
+    fireEvent.click(screen.getByTestId("task-section-header-done"));
+    expect(
+      screen.getByTestId("task-done-window-note").textContent,
+    ).toContain("letzten 7 Tage");
   });
 });
 
@@ -524,6 +548,7 @@ describe("AufgabenClient — verwerfen", () => {
     expect(mockUpdate.mock.calls[1][0]).toEqual({
       status: "open",
       due_date: null,
+      completed_at: null,
     });
   });
 });

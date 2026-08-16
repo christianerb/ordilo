@@ -27,6 +27,9 @@ import {
 import {
   formatTaskDayHint,
   getTaskSection,
+  recentDoneCutoff,
+  RECENT_DONE_DAYS,
+  sortTasksByCompletion,
   sortTasksByDate,
   todayLocalDate,
   type TaskSectionId,
@@ -185,12 +188,15 @@ function TaskSection({
   onAssign: (task: TaskCardData) => void;
   deleteLabel?: string;
 }) {
-  // Open sections read by date; "Erledigt" keeps the incoming order, which
-  // is newest-created first. Ordering finished work by the date it *was*
-  // due puts the oldest chore on top of a list people scan for what they
-  // just ticked off.
+  // Open sections read forwards by due date; "Erledigt" reads backwards
+  // from now by completion. Sorting finished work by the date it *was* due
+  // put the oldest chore on top of the list people scan for what they just
+  // ticked off.
   const sortedTasks = useMemo(
-    () => (section.id === "done" ? tasks : sortTasksByDate(tasks)),
+    () =>
+      section.id === "done"
+        ? sortTasksByCompletion(tasks)
+        : sortTasksByDate(tasks),
     [section.id, tasks],
   );
   const [expanded, setExpanded] = useState(false);
@@ -247,6 +253,18 @@ function TaskSection({
             deleteLabel={deleteLabel}
           />
         ))}
+
+        {/* The section is bounded, so it says so rather than letting the
+            family wonder where last month's tasks went. */}
+        {section.id === "done" && !collapsed && (
+          <p
+            className="px-3 py-3 text-xs text-muted-foreground"
+            data-testid="task-done-window-note"
+          >
+            Zeigt die letzten {RECENT_DONE_DAYS} Tage. Ältere Aufgaben bleiben
+            gespeichert.
+          </p>
+        )}
 
         {hiddenCount > 0 && peek > 0 && (
           <button
@@ -338,6 +356,9 @@ export function AufgabenClient({
       .select("*")
       .eq("family_id", familyId)
       .eq("confirmed", true)
+      // Same window as the server's first load, computed fresh so a
+      // long-lived session keeps moving with it.
+      .or(`status.neq.done,completed_at.gte.${recentDoneCutoff()}`)
       .order("created_at", { ascending: false });
     if (!taskRows) return;
 
@@ -469,7 +490,13 @@ export function AufgabenClient({
       // Mirror exactly the fields being changed, so undo restores those and
       // touches nothing else.
       const previous: TaskPatch = {};
-      if ("status" in updates) previous.status = task.status;
+      if ("status" in updates) {
+        previous.status = task.status;
+        // Snapshot the stamp too: undoing a change that reopened a finished
+        // task should put back the moment it was finished, not invent a new
+        // one when it flips back to done.
+        previous.completed_at = task.completed_at;
+      }
       if ("due_date" in updates) previous.due_date = task.due_date;
       if ("assigned_to" in updates) previous.assigned_to = task.assigned_to;
       setSelectedTask((prev) =>

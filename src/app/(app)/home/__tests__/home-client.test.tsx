@@ -283,7 +283,11 @@ describe("HomeClient — Heute hero", () => {
   it("marks the hero task as done via the hero action", () => {
     render(<HomeClient {...defaultProps} />);
     fireEvent.click(screen.getByTestId("today-hero-done"));
-    expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
+    // Completing anywhere stamps `completed_at`, so the Erledigt window on
+    // /aufgaben sees tasks ticked off from the home dashboard too.
+    const update = mockUpdate.mock.calls[0][0];
+    expect(update.status).toBe("done");
+    expect(typeof update.completed_at).toBe("string");
     // No toast on hero completions — the Erledigt beat in the card is the
     // confirmation; a toast on top would be the same signal twice.
     expect(toast.success).not.toHaveBeenCalled();
@@ -622,7 +626,11 @@ describe("HomeClient — Task Interaction", () => {
     fireEvent.click(checkboxes[0]);
 
     // The update should have been called with status "done"
-    expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
+    // Completing anywhere stamps `completed_at`, so the Erledigt window on
+    // /aufgaben sees tasks ticked off from the home dashboard too.
+    const update = mockUpdate.mock.calls[0][0];
+    expect(update.status).toBe("done");
+    expect(typeof update.completed_at).toBe("string");
   });
 
   it("shows a success toast after a task is marked done", async () => {

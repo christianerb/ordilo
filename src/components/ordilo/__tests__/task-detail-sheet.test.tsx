@@ -25,6 +25,7 @@ const task: TaskCardData = {
   created_at: "2026-07-23T08:00:00Z",
   tags: [],
   assigned_to: null,
+  completed_at: null,
 };
 
 const members = [

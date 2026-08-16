@@ -23,6 +23,8 @@ export interface TaskRow {
   created_at: string;
   tags: string[];
   assigned_to: string | null;
+  /** When it was ticked off; null while open, or if completed long ago. */
+  completed_at: string | null;
 }
 
 /** The three status filter options shown in the Aufgaben tab. */
@@ -83,6 +85,47 @@ export function filterTasksByStatus<
 >(tasks: T[], filter: TaskStatusFilter): T[] {
   if (filter === "all") return tasks;
   return tasks.filter((t) => t.status === filter);
+}
+
+/**
+ * How much finished work the Erledigt section keeps in view.
+ *
+ * Long enough to cover "did I tick that off?" and to take something back a
+ * few days later; short enough that a household nine months in is not
+ * carrying hundreds of rows it will never look at. Older tasks stay in the
+ * database — they are simply not loaded.
+ */
+export const RECENT_DONE_DAYS = 7;
+
+/**
+ * The oldest completion the Aufgaben page loads, as an ISO timestamp.
+ *
+ * Shared by the server query and the client's realtime refetch so the two
+ * can never disagree about what "recently" means.
+ */
+export function recentDoneCutoff(now = new Date()): string {
+  return new Date(now.getTime() - RECENT_DONE_DAYS * 86_400_000).toISOString();
+}
+
+/**
+ * Sort tasks by completion, most recently finished first.
+ *
+ * The Erledigt list is read backwards from now — "what did we just get
+ * done?" — not forwards from the date something happened to be due. Tasks
+ * completed before `completed_at` existed have no timestamp and sort last.
+ *
+ * @param tasks - The list of tasks to sort.
+ * @returns A new sorted array (does not mutate the input).
+ */
+export function sortTasksByCompletion<
+  T extends { completed_at: string | null },
+>(tasks: T[]): T[] {
+  return [...tasks].sort((a, b) => {
+    if (!a.completed_at && !b.completed_at) return 0;
+    if (!a.completed_at) return 1;
+    if (!b.completed_at) return -1;
+    return b.completed_at.localeCompare(a.completed_at);
+  });
 }
 
 /**

@@ -47,6 +47,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     tags: [],
     document_title: "Stromrechnung Juli",
     assigned_to: null,
+    completed_at: null,
     ...overrides,
   };
 }

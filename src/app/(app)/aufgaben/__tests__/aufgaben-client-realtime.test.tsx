@@ -28,6 +28,8 @@ let serverTasks: Record<string, unknown>[] = [];
 let serverDocuments: { id: string; title: string | null }[] = [];
 /** The postgres_changes handler the component registered. */
 let realtimeHandler: (() => void) | null = null;
+/** Arguments every `.or()` filter was called with. */
+let orCalls: unknown[][] = [];
 
 const mockSubscribe = vi.fn();
 const mockRemoveChannel = vi.fn();
@@ -43,6 +45,10 @@ function makeQuery(result: unknown) {
   for (const method of ["eq", "order", "in", "limit"]) {
     query[method] = vi.fn(chain);
   }
+  query.or = vi.fn((...args: unknown[]) => {
+    orCalls.push(args);
+    return query;
+  });
   query.then = (resolve: (value: unknown) => unknown) =>
     Promise.resolve(result).then(resolve);
   return query;
@@ -111,6 +117,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     created_at: "2026-08-01T00:00:00Z",
     tags: [],
     assigned_to: null,
+    completed_at: null,
     ...overrides,
   };
 }
@@ -136,6 +143,7 @@ beforeEach(() => {
   serverTasks = [];
   serverDocuments = [];
   realtimeHandler = null;
+  orCalls = [];
   vi.clearAllMocks();
 });
 
@@ -257,6 +265,17 @@ describe("AufgabenClient — one list across two phones", () => {
     await emitRealtimeChange();
 
     expect(screen.getByText("Trikot")).toBeDefined();
+  });
+
+  it("refetches with the same recent-completions window as the server", async () => {
+    renderList([makeTask({ id: "t1" })]);
+    await emitRealtimeChange();
+
+    // Both loads have to agree on what "recently" means, or a task would
+    // appear and vanish depending on which one ran last.
+    const filters = orCalls.flat().filter((arg) => typeof arg === "string");
+    expect(filters.some((f) => f.includes("status.neq.done"))).toBe(true);
+    expect(filters.some((f) => f.includes("completed_at.gte."))).toBe(true);
   });
 
   it("unsubscribes when the view goes away", () => {
