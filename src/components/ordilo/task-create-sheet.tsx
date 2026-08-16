@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Loader2, User, ChevronDown } from "lucide-react";
+import { Loader2, UserX } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -14,6 +14,15 @@ import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
+import { MemberAvatar } from "@/components/ordilo/member-avatar";
+import { cn } from "@/lib/utils";
+import {
+  formatTaskDayHint,
+  resolveSchedulePreset,
+  TASK_SCHEDULE_PRESET_LABELS,
+  todayLocalDate,
+  type TaskSchedulePreset,
+} from "@/lib/task-utils";
 
 function todayAsIsoDate(): string {
   const today = new Date();
@@ -21,11 +30,23 @@ function todayAsIsoDate(): string {
   return new Date(today.getTime() - offset).toISOString().slice(0, 10);
 }
 
+/** The quick "wann?" answers offered above the date field. */
+const DUE_PRESETS: TaskSchedulePreset[] = ["today", "tomorrow", "weekend"];
+
 export interface TaskCreateSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   familyId: string;
   members: AssigneeOption[];
+  /** Signed avatar URLs by member id (photoless members show initials). */
+  memberPhotoUrls?: Record<string, string>;
+  /**
+   * Who the new task starts out belonging to.
+   *
+   * The list passes the member currently filtered to: looking at Karina's
+   * tasks and tapping "+" almost always means "and one more for Karina".
+   */
+  defaultAssignee?: string | null;
   onCreated: () => void;
 }
 
@@ -34,24 +55,29 @@ export function TaskCreateSheet({
   onOpenChange,
   familyId,
   members,
+  memberPhotoUrls = {},
+  defaultAssignee = null,
   onCreated,
 }: TaskCreateSheetProps) {
   const supabase = createClient();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
-  const [assignedTo, setAssignedTo] = useState<string>("");
+  const [assignedTo, setAssignedTo] = useState<string>(defaultAssignee ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const minDueDate = todayAsIsoDate();
+  // Read on every render so a sheet left open overnight cannot offer
+  // yesterday as "Heute".
+  const todayStr = todayLocalDate();
 
   const resetForm = useCallback(() => {
     setTitle("");
     setDescription("");
     setDueDate("");
-    setAssignedTo("");
+    setAssignedTo(defaultAssignee ?? "");
     setError(null);
-  }, []);
+  }, [defaultAssignee]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -143,34 +169,78 @@ export function TaskCreateSheet({
               </div>
             )}
 
-            {/* Title */}
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Aufgabentitel"
-              autoFocus
-              className="w-full border-0 bg-transparent text-lg font-semibold text-foreground outline-none focus:ring-0"
-              data-testid="task-create-title"
-            />
+            {/* Creating and editing a task are the same job, so this sheet
+                uses the same fields and the same quick answers as the
+                detail sheet rather than its own vocabulary. */}
+            <div>
+              <label
+                htmlFor="task-create-title"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Aufgabe
+              </label>
+              <input
+                id="task-create-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Was ist zu tun?"
+                autoFocus
+                className="w-full rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base font-medium leading-snug text-foreground outline-none transition-colors placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                data-testid="task-create-title"
+              />
+            </div>
 
             {/* Description */}
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Notizen, Details, was zu tun ist…"
-              rows={3}
-              className="mt-3 w-full resize-none rounded-ordilo-sm border-0 bg-secondary/50 px-3 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:bg-secondary/80 focus:ring-0"
-              data-testid="task-create-description"
-            />
+            <div className="mt-4">
+              <label
+                htmlFor="task-create-description"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Notiz
+              </label>
+              <textarea
+                id="task-create-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Notizen, Details, was zu tun ist…"
+                rows={3}
+                className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                data-testid="task-create-description"
+              />
+            </div>
 
             {/* Due date */}
-            <div className="mt-3">
+            <div className="mt-4">
               <label
                 htmlFor="task-create-due-date"
                 className="mb-2 block text-sm font-medium text-foreground"
               >
                 Fällig am
               </label>
+              <div className="mb-2 flex flex-wrap gap-2">
+                {DUE_PRESETS.map((preset) => {
+                  const date = resolveSchedulePreset(preset, todayStr);
+                  const selected = Boolean(date) && dueDate === date;
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => setDueDate(selected ? "" : date ?? "")}
+                      aria-pressed={selected}
+                      title={formatTaskDayHint(date) ?? undefined}
+                      className={cn(
+                        "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        selected
+                          ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                          : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                      )}
+                      data-testid={`task-create-due-${preset}`}
+                    >
+                      {TASK_SCHEDULE_PRESET_LABELS[preset]}
+                    </button>
+                  );
+                })}
+              </div>
               <DateInput
                 id="task-create-due-date"
                 value={dueDate}
@@ -182,39 +252,64 @@ export function TaskCreateSheet({
               />
             </div>
 
-            {/* Assignee picker — select dropdown matching the detail sheet */}
+            {/* Assignee — faces, matching the detail sheet and the row */}
             {members.length > 0 && (
               <div className="mt-4" data-testid="task-create-assignee-section">
-                <label
-                  htmlFor="task-create-assignee"
-                  className="mb-2 block text-sm font-medium text-foreground"
+                <p className="mb-2 text-sm font-medium text-foreground">
+                  Wer macht das?
+                </p>
+                <div
+                  role="radiogroup"
+                  aria-label="Wer macht das?"
+                  className="flex flex-wrap gap-2"
                 >
-                  Verantwortlich
-                </label>
-                <div className="relative">
-                  <User
-                    className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                    strokeWidth={1.5}
-                  />
-                  <select
-                    id="task-create-assignee"
-                    value={assignedTo}
-                    onChange={(event) => setAssignedTo(event.target.value)}
-                    className="h-12 w-full appearance-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] pr-10 pl-10 text-sm text-foreground outline-none transition-colors hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
-                    data-testid="task-create-assignee"
+                  {members.map((member) => {
+                    const selected = assignedTo === member.id;
+                    return (
+                      <button
+                        key={member.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={selected}
+                        onClick={() => setAssignedTo(member.id)}
+                        className={cn(
+                          "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                          selected
+                            ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                            : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
+                        )}
+                        data-testid={`task-create-assignee-${member.id}`}
+                      >
+                        <MemberAvatar
+                          name={member.name}
+                          color={member.avatar_color}
+                          photoUrl={memberPhotoUrls[member.id]}
+                          size="md"
+                        />
+                        <span className="max-w-28 truncate">{member.name}</span>
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={assignedTo === ""}
+                    onClick={() => setAssignedTo("")}
+                    className={cn(
+                      "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      assignedTo === ""
+                        ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                        : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                    )}
+                    data-testid="task-create-assignee-none"
                   >
-                    <option value="">Nicht festgelegt</option>
-                    {members.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown
-                    className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                  />
+                    <UserX
+                      className="size-4 shrink-0"
+                      aria-hidden="true"
+                      strokeWidth={1.75}
+                    />
+                    Niemand
+                  </button>
                 </div>
               </div>
             )}

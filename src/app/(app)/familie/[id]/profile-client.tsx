@@ -142,6 +142,7 @@ export function ProfileClient({
     created_at: "",
     tags: [],
     assigned_to: null,
+    completed_at: null,
     document_title: task.document_id ? documentTitles?.get(task.document_id) ?? null : null,
   }));
 

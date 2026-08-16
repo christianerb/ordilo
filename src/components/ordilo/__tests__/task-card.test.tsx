@@ -15,6 +15,23 @@ import type { TaskCardData } from "@/components/ordilo/task-card";
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * An ISO date `days` from today. The card reads the real clock (a task is
+ * overdue relative to *now*), so fixtures have to move with it — a
+ * hard-coded date silently changes meaning as time passes.
+ */
+function isoInDays(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date.toLocaleDateString("sv-SE");
+}
+
+/** The same date in the German form the card puts in its `title`. */
+function germanDate(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return `${day}.${month}.${year}`;
+}
+
 function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
   return {
     id: "task-1",
@@ -22,7 +39,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     document_id: "doc-1",
     title: "Rechnung bezahlen",
     description: null,
-    due_date: "2026-07-15",
+    due_date: isoInDays(30),
     status: "open",
     confidence: 0.9,
     confirmed: true,
@@ -30,6 +47,7 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
     tags: [],
     document_title: "Stromrechnung Juli",
     assigned_to: null,
+    completed_at: null,
     ...overrides,
   };
 }
@@ -49,11 +67,31 @@ describe("TaskCard", () => {
   });
 
   it("renders a short, human due label with the full date as its title", () => {
-    render(<TaskCard task={makeTask({ due_date: "2026-07-15" })} />);
+    const due_date = isoInDays(30);
+    render(<TaskCard task={makeTask({ due_date })} />);
     const due = screen.getByTestId("task-due-date");
-    // Far enough out for the plain date form.
-    expect(due.textContent).toContain("15. Juli");
-    expect(due.getAttribute("title")).toBe("15.07.2026");
+    // Far enough out for the plain date form ("14. Sep.").
+    expect(due.textContent).toMatch(/\d{1,2}\.\s\S+/);
+    expect(due.getAttribute("title")).toBe(germanDate(due_date));
+  });
+
+  it("says how late an overdue task is instead of naming the day", () => {
+    const due_date = isoInDays(-3);
+    render(<TaskCard task={makeTask({ due_date })} />);
+    const due = screen.getByTestId("task-due-date");
+    // "seit 3 Tagen" is what the family needs; the exact day stays in the
+    // title attribute rather than taking up the row.
+    expect(due.textContent).toContain("seit 3 Tagen");
+    expect(due.getAttribute("title")).toBe(germanDate(due_date));
+  });
+
+  it("drops the overdue label once the task is done", () => {
+    render(
+      <TaskCard task={makeTask({ due_date: isoInDays(-3), status: "done" })} />,
+    );
+    expect(screen.getByTestId("task-due-date").textContent).not.toContain(
+      "seit",
+    );
   });
 
   it("says 'Heute' for a task due today", () => {
@@ -125,6 +163,174 @@ describe("TaskCard", () => {
   it("does not render an actions menu when onDismiss is not provided", () => {
     render(<TaskCard task={makeTask()} />);
     expect(screen.queryByTestId("task-card-actions")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // The four things a task carries: Titel, Beschreibung, Wer, Wann
+  // ---------------------------------------------------------------------------
+
+  it("puts the note on the row, not just inside the sheet", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          description: "Im Sekretariat abgeben, nicht in den Briefkasten",
+        })}
+      />,
+    );
+
+    // Editable but invisible meant the only way to find out a task had a
+    // note was to open every task.
+    expect(screen.getByTestId("task-note").textContent).toBe(
+      "Im Sekretariat abgeben, nicht in den Briefkasten",
+    );
+  });
+
+  it("shows no note line when there is nothing to say", () => {
+    render(<TaskCard task={makeTask({ description: null })} />);
+    expect(screen.queryByTestId("task-note")).toBeNull();
+  });
+
+  it("ignores a note that is only whitespace", () => {
+    render(<TaskCard task={makeTask({ description: "   " })} />);
+    expect(screen.queryByTestId("task-note")).toBeNull();
+  });
+
+  it("drops the note once the task is done", () => {
+    render(
+      <TaskCard task={makeTask({ description: "Details", status: "done" })} />,
+    );
+    // The Erledigt list is scanned, not read.
+    expect(screen.queryByTestId("task-note")).toBeNull();
+  });
+
+  it("keeps the note to one line so the list stays scannable", () => {
+    render(
+      <TaskCard
+        task={makeTask({ description: "Eine sehr lange Notiz ".repeat(20) })}
+      />,
+    );
+    expect(screen.getByTestId("task-note").className).toContain("line-clamp-1");
+  });
+
+  it("carries title, note, who and when on a single row", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          title: "Klassenfahrt bezahlen",
+          description: "Überweisung, Verwendungszweck nicht vergessen",
+          due_date: isoInDays(0),
+          assigned_to: "m1",
+        })}
+        assignee={{ name: "Karina" }}
+      />,
+    );
+
+    expect(screen.getByTestId("task-title").textContent).toBe(
+      "Klassenfahrt bezahlen",
+    );
+    expect(screen.getByTestId("task-note")).toBeDefined();
+    expect(screen.getByTestId("task-due-date").textContent).toContain("Heute");
+    expect(screen.getByTestId("task-assignee").textContent).toContain("Karina");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Assignee — "wer macht was"
+  // ---------------------------------------------------------------------------
+
+  it("offers an empty slot to assign a task nobody has taken on", () => {
+    const onAssign = vi.fn();
+    render(
+      <TaskCard task={makeTask({ assigned_to: null })} onAssign={onAssign} />,
+    );
+
+    const slot = screen.getByTestId("task-assignee");
+    expect(slot.getAttribute("aria-label")).toContain("Niemand zuständig");
+    fireEvent.click(slot);
+    expect(onAssign).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the assignee's face and lets it be reassigned in one tap", () => {
+    const onAssign = vi.fn();
+    render(
+      <TaskCard
+        task={makeTask({ assigned_to: "m1" })}
+        assignee={{ name: "Karina" }}
+        onAssign={onAssign}
+      />,
+    );
+
+    const slot = screen.getByTestId("task-assignee");
+    expect(slot.getAttribute("aria-label")).toContain("Karina");
+    fireEvent.click(slot);
+    expect(onAssign).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not swallow the row's own click when the face is tapped", () => {
+    const onClick = vi.fn();
+    const onAssign = vi.fn();
+    render(
+      <TaskCard
+        task={makeTask({ assigned_to: "m1" })}
+        assignee={{ name: "Karina" }}
+        onAssign={onAssign}
+        onClick={onClick}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("task-assignee"));
+    expect(onAssign).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it("shows a plain face where reassigning is not offered", () => {
+    render(
+      <TaskCard
+        task={makeTask({ assigned_to: "m1" })}
+        assignee={{ name: "Karina" }}
+      />,
+    );
+
+    const slot = screen.getByTestId("task-assignee");
+    expect(slot.tagName).not.toBe("BUTTON");
+    expect(slot.textContent).toContain("Karina");
+  });
+
+  it("shows no assignee slot at all for an unassigned read-only card", () => {
+    render(<TaskCard task={makeTask({ assigned_to: null })} />);
+    expect(screen.queryByTestId("task-assignee")).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Row menu
+  // ---------------------------------------------------------------------------
+
+  it("offers Verschieben in the menu, so the swipe is not the only way", async () => {
+    const onSchedule = vi.fn();
+    render(
+      <TaskCard
+        task={makeTask({ status: "open" })}
+        onSchedule={onSchedule}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    fireEvent.click(await screen.findByTestId("card-action-schedule"));
+    expect(onSchedule).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not offer Verschieben for a task that is already done", async () => {
+    render(
+      <TaskCard
+        task={makeTask({ status: "done" })}
+        onSchedule={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByTestId("task-card-actions"), { key: "Enter" });
+    await screen.findByTestId("card-action-delete");
+    expect(screen.queryByTestId("card-action-schedule")).toBeNull();
   });
 
   // ---------------------------------------------------------------------------

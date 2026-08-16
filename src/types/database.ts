@@ -710,6 +710,7 @@ export type Database = {
           created_at: string;
           tags: string[];
           assigned_to: string | null;
+          completed_at: string | null;
         };
         Insert: {
           id?: string;
@@ -724,6 +725,7 @@ export type Database = {
           created_at?: string;
           tags?: string[];
           assigned_to?: string | null;
+          completed_at?: string | null;
         };
         Update: {
           id?: string;
@@ -738,6 +740,7 @@ export type Database = {
           created_at?: string;
           tags?: string[];
           assigned_to?: string | null;
+          completed_at?: string | null;
         };
         Relationships: [];
       };

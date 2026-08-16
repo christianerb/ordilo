@@ -2,6 +2,7 @@ import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import type { CalendarEvent } from "@/lib/calendar";
 import { toCalendarDate } from "@/lib/calendar";
+import { recentDoneCutoff } from "@/lib/task-utils";
 import type { Database } from "@/types/database";
 import { AufgabenClient } from "./aufgaben-client";
 import { CalendarClient, type CalendarSuggestion } from "./calendar-client";
@@ -141,11 +142,16 @@ async function loadInitialData(): Promise<{
         .select("id, name, role, avatar_color, photo_url")
         .eq("family_id", family.id)
         .order("created_at", { ascending: true }),
+      // Open tasks, plus what the family finished in the last week. Loading
+      // every task ever completed meant a household months in shipped
+      // hundreds of rows into a section nobody scrolls; older completions
+      // stay in the database, out of the way.
       supabase
         .from("tasks")
         .select("*")
         .eq("family_id", family.id)
         .eq("confirmed", true)
+        .or(`status.neq.done,completed_at.gte.${recentDoneCutoff()}`)
         .order("created_at", { ascending: false }),
       supabase
         .from("calendar_events")
@@ -332,7 +338,7 @@ export default async function AufgabenPage({
   } = await loadInitialData();
   const taskKey = initialTasks
     .map((task) =>
-      `${task.id}:${task.status}:${task.title}:${task.description ?? ""}:${task.due_date ?? ""}:${(task.tags ?? []).join(",")}:${task.linked_documents?.length ?? 0}:${task.assigned_to ?? ""}`,
+      `${task.id}:${task.status}:${task.title}:${task.description ?? ""}:${task.due_date ?? ""}:${(task.tags ?? []).join(",")}:${task.linked_documents?.length ?? 0}:${task.assigned_to ?? ""}:${task.completed_at ?? ""}`,
     )
     .join("|");
 

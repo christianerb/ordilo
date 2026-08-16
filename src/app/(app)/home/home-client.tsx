@@ -221,6 +221,9 @@ export function HomeClient({
     document_title: t.document_title ?? null,
     assigned_to: t.assigned_to ?? null,
     assigned_member_name: null,
+    // The home dashboard shows what is open, never an Erledigt section, so
+    // it has no use for the completion stamp.
+    completed_at: null,
   });
 
   // -------------------------------------------------------------------------

@@ -5,6 +5,47 @@ import { createClient } from "@/lib/supabase/client";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 
 /**
+ * The task fields a single edit can change.
+ *
+ * One shape for every "change this and let me undo it" edit — moving a due
+ * date, handing a task to somebody else, reopening it. Undo is just the
+ * same call with the previous values, which is why both directions share
+ * this type.
+ */
+export interface TaskPatch {
+  status?: string;
+  due_date?: string | null;
+  assigned_to?: string | null;
+  /**
+   * Rarely passed. A database trigger stamps and clears this alongside
+   * `status` for every writer — including the chat tools, which do not go
+   * through this hook at all. Send it only to restore an exact earlier
+   * value: an undo putting back the moment a task was actually finished.
+   * A value supplied here wins; otherwise the database decides, using its
+   * own clock rather than a browser's.
+   */
+  completed_at?: string | null;
+}
+
+/**
+ * The local guess for `completed_at`, used for optimistic state only.
+ *
+ * The row has to sort correctly in "Erledigt" the instant it is ticked off,
+ * before any refetch. This value never reaches the database — the trigger
+ * writes the authoritative one — so a device with a wrong clock misorders a
+ * row for a moment instead of hiding it outside the visible window.
+ */
+function withLocalCompletionGuess(updates: TaskPatch): TaskPatch {
+  if (updates.status === undefined) return updates;
+  if ("completed_at" in updates) return updates;
+  return {
+    ...updates,
+    completed_at:
+      updates.status === "done" ? new Date().toISOString() : null,
+  };
+}
+
+/**
  * Options for the {@link useTaskMutation} hook.
  *
  * The hook owns the Supabase `tasks` update call and the optimistic /
@@ -58,31 +99,25 @@ export interface UseTaskMutationOptions {
    */
   onDismissException?: () => void;
   /**
-   * Apply the optimistic reschedule update (e.g. set the task's status and
-   * due date to `updates`). Called immediately before the Supabase update.
-   * Optional — components without board drag-and-drop don't need it.
+   * Apply the optimistic patch (e.g. set the task's due date or assignee to
+   * `updates`). Called immediately before the Supabase update. Optional —
+   * components that only tick tasks off don't need it.
    */
-  onOptimisticReschedule?: (
-    taskId: string,
-    updates: { status: string; due_date: string | null },
-  ) => void;
+  onOptimisticPatch?: (taskId: string, updates: TaskPatch) => void;
   /**
-   * Revert a failed reschedule back to `previous`. Called when the Supabase
+   * Revert a failed patch back to `previous`. Called when the Supabase
    * update returns an error or throws.
    */
-  onRevertReschedule?: (
-    taskId: string,
-    previous: { status: string; due_date: string | null },
-  ) => void;
+  onRevertPatch?: (taskId: string, previous: TaskPatch) => void;
   /**
-   * Called when a reschedule mutation fails with a Supabase error object.
+   * Called when a patch mutation fails with a Supabase error object.
    */
-  onRescheduleError?: () => void;
+  onPatchError?: () => void;
   /**
-   * Called when a reschedule mutation throws an exception. When omitted,
-   * falls back to {@link onRescheduleError}.
+   * Called when a patch mutation throws an exception. When omitted, falls
+   * back to {@link onPatchError}.
    */
-  onRescheduleException?: () => void;
+  onPatchException?: () => void;
   /**
    * Called after a successful Supabase update (no error, no exception).
    * Used to sync server state (e.g. `router.refresh()`). NOT called on
@@ -108,15 +143,15 @@ export interface UseTaskMutationOptions {
  * return `true` on success and `false` on error so callers can show
  * success toasts only after the mutation actually resolved.
  *
- * @returns `{ toggleDone, dismiss }` — async mutation functions.
+ * @returns `{ toggleDone, dismiss, patch }` — async mutation functions.
  */
 export function useTaskMutation(options: UseTaskMutationOptions): {
   toggleDone: (taskId: string, newStatus: string) => Promise<boolean>;
   dismiss: (taskId: string) => Promise<boolean>;
-  reschedule: (
+  patch: (
     taskId: string,
-    updates: { status: string; due_date: string | null },
-    previous: { status: string; due_date: string | null },
+    updates: TaskPatch,
+    previous: TaskPatch,
   ) => Promise<boolean>;
 } {
   const supabase = createClient();
@@ -192,36 +227,36 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
     [supabase],
   );
 
-  const reschedule = useCallback(
+  const patch = useCallback(
     async (
       taskId: string,
-      updates: { status: string; due_date: string | null },
-      previous: { status: string; due_date: string | null },
+      updates: TaskPatch,
+      previous: TaskPatch,
     ): Promise<boolean> => {
       const opts = optionsRef.current;
-      opts.onOptimisticReschedule?.(taskId, updates);
+      opts.onOptimisticPatch?.(taskId, withLocalCompletionGuess(updates));
 
       try {
         const { error } = await supabase
           .from("tasks")
-          .update({ status: updates.status, due_date: updates.due_date })
+          .update(updates)
           .eq("id", taskId);
 
         if (error) {
-          opts.onRevertReschedule?.(taskId, previous);
-          opts.onRescheduleError?.();
+          opts.onRevertPatch?.(taskId, previous);
+          opts.onPatchError?.();
           return false;
         }
         opts.onSettled?.();
         return true;
       } catch {
-        opts.onRevertReschedule?.(taskId, previous);
-        (opts.onRescheduleException ?? opts.onRescheduleError)?.();
+        opts.onRevertPatch?.(taskId, previous);
+        (opts.onPatchException ?? opts.onPatchError)?.();
         return false;
       }
     },
     [supabase],
   );
 
-  return { toggleDone, dismiss, reschedule };
+  return { toggleDone, dismiss, patch };
 }

@@ -1800,7 +1800,10 @@ async function executeMarkTaskDone(
     } as unknown as ConfirmationRequest);
   }
 
-  // Confirmed — execute the update.
+  // Confirmed — execute the update. `completed_at` is deliberately absent:
+  // a database trigger (migration 0063) stamps it on the transition to
+  // done, which is what keeps this writer in step with the Aufgaben list
+  // without it having to know the list exists.
   const { error: updateError } = await ctx.client
     .from("tasks")
     .update({ status: "done" })
@@ -2495,6 +2498,9 @@ async function executeUpdateTask(
     });
   }
 
+  // `completed_at` is maintained by a database trigger (migration 0063),
+  // so changing `status` here both stamps a completion and clears one on
+  // reopening, with no bookkeeping in this tool.
   const { error: updateError } = await ctx.client
     .from("tasks")
     .update(updates)
