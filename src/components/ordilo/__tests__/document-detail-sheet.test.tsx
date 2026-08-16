@@ -28,6 +28,19 @@ vi.mock("@/lib/attribution", () => ({
   fetchDocumentAttribution: vi.fn(),
 }));
 
+// The credentials panel reads the document body (ocr_text) on demand — it
+// is deliberately not part of the list columns the sheet is handed.
+const ocrText = vi.fn<() => Promise<{ data: { ocr_text: string } | null }>>();
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: () => ocrText() }),
+      }),
+    }),
+  }),
+}));
+
 import { DocumentDetailSheet } from "@/components/ordilo/document-detail-sheet";
 import { fetchDocumentAttribution } from "@/lib/attribution";
 
@@ -49,6 +62,7 @@ beforeEach(() => {
     name: null,
     isCurrentUser: false,
   });
+  ocrText.mockResolvedValue({ data: null });
 });
 
 describe("DocumentDetailSheet", () => {
@@ -75,6 +89,56 @@ describe("DocumentDetailSheet", () => {
     );
 
     expect(screen.getByTestId("document-secret-reveal")).toBeDefined();
+  });
+
+  it("shows URL and user name from the document body as working controls", async () => {
+    ocrText.mockResolvedValue({
+      data: {
+        ocr_text:
+          "- **URL:** https://www.netflix.com\n" +
+          "- **Benutzername:** familie@example.de\n\nFamilienaccount",
+      },
+    });
+
+    render(
+      <DocumentDetailSheet
+        document={
+          { ...document, document_type: "credentials", secret: null } as never
+        }
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("credential-link")).toBeDefined();
+    });
+    const link = screen.getByTestId("credential-link") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("https://www.netflix.com/");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(screen.getByText("familie@example.de")).toBeDefined();
+    // Both values are copyable.
+    expect(screen.getAllByTestId("credential-copy")).toHaveLength(2);
+  });
+
+  it("shows the panel without rows when the body has no field layout", async () => {
+    ocrText.mockResolvedValue({ data: { ocr_text: "Zugangsdaten WLAN" } });
+
+    render(
+      <DocumentDetailSheet
+        document={
+          { ...document, document_type: "credentials", secret: null } as never
+        }
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("document-credentials")).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByTestId("credential-link")).toBeNull();
+    });
+    expect(screen.queryByTestId("credential-copy")).toBeNull();
   });
 
   it("offers to add a password to a Zugangsdaten document that has none", () => {
@@ -128,7 +192,7 @@ describe("DocumentDetailSheet", () => {
     fireEvent.click(screen.getByTestId("secret-editor-save"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("document-secret-reveal")).toBeDefined();
+      expect(screen.getByTestId("credential-secret-reveal")).toBeDefined();
     });
     expect(fetchMock).toHaveBeenCalledWith("/api/documents/doc-1/secret", {
       method: "PUT",
@@ -201,7 +265,7 @@ describe("DocumentDetailSheet", () => {
     fireEvent.click(screen.getByTestId("secret-editor-save"));
 
     await waitFor(() => {
-      expect(screen.queryByTestId("document-secret-reveal")).toBeNull();
+      expect(screen.queryByTestId("credential-secret-reveal")).toBeNull();
     });
     expect(screen.getByTestId("secret-add-button")).toBeDefined();
 

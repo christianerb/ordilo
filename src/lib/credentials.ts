@@ -43,3 +43,35 @@ export function buildCredentialsContent({
     .join("\n\n");
   return body || `Zugangsdaten ${title}`;
 }
+
+/** URL and user name read back out of a credentials body. */
+export interface ParsedCredentials {
+  url: string | null;
+  username: string | null;
+}
+
+const FIELD_LINE = /^-\s+\*\*(URL|Benutzername):\*\*\s*(.+)$/i;
+
+/**
+ * Read URL and user name back out of a credentials body.
+ *
+ * The inverse of {@link buildCredentialsContent}, so the detail view can
+ * show the two values as a link and a copyable row instead of leaving
+ * them buried in markdown. Anything that does not match the layout — a
+ * body written before this format existed, or one edited by hand — simply
+ * yields nulls; the caller then shows nothing rather than guessing.
+ */
+export function parseCredentialsContent(content: string): ParsedCredentials {
+  const parsed: ParsedCredentials = { url: null, username: null };
+
+  for (const line of content.split("\n")) {
+    const match = FIELD_LINE.exec(line.trim());
+    if (!match) continue;
+    const value = match[2].trim();
+    if (!value) continue;
+    if (match[1].toLowerCase() === "url") parsed.url ??= value;
+    else parsed.username ??= value;
+  }
+
+  return parsed;
+}

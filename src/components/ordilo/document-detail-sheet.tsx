@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Lock, Eye, EyeOff, Loader2, Copy, Check } from "lucide-react";
+import {
+  Check,
+  Copy,
+  Eye,
+  EyeOff,
+  FileText,
+  KeyRound,
+  Loader2,
+  Lock,
+} from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -18,6 +27,15 @@ import {
 } from "@/lib/schemas/document";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { useSecretReveal } from "@/lib/hooks/use-secret-reveal";
+import {
+  CredentialRow,
+  SecretValueRow,
+} from "@/components/ordilo/credential-fields";
+import { createClient } from "@/lib/supabase/client";
+import {
+  parseCredentialsContent,
+  type ParsedCredentials,
+} from "@/lib/credentials";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -238,13 +256,112 @@ function SecretEditor({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Credentials panel — the login itself, as working controls.
+// The document body is markdown that nothing in the app renders, so URL
+// and user name used to be visible only as the AI's paraphrase in the
+// summary. Here they are read back out of the body and shown the way the
+// chat card shows them: address opens, values copy, password reveals.
+// ---------------------------------------------------------------------------
+
+function CredentialsPanel({
+  documentId,
+  hasSecret,
+  onEditSecret,
+}: {
+  documentId: string;
+  hasSecret: boolean;
+  onEditSecret: () => void;
+}) {
+  const [fields, setFields] = useState<ParsedCredentials>({
+    url: null,
+    username: null,
+  });
+
+  useMountEffect(() => {
+    let active = true;
+    // `ocr_text` is deliberately absent from the document list columns
+    // (too heavy for every row on every poll), so it is fetched here for
+    // the one document that is open. RLS scopes the read to the family.
+    void createClient()
+      .from("documents")
+      .select("ocr_text")
+      .eq("id", documentId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (active && data?.ocr_text) {
+          setFields(parseCredentialsContent(data.ocr_text));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  });
+
+  return (
+    <div
+      className="mx-5 mt-4 rounded-ordilo-sm border border-border bg-[var(--sand-light)]/60 px-3 py-2.5"
+      data-testid="document-credentials"
+    >
+      <div className="flex items-center gap-2">
+        <KeyRound
+          className="size-3.5 shrink-0 text-[var(--mist-dark)]"
+          aria-hidden="true"
+        />
+        <span className="text-xs font-medium text-foreground">Zugangsdaten</span>
+      </div>
+
+      <dl className="mt-2 space-y-1.5">
+        {fields.url && <CredentialRow label="URL" value={fields.url} />}
+        {fields.username && (
+          <CredentialRow label="Benutzername" value={fields.username} />
+        )}
+        {hasSecret ? (
+          // Remounted after a change so a previously revealed value is
+          // dropped rather than kept next to a password that no longer
+          // matches.
+          <SecretValueRow key={String(hasSecret)} documentId={documentId} />
+        ) : (
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="shrink-0 text-sm text-muted-foreground">Passwort</dt>
+            <dd>
+              <button
+                type="button"
+                onClick={onEditSecret}
+                data-testid="secret-add-button"
+                className="rounded-ordilo-sm px-1.5 py-0.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                Hinterlegen
+              </button>
+            </dd>
+          </div>
+        )}
+      </dl>
+
+      {hasSecret && (
+        <div className="mt-1.5 flex justify-end">
+          <button
+            type="button"
+            onClick={onEditSecret}
+            className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="secret-change-button"
+          >
+            Passwort ändern
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * The password area of the detail sheet: reveals an existing secret and
  * offers to set, change or remove one.
  *
- * A document without a secret only gets the offer when it is a
- * "Zugangsdaten" document — for every other type an empty password field
- * would be noise, the same reasoning the note form follows.
+ * A "Zugangsdaten" document gets the full login panel; every other type
+ * only gets the reveal control, and only when a secret actually exists —
+ * an empty password field elsewhere would be noise, the same reasoning
+ * the note form follows.
  */
 function SecretSection({
   documentId,
@@ -272,42 +389,34 @@ function SecretSection({
     );
   }
 
-  if (hasSecret) {
+  if (documentType === "credentials") {
     return (
-      <>
-        {/* Remounted on change so a previously revealed value is dropped
-            rather than kept next to a password that no longer matches. */}
-        <SecretReveal key={String(hasSecret)} documentId={documentId} />
-        <div className="mx-5 mt-1.5 flex justify-end">
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            data-testid="secret-change-button"
-          >
-            Passwort ändern
-          </button>
-        </div>
-      </>
+      <CredentialsPanel
+        documentId={documentId}
+        hasSecret={hasSecret}
+        onEditSecret={() => setEditing(true)}
+      />
     );
   }
 
-  if (documentType !== "credentials") return null;
+  if (!hasSecret) return null;
 
   return (
-    <div className="mx-5 mt-4">
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={() => setEditing(true)}
-        className="h-8 text-xs"
-        data-testid="secret-add-button"
-      >
-        <Lock className="size-3.5" aria-hidden="true" />
-        Passwort hinterlegen
-      </Button>
-    </div>
+    <>
+      {/* Remounted on change so a previously revealed value is dropped
+          rather than kept next to a password that no longer matches. */}
+      <SecretReveal key={String(hasSecret)} documentId={documentId} />
+      <div className="mx-5 mt-1.5 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          data-testid="secret-change-button"
+        >
+          Passwort ändern
+        </button>
+      </div>
+    </>
   );
 }
 

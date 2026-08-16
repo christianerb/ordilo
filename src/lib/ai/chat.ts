@@ -828,14 +828,21 @@ export async function streamAgenticAnswer(
               // here, after the document reference has been verified.
               if (cardToSend.actionDocumentId) {
                 try {
-                  const { data: secretRow } = await toolContext.client
+                  const { data: sourceDoc } = await toolContext.client
                     .from("documents")
-                    .select("secret")
+                    .select("secret, document_type")
                     .eq("id", cardToSend.actionDocumentId)
                     .maybeSingle();
+                  const isCredentialsDoc =
+                    sourceDoc?.document_type === "credentials";
                   cardToSend = {
                     ...cardToSend,
-                    hasSecret: Boolean(secretRow?.secret),
+                    // The card type decides whether the row values become
+                    // working controls, so it must not hang on the model
+                    // picking the right enum: a card about a credentials
+                    // document IS a credentials card.
+                    type: isCredentialsDoc ? "zugangsdaten" : cardToSend.type,
+                    hasSecret: Boolean(sourceDoc?.secret),
                   };
                 } catch {
                   // The answer stands on its own — a failed lookup only

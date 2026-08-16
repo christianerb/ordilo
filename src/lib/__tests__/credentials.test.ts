@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { buildCredentialsContent } from "@/lib/credentials";
+import {
+  buildCredentialsContent,
+  parseCredentialsContent,
+} from "@/lib/credentials";
 
 describe("buildCredentialsContent", () => {
   it("lists URL and user name above the description", () => {
@@ -42,5 +45,42 @@ describe("buildCredentialsContent", () => {
     expect(
       buildCredentialsContent({ title: "X", url: "  https://a.de  " }),
     ).toBe("- **URL:** https://a.de");
+  });
+});
+
+describe("parseCredentialsContent", () => {
+  it("reads back what buildCredentialsContent wrote", () => {
+    const content = buildCredentialsContent({
+      title: "Netflix",
+      url: "https://www.netflix.com",
+      username: "familie@example.de",
+      description: "Familienaccount",
+    });
+
+    expect(parseCredentialsContent(content)).toEqual({
+      url: "https://www.netflix.com",
+      username: "familie@example.de",
+    });
+  });
+
+  it("returns nulls for a body without the field layout", () => {
+    expect(parseCredentialsContent("Zettel am Router")).toEqual({
+      url: null,
+      username: null,
+    });
+  });
+
+  it("ignores the description text below the fields", () => {
+    const parsed = parseCredentialsContent(
+      "- **URL:** https://a.de\n\nHier steht Benutzername als Wort im Fließtext.",
+    );
+    expect(parsed).toEqual({ url: "https://a.de", username: null });
+  });
+
+  it("keeps the first value when a field appears twice", () => {
+    const parsed = parseCredentialsContent(
+      "- **Benutzername:** erste\n- **Benutzername:** zweite",
+    );
+    expect(parsed.username).toBe("erste");
   });
 });

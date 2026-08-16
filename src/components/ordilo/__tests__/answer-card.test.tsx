@@ -127,7 +127,7 @@ describe("AnswerCard — Zugangsdaten", () => {
   it("renders the URL as a link that opens in a new tab", () => {
     render(<AnswerCard card={buildCredentialsCard()} />);
 
-    const link = screen.getByTestId("answer-card-link") as HTMLAnchorElement;
+    const link = screen.getByTestId("credential-link") as HTMLAnchorElement;
     expect(link.getAttribute("href")).toBe("https://www.netflix.com/");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel")).toBe("noopener noreferrer");
@@ -143,7 +143,7 @@ describe("AnswerCard — Zugangsdaten", () => {
     );
 
     expect(
-      (screen.getByTestId("answer-card-link") as HTMLAnchorElement).getAttribute("href"),
+      (screen.getByTestId("credential-link") as HTMLAnchorElement).getAttribute("href"),
     ).toBe("https://www.netflix.com/");
   });
 
@@ -158,14 +158,14 @@ describe("AnswerCard — Zugangsdaten", () => {
       />,
     );
 
-    expect(screen.queryByTestId("answer-card-link")).toBeNull();
+    expect(screen.queryByTestId("credential-link")).toBeNull();
     expect(screen.getByText("javascript:alert(1)")).toBeDefined();
   });
 
   it("copies a field value to the clipboard", async () => {
     render(<AnswerCard card={buildCredentialsCard()} />);
 
-    fireEvent.click(screen.getAllByTestId("answer-card-copy")[1]);
+    fireEvent.click(screen.getAllByTestId("credential-copy")[1]);
 
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("familie@example.de");
@@ -174,7 +174,7 @@ describe("AnswerCard — Zugangsdaten", () => {
 
   it("leaves other card types as plain, uncopyable text", () => {
     render(<AnswerCard card={buildCard({ type: "dokument" })} />);
-    expect(screen.queryByTestId("answer-card-copy")).toBeNull();
+    expect(screen.queryByTestId("credential-copy")).toBeNull();
   });
 
   it("fetches the password only when asked, then copies it", async () => {
@@ -188,12 +188,12 @@ describe("AnswerCard — Zugangsdaten", () => {
 
     // Nothing is fetched until the user asks for it.
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("answer-card-secret-value")).toBeNull();
+    expect(screen.queryByTestId("credential-secret-value")).toBeNull();
 
-    fireEvent.click(screen.getByTestId("answer-card-secret-reveal"));
+    fireEvent.click(screen.getByTestId("credential-secret-reveal"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("answer-card-secret-value").textContent).toBe(
+      expect(screen.getByTestId("credential-secret-value").textContent).toBe(
         "hunter2",
       );
     });
@@ -201,7 +201,7 @@ describe("AnswerCard — Zugangsdaten", () => {
       method: "POST",
     });
 
-    fireEvent.click(screen.getByTestId("answer-card-secret-copy"));
+    fireEvent.click(screen.getByTestId("credential-secret-copy"));
     await waitFor(() => {
       expect(writeText).toHaveBeenCalledWith("hunter2");
     });
@@ -219,27 +219,27 @@ describe("AnswerCard — Zugangsdaten", () => {
     );
 
     render(<AnswerCard card={buildCredentialsCard()} />);
-    fireEvent.click(screen.getByTestId("answer-card-secret-reveal"));
+    fireEvent.click(screen.getByTestId("credential-secret-reveal"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("answer-card-secret-error").textContent).toBe(
+      expect(screen.getByTestId("credential-secret-error").textContent).toBe(
         "Dieses Dokument hat kein hinterlegtes Geheim.",
       );
     });
-    expect(screen.queryByTestId("answer-card-secret-value")).toBeNull();
+    expect(screen.queryByTestId("credential-secret-value")).toBeNull();
 
     vi.unstubAllGlobals();
   });
 
   it("omits the password row when the document has no secret", () => {
     render(<AnswerCard card={buildCredentialsCard({ hasSecret: false })} />);
-    expect(screen.queryByTestId("answer-card-secret")).toBeNull();
+    expect(screen.queryByTestId("credential-secret")).toBeNull();
   });
 
   it("omits the password row when the document reference was dropped", () => {
     render(
       <AnswerCard card={buildCredentialsCard({ actionDocumentId: null })} />,
     );
-    expect(screen.queryByTestId("answer-card-secret")).toBeNull();
+    expect(screen.queryByTestId("credential-secret")).toBeNull();
   });
 });
