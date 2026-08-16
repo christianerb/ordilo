@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const mockPush = vi.fn();
+const mockRefresh = vi.fn();
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mockPush,
     replace: vi.fn(),
-    refresh: vi.fn(),
+    refresh: mockRefresh,
   }),
 }));
 
+const mockAddFamilyMember = vi.fn();
 vi.mock("@/app/(app)/familie/actions", () => ({
-  addFamilyMember: vi.fn(),
+  addFamilyMember: (...args: unknown[]) => mockAddFamilyMember(...args),
   updateFamilyMember: vi.fn(),
   removeFamilyMember: vi.fn(),
 }));
@@ -37,6 +39,7 @@ function makeMember(
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations_backfilled_at: null,
     relations: [],
     ...overrides,
   } satisfies MemberRow & { relations: MemberWithRelations["relations"] };
@@ -150,5 +153,40 @@ describe("FamilieClient — member list", () => {
     expect(screen.getByText("Mutter von Ben")).toBeInTheDocument();
     // The card has room for one relationship — the rest is on the profile.
     expect(screen.queryByText(/Vater/)).not.toBeInTheDocument();
+  });
+});
+
+describe("FamilieClient — hinzufügen", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("opens the edit page instead of a sheet", () => {
+    render(<FamilieClient familyName="Testfamilie" members={[makeMember()]} />);
+
+    fireEvent.keyDown(screen.getByTestId("person-card-actions"), { key: "Enter" });
+    fireEvent.click(screen.getByText("Bearbeiten"));
+
+    expect(mockPush).toHaveBeenCalledWith("/familie/mem-1/bearbeiten");
+  });
+
+  it("refreshes after adding, so the counterpart's card is not stale", async () => {
+    mockAddFamilyMember.mockResolvedValue({
+      success: true,
+      data: makeMember({ id: "mem-9", name: "Nora", relations: [] }),
+    });
+
+    render(<FamilieClient familyName="Testfamilie" members={[makeMember()]} />);
+
+    fireEvent.click(screen.getByTestId("add-member-button"));
+    fireEvent.change(await screen.findByLabelText("Name"), {
+      target: { value: "Nora" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
+
+    // The reciprocal relationship changed the other person's role server-side.
+    await waitFor(() => {
+      expect(mockRefresh).toHaveBeenCalled();
+    });
   });
 });

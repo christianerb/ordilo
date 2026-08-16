@@ -64,8 +64,11 @@ export default async function PersonProfilePage({
         .then((res) => res.data?.signedUrl ?? null)
     : Promise.resolve(null);
 
-  // The member's relationships ("Mutter von Emma und Hanna", …).
-  const relationsPromise = loadMemberRelations(supabase, typedMember.id);
+  // The member's relationships ("Mutter von Emma und Hanna", …). This page
+  // only displays them, so a failed read costs a line of text, nothing more.
+  const relationsPromise = loadMemberRelations(supabase, typedMember.id).then(
+    (result) => result.relations,
+  );
 
   // Other members of the same family — the people a relation can point at.
   const otherMembersPromise = supabase

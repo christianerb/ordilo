@@ -100,7 +100,7 @@ export default async function FamiliePage() {
 
   const members: MemberWithRelations[] = memberRows.map((member) => ({
     ...member,
-    relations: relationsByMember[member.id] ?? [],
+    relations: relationsByMember.byMember[member.id] ?? [],
   }));
 
   // Count unique documents per member (a member can appear on the same

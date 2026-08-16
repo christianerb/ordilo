@@ -46,7 +46,7 @@ export default async function EditMemberPage({
 
   const others = otherMemberRows ?? [];
 
-  const [relations, photoUrls] = await Promise.all([
+  const [relationsResult, photoUrls] = await Promise.all([
     loadMemberRelations(supabase, typedMember.id),
     resolveMemberPhotoUrls([...others, typedMember]),
   ]);
@@ -54,7 +54,10 @@ export default async function EditMemberPage({
   return (
     <EditMemberClient
       member={typedMember}
-      relations={relations}
+      relations={relationsResult.relations}
+      // Saving the list the editor was handed would wipe the stored
+      // relationships if that list came from a failed read.
+      relationsUnavailable={relationsResult.error}
       photoUrl={photoUrls[typedMember.id] ?? null}
       otherMembers={others.map((m) => ({
         id: m.id,

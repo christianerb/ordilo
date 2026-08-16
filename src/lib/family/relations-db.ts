@@ -25,32 +25,52 @@ type RelationInsert =
  * can import the formatters without pulling in the Supabase server client.
  */
 
-/** Loads the relations of one member, grouped by role. */
+/**
+ * Loads the relations of one member, grouped by role.
+ *
+ * `error` is not decoration: the editor saves the list it was given, so an
+ * empty list from a failed read would delete every stored relationship on
+ * the next save. Callers must not offer relationship editing when it is set.
+ */
 export async function loadMemberRelations(
   client: ServerClient,
   memberId: string,
-): Promise<MemberRelation[]> {
-  const { data } = await client
+): Promise<{ relations: MemberRelation[]; error: boolean }> {
+  const { data, error } = await client
     .from("family_member_relations")
     .select("member_id, related_member_id, role, sort_order")
     .eq("member_id", memberId)
     .order("sort_order", { ascending: true });
 
-  return groupRelationRows((data ?? []) as MemberRelationRow[]);
+  if (error || !data) return { relations: [], error: true };
+  return {
+    relations: groupRelationRows(data as MemberRelationRow[]),
+    error: false,
+  };
 }
 
-/** Loads the relations of every member of a family, keyed by member id. */
+/**
+ * Loads the relations of every member of a family, keyed by member id.
+ *
+ * Read-only callers (the family list, the profile page) can treat a failure
+ * as "no relationships to show"; anything that saves them back must look at
+ * `error` first.
+ */
 export async function loadFamilyRelations(
   client: ServerClient,
   familyId: string,
-): Promise<Record<string, MemberRelation[]>> {
-  const { data } = await client
+): Promise<{ byMember: Record<string, MemberRelation[]>; error: boolean }> {
+  const { data, error } = await client
     .from("family_member_relations")
     .select("member_id, related_member_id, role, sort_order")
     .eq("family_id", familyId)
     .order("sort_order", { ascending: true });
 
-  return groupRelationsByMember((data ?? []) as MemberRelationRow[]);
+  if (error || !data) return { byMember: {}, error: true };
+  return {
+    byMember: groupRelationsByMember(data as MemberRelationRow[]),
+    error: false,
+  };
 }
 
 /**
@@ -111,13 +131,15 @@ export async function validateRelations(
  * relation onto the other person ("Mutter von Emma" gives Emma "Kind von
  * Karina").
  *
- * Delete-then-insert rather than a diff: a member has a handful of
- * relations, and replacing them makes "what the form shows is what is
- * stored" true without reconciliation logic.
+ * The member's own rows are swapped by the `replace_member_relations` RPC:
+ * one function body is one transaction, so a failure mid-way leaves the
+ * stored relations untouched instead of deleting them. The RPC hands back
+ * the previous rows, which is what the counterpart mirroring diffs against.
  *
  * The caller must have validated `relations` (see `validateRelations`).
  *
- * @returns true on success, false when a write failed.
+ * @returns true on success, false when the replacement failed — in which
+ *          case nothing was changed.
  */
 export async function saveMemberRelations(
   client: ServerClient,
@@ -127,19 +149,6 @@ export async function saveMemberRelations(
     relations,
   }: { familyId: string; memberId: string; relations: MemberRelation[] },
 ): Promise<boolean> {
-  // The relations as they were, to tell which ones the save adds and which
-  // it removes — the other side has to follow both.
-  const { data: beforeRows } = await client
-    .from("family_member_relations")
-    .select("member_id, related_member_id, role, sort_order")
-    .eq("member_id", memberId);
-
-  const { error: deleteError } = await client
-    .from("family_member_relations")
-    .delete()
-    .eq("member_id", memberId);
-  if (deleteError) return false;
-
   const rows: RelationInsert[] = [];
   relations.forEach((relation, index) => {
     // A relation without a counterpart is stored as a single row with a
@@ -157,20 +166,19 @@ export async function saveMemberRelations(
     }
   });
 
-  if (rows.length > 0) {
-    const { error: insertError } = await client
-      .from("family_member_relations")
-      .insert(rows);
-    if (insertError) return false;
-  }
+  const { data: beforeRows, error } = await client.rpc(
+    "replace_member_relations",
+    {
+      p_member_id: memberId,
+      p_relations: rows.map((row) => ({
+        related_member_id: row.related_member_id ?? null,
+        role: row.role,
+        sort_order: row.sort_order ?? 0,
+      })),
+    },
+  );
 
-  // Mirror the primary role onto the member row — the Erwachsene/Kinder
-  // filter, the chat tools and the task assignment sheet read it there.
-  const { error: roleError } = await client
-    .from("family_members")
-    .update({ role: primaryRole(relations) })
-    .eq("id", memberId);
-  if (roleError) return false;
+  if (error) return false;
 
   await syncCounterparts(client, {
     familyId,
@@ -275,13 +283,18 @@ async function syncCounterparts(
     if (!counterRole) continue;
 
     // The same role without a counterpart becomes redundant the moment it
-    // points at someone ("Tochter" → "Tochter von Karina").
+    // points at someone ("Tochter" → "Tochter von Karina"). The replacement
+    // takes over its position: appending it instead would silently promote
+    // whatever came second to be the person's primary role.
+    let replacedOrder: number | null = null;
     for (const row of theirs) {
       if (
         row.related_member_id === null &&
         row.role.trim().toLowerCase() === counterRole.toLowerCase()
       ) {
         deleteIds.push(row.id);
+        replacedOrder =
+          replacedOrder === null ? row.sort_order : Math.min(replacedOrder, row.sort_order);
       }
     }
 
@@ -291,7 +304,7 @@ async function syncCounterparts(
       member_id: targetId,
       related_member_id: memberId,
       role: counterRole,
-      sort_order: lastOrder + 1,
+      sort_order: replacedOrder ?? lastOrder + 1,
     });
   }
 

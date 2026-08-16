@@ -280,6 +280,27 @@ describe("MemberForm", () => {
     );
   });
 
+  it("keeps the plain-role row available when other members exist", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Hinzufügen"
+        onSubmit={onSubmit}
+        otherMembers={[{ id: "mem-2", name: "Emma" }]}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Uta" } });
+
+    // "Oma" without the grandchildren in Ordilo is still a thing to say.
+    fireEvent.click(screen.getByTestId("relationship-solo-row"));
+    fireEvent.click(screen.getByTestId("solo-role-chip-Oma"));
+    fireEvent.click(screen.getByRole("button", { name: "Hinzufügen" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ relations: [{ role: "Oma", member_ids: [] }] }),
+    );
+  });
+
   it("excludes the member's own id from the people a relationship can point at", () => {
     render(
       <MemberForm

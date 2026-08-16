@@ -1345,7 +1345,10 @@ async function executeListFamilyMembers(ctx: ToolContext): Promise<string> {
 
   // Relationships answer the questions a bare role cannot — "die Steuer-ID
   // meiner Tochter" needs to know WHOSE daughter someone is.
-  const relationsByMember = await loadFamilyRelations(ctx.client, ctx.familyId);
+  const { byMember: relationsByMember } = await loadFamilyRelations(
+    ctx.client,
+    ctx.familyId,
+  );
   const names = nameMap(data);
 
   return JSON.stringify({

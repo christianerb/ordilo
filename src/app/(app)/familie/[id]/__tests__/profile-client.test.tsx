@@ -44,6 +44,7 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations_backfilled_at: null,
     ...overrides,
   };
 }

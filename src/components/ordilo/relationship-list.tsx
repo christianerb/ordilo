@@ -100,16 +100,16 @@ export function RelationshipList({
 
   return (
     <div className="space-y-3" data-testid="relationship-list">
-      {/* A role with nobody to point at — the whole story for the first
-          person in a family, and a leftover for everyone else. */}
-      {(members.length === 0 || soloRoles.length > 0) && (
-        <RoleRow
-          label="Rolle in der Familie"
-          role={soloRoles[0] ?? ""}
-          disabled={disabled}
-          onOpen={() => setSoloPickerOpen(true)}
-        />
-      )}
+      {/* A role with nobody to point at. The whole story for the first
+          person in a family — and still the only way to say "Oma" when the
+          grandchildren are not in Ordilo, so it stays available for
+          everyone. */}
+      <RoleRow
+        label="Rolle in der Familie"
+        role={soloRoles[0] ?? ""}
+        disabled={disabled}
+        onOpen={() => setSoloPickerOpen(true)}
+      />
 
       {personRelations.length > 0 && (
         <ul className="overflow-hidden rounded-ordilo-md border border-border bg-card">

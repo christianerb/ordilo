@@ -147,6 +147,7 @@ function mockSupabase(options: {
 
   return {
     from: fromMock,
+    rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user },

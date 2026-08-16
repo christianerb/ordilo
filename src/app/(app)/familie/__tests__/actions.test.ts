@@ -67,6 +67,8 @@ function mockSupabase(options: {
     }[];
     insertError?: unknown;
     deleteError?: unknown;
+    /** Make the atomic replacement RPC fail. */
+    rpcError?: unknown;
   };
   familyNameUpdate?: {
     updated?: { name: string };
@@ -212,6 +214,12 @@ function mockSupabase(options: {
 
   return {
     from: fromMock,
+    // replace_member_relations — the atomic swap of one member's rows,
+    // returning the rows as they were before.
+    rpc: vi.fn().mockResolvedValue({
+      data: options.relations?.rows ?? [],
+      error: options.relations?.rpcError ?? null,
+    }),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user },
@@ -461,6 +469,33 @@ describe("addFamilyMember", () => {
       // The first relation's role is mirrored onto the member row.
       expect(result.data.role).toBe("Mutter");
     }
+  });
+
+  it("undoes the new member when the relationships cannot be stored", async () => {
+    const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
+    const emmaId = "11111111-1111-4111-8111-111111111111";
+    const client = mockSupabase({
+      family,
+      members: {
+        inserted: { id: "mem-3", family_id: "fam-1", name: "Karina" },
+        relatedMembers: [{ id: emmaId, family_id: "fam-1" }],
+      },
+      relations: { rpcError: { message: "boom" } },
+    });
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const result = await addFamilyMember({
+      name: "Karina",
+      relations: [{ role: "Mutter", member_ids: [emmaId] }],
+    });
+
+    expect(result.success).toBe(false);
+    // The half-created member does not stay behind in the family list.
+    expect(client.from).toHaveBeenCalledWith("family_members");
+    const deleteCalls = (client.from as ReturnType<typeof vi.fn>).mock.results
+      .map((r) => r.value as { delete?: ReturnType<typeof vi.fn> })
+      .filter((table) => table.delete && table.delete.mock.calls.length > 0);
+    expect(deleteCalls.length).toBeGreaterThan(0);
   });
 
   it("rejects a relationship pointing at a different family's member", async () => {

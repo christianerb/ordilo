@@ -28,6 +28,8 @@ interface MemberRow {
 function fakeClient(initial: {
   relations?: Omit<RelationRow, "id" | "family_id">[];
   members?: MemberRow[];
+  /** Make the atomic replacement fail, as a transient database error would. */
+  rpcFails?: boolean;
 }) {
   let nextId = 1;
   const relations: RelationRow[] = (initial.relations ?? []).map((row) => ({
@@ -36,6 +38,41 @@ function fakeClient(initial: {
     ...row,
   }));
   const members: MemberRow[] = initial.members ?? [];
+
+  /** What the `replace_member_relations` RPC does, in memory. */
+  const replaceMemberRelations = (
+    memberId: string,
+    rows: { related_member_id: string | null; role: string; sort_order: number }[],
+  ) => {
+    const before = relations
+      .filter((row) => row.member_id === memberId)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((row) => ({
+        member_id: row.member_id,
+        related_member_id: row.related_member_id,
+        role: row.role,
+        sort_order: row.sort_order,
+      }));
+
+    for (let i = relations.length - 1; i >= 0; i--) {
+      if (relations[i].member_id === memberId) relations.splice(i, 1);
+    }
+    for (const row of rows) {
+      relations.push({ id: `rel-${nextId++}`, family_id: "fam-1", member_id: memberId, ...row });
+    }
+    syncPrimaryRole(memberId);
+    return before;
+  };
+
+  /** The DB-side trigger/function that keeps family_members.role current. */
+  const syncPrimaryRole = (memberId: string) => {
+    const member = members.find((m) => m.id === memberId);
+    if (!member) return;
+    const first = relations
+      .filter((row) => row.member_id === memberId)
+      .sort((a, b) => a.sort_order - b.sort_order)[0];
+    member.role = first?.role ?? null;
+  };
 
   const relationsTable = {
     select: () => ({
@@ -65,9 +102,14 @@ function fakeClient(initial: {
         return { error: null };
       },
       in: async (_column: string, ids: string[]) => {
+        const owners = new Set(
+          relations.filter((row) => ids.includes(row.id)).map((row) => row.member_id),
+        );
         for (let i = relations.length - 1; i >= 0; i--) {
           if (ids.includes(relations[i].id)) relations.splice(i, 1);
         }
+        // The AFTER DELETE trigger from migration 0064.
+        for (const owner of owners) syncPrimaryRole(owner);
         return { error: null };
       },
     }),
@@ -92,6 +134,23 @@ function fakeClient(initial: {
   const client = {
     from: (table: string) =>
       table === "family_member_relations" ? relationsTable : membersTable,
+    rpc: async (
+      name: string,
+      args: {
+        p_member_id: string;
+        p_relations: {
+          related_member_id: string | null;
+          role: string;
+          sort_order: number;
+        }[];
+      },
+    ) => {
+      if (name !== "replace_member_relations") throw new Error(`Unexpected rpc ${name}`);
+      if (initial.rpcFails) {
+        return { data: null, error: { message: "boom" } };
+      }
+      return { data: replaceMemberRelations(args.p_member_id, args.p_relations), error: null };
+    },
   } as unknown as Awaited<ReturnType<typeof createClient>>;
 
   return {
@@ -279,5 +338,55 @@ describe("saveMemberRelations — the other side", () => {
     });
 
     expect(db.rolesOf("chris")).toEqual(["Partner:in:karina"]);
+  });
+});
+
+describe("saveMemberRelations — failures and ordering", () => {
+  it("changes nothing when the atomic replacement fails", async () => {
+    const db = fakeClient({
+      relations: [
+        { member_id: "karina", related_member_id: "emma", role: "Mutter", sort_order: 0 },
+      ],
+      members: [
+        { id: "karina", role: "Mutter" },
+        { id: "emma", role: "Kind" },
+      ],
+      rpcFails: true,
+    });
+
+    const ok = await saveMemberRelations(db.client, {
+      familyId: "fam-1",
+      memberId: "karina",
+      relations: [],
+    });
+
+    expect(ok).toBe(false);
+    // The old relations survive a failed save — no silent data loss.
+    expect(db.rolesOf("karina")).toEqual(["Mutter:emma"]);
+  });
+
+  it("keeps the counterpart's primary role when replacing their plain role", async () => {
+    const db = fakeClient({
+      relations: [
+        { member_id: "emma", related_member_id: null, role: "Tochter", sort_order: 0 },
+        { member_id: "emma", related_member_id: "ben", role: "Schwester", sort_order: 1 },
+      ],
+      members: [
+        { id: "karina", role: null },
+        { id: "emma", role: "Tochter" },
+        { id: "ben", role: "Bruder" },
+      ],
+    });
+
+    await saveMemberRelations(db.client, {
+      familyId: "fam-1",
+      memberId: "karina",
+      relations: [{ role: "Mutter", member_ids: ["emma"] }],
+    });
+
+    // "Tochter von Karina" takes the place of the plain "Tochter" instead of
+    // being appended, so Emma stays a Tochter first and a Schwester second.
+    expect(db.rolesOf("emma")).toEqual(["Schwester:ben", "Tochter:karina"]);
+    expect(db.members.find((m) => m.id === "emma")?.role).toBe("Tochter");
   });
 });

@@ -331,17 +331,23 @@ function makeMemberCtx({
           eq: vi.fn().mockResolvedValue({ error: null }),
           in: vi.fn().mockResolvedValue({ error: null }),
         })),
-        insert: vi.fn((rows: Record<string, unknown>[]) => {
-          capturedRelations = rows;
-          return Promise.resolve({ error: null });
-        }),
+        insert: vi.fn().mockResolvedValue({ error: null }),
       };
     }
     return makeThenableChain(null);
   });
 
+  // The relations are written by the replace_member_relations RPC, which
+  // swaps a member's rows in one transaction.
+  const rpc = vi.fn((name: string, args: Record<string, unknown>) => {
+    if (name === "replace_member_relations") {
+      capturedRelations = args.p_relations as Record<string, unknown>[];
+    }
+    return Promise.resolve({ data: [], error: null });
+  });
+
   const ctx = {
-    client: { from } as unknown as ToolContext["client"],
+    client: { from, rpc } as unknown as ToolContext["client"],
     familyId: "fam-1",
     sources: [] as ChatSource[],
     speakerName: null,
@@ -420,13 +426,7 @@ describe("add_family_member confirmation gate", () => {
     // The role also becomes a relationship, so the /familie UI shows the
     // same thing for a member added through chat.
     expect(getRelations()).toEqual([
-      {
-        family_id: "fam-1",
-        member_id: "member-2",
-        related_member_id: null,
-        role: "Kind",
-        sort_order: 0,
-      },
+      { related_member_id: null, role: "Kind", sort_order: 0 },
     ]);
   });
 

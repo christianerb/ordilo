@@ -36,6 +36,7 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations_backfilled_at: null,
     ...overrides,
   };
 }
@@ -171,6 +172,34 @@ describe("EditMemberClient", () => {
     });
     await waitFor(() => {
       expect(mockPush).toHaveBeenCalledWith("/familie");
+    });
+  });
+
+  it("leaves the stored relationships alone when they could not be loaded", async () => {
+    render(
+      <EditMemberClient
+        member={makeMember()}
+        relations={[]}
+        relationsUnavailable
+        photoUrl={null}
+        otherMembers={others}
+      />,
+    );
+
+    // No editor at all — an empty list here would mean "delete them all".
+    expect(screen.getByTestId("relations-unavailable")).toBeInTheDocument();
+    expect(screen.queryByTestId("relationship-list")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Karina B." } });
+    fireEvent.click(screen.getByTestId("edit-member-save"));
+
+    await waitFor(() => {
+      expect(mockUpdateFamilyMember).toHaveBeenCalledWith("mem-1", {
+        name: "Karina B.",
+        birthdate: "1989-05-13",
+        avatar_color: "#E46018",
+        relations: undefined,
+      });
     });
   });
 

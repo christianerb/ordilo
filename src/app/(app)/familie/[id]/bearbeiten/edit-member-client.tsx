@@ -3,7 +3,15 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Check, Loader2, Lock, MoreHorizontal, Trash2 } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Check,
+  Loader2,
+  Lock,
+  MoreHorizontal,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,6 +47,12 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 export interface EditMemberClientProps {
   member: MemberRow;
   relations: MemberRelation[];
+  /**
+   * The relationships could not be read. Editing them is off in that case:
+   * saving the empty list the page fell back to would delete the stored
+   * ones. Everything else on the page still saves.
+   */
+  relationsUnavailable?: boolean;
   photoUrl: string | null;
   otherMembers: RelationMemberOption[];
 }
@@ -54,6 +68,7 @@ export interface EditMemberClientProps {
 export function EditMemberClient({
   member,
   relations: initialRelations,
+  relationsUnavailable = false,
   photoUrl: initialPhotoUrl,
   otherMembers,
 }: EditMemberClientProps) {
@@ -91,7 +106,11 @@ export function EditMemberClient({
         name,
         birthdate: birthdate || undefined,
         avatar_color: avatarColor || undefined,
-        relations: relations.filter((relation) => relation.role.trim() !== ""),
+        // Omitting relations entirely tells the action to leave the stored
+        // ones alone — the only safe option when they could not be read.
+        relations: relationsUnavailable
+          ? undefined
+          : relations.filter((relation) => relation.role.trim() !== ""),
       });
       setIsSubmitting(false);
 
@@ -104,7 +123,16 @@ export function EditMemberClient({
       router.push(profileHref);
       router.refresh();
     },
-    [avatarColor, birthdate, member.id, name, profileHref, relations, router],
+    [
+      avatarColor,
+      birthdate,
+      member.id,
+      name,
+      profileHref,
+      relations,
+      relationsUnavailable,
+      router,
+    ],
   );
 
   const handleRemove = useCallback(async () => {
@@ -259,13 +287,30 @@ export function EditMemberClient({
               Wer ist {name.trim() || "diese Person"} für die anderen?
             </p>
           </div>
-          <RelationshipList
-            value={relations}
-            onChange={setRelations}
-            members={otherMembers}
-            subjectName={name}
-            disabled={isSubmitting}
-          />
+          {relationsUnavailable ? (
+            <div
+              className="flex items-start gap-2 rounded-ordilo-sm border border-border bg-secondary/50 px-3 py-2.5"
+              data-testid="relations-unavailable"
+            >
+              <AlertCircle
+                className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-muted-foreground">
+                Die Beziehungen konnten gerade nicht geladen werden. Sie
+                bleiben unverändert — lade die Seite neu, um sie zu
+                bearbeiten.
+              </p>
+            </div>
+          ) : (
+            <RelationshipList
+              value={relations}
+              onChange={setRelations}
+              members={otherMembers}
+              subjectName={name}
+              disabled={isSubmitting}
+            />
+          )}
         </section>
 
         {serverError && (

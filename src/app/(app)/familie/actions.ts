@@ -116,11 +116,18 @@ export async function addFamilyMember(
   }
 
   if (relationCheck.data.length > 0) {
-    await saveMemberRelations(supabase, {
+    const relationsSaved = await saveMemberRelations(supabase, {
       familyId: family.id,
       memberId: member.id,
       relations: relationCheck.data,
     });
+    if (!relationsSaved) {
+      // A member without the relationships the user just entered is not
+      // what was asked for, and silently keeping it would leave a stranger
+      // in the family list. Undo the insert and report the failure.
+      await supabase.from("family_members").delete().eq("id", member.id);
+      return { success: false, error: FRIENDLY_ERROR };
+    }
   }
 
   return { success: true, data: { ...member, relations: relationCheck.data } };
@@ -214,10 +221,8 @@ export async function updateFamilyMember(
   }
 
   if (!managesRelations) {
-    return {
-      success: true,
-      data: { ...updated, relations: await loadMemberRelations(supabase, memberId) },
-    };
+    const stored = await loadMemberRelations(supabase, memberId);
+    return { success: true, data: { ...updated, relations: stored.relations } };
   }
 
   // Relations are replaced wholesale — what the form showed is what is

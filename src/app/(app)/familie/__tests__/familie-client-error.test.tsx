@@ -38,6 +38,7 @@ function makeMember(
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations_backfilled_at: null,
     relations: [],
     ...overrides,
   } satisfies MemberRow & { relations: MemberWithRelations["relations"] };

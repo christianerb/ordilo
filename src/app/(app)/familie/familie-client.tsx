@@ -95,8 +95,12 @@ export function FamilieClient({
       setMemberList((prev) => [...prev, result.data]);
       setAddSheetOpen(false);
       toast.success(`${result.data.name} ist dabei`);
+      // A new relationship also lands on the other person (their role, their
+      // relationship line, which filter tab they belong to) — only the
+      // server knows their new state.
+      router.refresh();
     },
-    [resetErrors],
+    [resetErrors, router],
   );
 
   // Editing a person is a page of its own — a photo, the basics and a list
