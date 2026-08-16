@@ -165,6 +165,74 @@ describe("TaskCard", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // The four things a task carries: Titel, Beschreibung, Wer, Wann
+  // ---------------------------------------------------------------------------
+
+  it("puts the note on the row, not just inside the sheet", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          description: "Im Sekretariat abgeben, nicht in den Briefkasten",
+        })}
+      />,
+    );
+
+    // Editable but invisible meant the only way to find out a task had a
+    // note was to open every task.
+    expect(screen.getByTestId("task-note").textContent).toBe(
+      "Im Sekretariat abgeben, nicht in den Briefkasten",
+    );
+  });
+
+  it("shows no note line when there is nothing to say", () => {
+    render(<TaskCard task={makeTask({ description: null })} />);
+    expect(screen.queryByTestId("task-note")).toBeNull();
+  });
+
+  it("ignores a note that is only whitespace", () => {
+    render(<TaskCard task={makeTask({ description: "   " })} />);
+    expect(screen.queryByTestId("task-note")).toBeNull();
+  });
+
+  it("drops the note once the task is done", () => {
+    render(
+      <TaskCard task={makeTask({ description: "Details", status: "done" })} />,
+    );
+    // The Erledigt list is scanned, not read.
+    expect(screen.queryByTestId("task-note")).toBeNull();
+  });
+
+  it("keeps the note to one line so the list stays scannable", () => {
+    render(
+      <TaskCard
+        task={makeTask({ description: "Eine sehr lange Notiz ".repeat(20) })}
+      />,
+    );
+    expect(screen.getByTestId("task-note").className).toContain("line-clamp-1");
+  });
+
+  it("carries title, note, who and when on a single row", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          title: "Klassenfahrt bezahlen",
+          description: "Überweisung, Verwendungszweck nicht vergessen",
+          due_date: isoInDays(0),
+          assigned_to: "m1",
+        })}
+        assignee={{ name: "Karina" }}
+      />,
+    );
+
+    expect(screen.getByTestId("task-title").textContent).toBe(
+      "Klassenfahrt bezahlen",
+    );
+    expect(screen.getByTestId("task-note")).toBeDefined();
+    expect(screen.getByTestId("task-due-date").textContent).toContain("Heute");
+    expect(screen.getByTestId("task-assignee").textContent).toContain("Karina");
+  });
+
+  // ---------------------------------------------------------------------------
   // Assignee — "wer macht was"
   // ---------------------------------------------------------------------------
 

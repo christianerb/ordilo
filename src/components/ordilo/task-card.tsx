@@ -103,6 +103,14 @@ export function TaskCard({
   const hasDocument = Boolean(task.document_id);
   const assigneeName = assignee?.name ?? task.assigned_member_name ?? null;
   const hasMeta = Boolean(dueLabel || hasDocument);
+  // A task carries four things that matter: what, who, when, and the
+  // detail that makes it doable ("im Sekretariat abgeben, nicht in den
+  // Briefkasten"). The first three were on the row; the note was editable
+  // but invisible, so the only way to find out a task had one was to open
+  // every task. One clamped line puts the content itself on the row —
+  // more use than an icon hinting that content exists. Finished tasks drop
+  // it again: the Erledigt list is scanned, not read.
+  const noteLine = isDone ? null : task.description?.trim() || null;
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -171,6 +179,7 @@ export function TaskCard({
             dueLabel={dueLabel}
             overdueLabel={overdueLabel}
             dueTitle={dueTitle}
+            noteLine={noteLine}
             hasMeta={hasMeta}
           />
         </button>
@@ -184,6 +193,7 @@ export function TaskCard({
             dueLabel={dueLabel}
             overdueLabel={overdueLabel}
             dueTitle={dueTitle}
+            noteLine={noteLine}
             hasMeta={hasMeta}
           />
         </div>
@@ -323,6 +333,7 @@ function CardContent({
   dueLabel,
   overdueLabel,
   dueTitle,
+  noteLine,
   hasMeta,
 }: {
   task: TaskCardData;
@@ -332,6 +343,7 @@ function CardContent({
   dueLabel: string | null;
   overdueLabel: string | null;
   dueTitle: string | undefined;
+  noteLine: string | null;
   hasMeta: boolean;
 }) {
   return (
@@ -346,6 +358,16 @@ function CardContent({
       >
         {task.title}
       </p>
+
+      {/* Note — the detail that makes the task doable */}
+      {noteLine && (
+        <p
+          className="mt-0.5 line-clamp-1 text-xs leading-relaxed text-muted-foreground"
+          data-testid="task-note"
+        >
+          {noteLine}
+        </p>
+      )}
 
       {/* Meta — when it is due, and where it came from */}
       {hasMeta && (

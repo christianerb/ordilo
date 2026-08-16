@@ -327,7 +327,9 @@ The most-seen component in the app. Horizontal layout: file-type icon (40px sand
 
 ### Signature: Task Card
 
-Horizontal layout, left to right: circular checkbox (24px mark inside a 44px target, harbor blue when checked) → title + meta line → assignee face → row menu. Done tasks get strikethrough and muted foreground.
+Horizontal layout, left to right: circular checkbox (24px mark inside a 44px target, harbor blue when checked) → title + note + meta line → assignee face → row menu. Done tasks get strikethrough and muted foreground.
+
+**A task carries four things, and all four are on the row:** what (title, up to two lines), the detail that makes it doable (note, one clamped line), who (the assignee face), and when (the due label). A field that is editable but invisible in the list may as well not exist — the only way to discover it is to open every task in turn. Finished tasks drop the note again: the Erledigt list is scanned, not read.
 
 **Due labels** are short and human — "Heute", "Morgen", "Do", "10. Aug." — with the full German date (DD.MM.YYYY) in the `title` attribute. An overdue task shows *how late* it is instead ("seit gestern", "seit 3 Tagen") in apricot: lateness belongs on the row that is late, never in a section heading that grows into a wall of everything the family missed.
 
