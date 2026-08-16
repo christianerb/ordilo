@@ -32,6 +32,7 @@ import {
   type TaskSectionId,
 } from "@/lib/task-utils";
 import { useScanActions } from "@/lib/scan/scan-context";
+import { createClient } from "@/lib/supabase/client";
 import { useTaskMutation, type TaskPatch } from "@/lib/hooks/use-task-mutation";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +80,84 @@ const SECTIONS: SectionConfig[] = [
 /** The sentinel member filter for "tasks nobody has taken on yet". */
 const UNASSIGNED = "__unassigned__";
 
+/**
+ * Who a task belongs to, as the row should show them right now.
+ *
+ * The live `members` list wins over the `assigned_member_name` the server
+ * sent: reassigning a task updates `assigned_to` optimistically but cannot
+ * update a name resolved on the server, so trusting that name first showed
+ * the new person's face next to the old person's name.
+ */
+function resolveAssignee(
+  task: TaskCardData,
+  members: AssigneeOption[],
+  memberPhotoUrls: Record<string, string>,
+) {
+  if (!task.assigned_to) return undefined;
+  const member = members.find((m) => m.id === task.assigned_to);
+  return {
+    name: member?.name ?? task.assigned_member_name ?? null,
+    color: member?.avatar_color,
+    photoUrl: memberPhotoUrls[task.assigned_to],
+  };
+}
+
+/** A section's heading: a disclosure control only where there is one. */
+function SectionHeading({
+  section,
+  count,
+  expanded,
+  onToggle,
+}: {
+  section: SectionConfig;
+  count: number;
+  expanded: boolean;
+  onToggle?: () => void;
+}) {
+  const content = (
+    <>
+      <h2 className={cn("text-base font-semibold", section.tone)}>
+        {section.label}
+      </h2>
+      <span className="rounded-full bg-[var(--sand-warm)] px-2 py-0.5 text-xs font-medium tabular-nums text-[var(--mist-dark)]">
+        {count}
+      </span>
+      {onToggle && (
+        <ChevronDown
+          className={cn(
+            "ml-auto size-4.5 shrink-0 text-muted-foreground transition-transform",
+            expanded && "rotate-180",
+          )}
+          aria-hidden="true"
+        />
+      )}
+    </>
+  );
+
+  if (!onToggle) {
+    return (
+      <div
+        className="flex w-full items-center gap-2 px-1 py-2"
+        data-testid={`task-section-header-${section.id}`}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={expanded}
+      className="flex w-full items-center gap-2 rounded-ordilo-sm px-1 py-2 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      data-testid={`task-section-header-${section.id}`}
+    >
+      {content}
+    </button>
+  );
+}
+
 function TaskSection({
   section,
   tasks,
@@ -106,7 +185,14 @@ function TaskSection({
   onAssign: (task: TaskCardData) => void;
   deleteLabel?: string;
 }) {
-  const sortedTasks = useMemo(() => sortTasksByDate(tasks), [tasks]);
+  // Open sections read by date; "Erledigt" keeps the incoming order, which
+  // is newest-created first. Ordering finished work by the date it *was*
+  // due puts the oldest chore on top of a list people scan for what they
+  // just ticked off.
+  const sortedTasks = useMemo(
+    () => (section.id === "done" ? tasks : sortTasksByDate(tasks)),
+    [section.id, tasks],
+  );
   const [expanded, setExpanded] = useState(false);
 
   // A section is a heading, nothing more — it is not a drop target, so an
@@ -123,32 +209,17 @@ function TaskSection({
       className="animate-column-in rounded-ordilo-md"
       data-testid={`task-section-${section.id}`}
     >
-      <button
-        type="button"
-        onClick={() => section.collapsible && setExpanded((open) => !open)}
-        aria-expanded={section.collapsible ? expanded : undefined}
-        className={cn(
-          "flex w-full items-center gap-2 rounded-ordilo-sm px-1 py-2 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-          !section.collapsible && "cursor-default",
-        )}
-        data-testid={`task-section-header-${section.id}`}
-      >
-        <h2 className={cn("text-base font-semibold", section.tone)}>
-          {section.label}
-        </h2>
-        <span className="rounded-full bg-[var(--sand-warm)] px-2 py-0.5 text-xs font-medium tabular-nums text-[var(--mist-dark)]">
-          {sortedTasks.length}
-        </span>
-        {section.collapsible && (
-          <ChevronDown
-            className={cn(
-              "ml-auto size-4.5 shrink-0 text-muted-foreground transition-transform",
-              expanded && "rotate-180",
-            )}
-            aria-hidden="true"
-          />
-        )}
-      </button>
+      {/* Only a collapsible section is a control. A heading rendered as a
+          button that toggles nothing announces itself as interactive to a
+          screen reader and then does nothing. */}
+      <SectionHeading
+        section={section}
+        count={sortedTasks.length}
+        expanded={expanded}
+        onToggle={
+          section.collapsible ? () => setExpanded((open) => !open) : undefined
+        }
+      />
 
       <div
         className={cn(
@@ -160,19 +231,7 @@ function TaskSection({
           <SwipeableTaskCard
             key={task.id}
             task={task}
-            assignee={
-              task.assigned_to
-                ? {
-                    name:
-                      task.assigned_member_name ??
-                      members.find((m) => m.id === task.assigned_to)?.name ??
-                      null,
-                    color: members.find((m) => m.id === task.assigned_to)
-                      ?.avatar_color,
-                    photoUrl: memberPhotoUrls[task.assigned_to],
-                  }
-                : undefined
-            }
+            assignee={resolveAssignee(task, members, memberPhotoUrls)}
             flat
             cardClassName="px-3"
             onToggleDone={(newStatus) => onToggleDone(task.id, newStatus)}
@@ -227,6 +286,7 @@ export function AufgabenClient({
 }) {
   const router = useRouter();
   const { openWizard } = useScanActions();
+  const supabase = createClient();
   const [tasks, setTasks] = useState<TaskCardData[]>(initialTasks);
   const [error] = useState<string | null>(initialError);
   // Deep link: /aufgaben?task=<id> preselects that task and opens its
@@ -261,6 +321,92 @@ export function AufgabenClient({
     if (!familyId) return;
     plannerActions?.setCreateHandler(() => setCreateSheetOpen(true));
     return () => plannerActions?.setCreateHandler(null);
+  });
+
+  /**
+   * Re-read the family's tasks from the server.
+   *
+   * Merges into local state instead of calling `router.refresh()`, because
+   * the page keys this component on its task data — a refresh would remount
+   * it and throw away the member filter, the expanded sections and any open
+   * sheet every time somebody else ticked something off.
+   */
+  const refreshTasks = useCallback(async () => {
+    if (!familyId) return;
+    const { data: taskRows } = await supabase
+      .from("tasks")
+      .select("*")
+      .eq("family_id", familyId)
+      .eq("confirmed", true)
+      .order("created_at", { ascending: false });
+    if (!taskRows) return;
+
+    const documentIds = [
+      ...new Set(
+        taskRows
+          .map((task) => task.document_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const titleById = new Map<string, string | null>();
+    if (documentIds.length > 0) {
+      const { data: documentRows } = await supabase
+        .from("documents")
+        .select("id, title")
+        .in("id", documentIds);
+      for (const document of documentRows ?? []) {
+        titleById.set(document.id, document.title);
+      }
+    }
+
+    setTasks((previous) => {
+      const previousById = new Map(previous.map((task) => [task.id, task]));
+      return taskRows.map((row) => ({
+        ...row,
+        document_title: row.document_id
+          ? titleById.get(row.document_id) ?? null
+          : null,
+        // Linked documents only appear inside the detail sheet, so they are
+        // not worth a third round trip here — keep what the page loaded.
+        linked_documents: previousById.get(row.id)?.linked_documents ?? [],
+        // Resolved from the live members list by the row itself.
+        assigned_member_name: null,
+      }));
+    });
+  }, [familyId, supabase]);
+
+  /**
+   * Two parents, two phones, one list.
+   *
+   * The Kalender tab of this very page has been live since it shipped while
+   * Aufgaben stayed request/response — so a task Karina ticked off stayed
+   * open on Christian's phone until he navigated away and back. For a
+   * family plan that is the difference between one shared list and two
+   * private guesses.
+   */
+  useMountEffect(() => {
+    if (!familyId) return;
+    // Defensive: test mocks (and any non-realtime client) don't implement
+    // channel(); the page then simply stays request/response.
+    if (typeof supabase.channel !== "function") return;
+
+    const channel = supabase
+      .channel(`tasks-${familyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "tasks",
+          filter: `family_id=eq.${familyId}`,
+        },
+        () => void refreshTasks(),
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
   });
 
   // Fresh "today" on every render so the sections stay correct across long
@@ -531,6 +677,10 @@ export function AufgabenClient({
     !nothingMatchesFilter &&
     sectionedTasks.now.length === 0 &&
     openCount > 0;
+  // Everything done. Without this the screen is a single collapsed
+  // "Erledigt" row, which looks like the list failed to load rather than
+  // like the family finished.
+  const allDone = hasAnyTasks && !nothingMatchesFilter && openCount === 0;
 
   return (
     <div className="app-page-stack">
@@ -617,6 +767,15 @@ export function AufgabenClient({
         </p>
       )}
 
+      {allDone && (
+        <p
+          className="rounded-ordilo-md border border-border bg-[var(--surface-story)] p-4 text-sm text-muted-foreground"
+          data-testid="task-all-done"
+        >
+          Alles erledigt. Nichts steht mehr an — schön gemacht.
+        </p>
+      )}
+
       {nowIsClear && (
         <p
           className="rounded-ordilo-md border border-border bg-[var(--surface-story)] p-4 text-sm text-muted-foreground"
@@ -650,7 +809,10 @@ export function AufgabenClient({
 
       <TaskScheduleSheet
         task={scheduleTask}
-        open={scheduleTaskId !== null}
+        // Driven by the resolved task, not the id: if the task disappears
+        // while its sheet is open — dismissed on another phone — the sheet
+        // closes instead of asking "wann?" about nothing.
+        open={scheduleTask !== null}
         onOpenChange={(open) => {
           if (!open) setScheduleTaskId(null);
         }}
@@ -661,7 +823,7 @@ export function AufgabenClient({
         task={assignTask}
         members={members}
         memberPhotoUrls={memberPhotoUrls}
-        open={assignTaskId !== null}
+        open={assignTask !== null}
         onOpenChange={(open) => {
           if (!open) setAssignTaskId(null);
         }}
@@ -682,10 +844,20 @@ export function AufgabenClient({
 
       {familyId && (
         <TaskCreateSheet
+          // The sheet stays mounted, so its default assignee would be
+          // frozen at whatever the filter was on first render. Remounting
+          // on change is the codebase's reset-with-key convention.
+          key={`create:${memberFilter ?? "all"}`}
           open={createSheetOpen}
           onOpenChange={setCreateSheetOpen}
           familyId={familyId}
           members={members}
+          memberPhotoUrls={memberPhotoUrls}
+          // Looking at one person's tasks and tapping "+" almost always
+          // means "and one more for them".
+          defaultAssignee={
+            memberFilter && memberFilter !== UNASSIGNED ? memberFilter : null
+          }
           onCreated={handleSheetCreated}
         />
       )}

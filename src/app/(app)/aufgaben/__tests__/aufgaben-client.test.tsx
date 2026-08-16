@@ -288,6 +288,32 @@ describe("AufgabenClient — wer macht was", () => {
     expect(screen.getByTestId("task-filter-empty")).toBeDefined();
   });
 
+  it("shows the new person's name, not the one the server sent", async () => {
+    // Regression: the row preferred `assigned_member_name` from the server
+    // over the live member list, so reassigning showed the new person's
+    // face beside the old person's name.
+    renderList([
+      makeTask({
+        id: "t1",
+        due_date: TODAY_STR,
+        assigned_to: "m1",
+        assigned_member_name: "Christian",
+      }),
+    ]);
+
+    fireEvent.click(screen.getByTestId("task-assignee"));
+    fireEvent.click(await screen.findByTestId("task-assign-m2"));
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId("task-assignee").getAttribute("aria-label"),
+      ).toContain("Karina"),
+    );
+    expect(
+      screen.getByTestId("task-assignee").getAttribute("aria-label"),
+    ).not.toContain("Christian");
+  });
+
   it("assigns a task from the row and offers to undo it", async () => {
     renderList([makeTask({ id: "t1", due_date: TODAY_STR })]);
 
@@ -401,6 +427,69 @@ describe("AufgabenClient — abhaken", () => {
     expect(screen.queryByTestId("task-section-now")).toBeNull();
     fireEvent.click(screen.getByTestId("task-section-header-done"));
     expect(sectionTitles("done")).toEqual(["Trikot"]);
+  });
+});
+
+describe("AufgabenClient — the shape of the screen", () => {
+  it("celebrates instead of leaving a lone collapsed section", () => {
+    renderList([
+      makeTask({ id: "t1", status: "done" }),
+      makeTask({ id: "t2", status: "done" }),
+    ]);
+
+    expect(screen.getByTestId("task-all-done")).toBeDefined();
+    expect(screen.queryByTestId("task-now-clear")).toBeNull();
+  });
+
+  it("does not celebrate while work is still open", () => {
+    renderList([
+      makeTask({ id: "t1", status: "done" }),
+      makeTask({ id: "t2", due_date: TOMORROW_STR }),
+    ]);
+
+    expect(screen.queryByTestId("task-all-done")).toBeNull();
+    expect(screen.getByTestId("task-now-clear")).toBeDefined();
+  });
+
+  it("makes only collapsible headings interactive", () => {
+    renderList([
+      makeTask({ id: "t1", due_date: TODAY_STR }),
+      makeTask({ id: "t2", due_date: null }),
+    ]);
+
+    // "Jetzt dran" toggles nothing, so it must not announce itself as a
+    // control; "Ohne Termin" collapses, so it must.
+    expect(screen.getByTestId("task-section-header-now").tagName).not.toBe(
+      "BUTTON",
+    );
+    const undated = screen.getByTestId("task-section-header-undated");
+    expect(undated.tagName).toBe("BUTTON");
+    expect(undated.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("lists what was just finished first, not what was due longest ago", () => {
+    // Done tasks keep the incoming (newest-created-first) order rather than
+    // being re-sorted by the date they happened to be due.
+    renderList([
+      makeTask({
+        id: "t1",
+        title: "Zuletzt erledigt",
+        status: "done",
+        due_date: isoInDays(-30),
+      }),
+      makeTask({
+        id: "t2",
+        title: "Vorher erledigt",
+        status: "done",
+        due_date: isoInDays(-1),
+      }),
+    ]);
+
+    fireEvent.click(screen.getByTestId("task-section-header-done"));
+    expect(sectionTitles("done")).toEqual([
+      "Zuletzt erledigt",
+      "Vorher erledigt",
+    ]);
   });
 });
 

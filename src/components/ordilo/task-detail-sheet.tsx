@@ -18,6 +18,14 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
@@ -92,6 +100,7 @@ export function TaskDetailSheet({
   const [showMore, setShowMore] = useState((task?.tags?.length ?? 0) > 0);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const minDueDate = todayAsIsoDate();
   // Read on every render so a sheet left open overnight cannot offer
   // yesterday as "Heute".
@@ -150,6 +159,26 @@ export function TaskDetailSheet({
     }
   }, [task, title, description, dueDate, tags, assignedTo, supabase, onSaved, onOpenChange, minDueDate]);
 
+  /**
+   * Closing with unsaved edits asks first.
+   *
+   * The sheet can be dismissed four ways — the X, the overlay, Escape, and
+   * a swipe down — and every one of them used to drop a half-typed title on
+   * the floor without a word. Everything else on this screen either commits
+   * immediately or offers an undo; silently losing work is the one outcome
+   * that has neither.
+   */
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next && hasChanges && !saving) {
+        setConfirmDiscard(true);
+        return;
+      }
+      onOpenChange(next);
+    },
+    [hasChanges, onOpenChange, saving],
+  );
+
   const handleToggle = useCallback(() => {
     if (!task) return;
     onToggleDone(task.id, isDone ? "open" : "done");
@@ -169,7 +198,7 @@ export function TaskDetailSheet({
   ];
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         className="w-full gap-0 bg-[var(--surface-box)] sm:max-w-md"
         onOpenAutoFocus={(event) => {
@@ -548,6 +577,51 @@ export function TaskDetailSheet({
           </div>
         )}
       </SheetContent>
+
+      <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
+        <DialogContent
+          className="max-w-sm"
+          data-testid="task-detail-discard-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>Änderungen verwerfen?</DialogTitle>
+            <DialogDescription>
+              Du hast etwas geändert, aber noch nicht gespeichert.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-2 flex-row gap-3 sm:justify-end">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setConfirmDiscard(false)}
+              data-testid="task-detail-keep-editing"
+            >
+              Weiter bearbeiten
+            </Button>
+            <Button
+              className="flex-1"
+              onClick={() => {
+                setConfirmDiscard(false);
+                void handleSave();
+              }}
+              data-testid="task-detail-save-and-close"
+            >
+              Speichern
+            </Button>
+          </DialogFooter>
+          <button
+            type="button"
+            onClick={() => {
+              setConfirmDiscard(false);
+              onOpenChange(false);
+            }}
+            className="mx-auto flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            data-testid="task-detail-discard"
+          >
+            Änderungen verwerfen
+          </button>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
