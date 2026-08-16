@@ -350,7 +350,6 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       status: "open",
       due_date: TODAY_STR,
-      completed_at: null,
     });
 
     const [message, options] = lastToast();
@@ -364,6 +363,9 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate.mock.calls[1][0]).toEqual({
       status: "open",
       due_date: null,
+      // Undo restores the exact snapshot taken when the change was made,
+      // including the completion time, so putting back a task that was
+      // reopened by rescheduling does not re-date it to "now".
       completed_at: null,
     });
   });
@@ -379,7 +381,6 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       status: "open",
       due_date: TOMORROW_STR,
-      completed_at: null,
     });
     expect(lastToast()[0]).toContain("Verschoben auf");
   });
@@ -395,7 +396,6 @@ describe("AufgabenClient — verschieben", () => {
     expect(mockUpdate).toHaveBeenCalledWith({
       status: "open",
       due_date: null,
-      completed_at: null,
     });
     expect(lastToast()[0]).toBe("Termin entfernt");
   });
@@ -408,10 +408,10 @@ describe("AufgabenClient — abhaken", () => {
     fireEvent.click(screen.getByTestId("task-checkbox"));
 
     await waitFor(() => expect(mockEq).toHaveBeenCalledWith("id", "t1"));
-    // The stamp rides along with the status, so the two can never disagree.
-    const completing = mockUpdate.mock.calls[0][0];
-    expect(completing.status).toBe("done");
-    expect(typeof completing.completed_at).toBe("string");
+    // The client does not send a completion time: a database trigger stamps
+    // it, using its own clock and covering writers that never touch this
+    // hook (the chat tools write `status` directly).
+    expect(mockUpdate).toHaveBeenCalledWith({ status: "done" });
 
     // The easiest action to trigger by accident is the one that most needs
     // a way back.
@@ -423,10 +423,7 @@ describe("AufgabenClient — abhaken", () => {
       options.action?.onClick();
     });
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
-    expect(mockUpdate.mock.calls[1][0]).toEqual({
-      status: "open",
-      completed_at: null,
-    });
+    expect(mockUpdate.mock.calls[1][0]).toEqual({ status: "open" });
   });
 
   it("moves the ticked-off task into Erledigt", async () => {
@@ -548,7 +545,6 @@ describe("AufgabenClient — verwerfen", () => {
     expect(mockUpdate.mock.calls[1][0]).toEqual({
       status: "open",
       due_date: null,
-      completed_at: null,
     });
   });
 });

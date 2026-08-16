@@ -438,7 +438,19 @@ export function AufgabenClient({
   const { toggleDone, dismiss, patch } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
       setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, status: newStatus } : t)),
+        prev.map((t) =>
+          t.id === taskId
+            ? {
+                ...t,
+                status: newStatus,
+                // A local guess so the row sorts correctly in "Erledigt"
+                // straight away. The database trigger writes the real one;
+                // the next refetch replaces this.
+                completed_at:
+                  newStatus === "done" ? new Date().toISOString() : null,
+              }
+            : t,
+        ),
       ),
     onRevertToggle: (taskId, newStatus) =>
       setTasks((prev) =>

@@ -17,23 +17,25 @@ export interface TaskPatch {
   due_date?: string | null;
   assigned_to?: string | null;
   /**
-   * Usually derived, not passed. Any patch that moves `status` gets a
-   * matching `completed_at` from {@link withCompletionStamp}, so the two can
-   * never disagree. Pass it explicitly only to restore an exact earlier
-   * value — an undo putting back the original completion time.
+   * Rarely passed. A database trigger stamps and clears this alongside
+   * `status` for every writer — including the chat tools, which do not go
+   * through this hook at all. Send it only to restore an exact earlier
+   * value: an undo putting back the moment a task was actually finished.
+   * A value supplied here wins; otherwise the database decides, using its
+   * own clock rather than a browser's.
    */
   completed_at?: string | null;
 }
 
 /**
- * Keep `completed_at` in step with `status`.
+ * The local guess for `completed_at`, used for optimistic state only.
  *
- * A task is done at a point in time, and that point is what the Erledigt
- * list sorts and bounds by. Deriving it here rather than at each call site
- * means no path — swipe, checkbox, detail sheet, reschedule, undo — can
- * write one field and forget the other.
+ * The row has to sort correctly in "Erledigt" the instant it is ticked off,
+ * before any refetch. This value never reaches the database — the trigger
+ * writes the authoritative one — so a device with a wrong clock misorders a
+ * row for a moment instead of hiding it outside the visible window.
  */
-function withCompletionStamp(updates: TaskPatch): TaskPatch {
+function withLocalCompletionGuess(updates: TaskPatch): TaskPatch {
   if (updates.status === undefined) return updates;
   if ("completed_at" in updates) return updates;
   return {
@@ -166,7 +168,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       try {
         const { error } = await supabase
           .from("tasks")
-          .update(withCompletionStamp({ status: newStatus }))
+          .update({ status: newStatus })
           .eq("id", taskId);
 
         if (error) {
@@ -206,7 +208,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       try {
         const { error } = await supabase
           .from("tasks")
-          .update(withCompletionStamp({ status: "dismissed" }))
+          .update({ status: "dismissed" })
           .eq("id", taskId);
 
         if (error) {
@@ -232,12 +234,12 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       previous: TaskPatch,
     ): Promise<boolean> => {
       const opts = optionsRef.current;
-      opts.onOptimisticPatch?.(taskId, updates);
+      opts.onOptimisticPatch?.(taskId, withLocalCompletionGuess(updates));
 
       try {
         const { error } = await supabase
           .from("tasks")
-          .update(withCompletionStamp(updates))
+          .update(updates)
           .eq("id", taskId);
 
         if (error) {
