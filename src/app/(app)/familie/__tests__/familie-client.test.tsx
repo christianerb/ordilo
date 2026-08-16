@@ -170,6 +170,33 @@ describe("FamilieClient — hinzufügen", () => {
     expect(mockPush).toHaveBeenCalledWith("/familie/mem-1/bearbeiten");
   });
 
+  it("takes over refreshed server data for the counterpart", () => {
+    const karina = makeMember({
+      id: "mem-1",
+      name: "Karina",
+      role: "Mutter",
+      relations: [{ role: "Mutter", member_ids: ["mem-9"] }],
+    });
+    const emmaBefore = makeMember({ id: "mem-9", name: "Emma", role: null, relations: [] });
+    const { rerender } = render(
+      <FamilieClient familyName="Testfamilie" members={[karina, emmaBefore]} />,
+    );
+    expect(screen.getByText("Mutter von Emma")).toBeInTheDocument();
+
+    // What the server sends after router.refresh(): Emma got the mirrored
+    // relationship. A list kept in state from the first render would still
+    // show her without one.
+    const emmaAfter = makeMember({
+      id: "mem-9",
+      name: "Emma",
+      role: "Kind",
+      relations: [{ role: "Kind", member_ids: ["mem-1"] }],
+    });
+    rerender(<FamilieClient familyName="Testfamilie" members={[karina, emmaAfter]} />);
+
+    expect(screen.getByText("Kind von Karina")).toBeInTheDocument();
+  });
+
   it("refreshes after adding, so the counterpart's card is not stale", async () => {
     mockAddFamilyMember.mockResolvedValue({
       success: true,

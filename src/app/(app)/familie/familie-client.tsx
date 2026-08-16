@@ -52,7 +52,18 @@ export function FamilieClient({
   fetchError = false,
 }: FamilieClientProps) {
   const router = useRouter();
+  // The list is held locally so an add or a remove shows up immediately,
+  // but the server has the last word: a relationship also changes the OTHER
+  // person's role and relationship line, and `router.refresh()` only
+  // re-renders the server component — state initialized once would keep
+  // showing the counterpart as they were. Adjusting it during render is
+  // React's sanctioned answer to "a prop changed" (no effect involved).
   const [memberList, setMemberList] = useState<MemberWithRelations[]>(members);
+  const [renderedMembers, setRenderedMembers] = useState(members);
+  if (renderedMembers !== members) {
+    setRenderedMembers(members);
+    setMemberList(members);
+  }
   // Photos are resolved on the server; they only change on the edit page,
   // which re-renders this one on the way back.
   const photoUrlMap = photoUrls;
@@ -131,7 +142,10 @@ export function FamilieClient({
     setRemoveDialogOpen(false);
     setRemoveTarget(null);
     toast.success(`${removeTarget.name} ist nicht mehr dabei`);
-  }, [removeTarget]);
+    // Removing a person takes the others' relationships to them with it,
+    // and with those their roles — only the server knows the new state.
+    router.refresh();
+  }, [removeTarget, router]);
 
   if (fetchError) {
     return (

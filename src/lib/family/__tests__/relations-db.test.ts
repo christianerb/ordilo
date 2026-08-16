@@ -396,6 +396,38 @@ describe("saveMemberRelations — the counterpart write", () => {
 });
 
 describe("saveMemberRelations — failures and ordering", () => {
+  it("keeps a changed relationship in the counterpart's original slot", async () => {
+    const db = fakeClient({
+      relations: [
+        { member_id: "karina", related_member_id: "emma", role: "Mutter", sort_order: 0 },
+        { member_id: "emma", related_member_id: "karina", role: "Kind", sort_order: 0 },
+        { member_id: "emma", related_member_id: "ben", role: "Schwester", sort_order: 1 },
+      ],
+      members: [
+        { id: "karina", role: "Mutter" },
+        { id: "emma", role: "Kind" },
+        { id: "ben", role: "Bruder" },
+      ],
+    });
+
+    // Same person, different wording — Emma's mirrored row must stay first,
+    // or her primary role silently becomes "Schwester".
+    await saveMemberRelations(db.client, {
+      familyId: "fam-1",
+      memberId: "karina",
+      relations: [{ role: "Vater", member_ids: ["emma"] }],
+    });
+
+    expect(db.members.find((m) => m.id === "emma")?.role).toBe("Kind");
+    expect(
+      db.relations
+        .filter((row) => row.member_id === "emma")
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((row) => row.role),
+    ).toEqual(["Kind", "Schwester"]);
+  });
+
+
   it("changes nothing when the atomic replacement fails", async () => {
     const db = fakeClient({
       relations: [

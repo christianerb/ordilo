@@ -256,20 +256,27 @@ async function syncCounterparts(
 
   for (const targetId of affected) {
     // Their list as it should look afterwards, rebuilt from what is stored.
-    let rows = theirRows
+    const rows = theirRows
       .filter((row) => row.member_id === targetId)
       .sort((a, b) => a.sort_order - b.sort_order);
     let changed = false;
+    // Where the mirror of this relationship used to sit. The position is
+    // what decides the primary role, so a relationship that only changes
+    // its wording ("Mutter" → "Vater von Emma") must not send the other
+    // person's mirrored row to the end of their list.
+    let vacatedIndex: number | null = null;
 
     for (const { targetId: removedTarget, role } of removed) {
       if (removedTarget !== targetId) continue;
       // Drop the mirrored row this relation left behind — but only if it
       // really is the reverse of what was removed.
-      const kept = rows.filter(
-        (row) => !(row.related_member_id === memberId && isInverseOf(role, row.role)),
+      const index = rows.findIndex(
+        (row) => row.related_member_id === memberId && isInverseOf(role, row.role),
       );
-      if (kept.length !== rows.length) changed = true;
-      rows = kept;
+      if (index < 0) continue;
+      rows.splice(index, 1);
+      vacatedIndex = vacatedIndex === null ? index : Math.min(vacatedIndex, index);
+      changed = true;
     }
 
     for (const { targetId: addedTarget, role } of added) {
@@ -284,8 +291,9 @@ async function syncCounterparts(
 
       // The same role without a counterpart becomes redundant the moment it
       // points at someone ("Tochter" → "Tochter von Karina"). The
-      // replacement takes over its position: appending it instead would
-      // silently promote whatever came second to be the primary role.
+      // replacement takes over its position, as does a mirror that was just
+      // removed a few lines above: appending instead would silently promote
+      // whatever came second to be the primary role.
       const replacedIndex = rows.findIndex(
         (row) =>
           row.related_member_id === null &&
@@ -299,6 +307,8 @@ async function syncCounterparts(
       };
       if (replacedIndex >= 0) {
         rows.splice(replacedIndex, 1, mirrored);
+      } else if (vacatedIndex !== null) {
+        rows.splice(vacatedIndex, 0, mirrored);
       } else {
         rows.push(mirrored);
       }
