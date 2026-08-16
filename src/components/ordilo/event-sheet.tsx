@@ -15,12 +15,10 @@ import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ordilo/date-input";
 import { TimeInput } from "@/components/ordilo/time-input";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { findScheduleConflicts, type CalendarEvent } from "@/lib/calendar";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -413,16 +411,18 @@ export function EventSheet({
   const labelClass = "mb-1.5 block text-sm font-medium";
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent className="w-full max-w-full gap-0 overflow-x-hidden overflow-y-auto sm:max-w-md">
-        <SheetHeader className="border-b border-border/60">
-          <SheetTitle>{isEdit ? "Termin bearbeiten" : "Neuer Termin"}</SheetTitle>
-          <SheetDescription>
-            Alle in deiner Familie können diesen Termin sehen.
-          </SheetDescription>
-        </SheetHeader>
+    <OrdiloDrawer
+      variant="detail"
+      open={open}
+      onOpenChange={handleOpenChange}
+    >
+      <OrdiloDrawerHeader
+        title={isEdit ? "Termin bearbeiten" : "Neuer Termin"}
+        description="Alle in deiner Familie können diesen Termin sehen."
+      />
 
-        <div className="min-w-0 space-y-4 p-4">
+      <OrdiloDrawerBody className="overflow-x-hidden">
+        <div className="min-w-0 space-y-4">
           {isEdit && event.document_id && (
             <Link
               href={`/dokumente?doc=${event.document_id}`}
@@ -775,7 +775,7 @@ export function EventSheet({
             </Button>
           )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </OrdiloDrawerBody>
+    </OrdiloDrawer>
   );
 }

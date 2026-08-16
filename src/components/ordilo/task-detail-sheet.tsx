@@ -12,12 +12,11 @@ import {
   ChevronDown,
 } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerFooter,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import {
   Dialog,
   DialogContent,
@@ -198,385 +197,382 @@ export function TaskDetailSheet({
   ];
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        className="w-full gap-0 bg-[var(--surface-box)] sm:max-w-md"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          sheetTitleRef.current?.focus();
-        }}
-        data-testid="task-detail-sheet"
-      >
-        <SheetHeader className="border-b border-border/60 px-5 py-4 pr-16">
-          <div className="flex items-center gap-3">
-            <SheetTitle
-              ref={sheetTitleRef}
-              tabIndex={-1}
-              className="text-base font-semibold outline-none"
-            >
-              Aufgabe
-            </SheetTitle>
-            <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-              <span
-                className={cn(
-                  "size-2 rounded-full",
-                  isDone
-                    ? "bg-[var(--petrol)]"
-                    : isOpen
-                      ? "bg-[var(--warm-apricot)]"
-                      : "bg-[var(--mist)]",
-                )}
-                aria-hidden="true"
-              />
-              {isDone ? "Erledigt" : isOpen ? "Offen" : "Verworfen"}
-            </span>
-          </div>
-          <SheetDescription className="sr-only">
-            Aufgabe ansehen und bearbeiten
-          </SheetDescription>
-        </SheetHeader>
-
-        {task && (
-          <div className="flex min-h-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
-              {error && (
-                <div
-                  className="mb-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
-                  role="alert"
-                >
-                  {error}
-                </div>
+    <>
+    <OrdiloDrawer
+      variant="detail"
+      open={open}
+      onOpenChange={handleOpenChange}
+      onOpenAutoFocus={(event) => {
+        event.preventDefault();
+        sheetTitleRef.current?.focus();
+      }}
+      data-testid="task-detail-sheet"
+    >
+      <OrdiloDrawerHeader
+        title="Aufgabe"
+        titleRef={sheetTitleRef}
+        titleClassName="text-base font-semibold outline-none"
+        titleAdornment={
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+            <span
+              className={cn(
+                "size-2 rounded-full",
+                isDone
+                  ? "bg-[var(--petrol)]"
+                  : isOpen
+                    ? "bg-[var(--warm-apricot)]"
+                    : "bg-[var(--mist)]",
               )}
+              aria-hidden="true"
+            />
+            {isDone ? "Erledigt" : isOpen ? "Offen" : "Verworfen"}
+          </span>
+        }
+        description="Aufgabe ansehen und bearbeiten"
+        descriptionHidden
+      />
 
-              {/* A borderless heading-sized input read as static text — the
-                  sheet looked like a detail view you could not change. It
-                  is a labelled field now, with the same chrome as every
-                  other field in the app. */}
-              <div>
-                <label
-                  htmlFor="task-detail-title"
-                  className="mb-2 block text-sm font-medium text-foreground"
-                >
-                  Aufgabe
-                </label>
-                <input
-                  id="task-detail-title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Was ist zu tun?"
-                  className="w-full rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base font-medium leading-snug text-foreground outline-none transition-colors placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
-                  data-testid="task-detail-title"
-                />
-              </div>
-
-              <div className="mt-5">
-                <label
-                  htmlFor="task-detail-description"
-                  className="mb-2 block text-sm font-medium text-foreground"
-                >
-                  Notiz
-                </label>
-                <textarea
-                  id="task-detail-description"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Was ist zu tun?"
-                  rows={4}
-                  className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
-                  data-testid="task-detail-description"
-                />
-              </div>
-
-              <section
-                className="mt-5 overflow-hidden rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)]"
-                aria-label="Aufgabenplanung"
+      {task && (
+        <>
+          <OrdiloDrawerBody className="py-5">
+            {error && (
+              <div
+                className="mb-4 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2.5 text-sm text-destructive"
+                role="alert"
               >
-                <div className="p-4">
-                  <label
-                    htmlFor="task-detail-due-date"
-                    className="mb-2 block text-sm font-medium text-foreground"
-                  >
-                    Fällig am
-                  </label>
-                  {/* Typing a date is the slow path. "Heute" and "Morgen"
-                      cover most of what actually changes here. */}
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {DUE_PRESETS.map((preset) => {
-                      const date = resolveSchedulePreset(preset, todayStr);
-                      const selected = Boolean(date) && dueDate === date;
-                      return (
-                        <button
-                          key={preset}
-                          type="button"
-                          onClick={() => setDueDate(date ?? "")}
-                          aria-pressed={selected}
-                          title={formatTaskDayHint(date) ?? undefined}
-                          className={cn(
-                            "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                            selected
-                              ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                              : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
-                          )}
-                          data-testid={`task-detail-due-${preset}`}
-                        >
-                          {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                        </button>
-                      );
-                    })}
-                    {dueDate && (
-                      <button
-                        type="button"
-                        onClick={() => setDueDate("")}
-                        className="inline-flex h-9 items-center rounded-full border border-border bg-[var(--surface-box)] px-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        data-testid="task-detail-due-none"
-                      >
-                        {TASK_SCHEDULE_PRESET_LABELS.none}
-                      </button>
-                    )}
-                  </div>
-                  <DateInput
-                    id="task-detail-due-date"
-                    value={dueDate}
-                    onChange={setDueDate}
-                    minDate={minDueDate}
-                    className="h-12"
-                    aria-label="Fällig am"
-                    data-testid="task-detail-due-date"
-                  />
-                </div>
+                {error}
+              </div>
+            )}
 
-                {members.length > 0 && (
-                  <div
-                    className="border-t border-border/70 p-4"
-                    data-testid="task-detail-assignee-section"
-                  >
-                    <p className="mb-2 text-sm font-medium text-foreground">
-                      Wer macht das?
-                    </p>
-                    {/* Faces, not a dropdown: a family recognises each other
-                        faster than it reads a list, and every option is a
-                        44px target instead of a native picker. */}
-                    <div
-                      role="radiogroup"
-                      aria-label="Wer macht das?"
-                      className="flex flex-wrap gap-2"
-                    >
-                      {members.map((member) => {
-                        const selected = assignedTo === member.id;
-                        return (
-                          <button
-                            key={member.id}
-                            type="button"
-                            role="radio"
-                            aria-checked={selected}
-                            onClick={() => setAssignedTo(member.id)}
-                            className={cn(
-                              "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                              selected
-                                ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                                : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
-                            )}
-                            data-testid={`task-detail-assignee-${member.id}`}
-                          >
-                            <MemberAvatar
-                              name={member.name}
-                              color={member.avatar_color}
-                              photoUrl={memberPhotoUrls[member.id]}
-                              size="md"
-                            />
-                            <span className="max-w-28 truncate">
-                              {member.name}
-                            </span>
-                          </button>
-                        );
-                      })}
+            {/* A borderless heading-sized input read as static text — the
+                sheet looked like a detail view you could not change. It
+                is a labelled field now, with the same chrome as every
+                other field in the app. */}
+            <div>
+              <label
+                htmlFor="task-detail-title"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Aufgabe
+              </label>
+              <input
+                id="task-detail-title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Was ist zu tun?"
+                className="w-full rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base font-medium leading-snug text-foreground outline-none transition-colors placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                data-testid="task-detail-title"
+              />
+            </div>
+
+            <div className="mt-5">
+              <label
+                htmlFor="task-detail-description"
+                className="mb-2 block text-sm font-medium text-foreground"
+              >
+                Notiz
+              </label>
+              <textarea
+                id="task-detail-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Was ist zu tun?"
+                rows={4}
+                className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                data-testid="task-detail-description"
+              />
+            </div>
+
+            <section
+              className="mt-5 overflow-hidden rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)]"
+              aria-label="Aufgabenplanung"
+            >
+              <div className="p-4">
+                <label
+                  htmlFor="task-detail-due-date"
+                  className="mb-2 block text-sm font-medium text-foreground"
+                >
+                  Fällig am
+                </label>
+                {/* Typing a date is the slow path. "Heute" and "Morgen"
+                    cover most of what actually changes here. */}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {DUE_PRESETS.map((preset) => {
+                    const date = resolveSchedulePreset(preset, todayStr);
+                    const selected = Boolean(date) && dueDate === date;
+                    return (
                       <button
+                        key={preset}
                         type="button"
-                        role="radio"
-                        aria-checked={assignedTo === ""}
-                        onClick={() => setAssignedTo("")}
+                        onClick={() => setDueDate(date ?? "")}
+                        aria-pressed={selected}
+                        title={formatTaskDayHint(date) ?? undefined}
                         className={cn(
-                          "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          assignedTo === ""
+                          "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                          selected
                             ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
                             : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
                         )}
-                        data-testid="task-detail-assignee-none"
+                        data-testid={`task-detail-due-${preset}`}
                       >
-                        <UserX
-                          className="size-4 shrink-0"
-                          aria-hidden="true"
-                          strokeWidth={1.75}
-                        />
-                        Niemand
+                        {TASK_SCHEDULE_PRESET_LABELS[preset]}
                       </button>
-                    </div>
-                  </div>
-                )}
-              </section>
-
-              {allDocs.length > 0 && (
-                <section className="mt-5" data-testid="task-detail-documents">
-                  <h3 className="mb-2 text-sm font-medium text-foreground">
-                    Verknüpfte Dokumente
-                  </h3>
-                  <div className="overflow-hidden rounded-ordilo-sm border border-border/70">
-                    {allDocs.map((doc) => (
-                      <Link
-                        key={doc.id}
-                        href={`/dokumente?doc=${doc.id}`}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          onOpenChange(false);
-                          void openDocument(doc.id);
-                        }}
-                        className="flex min-h-12 items-center gap-3 bg-[var(--surface-story)] px-3 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
-                        data-testid="task-detail-document-link"
-                      >
-                        <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-box)] text-muted-foreground">
-                          <FileText
-                            className="size-4"
-                            aria-hidden="true"
-                            strokeWidth={1.5}
-                          />
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-sm text-foreground">
-                          {doc.title?.trim() || "Ohne Titel"}
-                        </span>
-                        {doc.primary && (
-                          <span className="sr-only">Hauptdokument</span>
-                        )}
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              <div className="mt-5 border-t border-border/60 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowMore((current) => !current)}
-                  aria-expanded={showMore}
-                  aria-controls="task-detail-more"
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-ordilo-sm px-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="task-detail-more-toggle"
-                >
-                  <span>Weitere Angaben</span>
-                  <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
-                    {tags.length > 0
-                      ? `${tags.length} ${tags.length === 1 ? "Stichwort" : "Stichwörter"}`
-                      : "Optional"}
-                    <ChevronDown
-                      className={cn(
-                        "size-4 transition-transform",
-                        showMore && "rotate-180",
-                      )}
-                      aria-hidden="true"
-                    />
-                  </span>
-                </button>
-
-                {showMore && (
-                  <div
-                    id="task-detail-more"
-                    className="px-2 pt-3 pb-1"
-                    data-testid="task-detail-more"
-                  >
-                    <div data-testid="task-detail-tags-section">
-                      <p className="text-sm font-medium text-foreground">
-                        Stichwörter
-                      </p>
-                      <p className="mt-0.5 mb-2 text-xs text-muted-foreground">
-                        Helfen dir, die Aufgabe später wiederzufinden.
-                      </p>
-                      <TagInput
-                        value={tags}
-                        onChange={setTags}
-                        placeholder="Stichwort hinzufügen…"
-                        testId="task-detail-tag"
-                        disabled={saving}
-                      />
-                    </div>
-
-                    <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
-                      {createdDate && (
-                        <span className="text-xs text-muted-foreground">
-                          Erstellt am {createdDate}
-                        </span>
-                      )}
-                      {isOpen && (
-                        <button
-                          type="button"
-                          onClick={handleDismiss}
-                          className="ml-auto flex min-h-11 items-center gap-2 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                          data-testid="task-detail-dismiss"
-                        >
-                          <Trash2
-                            className="size-4"
-                            aria-hidden="true"
-                            strokeWidth={1.5}
-                          />
-                          Aufgabe verwerfen
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
+                    );
+                  })}
+                  {dueDate && (
+                    <button
+                      type="button"
+                      onClick={() => setDueDate("")}
+                      className="inline-flex h-9 items-center rounded-full border border-border bg-[var(--surface-box)] px-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      data-testid="task-detail-due-none"
+                    >
+                      {TASK_SCHEDULE_PRESET_LABELS.none}
+                    </button>
+                  )}
+                </div>
+                <DateInput
+                  id="task-detail-due-date"
+                  value={dueDate}
+                  onChange={setDueDate}
+                  minDate={minDueDate}
+                  className="h-12"
+                  aria-label="Fällig am"
+                  data-testid="task-detail-due-date"
+                />
               </div>
-            </div>
 
-            <div className="border-t border-border/60 bg-[var(--surface-box)] px-5 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-              {hasChanges ? (
-                <Button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="h-11 w-full"
-                  data-testid="task-detail-save"
+              {members.length > 0 && (
+                <div
+                  className="border-t border-border/70 p-4"
+                  data-testid="task-detail-assignee-section"
                 >
-                  {saving ? (
-                    <Loader2
-                      className="size-4 animate-spin"
-                      aria-hidden="true"
+                  <p className="mb-2 text-sm font-medium text-foreground">
+                    Wer macht das?
+                  </p>
+                  {/* Faces, not a dropdown: a family recognises each other
+                      faster than it reads a list, and every option is a
+                      44px target instead of a native picker. */}
+                  <div
+                    role="radiogroup"
+                    aria-label="Wer macht das?"
+                    className="flex flex-wrap gap-2"
+                  >
+                    {members.map((member) => {
+                      const selected = assignedTo === member.id;
+                      return (
+                        <button
+                          key={member.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setAssignedTo(member.id)}
+                          className={cn(
+                            "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                            selected
+                              ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                              : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
+                          )}
+                          data-testid={`task-detail-assignee-${member.id}`}
+                        >
+                          <MemberAvatar
+                            name={member.name}
+                            color={member.avatar_color}
+                            photoUrl={memberPhotoUrls[member.id]}
+                            size="md"
+                          />
+                          <span className="max-w-28 truncate">
+                            {member.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={assignedTo === ""}
+                      onClick={() => setAssignedTo("")}
+                      className={cn(
+                        "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        assignedTo === ""
+                          ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                          : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                      )}
+                      data-testid="task-detail-assignee-none"
+                    >
+                      <UserX
+                        className="size-4 shrink-0"
+                        aria-hidden="true"
+                        strokeWidth={1.75}
+                      />
+                      Niemand
+                    </button>
+                  </div>
+                </div>
+              )}
+            </section>
+
+            {allDocs.length > 0 && (
+              <section className="mt-5" data-testid="task-detail-documents">
+                <h3 className="mb-2 text-sm font-medium text-foreground">
+                  Verknüpfte Dokumente
+                </h3>
+                <div className="overflow-hidden rounded-ordilo-sm border border-border/70">
+                  {allDocs.map((doc) => (
+                    <Link
+                      key={doc.id}
+                      href={`/dokumente?doc=${doc.id}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        onOpenChange(false);
+                        void openDocument(doc.id);
+                      }}
+                      className="flex min-h-12 items-center gap-3 bg-[var(--surface-story)] px-3 transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
+                      data-testid="task-detail-document-link"
+                    >
+                      <span className="flex size-8 shrink-0 items-center justify-center rounded-[8px] bg-[var(--surface-box)] text-muted-foreground">
+                        <FileText
+                          className="size-4"
+                          aria-hidden="true"
+                          strokeWidth={1.5}
+                        />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">
+                        {doc.title?.trim() || "Ohne Titel"}
+                      </span>
+                      {doc.primary && (
+                        <span className="sr-only">Hauptdokument</span>
+                      )}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <div className="mt-5 border-t border-border/60 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowMore((current) => !current)}
+                aria-expanded={showMore}
+                aria-controls="task-detail-more"
+                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-ordilo-sm px-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                data-testid="task-detail-more-toggle"
+              >
+                <span>Weitere Angaben</span>
+                <span className="flex items-center gap-2 text-xs font-normal text-muted-foreground">
+                  {tags.length > 0
+                    ? `${tags.length} ${tags.length === 1 ? "Stichwort" : "Stichwörter"}`
+                    : "Optional"}
+                  <ChevronDown
+                    className={cn(
+                      "size-4 transition-transform",
+                      showMore && "rotate-180",
+                    )}
+                    aria-hidden="true"
+                  />
+                </span>
+              </button>
+
+              {showMore && (
+                <div
+                  id="task-detail-more"
+                  className="px-2 pt-3 pb-1"
+                  data-testid="task-detail-more"
+                >
+                  <div data-testid="task-detail-tags-section">
+                    <p className="text-sm font-medium text-foreground">
+                      Stichwörter
+                    </p>
+                    <p className="mt-0.5 mb-2 text-xs text-muted-foreground">
+                      Helfen dir, die Aufgabe später wiederzufinden.
+                    </p>
+                    <TagInput
+                      value={tags}
+                      onChange={setTags}
+                      placeholder="Stichwort hinzufügen…"
+                      testId="task-detail-tag"
+                      disabled={saving}
                     />
-                  ) : (
-                    "Änderungen speichern"
-                  )}
-                </Button>
-              ) : isDismissed ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled
-                  className="h-11 w-full"
-                >
-                  Aufgabe verworfen
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  variant={isDone ? "outline" : "default"}
-                  onClick={handleToggle}
-                  className="h-11 w-full"
-                  data-testid="task-detail-toggle"
-                >
-                  {isDone ? (
-                    <>
-                      <RotateCcw className="size-4" aria-hidden="true" />
-                      Wieder öffnen
-                    </>
-                  ) : (
-                    <>
-                      <Check className="size-4" aria-hidden="true" />
-                      Als erledigt markieren
-                    </>
-                  )}
-                </Button>
+                  </div>
+
+                  <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/60 pt-3">
+                    {createdDate && (
+                      <span className="text-xs text-muted-foreground">
+                        Erstellt am {createdDate}
+                      </span>
+                    )}
+                    {isOpen && (
+                      <button
+                        type="button"
+                        onClick={handleDismiss}
+                        className="ml-auto flex min-h-11 items-center gap-2 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        data-testid="task-detail-dismiss"
+                      >
+                        <Trash2
+                          className="size-4"
+                          aria-hidden="true"
+                          strokeWidth={1.5}
+                        />
+                        Aufgabe verwerfen
+                      </button>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-        )}
-      </SheetContent>
+          </OrdiloDrawerBody>
+
+          <OrdiloDrawerFooter>
+          {hasChanges ? (
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={saving}
+              className="h-11 w-full"
+              data-testid="task-detail-save"
+            >
+              {saving ? (
+                <Loader2
+                  className="size-4 animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                "Änderungen speichern"
+              )}
+            </Button>
+          ) : isDismissed ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled
+              className="h-11 w-full"
+            >
+              Aufgabe verworfen
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant={isDone ? "outline" : "default"}
+              onClick={handleToggle}
+              className="h-11 w-full"
+              data-testid="task-detail-toggle"
+            >
+              {isDone ? (
+                <>
+                  <RotateCcw className="size-4" aria-hidden="true" />
+                  Wieder öffnen
+                </>
+              ) : (
+                <>
+                  <Check className="size-4" aria-hidden="true" />
+                  Als erledigt markieren
+                </>
+              )}
+            </Button>
+          )}
+          </OrdiloDrawerFooter>
+        </>
+      )}
+    </OrdiloDrawer>
 
       <Dialog open={confirmDiscard} onOpenChange={setConfirmDiscard}>
         <DialogContent
@@ -622,6 +618,6 @@ export function TaskDetailSheet({
           </button>
         </DialogContent>
       </Dialog>
-    </Sheet>
+    </>
   );
 }

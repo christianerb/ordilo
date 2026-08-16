@@ -28,6 +28,40 @@ describe("cn", () => {
       "p-4 text-center",
     );
   });
+
+  // -------------------------------------------------------------------------
+  // Ordilo radius scale
+  // -------------------------------------------------------------------------
+  //
+  // tailwind-merge only resolves conflicts between classes it recognises.
+  // Until the `--radius-ordilo-*` scale was registered in `cn`, an Ordilo
+  // radius did not count as a border-radius utility: it survived alongside a
+  // plain `rounded-*` and the winner was decided by stylesheet order.
+
+  it("resolves Ordilo radii against Tailwind's own radius scale", () => {
+    expect(cn("rounded-lg", "rounded-ordilo-xl")).toBe("rounded-ordilo-xl");
+    expect(cn("rounded-ordilo-xl", "rounded-lg")).toBe("rounded-lg");
+  });
+
+  it("resolves Ordilo radii against each other", () => {
+    expect(cn("rounded-ordilo-sm", "rounded-ordilo-md")).toBe(
+      "rounded-ordilo-md",
+    );
+  });
+
+  it("treats a side-specific radius as its own group", () => {
+    expect(cn("rounded-t-lg", "rounded-t-ordilo-xl")).toBe(
+      "rounded-t-ordilo-xl",
+    );
+    // A top radius and an all-corner radius are different groups, so both stay.
+    expect(cn("rounded-ordilo-md", "rounded-t-ordilo-xl")).toBe(
+      "rounded-ordilo-md rounded-t-ordilo-xl",
+    );
+  });
+
+  it("only dedupes within the same variant chain", () => {
+    expect(cn("max-w-md", "lg:max-w-xl")).toBe("max-w-md lg:max-w-xl");
+  });
 });
 
 function isActive() {

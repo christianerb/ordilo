@@ -18,12 +18,10 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerFooter,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { EventSheet, type EventTemplate } from "@/components/ordilo/event-sheet";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 import {
@@ -1096,66 +1094,66 @@ export function CalendarClient({
         />
       )}
 
-      <Sheet
+      <OrdiloDrawer
+        variant="form"
         open={deleteTarget !== null}
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
+        data-testid="event-delete-confirm-sheet"
       >
-        <SheetContent side="bottom" data-testid="event-delete-confirm-sheet">
-          <SheetHeader>
-            <SheetTitle>Termin löschen?</SheetTitle>
-            <SheetDescription>
-              {deleteTarget?.recurrence === "none"
-                ? "Der Termin wird für die ganze Familie entfernt."
-                : "Der Termin wiederholt sich. Was möchtest du löschen?"}
-            </SheetDescription>
-          </SheetHeader>
-          <div className="mt-4 flex flex-col gap-2">
-            {deleteTarget && deleteTarget.recurrence !== "none" && (
-              <>
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => void handleDelete("single")}
-                  disabled={deleting}
-                  data-testid="confirm-delete-single-button"
-                >
-                  Nur {formatGermanDate(toCalendarDate(selectedDate))} löschen
-                </Button>
-                <Button
-                  variant="destructive"
-                  className="w-full"
-                  onClick={() => void handleDelete("series")}
-                  disabled={deleting}
-                  data-testid="confirm-delete-series-button"
-                >
-                  Ganze Serie löschen
-                </Button>
-              </>
-            )}
-            {deleteTarget?.recurrence === "none" && (
+        <OrdiloDrawerHeader
+          title="Termin löschen?"
+          description={
+            deleteTarget?.recurrence === "none"
+              ? "Der Termin wird für die ganze Familie entfernt."
+              : "Der Termin wiederholt sich. Was möchtest du löschen?"
+          }
+        />
+        <OrdiloDrawerFooter className="flex-col gap-2">
+          {deleteTarget && deleteTarget.recurrence !== "none" && (
+            <>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => void handleDelete("single")}
+                disabled={deleting}
+                data-testid="confirm-delete-single-button"
+              >
+                Nur {formatGermanDate(toCalendarDate(selectedDate))} löschen
+              </Button>
               <Button
                 variant="destructive"
                 className="w-full"
                 onClick={() => void handleDelete("series")}
                 disabled={deleting}
-                data-testid="confirm-delete-event-button"
+                data-testid="confirm-delete-series-button"
               >
-                Löschen
+                Ganze Serie löschen
               </Button>
-            )}
+            </>
+          )}
+          {deleteTarget?.recurrence === "none" && (
             <Button
-              variant="ghost"
+              variant="destructive"
               className="w-full"
-              onClick={() => setDeleteTarget(null)}
+              onClick={() => void handleDelete("series")}
               disabled={deleting}
+              data-testid="confirm-delete-event-button"
             >
-              Abbrechen
+              Löschen
             </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+          )}
+          <Button
+            variant="ghost"
+            className="w-full"
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleting}
+          >
+            Abbrechen
+          </Button>
+        </OrdiloDrawerFooter>
+      </OrdiloDrawer>
     </div>
   );
 }

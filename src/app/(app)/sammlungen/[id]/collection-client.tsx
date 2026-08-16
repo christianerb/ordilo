@@ -12,12 +12,10 @@ import {
 } from "@/components/ordilo/collection-form";
 import { getCollectionIcon, getCollectionColor } from "@/lib/schemas/collections";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import {
   Dialog,
   DialogContent,
@@ -205,34 +203,27 @@ export function CollectionClient({
         </div>
       )}
 
-      {/* Edit sheet */}
-      <Sheet open={editOpen} onOpenChange={setEditOpen}>
-        <SheetContent
-          side="bottom"
-          className="mx-auto max-h-[85dvh] max-w-md overflow-y-auto rounded-t-ordilo-xl"
-        >
-          <SheetHeader>
-            <SheetTitle>Sammlung bearbeiten</SheetTitle>
-            <SheetDescription>
-              Ändere Name, Icon oder Farbe dieser Sammlung.
-            </SheetDescription>
-          </SheetHeader>
-          <div className="px-4 pb-6">
-            <CollectionForm
-              initialValues={{
-                name: current.name,
-                icon: current.icon,
-                color: current.color,
-              }}
-              submitLabel="Änderungen speichern"
-              onSubmit={handleEditSubmit}
-              isSubmitting={isSubmitting}
-              serverError={serverError}
-              onClearServerError={() => setServerError(null)}
-            />
-          </div>
-        </SheetContent>
-      </Sheet>
+      {/* Edit drawer */}
+      <OrdiloDrawer variant="form" open={editOpen} onOpenChange={setEditOpen}>
+        <OrdiloDrawerHeader
+          title="Sammlung bearbeiten"
+          description="Ändere Name, Icon oder Farbe dieser Sammlung."
+        />
+        <OrdiloDrawerBody>
+          <CollectionForm
+            initialValues={{
+              name: current.name,
+              icon: current.icon,
+              color: current.color,
+            }}
+            submitLabel="Änderungen speichern"
+            onSubmit={handleEditSubmit}
+            isSubmitting={isSubmitting}
+            serverError={serverError}
+            onClearServerError={() => setServerError(null)}
+          />
+        </OrdiloDrawerBody>
+      </OrdiloDrawer>
 
       {/* Delete confirmation dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>

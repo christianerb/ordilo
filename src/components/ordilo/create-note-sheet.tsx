@@ -15,12 +15,11 @@ import {
   User,
 } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerFooter,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NoteEditor } from "@/components/ordilo/note-editor";
@@ -293,258 +292,254 @@ export function CreateNoteSheet({
   const canSubmit = Boolean(title.trim()) && hasBody && !submitting;
 
   return (
-    <Sheet open={open} onOpenChange={handleClose}>
-      <SheetContent
-        side="bottom"
-        className={cn(
-          "flex max-h-[92dvh] flex-col gap-0 rounded-t-ordilo-xl p-0",
-          "lg:max-w-lg lg:mx-auto lg:rounded-t-ordilo-xl",
-        )}
-        data-testid="create-note-sheet"
-      >
-        <SheetHeader className="border-b border-border bg-[var(--sand)]/70 px-5 py-4">
-          <SheetTitle className="flex items-center gap-2 text-[15px]">
+    <OrdiloDrawer
+      variant="detail"
+      open={open}
+      onOpenChange={handleClose}
+      data-testid="create-note-sheet"
+    >
+      <OrdiloDrawerHeader
+        title={
+          <span className="flex items-center gap-2">
             <FileText
               className="size-4 shrink-0 text-[var(--mist-dark)]"
               aria-hidden="true"
             />
             Dokument anlegen
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            Ein Dokument mit eigener Notiz anlegen
-          </SheetDescription>
-        </SheetHeader>
+          </span>
+        }
+        description="Ein Dokument mit eigener Notiz anlegen"
+        descriptionHidden
+      />
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          <div className="space-y-4">
-            {/* Collection hint — shown when the note is filed into a collection */}
-            {collectionName && (
-              <div
-                className="flex items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)]/10 px-3 py-2 text-xs font-medium text-[var(--petrol)]"
-                data-testid="note-collection-hint"
-              >
-                <Folder className="size-3.5 shrink-0" aria-hidden="true" />
-                Wird in „{collectionName}“ abgelegt
+      <OrdiloDrawerBody>
+        <div className="space-y-4">
+          {/* Collection hint — shown when the note is filed into a collection */}
+          {collectionName && (
+            <div
+              className="flex items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)]/10 px-3 py-2 text-xs font-medium text-[var(--petrol)]"
+              data-testid="note-collection-hint"
+            >
+              <Folder className="size-3.5 shrink-0" aria-hidden="true" />
+              Wird in „{collectionName}“ abgelegt
+            </div>
+          )}
+
+          {/* Title — the name of the login for credentials */}
+          <div className="space-y-1.5">
+            <Label htmlFor="note-title">{isCredentials ? "Name" : "Titel"}</Label>
+            <input
+              id="note-title"
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder={
+                isCredentials
+                  ? "z. B. Netflix, Stadtwerke-Portal, WLAN"
+                  : "z. B. Arztbesuch Notiz, Idee fur Urlaub ..."
+              }
+              maxLength={200}
+              className={FIELD_CLASS}
+              data-testid="note-title-input"
+            />
+          </div>
+
+          {/* Document type */}
+          <div className="space-y-1.5">
+            <Label htmlFor="note-type">Typ</Label>
+            <DocumentTypeSelector value={documentType} onChange={handleTypeChange} />
+          </div>
+
+          {/* Login fields — only "Zugangsdaten" notes have them. URL and
+              user name become part of the note text; the password does
+              not: it is stored encrypted, separately. */}
+          {isCredentials && (
+            <div className="space-y-4" data-testid="note-credentials-fields">
+              <div className="space-y-1.5">
+                <Label htmlFor="note-url" className="flex items-center gap-1.5">
+                  <Link2 className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                  URL
+                </Label>
+                <input
+                  id="note-url"
+                  type="url"
+                  inputMode="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="z. B. https://www.netflix.com"
+                  maxLength={500}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className={FIELD_CLASS}
+                  data-testid="note-url-input"
+                />
               </div>
-            )}
 
-            {/* Title — the name of the login for credentials */}
-            <div className="space-y-1.5">
-              <Label htmlFor="note-title">{isCredentials ? "Name" : "Titel"}</Label>
-              <input
-                id="note-title"
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={
-                  isCredentials
-                    ? "z. B. Netflix, Stadtwerke-Portal, WLAN"
-                    : "z. B. Arztbesuch Notiz, Idee fur Urlaub ..."
-                }
-                maxLength={200}
-                className={FIELD_CLASS}
-                data-testid="note-title-input"
-              />
-            </div>
-
-            {/* Document type */}
-            <div className="space-y-1.5">
-              <Label htmlFor="note-type">Typ</Label>
-              <DocumentTypeSelector value={documentType} onChange={handleTypeChange} />
-            </div>
-
-            {/* Login fields — only "Zugangsdaten" notes have them. URL and
-                user name become part of the note text; the password does
-                not: it is stored encrypted, separately. */}
-            {isCredentials && (
-              <div className="space-y-4" data-testid="note-credentials-fields">
-                <div className="space-y-1.5">
-                  <Label htmlFor="note-url" className="flex items-center gap-1.5">
-                    <Link2 className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
-                    URL
-                  </Label>
-                  <input
-                    id="note-url"
-                    type="url"
-                    inputMode="url"
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    placeholder="z. B. https://www.netflix.com"
-                    maxLength={500}
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    className={FIELD_CLASS}
-                    data-testid="note-url-input"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label htmlFor="note-username" className="flex items-center gap-1.5">
-                    <User className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
-                    Benutzername
-                  </Label>
-                  <input
-                    id="note-username"
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="z. B. familie@example.de"
-                    maxLength={200}
-                    autoComplete="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    className={FIELD_CLASS}
-                    data-testid="note-username-input"
-                  />
-                </div>
-
-                <div className="space-y-1.5" data-testid="note-secret-field">
-                  <Label htmlFor="note-secret" className="flex items-center gap-1.5">
-                    <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
-                    Passwort
-                  </Label>
-                  <div className="relative">
-                    <input
-                      id="note-secret"
-                      type={showSecret ? "text" : "password"}
-                      value={secret}
-                      onChange={(e) => setSecret(e.target.value)}
-                      placeholder="z. B. Passwort, PIN, Zugangscode"
-                      autoComplete="off"
-                      className={cn(FIELD_CLASS, "pr-10")}
-                      data-testid="note-secret-input"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSecret((s) => !s)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                      aria-label={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
-                    >
-                      {showSecret ? (
-                        <EyeOff className="size-4" aria-hidden="true" />
-                      ) : (
-                        <Eye className="size-4" aria-hidden="true" />
-                      )}
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
-                  </p>
-                </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="note-username" className="flex items-center gap-1.5">
+                  <User className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                  Benutzername
+                </Label>
+                <input
+                  id="note-username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="z. B. familie@example.de"
+                  maxLength={200}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  className={FIELD_CLASS}
+                  data-testid="note-username-input"
+                />
               </div>
-            )}
 
-            {/* Free text — the note itself, or the description of a login */}
-            <div className="space-y-1.5">
-              <Label>{isCredentials ? "Beschreibung" : "Notiz"}</Label>
-              <NoteEditor
-                value={content}
-                onChange={setContent}
-                imagePreview={imagePreview}
-                onRemoveImage={handleRemoveImage}
-                placeholder={
-                  isCredentials
-                    ? "z. B. Familienaccount, Sicherheitsfragen, wer ihn nutzt ..."
-                    : undefined
-                }
-              />
-            </div>
-
-            {/* Image attachment */}
-            <div className="flex items-center gap-2">
-              <input
-                ref={cameraRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImageSelect(file);
-                  if (cameraRef.current) cameraRef.current.value = "";
-                }}
-                aria-label="Foto aufnehmen"
-              />
-              <input
-                ref={galleryRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleImageSelect(file);
-                  if (galleryRef.current) galleryRef.current.value = "";
-                }}
-                aria-label="Bild aus Galerie wählen"
-              />
-              {!imageFile && (
-                <>
-                  <Button
+              <div className="space-y-1.5" data-testid="note-secret-field">
+                <Label htmlFor="note-secret" className="flex items-center gap-1.5">
+                  <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                  Passwort
+                </Label>
+                <div className="relative">
+                  <input
+                    id="note-secret"
+                    type={showSecret ? "text" : "password"}
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    placeholder="z. B. Passwort, PIN, Zugangscode"
+                    autoComplete="off"
+                    className={cn(FIELD_CLASS, "pr-10")}
+                    data-testid="note-secret-input"
+                  />
+                  <button
                     type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => cameraRef.current?.click()}
+                    onClick={() => setShowSecret((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    aria-label={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
                   >
-                    <Camera className="size-4" aria-hidden="true" />
-                    Foto
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => galleryRef.current?.click()}
-                  >
-                    <Images className="size-4" aria-hidden="true" />
-                    Bild
-                  </Button>
-                </>
-              )}
+                    {showSecret ? (
+                      <EyeOff className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="size-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
+                </p>
+              </div>
             </div>
+          )}
 
-            {/* Error */}
-            {error && (
-              <p
-                className="text-sm text-destructive"
-                data-testid="note-error"
-              >
-                {error}
-              </p>
+          {/* Free text — the note itself, or the description of a login */}
+          <div className="space-y-1.5">
+            <Label>{isCredentials ? "Beschreibung" : "Notiz"}</Label>
+            <NoteEditor
+              value={content}
+              onChange={setContent}
+              imagePreview={imagePreview}
+              onRemoveImage={handleRemoveImage}
+              placeholder={
+                isCredentials
+                  ? "z. B. Familienaccount, Sicherheitsfragen, wer ihn nutzt ..."
+                  : undefined
+              }
+            />
+          </div>
+
+          {/* Image attachment */}
+          <div className="flex items-center gap-2">
+            <input
+              ref={cameraRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImageSelect(file);
+                if (cameraRef.current) cameraRef.current.value = "";
+              }}
+              aria-label="Foto aufnehmen"
+            />
+            <input
+              ref={galleryRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleImageSelect(file);
+                if (galleryRef.current) galleryRef.current.value = "";
+              }}
+              aria-label="Bild aus Galerie wählen"
+            />
+            {!imageFile && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => cameraRef.current?.click()}
+                >
+                  <Camera className="size-4" aria-hidden="true" />
+                  Foto
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => galleryRef.current?.click()}
+                >
+                  <Images className="size-4" aria-hidden="true" />
+                  Bild
+                </Button>
+              </>
             )}
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="flex gap-3 border-t border-border px-5 py-4">
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => handleClose(false)}
-            disabled={submitting}
-          >
-            Abbrechen
-          </Button>
-          <Button
-            className="flex-1"
-            onClick={handleSubmit}
-            disabled={!canSubmit}
-            data-testid="note-submit-button"
-          >
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                Wird gespeichert ...
-              </>
-            ) : (
-              // The label used to promise "& analysieren" because the save
-              // waited for the analysis. It no longer does — the note is
-              // stored, the sheet closes, enrichment follows in the
-              // background — so the button says what it now actually does.
-              "Anlegen"
-            )}
-          </Button>
+          {/* Error */}
+          {error && (
+            <p
+              className="text-sm text-destructive"
+              data-testid="note-error"
+            >
+              {error}
+            </p>
+          )}
         </div>
-      </SheetContent>
-    </Sheet>
+      </OrdiloDrawerBody>
+
+      <OrdiloDrawerFooter>
+        <Button
+          variant="outline"
+          className="flex-1"
+          onClick={() => handleClose(false)}
+          disabled={submitting}
+        >
+          Abbrechen
+        </Button>
+        <Button
+          className="flex-1"
+          onClick={handleSubmit}
+          disabled={!canSubmit}
+          data-testid="note-submit-button"
+        >
+          {submitting ? (
+            <>
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              Wird gespeichert ...
+            </>
+          ) : (
+            // The label used to promise "& analysieren" because the save
+            // waited for the analysis. It no longer does — the note is
+            // stored, the drawer closes, enrichment follows in the
+            // background — so the button says what it now actually does.
+            "Anlegen"
+          )}
+        </Button>
+      </OrdiloDrawerFooter>
+    </OrdiloDrawer>
   );
 }

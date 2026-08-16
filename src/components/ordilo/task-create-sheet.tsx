@@ -3,12 +3,11 @@
 import { useState, useCallback } from "react";
 import { Loader2, UserX } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerFooter,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { Button } from "@/components/ui/button";
 import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
@@ -144,206 +143,198 @@ export function TaskCreateSheet({
   }, [title, description, dueDate, assignedTo, familyId, supabase, onCreated, handleOpenChange, minDueDate]);
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        className="w-full gap-0 sm:max-w-md"
-        data-testid="task-create-sheet"
-      >
-        <SheetHeader className="border-b border-border/60">
-          <SheetTitle className="text-sm font-medium text-muted-foreground">
-            Neue Aufgabe
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            Erstelle eine neue Aufgabe für deine Familie
-          </SheetDescription>
-        </SheetHeader>
+    <OrdiloDrawer
+      variant="detail"
+      open={open}
+      onOpenChange={handleOpenChange}
+      data-testid="task-create-sheet"
+    >
+      <OrdiloDrawerHeader
+        title="Neue Aufgabe"
+        description="Erstelle eine neue Aufgabe für deine Familie"
+        descriptionHidden
+      />
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            {error && (
-              <div
-                className="mb-3 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
-                role="alert"
-              >
-                {error}
-              </div>
-            )}
+      <OrdiloDrawerBody>
+        {error && (
+          <div
+            className="mb-3 rounded-ordilo-sm border border-destructive/20 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            role="alert"
+          >
+            {error}
+          </div>
+        )}
 
-            {/* Creating and editing a task are the same job, so this sheet
-                uses the same fields and the same quick answers as the
-                detail sheet rather than its own vocabulary. */}
-            <div>
-              <label
-                htmlFor="task-create-title"
-                className="mb-2 block text-sm font-medium text-foreground"
-              >
-                Aufgabe
-              </label>
-              <input
-                id="task-create-title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Was ist zu tun?"
-                autoFocus
-                className="w-full rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base font-medium leading-snug text-foreground outline-none transition-colors placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
-                data-testid="task-create-title"
-              />
-            </div>
+        {/* Creating and editing a task are the same job, so this sheet
+            uses the same fields and the same quick answers as the
+            detail sheet rather than its own vocabulary. */}
+        <div>
+          <label
+            htmlFor="task-create-title"
+            className="mb-2 block text-sm font-medium text-foreground"
+          >
+            Aufgabe
+          </label>
+          <input
+            id="task-create-title"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Was ist zu tun?"
+            autoFocus
+            className="w-full rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base font-medium leading-snug text-foreground outline-none transition-colors placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+            data-testid="task-create-title"
+          />
+        </div>
 
-            {/* Description */}
-            <div className="mt-4">
-              <label
-                htmlFor="task-create-description"
-                className="mb-2 block text-sm font-medium text-foreground"
-              >
-                Notiz
-              </label>
-              <textarea
-                id="task-create-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Notizen, Details, was zu tun ist…"
-                rows={3}
-                className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
-                data-testid="task-create-description"
-              />
-            </div>
+        {/* Description */}
+        <div className="mt-4">
+          <label
+            htmlFor="task-create-description"
+            className="mb-2 block text-sm font-medium text-foreground"
+          >
+            Notiz
+          </label>
+          <textarea
+            id="task-create-description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Notizen, Details, was zu tun ist…"
+            rows={3}
+            className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+            data-testid="task-create-description"
+          />
+        </div>
 
-            {/* Due date */}
-            <div className="mt-4">
-              <label
-                htmlFor="task-create-due-date"
-                className="mb-2 block text-sm font-medium text-foreground"
-              >
-                Fällig am
-              </label>
-              <div className="mb-2 flex flex-wrap gap-2">
-                {DUE_PRESETS.map((preset) => {
-                  const date = resolveSchedulePreset(preset, todayStr);
-                  const selected = Boolean(date) && dueDate === date;
-                  return (
-                    <button
-                      key={preset}
-                      type="button"
-                      onClick={() => setDueDate(selected ? "" : date ?? "")}
-                      aria-pressed={selected}
-                      title={formatTaskDayHint(date) ?? undefined}
-                      className={cn(
-                        "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        selected
-                          ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                          : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
-                      )}
-                      data-testid={`task-create-due-${preset}`}
-                    >
-                      {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                    </button>
-                  );
-                })}
-              </div>
-              <DateInput
-                id="task-create-due-date"
-                value={dueDate}
-                onChange={setDueDate}
-                minDate={minDueDate}
-                className="h-12"
-                aria-label="Fällig am"
-                data-testid="task-create-due-date"
-              />
-            </div>
-
-            {/* Assignee — faces, matching the detail sheet and the row */}
-            {members.length > 0 && (
-              <div className="mt-4" data-testid="task-create-assignee-section">
-                <p className="mb-2 text-sm font-medium text-foreground">
-                  Wer macht das?
-                </p>
-                <div
-                  role="radiogroup"
-                  aria-label="Wer macht das?"
-                  className="flex flex-wrap gap-2"
+        {/* Due date */}
+        <div className="mt-4">
+          <label
+            htmlFor="task-create-due-date"
+            className="mb-2 block text-sm font-medium text-foreground"
+          >
+            Fällig am
+          </label>
+          <div className="mb-2 flex flex-wrap gap-2">
+            {DUE_PRESETS.map((preset) => {
+              const date = resolveSchedulePreset(preset, todayStr);
+              const selected = Boolean(date) && dueDate === date;
+              return (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setDueDate(selected ? "" : date ?? "")}
+                  aria-pressed={selected}
+                  title={formatTaskDayHint(date) ?? undefined}
+                  className={cn(
+                    "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    selected
+                      ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                      : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                  )}
+                  data-testid={`task-create-due-${preset}`}
                 >
-                  {members.map((member) => {
-                    const selected = assignedTo === member.id;
-                    return (
-                      <button
-                        key={member.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={selected}
-                        onClick={() => setAssignedTo(member.id)}
-                        className={cn(
-                          "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          selected
-                            ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                            : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
-                        )}
-                        data-testid={`task-create-assignee-${member.id}`}
-                      >
-                        <MemberAvatar
-                          name={member.name}
-                          color={member.avatar_color}
-                          photoUrl={memberPhotoUrls[member.id]}
-                          size="md"
-                        />
-                        <span className="max-w-28 truncate">{member.name}</span>
-                      </button>
-                    );
-                  })}
+                  {TASK_SCHEDULE_PRESET_LABELS[preset]}
+                </button>
+              );
+            })}
+          </div>
+          <DateInput
+            id="task-create-due-date"
+            value={dueDate}
+            onChange={setDueDate}
+            minDate={minDueDate}
+            className="h-12"
+            aria-label="Fällig am"
+            data-testid="task-create-due-date"
+          />
+        </div>
+
+        {/* Assignee — faces, matching the detail sheet and the row */}
+        {members.length > 0 && (
+          <div className="mt-4" data-testid="task-create-assignee-section">
+            <p className="mb-2 text-sm font-medium text-foreground">
+              Wer macht das?
+            </p>
+            <div
+              role="radiogroup"
+              aria-label="Wer macht das?"
+              className="flex flex-wrap gap-2"
+            >
+              {members.map((member) => {
+                const selected = assignedTo === member.id;
+                return (
                   <button
+                    key={member.id}
                     type="button"
                     role="radio"
-                    aria-checked={assignedTo === ""}
-                    onClick={() => setAssignedTo("")}
+                    aria-checked={selected}
+                    onClick={() => setAssignedTo(member.id)}
                     className={cn(
-                      "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      assignedTo === ""
+                      "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      selected
                         ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                        : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                        : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
                     )}
-                    data-testid="task-create-assignee-none"
+                    data-testid={`task-create-assignee-${member.id}`}
                   >
-                    <UserX
-                      className="size-4 shrink-0"
-                      aria-hidden="true"
-                      strokeWidth={1.75}
+                    <MemberAvatar
+                      name={member.name}
+                      color={member.avatar_color}
+                      photoUrl={memberPhotoUrls[member.id]}
+                      size="md"
                     />
-                    Niemand
+                    <span className="max-w-28 truncate">{member.name}</span>
                   </button>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Action bar */}
-          <div className="border-t border-border/60 px-4 py-3">
-            <div className="flex items-center gap-2">
-              <Button
+                );
+              })}
+              <button
                 type="button"
-                variant="outline"
-                className="flex-1"
-                onClick={() => handleOpenChange(false)}
-                disabled={saving}
-              >
-                Abbrechen
-              </Button>
-              <Button
-                type="button"
-                className="flex-1"
-                onClick={handleSave}
-                disabled={saving || !title.trim()}
-                data-testid="task-create-save"
-              >
-                {saving ? (
-                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : (
-                  "Aufgabe erstellen"
+                role="radio"
+                aria-checked={assignedTo === ""}
+                onClick={() => setAssignedTo("")}
+                className={cn(
+                  "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  assignedTo === ""
+                    ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                    : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
                 )}
-              </Button>
+                data-testid="task-create-assignee-none"
+              >
+                <UserX
+                  className="size-4 shrink-0"
+                  aria-hidden="true"
+                  strokeWidth={1.75}
+                />
+                Niemand
+              </button>
             </div>
           </div>
-        </div>
-      </SheetContent>
-    </Sheet>
+        )}
+      </OrdiloDrawerBody>
+
+      <OrdiloDrawerFooter>
+        <Button
+          type="button"
+          variant="outline"
+          className="flex-1"
+          onClick={() => handleOpenChange(false)}
+          disabled={saving}
+        >
+          Abbrechen
+        </Button>
+        <Button
+          type="button"
+          className="flex-1"
+          onClick={handleSave}
+          disabled={saving || !title.trim()}
+          data-testid="task-create-save"
+        >
+          {saving ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            "Aufgabe erstellen"
+          )}
+        </Button>
+      </OrdiloDrawerFooter>
+    </OrdiloDrawer>
   );
 }
