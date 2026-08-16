@@ -146,6 +146,75 @@ describe("MemberForm", () => {
     );
   });
 
+  it("changes a role in place, keeping the first relationship first", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={onSubmit}
+        otherMembers={[
+          { id: "mem-2", name: "Emma" },
+          { id: "mem-3", name: "Chris" },
+        ]}
+        initialValues={{
+          name: "Karina",
+          relations: [
+            { role: "Mutter", member_ids: ["mem-2"] },
+            { role: "Schwester", member_ids: ["mem-3"] },
+          ],
+        }}
+      />,
+    );
+
+    // Re-picking Emma's role must not push her behind Chris — the first
+    // relationship is what becomes the person's primary role.
+    fireEvent.click(screen.getByTestId("relationship-row-mem-2"));
+    fireEvent.click(screen.getByTestId("role-chip-Tochter"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [
+          { role: "Tochter", member_ids: ["mem-2"] },
+          { role: "Schwester", member_ids: ["mem-3"] },
+        ],
+      }),
+    );
+  });
+
+  it("keeps relationships whose person the list does not know", () => {
+    const onSubmit = vi.fn();
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={onSubmit}
+        otherMembers={[{ id: "mem-2", name: "Emma" }]}
+        initialValues={{
+          name: "Karina",
+          relations: [
+            { role: "Mutter", member_ids: ["mem-2", "mem-unknown"] },
+            { role: "Partner:in", member_ids: ["mem-gone"] },
+          ],
+        }}
+      />,
+    );
+
+    // Editing something else must not delete what could not be rendered.
+    fireEvent.click(screen.getByTestId("relationship-solo-row"));
+    fireEvent.click(screen.getByTestId("solo-role-chip-Oma"));
+    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        relations: [
+          { role: "Oma", member_ids: [] },
+          { role: "Mutter", member_ids: ["mem-2", "mem-unknown"] },
+          { role: "Partner:in", member_ids: ["mem-gone"] },
+        ],
+      }),
+    );
+  });
+
   it("takes a free-text role under 'Andere'", () => {
     const onSubmit = vi.fn();
     render(

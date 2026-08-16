@@ -2180,11 +2180,20 @@ async function executeAddFamilyMember(
   // counterpart yet, so the relation has no target ("Mutter", not "Mutter
   // von Emma") — that is exactly what the UI shows for a plain role.
   if (validation.data.role) {
-    await saveMemberRelations(ctx.client, {
+    const relationsSaved = await saveMemberRelations(ctx.client, {
       familyId: ctx.familyId,
       memberId: member.id,
       relations: [{ role: validation.data.role, member_ids: [] }],
     });
+    if (!relationsSaved) {
+      // A role that lives only on the member row is a trap: the next
+      // ordinary edit reads an empty relation list and clears it. Undo the
+      // insert rather than report a half-made member.
+      await ctx.client.from("family_members").delete().eq("id", member.id);
+      return JSON.stringify({
+        error: "Familienmitglied konnte nicht angelegt werden.",
+      });
+    }
   }
 
   return JSON.stringify({

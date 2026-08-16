@@ -27,6 +27,8 @@ function mockSupabase(options: {
     updateError?: unknown;
     updated?: { id: string; name: string; onboarding_completed_at: string };
   };
+  /** Make the atomic relation write fail. */
+  relationsRpcError?: unknown;
   members?: {
     insertError?: unknown;
     inserted?: Record<string, unknown>;
@@ -104,6 +106,11 @@ function mockSupabase(options: {
     error: null,
   });
 
+  // Rollback of a half-created member (the relation write failed).
+  const membersDeleteMock = vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  }));
+
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
       return {
@@ -121,6 +128,7 @@ function mockSupabase(options: {
         update: vi.fn(() => ({
           eq: vi.fn().mockResolvedValue({ error: null }),
         })),
+        delete: membersDeleteMock,
       };
     }
     if (table === "family_member_relations") {
@@ -136,6 +144,7 @@ function mockSupabase(options: {
         insert: vi.fn().mockResolvedValue({ error: null }),
       };
     }
+
     if (table === "collections") {
       return {
         select: vi.fn(() => collectionsSelectChain),
@@ -146,8 +155,12 @@ function mockSupabase(options: {
   });
 
   return {
+    membersDeleteMock,
     from: fromMock,
-    rpc: vi.fn().mockResolvedValue({ data: [], error: null }),
+    rpc: vi.fn().mockResolvedValue({
+      data: [],
+      error: options.relationsRpcError ?? null,
+    }),
     auth: {
       getUser: vi.fn().mockResolvedValue({
         data: { user },
@@ -201,6 +214,31 @@ describe("createFamily", () => {
       expect(result.data.id).toBe("fam-new");
       expect(result.data.name).toBe("Familie Müller");
     }
+  });
+
+  it("undoes the member when their role cannot be stored as a relation", async () => {
+    const client = mockSupabase({
+      members: {
+        inserted: {
+          id: "mem-2",
+          family_id: "fam-1",
+          name: "Thomas",
+          role: "Vater",
+        },
+      },
+      relationsRpcError: { message: "boom" },
+    });
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const result = await addMember("fam-1", { name: "Thomas", role: "Vater" });
+
+    // A role that exists only on the member row would be cleared by the
+    // next ordinary edit — better no member than a misleading one.
+    expect(result.success).toBe(false);
+    expect(
+      (client as unknown as { membersDeleteMock: ReturnType<typeof vi.fn> })
+        .membersDeleteMock,
+    ).toHaveBeenCalled();
   });
 
   it("returns friendly German error on insert failure", async () => {
@@ -360,6 +398,31 @@ describe("addMember", () => {
       expect(result.data.birthdate).toBe("1985-06-15");
       expect(result.data.avatar_color).toBe("#E46018");
     }
+  });
+
+  it("undoes the member when their role cannot be stored as a relation", async () => {
+    const client = mockSupabase({
+      members: {
+        inserted: {
+          id: "mem-2",
+          family_id: "fam-1",
+          name: "Thomas",
+          role: "Vater",
+        },
+      },
+      relationsRpcError: { message: "boom" },
+    });
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const result = await addMember("fam-1", { name: "Thomas", role: "Vater" });
+
+    // A role that exists only on the member row would be cleared by the
+    // next ordinary edit — better no member than a misleading one.
+    expect(result.success).toBe(false);
+    expect(
+      (client as unknown as { membersDeleteMock: ReturnType<typeof vi.fn> })
+        .membersDeleteMock,
+    ).toHaveBeenCalled();
   });
 
   it("returns friendly German error on insert failure", async () => {

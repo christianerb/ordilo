@@ -66,18 +66,27 @@ export function RelationshipList({
   const [soloPickerOpen, setSoloPickerOpen] = useState(false);
   const [personPickerOpen, setPersonPickerOpen] = useState(false);
 
-  const { personRelations, soloRoles } = splitRelations(value, members);
+  const { personRelations, soloRoles, hidden } = splitRelations(value, members);
   const relatedIds = new Set(personRelations.map((r) => r.memberId));
   const addableMembers = members.filter((m) => !relatedIds.has(m.id));
   const memberById = new Map(members.map((m) => [m.id, m]));
 
   const commit = (persons: PersonRelation[], solos: string[]) => {
-    onChange(mergeRelations(persons, solos));
+    onChange(mergeRelations(persons, solos, hidden));
   };
 
   const setRoleFor = (memberId: string, role: string) => {
-    const next = personRelations.filter((r) => r.memberId !== memberId);
-    if (role.trim()) next.push({ memberId, role: role.trim() });
+    const index = personRelations.findIndex((r) => r.memberId === memberId);
+    const next = [...personRelations];
+    if (!role.trim()) {
+      if (index >= 0) next.splice(index, 1);
+    } else if (index >= 0) {
+      // In place: the first relationship is the person's primary role, so
+      // re-picking a role must not shuffle an unrelated one to the front.
+      next[index] = { memberId, role: role.trim() };
+    } else {
+      next.push({ memberId, role: role.trim() });
+    }
     commit(next, soloRoles);
   };
 
@@ -450,23 +459,34 @@ function PickerSheet({
  * Turns the stored role-per-entry shape into one entry per person (plus the
  * roles that point at nobody). A person listed under two roles keeps the
  * first — the list shows one role per face.
+ *
+ * Relations pointing at people this list has never heard of (a member list
+ * that failed to load) are handed back as `hidden` so `mergeRelations` can
+ * put them back: what cannot be shown must still not be deleted.
  */
 function splitRelations(
   relations: MemberRelation[],
   members: RelationMemberOption[],
-): { personRelations: PersonRelation[]; soloRoles: string[] } {
+): {
+  personRelations: PersonRelation[];
+  soloRoles: string[];
+  hidden: MemberRelation[];
+} {
   const known = new Set(members.map((m) => m.id));
   const personRelations: PersonRelation[] = [];
   const seen = new Set<string>();
   const soloRoles: string[] = [];
+  const hidden: MemberRelation[] = [];
 
   for (const relation of relations) {
     const role = relation.role.trim();
     if (!role) continue;
     const targets = relation.member_ids.filter((id) => known.has(id));
+    const unknownTargets = relation.member_ids.filter((id) => !known.has(id));
+    if (unknownTargets.length > 0) {
+      hidden.push({ role, member_ids: unknownTargets });
+    }
     if (targets.length === 0) {
-      // Keep a role whose people are unknown to this view as a plain role
-      // only when it never had any — otherwise it would look invented.
       if (relation.member_ids.length === 0 && !soloRoles.includes(role)) {
         soloRoles.push(role);
       }
@@ -479,29 +499,40 @@ function splitRelations(
     }
   }
 
-  return { personRelations, soloRoles };
+  return { personRelations, soloRoles, hidden };
 }
 
 /** Turns the per-person rows back into the stored role-grouped shape. */
 function mergeRelations(
   personRelations: PersonRelation[],
   soloRoles: string[],
+  hidden: MemberRelation[] = [],
 ): MemberRelation[] {
   const byRole = new Map<string, MemberRelation>();
 
-  for (const role of soloRoles) {
-    if (!role.trim()) continue;
-    byRole.set(role.trim().toLowerCase(), { role: role.trim(), member_ids: [] });
-  }
-
-  for (const { memberId, role } of personRelations) {
+  const add = (role: string, memberIds: string[]) => {
     const key = role.trim().toLowerCase();
     const existing = byRole.get(key);
     if (existing) {
-      if (!existing.member_ids.includes(memberId)) existing.member_ids.push(memberId);
+      for (const id of memberIds) {
+        if (!existing.member_ids.includes(id)) existing.member_ids.push(id);
+      }
     } else {
-      byRole.set(key, { role: role.trim(), member_ids: [memberId] });
+      byRole.set(key, { role: role.trim(), member_ids: [...memberIds] });
     }
+  };
+
+  for (const role of soloRoles) {
+    if (role.trim()) add(role, []);
+  }
+
+  for (const { memberId, role } of personRelations) {
+    add(role, [memberId]);
+  }
+
+  // People the list could not render keep their relationships.
+  for (const relation of hidden) {
+    add(relation.role, relation.member_ids);
   }
 
   return [...byRole.values()];

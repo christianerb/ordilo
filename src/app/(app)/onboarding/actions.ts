@@ -193,11 +193,18 @@ export async function addMember(
   // Onboarding adds people one by one, so the relation has no counterpart
   // yet ("Mutter", not "Mutter von Emma") — that is added on /familie.
   if (validation.data.role) {
-    await saveMemberRelations(supabase, {
+    const relationsSaved = await saveMemberRelations(supabase, {
       familyId,
       memberId: member.id,
       relations: [{ role: validation.data.role, member_ids: [] }],
     });
+    if (!relationsSaved) {
+      // A member whose role exists only on the member row is a trap: the
+      // next ordinary edit reads an empty relation list and clears it.
+      // Undo the insert instead and let the user try again.
+      await supabase.from("family_members").delete().eq("id", member.id);
+      return { success: false, error: FRIENDLY_ERROR };
+    }
   }
 
   await recordProductEvent(supabase, {

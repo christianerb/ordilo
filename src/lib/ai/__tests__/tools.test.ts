@@ -293,12 +293,18 @@ describe("mark_task_done confirmation gate", () => {
 function makeMemberCtx({
   inserted = null,
   insertError = null,
+  relationsRpcError = null,
 }: {
   inserted?: { id: string; name: string } | null;
   insertError?: unknown;
+  /** Make the atomic relation write fail. */
+  relationsRpcError?: unknown;
 } = {}) {
   let capturedInsert: Record<string, unknown> | null = null;
   let capturedRelations: Record<string, unknown>[] | null = null;
+  const memberDelete = vi.fn(() => ({
+    eq: vi.fn().mockResolvedValue({ error: null }),
+  }));
 
   const from = vi.fn((table: string) => {
     if (table === "family_members") {
@@ -319,6 +325,7 @@ function makeMemberCtx({
         update: vi.fn(() => ({
           eq: vi.fn().mockResolvedValue({ error: null }),
         })),
+        delete: memberDelete,
       };
     }
     if (table === "family_member_relations") {
@@ -343,7 +350,7 @@ function makeMemberCtx({
     if (name === "replace_member_relations") {
       capturedRelations = args.p_relations as Record<string, unknown>[];
     }
-    return Promise.resolve({ data: [], error: null });
+    return Promise.resolve({ data: [], error: relationsRpcError ?? null });
   });
 
   const ctx = {
@@ -357,6 +364,7 @@ function makeMemberCtx({
     ctx,
     getInsert: () => capturedInsert,
     getRelations: () => capturedRelations,
+    memberDelete,
   };
 }
 
@@ -428,6 +436,22 @@ describe("add_family_member confirmation gate", () => {
     expect(getRelations()).toEqual([
       { related_member_id: null, role: "Kind", sort_order: 0 },
     ]);
+  });
+
+  it("undoes the member when the role cannot be stored as a relation", async () => {
+    const { ctx, memberDelete } = makeMemberCtx({
+      inserted: { id: "member-3", name: "Emma" },
+      relationsRpcError: { message: "boom" },
+    });
+    const result = await executeTool(
+      "add_family_member",
+      { name: "Emma", role: "Kind", confirmed: true },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(parsed.error).toBe("Familienmitglied konnte nicht angelegt werden.");
+    expect(memberDelete).toHaveBeenCalled();
   });
 
   it("returns the shared validation error for an invalid birthdate", async () => {

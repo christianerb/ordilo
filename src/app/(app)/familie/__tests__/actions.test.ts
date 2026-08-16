@@ -759,6 +759,34 @@ describe("updateFamilyMember", () => {
     }
   });
 
+  it("touches nothing when the relationships cannot be stored", async () => {
+    const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
+    const relatedId = "22222222-2222-4222-8222-222222222222";
+    const client = mockSupabase({
+      family,
+      members: {
+        existing: { id: "mem-1", family_id: "fam-1" },
+        relatedMembers: [{ id: relatedId, family_id: "fam-1" }],
+        updated: { id: "mem-1", family_id: "fam-1", name: "Emma" },
+      },
+      relations: { rpcError: { message: "boom" } },
+    });
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
+
+    const result = await updateFamilyMember("mem-1", {
+      name: "Emma Neu",
+      relations: [{ role: "Mutter", member_ids: [relatedId] }],
+    });
+
+    expect(result.success).toBe(false);
+    // The member row (and with it the primary role) is left alone — the
+    // relations carry the role, and they did not change.
+    const updateCalls = (client.from as ReturnType<typeof vi.fn>).mock.results
+      .map((r) => r.value as { update?: ReturnType<typeof vi.fn> })
+      .filter((table) => table.update && table.update.mock.calls.length > 0);
+    expect(updateCalls).toHaveLength(0);
+  });
+
   it("keeps the stored relationships when the caller passes none", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const relatedId = "22222222-2222-4222-8222-222222222222";

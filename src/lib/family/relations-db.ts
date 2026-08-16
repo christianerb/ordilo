@@ -9,7 +9,6 @@ import {
   isInverseOf,
   memberRelationsSchema,
   normalizeRelations,
-  primaryRole,
   type MemberRelation,
   type MemberRelationRow,
 } from "@/lib/family/relations";
@@ -181,7 +180,6 @@ export async function saveMemberRelations(
   if (error) return false;
 
   await syncCounterparts(client, {
-    familyId,
     memberId,
     before: ((beforeRows ?? []) as MemberRelationRow[]).filter(
       (row) => row.related_member_id !== null,
@@ -204,19 +202,21 @@ function pairKey(targetId: string, role: string): string {
  * A counterpart is only ever created when the relationship has an obvious
  * reverse (see `inverseRole`) and the other person does not already say
  * something about this one — a hand-picked "Patenkind" is never overwritten
- * by an automatic "Kind". Failures are swallowed: the member's own
- * relations are already saved, and a missing mirror is a nuisance, not a
- * lost edit.
+ * by an automatic "Kind".
+ *
+ * Each affected person's list is rewritten through the same atomic RPC as
+ * the edited member's: a half-applied mirror would take a relationship away
+ * without putting the new one in its place. A counterpart that cannot be
+ * written is left as it was — the edited member's own relations are already
+ * saved, and a missing mirror is a nuisance, not a lost edit.
  */
 async function syncCounterparts(
   client: ServerClient,
   {
-    familyId,
     memberId,
     before,
     after,
   }: {
-    familyId: string;
     memberId: string;
     before: MemberRelationRow[];
     after: RelationInsert[];
@@ -249,95 +249,71 @@ async function syncCounterparts(
   // Everything the affected people currently say, in one read.
   const { data: theirRowsData, error: readError } = await client
     .from("family_member_relations")
-    .select("id, member_id, related_member_id, role, sort_order")
+    .select("member_id, related_member_id, role, sort_order")
     .in("member_id", affected);
-  if (readError) return;
-  const theirRows = (theirRowsData ?? []) as (MemberRelationRow & { id: string })[];
+  if (readError || !theirRowsData) return;
+  const theirRows = theirRowsData as MemberRelationRow[];
 
-  const rowsOf = (targetId: string) =>
-    theirRows.filter((row) => row.member_id === targetId);
+  for (const targetId of affected) {
+    // Their list as it should look afterwards, rebuilt from what is stored.
+    let rows = theirRows
+      .filter((row) => row.member_id === targetId)
+      .sort((a, b) => a.sort_order - b.sort_order);
+    let changed = false;
 
-  const deleteIds: string[] = [];
-  const inserts: RelationInsert[] = [];
-
-  for (const { targetId, role } of removed) {
-    // Drop the mirrored row this relation left on the other person — but
-    // only if it really is the reverse of what was removed.
-    for (const row of rowsOf(targetId)) {
-      if (row.related_member_id !== memberId) continue;
-      if (isInverseOf(role, row.role)) deleteIds.push(row.id);
+    for (const { targetId: removedTarget, role } of removed) {
+      if (removedTarget !== targetId) continue;
+      // Drop the mirrored row this relation left behind — but only if it
+      // really is the reverse of what was removed.
+      const kept = rows.filter(
+        (row) => !(row.related_member_id === memberId && isInverseOf(role, row.role)),
+      );
+      if (kept.length !== rows.length) changed = true;
+      rows = kept;
     }
-  }
 
-  for (const { targetId, role } of added) {
-    const theirs = rowsOf(targetId);
-    const alreadySays = theirs.some(
-      (row) => row.related_member_id === memberId && !deleteIds.includes(row.id),
-    );
-    if (alreadySays) continue;
+    for (const { targetId: addedTarget, role } of added) {
+      if (addedTarget !== targetId) continue;
+      if (rows.some((row) => row.related_member_id === memberId)) continue;
 
-    const counterRole = inverseRole(
-      role,
-      theirs.map((row) => row.role),
-    );
-    if (!counterRole) continue;
+      const counterRole = inverseRole(
+        role,
+        rows.map((row) => row.role),
+      );
+      if (!counterRole) continue;
 
-    // The same role without a counterpart becomes redundant the moment it
-    // points at someone ("Tochter" → "Tochter von Karina"). The replacement
-    // takes over its position: appending it instead would silently promote
-    // whatever came second to be the person's primary role.
-    let replacedOrder: number | null = null;
-    for (const row of theirs) {
-      if (
-        row.related_member_id === null &&
-        row.role.trim().toLowerCase() === counterRole.toLowerCase()
-      ) {
-        deleteIds.push(row.id);
-        replacedOrder =
-          replacedOrder === null ? row.sort_order : Math.min(replacedOrder, row.sort_order);
+      // The same role without a counterpart becomes redundant the moment it
+      // points at someone ("Tochter" → "Tochter von Karina"). The
+      // replacement takes over its position: appending it instead would
+      // silently promote whatever came second to be the primary role.
+      const replacedIndex = rows.findIndex(
+        (row) =>
+          row.related_member_id === null &&
+          row.role.trim().toLowerCase() === counterRole.toLowerCase(),
+      );
+      const mirrored: MemberRelationRow = {
+        member_id: targetId,
+        related_member_id: memberId,
+        role: counterRole,
+        sort_order: 0,
+      };
+      if (replacedIndex >= 0) {
+        rows.splice(replacedIndex, 1, mirrored);
+      } else {
+        rows.push(mirrored);
       }
+      changed = true;
     }
 
-    const lastOrder = theirs.reduce((max, row) => Math.max(max, row.sort_order), -1);
-    inserts.push({
-      family_id: familyId,
-      member_id: targetId,
-      related_member_id: memberId,
-      role: counterRole,
-      sort_order: replacedOrder ?? lastOrder + 1,
+    if (!changed) continue;
+
+    await client.rpc("replace_member_relations", {
+      p_member_id: targetId,
+      p_relations: rows.map((row, index) => ({
+        related_member_id: row.related_member_id,
+        role: row.role,
+        sort_order: index,
+      })),
     });
-  }
-
-  if (deleteIds.length > 0) {
-    await client.from("family_member_relations").delete().in("id", deleteIds);
-  }
-  if (inserts.length > 0) {
-    await client.from("family_member_relations").insert(inserts);
-  }
-
-  // The counterparts' primary roles may have moved with their relations.
-  const remaining = theirRows.filter((row) => !deleteIds.includes(row.id));
-  const { data: memberRows } = await client
-    .from("family_members")
-    .select("id, role")
-    .in("id", affected);
-
-  for (const target of affected) {
-    const rows = [
-      ...remaining.filter((row) => row.member_id === target),
-      ...inserts
-        .filter((row) => row.member_id === target)
-        .map((row) => ({
-          member_id: target,
-          related_member_id: row.related_member_id ?? null,
-          role: row.role,
-          sort_order: row.sort_order ?? 0,
-        })),
-    ];
-    const nextRole = primaryRole(groupRelationRows(rows));
-    const current = (memberRows ?? []).find((m) => m.id === target);
-    if (current && current.role !== nextRole) {
-      await client.from("family_members").update({ role: nextRole }).eq("id", target);
-    }
   }
 }

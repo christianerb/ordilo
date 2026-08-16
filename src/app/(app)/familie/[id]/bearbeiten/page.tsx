@@ -37,7 +37,7 @@ export default async function EditMemberPage({
 
   const typedMember = member as MemberRow;
 
-  const { data: otherMemberRows } = await supabase
+  const { data: otherMemberRows, error: otherMembersError } = await supabase
     .from("family_members")
     .select("id, name, avatar_color, photo_url")
     .eq("family_id", typedMember.family_id)
@@ -56,8 +56,10 @@ export default async function EditMemberPage({
       member={typedMember}
       relations={relationsResult.relations}
       // Saving the list the editor was handed would wipe the stored
-      // relationships if that list came from a failed read.
-      relationsUnavailable={relationsResult.error}
+      // relationships if that list came from a failed read — and an
+      // incomplete member list is just as bad: the editor cannot show a
+      // relationship whose person it does not know, and would drop it.
+      relationsUnavailable={relationsResult.error || Boolean(otherMembersError)}
       photoUrl={photoUrls[typedMember.id] ?? null}
       otherMembers={others.map((m) => ({
         id: m.id,

@@ -203,12 +203,28 @@ export async function updateFamilyMember(
     return { success: false, error: relationCheck.error };
   }
 
+  // Relations first, and wholesale — what the form showed is what is
+  // stored, including "all of them removed". They carry the primary role
+  // with them (the RPC writes it inside the same transaction), so a failed
+  // relation save must not have left a changed role behind: that is why
+  // this runs before the member row is touched, and why the update below
+  // does not write `role` itself.
+  if (managesRelations) {
+    const relationsSaved = await saveMemberRelations(supabase, {
+      familyId: family.id,
+      memberId,
+      relations: relationCheck.data,
+    });
+    if (!relationsSaved) {
+      return { success: false, error: FRIENDLY_ERROR };
+    }
+  }
+
   // Update the member.
   const { data: updated, error: updateError } = await supabase
     .from("family_members")
     .update({
       name: validation.data.name,
-      ...(managesRelations ? { role: validation.data.role } : {}),
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
     })
@@ -225,18 +241,15 @@ export async function updateFamilyMember(
     return { success: true, data: { ...updated, relations: stored.relations } };
   }
 
-  // Relations are replaced wholesale — what the form showed is what is
-  // stored, including "all of them removed".
-  const relationsSaved = await saveMemberRelations(supabase, {
-    familyId: family.id,
-    memberId,
-    relations: relationCheck.data,
-  });
-  if (!relationsSaved) {
-    return { success: false, error: FRIENDLY_ERROR };
-  }
-
-  return { success: true, data: { ...updated, relations: relationCheck.data } };
+  return {
+    success: true,
+    // The row was read before the RPC's role write landed in it.
+    data: {
+      ...updated,
+      role: validation.data.role,
+      relations: relationCheck.data,
+    },
+  };
 }
 
 /**

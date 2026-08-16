@@ -30,8 +30,11 @@ function fakeClient(initial: {
   members?: MemberRow[];
   /** Make the atomic replacement fail, as a transient database error would. */
   rpcFails?: boolean;
+  /** Make it fail for one member only (the counterpart write). */
+  failRpcFor?: string;
 }) {
   let nextId = 1;
+  const rpcCalls: { p_member_id: string }[] = [];
   const relations: RelationRow[] = (initial.relations ?? []).map((row) => ({
     id: `rel-${nextId++}`,
     family_id: "fam-1",
@@ -146,7 +149,8 @@ function fakeClient(initial: {
       },
     ) => {
       if (name !== "replace_member_relations") throw new Error(`Unexpected rpc ${name}`);
-      if (initial.rpcFails) {
+      rpcCalls.push(args);
+      if (initial.rpcFails || initial.failRpcFor === args.p_member_id) {
         return { data: null, error: { message: "boom" } };
       }
       return { data: replaceMemberRelations(args.p_member_id, args.p_relations), error: null };
@@ -157,6 +161,7 @@ function fakeClient(initial: {
     client,
     relations,
     members,
+    rpcCalls: () => rpcCalls,
     /** The relations of one member as `role → target` pairs, for assertions. */
     rolesOf: (memberId: string) =>
       relations
@@ -338,6 +343,55 @@ describe("saveMemberRelations — the other side", () => {
     });
 
     expect(db.rolesOf("chris")).toEqual(["Partner:in:karina"]);
+  });
+});
+
+describe("saveMemberRelations — the counterpart write", () => {
+  it("replaces the counterpart's list in one call, never delete-then-insert", async () => {
+    const db = fakeClient({
+      relations: [
+        { member_id: "emma", related_member_id: null, role: "Tochter", sort_order: 0 },
+      ],
+      members: [
+        { id: "karina", role: null },
+        { id: "emma", role: "Tochter" },
+      ],
+    });
+
+    await saveMemberRelations(db.client, {
+      familyId: "fam-1",
+      memberId: "karina",
+      relations: [{ role: "Mutter", member_ids: ["emma"] }],
+    });
+
+    // Karina's own swap plus exactly one atomic swap for Emma.
+    expect(db.rpcCalls().map((call) => call.p_member_id)).toEqual(["karina", "emma"]);
+    expect(db.rolesOf("emma")).toEqual(["Tochter:karina"]);
+  });
+
+  it("leaves the counterpart untouched when their write fails", async () => {
+    const db = fakeClient({
+      relations: [
+        { member_id: "emma", related_member_id: null, role: "Tochter", sort_order: 0 },
+      ],
+      members: [
+        { id: "karina", role: null },
+        { id: "emma", role: "Tochter" },
+      ],
+      failRpcFor: "emma",
+    });
+
+    const ok = await saveMemberRelations(db.client, {
+      familyId: "fam-1",
+      memberId: "karina",
+      relations: [{ role: "Mutter", member_ids: ["emma"] }],
+    });
+
+    // The edited member is saved; Emma keeps what she had, all of it.
+    expect(ok).toBe(true);
+    expect(db.rolesOf("karina")).toEqual(["Mutter:emma"]);
+    expect(db.rolesOf("emma")).toEqual(["Tochter:-"]);
+    expect(db.members.find((m) => m.id === "emma")?.role).toBe("Tochter");
   });
 });
 
