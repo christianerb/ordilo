@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { NoteEditor } from "@/components/ordilo/note-editor";
+import { buildCredentialsContent } from "@/lib/credentials";
 import { cn } from "@/lib/utils";
 import {
   DOCUMENT_TYPES,
@@ -116,40 +117,6 @@ function DocumentTypeSelector({
 /** Shared look of every single-line text field in this sheet. */
 const FIELD_CLASS =
   "w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50";
-
-// ---------------------------------------------------------------------------
-// Credentials body
-// ---------------------------------------------------------------------------
-
-/**
- * Build the markdown body of a "Zugangsdaten" note from its fields.
- *
- * URL and user name are ordinary document text: they belong in the body so
- * search, embeddings and the detail view treat them like any other note
- * content. The password never appears here — it travels in `secret` and is
- * stored encrypted, so putting it in the body would defeat that entirely.
- *
- * With nothing but a name and a password, the body would be empty and the
- * API rejects empty content, so the name carries it.
- */
-function buildCredentialsContent({
-  title,
-  url,
-  username,
-  description,
-}: {
-  title: string;
-  url: string;
-  username: string;
-  description: string;
-}): string {
-  const fields: string[] = [];
-  if (url) fields.push(`- **URL:** ${url}`);
-  if (username) fields.push(`- **Benutzername:** ${username}`);
-
-  const body = [fields.join("\n"), description].filter(Boolean).join("\n\n");
-  return body || `Zugangsdaten ${title}`;
-}
 
 // ---------------------------------------------------------------------------
 // Component

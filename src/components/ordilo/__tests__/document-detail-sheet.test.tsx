@@ -77,6 +77,137 @@ describe("DocumentDetailSheet", () => {
     expect(screen.getByTestId("document-secret-reveal")).toBeDefined();
   });
 
+  it("offers to add a password to a Zugangsdaten document that has none", () => {
+    render(
+      <DocumentDetailSheet
+        document={
+          { ...document, document_type: "credentials", secret: null } as never
+        }
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("secret-add-button")).toBeDefined();
+    expect(screen.queryByTestId("document-secret-reveal")).toBeNull();
+  });
+
+  it("does not offer a password on an ordinary document", () => {
+    render(
+      <DocumentDetailSheet
+        document={{ ...document, document_type: "invoice", secret: null } as never}
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByTestId("secret-add-button")).toBeNull();
+  });
+
+  it("stores a newly entered password and switches to the reveal control", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ has_secret: true }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <DocumentDetailSheet
+        document={
+          { ...document, document_type: "credentials", secret: null } as never
+        }
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("secret-add-button"));
+    fireEvent.change(screen.getByTestId("secret-editor-input"), {
+      target: { value: "hunter2" },
+    });
+    fireEvent.click(screen.getByTestId("secret-editor-save"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("document-secret-reveal")).toBeDefined();
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/api/documents/doc-1/secret", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "hunter2" }),
+    });
+
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the editor open and shows the error when saving fails", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: async () => ({ error: "Passwort konnte nicht gespeichert werden." }),
+      }),
+    );
+
+    render(
+      <DocumentDetailSheet
+        document={
+          { ...document, document_type: "credentials", secret: null } as never
+        }
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("secret-add-button"));
+    fireEvent.change(screen.getByTestId("secret-editor-input"), {
+      target: { value: "hunter2" },
+    });
+    fireEvent.click(screen.getByTestId("secret-editor-save"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("secret-editor-error").textContent).toBe(
+        "Passwort konnte nicht gespeichert werden.",
+      );
+    });
+    expect(screen.getByTestId("secret-editor-input")).toBeDefined();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("drops the reveal control when the password is removed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ has_secret: false }),
+      }),
+    );
+
+    render(
+      <DocumentDetailSheet
+        document={
+          {
+            ...document,
+            document_type: "credentials",
+            secret: "v1:encrypted-envelope",
+          } as never
+        }
+        open
+        onOpenChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("secret-change-button"));
+    fireEvent.click(screen.getByTestId("secret-editor-save"));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId("document-secret-reveal")).toBeNull();
+    });
+    expect(screen.getByTestId("secret-add-button")).toBeDefined();
+
+    vi.unstubAllGlobals();
+  });
+
   it("does not offer an original comparison for a text-only note", () => {
     render(
       <DocumentDetailSheet
