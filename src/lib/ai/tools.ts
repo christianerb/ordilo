@@ -292,7 +292,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
             type: "string",
             enum: [
               "invoice", "letter", "contract", "medical",
-              "school", "insurance", "tax", "other",
+              "school", "insurance", "tax", "credentials", "other",
             ],
             description: "Filter nach Dokumenttyp. Optional.",
           },

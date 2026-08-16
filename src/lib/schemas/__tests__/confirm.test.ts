@@ -145,7 +145,7 @@ describe("confirmPayloadSchema", () => {
   });
 
   it("validates payload with all document types", () => {
-    const types = ["invoice", "letter", "contract", "medical", "school", "insurance", "tax", "other"];
+    const types = ["invoice", "letter", "contract", "medical", "school", "insurance", "tax", "credentials", "note", "other"];
     for (const type of types) {
       const payload = validPayload({ document_type: type as DocumentAnalysis["document_type"] });
       const result = confirmPayloadSchema.safeParse(payload);

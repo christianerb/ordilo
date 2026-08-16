@@ -130,6 +130,9 @@ export function CreateNoteSheet({
   const [documentType, setDocumentType] = useState<DocumentType>("other");
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
+  // Only "Zugangsdaten" notes carry a password. On every other type the
+  // field is meaningless noise under the editor, so it stays hidden.
+  const showSecretField = documentType === "credentials";
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -159,6 +162,16 @@ export function CreateNoteSheet({
     },
     [onOpenChange, reset, submitting],
   );
+
+  const handleTypeChange = useCallback((type: DocumentType) => {
+    setDocumentType(type);
+    // Leaving "Zugangsdaten" hides the field — drop whatever was typed into
+    // it so a password the user can no longer see never reaches the server.
+    if (type !== "credentials") {
+      setSecret("");
+      setShowSecret(false);
+    }
+  }, []);
 
   const handleImageSelect = useCallback(
     (file: File) => {
@@ -270,7 +283,7 @@ export function CreateNoteSheet({
             {/* Document type */}
             <div className="space-y-1.5">
               <Label htmlFor="note-type">Typ</Label>
-              <DocumentTypeSelector value={documentType} onChange={setDocumentType} />
+              <DocumentTypeSelector value={documentType} onChange={handleTypeChange} />
             </div>
 
             {/* Note editor */}
@@ -284,40 +297,43 @@ export function CreateNoteSheet({
               />
             </div>
 
-            {/* Hidden secret (e.g. password) — encrypted server-side, never stored in plain text */}
-            <div className="space-y-1.5">
-              <Label htmlFor="note-secret" className="flex items-center gap-1.5">
-                <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
-                Passwort / Geheim (optional)
-              </Label>
-              <div className="relative">
-                <input
-                  id="note-secret"
-                  type={showSecret ? "text" : "password"}
-                  value={secret}
-                  onChange={(e) => setSecret(e.target.value)}
-                  placeholder="z. B. Passwort, PIN, Zugangscode"
-                  autoComplete="off"
-                  className="w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  data-testid="note-secret-input"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((s) => !s)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  aria-label={showSecret ? "Geheim verbergen" : "Geheim anzeigen"}
-                >
-                  {showSecret ? (
-                    <EyeOff className="size-4" aria-hidden="true" />
-                  ) : (
-                    <Eye className="size-4" aria-hidden="true" />
-                  )}
-                </button>
+            {/* Hidden secret (e.g. password) — encrypted server-side, never
+                stored in plain text. Only shown for "Zugangsdaten" notes. */}
+            {showSecretField && (
+              <div className="space-y-1.5" data-testid="note-secret-field">
+                <Label htmlFor="note-secret" className="flex items-center gap-1.5">
+                  <Lock className="size-3.5 text-[var(--mist-dark)]" aria-hidden="true" />
+                  Passwort / Zugangscode
+                </Label>
+                <div className="relative">
+                  <input
+                    id="note-secret"
+                    type={showSecret ? "text" : "password"}
+                    value={secret}
+                    onChange={(e) => setSecret(e.target.value)}
+                    placeholder="z. B. Passwort, PIN, Zugangscode"
+                    autoComplete="off"
+                    className="w-full rounded-ordilo-sm border border-border bg-transparent px-3 py-2 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    data-testid="note-secret-input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret((s) => !s)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    aria-label={showSecret ? "Geheim verbergen" : "Geheim anzeigen"}
+                  >
+                    {showSecret ? (
+                      <EyeOff className="size-4" aria-hidden="true" />
+                    ) : (
+                      <Eye className="size-4" aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Wird verschlüsselt gespeichert und ist nur per Klick sichtbar.
-              </p>
-            </div>
+            )}
 
             {/* Image attachment */}
             <div className="flex items-center gap-2">

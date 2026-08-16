@@ -20,7 +20,7 @@ describe("CreateNoteSheet", () => {
 
     const select = screen.getByTestId("note-type-select") as HTMLSelectElement;
     expect(select.tagName).toBe("SELECT");
-    // All nine types, in schema order, with their German labels.
+    // Every type, in schema order, with its German label.
     expect(Array.from(select.options).map((o) => o.value)).toEqual([
       ...DOCUMENT_TYPES,
     ]);
@@ -50,6 +50,73 @@ describe("CreateNoteSheet", () => {
       title: "Steuer ID Hanna",
       content: "74 031 832 353",
       documentType: "tax",
+    });
+  });
+
+  it("hides the password field until the type is Zugangsdaten", () => {
+    renderSheet();
+
+    expect(screen.queryByTestId("note-secret-input")).toBeNull();
+
+    fireEvent.change(screen.getByTestId("note-type-select"), {
+      target: { value: "credentials" },
+    });
+
+    expect(screen.getByTestId("note-secret-input")).toBeInTheDocument();
+  });
+
+  it("submits the password entered on a Zugangsdaten note", async () => {
+    const { onSubmit } = renderSheet();
+
+    fireEvent.change(screen.getByTestId("note-title-input"), {
+      target: { value: "WLAN" },
+    });
+    fireEvent.change(screen.getByTestId("note-editor-textarea"), {
+      target: { value: "Gastzugang im Flur" },
+    });
+    fireEvent.change(screen.getByTestId("note-type-select"), {
+      target: { value: "credentials" },
+    });
+    fireEvent.change(screen.getByTestId("note-secret-input"), {
+      target: { value: "hunter2" },
+    });
+    fireEvent.click(screen.getByTestId("note-submit-button"));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      documentType: "credentials",
+      secret: "hunter2",
+    });
+  });
+
+  it("drops the password when the type moves away from Zugangsdaten", async () => {
+    const { onSubmit } = renderSheet();
+
+    fireEvent.change(screen.getByTestId("note-title-input"), {
+      target: { value: "WLAN" },
+    });
+    fireEvent.change(screen.getByTestId("note-editor-textarea"), {
+      target: { value: "Gastzugang im Flur" },
+    });
+    fireEvent.change(screen.getByTestId("note-type-select"), {
+      target: { value: "credentials" },
+    });
+    fireEvent.change(screen.getByTestId("note-secret-input"), {
+      target: { value: "hunter2" },
+    });
+    fireEvent.change(screen.getByTestId("note-type-select"), {
+      target: { value: "note" },
+    });
+    fireEvent.click(screen.getByTestId("note-submit-button"));
+
+    await waitFor(() => {
+      expect(onSubmit).toHaveBeenCalledTimes(1);
+    });
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      documentType: "note",
+      secret: "",
     });
   });
 
