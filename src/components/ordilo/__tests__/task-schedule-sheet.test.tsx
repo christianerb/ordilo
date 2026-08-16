@@ -10,6 +10,17 @@ import { resolveSchedulePreset, todayLocalDate } from "@/lib/task-utils";
 
 const TODAY = todayLocalDate();
 
+/** A date `days` from today, ISO and in the German form the field shows. */
+function futureDate(days: number): { iso: string; typed: string } {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const iso = date.toLocaleDateString("sv-SE");
+  const [year, month, day] = iso.split("-");
+  return { iso, typed: `${day}.${month}.${year}` };
+}
+
+const FUTURE = futureDate(45);
+
 function makeTask(overrides: Partial<{ due_date: string | null }> = {}) {
   return {
     id: "task-1",
@@ -96,15 +107,106 @@ describe("TaskScheduleSheet", () => {
     expect(props.onSelect).toHaveBeenCalledWith(null);
   });
 
-  it("accepts a typed date once it is complete", () => {
+  it("does not commit while a date is still being typed", () => {
     const props = renderSheet();
     const input = screen.getByTestId("task-schedule-custom");
 
-    // Partial input must not commit anything.
+    // DateInput reports every parseable keystroke, so committing there
+    // would snap the sheet shut mid-edit.
     fireEvent.change(input, { target: { value: "24.1" } });
-    expect(props.onSelect).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: FUTURE.typed } });
 
-    fireEvent.change(input, { target: { value: "24.12.2026" } });
-    expect(props.onSelect).toHaveBeenCalledWith("2026-12-24");
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("commits a typed date when it is deliberately applied", () => {
+    const props = renderSheet();
+
+    fireEvent.change(screen.getByTestId("task-schedule-custom"), {
+      target: { value: FUTURE.typed },
+    });
+    fireEvent.click(screen.getByTestId("task-schedule-apply"));
+
+    expect(props.onSelect).toHaveBeenCalledWith(FUTURE.iso);
+  });
+
+  it("refuses a typed date in the past and stays open", () => {
+    const props = renderSheet();
+
+    fireEvent.change(screen.getByTestId("task-schedule-custom"), {
+      target: { value: "01.01.2000" },
+    });
+
+    // `minDate` only disables calendar days — the typed path needs its own
+    // check, or rescheduling could move a task into the past while the
+    // create and detail forms both refuse to.
+    expect(screen.getByTestId("task-schedule-error").textContent).toContain(
+      "heute oder einen späteren Tag",
+    );
+    expect(screen.queryByTestId("task-schedule-apply")).toBeNull();
+    expect(props.onSelect).not.toHaveBeenCalled();
+    expect(props.onOpenChange).not.toHaveBeenCalled();
+  });
+
+  it("clears the error once a usable date is typed", () => {
+    renderSheet();
+    const input = screen.getByTestId("task-schedule-custom");
+
+    fireEvent.change(input, { target: { value: "01.01.2000" } });
+    expect(screen.getByTestId("task-schedule-error")).toBeDefined();
+
+    fireEvent.change(input, { target: { value: FUTURE.typed } });
+    expect(screen.queryByTestId("task-schedule-error")).toBeNull();
+    expect(screen.getByTestId("task-schedule-apply")).toBeDefined();
+  });
+
+  it("commits straight away when a day is picked in the calendar", () => {
+    const props = renderSheet();
+
+    fireEvent.click(screen.getByLabelText("Kalender öffnen"));
+    // Days before today are disabled, so the last enabled cell is always a
+    // usable one — a fixed index would be in the past for most of a month.
+    const selectable = screen
+      .getAllByTestId("date-input-day")
+      .filter((day) => !(day as HTMLButtonElement).disabled);
+    expect(selectable.length).toBeGreaterThan(0);
+    fireEvent.click(selectable[selectable.length - 1]);
+
+    // A tapped day is a finished decision, and past days are disabled
+    // there — so it behaves like the presets above it.
+    expect(props.onSelect).toHaveBeenCalledTimes(1);
+    expect(props.onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it("does not carry one task's typed date over to the next", () => {
+    const props = renderSheet();
+
+    fireEvent.change(screen.getByTestId("task-schedule-custom"), {
+      target: { value: FUTURE.typed },
+    });
+    fireEvent.click(screen.getByTestId("task-schedule-apply"));
+
+    // Closing runs through the resetting handler; the sheet stays mounted
+    // between tasks, so a leftover date would greet the next one as its own.
+    expect(props.onOpenChange).toHaveBeenCalledWith(false);
+    expect(
+      (screen.getByTestId("task-schedule-custom") as HTMLInputElement).value,
+    ).toBe("");
+  });
+
+  it("resets a typed date when the sheet is dismissed unused", () => {
+    renderSheet();
+
+    fireEvent.change(screen.getByTestId("task-schedule-custom"), {
+      target: { value: FUTURE.typed },
+    });
+    fireEvent.keyDown(screen.getByTestId("task-schedule-sheet"), {
+      key: "Escape",
+    });
+
+    expect(
+      (screen.getByTestId("task-schedule-custom") as HTMLInputElement).value,
+    ).toBe("");
   });
 });

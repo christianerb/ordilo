@@ -58,15 +58,45 @@ export function TaskScheduleSheet({
   // must not still offer yesterday as "Heute".
   const todayStr = todayLocalDate();
   const [customDate, setCustomDate] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  const commit = (dueDate: string | null) => {
-    onSelect(dueDate);
-    onOpenChange(false);
+  const resetCustom = () => {
+    setCustomDate("");
+    setError(null);
   };
 
   const handleOpenChange = (next: boolean) => {
-    if (!next) setCustomDate("");
+    if (!next) resetCustom();
     onOpenChange(next);
+  };
+
+  // Closes through the resetting handler, never past it: the sheet stays
+  // mounted between tasks, so a date left in the field would greet the next
+  // task as if it were its own.
+  const commit = (dueDate: string | null) => {
+    onSelect(dueDate);
+    handleOpenChange(false);
+  };
+
+  /**
+   * A typed date is only usable once it is complete and not in the past.
+   *
+   * `DateInput` applies `minDate` to the calendar's days but reports every
+   * parseable keystroke through `onChange`, so this field cannot lean on it
+   * for either check: committing there would move a task into the past —
+   * which the create and detail forms both refuse — and would snap the
+   * sheet shut the moment a half-typed date happened to parse.
+   */
+  const customDateIsPast = Boolean(customDate) && customDate < todayStr;
+  const canApplyCustomDate = Boolean(customDate) && !customDateIsPast;
+
+  const handleCustomChange = (value: string) => {
+    setCustomDate(value);
+    setError(
+      value && value < todayStr
+        ? "Bitte wähle heute oder einen späteren Tag."
+        : null,
+    );
   };
 
   return (
@@ -131,15 +161,37 @@ export function TaskScheduleSheet({
           <DateInput
             id="task-schedule-custom"
             value={customDate}
-            onChange={(value) => {
-              setCustomDate(value);
-              if (value) commit(value);
+            onChange={handleCustomChange}
+            // A day tapped in the calendar is a finished decision, and days
+            // before today are disabled there — so that path commits at
+            // once, like the presets above it.
+            onPickDate={(iso) => {
+              if (iso >= todayStr) commit(iso);
             }}
             minDate={todayStr}
             className="h-12"
             aria-label="Anderer Tag"
             data-testid="task-schedule-custom"
           />
+          {error && (
+            <p
+              className="mt-2 text-xs text-destructive"
+              role="alert"
+              data-testid="task-schedule-error"
+            >
+              {error}
+            </p>
+          )}
+          {canApplyCustomDate && (
+            <button
+              type="button"
+              onClick={() => commit(customDate)}
+              className="press-scale mt-2 flex min-h-11 w-full items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] px-4 text-sm font-medium text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              data-testid="task-schedule-apply"
+            >
+              Auf {formatTaskDayHint(customDate)} verschieben
+            </button>
+          )}
         </div>
 
         <button
