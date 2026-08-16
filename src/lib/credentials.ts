@@ -44,13 +44,35 @@ export function buildCredentialsContent({
   return body || `Zugangsdaten ${title}`;
 }
 
+const FIELD_LINE = /^-\s+\*\*(URL|Benutzername):\*\*\s*(.+)$/i;
+
+/**
+ * Remove the login fields from a credentials body, leaving the free-text
+ * description.
+ *
+ * URL and user name identify a login and, in the common case of an
+ * e-mail address, a person. They belong in the document — but not in
+ * everything the document feeds: the LLM analysis and the embeddings both
+ * travel to OpenAI and end up in the summary, the tags and the vector
+ * index. Those paths get the description only; the fields themselves stay
+ * in `documents.ocr_text` and reach the UI on server-side paths.
+ *
+ * The trade-off is deliberate: a login is no longer findable BY its user
+ * name — it is found by its name, description and type.
+ */
+export function stripCredentialFields(content: string): string {
+  return content
+    .split("\n")
+    .filter((line) => !FIELD_LINE.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 /** URL and user name read back out of a credentials body. */
 export interface ParsedCredentials {
   url: string | null;
   username: string | null;
 }
-
-const FIELD_LINE = /^-\s+\*\*(URL|Benutzername):\*\*\s*(.+)$/i;
 
 /**
  * Read URL and user name back out of a credentials body.

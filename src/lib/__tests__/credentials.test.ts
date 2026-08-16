@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   buildCredentialsContent,
   parseCredentialsContent,
+  stripCredentialFields,
 } from "@/lib/credentials";
 
 describe("buildCredentialsContent", () => {
@@ -82,5 +83,35 @@ describe("parseCredentialsContent", () => {
       "- **Benutzername:** erste\n- **Benutzername:** zweite",
     );
     expect(parsed.username).toBe("erste");
+  });
+});
+
+describe("stripCredentialFields", () => {
+  it("removes the login fields and keeps the description", () => {
+    const content = buildCredentialsContent({
+      title: "Netflix",
+      url: "https://www.netflix.com",
+      username: "familie@example.de",
+      description: "Familienaccount, vier Profile",
+    });
+
+    const stripped = stripCredentialFields(content);
+
+    expect(stripped).toBe("Familienaccount, vier Profile");
+    expect(stripped).not.toContain("familie@example.de");
+    expect(stripped).not.toContain("netflix.com");
+  });
+
+  it("returns empty when the body was nothing but fields", () => {
+    expect(
+      stripCredentialFields(
+        buildCredentialsContent({ title: "WLAN", username: "admin" }),
+      ),
+    ).toBe("");
+  });
+
+  it("leaves an ordinary note untouched", () => {
+    const note = "Einkaufen:\n- Milch\n- Brot";
+    expect(stripCredentialFields(note)).toBe(note);
   });
 });

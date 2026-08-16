@@ -206,6 +206,8 @@ function makeToolContext(
   secret: string | null = null,
   /** Type the mocked `documents.document_type` lookup should return. */
   documentType: string | null = null,
+  /** Body the mocked `documents.ocr_text` lookup should return. */
+  ocrText: string | null = null,
 ): ToolContext {
   // Minimal mock that supports loadFamilyContext queries.
   // Each .from() call returns a chainable builder that resolves to empty data.
@@ -218,8 +220,8 @@ function makeToolContext(
     maybeSingle: () =>
       Promise.resolve({
         data:
-          secret || documentType
-            ? { secret, document_type: documentType }
+          secret || documentType || ocrText
+            ? { secret, document_type: documentType, ocr_text: ocrText }
             : null,
         error: null,
       }),
@@ -695,6 +697,49 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       type: "card",
       card: { type: "zugangsdaten", actionDocumentId: "doc-1", hasSecret: true },
     });
+  });
+
+  it("fills the credentials card from the document, not from the model", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "zugangsdaten",
+              title: "Netflix",
+              // The model never sees URL or user name, so whatever it
+              // guesses here must not survive.
+              fields: [{ label: "Benutzername", value: "geraten@falsch.de" }],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext(
+      [{ document_id: "doc-1", title: "Netflix", excerpt: "Familienaccount", score: 0.9 }],
+      "encrypted-envelope",
+      "credentials",
+      "- **URL:** https://www.netflix.com\n- **Benutzername:** familie@example.de",
+    );
+    const stream = await streamAgenticAnswer("Zugangsdaten Netflix?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines[0]).toMatchObject({
+      type: "card",
+      card: {
+        type: "zugangsdaten",
+        fields: [
+          { label: "URL", value: "https://www.netflix.com" },
+          { label: "Benutzername", value: "familie@example.de" },
+        ],
+      },
+    });
+    expect(JSON.stringify(lines[0])).not.toContain("geraten@falsch.de");
   });
 
   it("upgrades a card about a credentials document to a credentials card", async () => {

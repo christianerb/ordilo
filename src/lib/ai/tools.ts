@@ -347,7 +347,8 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "beantworten (dann normal in Text antworten). " +
         "Bei Fragen nach Zugangsdaten (Login, Passwort, Zugang zu einem " +
         "Portal) IMMER card_type 'zugangsdaten' mit source_document_id " +
-        "verwenden: die Karte macht die URL anklickbar, den Benutzernamen " +
+        "verwenden: die Karte liest URL, Benutzername und Passwort selbst " +
+        "aus dem Dokument, macht die Adresse anklickbar, die Werte " +
         "kopierbar und blendet das Passwort auf Klick ein.",
       parameters: {
         type: "object",
@@ -370,10 +371,9 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
             type: "array",
             description:
               "1-6 Detailfelder als Label/Wert-Paare. Bei card_type " +
-              "'zugangsdaten': das Label 'URL' fuer die Adresse und " +
-              "'Benutzername' fuer den Login verwenden. KEIN Passwort-Feld " +
-              "anlegen — Passwoerter sind verschluesselt gespeichert, du " +
-              "kennst sie nicht, und die Karte holt sie selbst.",
+              "'zugangsdaten' bleibt die Liste leer bzw. wird ignoriert: " +
+              "URL, Benutzername und Passwort kennst du nicht, die Karte " +
+              "liest sie selbst aus dem Dokument.",
             items: {
               type: "object",
               properties: {
