@@ -23,6 +23,7 @@ export function CardActions({
   onEdit,
   onDelete,
   deleteLabel = "Löschen",
+  extraItems,
   className,
   testId,
 }: {
@@ -30,10 +31,17 @@ export function CardActions({
   onDelete?: () => void;
   /** Label for the delete/dismiss menu item. Defaults to "Löschen". */
   deleteLabel?: string;
+  /**
+   * Card-type-specific menu items rendered above Bearbeiten (e.g. a task's
+   * "Verschieben"). Every gesture on a card needs a visible counterpart in
+   * this menu, so it stays open to items the shared component knows nothing
+   * about.
+   */
+  extraItems?: React.ReactNode;
   className?: string;
   testId?: string;
 }) {
-  if (!onEdit && !onDelete) return null;
+  if (!onEdit && !onDelete && !extraItems) return null;
 
   return (
     <DropdownMenu>
@@ -52,6 +60,7 @@ export function CardActions({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        {extraItems}
         {onEdit && (
           <DropdownMenuItem onClick={onEdit} data-testid="card-action-edit">
             <Pencil className="size-4" aria-hidden="true" />

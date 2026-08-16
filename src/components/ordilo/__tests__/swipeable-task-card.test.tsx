@@ -13,10 +13,10 @@ import type { TaskCardData } from "@/components/ordilo/task-card";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Must match LONG_PRESS_MS in swipeable-task-card.tsx. */
-const LONG_PRESS_MS = 450;
 /** Must match SLIDE_OFF_DURATION in swipeable-task-card.tsx. */
-const SLIDE_OFF_DURATION = 200;
+const SLIDE_OFF_DURATION = 220;
+/** Comfortably past SWIPE_THRESHOLD (72). */
+const PAST_THRESHOLD = 120;
 
 function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
   return {
@@ -38,31 +38,20 @@ function makeTask(overrides: Partial<TaskCardData> = {}): TaskCardData {
 
 type CardProps = ComponentProps<typeof SwipeableTaskCard>;
 
-function renderBoard(overrides: Partial<CardProps> = {}) {
+function renderCard(overrides: Partial<CardProps> = {}) {
   const props: CardProps = {
     task: makeTask(),
     onToggleDone: vi.fn(),
     onDismiss: vi.fn(),
+    onSchedule: vi.fn(),
     onClick: vi.fn(),
-    onTaskDrop: vi.fn(),
-    onDragStateChange: vi.fn(),
-    onDragOverColumn: vi.fn(),
     ...overrides,
   };
-  render(
-    <div>
-      <div data-column-id="this-week" data-testid="target-column">
-        <p>Diese Woche</p>
-      </div>
-      <div data-column-id="later" data-testid="source-column">
-        <SwipeableTaskCard {...props} />
-      </div>
-    </div>,
-  );
+  render(<SwipeableTaskCard {...props} />);
   return props;
 }
 
-function touchStart(el: Element, x = 100, y = 100) {
+function touchStart(el: Element, x = 160, y = 100) {
   fireEvent.touchStart(el, { touches: [{ clientX: x, clientY: y }] });
 }
 
@@ -70,162 +59,82 @@ function touchMove(el: Element, x: number, y: number) {
   fireEvent.touchMove(el, { touches: [{ clientX: x, clientY: y }] });
 }
 
+/** A complete horizontal swipe by `dx` pixels, in two steps. */
+function swipe(el: Element, dx: number) {
+  touchStart(el);
+  touchMove(el, 160 + Math.sign(dx) * 12, 100);
+  touchMove(el, 160 + dx, 100);
+  fireEvent.touchEnd(el);
+}
+
+function panel(): HTMLElement | null {
+  return screen.queryByTestId("swipe-action-panel");
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe("SwipeableTaskCard", () => {
-  let originalElementFromPoint: typeof document.elementFromPoint;
-
   beforeEach(() => {
     vi.useFakeTimers();
-    originalElementFromPoint = document.elementFromPoint;
   });
 
   afterEach(() => {
-    document.elementFromPoint = originalElementFromPoint;
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
-  describe("touch drag-and-drop (long-press)", () => {
-    it("drops the task on the column under the finger", () => {
-      const props = renderBoard();
+  describe("swipe right — erledigt", () => {
+    it("completes the task after the row has slid away", () => {
+      const props = renderCard();
       const card = screen.getByTestId("task-card");
-      document.elementFromPoint = vi
-        .fn()
-        .mockReturnValue(screen.getByTestId("target-column"));
 
-      touchStart(card);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 50));
-      expect(props.onDragStateChange).toHaveBeenCalledWith("task-1");
+      swipe(card, PAST_THRESHOLD);
+      expect(props.onToggleDone).not.toHaveBeenCalled();
 
-      touchMove(card, 100, 300);
-      expect(props.onDragOverColumn).toHaveBeenCalledWith("this-week");
-
-      fireEvent.touchEnd(card);
-      expect(props.onTaskDrop).toHaveBeenCalledWith("task-1", "this-week");
-      expect(props.onDragStateChange).toHaveBeenLastCalledWith(null);
-      expect(props.onDragOverColumn).toHaveBeenLastCalledWith(null);
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
     });
 
-    it("does not drop when released outside any column", () => {
-      const props = renderBoard();
+    it("names the action while the finger is still down", () => {
+      renderCard();
       const card = screen.getByTestId("task-card");
-      document.elementFromPoint = vi.fn().mockReturnValue(null);
 
       touchStart(card);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 50));
-      touchMove(card, 100, 300);
-      fireEvent.touchEnd(card);
+      touchMove(card, 160 + 40, 100);
 
-      expect(props.onTaskDrop).not.toHaveBeenCalled();
-      expect(props.onDragStateChange).toHaveBeenLastCalledWith(null);
+      // The label appears well before the commit threshold, so the gesture
+      // teaches itself on the first hesitant swipe.
+      expect(panel()?.getAttribute("data-action")).toBe("done");
+      expect(panel()?.textContent).toContain("Erledigt");
     });
 
-    it("does not start a drag when the finger moves before the long-press", () => {
-      const props = renderBoard();
+    it("snaps back without completing below the threshold", () => {
+      const props = renderCard();
       const card = screen.getByTestId("task-card");
 
-      touchStart(card);
-      act(() => vi.advanceTimersByTime(100));
-      touchMove(card, 220, 100);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 100));
-
-      expect(props.onDragStateChange).not.toHaveBeenCalled();
-    });
-
-    it("does not start a drag without an onTaskDrop handler", () => {
-      const props = renderBoard({ onTaskDrop: undefined });
-      const card = screen.getByTestId("task-card");
-
-      touchStart(card);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 100));
-
-      expect(props.onDragStateChange).not.toHaveBeenCalled();
-    });
-
-    it("plays the pickup pop animation only while dragging", () => {
-      renderBoard();
-      const card = screen.getByTestId("task-card");
-      const draggable = card.closest("[draggable]") as HTMLElement;
-
-      expect(draggable.className).not.toContain("animate-drag-pop");
-
-      touchStart(card);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 50));
-      expect(draggable.className).toContain("animate-drag-pop");
-
-      fireEvent.touchEnd(card);
-      expect(draggable.className).not.toContain("animate-drag-pop");
-    });
-
-    it("auto-scrolls up while the finger rests near the top edge", () => {
-      const scrollBySpy = vi
-        .spyOn(window, "scrollBy")
-        .mockImplementation(() => {});
-      renderBoard();
-      const card = screen.getByTestId("task-card");
-      document.elementFromPoint = vi.fn().mockReturnValue(null);
-
-      touchStart(card);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 50));
-      touchMove(card, 100, 10); // inside the top edge zone
-      act(() => vi.advanceTimersByTime(100)); // let the rAF loop tick
-
-      expect(scrollBySpy).toHaveBeenCalled();
-      expect(scrollBySpy.mock.calls[0][1]).toBeLessThan(0);
-
-      fireEvent.touchEnd(card);
-      scrollBySpy.mockRestore();
-    });
-
-    it("does not auto-scroll in the middle of the viewport", () => {
-      const scrollBySpy = vi
-        .spyOn(window, "scrollBy")
-        .mockImplementation(() => {});
-      renderBoard();
-      const card = screen.getByTestId("task-card");
-      document.elementFromPoint = vi.fn().mockReturnValue(null);
-
-      touchStart(card);
-      act(() => vi.advanceTimersByTime(LONG_PRESS_MS + 50));
-      touchMove(card, 100, 300); // middle of an ~768px jsdom viewport
-      act(() => vi.advanceTimersByTime(100));
-
-      expect(scrollBySpy).not.toHaveBeenCalled();
-
-      fireEvent.touchEnd(card);
-      scrollBySpy.mockRestore();
-    });
-  });
-
-  describe("existing gestures stay intact", () => {
-    it("treats a quick tap as a click", () => {
-      const props = renderBoard();
-      const card = screen.getByTestId("task-card");
-
-      touchStart(card);
-      fireEvent.touchEnd(card);
-
-      expect(props.onClick).toHaveBeenCalled();
-      expect(props.onTaskDrop).not.toHaveBeenCalled();
-    });
-
-    it("keeps swipe-right-to-done working", () => {
-      const props = renderBoard();
-      const card = screen.getByTestId("task-card");
-
-      touchStart(card);
-      touchMove(card, 220, 100);
-      fireEvent.touchEnd(card);
+      swipe(card, 40);
       act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
 
-      expect(props.onToggleDone).toHaveBeenCalledWith("done");
-      expect(props.onTaskDrop).not.toHaveBeenCalled();
+      expect(props.onToggleDone).not.toHaveBeenCalled();
+      expect(panel()).toBeNull();
     });
 
-    it("commits a swipe immediately when reduced motion is preferred", () => {
+    it("never offers to complete a task that is already done", () => {
+      const props = renderCard({ task: makeTask({ status: "done" }) });
+      const card = screen.getByTestId("task-card");
+
+      touchStart(card);
+      touchMove(card, 160 + PAST_THRESHOLD, 100);
+
+      expect(panel()).toBeNull();
+      fireEvent.touchEnd(card);
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+      expect(props.onToggleDone).not.toHaveBeenCalled();
+    });
+
+    it("commits immediately when reduced motion is preferred", () => {
       vi.stubGlobal(
         "matchMedia",
         vi.fn().mockReturnValue({
@@ -234,12 +143,136 @@ describe("SwipeableTaskCard", () => {
           removeEventListener: vi.fn(),
         }),
       );
-      const props = renderBoard();
+      const props = renderCard();
+
+      swipe(screen.getByTestId("task-card"), PAST_THRESHOLD);
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
+    });
+  });
+
+  describe("swipe left — verschieben", () => {
+    it("opens the schedule sheet instead of changing anything itself", () => {
+      const props = renderCard();
+
+      swipe(screen.getByTestId("task-card"), -PAST_THRESHOLD);
+
+      expect(props.onSchedule).toHaveBeenCalledTimes(1);
+      // Nothing destructive, and nothing silently rescheduled.
+      expect(props.onDismiss).not.toHaveBeenCalled();
+      expect(props.onToggleDone).not.toHaveBeenCalled();
+    });
+
+    it("names the action while the finger is still down", () => {
+      renderCard();
       const card = screen.getByTestId("task-card");
 
       touchStart(card);
-      touchMove(card, 220, 100);
+      touchMove(card, 160 - 40, 100);
+
+      expect(panel()?.getAttribute("data-action")).toBe("schedule");
+      expect(panel()?.textContent).toContain("Verschieben");
+    });
+
+    it("never moves left when there is nothing to open", () => {
+      const props = renderCard({ onSchedule: undefined });
+      const card = screen.getByTestId("task-card");
+
+      touchStart(card);
+      touchMove(card, 160 - PAST_THRESHOLD, 100);
+
+      // A gesture that cannot deliver must not look like it could.
+      expect(panel()).toBeNull();
       fireEvent.touchEnd(card);
+      expect(props.onToggleDone).not.toHaveBeenCalled();
+    });
+
+    it("does not dismiss the task — that stays behind a confirmation", () => {
+      const props = renderCard();
+      swipe(screen.getByTestId("task-card"), -PAST_THRESHOLD);
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+      expect(props.onDismiss).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("tapping is left to the controls inside the row", () => {
+    it("never synthesises a click of its own", () => {
+      // The old version fired onClick from touchend, which stole every tap
+      // from the checkbox and the row menu.
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+
+      touchStart(card);
+      fireEvent.touchEnd(card);
+
+      expect(props.onClick).not.toHaveBeenCalled();
+    });
+
+    it("lets a real tap on the checkbox tick the task off, and nothing else", () => {
+      const props = renderCard();
+      const checkbox = screen.getByTestId("task-checkbox");
+
+      touchStart(checkbox);
+      fireEvent.touchEnd(checkbox);
+      fireEvent.click(checkbox);
+
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
+      expect(props.onClick).not.toHaveBeenCalled();
+    });
+
+    it("lets a real tap on the row body open the task", () => {
+      const props = renderCard();
+      const body = screen.getByRole("button", {
+        name: /Aufgabe öffnen/,
+      });
+
+      touchStart(body);
+      fireEvent.touchEnd(body);
+      fireEvent.click(body);
+
+      expect(props.onClick).toHaveBeenCalledTimes(1);
+    });
+
+    it("swallows the click a browser may synthesise after a swipe", () => {
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+      const body = screen.getByRole("button", { name: /Aufgabe öffnen/ });
+
+      swipe(card, -PAST_THRESHOLD);
+      fireEvent.click(body);
+
+      // The swipe opened the schedule sheet; it must not also open the
+      // detail sheet behind it.
+      expect(props.onSchedule).toHaveBeenCalledTimes(1);
+      expect(props.onClick).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("scrolling wins over swiping", () => {
+    it("lets go of the row as soon as the gesture leans vertical", () => {
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+
+      touchStart(card);
+      touchMove(card, 166, 140); // mostly down
+      touchMove(card, 160 + PAST_THRESHOLD, 240); // sideways afterwards
+      fireEvent.touchEnd(card);
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+
+      // The axis was decided on the first move and never reconsidered.
+      expect(panel()).toBeNull();
+      expect(props.onToggleDone).not.toHaveBeenCalled();
+      expect(props.onSchedule).not.toHaveBeenCalled();
+    });
+
+    it("keeps a horizontal gesture even if the finger drifts down later", () => {
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+
+      touchStart(card);
+      touchMove(card, 160 + 20, 104); // clearly horizontal
+      touchMove(card, 160 + PAST_THRESHOLD, 170); // drifts down
+      fireEvent.touchEnd(card);
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
 
       expect(props.onToggleDone).toHaveBeenCalledWith("done");
     });

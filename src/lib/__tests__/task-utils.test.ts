@@ -4,9 +4,11 @@ import {
   TASK_FILTER_LABELS,
   getTaskStatusLabel,
   filterTasksByStatus,
-  getTaskDropUpdates,
-  getTaskGroup,
+  getTaskSection,
+  resolveSchedulePreset,
   formatTaskDueLabel,
+  formatTaskDayHint,
+  formatOverdueLabel,
   type TaskStatusFilter,
 } from "@/lib/task-utils";
 import type { TaskRow } from "@/lib/task-utils";
@@ -155,224 +157,117 @@ describe("task-utils", () => {
   });
 
   // ---------------------------------------------------------------------------
-  // Board drag-and-drop
+  // Sections
   // ---------------------------------------------------------------------------
 
-  describe("getTaskDropUpdates", () => {
-    const TODAY = "2026-08-10";
-    const TOMORROW = "2026-08-11";
-    const YESTERDAY = "2026-08-09";
-    const IN_20_DAYS = "2026-08-30";
-
-    describe("drop on 'done'", () => {
-      it("completes an open task and keeps its due date", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-12" },
-            "done",
-            TODAY,
-          ),
-        ).toEqual({ status: "done", due_date: "2026-08-12" });
-      });
-
-      it("keeps a null due date when completing", () => {
-        expect(
-          getTaskDropUpdates({ status: "open", due_date: null }, "done", TODAY),
-        ).toEqual({ status: "done", due_date: null });
-      });
-
-      it("is a no-op for an already-done task", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "done", due_date: "2026-08-12" },
-            "done",
-            TODAY,
-          ),
-        ).toBeNull();
-      });
-    });
-
-    describe("drop on 'today'", () => {
-      it("schedules a task without due date for today", () => {
-        expect(
-          getTaskDropUpdates({ status: "open", due_date: null }, "today", TODAY),
-        ).toEqual({ status: "open", due_date: TODAY });
-      });
-
-      it("pulls a far-future task back to today", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: IN_20_DAYS },
-            "today",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: TODAY });
-      });
-
-      it("is a no-op for a task already due today", () => {
-        expect(
-          getTaskDropUpdates({ status: "open", due_date: TODAY }, "today", TODAY),
-        ).toBeNull();
-      });
-    });
-
-    describe("drop on 'this-week'", () => {
-      it("schedules a task without due date for tomorrow", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: null },
-            "this-week",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: TOMORROW });
-      });
-
-      it("pulls a far-future task back into the week", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: IN_20_DAYS },
-            "this-week",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: TOMORROW });
-      });
-
-      it("moves an overdue task into the week", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-01" },
-            "this-week",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: TOMORROW });
-      });
-
-      it("is a no-op for a task already due later this week", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-12" },
-            "this-week",
-            TODAY,
-          ),
-        ).toBeNull();
-      });
-
-      it("reopens a done task into the week", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "done", due_date: "2026-08-12" },
-            "this-week",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: TOMORROW });
-      });
-    });
-
-    describe("drop on 'later'", () => {
-      it("clears the due date of a task due this week", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-12" },
-            "later",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: null });
-      });
-
-      it("clears the due date of an overdue task", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-01" },
-            "later",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: null });
-      });
-
-      it("is a no-op for a task without due date", () => {
-        expect(
-          getTaskDropUpdates({ status: "open", due_date: null }, "later", TODAY),
-        ).toBeNull();
-      });
-
-      it("is a no-op for a task already due beyond this week", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: IN_20_DAYS },
-            "later",
-            TODAY,
-          ),
-        ).toBeNull();
-      });
-
-      it("reopens a done task and clears its due date", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "done", due_date: "2026-08-12" },
-            "later",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: null });
-      });
-    });
-
-    describe("drop on 'overdue'", () => {
-      it("dates an open task to yesterday", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-12" },
-            "overdue",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: YESTERDAY });
-      });
-
-      it("is a no-op for an already-overdue task", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "open", due_date: "2026-08-01" },
-            "overdue",
-            TODAY,
-          ),
-        ).toBeNull();
-      });
-
-      it("reopens a done task and dates it to yesterday", () => {
-        expect(
-          getTaskDropUpdates(
-            { status: "done", due_date: null },
-            "overdue",
-            TODAY,
-          ),
-        ).toEqual({ status: "open", due_date: YESTERDAY });
-      });
-    });
-  });
-
-  describe("getTaskGroup", () => {
+  describe("getTaskSection", () => {
     const TODAY = "2026-08-10";
 
     it("puts a done task in 'done' regardless of its date", () => {
-      expect(getTaskGroup({ status: "done", due_date: "2026-08-01" }, TODAY)).toBe(
+      expect(
+        getTaskSection({ status: "done", due_date: "2026-08-01" }, TODAY),
+      ).toBe("done");
+      expect(getTaskSection({ status: "done", due_date: null }, TODAY)).toBe(
         "done",
       );
     });
 
-    it("separates overdue, today, this week, and later", () => {
-      expect(getTaskGroup({ status: "open", due_date: "2026-08-09" }, TODAY)).toBe(
-        "overdue",
-      );
-      expect(getTaskGroup({ status: "open", due_date: TODAY }, TODAY)).toBe("today");
-      expect(getTaskGroup({ status: "open", due_date: "2026-08-13" }, TODAY)).toBe(
-        "this-week",
-      );
-      expect(getTaskGroup({ status: "open", due_date: "2026-09-01" }, TODAY)).toBe(
-        "later",
+    it("treats overdue and today alike — both are 'jetzt dran'", () => {
+      expect(
+        getTaskSection({ status: "open", due_date: "2026-07-01" }, TODAY),
+      ).toBe("now");
+      expect(
+        getTaskSection({ status: "open", due_date: "2026-08-09" }, TODAY),
+      ).toBe("now");
+      expect(getTaskSection({ status: "open", due_date: TODAY }, TODAY)).toBe(
+        "now",
       );
     });
 
-    it("treats a task without a due date as 'later' — no pressure", () => {
-      expect(getTaskGroup({ status: "open", due_date: null }, TODAY)).toBe("later");
+    it("puts everything still to come in 'next', however far out", () => {
+      expect(
+        getTaskSection({ status: "open", due_date: "2026-08-11" }, TODAY),
+      ).toBe("next");
+      // No seven-day cliff: a task in three weeks is simply still ahead.
+      expect(
+        getTaskSection({ status: "open", due_date: "2026-09-01" }, TODAY),
+      ).toBe("next");
+    });
+
+    it("gives an undated task its own section rather than calling it 'later'", () => {
+      expect(getTaskSection({ status: "open", due_date: null }, TODAY)).toBe(
+        "undated",
+      );
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Rescheduling
+  // ---------------------------------------------------------------------------
+
+  describe("resolveSchedulePreset", () => {
+    const MONDAY = "2026-08-10";
+
+    it("resolves today and tomorrow", () => {
+      expect(resolveSchedulePreset("today", MONDAY)).toBe(MONDAY);
+      expect(resolveSchedulePreset("tomorrow", MONDAY)).toBe("2026-08-11");
+    });
+
+    it("resolves 'Wochenende' to the coming Saturday", () => {
+      expect(resolveSchedulePreset("weekend", MONDAY)).toBe("2026-08-15");
+      // From a Friday, still the very next day.
+      expect(resolveSchedulePreset("weekend", "2026-08-14")).toBe("2026-08-15");
+    });
+
+    it("never resolves to today, so the task actually moves", () => {
+      // Saturday: "Wochenende" means the next one, not a no-op.
+      expect(resolveSchedulePreset("weekend", "2026-08-15")).toBe("2026-08-22");
+      // Monday: "Nächste Woche" means next Monday.
+      expect(resolveSchedulePreset("next-week", MONDAY)).toBe("2026-08-17");
+    });
+
+    it("resolves 'Nächste Woche' to the coming Monday", () => {
+      expect(resolveSchedulePreset("next-week", "2026-08-13")).toBe(
+        "2026-08-17",
+      );
+    });
+
+    it("clears the date for 'Kein Termin'", () => {
+      expect(resolveSchedulePreset("none", MONDAY)).toBeNull();
+    });
+  });
+
+  describe("formatOverdueLabel", () => {
+    const TODAY = "2026-08-10";
+
+    it("counts the days a task is late", () => {
+      expect(formatOverdueLabel("2026-08-09", TODAY)).toBe("seit gestern");
+      expect(formatOverdueLabel("2026-08-07", TODAY)).toBe("seit 3 Tagen");
+      expect(formatOverdueLabel("2026-07-29", TODAY)).toBe("seit 12 Tagen");
+    });
+
+    it("switches to weeks once days stop being useful", () => {
+      // 14 days is the crossover; below it the exact count still helps.
+      expect(formatOverdueLabel("2026-07-31", TODAY)).toBe("seit 10 Tagen");
+      expect(formatOverdueLabel("2026-07-27", TODAY)).toBe("seit 2 Wochen");
+      expect(formatOverdueLabel("2026-06-01", TODAY)).toBe("seit 10 Wochen");
+    });
+
+    it("returns null for anything not overdue", () => {
+      expect(formatOverdueLabel(TODAY, TODAY)).toBeNull();
+      expect(formatOverdueLabel("2026-08-11", TODAY)).toBeNull();
+      expect(formatOverdueLabel(null, TODAY)).toBeNull();
+    });
+  });
+
+  describe("formatTaskDayHint", () => {
+    it("spells out which day a preset lands on", () => {
+      expect(formatTaskDayHint("2026-08-15")).toBe("Sa, 15. Aug.");
+      expect(formatTaskDayHint("2026-09-01")).toBe("Di, 1. Sep.");
+    });
+
+    it("returns null without a date", () => {
+      expect(formatTaskDayHint(null)).toBeNull();
     });
   });
 

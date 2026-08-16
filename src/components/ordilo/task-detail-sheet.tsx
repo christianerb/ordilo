@@ -8,7 +8,7 @@ import {
   Trash2,
   RotateCcw,
   Loader2,
-  User,
+  UserX,
   ChevronDown,
 } from "lucide-react";
 import {
@@ -26,6 +26,14 @@ import { cn } from "@/lib/utils";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { TagInput } from "@/components/ordilo/tag-input";
+import { MemberAvatar } from "@/components/ordilo/member-avatar";
+import {
+  formatTaskDayHint,
+  resolveSchedulePreset,
+  TASK_SCHEDULE_PRESET_LABELS,
+  todayLocalDate,
+  type TaskSchedulePreset,
+} from "@/lib/task-utils";
 
 /** Order-insensitive comparison of two tag arrays. */
 function areTagsEqual(a: string[], b: string[]): boolean {
@@ -52,7 +60,12 @@ export interface TaskDetailSheetProps {
   onToggleDone: (taskId: string, newStatus: string) => void;
   onDismiss: (taskId: string) => void;
   members?: AssigneeOption[];
+  /** Signed avatar URLs by member id (photoless members show initials). */
+  memberPhotoUrls?: Record<string, string>;
 }
+
+/** The quick "wann?" answers offered above the date field. */
+const DUE_PRESETS: TaskSchedulePreset[] = ["today", "tomorrow", "weekend"];
 
 export function TaskDetailSheet({
   task,
@@ -62,6 +75,7 @@ export function TaskDetailSheet({
   onToggleDone,
   onDismiss,
   members = [],
+  memberPhotoUrls = {},
 }: TaskDetailSheetProps) {
   const supabase = createClient();
   const { openDocument } = useDocumentViewer();
@@ -79,6 +93,9 @@ export function TaskDetailSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const minDueDate = todayAsIsoDate();
+  // Read on every render so a sheet left open overnight cannot offer
+  // yesterday as "Heute".
+  const todayStr = todayLocalDate();
 
   const isDone = task?.status === "done";
   const isOpen = task?.status === "open";
@@ -202,14 +219,26 @@ export function TaskDetailSheet({
                 </div>
               )}
 
-              <input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Aufgabentitel"
-                aria-label="Aufgabentitel"
-                className="w-full border-0 border-b border-transparent bg-transparent px-0 pb-2 text-xl font-semibold leading-snug text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-0"
-                data-testid="task-detail-title"
-              />
+              {/* A borderless heading-sized input read as static text — the
+                  sheet looked like a detail view you could not change. It
+                  is a labelled field now, with the same chrome as every
+                  other field in the app. */}
+              <div>
+                <label
+                  htmlFor="task-detail-title"
+                  className="mb-2 block text-sm font-medium text-foreground"
+                >
+                  Aufgabe
+                </label>
+                <input
+                  id="task-detail-title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Was ist zu tun?"
+                  className="w-full rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base font-medium leading-snug text-foreground outline-none transition-colors placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+                  data-testid="task-detail-title"
+                />
+              </div>
 
               <div className="mt-5">
                 <label
@@ -240,6 +269,42 @@ export function TaskDetailSheet({
                   >
                     Fällig am
                   </label>
+                  {/* Typing a date is the slow path. "Heute" and "Morgen"
+                      cover most of what actually changes here. */}
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {DUE_PRESETS.map((preset) => {
+                      const date = resolveSchedulePreset(preset, todayStr);
+                      const selected = Boolean(date) && dueDate === date;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setDueDate(date ?? "")}
+                          aria-pressed={selected}
+                          title={formatTaskDayHint(date) ?? undefined}
+                          className={cn(
+                            "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                            selected
+                              ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                              : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                          )}
+                          data-testid={`task-detail-due-${preset}`}
+                        >
+                          {TASK_SCHEDULE_PRESET_LABELS[preset]}
+                        </button>
+                      );
+                    })}
+                    {dueDate && (
+                      <button
+                        type="button"
+                        onClick={() => setDueDate("")}
+                        className="inline-flex h-9 items-center rounded-full border border-border bg-[var(--surface-box)] px-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        data-testid="task-detail-due-none"
+                      >
+                        {TASK_SCHEDULE_PRESET_LABELS.none}
+                      </button>
+                    )}
+                  </div>
                   <DateInput
                     id="task-detail-due-date"
                     value={dueDate}
@@ -256,36 +321,66 @@ export function TaskDetailSheet({
                     className="border-t border-border/70 p-4"
                     data-testid="task-detail-assignee-section"
                   >
-                    <label
-                      htmlFor="task-detail-assignee"
-                      className="mb-2 block text-sm font-medium text-foreground"
+                    <p className="mb-2 text-sm font-medium text-foreground">
+                      Wer macht das?
+                    </p>
+                    {/* Faces, not a dropdown: a family recognises each other
+                        faster than it reads a list, and every option is a
+                        44px target instead of a native picker. */}
+                    <div
+                      role="radiogroup"
+                      aria-label="Wer macht das?"
+                      className="flex flex-wrap gap-2"
                     >
-                      Verantwortlich
-                    </label>
-                    <div className="relative">
-                      <User
-                        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                        strokeWidth={1.5}
-                      />
-                      <select
-                        id="task-detail-assignee"
-                        value={assignedTo}
-                        onChange={(event) => setAssignedTo(event.target.value)}
-                        className="h-12 w-full appearance-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-box)] pr-10 pl-10 text-sm text-foreground outline-none transition-colors hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
-                        data-testid="task-detail-assignee"
+                      {members.map((member) => {
+                        const selected = assignedTo === member.id;
+                        return (
+                          <button
+                            key={member.id}
+                            type="button"
+                            role="radio"
+                            aria-checked={selected}
+                            onClick={() => setAssignedTo(member.id)}
+                            className={cn(
+                              "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                              selected
+                                ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                                : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
+                            )}
+                            data-testid={`task-detail-assignee-${member.id}`}
+                          >
+                            <MemberAvatar
+                              name={member.name}
+                              color={member.avatar_color}
+                              photoUrl={memberPhotoUrls[member.id]}
+                              size="md"
+                            />
+                            <span className="max-w-28 truncate">
+                              {member.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        role="radio"
+                        aria-checked={assignedTo === ""}
+                        onClick={() => setAssignedTo("")}
+                        className={cn(
+                          "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                          assignedTo === ""
+                            ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                            : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
+                        )}
+                        data-testid="task-detail-assignee-none"
                       >
-                        <option value="">Nicht festgelegt</option>
-                        {members.map((member) => (
-                          <option key={member.id} value={member.id}>
-                            {member.name}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown
-                        className="pointer-events-none absolute top-1/2 right-3 size-4 -translate-y-1/2 text-muted-foreground"
-                        aria-hidden="true"
-                      />
+                        <UserX
+                          className="size-4 shrink-0"
+                          aria-hidden="true"
+                          strokeWidth={1.75}
+                        />
+                        Niemand
+                      </button>
                     </div>
                   </div>
                 )}

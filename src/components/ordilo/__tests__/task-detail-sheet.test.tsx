@@ -60,8 +60,8 @@ describe("TaskDetailSheet", () => {
     renderSheet();
 
     expect(screen.getByText("Fällig am")).toBeInTheDocument();
-    expect(screen.getByText("Verantwortlich")).toBeInTheDocument();
-    expect(screen.getByText("Nicht festgelegt")).toBeInTheDocument();
+    expect(screen.getByText("Wer macht das?")).toBeInTheDocument();
+    expect(screen.getByText("Niemand")).toBeInTheDocument();
     expect(screen.queryByText("Stichwörter")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Weitere Angaben"));
@@ -79,7 +79,7 @@ describe("TaskDetailSheet", () => {
   it("prioritizes saving after a field changes", () => {
     renderSheet();
 
-    fireEvent.change(screen.getByLabelText("Aufgabentitel"), {
+    fireEvent.change(screen.getByTestId("task-detail-title"), {
       target: { value: "Neue Aufgabe" },
     });
 

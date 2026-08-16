@@ -327,7 +327,19 @@ The most-seen component in the app. Horizontal layout: file-type icon (40px sand
 
 ### Signature: Task Card
 
-Horizontal layout: circular checkbox (24px, harbor blue when checked) → title + due date → dismiss button. Done tasks get strikethrough and muted foreground. Due dates use German format (DD.MM.YYYY) with a calendar icon; overdue due dates turn apricot.
+Horizontal layout, left to right: circular checkbox (24px mark inside a 44px target, harbor blue when checked) → title + meta line → assignee face → row menu. Done tasks get strikethrough and muted foreground.
+
+**Due labels** are short and human — "Heute", "Morgen", "Do", "10. Aug." — with the full German date (DD.MM.YYYY) in the `title` attribute. An overdue task shows *how late* it is instead ("seit gestern", "seit 3 Tagen") in apricot: lateness belongs on the row that is late, never in a section heading that grows into a wall of everything the family missed.
+
+**The assignee face** is the answer to "wer macht was" and sits on every row. Where reassigning is allowed it is a 44px button opening the member sheet; a task nobody has taken on shows a dashed circle with a plus, because an unowned task is the one thing a family plan must not hide.
+
+**Gestures — two, both reversible, both named.** Swipe right completes the task (harbor blue panel, "Erledigt"); swipe left opens the "Wann?" sheet (apricot panel, "Verschieben"). The panel labels appear well before the commit threshold, so the gesture teaches itself on the first hesitant swipe. Named rules:
+
+- **The Reversible Gesture Rule.** A gesture may only do something the user can take back with one tap. Verwerfen — the one destructive action — has no gesture; it lives in the row menu behind a confirmation.
+- **The Visible Counterpart Rule.** Every gesture also has a tappable path in the row menu. Gestures are an accelerator, never the only way.
+- **The Honest Panel Rule.** A row only moves when the gesture can actually deliver. A panel sliding in under the finger is a promise: no "Erledigt" panel on an already-finished task, no left swipe where no sheet is wired up.
+- **The Axis Lock Rule.** The first few pixels decide whether a gesture is a swipe or a page scroll, and that decision is never revisited. Lists are scrolled far more often than rows are swiped.
+- **No drag-and-drop on touch.** Rows are not dragged between sections. On a phone the drop target is usually off-screen, so dragging demands aiming, scrolling and holding at once — and it hijacks the natural "hold your finger still" gesture. Rescheduling is explicit instead: presets that each say which day they mean.
 
 ## 6. Do's and Don'ts
 
