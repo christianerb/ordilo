@@ -336,6 +336,7 @@ describe("MessageBubble — loading checklist", () => {
             subtitle: null,
             fields: [{ label: "Datum", value: "12.08.2026" }],
             actionDocumentId: null,
+            hasSecret: false,
           },
         })}
         isStreaming
@@ -360,6 +361,7 @@ describe("MessageBubble — structured answer card", () => {
             subtitle: "Emma",
             fields: [{ label: "Datum", value: "12.08.2026" }],
             actionDocumentId: null,
+            hasSecret: false,
           },
         })}
         passesFilters={passesAllFilters}
@@ -384,6 +386,7 @@ describe("MessageBubble — structured answer card", () => {
             subtitle: null,
             fields: [{ label: "Betrag", value: "45 EUR" }],
             actionDocumentId: "doc-1",
+            hasSecret: false,
           },
         })}
         passesFilters={passesAllFilters}

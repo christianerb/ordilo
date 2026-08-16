@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { FileText, Lock, Eye, EyeOff, Loader2, Copy, Check } from "lucide-react";
 import {
   Sheet,
@@ -17,6 +17,7 @@ import {
   getStatusLabel,
 } from "@/lib/schemas/document";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useSecretReveal } from "@/lib/hooks/use-secret-reveal";
 import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
 import { Button } from "@/components/ui/button";
@@ -39,44 +40,8 @@ type DocRow = Database["public"]["Tables"]["documents"]["Row"];
 // ---------------------------------------------------------------------------
 
 function SecretReveal({ documentId }: { documentId: string }) {
-  const [revealed, setRevealed] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [show, setShow] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const reveal = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/documents/${documentId}/secret`, {
-        method: "POST",
-      });
-      const body = (await res.json()) as { secret?: string; error?: string };
-      if (!res.ok) {
-        throw new Error(body.error ?? "Geheim konnte nicht geladen werden.");
-      }
-      setRevealed(body.secret ?? "");
-      setShow(true);
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Geheim konnte nicht geladen werden.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [documentId]);
-
-  const copy = useCallback(async () => {
-    if (revealed == null) return;
-    try {
-      await navigator.clipboard.writeText(revealed);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard may be unavailable; ignore silently.
-    }
-  }, [revealed]);
+  const { revealed, show, loading, copied, error, reveal, toggleShow, copy } =
+    useSecretReveal(documentId);
 
   return (
     <div
@@ -91,7 +56,7 @@ function SecretReveal({ documentId }: { documentId: string }) {
             <>
               <button
                 type="button"
-                onClick={() => setShow((s) => !s)}
+                onClick={toggleShow}
                 className="rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 aria-label={show ? "Geheim verbergen" : "Geheim anzeigen"}
               >

@@ -200,7 +200,11 @@ async function readNdjsonStream(
   return lines;
 }
 
-function makeToolContext(sources: ChatSource[] = []): ToolContext {
+function makeToolContext(
+  sources: ChatSource[] = [],
+  /** Ciphertext the mocked `documents.secret` lookup should return. */
+  secret: string | null = null,
+): ToolContext {
   // Minimal mock that supports loadFamilyContext queries.
   // Each .from() call returns a chainable builder that resolves to empty data.
   const chainable = {
@@ -209,6 +213,8 @@ function makeToolContext(sources: ChatSource[] = []): ToolContext {
     order: () => chainable,
     limit: () => chainable,
     in: () => chainable,
+    maybeSingle: () =>
+      Promise.resolve({ data: secret ? { secret } : null, error: null }),
     then: (resolve: (v: { data: unknown[]; error: null; count: number }) => void) =>
       Promise.resolve({ data: [], error: null, count: 0 }).then(resolve),
   };
@@ -647,6 +653,68 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       type: "card",
       card: { actionDocumentId: "doc-1" },
     });
+  });
+
+  it("sets hasSecret from the database, not from the model", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "zugangsdaten",
+              title: "Netflix",
+              fields: [{ label: "Benutzername", value: "familie@example.de" }],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    // The document carries an encrypted secret; the model never sees it.
+    const toolContext = makeToolContext(
+      [{ document_id: "doc-1", title: "Netflix", excerpt: "Login", score: 0.9 }],
+      "encrypted-envelope",
+    );
+
+    const stream = await streamAgenticAnswer("Zugangsdaten Netflix?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines[0]).toMatchObject({
+      type: "card",
+      card: { type: "zugangsdaten", actionDocumentId: "doc-1", hasSecret: true },
+    });
+  });
+
+  it("leaves hasSecret false when the document has no secret", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "zugangsdaten",
+              title: "Netflix",
+              fields: [{ label: "Benutzername", value: "familie@example.de" }],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      { document_id: "doc-1", title: "Netflix", excerpt: "Login", score: 0.9 },
+    ]);
+    const stream = await streamAgenticAnswer("Zugangsdaten Netflix?", [], toolContext);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines[0]).toMatchObject({ type: "card", card: { hasSecret: false } });
   });
 
   it("nulls out actionDocumentId when it does not match any accumulated source", async () => {

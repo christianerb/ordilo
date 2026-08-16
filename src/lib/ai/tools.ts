@@ -341,13 +341,17 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "eine Rechnung, eine einzelne Aufgabe). Verwende dies NICHT fuer " +
         "Listen mit mehreren Elementen, allgemeine Erklaerungen, " +
         "Begruessungen/Smalltalk oder wenn die Quellen die Frage nicht " +
-        "beantworten (dann normal in Text antworten).",
+        "beantworten (dann normal in Text antworten). " +
+        "Bei Fragen nach Zugangsdaten (Login, Passwort, Zugang zu einem " +
+        "Portal) IMMER card_type 'zugangsdaten' mit source_document_id " +
+        "verwenden: die Karte macht die URL anklickbar, den Benutzernamen " +
+        "kopierbar und blendet das Passwort auf Klick ein.",
       parameters: {
         type: "object",
         properties: {
           card_type: {
             type: "string",
-            enum: ["termin", "aufgabe", "dokument", "allgemein"],
+            enum: ["termin", "aufgabe", "dokument", "zugangsdaten", "allgemein"],
             description: "Die Art des Ergebnisses.",
           },
           title: {
@@ -361,7 +365,12 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           },
           fields: {
             type: "array",
-            description: "1-6 Detailfelder als Label/Wert-Paare.",
+            description:
+              "1-6 Detailfelder als Label/Wert-Paare. Bei card_type " +
+              "'zugangsdaten': das Label 'URL' fuer die Adresse und " +
+              "'Benutzername' fuer den Login verwenden. KEIN Passwort-Feld " +
+              "anlegen — Passwoerter sind verschluesselt gespeichert, du " +
+              "kennst sie nicht, und die Karte holt sie selbst.",
             items: {
               type: "object",
               properties: {

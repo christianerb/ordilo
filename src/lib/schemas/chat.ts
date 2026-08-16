@@ -539,6 +539,7 @@ export const ANSWER_CARD_TYPES = [
   "termin",
   "aufgabe",
   "dokument",
+  "zugangsdaten",
   "allgemein",
 ] as const;
 
@@ -566,6 +567,12 @@ export interface AnswerCard {
   fields: AnswerCardField[];
   /** UUID of the source document to link to, or null if not verifiable. */
   actionDocumentId: string | null;
+  /**
+   * Whether the source document has an encrypted secret to reveal. Set by
+   * the server from the database, never by the model — the model never
+   * sees a password and must not claim one exists.
+   */
+  hasSecret: boolean;
 }
 
 /** Maximum number of detail fields shown on an answer card. */
@@ -612,7 +619,8 @@ export type AnswerCardArgs = z.infer<typeof answerCardArgsSchema>;
  * @param rawArgs - The raw (already JSON.parsed) tool-call arguments.
  * @returns The validated `AnswerCard` (with `actionDocumentId` set from
  *          `source_document_id` verbatim — the caller must still verify
- *          it against known sources), or `null` if invalid.
+ *          it against known sources, and set `hasSecret` from the
+ *          database), or `null` if invalid.
  */
 export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
   const result = answerCardArgsSchema.safeParse(rawArgs);
@@ -634,5 +642,8 @@ export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
     subtitle: subtitle ?? null,
     fields,
     actionDocumentId: source_document_id ?? null,
+    // The model cannot know this — the caller sets it from the database
+    // once the document reference has been verified.
+    hasSecret: false,
   };
 }
