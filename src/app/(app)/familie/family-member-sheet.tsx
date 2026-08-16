@@ -7,12 +7,10 @@ import {
   type MemberOption,
 } from "@/components/ordilo/member-form";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 
 export function FamilyMemberSheet({
   open,
@@ -52,33 +50,25 @@ export function FamilyMemberSheet({
   formKey?: string;
 }) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="mx-auto max-h-[85dvh] max-w-md overflow-y-auto rounded-t-ordilo-xl"
-      >
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{description}</SheetDescription>
-        </SheetHeader>
-        <div className="px-4 pb-6">
-          <MemberForm
-            key={formKey}
-            initialValues={initialValues}
-            submitLabel={submitLabel}
-            onSubmit={onSubmit}
-            isSubmitting={isSubmitting}
-            validationError={validationError}
-            serverError={serverError}
-            onClearValidationError={onClearValidationError}
-            onClearServerError={onClearServerError}
-            memberId={memberId}
-            photoUrl={photoUrl}
-            onPhotoChange={onPhotoChange}
-            otherMembers={otherMembers}
-          />
-        </div>
-      </SheetContent>
-    </Sheet>
+    <OrdiloDrawer variant="form" open={open} onOpenChange={onOpenChange}>
+      <OrdiloDrawerHeader title={title} description={description} />
+      <OrdiloDrawerBody>
+        <MemberForm
+          key={formKey}
+          initialValues={initialValues}
+          submitLabel={submitLabel}
+          onSubmit={onSubmit}
+          isSubmitting={isSubmitting}
+          validationError={validationError}
+          serverError={serverError}
+          onClearValidationError={onClearValidationError}
+          onClearServerError={onClearServerError}
+          memberId={memberId}
+          photoUrl={photoUrl}
+          onPhotoChange={onPhotoChange}
+          otherMembers={otherMembers}
+        />
+      </OrdiloDrawerBody>
+    </OrdiloDrawer>
   );
 }

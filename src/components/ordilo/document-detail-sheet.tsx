@@ -12,12 +12,10 @@ import {
   Lock,
 } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { ReviewCard } from "@/components/ordilo/review-card";
 import { DocumentAttribution } from "@/components/ordilo/document-attribution";
 import {
@@ -447,23 +445,9 @@ export function DocumentDetailSheet({
   const FileIcon = document ? getFileIcon(document.mime_type) : FileText;
   const displayTitle =
     document?.title?.trim() || document?.original_filename || "Dokument";
-  const [desktop, setDesktop] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [discardPromptOpen, setDiscardPromptOpen] = useState(false);
-
-  useMountEffect(() => {
-    if (typeof window.matchMedia !== "function") return;
-    const media = window.matchMedia("(min-width: 1024px)");
-    const sync = () => setDesktop(media.matches);
-    sync();
-    if (typeof media.addEventListener === "function") {
-      media.addEventListener("change", sync);
-      return () => media.removeEventListener("change", sync);
-    }
-    media.addListener(sync);
-    return () => media.removeListener(sync);
-  });
 
   const closeSheet = () => {
     setDirty(false);
@@ -474,7 +458,8 @@ export function DocumentDetailSheet({
 
   return (
     <>
-      <Sheet
+      <OrdiloDrawer
+        variant="detail"
         open={open}
         onOpenChange={(nextOpen) => {
           if (nextOpen) {
@@ -487,51 +472,47 @@ export function DocumentDetailSheet({
           }
           closeSheet();
         }}
-      >
-      <SheetContent
-        side={desktop ? "right" : "bottom"}
+        // Side-by-side comparison needs room for two documents, so the panel
+        // grows past the detail default while it is open.
         className={cn(
-          "w-full gap-0 p-0",
-          desktop
-            ? comparisonOpen
-              ? "lg:max-w-[min(92vw,80rem)]"
-              : "lg:max-w-xl xl:max-w-[42rem]"
-            : "max-h-[90dvh] rounded-t-ordilo-xl",
+          comparisonOpen &&
+            "data-[vaul-drawer-direction=right]:lg:max-w-[min(92vw,80rem)] data-[vaul-drawer-direction=right]:xl:max-w-[min(92vw,80rem)]",
         )}
         data-testid="document-detail-sheet"
       >
-        <SheetHeader className="border-b border-border bg-[var(--sand)]/70 px-5 py-4">
-          <SheetTitle className="flex flex-col items-start gap-2 pr-12">
-            <span className="flex min-w-0 items-start gap-2 text-[15px]">
-              <FileIcon
-                className="mt-0.5 size-4 shrink-0 text-[var(--mist-dark)]"
-                aria-hidden="true"
-              />
-              <span className="line-clamp-2 text-left leading-snug">
-                {displayTitle}
-              </span>
-            </span>
-            {document && (
-              <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <span
-                  className={cn(
-                    "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
-                    getStatusBadgeClasses(document.status),
-                  )}
-                >
-                  {getStatusLabel(document.status)}
-                </span>
-                <DocumentAttribution
-                  uploadedBy={document.uploaded_by}
-                  createdAt={document.created_at}
+        <OrdiloDrawerHeader
+          title={
+            <span className="flex flex-col items-start gap-2">
+              <span className="flex min-w-0 items-start gap-2">
+                <FileIcon
+                  className="mt-0.5 size-4 shrink-0 text-[var(--mist-dark)]"
+                  aria-hidden="true"
                 />
+                <span className="line-clamp-2 text-left leading-snug">
+                  {displayTitle}
+                </span>
               </span>
-            )}
-          </SheetTitle>
-          <SheetDescription className="sr-only">
-            Details und Metadaten für dieses Dokument
-          </SheetDescription>
-        </SheetHeader>
+              {document && (
+                <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span
+                    className={cn(
+                      "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+                      getStatusBadgeClasses(document.status),
+                    )}
+                  >
+                    {getStatusLabel(document.status)}
+                  </span>
+                  <DocumentAttribution
+                    uploadedBy={document.uploaded_by}
+                    createdAt={document.created_at}
+                  />
+                </span>
+              )}
+            </span>
+          }
+          description="Details und Metadaten für dieses Dokument"
+          descriptionHidden
+        />
 
         {document && (
           <SecretSection
@@ -542,7 +523,7 @@ export function DocumentDetailSheet({
           />
         )}
         {document && (
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+          <OrdiloDrawerBody className="py-5">
             <ReviewCard
               key={`${document.id}:${document.status}`}
               documentId={document.id}
@@ -557,10 +538,9 @@ export function DocumentDetailSheet({
               onDirtyChange={setDirty}
               hasOriginalFile={Boolean(document.file_url)}
             />
-          </div>
+          </OrdiloDrawerBody>
         )}
-      </SheetContent>
-      </Sheet>
+      </OrdiloDrawer>
 
       <Dialog open={discardPromptOpen} onOpenChange={setDiscardPromptOpen}>
         <DialogContent className="max-w-sm">

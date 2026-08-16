@@ -86,7 +86,9 @@ describe("EventSheet", () => {
   it("stacks date fields and clips horizontal overflow on narrow screens", () => {
     renderSheet();
 
-    expect(document.querySelector("[data-slot=sheet-content]")).toHaveClass(
+    // The drawer body is the scroll container, so it is what has to clip
+    // sideways overflow — the content around it never scrolls.
+    expect(document.querySelector("[data-slot=drawer-body]")).toHaveClass(
       "overflow-x-hidden",
     );
     expect(screen.getByTestId("event-date-range")).toHaveClass(

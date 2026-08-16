@@ -5,12 +5,10 @@ import { ChevronRight, Plus, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Input } from "@/components/ui/input";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { MemberAvatar } from "@/app/(app)/familie/member-avatar";
 import { ROLE_CHIPS } from "@/components/ordilo/role-chips";
 import { MAX_ROLE_LENGTH, type MemberRelation } from "@/lib/family/relations";
@@ -440,18 +438,10 @@ function PickerSheet({
   children: React.ReactNode;
 }) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="mx-auto max-h-[80dvh] max-w-md overflow-y-auto rounded-t-ordilo-xl"
-      >
-        <SheetHeader>
-          <SheetTitle>{title}</SheetTitle>
-          <SheetDescription>{description}</SheetDescription>
-        </SheetHeader>
-        <div className="px-4 pb-8">{children}</div>
-      </SheetContent>
-    </Sheet>
+    <OrdiloDrawer variant="form" open={open} onOpenChange={onOpenChange}>
+      <OrdiloDrawerHeader title={title} description={description} />
+      <OrdiloDrawerBody>{children}</OrdiloDrawerBody>
+    </OrdiloDrawer>
   );
 }
 

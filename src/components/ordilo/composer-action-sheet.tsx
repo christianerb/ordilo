@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { ImageUp, FileText, FolderPlus, type LucideIcon } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { useScanActions } from "@/lib/scan/scan-context";
 import { useCollections } from "@/lib/collections/collections-context";
 import type { CollectionFormValues } from "@/components/ordilo/collection-form";
@@ -58,32 +56,28 @@ export function ComposerActionSheet({
   };
 
   return (
-    <Sheet
+    <OrdiloDrawer
+      variant="form"
       open={open}
       onOpenChange={(next) => {
         onOpenChange(next);
-        // Reset back to the action list once the sheet has closed, so
+        // Reset back to the action list once the drawer has closed, so
         // reopening it never lands mid-collection-form.
         if (!next) {
           setView("actions");
           setServerError(null);
         }
       }}
+      data-testid="composer-action-sheet"
     >
-      <SheetContent
-        side="bottom"
-        className="mx-auto max-h-[85dvh] max-w-md overflow-y-auto rounded-t-ordilo-xl"
-        data-testid="composer-action-sheet"
-      >
-        {view === "actions" ? (
-          <>
-            <SheetHeader>
-              <SheetTitle>Aktionen</SheetTitle>
-              <SheetDescription>
-                Foto oder PDF hochladen, Notiz erstellen oder eine neue Sammlung anlegen.
-              </SheetDescription>
-            </SheetHeader>
-            <div className="grid gap-1 px-4 pb-6">
+      {view === "actions" ? (
+        <>
+          <OrdiloDrawerHeader
+            title="Aktionen"
+            description="Foto oder PDF hochladen, Notiz erstellen oder eine neue Sammlung anlegen."
+          />
+          <OrdiloDrawerBody>
+            <div className="grid gap-1">
               <ActionRow
                 icon={ImageUp}
                 label="Foto oder PDF hochladen"
@@ -109,28 +103,26 @@ export function ComposerActionSheet({
                 onClick={() => setView("collection")}
               />
             </div>
-          </>
-        ) : (
-          <>
-            <SheetHeader>
-              <SheetTitle>Sammlung hinzufügen</SheetTitle>
-              <SheetDescription>
-                Gib der Sammlung einen Namen, ein Icon und eine Farbe.
-              </SheetDescription>
-            </SheetHeader>
-            <div className="px-4 pb-6">
-              <CollectionForm
-                submitLabel="Sammlung hinzufügen"
-                onSubmit={handleCollectionSubmit}
-                isSubmitting={isSubmitting}
-                serverError={serverError}
-                onClearServerError={() => setServerError(null)}
-              />
-            </div>
-          </>
-        )}
-      </SheetContent>
-    </Sheet>
+          </OrdiloDrawerBody>
+        </>
+      ) : (
+        <>
+          <OrdiloDrawerHeader
+            title="Sammlung hinzufügen"
+            description="Gib der Sammlung einen Namen, ein Icon und eine Farbe."
+          />
+          <OrdiloDrawerBody>
+            <CollectionForm
+              submitLabel="Sammlung hinzufügen"
+              onSubmit={handleCollectionSubmit}
+              isSubmitting={isSubmitting}
+              serverError={serverError}
+              onClearServerError={() => setServerError(null)}
+            />
+          </OrdiloDrawerBody>
+        </>
+      )}
+    </OrdiloDrawer>
   );
 }
 

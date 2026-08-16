@@ -2,12 +2,10 @@
 
 import { Check, UserX } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { MemberAvatar } from "@/components/ordilo/member-avatar";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
 import { cn } from "@/lib/utils";
@@ -46,79 +44,73 @@ export function TaskAssignSheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="gap-0 rounded-t-ordilo-md bg-[var(--surface-box)] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-        showCloseButton={false}
-        data-testid="task-assign-sheet"
-      >
-        <SheetHeader className="px-0 pt-1 pb-3">
-          <SheetTitle className="text-base font-semibold">
-            Wer macht das?
-          </SheetTitle>
-          <SheetDescription className="truncate text-sm">
-            {task?.title ?? ""}
-          </SheetDescription>
-        </SheetHeader>
+    <OrdiloDrawer
+      variant="picker"
+      open={open}
+      onOpenChange={onOpenChange}
+      data-testid="task-assign-sheet"
+    >
+      <OrdiloDrawerHeader
+        title="Wer macht das?"
+        description={task?.title ?? ""}
+      />
 
-        <div className="-mx-1 max-h-[50vh] overflow-y-auto px-1 pb-1">
-          {members.map((member) => {
-            const selected = task?.assigned_to === member.id;
-            return (
-              <button
-                key={member.id}
-                type="button"
-                onClick={() => commit(member.id)}
-                aria-pressed={selected}
-                className={cn(
-                  "flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                  selected
-                    ? "bg-[var(--petrol)]/10"
-                    : "hover:bg-secondary",
-                )}
-                data-testid={`task-assign-${member.id}`}
-              >
-                <MemberAvatar
-                  name={member.name}
-                  color={member.avatar_color}
-                  photoUrl={memberPhotoUrls[member.id]}
-                  size="lg"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-foreground">
-                    {member.name}
-                  </span>
-                  {member.role && (
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {member.role}
-                    </span>
-                  )}
+      <OrdiloDrawerBody className="max-h-[50vh]">
+        {members.map((member) => {
+          const selected = task?.assigned_to === member.id;
+          return (
+            <button
+              key={member.id}
+              type="button"
+              onClick={() => commit(member.id)}
+              aria-pressed={selected}
+              className={cn(
+                "flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                selected
+                  ? "bg-[var(--petrol)]/10"
+                  : "hover:bg-secondary",
+              )}
+              data-testid={`task-assign-${member.id}`}
+            >
+              <MemberAvatar
+                name={member.name}
+                color={member.avatar_color}
+                photoUrl={memberPhotoUrls[member.id]}
+                size="lg"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-foreground">
+                  {member.name}
                 </span>
-                {selected && (
-                  <Check
-                    className="size-4.5 shrink-0 text-[var(--petrol)]"
-                    aria-hidden="true"
-                  />
+                {member.role && (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {member.role}
+                  </span>
                 )}
-              </button>
-            );
-          })}
+              </span>
+              {selected && (
+                <Check
+                  className="size-4.5 shrink-0 text-[var(--petrol)]"
+                  aria-hidden="true"
+                />
+              )}
+            </button>
+          );
+        })}
 
-          <button
-            type="button"
-            onClick={() => commit(null)}
-            aria-pressed={task?.assigned_to === null}
-            className="mt-1 flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            data-testid="task-assign-none"
-          >
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-[var(--mist)]">
-              <UserX className="size-4" aria-hidden="true" strokeWidth={1.75} />
-            </span>
-            <span className="text-sm">Niemand</span>
-          </button>
-        </div>
-      </SheetContent>
-    </Sheet>
+        <button
+          type="button"
+          onClick={() => commit(null)}
+          aria-pressed={task?.assigned_to === null}
+          className="mt-1 flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          data-testid="task-assign-none"
+        >
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-[var(--mist)]">
+            <UserX className="size-4" aria-hidden="true" strokeWidth={1.75} />
+          </span>
+          <span className="text-sm">Niemand</span>
+        </button>
+      </OrdiloDrawerBody>
+    </OrdiloDrawer>
   );
 }

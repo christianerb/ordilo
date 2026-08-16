@@ -12,12 +12,10 @@ import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerFooter,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { UploadProgressCard } from "@/components/ordilo/scan-wizard/upload-progress";
 import { useScan } from "@/lib/scan/scan-context";
@@ -227,47 +225,45 @@ export function DokumenteClient({
         </div>
       )}
 
-      {/* Delete confirmation sheet */}
-      <Sheet
+      {/* Delete confirmation drawer */}
+      <OrdiloDrawer
+        variant="form"
         open={!!deleteConfirmId}
         onOpenChange={(open) => {
           if (!open) setDeleteConfirmId(null);
         }}
+        data-testid="delete-confirm-sheet"
       >
-        <SheetContent side="bottom" data-testid="delete-confirm-sheet">
-          <SheetHeader>
-            <SheetTitle>Dokument löschen?</SheetTitle>
-            <SheetDescription>
-              Das Dokument wird für immer entfernt. Vielleicht vorher noch kurz durchschauen?
-            </SheetDescription>
-          </SheetHeader>
-          <div className="mt-4 flex gap-3">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => setDeleteConfirmId(null)}
-            >
-              Abbrechen
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              onClick={async () => {
-                if (!deleteConfirmId) return;
-                const deleted = await handleDeleteDocument(deleteConfirmId);
-                setDeleteConfirmId(null);
-                closeDocument();
-                // On failure handleDeleteDocument restores the row and shows
-                // its own error toast — do not also claim success.
-                if (deleted) toast.success("Dokument entfernt");
-              }}
-              data-testid="confirm-delete-button"
-            >
-              Löschen
-            </Button>
-          </div>
-        </SheetContent>
-      </Sheet>
+        <OrdiloDrawerHeader
+          title="Dokument löschen?"
+          description="Das Dokument wird für immer entfernt. Vielleicht vorher noch kurz durchschauen?"
+        />
+        <OrdiloDrawerFooter>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => setDeleteConfirmId(null)}
+          >
+            Abbrechen
+          </Button>
+          <Button
+            variant="destructive"
+            className="flex-1"
+            onClick={async () => {
+              if (!deleteConfirmId) return;
+              const deleted = await handleDeleteDocument(deleteConfirmId);
+              setDeleteConfirmId(null);
+              closeDocument();
+              // On failure handleDeleteDocument restores the row and shows
+              // its own error toast — do not also claim success.
+              if (deleted) toast.success("Dokument entfernt");
+            }}
+            data-testid="confirm-delete-button"
+          >
+            Löschen
+          </Button>
+        </OrdiloDrawerFooter>
+      </OrdiloDrawer>
     </div>
   );
 }

@@ -33,9 +33,15 @@
   --radius-lg: 20px;
   --radius-xl: 20px;
 
-  /* Ordilo-specific radius tokens */
+  /* Ordilo-specific radius tokens.
+     `base` and `xl` were referenced by components long before they existed
+     here, so `rounded-ordilo-base` and `rounded-t-ordilo-xl` silently emitted
+     nothing and those surfaces rendered square. 12px is the list/input radius;
+     28px is the DESIGN.md ceiling, reserved for the top edge of drawers. */
+  --radius-ordilo-base: 12px;
   --radius-ordilo-sm: 12px;
   --radius-ordilo-md: 20px;
+  --radius-ordilo-xl: 28px;
 
   /* Font family */
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;

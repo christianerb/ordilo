@@ -3,12 +3,10 @@
 import { useState } from "react";
 import { CalendarOff, Check } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
+  OrdiloDrawer,
+  OrdiloDrawerBody,
+  OrdiloDrawerHeader,
+} from "@/components/ordilo/ordilo-drawer";
 import { DateInput } from "@/components/ordilo/date-input";
 import {
   formatTaskDayHint,
@@ -70,22 +68,18 @@ export function TaskScheduleSheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={handleOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="gap-0 rounded-t-ordilo-md bg-[var(--surface-box)] px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
-        showCloseButton={false}
-        data-testid="task-schedule-sheet"
-      >
-        <SheetHeader className="px-0 pt-1 pb-4">
-          <SheetTitle className="text-base font-semibold">
-            Wann ist das dran?
-          </SheetTitle>
-          <SheetDescription className="truncate text-sm">
-            {task?.title ?? ""}
-          </SheetDescription>
-        </SheetHeader>
+    <OrdiloDrawer
+      variant="picker"
+      open={open}
+      onOpenChange={handleOpenChange}
+      data-testid="task-schedule-sheet"
+    >
+      <OrdiloDrawerHeader
+        title="Wann ist das dran?"
+        description={task?.title ?? ""}
+      />
 
+      <OrdiloDrawerBody>
         <div className="grid grid-cols-2 gap-2">
           {PRESETS.map((preset) => {
             const date = resolveSchedulePreset(preset, todayStr);
@@ -151,7 +145,7 @@ export function TaskScheduleSheet({
           <CalendarOff className="size-4 shrink-0" aria-hidden="true" />
           {TASK_SCHEDULE_PRESET_LABELS.none}
         </button>
-      </SheetContent>
-    </Sheet>
+      </OrdiloDrawerBody>
+    </OrdiloDrawer>
   );
 }

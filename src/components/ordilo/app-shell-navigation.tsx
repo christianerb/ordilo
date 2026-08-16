@@ -21,14 +21,13 @@ import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import { useSuggestionChips } from "@/lib/search/suggestion-chips-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Drawer,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import {
   isSubItemActive,
@@ -95,26 +94,28 @@ export function Topbar({
         </div>
       </div>
 
-      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
-        <SheetContent
-          side="left"
-          showCloseButton={false}
-          className="!inset-y-2 !left-2 !h-auto !w-[calc(100vw-1rem)] !max-w-[28rem] rounded-ordilo-xl border border-white/80 bg-[var(--surface-box)] p-0 shadow-card lg:hidden"
-        >
-          <SheetHeader className="relative px-5 pb-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
-            <SheetTitle className="flex items-center gap-2">
+      {/*
+        The navigation menu is the one drawer that is not a card surface, so it
+        uses the primitive directly rather than an OrdiloDrawer variant: it
+        comes from the left, floats inset with its own radius and shadow, and
+        exists only below `lg`.
+      */}
+      <Drawer open={menuOpen} onOpenChange={setMenuOpen} direction="left">
+        <DrawerContent className="inset-y-2! left-2! h-auto! w-[calc(100vw-1rem)]! max-w-[28rem]! rounded-ordilo-xl border border-white/80 bg-[var(--surface-box)] p-0 shadow-card lg:hidden">
+          <div className="relative flex flex-col gap-1 px-5 pb-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
+            <DrawerTitle className="flex items-center gap-2">
               <Link href="/home" className="rounded-ordilo-sm text-base font-semibold focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label="Ordilo Startseite">
                 <OrdiloWordmark mascotSize={28} />
               </Link>
-            </SheetTitle>
-            <SheetDescription className="sr-only">Hauptmenü</SheetDescription>
-            <SheetClose
+            </DrawerTitle>
+            <DrawerDescription className="sr-only">Hauptmenü</DrawerDescription>
+            <DrawerClose
               aria-label="Menü schließen"
               className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] flex size-10 items-center justify-center rounded-full bg-[var(--sand)] text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               <ChevronsLeft className="size-4" aria-hidden="true" />
-            </SheetClose>
-          </SheetHeader>
+            </DrawerClose>
+          </div>
 
           {showNav && (
             <nav aria-label="Hauptnavigation" className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
@@ -191,7 +192,7 @@ export function Topbar({
             </nav>
           )}
 
-          <SheetFooter className="border-t border-border/70 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+          <DrawerFooter className="border-t border-border/70 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
             <form action={logout}>
               <button
                 type="submit"
@@ -201,9 +202,9 @@ export function Topbar({
                 Abmelden
               </button>
             </form>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </header>
   );
 }

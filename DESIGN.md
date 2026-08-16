@@ -259,6 +259,28 @@ The primary surface of the app. Document cards, task cards, person cards — all
 - **Placeholder:** Muted foreground (mist-dark, #606060) — meets WCAG AA contrast
 - **Error:** Border shifts to Destructive, ring at 20% opacity
 
+### Drawers
+
+Every overlay in the app is a drawer, and there is one component for them: `OrdiloDrawer`. It is built on shadcn's vaul-based Drawer, so dragging, scroll-locking and keyboard repositioning are the library's job rather than ours. A drawer is chosen by what it is for, never by assembling classes at the call site.
+
+- **Picker** — one decision, committed on tap ("Wer macht das?", "Wann ist das dran?"). Bottom-anchored, centred, max 28rem wide. **No close button:** choosing is the way out, and an X beside a list of answers suggests the choice needs confirming.
+- **Form** — something to fill in and submit. Bottom-anchored and centred so it stays thumb-reachable on a phone and does not sprawl on a desktop. Max height 85dvh.
+- **Detail** — a record to read and edit. The only variant that moves: bottom on a phone, right-hand panel from `lg` up. A full-height side panel on a phone is the worst of both, and a bottom sheet wastes a wide screen.
+
+Creating something is a Form, not a Detail, however much of the record it collects: "Neue Aufgabe", "Dokument anlegen" and "Neuer Termin" are all fill-and-submit. Detail is for a record that already exists.
+
+**The Fixed Anchor Rule.** A Detail drawer picks its anchor when it opens and keeps it until it closes. Switching sides mid-session means remounting, which would discard whatever the drawer is holding — a half-corrected document, a half-typed form. Resizing past `lg` while a drawer is open therefore leaves it where it is; the next open honours the new width.
+
+Shared anatomy, in this order: a header that names the thing, a body that scrolls, an optional footer that does not. The footer is pinned so the primary action never scrolls out of reach.
+
+- **Corner Style:** 28px on the top edge of bottom-anchored drawers (rounded-ordilo-xl — the DESIGN.md ceiling, and the one place it is used). Side panels have no radius; they meet the viewport edge.
+- **Background:** `--surface-box` (Warm White), one step lighter than the sand cards inside it
+- **Header:** 1px bottom border and a `--sand`/70 tint on Detail only, where it is a titlebar over scrolling content. Picker and Form headers sit flush.
+- **Safe area:** bottom-anchored drawers pad by `env(safe-area-inset-bottom)` so the last row clears the home indicator
+- **Alignment:** headers are left-aligned at every width — a centred header reads as a dialog, not as the top of a document
+
+**The Navigation Exception.** The mobile menu is the one drawer that is not a card surface: it comes from the left, floats inset with its own radius and shadow, and exists only below `lg`. It uses the primitive directly rather than an `OrdiloDrawer` variant.
+
 ### Authentication
 
 Login and email-code confirmation use a boxed, two-part welcome surface. On desktop, the product story and mascot illustration sit beside the form; on mobile, they stack into one continuous card. This makes the first contact feel friendly and substantial without turning authentication into a marketing page.
