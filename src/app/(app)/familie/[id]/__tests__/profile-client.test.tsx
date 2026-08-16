@@ -188,7 +188,7 @@ describe("ProfileClient — Bearbeiten", () => {
   it("saves changes via updateFamilyMember and reflects them in the header", async () => {
     mockUpdateFamilyMember.mockResolvedValue({
       success: true,
-      data: makeMember({ name: "Emma Neu", role: "Kind" }),
+      data: { ...makeMember({ name: "Emma Neu", role: "Kind" }), relations: [] },
     });
 
     render(
@@ -218,55 +218,63 @@ describe("ProfileClient — Bearbeiten", () => {
   });
 });
 
-describe("ProfileClient — Beziehungen (multiple related members)", () => {
-  it("lists every related member's name, joined, in its own line", () => {
+describe("ProfileClient — Beziehungen (mehrere Rollen gleichzeitig)", () => {
+  it("spells out every relationship in its own line", () => {
     render(
       <ProfileClient
-        member={makeMember({
-          role: "Elternteil",
-          relationship_label: "Elternteil",
-          related_member_ids: ["mem-2", "mem-3"],
-        })}
+        member={makeMember({ role: "Mutter" })}
         documents={[]}
         tasks={[]}
         dateEntities={emptyDateEntities}
-        relatedMemberNames={["Hanna", "Ben"]}
+        relations={[
+          { role: "Mutter", member_ids: ["mem-2", "mem-3"] },
+          { role: "Partnerin", member_ids: ["mem-4"] },
+        ]}
         otherMembers={[
           { id: "mem-2", name: "Hanna" },
           { id: "mem-3", name: "Ben" },
+          { id: "mem-4", name: "Chris" },
         ]}
       />,
     );
     expect(screen.getByTestId("profile-relationship").textContent).toBe(
-      "Elternteil von Hanna, Ben",
+      "Mutter von Hanna und Ben · Partnerin von Chris",
     );
   });
 
-  it("does not crowd the role/birthdate line with the relationship detail", () => {
+  it("does not repeat the role next to the birthdate", () => {
     render(
       <ProfileClient
-        member={makeMember({
-          role: "Elternteil",
-          birthdate: "1985-06-15",
-          relationship_label: "Elternteil",
-          related_member_ids: ["mem-2"],
-        })}
+        member={makeMember({ role: "Elternteil", birthdate: "1985-06-15" })}
         documents={[]}
         tasks={emptyTasks}
         dateEntities={emptyDateEntities}
-        relatedMemberNames={["Hanna"]}
+        relations={[{ role: "Elternteil", member_ids: ["mem-2"] }]}
+        otherMembers={[{ id: "mem-2", name: "Hanna" }]}
       />,
     );
-    // Role + birthdate stay compact on their own line …
-    expect(screen.getByText("Elternteil · 15.06.1985")).toBeInTheDocument();
-    // … the relationship detail renders separately, not appended to it.
-    expect(screen.queryByText(/Elternteil · 15\.06\.1985 ·/)).not.toBeInTheDocument();
+    // The birthdate line stays compact — the role leads the relationship line.
+    expect(screen.getByText("15.06.1985")).toBeInTheDocument();
     expect(screen.getByTestId("profile-relationship")).toHaveTextContent(
       "Elternteil von Hanna",
     );
   });
 
-  it("shows no relationship line when the member has no related members", () => {
+  it("falls back to the plain role when there is nobody to point at", () => {
+    render(
+      <ProfileClient
+        member={makeMember({ role: "Oma", birthdate: "1950-02-01" })}
+        documents={[]}
+        tasks={emptyTasks}
+        dateEntities={emptyDateEntities}
+        relations={[{ role: "Oma", member_ids: [] }]}
+      />,
+    );
+    expect(screen.getByTestId("profile-relationship")).toHaveTextContent("Oma");
+    expect(screen.getByText("01.02.1950")).toBeInTheDocument();
+  });
+
+  it("shows no relationship line when the member has none", () => {
     render(
       <ProfileClient
         member={makeMember()}

@@ -45,9 +45,20 @@ function mockSupabase(options: {
     // For update/remove: whether the member exists and belongs to the family.
     existing?: { id: string; family_id: string } | null;
     existingError?: unknown;
-    // For the related-members ownership check (verifyRelatedMembers).
+    // For the relationship ownership check (validateRelations).
     relatedMembers?: { id: string; family_id: string }[];
     relatedMembersError?: unknown;
+  };
+  relations?: {
+    /** Rows returned when the relations of a member are read back. */
+    rows?: {
+      member_id: string;
+      related_member_id: string | null;
+      role: string;
+      sort_order: number;
+    }[];
+    insertError?: unknown;
+    deleteError?: unknown;
   };
   familyNameUpdate?: {
     updated?: { name: string };
@@ -95,9 +106,9 @@ function mockSupabase(options: {
 
   // family_members select chain. `.eq(...).maybeSingle()` verifies the
   // member being edited (updateFamilyMember only); `.in(...)` is the
-  // related-members ownership check (verifyRelatedMembers), called by both
-  // addFamilyMember and updateFamilyMember whenever related_member_ids is
-  // non-empty.
+  // relationship ownership check (validateRelations), called by both
+  // addFamilyMember and updateFamilyMember whenever a relation points at
+  // someone.
   const membersSelectChain = {
     eq: vi.fn().mockReturnThis(),
     maybeSingle: vi.fn().mockResolvedValue({
@@ -135,11 +146,34 @@ function mockSupabase(options: {
     error: options.members?.deleteError ?? null,
   };
 
+  // family_member_relations chains — relations are replaced wholesale
+  // (delete, then insert), and read back when a caller does not manage them.
+  const relationsSelectChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockResolvedValue({
+      data: options.relations?.rows ?? [],
+      error: null,
+    }),
+  };
+  const relationsInsertMock = vi
+    .fn()
+    .mockResolvedValue({ error: options.relations?.insertError ?? null });
+  const relationsDeleteChain = {
+    eq: vi.fn().mockResolvedValue({ error: options.relations?.deleteError ?? null }),
+  };
+
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
       return {
         select: vi.fn(() => familiesSelectChain),
         update: vi.fn(() => familiesUpdateChain),
+      };
+    }
+    if (table === "family_member_relations") {
+      return {
+        select: vi.fn(() => relationsSelectChain),
+        insert: relationsInsertMock,
+        delete: vi.fn(() => relationsDeleteChain),
       };
     }
     if (table === "family_memberships") {
@@ -370,39 +404,48 @@ describe("addFamilyMember", () => {
     }
   });
 
-  it("creates a member with related members and a relationship label", async () => {
+  it("creates a member with several relationships at once", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
-    const relatedId = "11111111-1111-4111-8111-111111111111";
+    const emmaId = "11111111-1111-4111-8111-111111111111";
+    const chrisId = "44444444-4444-4444-8444-444444444444";
     const inserted: Partial<MemberRow> = {
       id: "mem-3",
       family_id: "fam-1",
-      name: "Anna",
-      related_member_ids: [relatedId],
-      relationship_label: "Ehepartner",
+      name: "Karina",
+      role: "Mutter",
     };
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({
         family,
         members: {
           inserted,
-          relatedMembers: [{ id: relatedId, family_id: "fam-1" }],
+          relatedMembers: [
+            { id: emmaId, family_id: "fam-1" },
+            { id: chrisId, family_id: "fam-1" },
+          ],
         },
       }),
     );
 
     const result = await addFamilyMember({
-      name: "Anna",
-      related_member_ids: [relatedId],
-      relationship_label: "Ehepartner",
+      name: "Karina",
+      relations: [
+        { role: "Mutter", member_ids: [emmaId] },
+        { role: "Partnerin", member_ids: [chrisId] },
+      ],
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.related_member_ids).toEqual([relatedId]);
-      expect(result.data.relationship_label).toBe("Ehepartner");
+      expect(result.data.relations).toEqual([
+        { role: "Mutter", member_ids: [emmaId] },
+        { role: "Partnerin", member_ids: [chrisId] },
+      ]);
+      // The first relation's role is mirrored onto the member row.
+      expect(result.data.role).toBe("Mutter");
     }
   });
 
-  it("rejects a related member from a different family", async () => {
+  it("rejects a relationship pointing at a different family's member", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const relatedId = "22222222-2222-4222-8222-222222222222";
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -416,16 +459,15 @@ describe("addFamilyMember", () => {
 
     const result = await addFamilyMember({
       name: "Anna",
-      related_member_ids: [relatedId],
-      relationship_label: "Ehepartner",
+      relations: [{ role: "Partnerin", member_ids: [relatedId] }],
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe(FRIENDLY_ERROR);
+      expect(result.error).toBe("Beziehung konnte nicht gespeichert werden.");
     }
   });
 
-  it("rejects an unknown related member id", async () => {
+  it("rejects a relationship pointing at an unknown member id", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({
@@ -436,11 +478,13 @@ describe("addFamilyMember", () => {
 
     const result = await addFamilyMember({
       name: "Anna",
-      related_member_ids: ["33333333-3333-4333-8333-333333333333"],
+      relations: [
+        { role: "Schwester", member_ids: ["33333333-3333-4333-8333-333333333333"] },
+      ],
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe(FRIENDLY_ERROR);
+      expect(result.error).toBe("Beziehung konnte nicht gespeichert werden.");
     }
   });
 });
@@ -612,28 +656,32 @@ describe("updateFamilyMember", () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const selfId = "11111111-1111-4111-8111-111111111111";
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockSupabase({ family }),
+      mockSupabase({
+        family,
+        members: { existing: { id: selfId, family_id: "fam-1" } },
+      }),
     );
 
     const result = await updateFamilyMember(selfId, {
       name: "Emma",
-      related_member_ids: [selfId],
+      relations: [{ role: "Schwester", member_ids: [selfId] }],
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe(FRIENDLY_ERROR);
+      expect(result.error).toBe(
+        "Eine Person kann keine Beziehung zu sich selbst haben.",
+      );
     }
   });
 
-  it("updates a member with related members and a relationship label", async () => {
+  it("replaces the relationships and mirrors the first role onto the member", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const relatedId = "22222222-2222-4222-8222-222222222222";
     const updated: Partial<MemberRow> = {
       id: "mem-1",
       family_id: "fam-1",
       name: "Emma",
-      related_member_ids: [relatedId],
-      relationship_label: "Schwester",
+      role: "Schwester",
     };
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
       mockSupabase({
@@ -648,17 +696,49 @@ describe("updateFamilyMember", () => {
 
     const result = await updateFamilyMember("mem-1", {
       name: "Emma",
-      related_member_ids: [relatedId],
-      relationship_label: "Schwester",
+      relations: [{ role: "Schwester", member_ids: [relatedId] }],
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.related_member_ids).toEqual([relatedId]);
-      expect(result.data.relationship_label).toBe("Schwester");
+      expect(result.data.relations).toEqual([
+        { role: "Schwester", member_ids: [relatedId] },
+      ]);
     }
   });
 
-  it("rejects a related member from a different family", async () => {
+  it("keeps the stored relationships when the caller passes none", async () => {
+    const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
+    const relatedId = "22222222-2222-4222-8222-222222222222";
+    (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
+      mockSupabase({
+        family,
+        members: {
+          existing: { id: "mem-1", family_id: "fam-1" },
+          updated: { id: "mem-1", family_id: "fam-1", name: "Emma", role: "Mutter" },
+        },
+        relations: {
+          rows: [
+            {
+              member_id: "mem-1",
+              related_member_id: relatedId,
+              role: "Mutter",
+              sort_order: 0,
+            },
+          ],
+        },
+      }),
+    );
+
+    const result = await updateFamilyMember("mem-1", { name: "Emma" });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.relations).toEqual([
+        { role: "Mutter", member_ids: [relatedId] },
+      ]);
+    }
+  });
+
+  it("rejects a relationship pointing at a different family's member", async () => {
     const family = { id: "fam-1", name: "Familie Müller", created_by: "user-1" };
     const relatedId = "33333333-3333-4333-8333-333333333333";
     (createClient as ReturnType<typeof vi.fn>).mockResolvedValue(
@@ -673,11 +753,11 @@ describe("updateFamilyMember", () => {
 
     const result = await updateFamilyMember("mem-1", {
       name: "Emma",
-      related_member_ids: [relatedId],
+      relations: [{ role: "Mutter", member_ids: [relatedId] }],
     });
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toBe(FRIENDLY_ERROR);
+      expect(result.error).toBe("Beziehung konnte nicht gespeichert werden.");
     }
   });
 });

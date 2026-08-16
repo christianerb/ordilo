@@ -8,6 +8,12 @@ import {
   getUserFamily,
 } from "@/lib/actions/result";
 import { validateMember, validateFamilyName } from "@/lib/schemas/onboarding";
+import { primaryRole, type MemberRelation } from "@/lib/family/relations";
+import {
+  loadMemberRelations,
+  saveMemberRelations,
+  validateRelations,
+} from "@/lib/family/relations-db";
 import type { Database } from "@/types/database";
 
 /**
@@ -22,56 +28,45 @@ import type { Database } from "@/types/database";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
+/** A member row plus the relations stored in `family_member_relations`. */
+export type MemberWithRelations = MemberRow & { relations: MemberRelation[] };
+
 /**
  * Input shape for member add/edit operations.
  * Only `name` is required; the optional fields default to empty strings.
  */
 export interface MemberInput {
   name: string;
+  /**
+   * The member's primary role. Normally derived from `relations` — pass it
+   * directly only where there are no relations to derive it from (the
+   * onboarding quick-add and the chat tool).
+   */
   role?: string;
   birthdate?: string;
   avatar_color?: string;
-  related_member_ids?: string[];
-  relationship_label?: string;
-}
-
-/**
- * Verify that every id in `relatedMemberIds` refers to an existing member of
- * `familyId`. Prevents cross-family references (a user could otherwise
- * reference any UUID, including members of other families).
- */
-async function verifyRelatedMembers(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  relatedMemberIds: string[],
-  familyId: string,
-): Promise<boolean> {
-  if (relatedMemberIds.length === 0) return true;
-  const { data, error } = await supabase
-    .from("family_members")
-    .select("id, family_id")
-    .in("id", relatedMemberIds);
-  if (error || !data) return false;
-  const found = new Set(data.filter((m) => m.family_id === familyId).map((m) => m.id));
-  return relatedMemberIds.every((id) => found.has(id));
+  /** "Mutter von Emma und Hanna", "Partnerin von Chris", … */
+  relations?: MemberRelation[];
 }
 
 /**
  * Add a new family member to the authenticated user's family.
  *
- * @param input - Member data: name (required), role/birthdate/avatar_color (optional).
- * @returns The created member row on success, or a German error.
+ * @param input - Member data: name (required), relations/role/birthdate/avatar_color (optional).
+ * @returns The created member row (with its relations) on success, or a German error.
  */
 export async function addFamilyMember(
   input: MemberInput,
-): Promise<ActionResult<MemberRow>> {
-  // Validate input — German validation messages.
+): Promise<ActionResult<MemberWithRelations>> {
+  const inputRelations = input.relations ?? [];
+
+  // Validate input — German validation messages. The role stored on the
+  // member row is the first relation's, so the two never drift apart.
   const validation = validateMember({
     name: input.name,
-    role: input.role ?? "",
+    role: primaryRole(inputRelations) ?? input.role ?? "",
     birthdate: input.birthdate ?? "",
     avatar_color: input.avatar_color ?? "",
-    related_member_ids: input.related_member_ids ?? [],
-    relationship_label: input.relationship_label ?? "",
   });
   if (!validation.success) {
     return { success: false, error: validation.error };
@@ -93,9 +88,14 @@ export async function addFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  // Every related member reference must belong to the same family.
-  if (!(await verifyRelatedMembers(supabase, validation.data.related_member_ids, family.id))) {
-    return { success: false, error: FRIENDLY_ERROR };
+  // Every referenced person must belong to the same family.
+  const relationCheck = await validateRelations(
+    supabase,
+    inputRelations,
+    family.id,
+  );
+  if (!relationCheck.success) {
+    return { success: false, error: relationCheck.error };
   }
 
   // Insert the family member.
@@ -107,8 +107,6 @@ export async function addFamilyMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
-      related_member_ids: validation.data.related_member_ids,
-      relationship_label: validation.data.relationship_label,
     })
     .select("*")
     .single();
@@ -117,7 +115,15 @@ export async function addFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  return { success: true, data: member };
+  if (relationCheck.data.length > 0) {
+    await saveMemberRelations(supabase, {
+      familyId: family.id,
+      memberId: member.id,
+      relations: relationCheck.data,
+    });
+  }
+
+  return { success: true, data: { ...member, relations: relationCheck.data } };
 }
 
 /**
@@ -128,29 +134,25 @@ export async function addFamilyMember(
  * are empty strings are normalized to null.
  *
  * @param memberId - The UUID of the member to update.
- * @param input - Updated member data: name (required), role/birthdate/avatar_color (optional).
- * @returns The updated member row on success, or a German error.
+ * @param input - Updated member data: name (required), relations/birthdate/avatar_color (optional).
+ * @returns The updated member row (with its relations) on success, or a German error.
  */
 export async function updateFamilyMember(
   memberId: string,
   input: MemberInput,
-): Promise<ActionResult<MemberRow>> {
-  // Validate input — German validation messages.
+): Promise<ActionResult<MemberWithRelations>> {
+  const inputRelations = input.relations ?? [];
+
+  // Validate input — German validation messages. The role stored on the
+  // member row is the first relation's, so the two never drift apart.
   const validation = validateMember({
     name: input.name,
-    role: input.role ?? "",
+    role: primaryRole(inputRelations) ?? input.role ?? "",
     birthdate: input.birthdate ?? "",
     avatar_color: input.avatar_color ?? "",
-    related_member_ids: input.related_member_ids ?? [],
-    relationship_label: input.relationship_label ?? "",
   });
   if (!validation.success) {
     return { success: false, error: validation.error };
-  }
-
-  // A member cannot be related to itself.
-  if (validation.data.related_member_ids.includes(memberId)) {
-    return { success: false, error: FRIENDLY_ERROR };
   }
 
   const supabase = await createClient();
@@ -180,9 +182,18 @@ export async function updateFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  // Every related member reference must belong to the same family.
-  if (!(await verifyRelatedMembers(supabase, validation.data.related_member_ids, family.id))) {
-    return { success: false, error: FRIENDLY_ERROR };
+  // Every referenced person must belong to the same family, and nobody is
+  // their own mother. A caller that passes no `relations` at all is not
+  // editing them — the stored ones (and the role derived from them) stay.
+  const managesRelations = input.relations !== undefined;
+  const relationCheck = await validateRelations(
+    supabase,
+    inputRelations,
+    family.id,
+    memberId,
+  );
+  if (!relationCheck.success) {
+    return { success: false, error: relationCheck.error };
   }
 
   // Update the member.
@@ -190,11 +201,9 @@ export async function updateFamilyMember(
     .from("family_members")
     .update({
       name: validation.data.name,
-      role: validation.data.role,
+      ...(managesRelations ? { role: validation.data.role } : {}),
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
-      related_member_ids: validation.data.related_member_ids,
-      relationship_label: validation.data.relationship_label,
     })
     .eq("id", memberId)
     .select("*")
@@ -204,7 +213,25 @@ export async function updateFamilyMember(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  return { success: true, data: updated };
+  if (!managesRelations) {
+    return {
+      success: true,
+      data: { ...updated, relations: await loadMemberRelations(supabase, memberId) },
+    };
+  }
+
+  // Relations are replaced wholesale — what the form showed is what is
+  // stored, including "all of them removed".
+  const relationsSaved = await saveMemberRelations(supabase, {
+    familyId: family.id,
+    memberId,
+    relations: relationCheck.data,
+  });
+  if (!relationsSaved) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: { ...updated, relations: relationCheck.data } };
 }
 
 /**

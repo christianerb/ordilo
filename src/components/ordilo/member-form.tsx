@@ -7,14 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
 import { ACCEPTED_AVATAR_FILE_EXTENSIONS } from "@/lib/schemas/avatar";
-import { RoleChipGroup } from "@/components/ordilo/role-chips";
+import { RelationshipEditor } from "@/components/ordilo/relationship-editor";
 import { DateInput } from "@/components/ordilo/date-input";
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import type { MemberRelation } from "@/lib/family/relations";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { PhotoCropDialog } from "@/components/ordilo/photo-crop-dialog";
@@ -24,15 +19,16 @@ import { PhotoCropDialog } from "@/components/ordilo/photo-crop-dialog";
  */
 export interface MemberFormValues {
   name: string;
-  role: string;
   birthdate: string;
   avatar_color: string;
-  /** Other members this one shares `relationship_label` with (e.g. all children, if the label is "Elternteil"). */
-  related_member_ids: string[];
-  relationship_label: string;
+  /**
+   * Everything this person is, at once — "Mutter von Emma und Hanna" AND
+   * "Partnerin von Christian". A relation without members is a plain role.
+   */
+  relations: MemberRelation[];
 }
 
-/** A minimal reference to another family member, for the "Beziehung zu" multi-select. */
+/** A minimal reference to another family member, for the relationship chips. */
 export interface MemberOption {
   id: string;
   name: string;
@@ -68,7 +64,7 @@ export interface MemberFormProps {
   photoUrl?: string | null;
   /** Called after the photo is uploaded or removed, with the new signed URL (or null). */
   onPhotoChange?: (url: string | null) => void;
-  /** Other members of the family (excluding this one), for "Beziehung zu". */
+  /** Other members of the family (excluding this one), for the "von" chips. */
   otherMembers?: MemberOption[];
 }
 
@@ -77,10 +73,12 @@ export interface MemberFormProps {
  *
  * Fields:
  * - Name (required) — always visible
- * - Rolle (optional) — always visible, right below the name
- * - Foto, Geburtsdatum, Beziehung, Avatarfarbe (optional) — behind a
- *   "Weitere Angaben" toggle, shown by default when any has a pre-filled
- *   value. Foto only renders once the member exists (edit mode).
+ * - Rolle & Beziehung (optional) — always visible, right below the name.
+ *   A list, because one person is several things at once ("Mutter von
+ *   Emma", "Partnerin von Chris").
+ * - Foto, Geburtsdatum, Avatarfarbe (optional) — behind a "Weitere
+ *   Angaben" toggle, shown by default when any has a pre-filled value.
+ *   Foto only renders once the member exists (edit mode).
  *
  * Used in the family management page's add and edit bottom sheets.
  */
@@ -99,25 +97,16 @@ export function MemberForm({
   otherMembers = [],
 }: MemberFormProps) {
   const [name, setName] = useState(initialValues?.name ?? "");
-  const [role, setRole] = useState(initialValues?.role ?? "");
   const [birthdate, setBirthdate] = useState(initialValues?.birthdate ?? "");
   const [avatarColor, setAvatarColor] = useState(
     initialValues?.avatar_color ?? "",
   );
-  const [relatedMemberIds, setRelatedMemberIds] = useState<string[]>(
-    initialValues?.related_member_ids ?? [],
-  );
-  const [relationshipLabel, setRelationshipLabel] = useState(
-    initialValues?.relationship_label ?? "",
+  const [relations, setRelations] = useState<MemberRelation[]>(
+    initialValues?.relations ?? [],
   );
   const [showOptional, setShowOptional] = useState(() => {
     // Show optional fields by default when editing a member that has values.
-    return Boolean(
-      initialValues?.birthdate ||
-        initialValues?.avatar_color ||
-        (initialValues?.related_member_ids?.length ?? 0) > 0 ||
-        initialValues?.relationship_label,
-    );
+    return Boolean(initialValues?.birthdate || initialValues?.avatar_color);
   });
 
   const [photoUploading, setPhotoUploading] = useState(false);
@@ -136,18 +125,12 @@ export function MemberForm({
     event.preventDefault();
     onSubmit({
       name,
-      role,
       birthdate,
       avatar_color: avatarColor,
-      related_member_ids: relatedMemberIds,
-      relationship_label: relationshipLabel,
+      // Half-filled rows (a person picked but no role yet) carry no
+      // meaning — drop them instead of failing the save.
+      relations: relations.filter((relation) => relation.role.trim() !== ""),
     });
-  };
-
-  const toggleRelatedMember = (id: string) => {
-    setRelatedMemberIds((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
-    );
   };
 
   const handleNameChange = (value: string) => {
@@ -231,16 +214,23 @@ export function MemberForm({
         )}
       </div>
 
-      {/* Rolle (optional, but always visible — not tucked behind a toggle).
-          Same one-tap chips as in onboarding — no free text. */}
+      {/* Rolle & Beziehung (optional, but always visible — not tucked behind
+          a toggle). A list: one person is usually several things at once. */}
       <div className="space-y-2">
-        <Label>Rolle</Label>
-        <RoleChipGroup
-          value={role}
-          onChange={setRole}
-          disabled={isSubmitting}
-          aria-label="Rolle"
-        />
+        <Label id="member-relations-label">Rolle & Beziehung</Label>
+        {relatableMembers.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            Mehreres möglich — z. B. Mutter von Emma und Partnerin von Chris.
+          </p>
+        )}
+        <div aria-labelledby="member-relations-label">
+          <RelationshipEditor
+            value={relations}
+            onChange={setRelations}
+            members={relatableMembers}
+            disabled={isSubmitting}
+          />
+        </div>
       </div>
 
       {/* Optional fields toggle */}
@@ -347,61 +337,6 @@ export function MemberForm({
               aria-label="Geburtsdatum"
             />
           </div>
-
-          {/* Beziehung — one relationship label applying to any number of
-              other members (e.g. "Elternteil" of both Emma and Hanna). */}
-          {relatableMembers.length > 0 && (
-            <div className="space-y-2">
-              <Label id="member-related-label">Beziehung zu</Label>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    aria-labelledby="member-related-label"
-                    data-testid="member-related-trigger"
-                    className="flex h-11 w-full items-center justify-between rounded-ordilo-md border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span className="truncate text-left">
-                      {relatedMemberIds.length > 0
-                        ? relatableMembers
-                            .filter((m) => relatedMemberIds.includes(m.id))
-                            .map((m) => m.name)
-                            .join(", ")
-                        : "Keine Auswahl"}
-                    </span>
-                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-[14rem]">
-                  {relatableMembers.map((m) => (
-                    <DropdownMenuCheckboxItem
-                      key={m.id}
-                      checked={relatedMemberIds.includes(m.id)}
-                      onSelect={(e) => e.preventDefault()}
-                      onCheckedChange={() => toggleRelatedMember(m.id)}
-                      data-testid={`member-related-option-${m.id}`}
-                    >
-                      {m.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {relatedMemberIds.length > 0 && (
-                <Input
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Art der Beziehung, z. B. Elternteil, Geschwister"
-                  maxLength={50}
-                  value={relationshipLabel}
-                  onChange={(e) => setRelationshipLabel(e.target.value)}
-                  disabled={isSubmitting}
-                  className="h-11 rounded-ordilo-md"
-                  data-testid="member-relationship-label"
-                />
-              )}
-            </div>
-          )}
 
           {/* Avatar color */}
           <div className="space-y-2">

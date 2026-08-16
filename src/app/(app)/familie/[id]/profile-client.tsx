@@ -14,6 +14,11 @@ import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { TimelineItem } from "@/components/ordilo/timeline-item";
 import type { MemberFormValues, MemberOption } from "@/components/ordilo/member-form";
 import {
+  formatRelations,
+  nameMap,
+  type MemberRelation,
+} from "@/lib/family/relations";
+import {
   buildTimelineEvents,
   sortTimelineEvents,
   type ProfileDocument,
@@ -39,9 +44,9 @@ export interface ProfileClientProps {
   documentTitles?: Map<string, string | null>;
   /** A short-lived signed URL for the member's uploaded photo, if any. */
   photoUrl?: string | null;
-  /** Names of the members referenced by related_member_ids, if any. */
-  relatedMemberNames?: string[];
-  /** Other members of the same family, for the edit form's "Beziehung zu" select. */
+  /** The member's relationships, e.g. "Mutter von Emma", "Partnerin von Chris". */
+  relations?: MemberRelation[];
+  /** Other members of the same family — the people a relation can point at. */
   otherMembers?: MemberOption[];
 }
 
@@ -52,14 +57,14 @@ export function ProfileClient({
   dateEntities,
   documentTitles,
   photoUrl: initialPhotoUrl,
-  relatedMemberNames: initialRelatedMemberNames = [],
+  relations: initialRelations = [],
   otherMembers = [],
 }: ProfileClientProps) {
   const { openDocument } = useDocumentViewer();
 
   const [member, setMember] = useState(initialMember);
   const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
-  const [relatedMemberNames, setRelatedMemberNames] = useState(initialRelatedMemberNames);
+  const [relations, setRelations] = useState(initialRelations);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -76,11 +81,9 @@ export function ProfileClient({
       setIsSubmitting(true);
       const result = await updateFamilyMember(member.id, {
         name: values.name,
-        role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_ids: values.related_member_ids,
-        relationship_label: values.relationship_label || undefined,
+        relations: values.relations,
       });
       setIsSubmitting(false);
       if (!result.success) {
@@ -88,27 +91,25 @@ export function ProfileClient({
         return;
       }
       setMember(result.data);
-      setRelatedMemberNames(
-        otherMembers
-          .filter((m) => result.data.related_member_ids.includes(m.id))
-          .map((m) => m.name),
-      );
+      setRelations(result.data.relations);
       setEditSheetOpen(false);
       toast.success("Gespeichert");
     },
-    [member.id, otherMembers],
+    [member.id],
   );
 
   const formattedBirthdate = formatGermanDate(member.birthdate);
   const avatarColor = member.avatar_color ?? "#305460";
   const initial = member.name.charAt(0).toUpperCase() || "?";
-  // Kept separate from the compact role/birthdate meta line below — with
-  // several related members this can get long, and the profile page (unlike
-  // the crowded family list row) has room to give it its own line.
-  const relationship =
-    relatedMemberNames.length > 0 && member.relationship_label
-      ? `${member.relationship_label} von ${relatedMemberNames.join(", ")}`
-      : null;
+  // Kept separate from the compact birthdate meta line below — a person is
+  // usually several things at once ("Mutter von Emma und Hanna · Partnerin
+  // von Chris"), and the profile page has room to spell that out.
+  const relationship = formatRelations(relations, nameMap(otherMembers)) || null;
+  // The role already leads the relationship line — repeating it next to the
+  // birthdate would say "Mutter" twice.
+  const metaLine = [relationship ? null : member.role, formattedBirthdate]
+    .filter(Boolean)
+    .join(" · ");
 
   const docTypeMap = new Map<string, string | null>();
   for (const doc of documents) {
@@ -231,7 +232,7 @@ export function ProfileClient({
               {member.name}
             </h1>
             <p className="text-sm text-muted-foreground">
-              {[member.role, formattedBirthdate].filter(Boolean).join(" · ")}
+              {metaLine}
             </p>
             {relationship && (
               <p className="mt-0.5 text-sm text-muted-foreground" data-testid="profile-relationship">
@@ -320,11 +321,9 @@ export function ProfileClient({
         otherMembers={otherMembers}
         initialValues={{
           name: member.name,
-          role: member.role ?? "",
           birthdate: member.birthdate ?? "",
           avatar_color: member.avatar_color ?? "",
-          related_member_ids: member.related_member_ids,
-          relationship_label: member.relationship_label ?? "",
+          relations,
         }}
         memberId={member.id}
         photoUrl={photoUrl}

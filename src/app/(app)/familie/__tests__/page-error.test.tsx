@@ -86,9 +86,19 @@ function mockServerClient(options: {
     in: vi.fn().mockResolvedValue({ data: [], error: null }),
   };
 
+  // Relationship lookup — empty by default; relationships aren't under
+  // test here.
+  const relationsChain = {
+    eq: vi.fn().mockReturnThis(),
+    order: vi.fn().mockResolvedValue({ data: [], error: null }),
+  };
+
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
       return { select: vi.fn(() => familiesChain) };
+    }
+    if (table === "family_member_relations") {
+      return { select: vi.fn(() => relationsChain) };
     }
     if (table === "family_memberships") {
       return { select: vi.fn(() => membershipsChain) };

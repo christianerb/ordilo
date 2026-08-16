@@ -298,6 +298,7 @@ function makeMemberCtx({
   insertError?: unknown;
 } = {}) {
   let capturedInsert: Record<string, unknown> | null = null;
+  let capturedRelations: Record<string, unknown>[] | null = null;
 
   const from = vi.fn((table: string) => {
     if (table === "family_members") {
@@ -313,6 +314,22 @@ function makeMemberCtx({
             })),
           };
         }),
+        // The role is mirrored into family_member_relations, which syncs
+        // the primary role back onto the member row.
+        update: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        })),
+      };
+    }
+    if (table === "family_member_relations") {
+      return {
+        delete: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        })),
+        insert: vi.fn((rows: Record<string, unknown>[]) => {
+          capturedRelations = rows;
+          return Promise.resolve({ error: null });
+        }),
       };
     }
     return makeThenableChain(null);
@@ -325,7 +342,11 @@ function makeMemberCtx({
     speakerName: null,
   };
 
-  return { ctx, getInsert: () => capturedInsert };
+  return {
+    ctx,
+    getInsert: () => capturedInsert,
+    getRelations: () => capturedRelations,
+  };
 }
 
 describe("add_family_member confirmation gate", () => {
@@ -375,15 +396,13 @@ describe("add_family_member confirmation gate", () => {
       role: null,
       birthdate: null,
       avatar_color: null,
-      related_member_ids: [],
-      relationship_label: null,
     });
     expect(parsed.success).toBe(true);
     expect(parsed.member_id).toBe("member-1");
   });
 
   it("passes role and birthdate through the shared validation", async () => {
-    const { ctx, getInsert } = makeMemberCtx({
+    const { ctx, getInsert, getRelations } = makeMemberCtx({
       inserted: { id: "member-2", name: "Emma" },
     });
     await executeTool(
@@ -393,6 +412,17 @@ describe("add_family_member confirmation gate", () => {
     );
 
     expect(getInsert()).toMatchObject({ role: "Kind", birthdate: "2020-04-03" });
+    // The role also becomes a relationship, so the /familie UI shows the
+    // same thing for a member added through chat.
+    expect(getRelations()).toEqual([
+      {
+        family_id: "fam-1",
+        member_id: "member-2",
+        related_member_id: null,
+        role: "Kind",
+        sort_order: 0,
+      },
+    ]);
   });
 
   it("returns the shared validation error for an invalid birthdate", async () => {

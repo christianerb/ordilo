@@ -17,11 +17,14 @@ vi.mock("@/app/(app)/familie/actions", () => ({
 }));
 
 import { FamilieClient } from "@/app/(app)/familie/familie-client";
+import type { MemberWithRelations } from "@/app/(app)/familie/actions";
 import type { Database } from "@/types/database";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
-function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
+function makeMember(
+  overrides: Partial<MemberWithRelations> = {},
+): MemberWithRelations {
   return {
     id: "mem-1",
     family_id: "fam-1",
@@ -34,8 +37,9 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations: [],
     ...overrides,
-  };
+  } satisfies MemberRow & { relations: MemberWithRelations["relations"] };
 }
 
 describe("FamilieClient — member list", () => {
@@ -125,20 +129,26 @@ describe("FamilieClient — member list", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("shows the relationship label in the row, without the crowded 'von X' detail", () => {
-    // The full "Ehepartner von Anna" phrasing lives on the profile page —
-    // squeezed into this compact list row it made the line too crowded, so
-    // only the label itself shows here (VAL-FAMILY: declutter overview).
-    const anna = makeMember({ id: "mem-1", name: "Anna", role: "Mutter" });
+  it("shows the first relationship in the row, spelled out with the person", () => {
+    const anna = makeMember({
+      id: "mem-1",
+      name: "Anna",
+      role: "Mutter",
+      relations: [{ role: "Mutter", member_ids: ["mem-2"] }],
+    });
     const ben = makeMember({
       id: "mem-2",
       name: "Ben",
-      role: "Vater",
-      related_member_ids: ["mem-1"],
-      relationship_label: "Ehepartner",
+      role: "Ehepartner",
+      relations: [
+        { role: "Ehepartner", member_ids: ["mem-1"] },
+        { role: "Vater", member_ids: [] },
+      ],
     });
     render(<FamilieClient familyName="Testfamilie" members={[anna, ben]} />);
-    expect(screen.getByText(/Ehepartner/)).toBeInTheDocument();
-    expect(screen.queryByText(/von Anna/)).not.toBeInTheDocument();
+    expect(screen.getByText("Ehepartner von Anna")).toBeInTheDocument();
+    expect(screen.getByText("Mutter von Ben")).toBeInTheDocument();
+    // The card has room for one relationship — the rest is on the profile.
+    expect(screen.queryByText(/Vater/)).not.toBeInTheDocument();
   });
 });

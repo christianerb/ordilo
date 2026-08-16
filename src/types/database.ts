@@ -309,9 +309,9 @@ export type Database = {
           linked_user_id: string | null;
           /** Storage path of the member's uploaded profile photo. See migration 0022. */
           photo_url: string | null;
-          /** Other family members this person has the same relationship to. See migration 0042. */
+          /** @deprecated Superseded by family_member_relations (0064). */
           related_member_ids: string[];
-          /** Free-text label describing the relationship to related_member_ids, e.g. "Elternteil". */
+          /** @deprecated Superseded by family_member_relations (0064). */
           relationship_label: string | null;
         };
         Insert: {
@@ -346,6 +346,64 @@ export type Database = {
             columns: ["family_id"];
             isOneToOne: false;
             referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      // family_member_relations ----------------------------------------------
+      /**
+       * One row per "<member> ist <role> von <related member>". See
+       * migration 0064. A null related_member_id is a role without a
+       * counterpart ("Mutter", with nobody else in the family yet).
+       */
+      family_member_relations: {
+        Row: {
+          id: string;
+          family_id: string;
+          member_id: string;
+          related_member_id: string | null;
+          role: string;
+          sort_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          member_id: string;
+          related_member_id?: string | null;
+          role: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          member_id?: string;
+          related_member_id?: string | null;
+          role?: string;
+          sort_order?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "family_member_relations_family_id_fkey";
+            columns: ["family_id"];
+            isOneToOne: false;
+            referencedRelation: "families";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "family_member_relations_member_id_fkey";
+            columns: ["member_id"];
+            isOneToOne: false;
+            referencedRelation: "family_members";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "family_member_relations_related_member_id_fkey";
+            columns: ["related_member_id"];
+            isOneToOne: false;
+            referencedRelation: "family_members";
             referencedColumns: ["id"];
           },
         ];

@@ -116,6 +116,19 @@ function mockSupabase(options: {
       return {
         select: vi.fn(() => membersSelectChain),
         insert: vi.fn(() => membersInsertChain),
+        // The role picked in onboarding is mirrored into
+        // family_member_relations, which syncs it back onto the member row.
+        update: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        })),
+      };
+    }
+    if (table === "family_member_relations") {
+      return {
+        delete: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ error: null }),
+        })),
+        insert: vi.fn().mockResolvedValue({ error: null }),
       };
     }
     if (table === "collections") {

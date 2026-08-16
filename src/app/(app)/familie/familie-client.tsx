@@ -10,8 +10,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Database } from "@/types/database";
 import type { MemberFormValues } from "@/components/ordilo/member-form";
+import { nameMap } from "@/lib/family/relations";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +26,7 @@ import {
   addFamilyMember,
   removeFamilyMember,
   updateFamilyMember,
+  type MemberWithRelations,
 } from "./actions";
 import { getFamilyCardWash } from "./family-card-colors";
 import { FamilyBanner } from "./family-banner";
@@ -35,11 +36,9 @@ import { isChildMember } from "./family-filters";
 import { FamilyMemberCard } from "./family-member-card";
 import { FamilyMemberSheet } from "./family-member-sheet";
 
-type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
-
 export interface FamilieClientProps {
   familyName: string;
-  members: MemberRow[];
+  members: MemberWithRelations[];
   documentCounts?: Record<string, number>;
   /** Signed URLs for members that have an uploaded photo, keyed by member ID. */
   photoUrls?: Record<string, string>;
@@ -54,7 +53,7 @@ export function FamilieClient({
   fetchError = false,
 }: FamilieClientProps) {
   const router = useRouter();
-  const [memberList, setMemberList] = useState<MemberRow[]>(members);
+  const [memberList, setMemberList] = useState<MemberWithRelations[]>(members);
   const [photoUrlMap, setPhotoUrlMap] = useState<Record<string, string>>(photoUrls);
   const [filter, setFilter] = useState<FamilyFilter>("all");
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
@@ -62,8 +61,8 @@ export function FamilieClient({
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<MemberRow | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<MemberRow | null>(null);
+  const [editTarget, setEditTarget] = useState<MemberWithRelations | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<MemberWithRelations | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,11 +84,9 @@ export function FamilieClient({
       setIsSubmitting(true);
       const result = await addFamilyMember({
         name: values.name,
-        role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_ids: values.related_member_ids,
-        relationship_label: values.relationship_label || undefined,
+        relations: values.relations,
       });
       setIsSubmitting(false);
       if (!result.success) {
@@ -103,7 +100,7 @@ export function FamilieClient({
     [resetErrors],
   );
 
-  const handleOpenEdit = useCallback((member: MemberRow) => {
+  const handleOpenEdit = useCallback((member: MemberWithRelations) => {
     resetErrors();
     setEditTarget(member);
     setEditSheetOpen(true);
@@ -129,11 +126,9 @@ export function FamilieClient({
       setIsSubmitting(true);
       const result = await updateFamilyMember(editTarget.id, {
         name: values.name,
-        role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_ids: values.related_member_ids,
-        relationship_label: values.relationship_label || undefined,
+        relations: values.relations,
       });
       setIsSubmitting(false);
       if (!result.success) {
@@ -150,7 +145,7 @@ export function FamilieClient({
     [editTarget, resetErrors],
   );
 
-  const handleOpenRemove = useCallback((member: MemberRow) => {
+  const handleOpenRemove = useCallback((member: MemberWithRelations) => {
     setRemoveError(null);
     setRemoveTarget(member);
     setRemoveDialogOpen(true);
@@ -201,6 +196,9 @@ export function FamilieClient({
   const washByMemberId = new Map(
     memberList.map((member, index) => [member.id, getFamilyCardWash(index)]),
   );
+
+  // Names of everyone in the family, so a card can render "Mutter von Emma".
+  const memberNames = nameMap(memberList);
 
   const filteredMembers = memberList.filter((member) => {
     if (documentsOnly && (documentCounts[member.id] ?? 0) === 0) return false;
@@ -265,6 +263,8 @@ export function FamilieClient({
               <FamilyMemberCard
                 key={member.id}
                 member={member}
+                relations={member.relations}
+                memberNames={memberNames}
                 wash={washByMemberId.get(member.id) ?? getFamilyCardWash(0)}
                 photoUrl={photoUrlMap[member.id]}
                 documentCount={documentCounts[member.id] ?? 0}
@@ -343,11 +343,9 @@ export function FamilieClient({
           formKey={editTarget.id}
           initialValues={{
             name: editTarget.name,
-            role: editTarget.role ?? "",
             birthdate: editTarget.birthdate ?? "",
             avatar_color: editTarget.avatar_color ?? "",
-            related_member_ids: editTarget.related_member_ids ?? [],
-            relationship_label: editTarget.relationship_label ?? "",
+            relations: editTarget.relations,
           }}
           memberId={editTarget.id}
           photoUrl={photoUrlMap[editTarget.id] ?? null}

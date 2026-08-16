@@ -27,6 +27,11 @@ import { formatGermanDate } from "@/lib/format";
 import { rerankResults } from "@/lib/ai/reranking";
 import { validateCollectionInput } from "@/lib/schemas/collections";
 import { validateMember } from "@/lib/schemas/onboarding";
+import { formatRelations, nameMap } from "@/lib/family/relations";
+import {
+  loadFamilyRelations,
+  saveMemberRelations,
+} from "@/lib/family/relations-db";
 import {
   performAnalyzeStep,
   isDestructiveAnalysisFailure,
@@ -1338,13 +1343,24 @@ async function executeListFamilyMembers(ctx: ToolContext): Promise<string> {
     return JSON.stringify({ members: [], message: "Keine Familienmitglieder gefunden." });
   }
 
+  // Relationships answer the questions a bare role cannot — "die Steuer-ID
+  // meiner Tochter" needs to know WHOSE daughter someone is.
+  const relationsByMember = await loadFamilyRelations(ctx.client, ctx.familyId);
+  const names = nameMap(data);
+
   return JSON.stringify({
-    members: data.map((m) => ({
-      id: m.id,
-      name: m.name,
-      rolle: m.role,
-      geburtsdatum: m.birthdate,
-    })),
+    members: data.map((m) => {
+      const relations = relationsByMember[m.id] ?? [];
+      return {
+        id: m.id,
+        name: m.name,
+        rolle: m.role,
+        beziehungen: relations.length > 0
+          ? formatRelations(relations, names, "; ")
+          : null,
+        geburtsdatum: m.birthdate,
+      };
+    }),
   });
 }
 
@@ -2146,8 +2162,6 @@ async function executeAddFamilyMember(
       role: validation.data.role,
       birthdate: validation.data.birthdate,
       avatar_color: validation.data.avatar_color,
-      related_member_ids: validation.data.related_member_ids,
-      relationship_label: validation.data.relationship_label,
     })
     .select("id, name")
     .single();
@@ -2155,6 +2169,18 @@ async function executeAddFamilyMember(
   if (insertError || !member) {
     return JSON.stringify({
       error: "Familienmitglied konnte nicht angelegt werden.",
+    });
+  }
+
+  // Mirror the role into the relationship list the /familie UI reads, so a
+  // member added through chat is not the odd one out. Chat cannot name the
+  // counterpart yet, so the relation has no target ("Mutter", not "Mutter
+  // von Emma") — that is exactly what the UI shows for a plain role.
+  if (validation.data.role) {
+    await saveMemberRelations(ctx.client, {
+      familyId: ctx.familyId,
+      memberId: member.id,
+      relations: [{ role: validation.data.role, member_ids: [] }],
     });
   }
 
