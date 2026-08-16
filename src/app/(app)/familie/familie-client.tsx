@@ -10,8 +10,8 @@ import {
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Database } from "@/types/database";
 import type { MemberFormValues } from "@/components/ordilo/member-form";
+import { nameMap } from "@/lib/family/relations";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -25,7 +25,7 @@ import {
 import {
   addFamilyMember,
   removeFamilyMember,
-  updateFamilyMember,
+  type MemberWithRelations,
 } from "./actions";
 import { getFamilyCardWash } from "./family-card-colors";
 import { FamilyBanner } from "./family-banner";
@@ -35,11 +35,9 @@ import { isChildMember } from "./family-filters";
 import { FamilyMemberCard } from "./family-member-card";
 import { FamilyMemberSheet } from "./family-member-sheet";
 
-type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
-
 export interface FamilieClientProps {
   familyName: string;
-  members: MemberRow[];
+  members: MemberWithRelations[];
   documentCounts?: Record<string, number>;
   /** Signed URLs for members that have an uploaded photo, keyed by member ID. */
   photoUrls?: Record<string, string>;
@@ -54,16 +52,27 @@ export function FamilieClient({
   fetchError = false,
 }: FamilieClientProps) {
   const router = useRouter();
-  const [memberList, setMemberList] = useState<MemberRow[]>(members);
-  const [photoUrlMap, setPhotoUrlMap] = useState<Record<string, string>>(photoUrls);
+  // The list is held locally so an add or a remove shows up immediately,
+  // but the server has the last word: a relationship also changes the OTHER
+  // person's role and relationship line, and `router.refresh()` only
+  // re-renders the server component — state initialized once would keep
+  // showing the counterpart as they were. Adjusting it during render is
+  // React's sanctioned answer to "a prop changed" (no effect involved).
+  const [memberList, setMemberList] = useState<MemberWithRelations[]>(members);
+  const [renderedMembers, setRenderedMembers] = useState(members);
+  if (renderedMembers !== members) {
+    setRenderedMembers(members);
+    setMemberList(members);
+  }
+  // Photos are resolved on the server; they only change on the edit page,
+  // which re-renders this one on the way back.
+  const photoUrlMap = photoUrls;
   const [filter, setFilter] = useState<FamilyFilter>("all");
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [documentsOnly, setDocumentsOnly] = useState(false);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
-  const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<MemberRow | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<MemberRow | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<MemberWithRelations | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -85,11 +94,9 @@ export function FamilieClient({
       setIsSubmitting(true);
       const result = await addFamilyMember({
         name: values.name,
-        role: values.role || undefined,
         birthdate: values.birthdate || undefined,
         avatar_color: values.avatar_color || undefined,
-        related_member_ids: values.related_member_ids,
-        relationship_label: values.relationship_label || undefined,
+        relations: values.relations,
       });
       setIsSubmitting(false);
       if (!result.success) {
@@ -99,58 +106,24 @@ export function FamilieClient({
       setMemberList((prev) => [...prev, result.data]);
       setAddSheetOpen(false);
       toast.success(`${result.data.name} ist dabei`);
+      // A new relationship also lands on the other person (their role, their
+      // relationship line, which filter tab they belong to) — only the
+      // server knows their new state.
+      router.refresh();
     },
-    [resetErrors],
+    [resetErrors, router],
   );
 
-  const handleOpenEdit = useCallback((member: MemberRow) => {
-    resetErrors();
-    setEditTarget(member);
-    setEditSheetOpen(true);
-  }, [resetErrors]);
-
-  const handlePhotoChange = useCallback((memberId: string, url: string | null) => {
-    setPhotoUrlMap((prev) => {
-      if (url) return { ...prev, [memberId]: url };
-      const next = { ...prev };
-      delete next[memberId];
-      return next;
-    });
-  }, []);
-
-  const handleEditSubmit = useCallback(
-    async (values: MemberFormValues) => {
-      if (!editTarget) return;
-      resetErrors();
-      if (!values.name.trim()) {
-        setValidationError("Bitte einen Namen eingeben");
-        return;
-      }
-      setIsSubmitting(true);
-      const result = await updateFamilyMember(editTarget.id, {
-        name: values.name,
-        role: values.role || undefined,
-        birthdate: values.birthdate || undefined,
-        avatar_color: values.avatar_color || undefined,
-        related_member_ids: values.related_member_ids,
-        relationship_label: values.relationship_label || undefined,
-      });
-      setIsSubmitting(false);
-      if (!result.success) {
-        setServerError(result.error);
-        return;
-      }
-      setMemberList((prev) =>
-        prev.map((m) => (m.id === result.data.id ? result.data : m)),
-      );
-      setEditSheetOpen(false);
-      setEditTarget(null);
-      toast.success("Gespeichert");
+  // Editing a person is a page of its own — a photo, the basics and a list
+  // of relationships never fit a bottom sheet.
+  const handleOpenEdit = useCallback(
+    (member: MemberWithRelations) => {
+      router.push(`/familie/${member.id}/bearbeiten`);
     },
-    [editTarget, resetErrors],
+    [router],
   );
 
-  const handleOpenRemove = useCallback((member: MemberRow) => {
+  const handleOpenRemove = useCallback((member: MemberWithRelations) => {
     setRemoveError(null);
     setRemoveTarget(member);
     setRemoveDialogOpen(true);
@@ -169,7 +142,10 @@ export function FamilieClient({
     setRemoveDialogOpen(false);
     setRemoveTarget(null);
     toast.success(`${removeTarget.name} ist nicht mehr dabei`);
-  }, [removeTarget]);
+    // Removing a person takes the others' relationships to them with it,
+    // and with those their roles — only the server knows the new state.
+    router.refresh();
+  }, [removeTarget, router]);
 
   if (fetchError) {
     return (
@@ -201,6 +177,17 @@ export function FamilieClient({
   const washByMemberId = new Map(
     memberList.map((member, index) => [member.id, getFamilyCardWash(index)]),
   );
+
+  // Names of everyone in the family, so a card can render "Mutter von Emma".
+  const memberNames = nameMap(memberList);
+
+  // The people a new member can be related to, with their faces.
+  const relationOptions = memberList.map((member) => ({
+    id: member.id,
+    name: member.name,
+    avatar_color: member.avatar_color,
+    photoUrl: photoUrlMap[member.id] ?? null,
+  }));
 
   const filteredMembers = memberList.filter((member) => {
     if (documentsOnly && (documentCounts[member.id] ?? 0) === 0) return false;
@@ -265,6 +252,8 @@ export function FamilieClient({
               <FamilyMemberCard
                 key={member.id}
                 member={member}
+                relations={member.relations}
+                memberNames={memberNames}
                 wash={washByMemberId.get(member.id) ?? getFamilyCardWash(0)}
                 photoUrl={photoUrlMap[member.id]}
                 documentCount={documentCounts[member.id] ?? 0}
@@ -323,37 +312,8 @@ export function FamilieClient({
         serverError={serverError}
         onClearValidationError={() => setValidationError(null)}
         onClearServerError={() => setServerError(null)}
-        otherMembers={memberList}
+        otherMembers={relationOptions}
       />
-
-      {editTarget && (
-        <FamilyMemberSheet
-          open={editSheetOpen}
-          onOpenChange={setEditSheetOpen}
-          title="Bearbeiten"
-          description="Ändere die Angaben dieser Person."
-          submitLabel="Speichern"
-          onSubmit={handleEditSubmit}
-          isSubmitting={isSubmitting}
-          validationError={validationError}
-          serverError={serverError}
-          onClearValidationError={() => setValidationError(null)}
-          onClearServerError={() => setServerError(null)}
-          otherMembers={memberList}
-          formKey={editTarget.id}
-          initialValues={{
-            name: editTarget.name,
-            role: editTarget.role ?? "",
-            birthdate: editTarget.birthdate ?? "",
-            avatar_color: editTarget.avatar_color ?? "",
-            related_member_ids: editTarget.related_member_ids ?? [],
-            relationship_label: editTarget.relationship_label ?? "",
-          }}
-          memberId={editTarget.id}
-          photoUrl={photoUrlMap[editTarget.id] ?? null}
-          onPhotoChange={(url) => handlePhotoChange(editTarget.id, url)}
-        />
-      )}
 
       <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
         <DialogContent className="max-w-md rounded-ordilo-md">

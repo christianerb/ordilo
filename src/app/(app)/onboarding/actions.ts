@@ -5,6 +5,7 @@ import { type ActionResult, FRIENDLY_ERROR } from "@/lib/actions/result";
 import { validateFamilyName, validateMember } from "@/lib/schemas/onboarding";
 import { DEFAULT_COLLECTIONS } from "@/lib/schemas/collections";
 import { recordProductEvent } from "@/lib/analytics/product-events";
+import { saveMemberRelations } from "@/lib/family/relations-db";
 import type { Database } from "@/types/database";
 
 /**
@@ -185,6 +186,25 @@ export async function addMember(
 
   if (insertError || !member) {
     return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  // Mirror the role into the relationship list the /familie form edits, so
+  // the chip picked here is still selected when the member is opened later.
+  // Onboarding adds people one by one, so the relation has no counterpart
+  // yet ("Mutter", not "Mutter von Emma") — that is added on /familie.
+  if (validation.data.role) {
+    const relationsSaved = await saveMemberRelations(supabase, {
+      familyId,
+      memberId: member.id,
+      relations: [{ role: validation.data.role, member_ids: [] }],
+    });
+    if (!relationsSaved) {
+      // A member whose role exists only on the member row is a trap: the
+      // next ordinary edit reads an empty relation list and clears it.
+      // Undo the insert instead and let the user try again.
+      await supabase.from("family_members").delete().eq("id", member.id);
+      return { success: false, error: FRIENDLY_ERROR };
+    }
   }
 
   await recordProductEvent(supabase, {

@@ -3,6 +3,7 @@
 import { FileText } from "lucide-react";
 import { CardActions } from "@/components/ordilo/card-actions";
 import { getAgeInYears } from "@/lib/format";
+import { formatRelations, type MemberRelation } from "@/lib/family/relations";
 import type { Database } from "@/types/database";
 import { isChildMember } from "./family-filters";
 import { MemberAvatar } from "./member-avatar";
@@ -11,6 +12,8 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
 export function FamilyMemberCard({
   member,
+  relations = [],
+  memberNames = {},
   wash,
   photoUrl,
   documentCount = 0,
@@ -19,6 +22,10 @@ export function FamilyMemberCard({
   onRemove,
 }: {
   member: MemberRow;
+  /** The member's relationships, e.g. "Mutter von Emma und Hanna". */
+  relations?: MemberRelation[];
+  /** `{ id: name }` of the whole family, to resolve the related people. */
+  memberNames?: Record<string, string>;
   wash: string;
   photoUrl?: string;
   documentCount?: number;
@@ -27,13 +34,16 @@ export function FamilyMemberCard({
   onRemove: () => void;
 }) {
   const age = getAgeInYears(member.birthdate);
+  // The card is narrow, so it shows the first relationship only ("Mutter
+  // von Emma und Hanna") — the profile page lists them all.
+  const relationText = relations.length > 0
+    ? formatRelations(relations.slice(0, 1), memberNames)
+    : member.role;
   // Age is only useful context for children (school year, size); showing a
-  // parent's age isn't the point of this card. The relationship label (e.g.
-  // "Ehepartnerin") takes priority over it when both would apply.
-  const showAge = isChildMember(member) && !member.relationship_label && age !== null;
+  // parent's age isn't the point of this card.
+  const showAge = isChildMember(member) && age !== null;
   const metaParts = [
-    member.role,
-    member.relationship_label,
+    relationText,
     showAge ? (age === 1 ? "1 Jahr" : `${age} Jahre`) : null,
   ].filter(Boolean);
   const metaText = metaParts.join(" · ");

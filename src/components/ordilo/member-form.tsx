@@ -1,42 +1,37 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2, Camera, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
-import { ACCEPTED_AVATAR_FILE_EXTENSIONS } from "@/lib/schemas/avatar";
-import { RoleChipGroup } from "@/components/ordilo/role-chips";
-import { DateInput } from "@/components/ordilo/date-input";
 import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  RelationshipList,
+  type RelationMemberOption,
+} from "@/components/ordilo/relationship-list";
+import { MemberPhotoPicker } from "@/components/ordilo/member-photo-picker";
+import { DateInput } from "@/components/ordilo/date-input";
+import type { MemberRelation } from "@/lib/family/relations";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { PhotoCropDialog } from "@/components/ordilo/photo-crop-dialog";
 
 /**
  * The form values for a member (add or edit).
  */
 export interface MemberFormValues {
   name: string;
-  role: string;
   birthdate: string;
   avatar_color: string;
-  /** Other members this one shares `relationship_label` with (e.g. all children, if the label is "Elternteil"). */
-  related_member_ids: string[];
-  relationship_label: string;
+  /**
+   * Everything this person is, at once — "Mutter von Emma und Hanna" AND
+   * "Partnerin von Christian". A relation without members is a plain role.
+   */
+  relations: MemberRelation[];
 }
 
-/** A minimal reference to another family member, for the "Beziehung zu" multi-select. */
-export interface MemberOption {
-  id: string;
-  name: string;
-}
+/** A minimal reference to another family member, for the relationship list. */
+export type MemberOption = RelationMemberOption;
 
 /**
  * Props for the MemberForm component.
@@ -68,7 +63,7 @@ export interface MemberFormProps {
   photoUrl?: string | null;
   /** Called after the photo is uploaded or removed, with the new signed URL (or null). */
   onPhotoChange?: (url: string | null) => void;
-  /** Other members of the family (excluding this one), for "Beziehung zu". */
+  /** Other members of the family (excluding this one), for the "von" chips. */
   otherMembers?: MemberOption[];
 }
 
@@ -77,10 +72,12 @@ export interface MemberFormProps {
  *
  * Fields:
  * - Name (required) — always visible
- * - Rolle (optional) — always visible, right below the name
- * - Foto, Geburtsdatum, Beziehung, Avatarfarbe (optional) — behind a
- *   "Weitere Angaben" toggle, shown by default when any has a pre-filled
- *   value. Foto only renders once the member exists (edit mode).
+ * - Rolle & Beziehung (optional) — always visible, right below the name.
+ *   A list, because one person is several things at once ("Mutter von
+ *   Emma", "Partnerin von Chris").
+ * - Foto, Geburtsdatum, Avatarfarbe (optional) — behind a "Weitere
+ *   Angaben" toggle, shown by default when any has a pre-filled value.
+ *   Foto only renders once the member exists (edit mode).
  *
  * Used in the family management page's add and edit bottom sheets.
  */
@@ -99,31 +96,17 @@ export function MemberForm({
   otherMembers = [],
 }: MemberFormProps) {
   const [name, setName] = useState(initialValues?.name ?? "");
-  const [role, setRole] = useState(initialValues?.role ?? "");
   const [birthdate, setBirthdate] = useState(initialValues?.birthdate ?? "");
   const [avatarColor, setAvatarColor] = useState(
     initialValues?.avatar_color ?? "",
   );
-  const [relatedMemberIds, setRelatedMemberIds] = useState<string[]>(
-    initialValues?.related_member_ids ?? [],
-  );
-  const [relationshipLabel, setRelationshipLabel] = useState(
-    initialValues?.relationship_label ?? "",
+  const [relations, setRelations] = useState<MemberRelation[]>(
+    initialValues?.relations ?? [],
   );
   const [showOptional, setShowOptional] = useState(() => {
     // Show optional fields by default when editing a member that has values.
-    return Boolean(
-      initialValues?.birthdate ||
-        initialValues?.avatar_color ||
-        (initialValues?.related_member_ids?.length ?? 0) > 0 ||
-        initialValues?.relationship_label,
-    );
+    return Boolean(initialValues?.birthdate || initialValues?.avatar_color);
   });
-
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const [photoError, setPhotoError] = useState<string | null>(null);
-  const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -136,18 +119,12 @@ export function MemberForm({
     event.preventDefault();
     onSubmit({
       name,
-      role,
       birthdate,
       avatar_color: avatarColor,
-      related_member_ids: relatedMemberIds,
-      relationship_label: relationshipLabel,
+      // Half-filled rows (a person picked but no role yet) carry no
+      // meaning — drop them instead of failing the save.
+      relations: relations.filter((relation) => relation.role.trim() !== ""),
     });
-  };
-
-  const toggleRelatedMember = (id: string) => {
-    setRelatedMemberIds((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id],
-    );
   };
 
   const handleNameChange = (value: string) => {
@@ -155,54 +132,6 @@ export function MemberForm({
     if (validationError) onClearValidationError?.();
     if (serverError) onClearServerError?.();
   };
-
-  const handlePhotoSelected = useCallback(
-    async (file: File) => {
-      if (!memberId) return;
-      setPhotoError(null);
-      setPhotoUploading(true);
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const response = await fetch(`/api/family-members/${memberId}/photo`, {
-          method: "POST",
-          body: formData,
-        });
-        const body = await response.json();
-        if (!response.ok) {
-          setPhotoError(body.error ?? "Foto konnte nicht hochgeladen werden.");
-          return;
-        }
-        onPhotoChange?.(body.url as string);
-      } catch {
-        setPhotoError("Foto konnte nicht hochgeladen werden. Bitte erneut versuchen.");
-      } finally {
-        setPhotoUploading(false);
-      }
-    },
-    [memberId, onPhotoChange],
-  );
-
-  const handleRemovePhoto = useCallback(async () => {
-    if (!memberId) return;
-    setPhotoError(null);
-    setPhotoUploading(true);
-    try {
-      const response = await fetch(`/api/family-members/${memberId}/photo`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const body = await response.json();
-        setPhotoError(body.error ?? "Foto konnte nicht entfernt werden.");
-        return;
-      }
-      onPhotoChange?.(null);
-    } catch {
-      setPhotoError("Foto konnte nicht entfernt werden. Bitte erneut versuchen.");
-    } finally {
-      setPhotoUploading(false);
-    }
-  }, [memberId, onPhotoChange]);
 
   const relatableMembers = otherMembers.filter((m) => m.id !== memberId);
 
@@ -231,16 +160,20 @@ export function MemberForm({
         )}
       </div>
 
-      {/* Rolle (optional, but always visible — not tucked behind a toggle).
-          Same one-tap chips as in onboarding — no free text. */}
+      {/* Familienbeziehungen (optional, but always visible — not tucked
+          behind a toggle). One row per person: a person is usually several
+          things at once ("Mutter von Emma", "Partnerin von Chris"). */}
       <div className="space-y-2">
-        <Label>Rolle</Label>
-        <RoleChipGroup
-          value={role}
-          onChange={setRole}
-          disabled={isSubmitting}
-          aria-label="Rolle"
-        />
+        <Label id="member-relations-label">Familienbeziehungen</Label>
+        <div aria-labelledby="member-relations-label">
+          <RelationshipList
+            value={relations}
+            onChange={setRelations}
+            members={relatableMembers}
+            subjectName={name}
+            disabled={isSubmitting}
+          />
+        </div>
       </div>
 
       {/* Optional fields toggle */}
@@ -263,73 +196,13 @@ export function MemberForm({
           {memberId && (
             <div className="space-y-2">
               <Label>Foto</Label>
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => photoInputRef.current?.click()}
-                    disabled={photoUploading || isSubmitting}
-                    className="group relative flex size-16 items-center justify-center overflow-hidden rounded-full bg-[var(--sand-warm)] ring-1 ring-border"
-                    aria-label={photoUrl ? "Foto ändern" : "Foto hochladen"}
-                    data-testid="member-photo-button"
-                  >
-                    {photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={photoUrl}
-                        alt=""
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <Camera className="size-6 text-muted-foreground" strokeWidth={1.5} />
-                    )}
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Camera className="size-5 text-white" strokeWidth={1.75} />
-                    </span>
-                    {photoUploading && (
-                      <span className="absolute inset-0 flex items-center justify-center bg-black/40">
-                        <Loader2 className="size-5 animate-spin text-white" />
-                      </span>
-                    )}
-                  </button>
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept={ACCEPTED_AVATAR_FILE_EXTENSIONS}
-                    className="hidden"
-                    data-testid="member-photo-input"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (file) setPendingPhotoFile(file);
-                    }}
-                  />
-                </div>
-                {photoUrl && (
-                  <button
-                    type="button"
-                    onClick={handleRemovePhoto}
-                    disabled={photoUploading || isSubmitting}
-                    className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-destructive"
-                    data-testid="member-photo-remove"
-                  >
-                    <X className="size-3.5" />
-                    Entfernen
-                  </button>
-                )}
-              </div>
-              {photoError && (
-                <p role="alert" className="text-sm font-medium text-destructive">
-                  {photoError}
-                </p>
-              )}
-              <PhotoCropDialog
-                file={pendingPhotoFile}
-                onCancel={() => setPendingPhotoFile(null)}
-                onConfirm={(croppedFile) => {
-                  setPendingPhotoFile(null);
-                  void handlePhotoSelected(croppedFile);
-                }}
+              <MemberPhotoPicker
+                memberId={memberId}
+                memberName={name}
+                avatarColor={avatarColor}
+                photoUrl={photoUrl}
+                onPhotoChange={onPhotoChange}
+                disabled={isSubmitting}
               />
             </div>
           )}
@@ -347,61 +220,6 @@ export function MemberForm({
               aria-label="Geburtsdatum"
             />
           </div>
-
-          {/* Beziehung — one relationship label applying to any number of
-              other members (e.g. "Elternteil" of both Emma and Hanna). */}
-          {relatableMembers.length > 0 && (
-            <div className="space-y-2">
-              <Label id="member-related-label">Beziehung zu</Label>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    aria-labelledby="member-related-label"
-                    data-testid="member-related-trigger"
-                    className="flex h-11 w-full items-center justify-between rounded-ordilo-md border border-border bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    <span className="truncate text-left">
-                      {relatedMemberIds.length > 0
-                        ? relatableMembers
-                            .filter((m) => relatedMemberIds.includes(m.id))
-                            .map((m) => m.name)
-                            .join(", ")
-                        : "Keine Auswahl"}
-                    </span>
-                    <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-[14rem]">
-                  {relatableMembers.map((m) => (
-                    <DropdownMenuCheckboxItem
-                      key={m.id}
-                      checked={relatedMemberIds.includes(m.id)}
-                      onSelect={(e) => e.preventDefault()}
-                      onCheckedChange={() => toggleRelatedMember(m.id)}
-                      data-testid={`member-related-option-${m.id}`}
-                    >
-                      {m.name}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              {relatedMemberIds.length > 0 && (
-                <Input
-                  type="text"
-                  autoComplete="off"
-                  placeholder="Art der Beziehung, z. B. Elternteil, Geschwister"
-                  maxLength={50}
-                  value={relationshipLabel}
-                  onChange={(e) => setRelationshipLabel(e.target.value)}
-                  disabled={isSubmitting}
-                  className="h-11 rounded-ordilo-md"
-                  data-testid="member-relationship-label"
-                />
-              )}
-            </div>
-          )}
 
           {/* Avatar color */}
           <div className="space-y-2">

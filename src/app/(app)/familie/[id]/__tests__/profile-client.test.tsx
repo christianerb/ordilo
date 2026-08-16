@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 // Mock next/navigation useRouter so ProfileClient can call router.push.
 const mockPush = vi.fn();
@@ -14,11 +14,6 @@ vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({
     openDocument: vi.fn(),
   }),
-}));
-
-const mockUpdateFamilyMember = vi.fn();
-vi.mock("@/app/(app)/familie/actions", () => ({
-  updateFamilyMember: (...args: unknown[]) => mockUpdateFamilyMember(...args),
 }));
 
 import { ProfileClient } from "@/app/(app)/familie/[id]/profile-client";
@@ -49,6 +44,7 @@ function makeMember(overrides: Partial<MemberRow> = {}): MemberRow {
     photo_url: null,
     related_member_ids: [],
     relationship_label: null,
+    relations_backfilled_at: null,
     ...overrides,
   };
 }
@@ -169,28 +165,7 @@ describe("ProfileClient — Dokumente section (VAL-PROFILE-002)", () => {
 });
 
 describe("ProfileClient — Bearbeiten", () => {
-  it("opens an edit sheet pre-filled with the member's data", () => {
-    render(
-      <ProfileClient
-        member={makeMember({ name: "Emma", role: "Kind" })}
-        documents={[]}
-        tasks={emptyTasks}
-        dateEntities={emptyDateEntities}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("profile-edit-button"));
-
-    expect(screen.getByRole("heading", { name: "Bearbeiten" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Name")).toHaveValue("Emma");
-  });
-
-  it("saves changes via updateFamilyMember and reflects them in the header", async () => {
-    mockUpdateFamilyMember.mockResolvedValue({
-      success: true,
-      data: makeMember({ name: "Emma Neu", role: "Kind" }),
-    });
-
+  it("links to the edit page instead of opening a sheet", () => {
     render(
       <ProfileClient
         member={makeMember({ id: "mem-1", name: "Emma", role: "Kind" })}
@@ -200,73 +175,68 @@ describe("ProfileClient — Bearbeiten", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("profile-edit-button"));
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Emma Neu" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
-
-    await waitFor(() => {
-      expect(mockUpdateFamilyMember).toHaveBeenCalledWith(
-        "mem-1",
-        expect.objectContaining({ name: "Emma Neu" }),
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Emma Neu" })).toBeInTheDocument();
-    });
+    const editLink = screen.getByTestId("profile-edit-button");
+    expect(editLink).toHaveAttribute("href", "/familie/mem-1/bearbeiten");
   });
 });
 
-describe("ProfileClient — Beziehungen (multiple related members)", () => {
-  it("lists every related member's name, joined, in its own line", () => {
+describe("ProfileClient — Beziehungen (mehrere Rollen gleichzeitig)", () => {
+  it("spells out every relationship in its own line", () => {
     render(
       <ProfileClient
-        member={makeMember({
-          role: "Elternteil",
-          relationship_label: "Elternteil",
-          related_member_ids: ["mem-2", "mem-3"],
-        })}
+        member={makeMember({ role: "Mutter" })}
         documents={[]}
         tasks={[]}
         dateEntities={emptyDateEntities}
-        relatedMemberNames={["Hanna", "Ben"]}
+        relations={[
+          { role: "Mutter", member_ids: ["mem-2", "mem-3"] },
+          { role: "Partnerin", member_ids: ["mem-4"] },
+        ]}
         otherMembers={[
           { id: "mem-2", name: "Hanna" },
           { id: "mem-3", name: "Ben" },
+          { id: "mem-4", name: "Chris" },
         ]}
       />,
     );
     expect(screen.getByTestId("profile-relationship").textContent).toBe(
-      "Elternteil von Hanna, Ben",
+      "Mutter von Hanna und Ben · Partnerin von Chris",
     );
   });
 
-  it("does not crowd the role/birthdate line with the relationship detail", () => {
+  it("does not repeat the role next to the birthdate", () => {
     render(
       <ProfileClient
-        member={makeMember({
-          role: "Elternteil",
-          birthdate: "1985-06-15",
-          relationship_label: "Elternteil",
-          related_member_ids: ["mem-2"],
-        })}
+        member={makeMember({ role: "Elternteil", birthdate: "1985-06-15" })}
         documents={[]}
         tasks={emptyTasks}
         dateEntities={emptyDateEntities}
-        relatedMemberNames={["Hanna"]}
+        relations={[{ role: "Elternteil", member_ids: ["mem-2"] }]}
+        otherMembers={[{ id: "mem-2", name: "Hanna" }]}
       />,
     );
-    // Role + birthdate stay compact on their own line …
-    expect(screen.getByText("Elternteil · 15.06.1985")).toBeInTheDocument();
-    // … the relationship detail renders separately, not appended to it.
-    expect(screen.queryByText(/Elternteil · 15\.06\.1985 ·/)).not.toBeInTheDocument();
+    // The birthdate line stays compact — the role leads the relationship line.
+    expect(screen.getByText("15.06.1985")).toBeInTheDocument();
     expect(screen.getByTestId("profile-relationship")).toHaveTextContent(
       "Elternteil von Hanna",
     );
   });
 
-  it("shows no relationship line when the member has no related members", () => {
+  it("falls back to the plain role when there is nobody to point at", () => {
+    render(
+      <ProfileClient
+        member={makeMember({ role: "Oma", birthdate: "1950-02-01" })}
+        documents={[]}
+        tasks={emptyTasks}
+        dateEntities={emptyDateEntities}
+        relations={[{ role: "Oma", member_ids: [] }]}
+      />,
+    );
+    expect(screen.getByTestId("profile-relationship")).toHaveTextContent("Oma");
+    expect(screen.getByText("01.02.1950")).toBeInTheDocument();
+  });
+
+  it("shows no relationship line when the member has none", () => {
     render(
       <ProfileClient
         member={makeMember()}
