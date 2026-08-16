@@ -1,18 +1,20 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2, Camera, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AVATAR_COLORS } from "@/lib/schemas/onboarding";
-import { ACCEPTED_AVATAR_FILE_EXTENSIONS } from "@/lib/schemas/avatar";
-import { RelationshipEditor } from "@/components/ordilo/relationship-editor";
+import {
+  RelationshipList,
+  type RelationMemberOption,
+} from "@/components/ordilo/relationship-list";
+import { MemberPhotoPicker } from "@/components/ordilo/member-photo-picker";
 import { DateInput } from "@/components/ordilo/date-input";
 import type { MemberRelation } from "@/lib/family/relations";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { PhotoCropDialog } from "@/components/ordilo/photo-crop-dialog";
 
 /**
  * The form values for a member (add or edit).
@@ -28,11 +30,8 @@ export interface MemberFormValues {
   relations: MemberRelation[];
 }
 
-/** A minimal reference to another family member, for the relationship chips. */
-export interface MemberOption {
-  id: string;
-  name: string;
-}
+/** A minimal reference to another family member, for the relationship list. */
+export type MemberOption = RelationMemberOption;
 
 /**
  * Props for the MemberForm component.
@@ -109,11 +108,6 @@ export function MemberForm({
     return Boolean(initialValues?.birthdate || initialValues?.avatar_color);
   });
 
-  const [photoUploading, setPhotoUploading] = useState(false);
-  const [photoError, setPhotoError] = useState<string | null>(null);
-  const [pendingPhotoFile, setPendingPhotoFile] = useState<File | null>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
-
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   // Focus the name input on mount.
@@ -138,54 +132,6 @@ export function MemberForm({
     if (validationError) onClearValidationError?.();
     if (serverError) onClearServerError?.();
   };
-
-  const handlePhotoSelected = useCallback(
-    async (file: File) => {
-      if (!memberId) return;
-      setPhotoError(null);
-      setPhotoUploading(true);
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        const response = await fetch(`/api/family-members/${memberId}/photo`, {
-          method: "POST",
-          body: formData,
-        });
-        const body = await response.json();
-        if (!response.ok) {
-          setPhotoError(body.error ?? "Foto konnte nicht hochgeladen werden.");
-          return;
-        }
-        onPhotoChange?.(body.url as string);
-      } catch {
-        setPhotoError("Foto konnte nicht hochgeladen werden. Bitte erneut versuchen.");
-      } finally {
-        setPhotoUploading(false);
-      }
-    },
-    [memberId, onPhotoChange],
-  );
-
-  const handleRemovePhoto = useCallback(async () => {
-    if (!memberId) return;
-    setPhotoError(null);
-    setPhotoUploading(true);
-    try {
-      const response = await fetch(`/api/family-members/${memberId}/photo`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const body = await response.json();
-        setPhotoError(body.error ?? "Foto konnte nicht entfernt werden.");
-        return;
-      }
-      onPhotoChange?.(null);
-    } catch {
-      setPhotoError("Foto konnte nicht entfernt werden. Bitte erneut versuchen.");
-    } finally {
-      setPhotoUploading(false);
-    }
-  }, [memberId, onPhotoChange]);
 
   const relatableMembers = otherMembers.filter((m) => m.id !== memberId);
 
@@ -214,20 +160,17 @@ export function MemberForm({
         )}
       </div>
 
-      {/* Rolle & Beziehung (optional, but always visible — not tucked behind
-          a toggle). A list: one person is usually several things at once. */}
+      {/* Familienbeziehungen (optional, but always visible — not tucked
+          behind a toggle). One row per person: a person is usually several
+          things at once ("Mutter von Emma", "Partnerin von Chris"). */}
       <div className="space-y-2">
-        <Label id="member-relations-label">Rolle & Beziehung</Label>
-        {relatableMembers.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Mehreres möglich — z. B. Mutter von Emma und Partnerin von Chris.
-          </p>
-        )}
+        <Label id="member-relations-label">Familienbeziehungen</Label>
         <div aria-labelledby="member-relations-label">
-          <RelationshipEditor
+          <RelationshipList
             value={relations}
             onChange={setRelations}
             members={relatableMembers}
+            subjectName={name}
             disabled={isSubmitting}
           />
         </div>
@@ -253,73 +196,13 @@ export function MemberForm({
           {memberId && (
             <div className="space-y-2">
               <Label>Foto</Label>
-              <div className="flex items-center gap-3">
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => photoInputRef.current?.click()}
-                    disabled={photoUploading || isSubmitting}
-                    className="group relative flex size-16 items-center justify-center overflow-hidden rounded-full bg-[var(--sand-warm)] ring-1 ring-border"
-                    aria-label={photoUrl ? "Foto ändern" : "Foto hochladen"}
-                    data-testid="member-photo-button"
-                  >
-                    {photoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={photoUrl}
-                        alt=""
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <Camera className="size-6 text-muted-foreground" strokeWidth={1.5} />
-                    )}
-                    <span className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Camera className="size-5 text-white" strokeWidth={1.75} />
-                    </span>
-                    {photoUploading && (
-                      <span className="absolute inset-0 flex items-center justify-center bg-black/40">
-                        <Loader2 className="size-5 animate-spin text-white" />
-                      </span>
-                    )}
-                  </button>
-                  <input
-                    ref={photoInputRef}
-                    type="file"
-                    accept={ACCEPTED_AVATAR_FILE_EXTENSIONS}
-                    className="hidden"
-                    data-testid="member-photo-input"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      e.target.value = "";
-                      if (file) setPendingPhotoFile(file);
-                    }}
-                  />
-                </div>
-                {photoUrl && (
-                  <button
-                    type="button"
-                    onClick={handleRemovePhoto}
-                    disabled={photoUploading || isSubmitting}
-                    className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-destructive"
-                    data-testid="member-photo-remove"
-                  >
-                    <X className="size-3.5" />
-                    Entfernen
-                  </button>
-                )}
-              </div>
-              {photoError && (
-                <p role="alert" className="text-sm font-medium text-destructive">
-                  {photoError}
-                </p>
-              )}
-              <PhotoCropDialog
-                file={pendingPhotoFile}
-                onCancel={() => setPendingPhotoFile(null)}
-                onConfirm={(croppedFile) => {
-                  setPendingPhotoFile(null);
-                  void handlePhotoSelected(croppedFile);
-                }}
+              <MemberPhotoPicker
+                memberId={memberId}
+                memberName={name}
+                avatarColor={avatarColor}
+                photoUrl={photoUrl}
+                onPhotoChange={onPhotoChange}
+                disabled={isSubmitting}
               />
             </div>
           )}

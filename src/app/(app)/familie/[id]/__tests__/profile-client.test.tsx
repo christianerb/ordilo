@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 
 // Mock next/navigation useRouter so ProfileClient can call router.push.
 const mockPush = vi.fn();
@@ -14,11 +14,6 @@ vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({
     openDocument: vi.fn(),
   }),
-}));
-
-const mockUpdateFamilyMember = vi.fn();
-vi.mock("@/app/(app)/familie/actions", () => ({
-  updateFamilyMember: (...args: unknown[]) => mockUpdateFamilyMember(...args),
 }));
 
 import { ProfileClient } from "@/app/(app)/familie/[id]/profile-client";
@@ -169,28 +164,7 @@ describe("ProfileClient — Dokumente section (VAL-PROFILE-002)", () => {
 });
 
 describe("ProfileClient — Bearbeiten", () => {
-  it("opens an edit sheet pre-filled with the member's data", () => {
-    render(
-      <ProfileClient
-        member={makeMember({ name: "Emma", role: "Kind" })}
-        documents={[]}
-        tasks={emptyTasks}
-        dateEntities={emptyDateEntities}
-      />,
-    );
-
-    fireEvent.click(screen.getByTestId("profile-edit-button"));
-
-    expect(screen.getByRole("heading", { name: "Bearbeiten" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Name")).toHaveValue("Emma");
-  });
-
-  it("saves changes via updateFamilyMember and reflects them in the header", async () => {
-    mockUpdateFamilyMember.mockResolvedValue({
-      success: true,
-      data: { ...makeMember({ name: "Emma Neu", role: "Kind" }), relations: [] },
-    });
-
+  it("links to the edit page instead of opening a sheet", () => {
     render(
       <ProfileClient
         member={makeMember({ id: "mem-1", name: "Emma", role: "Kind" })}
@@ -200,21 +174,8 @@ describe("ProfileClient — Bearbeiten", () => {
       />,
     );
 
-    fireEvent.click(screen.getByTestId("profile-edit-button"));
-    fireEvent.change(screen.getByLabelText("Name"), {
-      target: { value: "Emma Neu" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Speichern" }));
-
-    await waitFor(() => {
-      expect(mockUpdateFamilyMember).toHaveBeenCalledWith(
-        "mem-1",
-        expect.objectContaining({ name: "Emma Neu" }),
-      );
-    });
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Emma Neu" })).toBeInTheDocument();
-    });
+    const editLink = screen.getByTestId("profile-edit-button");
+    expect(editLink).toHaveAttribute("href", "/familie/mem-1/bearbeiten");
   });
 });
 

@@ -57,6 +57,14 @@ function mockSupabase(options: {
       role: string;
       sort_order: number;
     }[];
+    /** Rows of the OTHER people, for the reciprocal sync. */
+    counterpartRows?: {
+      id: string;
+      member_id: string;
+      related_member_id: string | null;
+      role: string;
+      sort_order: number;
+    }[];
     insertError?: unknown;
     deleteError?: unknown;
   };
@@ -147,19 +155,28 @@ function mockSupabase(options: {
   };
 
   // family_member_relations chains — relations are replaced wholesale
-  // (delete, then insert), and read back when a caller does not manage them.
+  // (delete, then insert), read back when a caller does not manage them,
+  // and read again for the other people's side of each relationship.
+  const relationRows = options.relations?.rows ?? [];
   const relationsSelectChain = {
+    // `.eq(...)` is awaited directly (the before-state read), so the chain
+    // has to be thenable as well as chainable.
     eq: vi.fn().mockReturnThis(),
-    order: vi.fn().mockResolvedValue({
-      data: options.relations?.rows ?? [],
+    in: vi.fn().mockResolvedValue({
+      data: options.relations?.counterpartRows ?? [],
       error: null,
     }),
+    order: vi.fn().mockResolvedValue({ data: relationRows, error: null }),
+    then: (
+      resolve: (value: { data: unknown; error: unknown }) => unknown,
+    ) => Promise.resolve({ data: relationRows, error: null }).then(resolve),
   };
   const relationsInsertMock = vi
     .fn()
     .mockResolvedValue({ error: options.relations?.insertError ?? null });
   const relationsDeleteChain = {
     eq: vi.fn().mockResolvedValue({ error: options.relations?.deleteError ?? null }),
+    in: vi.fn().mockResolvedValue({ error: null }),
   };
 
   const fromMock = vi.fn((table: string) => {
@@ -176,6 +193,7 @@ function mockSupabase(options: {
         delete: vi.fn(() => relationsDeleteChain),
       };
     }
+
     if (table === "family_memberships") {
       return {
         select: vi.fn(() => membershipsSelectChain),

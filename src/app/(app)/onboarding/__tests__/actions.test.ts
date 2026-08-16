@@ -125,8 +125,13 @@ function mockSupabase(options: {
     }
     if (table === "family_member_relations") {
       return {
+        select: vi.fn(() => ({
+          eq: vi.fn().mockResolvedValue({ data: [], error: null }),
+          in: vi.fn().mockResolvedValue({ data: [], error: null }),
+        })),
         delete: vi.fn(() => ({
           eq: vi.fn().mockResolvedValue({ error: null }),
+          in: vi.fn().mockResolvedValue({ error: null }),
         })),
         insert: vi.fn().mockResolvedValue({ error: null }),
       };

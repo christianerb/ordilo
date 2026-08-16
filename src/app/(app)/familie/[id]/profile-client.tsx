@@ -1,18 +1,16 @@
 "use client";
 
-import { useCallback, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
   Cake,
   Pencil,
 } from "lucide-react";
-import { toast } from "sonner";
 import type { Database } from "@/types/database";
 import { DocumentCard } from "@/components/ordilo/document-card";
 import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
 import { TimelineItem } from "@/components/ordilo/timeline-item";
-import type { MemberFormValues, MemberOption } from "@/components/ordilo/member-form";
+import type { MemberOption } from "@/components/ordilo/member-form";
 import {
   formatRelations,
   nameMap,
@@ -31,8 +29,6 @@ import {
   type DocumentType,
 } from "@/lib/schemas/extraction";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
-import { updateFamilyMember } from "../actions";
-import { FamilyMemberSheet } from "../family-member-sheet";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
@@ -62,41 +58,11 @@ export function ProfileClient({
 }: ProfileClientProps) {
   const { openDocument } = useDocumentViewer();
 
-  const [member, setMember] = useState(initialMember);
-  const [photoUrl, setPhotoUrl] = useState(initialPhotoUrl);
-  const [relations, setRelations] = useState(initialRelations);
-  const [editSheetOpen, setEditSheetOpen] = useState(false);
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const handleEditSubmit = useCallback(
-    async (values: MemberFormValues) => {
-      setValidationError(null);
-      setServerError(null);
-      if (!values.name.trim()) {
-        setValidationError("Bitte einen Namen eingeben");
-        return;
-      }
-      setIsSubmitting(true);
-      const result = await updateFamilyMember(member.id, {
-        name: values.name,
-        birthdate: values.birthdate || undefined,
-        avatar_color: values.avatar_color || undefined,
-        relations: values.relations,
-      });
-      setIsSubmitting(false);
-      if (!result.success) {
-        setServerError(result.error);
-        return;
-      }
-      setMember(result.data);
-      setRelations(result.data.relations);
-      setEditSheetOpen(false);
-      toast.success("Gespeichert");
-    },
-    [member.id],
-  );
+  // Editing happens on its own page (/familie/[id]/bearbeiten), so these
+  // are read-only here — a save navigates back and the server re-renders.
+  const member = initialMember;
+  const photoUrl = initialPhotoUrl;
+  const relations = initialRelations;
 
   const formattedBirthdate = formatGermanDate(member.birthdate);
   const avatarColor = member.avatar_color ?? "#305460";
@@ -167,19 +133,14 @@ export function ProfileClient({
           <ArrowLeft className="h-4 w-4" />
           Zurück
         </Link>
-        <button
-          type="button"
-          onClick={() => {
-            setValidationError(null);
-            setServerError(null);
-            setEditSheetOpen(true);
-          }}
+        <Link
+          href={`/familie/${member.id}/bearbeiten`}
           className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           data-testid="profile-edit-button"
         >
           <Pencil className="h-4 w-4" />
           Bearbeiten
-        </button>
+        </Link>
       </div>
 
       {/* Birthday banner */}
@@ -306,29 +267,6 @@ export function ProfileClient({
         </section>
       )}
 
-      <FamilyMemberSheet
-        open={editSheetOpen}
-        onOpenChange={setEditSheetOpen}
-        title="Bearbeiten"
-        description="Ändere die Angaben dieser Person."
-        submitLabel="Speichern"
-        onSubmit={handleEditSubmit}
-        isSubmitting={isSubmitting}
-        validationError={validationError}
-        serverError={serverError}
-        onClearValidationError={() => setValidationError(null)}
-        onClearServerError={() => setServerError(null)}
-        otherMembers={otherMembers}
-        initialValues={{
-          name: member.name,
-          birthdate: member.birthdate ?? "",
-          avatar_color: member.avatar_color ?? "",
-          relations,
-        }}
-        memberId={member.id}
-        photoUrl={photoUrl}
-        onPhotoChange={(url) => setPhotoUrl(url)}
-      />
     </div>
   );
 }

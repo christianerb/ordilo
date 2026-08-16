@@ -177,3 +177,87 @@ export function formatRelations(
 export function nameMap(members: { id: string; name: string }[]): Record<string, string> {
   return Object.fromEntries(members.map((m) => [m.id, m.name]));
 }
+
+/**
+ * The counter-role for the other side of a relationship, keyed by the
+ * lower-cased role. "Karina ist Mutter von Emma" means "Emma ist Kind von
+ * Karina" — nobody should have to type both.
+ *
+ * Where the counter-role depends on something we do not know (a mother's
+ * child is a daughter or a son; a daughter's parent is a mother or a
+ * father) the neutral term is used, and `inverseRole` upgrades it when the
+ * other person's own role already says which one it is.
+ *
+ * Roles that are not listed have no automatic counterpart — a made-up
+ * label is worse than none.
+ */
+const INVERSE_ROLES: Record<string, string> = {
+  "partner:in": "Partner:in",
+  partner: "Partner:in",
+  partnerin: "Partner:in",
+  ehepartner: "Partner:in",
+  ehepartnerin: "Partner:in",
+  ehefrau: "Partner:in",
+  ehemann: "Partner:in",
+  mutter: "Kind",
+  vater: "Kind",
+  elternteil: "Kind",
+  kind: "Elternteil",
+  tochter: "Elternteil",
+  sohn: "Elternteil",
+  oma: "Enkelkind",
+  opa: "Enkelkind",
+  großelternteil: "Enkelkind",
+  enkelkind: "Großelternteil",
+  enkel: "Großelternteil",
+  enkelin: "Großelternteil",
+  bruder: "Geschwister",
+  schwester: "Geschwister",
+  geschwister: "Geschwister",
+};
+
+/** More precise stand-ins for the neutral counter-roles, when known. */
+const ROLE_REFINEMENTS: Record<string, string[]> = {
+  Kind: ["Tochter", "Sohn"],
+  Elternteil: ["Mutter", "Vater"],
+  Enkelkind: ["Enkelin", "Enkel"],
+  Großelternteil: ["Oma", "Opa"],
+};
+
+/**
+ * The role the other person holds in return, or null when it cannot be
+ * derived (a custom label like "Patentante" has no obvious counterpart).
+ *
+ * @param role - The role of the relation being set.
+ * @param counterpartKnownRoles - Roles the other person already holds. When
+ *   one of them is a more precise version of the neutral counter-role
+ *   ("Tochter" instead of "Kind"), it wins — the family's own wording.
+ */
+export function inverseRole(
+  role: string,
+  counterpartKnownRoles: string[] = [],
+): string | null {
+  const inverse = INVERSE_ROLES[role.trim().toLowerCase()];
+  if (!inverse) return null;
+
+  const refinements = ROLE_REFINEMENTS[inverse] ?? [];
+  const known = counterpartKnownRoles.map((r) => r.trim().toLowerCase());
+  const refined = refinements.find((option) => known.includes(option.toLowerCase()));
+  return refined ?? inverse;
+}
+
+/**
+ * Whether two roles are the two sides of the same relationship — used to
+ * find the counterpart row that a removed relation leaves behind.
+ */
+export function isInverseOf(role: string, counterRole: string): boolean {
+  const expected = INVERSE_ROLES[role.trim().toLowerCase()]?.toLowerCase();
+  const actual = counterRole.trim().toLowerCase();
+  if (!expected) return false;
+  if (expected === actual) return true;
+  // "Tochter" is a Kind, "Mutter" is an Elternteil — the refinements count
+  // as the same side of the relationship.
+  return (ROLE_REFINEMENTS[INVERSE_ROLES[role.trim().toLowerCase()]] ?? []).some(
+    (option) => option.toLowerCase() === actual,
+  );
+}

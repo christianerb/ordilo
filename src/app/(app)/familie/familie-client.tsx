@@ -25,7 +25,6 @@ import {
 import {
   addFamilyMember,
   removeFamilyMember,
-  updateFamilyMember,
   type MemberWithRelations,
 } from "./actions";
 import { getFamilyCardWash } from "./family-card-colors";
@@ -54,14 +53,14 @@ export function FamilieClient({
 }: FamilieClientProps) {
   const router = useRouter();
   const [memberList, setMemberList] = useState<MemberWithRelations[]>(members);
-  const [photoUrlMap, setPhotoUrlMap] = useState<Record<string, string>>(photoUrls);
+  // Photos are resolved on the server; they only change on the edit page,
+  // which re-renders this one on the way back.
+  const photoUrlMap = photoUrls;
   const [filter, setFilter] = useState<FamilyFilter>("all");
   const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
   const [documentsOnly, setDocumentsOnly] = useState(false);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
-  const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [removeDialogOpen, setRemoveDialogOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<MemberWithRelations | null>(null);
   const [removeTarget, setRemoveTarget] = useState<MemberWithRelations | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -100,49 +99,13 @@ export function FamilieClient({
     [resetErrors],
   );
 
-  const handleOpenEdit = useCallback((member: MemberWithRelations) => {
-    resetErrors();
-    setEditTarget(member);
-    setEditSheetOpen(true);
-  }, [resetErrors]);
-
-  const handlePhotoChange = useCallback((memberId: string, url: string | null) => {
-    setPhotoUrlMap((prev) => {
-      if (url) return { ...prev, [memberId]: url };
-      const next = { ...prev };
-      delete next[memberId];
-      return next;
-    });
-  }, []);
-
-  const handleEditSubmit = useCallback(
-    async (values: MemberFormValues) => {
-      if (!editTarget) return;
-      resetErrors();
-      if (!values.name.trim()) {
-        setValidationError("Bitte einen Namen eingeben");
-        return;
-      }
-      setIsSubmitting(true);
-      const result = await updateFamilyMember(editTarget.id, {
-        name: values.name,
-        birthdate: values.birthdate || undefined,
-        avatar_color: values.avatar_color || undefined,
-        relations: values.relations,
-      });
-      setIsSubmitting(false);
-      if (!result.success) {
-        setServerError(result.error);
-        return;
-      }
-      setMemberList((prev) =>
-        prev.map((m) => (m.id === result.data.id ? result.data : m)),
-      );
-      setEditSheetOpen(false);
-      setEditTarget(null);
-      toast.success("Gespeichert");
+  // Editing a person is a page of its own — a photo, the basics and a list
+  // of relationships never fit a bottom sheet.
+  const handleOpenEdit = useCallback(
+    (member: MemberWithRelations) => {
+      router.push(`/familie/${member.id}/bearbeiten`);
     },
-    [editTarget, resetErrors],
+    [router],
   );
 
   const handleOpenRemove = useCallback((member: MemberWithRelations) => {
@@ -199,6 +162,14 @@ export function FamilieClient({
 
   // Names of everyone in the family, so a card can render "Mutter von Emma".
   const memberNames = nameMap(memberList);
+
+  // The people a new member can be related to, with their faces.
+  const relationOptions = memberList.map((member) => ({
+    id: member.id,
+    name: member.name,
+    avatar_color: member.avatar_color,
+    photoUrl: photoUrlMap[member.id] ?? null,
+  }));
 
   const filteredMembers = memberList.filter((member) => {
     if (documentsOnly && (documentCounts[member.id] ?? 0) === 0) return false;
@@ -323,35 +294,8 @@ export function FamilieClient({
         serverError={serverError}
         onClearValidationError={() => setValidationError(null)}
         onClearServerError={() => setServerError(null)}
-        otherMembers={memberList}
+        otherMembers={relationOptions}
       />
-
-      {editTarget && (
-        <FamilyMemberSheet
-          open={editSheetOpen}
-          onOpenChange={setEditSheetOpen}
-          title="Bearbeiten"
-          description="Ändere die Angaben dieser Person."
-          submitLabel="Speichern"
-          onSubmit={handleEditSubmit}
-          isSubmitting={isSubmitting}
-          validationError={validationError}
-          serverError={serverError}
-          onClearValidationError={() => setValidationError(null)}
-          onClearServerError={() => setServerError(null)}
-          otherMembers={memberList}
-          formKey={editTarget.id}
-          initialValues={{
-            name: editTarget.name,
-            birthdate: editTarget.birthdate ?? "",
-            avatar_color: editTarget.avatar_color ?? "",
-            relations: editTarget.relations,
-          }}
-          memberId={editTarget.id}
-          photoUrl={photoUrlMap[editTarget.id] ?? null}
-          onPhotoChange={(url) => handlePhotoChange(editTarget.id, url)}
-        />
-      )}
 
       <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
         <DialogContent className="max-w-md rounded-ordilo-md">

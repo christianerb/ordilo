@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   formatRelation,
+  inverseRole,
+  isInverseOf,
   formatRelations,
   groupRelationRows,
   groupRelationsByMember,
@@ -150,5 +152,44 @@ describe("formatRelation / formatRelations", () => {
 
   it("is empty without relations", () => {
     expect(formatRelations([], names)).toBe("");
+  });
+});
+
+describe("inverseRole", () => {
+  it("mirrors symmetric roles onto themselves", () => {
+    expect(inverseRole("Partner:in")).toBe("Partner:in");
+    expect(inverseRole("Ehefrau")).toBe("Partner:in");
+    expect(inverseRole("Bruder")).toBe("Geschwister");
+  });
+
+  it("uses the neutral counter-role when the other side is unknown", () => {
+    expect(inverseRole("Mutter")).toBe("Kind");
+    expect(inverseRole("Tochter")).toBe("Elternteil");
+    expect(inverseRole("Oma")).toBe("Enkelkind");
+  });
+
+  it("prefers the family's own wording when the other person already has it", () => {
+    expect(inverseRole("Mutter", ["Tochter"])).toBe("Tochter");
+    expect(inverseRole("Vater", ["Sohn", "Bruder"])).toBe("Sohn");
+    expect(inverseRole("Tochter", ["Mutter"])).toBe("Mutter");
+  });
+
+  it("invents nothing for a custom role", () => {
+    expect(inverseRole("Patentante")).toBeNull();
+    expect(inverseRole("")).toBeNull();
+  });
+});
+
+describe("isInverseOf", () => {
+  it("recognizes the two sides of one relationship", () => {
+    expect(isInverseOf("Mutter", "Kind")).toBe(true);
+    expect(isInverseOf("Mutter", "Tochter")).toBe(true);
+    expect(isInverseOf("Partner:in", "Partner:in")).toBe(true);
+    expect(isInverseOf("Oma", "Enkelkind")).toBe(true);
+  });
+
+  it("rejects unrelated pairs", () => {
+    expect(isInverseOf("Mutter", "Partner:in")).toBe(false);
+    expect(isInverseOf("Patentante", "Patenkind")).toBe(false);
   });
 });
