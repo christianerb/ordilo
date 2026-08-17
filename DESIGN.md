@@ -20,25 +20,25 @@ colors:
   destructive-foreground: "#FDFCFA"
 typography:
   display:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Figtree, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.125rem"
     fontWeight: 600
     lineHeight: 1.3
     letterSpacing: "normal"
   body:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Figtree, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1rem"
     fontWeight: 400
     lineHeight: 1.5
     letterSpacing: "normal"
   label:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Figtree, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.75rem"
     fontWeight: 500
     lineHeight: 1.2
     letterSpacing: "normal"
   timestamp:
-    fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+    fontFamily: "Figtree, ui-sans-serif, system-ui, sans-serif"
     fontSize: "0.875rem"
     fontWeight: 400
     lineHeight: 1.4
@@ -134,7 +134,7 @@ The palette is anchored on a deep maritime teal for trust and authority, a baked
 - Generous 20px radius on primary cards — gentle, not bubbly
 - Subtle, warm-toned shadows that barely lift surfaces off the background
 - Mobile-first, one-thumb, 30-second interaction windows
-- Inter throughout — one family, multiple weights, no pairing needed
+- Figtree throughout — one family, multiple weights, no pairing needed
 - German-language UI copy, plain and accessible
 
 ## 2. Colors: The Family Journal Palette
@@ -178,24 +178,24 @@ A restrained palette where one teal carries authority and one apricot carries wa
 
 ## 3. Typography
 
-**Display Font:** Inter (with ui-sans-serif, system-ui, sans-serif fallback)
-**Body Font:** Inter (with ui-sans-serif, system-ui, sans-serif fallback)
-**Label Font:** Inter (same stack — one family, no pairing)
+**Display Font:** Figtree (with ui-sans-serif, system-ui, sans-serif fallback)
+**Body Font:** Figtree (with ui-sans-serif, system-ui, sans-serif fallback)
+**Label Font:** Figtree (same stack — one family, no pairing)
 
-**Character:** Inter is a single, well-tuned sans that carries headings, body, labels, buttons, and data with quiet competence. No display pairing is needed — the family's weight range (400, 500, 600) provides sufficient hierarchy. The choice is deliberate: a product UI should disappear into the task, and a familiar, well-set sans does that better than a distinctive display face.
+**Character:** Figtree is a warm, highly legible sans that keeps headings, body, labels, buttons, and data calm and approachable. No display pairing is needed — the family's weight range (400, 500, 600) provides sufficient hierarchy. It brings a little more human warmth than a neutral SaaS default while keeping document names, dates, and controls effortless to scan.
 
 ### Hierarchy
 
-- **Display** (Inter 600, 1.125rem, 1.3 line-height): Section headings and card titles. Appears at the top of each tab and in card headers. Small for a "display" role — product UI density over brand spectacle.
-- **Headline** (Inter 600, 1rem, 1.3 line-height): Page-level headings within tabs. The same weight as Display but at body size, distinguishing through placement and spacing rather than size inflation.
-- **Title** (Inter 500, 1rem, 1.4 line-height): Card titles, document titles, task titles. Medium weight for content that users scan.
-- **Body** (Inter 400, 1rem, 1.5 line-height): Primary content text, descriptions, helper text. Max line length 65–75ch on wider surfaces (the max-w-md column naturally constrains this).
-- **Label** (Inter 500, 0.75rem, 1.2 line-height): Badges, status labels, nav tab labels, form labels. Uppercase is not used — Ordilo speaks plainly.
-- **Timestamp** (Inter 400, 0.875rem, 1.4 line-height): Relative timestamps ("vor 2 Stunden"), due dates, secondary metadata. Slightly smaller than body, in mist-dark color.
+- **Display** (Figtree 600, 1.125rem, 1.3 line-height): Section headings and card titles. Appears at the top of each tab and in card headers. Small for a "display" role — product UI density over brand spectacle.
+- **Headline** (Figtree 600, 1rem, 1.3 line-height): Page-level headings within tabs. The same weight as Display but at body size, distinguishing through placement and spacing rather than size inflation.
+- **Title** (Figtree 500, 1rem, 1.4 line-height): Card titles, document titles, task titles. Medium weight for content that users scan.
+- **Body** (Figtree 400, 1rem, 1.5 line-height): Primary content text, descriptions, helper text. Max line length 65–75ch on wider surfaces (the max-w-md column naturally constrains this).
+- **Label** (Figtree 500, 0.75rem, 1.2 line-height): Badges, status labels, nav tab labels, form labels. Uppercase is not used — Ordilo speaks plainly.
+- **Timestamp** (Figtree 400, 0.875rem, 1.4 line-height): Relative timestamps ("vor 2 Stunden"), due dates, secondary metadata. Slightly smaller than body, in mist-dark color.
 
 ### Named Rules
 
-**The No-Display-Font Rule.** Inter is the only typeface. No serif display, no geometric pairing, no monospace accents. Hierarchy comes from weight (400 → 500 → 600), size (0.75rem → 1.125rem), and color (graphite → mist-dark), never from a different family.
+**The No-Display-Font Rule.** Figtree is the only typeface. No serif display, no geometric pairing, no monospace accents. Hierarchy comes from weight (400 → 500 → 600), size (0.75rem → 1.125rem), and color (graphite → mist-dark), never from a different family.
 
 **The No-UpperCase Rule.** Labels and badges use sentence case, never uppercase with letter-spacing. German nouns are already capitalized — adding all-caps reads as bureaucratic, which Ordilo is not.
 
@@ -317,8 +317,8 @@ Persistent left rail on lg+ viewports, replacing the bottom tab bar. Collapsible
 Warm, inviting, educational. Not "nothing here."
 
 - **Illustration:** 80px sand-light circle with a 36px mist-colored icon (1.5 stroke)
-- **Heading:** Inter 600, 1.125rem, graphite
-- **Description:** Inter 400, 0.875rem, mist-dark, max-w-xs, centered
+- **Heading:** Figtree 600, 1.125rem, graphite
+- **Description:** Figtree 400, 0.875rem, mist-dark, max-w-xs, centered
 - **CTA:** Large primary button, 48px height, 20px radius
 
 ### Signature: Document Card
@@ -337,7 +337,7 @@ Horizontal layout: circular checkbox (24px, harbor blue when checked) → title 
 - **Do** use Sand (#F7F5F1) as the card surface and Warm White (#FDFCFA) as the app background. The four-step warm paper ramp (warm-white, sand, sand-light, sand-warm) is the surface vocabulary.
 - **Do** use 12px radius (rounded-ordilo-sm) on primary cards and list items. 20px (rounded-ordilo-md) is reserved for large feature cards and empty-state CTAs.
 - **Do** keep shadows ambient: `0 2px 8px rgba(36, 36, 36, 0.06)` at rest, `0 4px 16px rgba(36, 36, 36, 0.08)` on hover. Never exceed 16px blur.
-- **Do** use Inter throughout, with hierarchy from weight (400/500/600) and size (0.75rem–1.125rem), never from a different typeface.
+- **Do** use Figtree throughout, with hierarchy from weight (400/500/600) and size (0.75rem–1.125rem), never from a different typeface.
 - **Do** write German UI copy at Hauptschul-niveau — plain, warm, non-bureaucratic.
 - **Do** provide empty states that teach the interface (sand-light circle + icon + heading + description + CTA).
 - **Do** respect `prefers-reduced-motion` — the page-fade-in and any animations need instant alternatives.
@@ -352,7 +352,7 @@ Horizontal layout: circular checkbox (24px, harbor blue when checked) → title 
 - **Don't** use radii larger than 28px on cards, sections, or inputs. 12px is the primary card radius (crisp, list-density); 28px is the ceiling for large feature cards.
 - **Don't** use uppercase letter-spacing on labels or badges. Sentence case, always — German nouns are already capitalized.
 - **Don't** use Mist (#9C978C) for body text or any text that needs to meet WCAG AA contrast. Use Mist Dark (#625D54) for muted foreground.
-- **Don't** use display fonts, serif pairings, or monospace accents in the UI. Inter is the only typeface.
+- **Don't** use display fonts, serif pairings, or monospace accents in the UI. Figtree is the only typeface.
 - **Don't** use decorative motion that doesn't convey state. The page-fade-in (0.25s ease-out) is the only page-level animation; everything else is state transitions (150–250ms).
 - **Don't** use corporate/enterprise document management aesthetics — grid-heavy layouts, permission dialogues, cold blue-gray surfaces. Ordilo is personal and warm.
 - **Don't** use cluttered scanner-app patterns — upsell banners, watermarked free tiers, feature-dense toolbars. Ordilo does one thing beautifully.

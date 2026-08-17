@@ -32,7 +32,7 @@ export default function GlobalError({
           justifyContent: "center",
           backgroundColor: "#FDFCFA",
           fontFamily:
-            "Inter, ui-sans-serif, system-ui, sans-serif",
+            "Figtree, ui-sans-serif, system-ui, sans-serif",
           color: "#262421",
         }}
       >
