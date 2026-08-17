@@ -43,6 +43,7 @@ export default async function DokumentePage() {
     .from("documents")
     .select(DOCUMENT_LIST_COLUMNS)
     .eq("family_id", family.id)
+    .is("deleted_at", null)
     .order("created_at", { ascending: false });
 
   // The trimmed selection carries every column except the heavy

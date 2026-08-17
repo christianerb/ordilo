@@ -1,5 +1,30 @@
 @import "tailwindcss";
 
+/* Toasts are short family-journal notices: warm, compact, and visibly
+   grouped when several updates arrive together. Sonner owns the stack and
+   swipe behaviour; these rules only bring it into the Ordilo palette. */
+.ordilo-toaster [data-sonner-toast] {
+  box-shadow: 0 4px 16px rgba(36, 36, 36, 0.08) !important;
+  border: 1px solid var(--mist-light) !important;
+  background: var(--sand) !important;
+  color: var(--graphite) !important;
+}
+
+.ordilo-toaster [data-sonner-toast] [data-close-button] {
+  border-color: var(--mist-light) !important;
+  background: var(--warm-white) !important;
+  color: var(--mist-dark) !important;
+}
+
+@keyframes processing-pixel {
+  0%, 100% { opacity: 0.22; transform: scale(0.82); }
+  46% { opacity: 1; transform: scale(1); }
+}
+
+.animate-processing-pixel {
+  animation: processing-pixel 810ms ease-in-out infinite;
+}
+
 /* ---------------------------------------------------------------------------
    Ordilo Design System — Tailwind v4 theme tokens
    Warm, premium, calm aesthetic. Extracted from user mockups (July 2026).

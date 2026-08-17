@@ -610,6 +610,7 @@ export type Database = {
           failed_at: string | null;
           created_at: string;
           confirmed_at: string | null;
+          deleted_at: string | null;
           tags: string[];
           source: string;
           /** Pipeline version that produced the current extraction (see 0026). */
@@ -639,6 +640,7 @@ export type Database = {
           failed_at?: string | null;
           created_at?: string;
           confirmed_at?: string | null;
+          deleted_at?: string | null;
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
@@ -665,6 +667,7 @@ export type Database = {
           failed_at?: string | null;
           created_at?: string;
           confirmed_at?: string | null;
+          deleted_at?: string | null;
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
@@ -719,6 +722,7 @@ export type Database = {
           confirmed: boolean;
           linked_object_id: string | null;
           created_at: string;
+          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -736,6 +740,7 @@ export type Database = {
           confirmed?: boolean;
           linked_object_id?: string | null;
           created_at?: string;
+          deleted_at?: string | null;
         };
         Update: {
           id?: string;
@@ -753,6 +758,7 @@ export type Database = {
           confirmed?: boolean;
           linked_object_id?: string | null;
           created_at?: string;
+          deleted_at?: string | null;
         };
         Relationships: [];
       };
@@ -769,6 +775,7 @@ export type Database = {
           confidence: number;
           confirmed: boolean;
           created_at: string;
+          deleted_at: string | null;
           tags: string[];
           assigned_to: string | null;
           completed_at: string | null;
@@ -784,6 +791,7 @@ export type Database = {
           confidence?: number;
           confirmed?: boolean;
           created_at?: string;
+          deleted_at?: string | null;
           tags?: string[];
           assigned_to?: string | null;
           completed_at?: string | null;
@@ -799,6 +807,7 @@ export type Database = {
           confidence?: number;
           confirmed?: boolean;
           created_at?: string;
+          deleted_at?: string | null;
           tags?: string[];
           assigned_to?: string | null;
           completed_at?: string | null;

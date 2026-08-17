@@ -44,6 +44,7 @@ import {
   PersonPicker,
   unmatchedPersonName,
 } from "@/components/ordilo/person-picker";
+import { OrdiloAccordion } from "@/components/ordilo/ordilo-accordion";
 
 function shouldShowOrganizationType(name: string, type?: string | null): boolean {
   if (!type) return false;
@@ -160,6 +161,11 @@ export function ReviewCardContent({
   const firstTaskTitle = firstTaskEntry
     ? edits.taskTitles.get(firstTaskEntry.index) ?? firstTaskEntry.task.title
     : null;
+  const hasAdditionalDetails =
+    analysis.organizations.length > 0 ||
+    analysis.dates.length > 0 ||
+    analysis.amounts.length > 0 ||
+    analysis.facts.length > 0;
 
   return (
     <div
@@ -325,6 +331,14 @@ export function ReviewCardContent({
             </ReviewFieldSection>
           )}
 
+        {hasAdditionalDetails && (
+          <OrdiloAccordion
+            title="Weitere Angaben"
+            description="Termine, Beträge und erkannte Details"
+            className="my-2"
+            contentClassName="space-y-0 px-0 py-0"
+            testId="review-additional-details"
+          >
         {/* Organizations */}
         {analysis.organizations.length > 0 && (
           <ReviewFieldSection
@@ -491,6 +505,8 @@ export function ReviewCardContent({
               </p>
             )}
           </ReviewFieldSection>
+        )}
+          </OrdiloAccordion>
         )}
 
         {/* Tasks */}

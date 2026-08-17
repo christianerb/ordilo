@@ -46,6 +46,10 @@ describe("ScanProcessingStep", () => {
       "data-state",
       "pending",
     );
+    expect(screen.getByTestId("processing-status-title")).toHaveTextContent(
+      "Foto wird hochgeladen",
+    );
+    expect(screen.getAllByTestId("pixel-loader").length).toBeGreaterThan(0);
   });
 
   it("marks the upload step done and the OCR step active for status 'uploaded'", () => {
@@ -66,6 +70,9 @@ describe("ScanProcessingStep", () => {
         .getByTestId("processing-step-upload")
         .querySelector(".animate-check-pop"),
     ).not.toBeNull();
+    expect(screen.getByTestId("processing-status-title")).toHaveTextContent(
+      "Text wird erkannt",
+    );
     expect(
       screen
         .getByTestId("processing-step-upload")

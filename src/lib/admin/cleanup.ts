@@ -4,6 +4,7 @@ import { createClient as createAdminClient } from "@/lib/supabase/admin";
 
 const ACTIVITY_RETENTION_DAYS = 365;
 const ACCESS_ATTEMPT_RETENTION_DAYS = 2;
+const TRASH_RETENTION_DAYS = 30;
 
 export async function purgeExpiredAdminAnalytics(): Promise<void> {
   const admin = createAdminClient();
@@ -23,4 +24,22 @@ export async function purgeExpiredAdminAnalytics(): Promise<void> {
   ]);
   if (events.error) throw events.error;
   if (attempts.error) throw attempts.error;
+}
+
+/** Permanently remove paper-bin entries after the recovery window ends. */
+export async function purgeExpiredTrash(): Promise<void> {
+  const admin = createAdminClient();
+  const cutoff = new Date(
+    Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+  const { error: tasksError } = await admin
+    .from("tasks")
+    .delete()
+    .lt("deleted_at", cutoff);
+  if (tasksError) throw tasksError;
+  const { error: documentsError } = await admin
+    .from("documents")
+    .delete()
+    .lt("deleted_at", cutoff);
+  if (documentsError) throw documentsError;
 }

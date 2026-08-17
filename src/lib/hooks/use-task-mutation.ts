@@ -208,7 +208,7 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       try {
         const { error } = await supabase
           .from("tasks")
-          .update({ status: "dismissed" })
+          .update({ status: "dismissed", deleted_at: new Date().toISOString() })
           .eq("id", taskId);
 
         if (error) {

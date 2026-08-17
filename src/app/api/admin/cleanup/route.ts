@@ -1,4 +1,4 @@
-import { purgeExpiredAdminAnalytics } from "@/lib/admin/cleanup";
+import { purgeExpiredAdminAnalytics, purgeExpiredTrash } from "@/lib/admin/cleanup";
 import { requireSchedulerAuth } from "@/lib/scheduler-auth";
 
 export async function GET(request: Request): Promise<Response> {
@@ -6,7 +6,7 @@ export async function GET(request: Request): Promise<Response> {
   if (authError) return authError;
 
   try {
-    await purgeExpiredAdminAnalytics();
+    await Promise.all([purgeExpiredAdminAnalytics(), purgeExpiredTrash()]);
     return Response.json({ ok: true });
   } catch {
     return Response.json(

@@ -99,7 +99,9 @@ export function useDocumentList({
         .order("created_at", { ascending: false });
       // The trimmed selection carries every column except the heavy
       // `ocr_text`, which no list consumer reads.
-      const data = listData as DocumentRow[] | null;
+      const data = (listData as DocumentRow[] | null)?.filter(
+        (document) => !document.deleted_at,
+      ) ?? null;
 
       if (error || !data) {
         // Leave whatever is already on screen and report the failure, instead
@@ -201,7 +203,9 @@ export function useDocumentList({
         .eq("id", documentId)
         .order("created_at", { ascending: false });
 
-      const document = ((data as DocumentRow[] | null)?.[0]) ?? null;
+      const document = (data as DocumentRow[] | null)?.find(
+        (candidate) => !candidate.deleted_at,
+      ) ?? null;
 
       if (error || !document) {
         if (options?.syncExpanded && expandedDocIdRef.current === documentId) {

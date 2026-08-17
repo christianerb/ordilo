@@ -13,6 +13,7 @@ import {
 import { CardActions } from "@/components/ordilo/card-actions";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { MemberAvatar } from "@/components/ordilo/member-avatar";
+import { OrdiloAccordion } from "@/components/ordilo/ordilo-accordion";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { vibrate } from "@/lib/haptics";
 
@@ -163,41 +164,21 @@ export function TaskCard({
         </span>
       </button>
 
-      {/* Content — button opens the detail sheet when onClick is provided */}
-      {onClick ? (
-        <button
-          type="button"
+      <div className="min-w-0 flex-1 py-1">
+        <TaskSummary
+          task={task}
+          isDone={isDone}
+          isOverdue={isOverdue}
+          isDueToday={isDueToday}
+          dueLabel={dueLabel}
+          overdueLabel={overdueLabel}
+          dueTitle={dueTitle}
+          noteLine={noteLine}
+          hasMeta={hasMeta}
           onClick={onClick}
-          className="min-w-0 flex-1 rounded-ordilo-sm py-1 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          aria-label={`Aufgabe öffnen: ${task.title}`}
-        >
-          <CardContent
-            task={task}
-            isDone={isDone}
-            isOverdue={isOverdue}
-            isDueToday={isDueToday}
-            dueLabel={dueLabel}
-            overdueLabel={overdueLabel}
-            dueTitle={dueTitle}
-            noteLine={noteLine}
-            hasMeta={hasMeta}
-          />
-        </button>
-      ) : (
-        <div className="min-w-0 flex-1 py-1">
-          <CardContent
-            task={task}
-            isDone={isDone}
-            isOverdue={isOverdue}
-            isDueToday={isDueToday}
-            dueLabel={dueLabel}
-            overdueLabel={overdueLabel}
-            dueTitle={dueTitle}
-            noteLine={noteLine}
-            hasMeta={hasMeta}
-          />
-        </div>
-      )}
+        />
+        <TaskDetails task={task} />
+      </div>
 
       {/* Wer macht's — a face on every row, tappable where reassigning is
           allowed. An empty dashed circle is a standing invitation: a task
@@ -325,7 +306,7 @@ function TaskAssigneeControl({
   );
 }
 
-function CardContent({
+function TaskSummary({
   task,
   isDone,
   isOverdue,
@@ -335,6 +316,7 @@ function CardContent({
   dueTitle,
   noteLine,
   hasMeta,
+  onClick,
 }: {
   task: TaskCardData;
   isDone: boolean;
@@ -345,8 +327,9 @@ function CardContent({
   dueTitle: string | undefined;
   noteLine: string | null;
   hasMeta: boolean;
+  onClick?: () => void;
 }) {
-  return (
+  const content = (
     <>
       {/* Title */}
       <p
@@ -407,6 +390,59 @@ function CardContent({
         </div>
       )}
     </>
+  );
+
+  return onClick ? (
+    <button
+      type="button"
+      onClick={onClick}
+      className="w-full rounded-ordilo-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      aria-label={`Aufgabe öffnen: ${task.title}`}
+    >
+      {content}
+    </button>
+  ) : (
+    content
+  );
+}
+
+function TaskDetails({ task }: { task: TaskCardData }) {
+  const description = task.description?.trim();
+  const linkedDocuments = task.linked_documents ?? [];
+  if (!description && linkedDocuments.length === 0) return null;
+
+  return (
+    <OrdiloAccordion
+      title="Details"
+      description={
+        linkedDocuments.length > 0
+          ? `${linkedDocuments.length} verknüpfte Dokumente`
+          : undefined
+      }
+      className="mt-2"
+      contentClassName="space-y-3"
+      testId="task-details"
+    >
+      {description && (
+        <p className="text-sm leading-relaxed text-[var(--mist-dark)]">
+          {description}
+        </p>
+      )}
+      {linkedDocuments.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground">
+            Verknüpfte Dokumente
+          </p>
+          <ul className="mt-1.5 space-y-1 text-sm text-foreground">
+            {linkedDocuments.map((document) => (
+              <li key={document.id} className="truncate">
+                {document.title?.trim() || "Ohne Titel"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </OrdiloAccordion>
   );
 }
 

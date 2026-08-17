@@ -380,6 +380,29 @@ describe("TaskCard", () => {
     expect(screen.getByText(/Zum Dokument/i)).toBeDefined();
   });
 
+  it("keeps supplementary task details collapsed until requested", () => {
+    render(
+      <TaskCard
+        task={makeTask({
+          description: "Bitte vor dem Wochenende erledigen.",
+          linked_documents: [
+            { id: "doc-2", title: "Mahnung Strom" },
+            { id: "doc-3", title: null },
+          ],
+        })}
+      />,
+    );
+
+    const details = screen.getByTestId("task-details");
+    const toggle = screen.getByRole("button", { name: /details/i });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(details).toHaveTextContent("Bitte vor dem Wochenende erledigen.");
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(details).toHaveTextContent("Mahnung Strom");
+  });
+
   // ---------------------------------------------------------------------------
   // Done state interactions
   // ---------------------------------------------------------------------------

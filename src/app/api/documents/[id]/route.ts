@@ -29,22 +29,14 @@ import type {
 /**
  * DELETE /api/documents/[id]
  *
- * Deletes a document AND its Storage file.
- *
- * Previously the client deleted the DB row directly and attempted the
- * Storage removal with the browser client — which silently fails on the
- * private bucket (no storage RLS policies for users), leaving orphaned
- * files. This route does it properly:
+ * Moves a document to the family's paper bin for 30 days.
  *
  *   1. Authenticate (401 without session)
  *   2. Read the document RLS-scoped (404 if not visible — no existence leak)
- *   3. Delete the DB row via the server client (RLS-enforced; cascades to
- *      pages, entities, tasks, facts, embeddings, edges)
- *   4. Remove the Storage object with the admin client (service role) —
- *      best-effort: a failure here never blocks the delete, but is logged.
+ *   3. Mark the document and its active linked tasks as deleted.
  */
 export async function DELETE(
-  request: Request,
+  _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   const auth = await requireUser();
@@ -81,35 +73,58 @@ export async function DELETE(
     );
   }
 
-  // Delete the row (RLS-enforced; FK cascades clean up all derived data).
+  const deletedAt = new Date().toISOString();
   const { error: deleteError } = await serverClient
     .from("documents")
-    .delete()
-    .eq("id", documentId);
+    .update({ deleted_at: deletedAt })
+    .eq("id", documentId)
+    .is("deleted_at", null);
 
   if (deleteError) {
     return jsonError(
-      "Dokument konnte nicht gelöscht werden.",
+      "Dokument konnte nicht in den Papierkorb gelegt werden.",
       "DB_DELETE_FAILED",
       500,
     );
   }
 
-  // Best-effort Storage cleanup with the service-role client.
-  if (document.file_url) {
-    const adminClient = createAdminClient();
-    const { error: storageError } = await adminClient.storage
-      .from("documents")
-      .remove([document.file_url]);
-    if (storageError) {
-      console.error(
-        `[documents] Storage cleanup failed for ${documentId}:`,
-        storageError,
-      );
-    }
+  const { data: linkedTasks, error: linkedTasksError } = await serverClient
+    .from("tasks")
+    .select("id, status")
+    .eq("document_id", documentId)
+    .is("deleted_at", null);
+
+  if (linkedTasksError) {
+    return jsonError(
+      "Verknüpfte Aufgaben konnten nicht in den Papierkorb gelegt werden.",
+      "TASKS_DELETE_FAILED",
+      500,
+    );
   }
 
-  return Response.json({ status: "deleted", document_id: documentId });
+  const taskResults = await Promise.all(
+    (linkedTasks ?? []).map((task) =>
+      serverClient
+        .from("tasks")
+        .update({
+          status: "dismissed",
+          deleted_at: deletedAt,
+          status_before_trash: task.status,
+          trashed_by_document_id: documentId,
+        })
+        .eq("id", task.id),
+    ),
+  );
+  const taskUpdateError = taskResults.find((result) => result.error)?.error;
+  if (taskUpdateError) {
+    return jsonError(
+      "Verknüpfte Aufgaben konnten nicht in den Papierkorb gelegt werden.",
+      "TASKS_DELETE_FAILED",
+      500,
+    );
+  }
+
+  return Response.json({ status: "trashed", document_id: documentId });
 }
 
 /**

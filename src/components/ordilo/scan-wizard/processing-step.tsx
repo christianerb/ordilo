@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Loader2, X, AlertCircle, ArrowRight } from "lucide-react";
+import { Check, X, AlertCircle, ArrowRight } from "lucide-react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
   type PartialAnalysisPreview,
 } from "@/lib/ai/partial-json";
 import type { Database } from "@/types/database";
+import { PixelLoader } from "./pixel-loader";
 
 type DocumentRow = Database["public"]["Tables"]["documents"]["Row"];
 
@@ -173,6 +174,7 @@ export function ScanProcessingStep({
     doc?.status === "analyzing" && doc.partial_analysis
       ? extractPartialPreview(doc.partial_analysis)
       : null;
+  const activeStep = STEPS[Math.min(done, STEPS.length - 1)];
 
   return (
     <div
@@ -240,14 +242,20 @@ export function ScanProcessingStep({
               animate
               style={{ color: "var(--petrol)" }}
             />
-            <h2 className="mt-4 text-base font-semibold text-foreground">
-              Ordilo schaut sich das an …
-            </h2>
+            <div className="mt-4 flex items-center gap-2.5">
+              <PixelLoader label={activeStep.label} />
+              <h2
+                className="text-base font-semibold text-foreground"
+                data-testid="processing-status-title"
+              >
+                {activeStep.label}
+              </h2>
+            </div>
             {analysisPreview ? (
               <AnalysisPreview preview={analysisPreview} />
             ) : (
               <StageNarration
-                stageKey={STEPS[Math.min(done, STEPS.length - 1)].key}
+                stageKey={activeStep.key}
               />
             )}
 
@@ -287,7 +295,10 @@ export function ScanProcessingStep({
                               strokeWidth={2.5}
                             />
                           ) : stepActive ? (
-                            <Loader2 className="size-3.5 animate-spin text-[var(--petrol)]" />
+                            <PixelLoader
+                              className="scale-75"
+                              label={`${step.label} läuft`}
+                            />
                           ) : null}
                         </span>
                         {/* Connecting line to next step */}

@@ -6,6 +6,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
 import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
@@ -224,6 +225,7 @@ export function DokumenteClient({
           <span>oder Datei hierher fallen lassen</span>
         </div>
       )}
+      <div className="text-center"><Link href="/papierkorb" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"><Trash2 className="size-4"/>Papierkorb</Link></div>
 
       {/* Delete confirmation drawer */}
       <OrdiloDrawer
