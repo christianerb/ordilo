@@ -673,6 +673,52 @@ export type Database = {
         };
         Relationships: [];
       };
+      // contacts -----------------------------------------------------------
+      contacts: {
+        Row: {
+          id: string;
+          family_id: string;
+          source_document_id: string | null;
+          source_key: string | null;
+          name: string;
+          organization: string | null;
+          role: string | null;
+          phone: string | null;
+          email: string | null;
+          status: "suggested" | "confirmed";
+          user_edited_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          source_document_id?: string | null;
+          source_key?: string | null;
+          name: string;
+          organization?: string | null;
+          role?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          status?: "suggested" | "confirmed";
+          user_edited_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          organization?: string | null;
+          role?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          status?: "suggested" | "confirmed";
+          user_edited_at?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       // document_pages -----------------------------------------------------
       document_pages: {
         Row: {
@@ -1289,6 +1335,17 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      search_family_contacts: {
+        Args: { p_family_id: string; p_query: string; p_limit?: number };
+        Returns: {
+          id: string;
+          name: string;
+          organization: string | null;
+          role: string | null;
+          phone: string | null;
+          email: string | null;
+        }[];
+      };
       user_belongs_to_family: {
         Args: { fam_id: string };
         Returns: boolean;

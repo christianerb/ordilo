@@ -7,6 +7,7 @@ import {
   FileText,
   Info,
   ArrowRight,
+  ContactRound,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -15,12 +16,14 @@ import {
   SecretValueRow,
 } from "@/components/ordilo/credential-fields";
 import type { AnswerCard as AnswerCardData } from "@/lib/schemas/chat";
+import { ContactActionLinks } from "@/components/ordilo/contact-actions";
 
 const CARD_TYPE_ICON: Record<AnswerCardData["type"], LucideIcon> = {
   termin: CalendarDays,
   aufgabe: ListChecks,
   dokument: FileText,
   zugangsdaten: KeyRound,
+  kontakt: ContactRound,
   allgemein: Info,
 };
 
@@ -29,6 +32,7 @@ const CARD_TYPE_ACTION_LABEL: Record<AnswerCardData["type"], string> = {
   aufgabe: "Zur Aufgabe",
   dokument: "Zum Dokument",
   zugangsdaten: "Zum Dokument",
+  kontakt: "Kontakt öffnen",
   allgemein: "Zum Dokument",
 };
 
@@ -70,6 +74,7 @@ export function AnswerCard({ card, onActionClick, className }: AnswerCardProps) 
   // point of the card is that nobody has to retype a login by hand.
   const isCredentials = card.type === "zugangsdaten";
   const showSecretRow = isCredentials && card.hasSecret && Boolean(card.actionDocumentId);
+  const contact = card.type === "kontakt" ? card.contact : undefined;
 
   return (
     <div
@@ -116,7 +121,23 @@ export function AnswerCard({ card, onActionClick, className }: AnswerCardProps) 
         </dl>
       )}
 
-      {card.actionDocumentId && (
+      {contact && (
+        <div className="mt-4 border-t border-border pt-3">
+          <ContactActionLinks
+            phone={contact.phone}
+            email={contact.email}
+            preferred={contact.action}
+            messageDraft={contact.messageDraft}
+          />
+          {contact.action === "whatsapp" && contact.messageDraft && (
+            <p className="col-span-3 mt-1 text-xs text-muted-foreground">
+              Du prüfst und sendest selbst in WhatsApp.
+            </p>
+          )}
+        </div>
+      )}
+
+      {card.actionDocumentId && !contact && (
         <button
           type="button"
           onClick={() => onActionClick?.(card.actionDocumentId!)}

@@ -7,6 +7,7 @@ import {
   GENERIC_DATE_LABELS,
   GENERIC_AMOUNT_LABELS,
 } from "@/lib/analysis-cleanup";
+import { contactSourceKey } from "@/lib/contacts";
 
 /**
  * The part of a `DocumentAnalysis` that becomes `extracted_entities` rows.
@@ -16,6 +17,7 @@ export type EntitySource = Pick<
   DocumentAnalysis,
   | "family_members"
   | "organizations"
+  | "contacts"
   | "dates"
   | "amounts"
   | "suggested_category"
@@ -54,6 +56,17 @@ export function buildEntityRows(analysis: EntitySource): ConfirmRpcEntity[] {
       normalized_value: org.name.toLowerCase().trim(),
       label: null,
       confidence: org.confidence,
+      linked_object_id: null,
+    });
+  }
+
+  for (const [contactIndex, contact] of (analysis.contacts ?? []).entries()) {
+    entities.push({
+      entity_type: "contact",
+      entity_value: JSON.stringify(contact),
+      normalized_value: contactSourceKey(contactIndex),
+      label: contact.name,
+      confidence: contact.confidence,
       linked_object_id: null,
     });
   }

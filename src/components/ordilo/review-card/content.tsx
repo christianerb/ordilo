@@ -7,6 +7,7 @@ import {
   Tag,
   User,
   Building2,
+  ContactRound,
   Euro,
   Hash,
   ListTodo,
@@ -360,6 +361,40 @@ export function ReviewCardContent({
                 </FieldRow>
               );
             })}
+          </ReviewFieldSection>
+        )}
+
+        {(analysis.contacts?.length ?? 0) > 0 && (
+          <ReviewFieldSection
+            icon={ContactRound}
+            title="Kontaktdaten"
+            testId="review-contacts"
+          >
+            {analysis.contacts!.map((contact, index) => (
+              <FieldRow
+                key={`${contact.name}-${index}`}
+                confidence={contact.confidence}
+                sourceText={contact.phone || contact.email}
+                onShowSource={onViewOriginal}
+              >
+                <span className="block truncate">{contact.name}</span>
+                {(contact.organization || contact.role) && (
+                  <span className="block truncate font-normal text-muted-foreground">
+                    {[contact.organization, contact.role].filter(Boolean).join(" · ")}
+                  </span>
+                )}
+                {contact.phone && (
+                  <span className="block truncate font-normal text-[var(--petrol)]">
+                    {contact.phone}
+                  </span>
+                )}
+                {contact.email && (
+                  <span className="block truncate font-normal text-[var(--petrol)]">
+                    {contact.email}
+                  </span>
+                )}
+              </FieldRow>
+            ))}
           </ReviewFieldSection>
         )}
 

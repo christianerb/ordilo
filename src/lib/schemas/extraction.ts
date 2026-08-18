@@ -343,6 +343,25 @@ const organizationSchema = z.object({
 });
 
 /**
+ * A person or organization the family may need to contact. At least one
+ * direct channel is required, otherwise it is only a mentioned name.
+ */
+export const extractedContactSchema = z
+  .object({
+    name: z.string().min(1),
+    organization: z.string(),
+    role: z.string(),
+    phone: z.string(),
+    email: z.string(),
+    confidence: z.number().min(0).max(1),
+  })
+  .refine((contact) => Boolean(contact.phone.trim() || contact.email.trim()), {
+    message: "Kontakt braucht Telefonnummer oder E-Mail-Adresse.",
+  });
+
+export type ExtractedContact = z.infer<typeof extractedContactSchema>;
+
+/**
  * Zod schema for a single extracted date.
  */
 const dateSchema = z.object({
@@ -441,6 +460,7 @@ export const documentAnalysisSchema = z.object({
   summary: z.string(),
   family_members: z.array(familyMemberSchema),
   organizations: z.array(organizationSchema),
+  contacts: z.array(extractedContactSchema).default([]),
   dates: z.array(dateSchema),
   amounts: z.array(amountSchema),
   tasks: z.array(taskSchema),
@@ -452,7 +472,15 @@ export const documentAnalysisSchema = z.object({
   needs_user_review: z.boolean(),
 }).strict();
 
-export type DocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
+type ParsedDocumentAnalysis = z.infer<typeof documentAnalysisSchema>;
+/**
+ * `contacts` is optional at the TypeScript boundary so cached analyses and
+ * test fixtures created before the field existed remain valid. Parsing
+ * always supplies an empty array through the schema default.
+ */
+export type DocumentAnalysis = Omit<ParsedDocumentAnalysis, "contacts"> & {
+  contacts?: ExtractedContact[];
+};
 
 // ---------------------------------------------------------------------------
 // JSON schema (for OpenAI Responses API strict mode)
@@ -501,6 +529,29 @@ export const documentAnalysisJsonSchema = {
           confidence: { type: "number" },
         },
         required: ["name", "type", "confidence"],
+        additionalProperties: false,
+      },
+    },
+    contacts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          organization: { type: "string" },
+          role: { type: "string" },
+          phone: { type: "string" },
+          email: { type: "string" },
+          confidence: { type: "number" },
+        },
+        required: [
+          "name",
+          "organization",
+          "role",
+          "phone",
+          "email",
+          "confidence",
+        ],
         additionalProperties: false,
       },
     },
@@ -584,6 +635,7 @@ export const documentAnalysisJsonSchema = {
     "summary",
     "family_members",
     "organizations",
+    "contacts",
     "dates",
     "amounts",
     "tasks",
@@ -647,6 +699,10 @@ export function computeNeedsUserReview(analysis: DocumentAnalysis): boolean {
   // Check organizations.
   for (const org of analysis.organizations) {
     if (org.confidence < threshold) return true;
+  }
+
+  for (const contact of analysis.contacts ?? []) {
+    if (contact.confidence < threshold) return true;
   }
 
   // Check dates.
