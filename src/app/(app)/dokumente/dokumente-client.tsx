@@ -95,10 +95,16 @@ export function DokumenteClient({
     handleDeleteDocument,
     openCreateNote,
     openWizard,
+    dropZoneRef,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
   } = useScan();
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [contactFormOpen, setContactFormOpen] = useState(false);
+  const [editingContact, setEditingContact] = useState<ContactRow | null>(null);
   const currentTab = useSearchParams().get("tab");
   const view: LibraryView =
     currentTab === "notizen"
@@ -171,6 +177,7 @@ export function DokumenteClient({
       return;
     }
     if (view === "kontakte") {
+      setEditingContact(null);
       setContactFormOpen(true);
       return;
     }
@@ -178,7 +185,14 @@ export function DokumenteClient({
   }
 
   return (
-    <div className="app-page-stack overflow-x-hidden">
+    <div
+      ref={view === "dokumente" ? dropZoneRef : undefined}
+      onDragEnter={view === "dokumente" ? handleDragEnter : undefined}
+      onDragOver={view === "dokumente" ? handleDragOver : undefined}
+      onDragLeave={view === "dokumente" ? handleDragLeave : undefined}
+      onDrop={view === "dokumente" ? handleDrop : undefined}
+      className="app-page-stack overflow-x-hidden"
+    >
       <LibraryPageHeader
         title="Dokumente"
         count={activeCount}
@@ -243,6 +257,8 @@ export function DokumenteClient({
             initialContacts={initialContacts}
             formOpen={contactFormOpen}
             onFormOpenChange={setContactFormOpen}
+            editingContact={editingContact}
+            onEditingContactChange={setEditingContact}
             onOpenSource={(documentId) => void openDocument(documentId)}
           />
         ) : view === "notizen" ? (
@@ -333,13 +349,8 @@ function DocumentsView({
     isDragOver,
     cameraInputRef,
     pdfInputRef,
-    dropZoneRef,
     handleCameraSelect,
     handlePdfSelect,
-    handleDragEnter,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
     handleRetry,
     dismissUpload,
     openWizard,
@@ -348,14 +359,7 @@ function DocumentsView({
   const hasDocuments = documents.length > 0;
 
   return (
-    <div
-      ref={dropZoneRef}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="space-y-4"
-    >
+    <div className="space-y-4">
       {/* Drag overlay */}
       {isDragOver && (
         <div className="flex flex-col items-center justify-center rounded-ordilo-sm border-2 border-dashed border-[var(--petrol)] bg-[var(--blue-soft)] py-8 text-center animate-card-in">

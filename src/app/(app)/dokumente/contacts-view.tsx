@@ -39,12 +39,17 @@ export function ContactsView({
   onOpenSource,
   formOpen: externalFormOpen,
   onFormOpenChange,
+  editingContact,
+  onEditingContactChange,
 }: {
   initialContacts: ContactRow[];
   onOpenSource: (documentId: string) => void;
   /** Controlled externally by the page header's "Neu erstellen" button. */
   formOpen?: boolean;
   onFormOpenChange?: (open: boolean) => void;
+  /** Kept by the page so every create entry point can explicitly reset it. */
+  editingContact: ContactRow | null;
+  onEditingContactChange: (contact: ContactRow | null) => void;
 }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
@@ -52,7 +57,6 @@ export function ContactsView({
   const [internalFormOpen, setInternalFormOpen] = useState(false);
   const formOpen = externalFormOpen ?? internalFormOpen;
   const setFormOpen = onFormOpenChange ?? setInternalFormOpen;
-  const [editing, setEditing] = useState<ContactRow | null>(null);
 
   const suggestions = contacts.filter((contact) => contact.status === "suggested");
   const confirmed = useMemo(() => {
@@ -89,7 +93,7 @@ export function ContactsView({
           className="size-12 shrink-0 rounded-full"
           aria-label="Kontakt hinzufügen"
           onClick={() => {
-            setEditing(null);
+            onEditingContactChange(null);
             setFormOpen(true);
           }}
         >
@@ -173,7 +177,7 @@ export function ContactsView({
             search
               ? undefined
               : () => {
-                  setEditing(null);
+                  onEditingContactChange(null);
                   setFormOpen(true);
                 }
           }
@@ -187,14 +191,14 @@ export function ContactsView({
         }}
         onEdit={(contact) => {
           setSelected(null);
-          setEditing(contact);
+          onEditingContactChange(contact);
           setFormOpen(true);
         }}
         onOpenSource={onOpenSource}
       />
       <ContactForm
         open={formOpen}
-        contact={editing}
+        contact={editingContact}
         onOpenChange={setFormOpen}
         onSaved={(contact) => {
           setContacts((current) => {
@@ -204,7 +208,7 @@ export function ContactsView({
               : [...current, contact];
           });
           setFormOpen(false);
-          setEditing(null);
+          onEditingContactChange(null);
         }}
       />
     </div>

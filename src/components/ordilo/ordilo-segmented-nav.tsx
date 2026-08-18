@@ -62,9 +62,9 @@ export function OrdiloSegmentedNav({
             href={item.href}
             aria-current={item.active ? "page" : undefined}
             className={cn(
-              "relative z-10 px-2 py-2 text-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:px-3",
+              "relative z-10 flex min-h-11 items-center justify-center gap-1.5 px-2 py-2 text-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:px-3",
               variant === "morphing"
-                ? "flex min-h-11 items-center justify-center gap-1.5 rounded-[9px]"
+                ? "rounded-[9px]"
                 : "rounded-[8px]",
               item.active
                 ? variant === "morphing"

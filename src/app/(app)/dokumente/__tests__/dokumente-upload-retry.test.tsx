@@ -139,4 +139,40 @@ describe("DokumentePage — upload retry", () => {
     expect(vi.mocked(uploadFile).mock.calls.length).toBe(2);
     expect(screen.getAllByTestId(/^upload-card-/).length).toBe(1);
   });
+
+  it("accepts a file dropped over the page header", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockSupabaseClient(() => []),
+    );
+    vi.mocked(uploadFile).mockRejectedValue(new Error("Netzwerkfehler"));
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient initialDocuments={[]} />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    await screen.findByTestId("empty-state");
+    const file = new File(["dummy"], "brief.pdf", {
+      type: "application/pdf",
+    });
+
+    fireEvent.drop(screen.getByRole("banner"), {
+      dataTransfer: {
+        files: [file],
+        types: ["Files"],
+      },
+    });
+
+    await waitFor(() => {
+      expect(uploadFile).toHaveBeenCalledTimes(1);
+    });
+    expect(uploadFile).toHaveBeenCalledWith(
+      file,
+      FAMILY_ID,
+      expect.any(Function),
+    );
+  });
 });
