@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { FamilySettingsClient } from "./settings-client";
+import { familyInboundEmail } from "@/lib/family-inbound-email";
 
 /**
  * Family settings page (`/familie/einstellungen`, server component).
@@ -31,12 +32,24 @@ export default async function FamilySettingsPage() {
     .select("id", { count: "exact", head: true })
     .eq("family_id", family.id);
 
+  const { data: emailAlias } = await supabase
+    .from("family_email_aliases")
+    .select("local_part")
+    .eq("family_id", family.id)
+    .maybeSingle();
+
+  const inboundEmail = familyInboundEmail(
+    emailAlias?.local_part ?? "",
+    process.env.INBOUND_EMAIL_DOMAIN,
+  );
+
   return (
     <FamilySettingsClient
       familyId={family.id}
       familyName={family.name}
       createdAt={family.created_at}
       memberCount={count ?? 0}
+      inboundEmail={inboundEmail}
     />
   );
 }

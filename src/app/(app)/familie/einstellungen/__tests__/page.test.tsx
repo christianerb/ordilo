@@ -47,12 +47,20 @@ function mockServerClient(options: {
     }),
   };
 
+  const aliasesChain = {
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
+
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
       return { select: vi.fn(() => familiesChain) };
     }
     if (table === "family_members") {
       return { select: vi.fn(() => membersChain) };
+    }
+    if (table === "family_email_aliases") {
+      return { select: vi.fn(() => aliasesChain) };
     }
     throw new Error(`Unexpected table: ${table}`);
   });

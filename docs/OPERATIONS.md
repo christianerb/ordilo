@@ -23,6 +23,28 @@ ohne Fristen bekommen nichts.
 Hinweis: Läufe werden nicht dedupliziert — der Cron feuert 1×/Tag, ein
 manueller zweiter Aufruf verschickt den Digest erneut.
 
+## 1b. Dokumente per E-Mail
+
+Jede Familie bekommt eine private Adresse im Format
+`dokumente+<geheimer-code>@<INBOUND_EMAIL_DOMAIN>`. Sie erscheint nach der
+Migration unter **Familieneinstellungen**. Weitergeleitete PDF- und Bildanhänge
+werden geprüft, in die Dokumente gelegt und wie ein Scan verarbeitet.
+
+| Variable | Pflicht | Beschreibung |
+| --- | --- | --- |
+| `RESEND_API_KEY` | ja | Bereits für ausgehende E-Mails verwendeter Resend API-Key. |
+| `RESEND_WEBHOOK_SECRET` | ja | Signing Secret des Resend-Webhooks. |
+| `INBOUND_EMAIL_DOMAIN` | ja | Bei Resend verifizierte Empfangs-Domain, z. B. `mail.ordilo.de`. |
+
+In Resend für diese Domain den Event **`email.received`** an
+`https://<app-domain>/api/email/inbound` senden. Der Endpoint akzeptiert nur
+gültig signierte Webhooks. Nicht unterstützte Anhänge und Anhänge über 4 MB
+werden übersprungen; pro Familie gelten weiterhin maximal 50 Dokumente pro Tag.
+Ordilo schickt einer bekannten Familienadresse, sonst der Besitzeradresse,
+eine Empfangsbestätigung. Scheitert die Verarbeitung, folgt eine zweite Mail
+mit einem Link zu den Dokumenten. Diese Mails werden über dieselbe
+`RESEND_API_KEY`-Konfiguration versendet.
+
 ## 2. Async-Pipeline (Scan-Verarbeitung über die Job-Queue)
 
 **Standardmäßig aktiv.** Der Upload-Endpoint enqueued einen `ocr`-Job und
