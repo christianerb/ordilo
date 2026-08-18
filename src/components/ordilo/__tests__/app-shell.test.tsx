@@ -568,7 +568,7 @@ describe("AppShell sidebar profile footer", () => {
     expect((await screen.findAllByText("Familie Müller")).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("opens a dropdown with 'Familie' and 'Abmelden' options", async () => {
+  it("opens a dropdown with settings and logout options", async () => {
     mockSupabaseData({
       family: { id: "fam-1", name: "Familie Müller" },
       userEmail: "anna@example.com",
@@ -586,7 +586,9 @@ describe("AppShell sidebar profile footer", () => {
     fireEvent.keyDown(screen.getByRole("button", { name: /Familie Müller/i }), {
       key: "Enter",
     });
-    expect(screen.getByRole("menuitem", { name: /^Familie$/i })).toBeDefined();
+    expect(
+      screen.getByRole("menuitem", { name: /Familieneinstellungen/i }),
+    ).toBeDefined();
     expect(screen.getByRole("menuitem", { name: /Abmelden/i })).toBeDefined();
   });
 });

@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CalendarFeedCard } from "@/components/ordilo/calendar-feed-card";
+import { InboundEmailAddressCard } from "@/components/ordilo/inbound-email-address-card";
 import { formatGermanDate } from "@/lib/format";
 import { updateFamilyName, deleteFamilyAccount } from "../actions";
 
@@ -203,21 +204,7 @@ export function FamilySettingsClient({
       </div>
 
       {inboundEmail && (
-        <div className="space-y-2 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
-          <h2 className="text-base font-semibold text-foreground">
-            Dokumente per E-Mail
-          </h2>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Leite PDFs und Bilder an diese private Adresse weiter. Sie landen
-            automatisch bei euren Dokumenten.
-          </p>
-          <p
-            className="select-all break-all rounded-ordilo-sm bg-[var(--sand-light)] px-3 py-2 text-sm font-medium text-foreground"
-            data-testid="family-inbound-email"
-          >
-            {inboundEmail}
-          </p>
-        </div>
+        <InboundEmailAddressCard email={inboundEmail} context="settings" />
       )}
 
       {/* Family info */}

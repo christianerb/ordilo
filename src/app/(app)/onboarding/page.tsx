@@ -8,6 +8,7 @@ import { OnboardingFlow } from "./onboarding-flow";
 import type { OnboardingState } from "./onboarding-flow";
 import { OnboardingError } from "./onboarding-error";
 import type { Database } from "@/types/database";
+import { familyInboundEmail } from "@/lib/family-inbound-email";
 
 type FamilyRow = Pick<
   Database["public"]["Tables"]["families"]["Row"],
@@ -77,6 +78,14 @@ export default async function OnboardingPage() {
     members = memberData ?? [];
   }
 
+  const { data: emailAlias } = family
+    ? await supabase
+        .from("family_email_aliases")
+        .select("local_part")
+        .eq("family_id", family.id)
+        .maybeSingle()
+    : { data: null };
+
   // Build the initial onboarding state for the client component.
   const familyRow = family as FamilyRow | null;
   const initialState: OnboardingState = familyRow
@@ -88,6 +97,10 @@ export default async function OnboardingPage() {
           step: "choose-next",
           familyId: familyRow.id,
           familyName: familyRow.name,
+          inboundEmail: familyInboundEmail(
+            emailAlias?.local_part ?? "",
+            process.env.INBOUND_EMAIL_DOMAIN,
+          ),
           members: members.map((m) => ({
             id: m.id,
             name: m.name,
@@ -101,6 +114,10 @@ export default async function OnboardingPage() {
           step: "add-member",
           familyId: familyRow.id,
           familyName: familyRow.name,
+          inboundEmail: familyInboundEmail(
+            emailAlias?.local_part ?? "",
+            process.env.INBOUND_EMAIL_DOMAIN,
+          ),
           members: [],
         }
     : {
@@ -108,6 +125,7 @@ export default async function OnboardingPage() {
         step: "family-name",
         familyId: null,
         familyName: null,
+        inboundEmail: null,
         members: [],
       };
 

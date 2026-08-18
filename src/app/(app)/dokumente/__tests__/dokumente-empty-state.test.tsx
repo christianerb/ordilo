@@ -114,6 +114,27 @@ describe("DokumentePage empty state", () => {
     expect(screen.getByText("Noch nichts gescannt")).toBeDefined();
   });
 
+  it("shows the private forwarding address above the document flow", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockSupabaseClient([]),
+    );
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient
+            initialDocuments={[]}
+            inboundEmail="dokumente+geheim@mail.ordilo.de"
+          />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    expect(screen.getByTestId("inbound-email-address-card")).toHaveTextContent(
+      "dokumente+geheim@mail.ordilo.de",
+    );
+  });
+
   it("does not render the empty state when documents exist", async () => {
     const doc = {
       id: "doc-1",

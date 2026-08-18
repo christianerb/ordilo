@@ -4,6 +4,7 @@ import { DOCUMENT_LIST_COLUMNS } from "@/lib/scan/document-list-columns";
 import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import { DokumenteClient } from "./dokumente-client";
 import type { ContactRow } from "./actions";
+import { familyInboundEmail } from "@/lib/family-inbound-email";
 
 /**
  * Dokumente page (server component).
@@ -68,15 +69,22 @@ export default async function DokumentePage({
       : Promise.resolve({
           data: [] as Array<{ id: string; ocr_text: string | null }>,
         });
+  const emailAliasPromise = supabase
+    .from("family_email_aliases")
+    .select("local_part")
+    .eq("family_id", family.id)
+    .maybeSingle();
 
   const [
     { data },
     { data: contactData },
     { data: notePreviewData },
+    { data: emailAlias },
   ] = await Promise.all([
     documentsPromise,
     contactsPromise,
     notePreviewsPromise,
+    emailAliasPromise,
   ]);
 
   // The trimmed selection carries every column except the heavy
@@ -92,6 +100,10 @@ export default async function DokumentePage({
           note.id,
           note.ocr_text?.trim().slice(0, 180) ?? "",
         ]),
+      )}
+      inboundEmail={familyInboundEmail(
+        emailAlias?.local_part ?? "",
+        process.env.INBOUND_EMAIL_DOMAIN,
       )}
     />
   );

@@ -62,7 +62,7 @@ describe("FamilySettingsClient", () => {
       />,
     );
 
-    expect(screen.getByTestId("family-inbound-email")).toHaveTextContent(
+    expect(screen.getByTestId("inbound-email-address-card")).toHaveTextContent(
       "dokumente+geheim@mail.ordilo.de",
     );
   });

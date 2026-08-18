@@ -35,6 +35,7 @@ const addMemberState: OnboardingState = {
   step: "add-member",
   familyId: "fam-1",
   familyName: "Testfamilie",
+  inboundEmail: null,
   members: [],
 };
 

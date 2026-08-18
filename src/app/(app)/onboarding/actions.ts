@@ -6,6 +6,7 @@ import { validateFamilyName, validateMember } from "@/lib/schemas/onboarding";
 import { DEFAULT_COLLECTIONS } from "@/lib/schemas/collections";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 import { saveMemberRelations } from "@/lib/family/relations-db";
+import { familyInboundEmail } from "@/lib/family-inbound-email";
 import type { Database } from "@/types/database";
 
 /**
@@ -39,7 +40,9 @@ type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
  * @param name - The family name (required, validated with Zod)
  * @returns The family row ({ id, name }) on success, or a German error.
  */
-export async function createFamily(name: string): Promise<ActionResult<Pick<FamilyRow, "id" | "name">>> {
+export async function createFamily(name: string): Promise<ActionResult<
+  Pick<FamilyRow, "id" | "name"> & { inboundEmail: string | null }
+>> {
   // Validate input — German validation messages.
   const validation = validateFamilyName(name);
   if (!validation.success) {
@@ -69,7 +72,22 @@ export async function createFamily(name: string): Promise<ActionResult<Pick<Fami
 
   if (existing) {
     // Return the existing family — no duplicate created.
-    return { success: true, data: { id: existing.id, name: existing.name } };
+    const { data: alias } = await supabase
+      .from("family_email_aliases")
+      .select("local_part")
+      .eq("family_id", existing.id)
+      .maybeSingle();
+    return {
+      success: true,
+      data: {
+        id: existing.id,
+        name: existing.name,
+        inboundEmail: familyInboundEmail(
+          alias?.local_part ?? "",
+          process.env.INBOUND_EMAIL_DOMAIN,
+        ),
+      },
+    };
   }
 
   // Create a new family.
@@ -98,9 +116,21 @@ export async function createFamily(name: string): Promise<ActionResult<Pick<Fami
         return { success: false, error: FRIENDLY_ERROR };
       }
 
+      const { data: alias } = await supabase
+        .from("family_email_aliases")
+        .select("local_part")
+        .eq("family_id", existingFamily.id)
+        .maybeSingle();
       return {
         success: true,
-        data: { id: existingFamily.id, name: existingFamily.name },
+        data: {
+          id: existingFamily.id,
+          name: existingFamily.name,
+          inboundEmail: familyInboundEmail(
+            alias?.local_part ?? "",
+            process.env.INBOUND_EMAIL_DOMAIN,
+          ),
+        },
       };
     }
     return { success: false, error: FRIENDLY_ERROR };
@@ -113,7 +143,22 @@ export async function createFamily(name: string): Promise<ActionResult<Pick<Fami
     properties: { step: "family_name" },
   });
 
-  return { success: true, data: family };
+  const { data: alias } = await supabase
+    .from("family_email_aliases")
+    .select("local_part")
+    .eq("family_id", family.id)
+    .maybeSingle();
+
+  return {
+    success: true,
+    data: {
+      ...family,
+      inboundEmail: familyInboundEmail(
+        alias?.local_part ?? "",
+        process.env.INBOUND_EMAIL_DOMAIN,
+      ),
+    },
+  };
 }
 
 /**

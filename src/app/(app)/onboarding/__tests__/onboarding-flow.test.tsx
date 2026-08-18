@@ -28,6 +28,7 @@ describe("OnboardingFlow", () => {
       step: "family-name",
       familyId: null,
       familyName: null,
+      inboundEmail: null,
       members: [],
     };
 
@@ -50,6 +51,7 @@ describe("OnboardingFlow", () => {
       step: "ready",
       familyId: "family-1",
       familyName: "Familie Müller",
+      inboundEmail: null,
       members: [],
     };
 
@@ -60,5 +62,21 @@ describe("OnboardingFlow", () => {
       expect(completeOnboarding).toHaveBeenCalledWith("family-1", true);
     });
     expect(mockPush).toHaveBeenCalledWith("/home?scan=1");
+  });
+
+  it("shows the private document address in the final step", () => {
+    const initialState: OnboardingState = {
+      step: "ready",
+      familyId: "family-1",
+      familyName: "Familie Müller",
+      inboundEmail: "dokumente+geheim@mail.ordilo.de",
+      members: [],
+    };
+
+    render(<OnboardingFlow initialState={initialState} />);
+
+    expect(screen.getByTestId("inbound-email-address-card")).toHaveTextContent(
+      "dokumente+geheim@mail.ordilo.de",
+    );
   });
 });

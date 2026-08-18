@@ -29,6 +29,7 @@ import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
 import { formatGermanDate } from "@/lib/format";
 import { ContactsView } from "./contacts-view";
 import type { ContactRow } from "./actions";
+import { InboundEmailAddressCard } from "@/components/ordilo/inbound-email-address-card";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -49,10 +50,12 @@ export function DokumenteClient({
   initialDocuments,
   initialContacts = [],
   initialNotePreviews = {},
+  inboundEmail,
 }: {
   initialDocuments: DocumentRow[];
   initialContacts?: ContactRow[];
   initialNotePreviews?: Record<string, string>;
+  inboundEmail?: string | null;
 }) {
   const {
     documents,
@@ -195,6 +198,8 @@ export function DokumenteClient({
         />
       ) : (
         <>
+      {inboundEmail && <InboundEmailAddressCard email={inboundEmail} />}
+
       {/* Drag overlay */}
       {isDragOver && (
         <div className="flex flex-col items-center justify-center rounded-ordilo-sm border-2 border-dashed border-[var(--petrol)] bg-[var(--blue-soft)] py-8 text-center animate-card-in">

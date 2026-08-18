@@ -131,9 +131,9 @@ function SidebarFooter({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         <DropdownMenuItem asChild>
-          <Link href="/familie">
+          <Link href="/familie/einstellungen">
             <Settings className="size-4" aria-hidden="true" />
-            Familie
+            Familieneinstellungen
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem
