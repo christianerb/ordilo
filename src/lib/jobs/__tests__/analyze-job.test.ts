@@ -80,6 +80,7 @@ function mockWorkerClient(docStatus: string) {
             const result = { data: { id: DOC_ID }, error: null };
             const chain = {
               eq: vi.fn(() => chain),
+              is: vi.fn(() => chain),
               in: vi.fn(() => chain),
               select: vi.fn(() => chain),
               maybeSingle: vi.fn().mockResolvedValue(result),

@@ -64,6 +64,10 @@ create policy "tasks_update" on public.tasks
     and public.user_belongs_to_family(family_id)
   );
 
+-- Physical task deletion is reserved for trusted database functions and the
+-- service-role cleanup. The confirm/re-analysis paths are wrapped below.
+drop policy if exists "tasks_delete" on public.tasks;
+
 -- Derived document content follows the parent visibility rule as well. This
 -- keeps dates, facts, and embeddings from surfacing while their source lives
 -- in the paper bin.
@@ -137,23 +141,36 @@ create policy "processing_jobs_select" on public.processing_jobs
   );
 
 create or replace function public.trash_document(p_document_id uuid)
-returns boolean
+returns text
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
   v_deleted_at timestamptz := now();
+  v_status text;
+  v_was_deleted boolean;
 begin
-  update public.documents d
-  set deleted_at = v_deleted_at
+  select d.status, d.deleted_at is not null
+    into v_status, v_was_deleted
+  from public.documents d
   where d.id = p_document_id
-    and d.deleted_at is null
-    and public.user_belongs_to_family(d.family_id);
+    and public.user_belongs_to_family(d.family_id)
+  for update;
 
   if not found then
-    return false;
+    return 'not_found';
   end if;
+  if v_was_deleted then
+    return 'already_trashed';
+  end if;
+  if v_status in ('ocr_processing', 'analyzing') then
+    return 'busy';
+  end if;
+
+  update public.documents
+  set deleted_at = v_deleted_at
+  where id = p_document_id;
 
   update public.tasks t
   set deleted_at = v_deleted_at,
@@ -161,7 +178,7 @@ begin
   where t.document_id = p_document_id
     and t.deleted_at is null;
 
-  return true;
+  return 'trashed';
 end;
 $$;
 
@@ -293,6 +310,188 @@ grant execute on function public.restore_document(uuid) to authenticated, servic
 grant execute on function public.trash_task(uuid) to authenticated, service_role;
 grant execute on function public.restore_task(uuid) to authenticated, service_role;
 grant execute on function public.list_trash(uuid) to authenticated, service_role;
+
+-- Replace all extraction-derived rows in one transaction while holding the
+-- document row lock. A concurrent trash operation therefore happens wholly
+-- before or wholly after the replacement, never between its delete/insert
+-- phases.
+create or replace function public.replace_document_extraction(
+  p_document_id uuid,
+  p_family_id uuid,
+  p_entities jsonb,
+  p_tasks jsonb,
+  p_facts jsonb,
+  p_clear_edges boolean default false
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform 1
+  from public.documents d
+  where d.id = p_document_id
+    and d.family_id = p_family_id
+    and d.status = 'analyzing'
+    and d.deleted_at is null
+    and (
+      auth.role() = 'service_role'
+      or public.user_belongs_to_family(d.family_id)
+    )
+  for update;
+
+  if not found then
+    return false;
+  end if;
+
+  delete from public.extracted_entities where document_id = p_document_id;
+  delete from public.tasks where document_id = p_document_id;
+  delete from public.document_facts where document_id = p_document_id;
+
+  if p_clear_edges then
+    delete from public.knowledge_edges where source_document_id = p_document_id;
+  end if;
+
+  insert into public.extracted_entities (
+    document_id, family_id, entity_type, entity_value, normalized_value,
+    label, amount_minor, currency, amount_kind, value_date, confidence,
+    linked_object_id
+  )
+  select p_document_id, p_family_id, entity.entity_type, entity.entity_value,
+         entity.normalized_value, entity.label, entity.amount_minor,
+         entity.currency, entity.amount_kind, entity.value_date,
+         entity.confidence, entity.linked_object_id
+  from jsonb_to_recordset(coalesce(p_entities, '[]'::jsonb)) as entity (
+    entity_type text,
+    entity_value text,
+    normalized_value text,
+    label text,
+    amount_minor bigint,
+    currency text,
+    amount_kind text,
+    value_date date,
+    confidence double precision,
+    linked_object_id uuid
+  );
+
+  insert into public.tasks (
+    family_id, document_id, title, due_date, status, confidence
+  )
+  select p_family_id, p_document_id, task.title, task.due_date,
+         coalesce(task.status, 'open'), task.confidence
+  from jsonb_to_recordset(coalesce(p_tasks, '[]'::jsonb)) as task (
+    title text,
+    due_date date,
+    status text,
+    confidence double precision
+  );
+
+  insert into public.document_facts (
+    document_id, family_id, fact_type, label, value, normalized_value,
+    confidence
+  )
+  select p_document_id, p_family_id, fact.fact_type, fact.label, fact.value,
+         fact.normalized_value, fact.confidence
+  from jsonb_to_recordset(coalesce(p_facts, '[]'::jsonb)) as fact (
+    fact_type text,
+    label text,
+    value text,
+    normalized_value text,
+    confidence double precision
+  );
+
+  return true;
+end;
+$$;
+
+revoke all on function public.replace_document_extraction(
+  uuid, uuid, jsonb, jsonb, jsonb, boolean
+) from public, anon;
+grant execute on function public.replace_document_extraction(
+  uuid, uuid, jsonb, jsonb, jsonb, boolean
+) to authenticated, service_role;
+
+-- Keep the large, proven confirm transaction intact, but put a narrow
+-- authorization wrapper in front of it. The internal function runs as the
+-- owner so it can replace tasks after the direct task-delete policy is gone.
+do $$
+begin
+  if to_regprocedure(
+    'public.confirm_document_internal(uuid,uuid,text,text,text,text,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,jsonb,integer)'
+  ) is null then
+    alter function public.confirm_document(
+      uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb,
+      jsonb, jsonb, jsonb, jsonb, int
+    ) rename to confirm_document_internal;
+  end if;
+end;
+$$;
+
+alter function public.confirm_document_internal(
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb,
+  jsonb, jsonb, jsonb, jsonb, int
+) security definer;
+alter function public.confirm_document_internal(
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb,
+  jsonb, jsonb, jsonb, jsonb, int
+) set search_path = public, pg_temp;
+revoke all on function public.confirm_document_internal(
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb,
+  jsonb, jsonb, jsonb, jsonb, int
+) from public, anon, authenticated;
+
+create or replace function public.confirm_document(
+  p_document_id uuid,
+  p_family_id uuid,
+  p_title text,
+  p_summary text,
+  p_document_type text,
+  p_category text,
+  p_persons jsonb default '[]'::jsonb,
+  p_organizations jsonb default '[]'::jsonb,
+  p_embeddings jsonb default '[]'::jsonb,
+  p_label_embeddings jsonb default '[]'::jsonb,
+  p_entities jsonb default '[]'::jsonb,
+  p_tasks jsonb default '[]'::jsonb,
+  p_facts jsonb default '[]'::jsonb,
+  p_pipeline_version int default 1
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform 1
+  from public.documents d
+  where d.id = p_document_id
+    and d.family_id = p_family_id
+    and d.status = 'analyzed'
+    and d.deleted_at is null
+    and public.user_belongs_to_family(d.family_id)
+  for update;
+
+  if not found then
+    return jsonb_build_object('status', 'status_changed');
+  end if;
+
+  return public.confirm_document_internal(
+    p_document_id, p_family_id, p_title, p_summary, p_document_type,
+    p_category, p_persons, p_organizations, p_embeddings,
+    p_label_embeddings, p_entities, p_tasks, p_facts, p_pipeline_version
+  );
+end;
+$$;
+
+revoke all on function public.confirm_document(
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb,
+  jsonb, jsonb, jsonb, jsonb, int
+) from public, anon;
+grant execute on function public.confirm_document(
+  uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb,
+  jsonb, jsonb, jsonb, jsonb, int
+) to authenticated;
 
 -- Claiming makes a document non-restorable before its Storage object is
 -- removed. A stale claim may be retried after one hour by the scheduler.

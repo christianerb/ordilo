@@ -1303,7 +1303,7 @@ export type Database = {
     Functions: {
       trash_document: {
         Args: { p_document_id: string };
-        Returns: boolean;
+        Returns: "trashed" | "busy" | "already_trashed" | "not_found";
       };
       restore_document: {
         Args: { p_document_id: string };
@@ -1325,6 +1325,17 @@ export type Database = {
           label: string;
           deleted_at: string;
         }[];
+      };
+      replace_document_extraction: {
+        Args: {
+          p_document_id: string;
+          p_family_id: string;
+          p_entities: Record<string, unknown>[];
+          p_tasks: Record<string, unknown>[];
+          p_facts: Record<string, unknown>[];
+          p_clear_edges?: boolean;
+        };
+        Returns: boolean;
       };
       claim_expired_trash_documents: {
         Args: { p_cutoff: string };

@@ -73,7 +73,7 @@ export async function DELETE(
     );
   }
 
-  const { data: trashed, error: deleteError } = await serverClient.rpc(
+  const { data: trashResult, error: deleteError } = await serverClient.rpc(
     "trash_document",
     { p_document_id: documentId },
   );
@@ -86,11 +86,27 @@ export async function DELETE(
     );
   }
 
-  if (!trashed) {
+  if (trashResult === "busy") {
+    return jsonError(
+      "Dokument wird gerade verarbeitet. Bitte kurz warten.",
+      "DOCUMENT_BUSY",
+      409,
+    );
+  }
+
+  if (trashResult === "already_trashed") {
     return jsonError(
       "Dokument ist bereits im Papierkorb.",
       "DOCUMENT_ALREADY_TRASHED",
       409,
+    );
+  }
+
+  if (trashResult !== "trashed") {
+    return jsonError(
+      "Dokument nicht gefunden oder kein Zugriff.",
+      "DOCUMENT_NOT_FOUND",
+      404,
     );
   }
 

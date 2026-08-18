@@ -55,7 +55,7 @@ export function OrdiloAccordion({
         </span>
         <ChevronDown
           className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(.22,1.35,.36,1)]",
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-300 ease-[cubic-bezier(.22,1.35,.36,1)] motion-reduce:transition-none motion-reduce:duration-0",
             open && "rotate-180",
           )}
           aria-hidden="true"
@@ -66,7 +66,7 @@ export function OrdiloAccordion({
         aria-hidden={!open}
         inert={!open}
         className={cn(
-          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.22,1.18,.36,1)]",
+          "grid transition-[grid-template-rows] duration-300 ease-[cubic-bezier(.22,1.18,.36,1)] motion-reduce:transition-none motion-reduce:duration-0",
           open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >

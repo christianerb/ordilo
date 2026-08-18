@@ -294,6 +294,7 @@ async function executeOcrJob(
     .from("documents")
     .update({ status: "ocr_processing", ...CLEAR_DOCUMENT_FAILURE })
     .eq("id", documentId)
+    .is("deleted_at", null)
     .in("status", [...OCR_ALLOWED_SOURCE_STATUSES])
     .select()
     .maybeSingle();
@@ -351,6 +352,7 @@ async function executeAnalyzeJob(
     .from("documents")
     .update({ status: "analyzing", ...CLEAR_DOCUMENT_FAILURE })
     .eq("id", documentId)
+    .is("deleted_at", null)
     .in("status", [...ANALYZE_ALLOWED_SOURCE_STATUSES])
     .select("id")
     .maybeSingle();

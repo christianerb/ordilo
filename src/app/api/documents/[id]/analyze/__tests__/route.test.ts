@@ -343,6 +343,16 @@ function mockServerClient(options: {
     }),
   };
 
+  const rpc = vi.fn().mockImplementation((functionName: string) => {
+    if (functionName === "replace_document_extraction") {
+      return Promise.resolve({
+        data: !storeError,
+        error: storeError ? "replace error" : null,
+      });
+    }
+    return Promise.resolve({ data: null, error: null });
+  });
+
   return {
     auth: {
       getUser: vi.fn().mockResolvedValue({ data: { user } }),
@@ -376,7 +386,7 @@ function mockServerClient(options: {
           throw new Error(`Unexpected table: ${table}`);
       }
     }),
-    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    rpc,
     _operations: operations,
     _entitiesBuilder: entitiesBuilder,
     _tasksBuilder: tasksBuilder,
@@ -384,6 +394,7 @@ function mockServerClient(options: {
     _edgesBuilder: edgesBuilder,
     _embeddingsBuilder: embeddingsBuilder,
     _documentsBuilder: documentsBuilder,
+    _rpc: rpc,
   } as unknown as Awaited<ReturnType<typeof createServerClient>> & {
     _operations: Record<string, number>;
     _entitiesBuilder: { delete: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> };
@@ -392,6 +403,7 @@ function mockServerClient(options: {
     _edgesBuilder: { delete: ReturnType<typeof vi.fn> };
     _embeddingsBuilder: { delete: ReturnType<typeof vi.fn> };
     _documentsBuilder: { update: ReturnType<typeof vi.fn> };
+    _rpc: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -717,15 +729,17 @@ describe("POST /api/documents/[id]/analyze", () => {
 
   // --- Re-analyze (clear prior results) ---
 
-  it("clears prior extracted_entities and tasks on re-analyze from analyzed", async () => {
-    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(
-      mockServerClient({ docStatus: "analyzed" }),
-    );
+  it("replaces prior extraction results atomically when re-analyzing", async () => {
+    const client = mockServerClient({ docStatus: "analyzed" });
+    (createServerClient as ReturnType<typeof vi.fn>).mockResolvedValue(client);
 
     const response = await POST(new Request("http://localhost"), createParams());
 
     expect(response.status).toBe(200);
-    // The delete operations should have been called.
+    expect(client._rpc).toHaveBeenCalledWith(
+      "replace_document_extraction",
+      expect.objectContaining({ p_clear_edges: false }),
+    );
   });
 
   it("clears knowledge_edges on re-analyze from confirmed (embeddings replaced, not deleted)", async () => {
@@ -735,7 +749,10 @@ describe("POST /api/documents/[id]/analyze", () => {
     const response = await POST(new Request("http://localhost"), createParams());
 
     expect(response.status).toBe(200);
-    expect(client._edgesBuilder.delete).toHaveBeenCalled();
+    expect(client._rpc).toHaveBeenCalledWith(
+      "replace_document_extraction",
+      expect.objectContaining({ p_clear_edges: true }),
+    );
     // Embeddings are NOT deleted — they are replaced atomically by
     // performAnalyzeStep after generating new ones.
     expect(client._embeddingsBuilder.delete).not.toHaveBeenCalled();
@@ -748,7 +765,10 @@ describe("POST /api/documents/[id]/analyze", () => {
     const response = await POST(new Request("http://localhost"), createParams());
 
     expect(response.status).toBe(200);
-    expect(client._edgesBuilder.delete).not.toHaveBeenCalled();
+    expect(client._rpc).toHaveBeenCalledWith(
+      "replace_document_extraction",
+      expect.objectContaining({ p_clear_edges: false }),
+    );
     expect(client._embeddingsBuilder.delete).not.toHaveBeenCalled();
   });
 
@@ -921,9 +941,10 @@ describe("POST /api/documents/[id]/analyze", () => {
 
     await POST(new Request("http://localhost"), createParams());
 
-    // The insert should have been called with entity rows.
-    expect(client._entitiesBuilder.insert).toHaveBeenCalledTimes(1);
-    const insertArg = client._entitiesBuilder.insert.mock.calls[0][0];
+    const replacementCall = client._rpc.mock.calls.find(
+      (call: unknown[]) => call[0] === "replace_document_extraction",
+    );
+    const insertArg = replacementCall?.[1].p_entities;
     // 1 person + 1 org + 1 date + 1 amount + 1 category + 2 tags = 7 entities
     expect(insertArg).toHaveLength(7);
     // Check entity types.
@@ -942,8 +963,10 @@ describe("POST /api/documents/[id]/analyze", () => {
 
     await POST(new Request("http://localhost"), createParams());
 
-    expect(client._tasksBuilder.insert).toHaveBeenCalledTimes(1);
-    const insertArg = client._tasksBuilder.insert.mock.calls[0][0];
+    const replacementCall = client._rpc.mock.calls.find(
+      (call: unknown[]) => call[0] === "replace_document_extraction",
+    );
+    const insertArg = replacementCall?.[1].p_tasks;
     expect(insertArg).toHaveLength(1);
     expect(insertArg[0].title).toBe("Elternabend besuchen");
     expect(insertArg[0].status).toBe("open");

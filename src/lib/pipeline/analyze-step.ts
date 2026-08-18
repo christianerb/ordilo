@@ -446,50 +446,9 @@ export async function storeExtractionResults(
   analysis: DocumentAnalysis,
   wasConfirmed: boolean,
 ): Promise<void> {
-  // 1. Clear prior results (re-analyze support) ----------------------------
-  const { error: entitiesDeleteError } = await client
-    .from("extracted_entities")
-    .delete()
-    .eq("document_id", documentId);
-
-  if (entitiesDeleteError) {
-    throw new Error("Vorherige Entitäten konnten nicht gelöscht werden.");
-  }
-
-  const { error: tasksDeleteError } = await client
-    .from("tasks")
-    .delete()
-    .eq("document_id", documentId);
-
-  if (tasksDeleteError) {
-    throw new Error("Vorherige Aufgaben konnten nicht gelöscht werden.");
-  }
-
-  const { error: factsDeleteError } = await client
-    .from("document_facts")
-    .delete()
-    .eq("document_id", documentId);
-
-  if (factsDeleteError) {
-    throw new Error("Vorherige Fakten konnten nicht gelöscht werden.");
-  }
-
-  if (wasConfirmed) {
-    const { error: edgesDeleteError } = await client
-      .from("knowledge_edges")
-      .delete()
-      .eq("source_document_id", documentId);
-
-    if (edgesDeleteError) {
-      throw new Error("Wissensgraph-Kanten konnten nicht gelöscht werden.");
-    }
-    // Note: embeddings are NOT deleted here when wasConfirmed. They are
-    // replaced atomically by performAnalyzeStep after generating new ones
-    // with the updated title/summary/tags. This keeps the document
-    // searchable during re-analysis.
-  }
-
-  // 2. Insert new extracted_entities rows ----------------------------------
+  // Build the replacement rows locally, then swap every derived table in a
+  // single database transaction. Embeddings stay untouched here and are
+  // replaced separately by their own atomic RPC.
   type EntityInsert =
     Database["public"]["Tables"]["extracted_entities"]["Insert"];
   const entityInserts: EntityInsert[] = [];
@@ -567,17 +526,6 @@ export async function storeExtractionResults(
     });
   }
 
-  if (entityInserts.length > 0) {
-    const { error: entitiesInsertError } = await client
-      .from("extracted_entities")
-      .insert(entityInserts);
-
-    if (entitiesInsertError) {
-      throw new Error("Entitäten konnten nicht gespeichert werden.");
-    }
-  }
-
-  // 3. Insert new tasks rows -------------------------------------------------
   type TaskInsert = Database["public"]["Tables"]["tasks"]["Insert"];
   const taskInserts: TaskInsert[] = analysis.tasks.map((task) => ({
     family_id: familyId,
@@ -588,17 +536,6 @@ export async function storeExtractionResults(
     confidence: task.confidence,
   }));
 
-  if (taskInserts.length > 0) {
-    const { error: tasksInsertError } = await client
-      .from("tasks")
-      .insert(taskInserts);
-
-    if (tasksInsertError) {
-      throw new Error("Aufgaben konnten nicht gespeichert werden.");
-    }
-  }
-
-  // 4. Insert new document_facts rows (typed identifiers) --------------------
   type FactInsert = Database["public"]["Tables"]["document_facts"]["Insert"];
   const factInserts: FactInsert[] = analysis.facts.map((fact) => ({
     document_id: documentId,
@@ -610,13 +547,19 @@ export async function storeExtractionResults(
     confidence: fact.confidence,
   }));
 
-  if (factInserts.length > 0) {
-    const { error: factsInsertError } = await client
-      .from("document_facts")
-      .insert(factInserts);
+  const { data: replaced, error } = await client.rpc(
+    "replace_document_extraction",
+    {
+      p_document_id: documentId,
+      p_family_id: familyId,
+      p_entities: entityInserts,
+      p_tasks: taskInserts,
+      p_facts: factInserts,
+      p_clear_edges: wasConfirmed,
+    },
+  );
 
-    if (factsInsertError) {
-      throw new Error("Fakten konnten nicht gespeichert werden.");
-    }
+  if (error || !replaced) {
+    throw new Error("Analyse-Ergebnisse konnten nicht gespeichert werden.");
   }
 }
