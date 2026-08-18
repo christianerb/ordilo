@@ -545,6 +545,9 @@ describe("AufgabenClient — verwerfen", () => {
     expect(mockUpdate.mock.calls[1][0]).toEqual({
       status: "open",
       due_date: null,
+      deleted_at: null,
+      status_before_trash: null,
+      trashed_by_document_id: null,
     });
   });
 });

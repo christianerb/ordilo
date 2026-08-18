@@ -32,12 +32,6 @@ export async function purgeExpiredTrash(): Promise<void> {
   const cutoff = new Date(
     Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const { error: tasksError } = await admin
-    .from("tasks")
-    .delete()
-    .lt("deleted_at", cutoff);
-  if (tasksError) throw tasksError;
-
   const claimId = crypto.randomUUID();
   const { data: documents, error: documentReadError } = await admin.rpc(
     "claim_expired_trash_documents",
@@ -61,9 +55,26 @@ export async function purgeExpiredTrash(): Promise<void> {
     }
   }
 
+  const claimedDocumentIds = (documents ?? []).map((document) => document.id);
+  if (claimedDocumentIds.length > 0) {
+    const { error: linkedTasksError } = await admin
+      .from("tasks")
+      .delete()
+      .in("trashed_by_document_id", claimedDocumentIds)
+      .not("deleted_at", "is", null);
+    if (linkedTasksError) throw linkedTasksError;
+  }
+
   const { error: documentsError } = await admin
     .from("documents")
     .delete()
     .eq("purge_claim_id", claimId);
   if (documentsError) throw documentsError;
+
+  const { error: standaloneTasksError } = await admin
+    .from("tasks")
+    .delete()
+    .is("trashed_by_document_id", null)
+    .lt("deleted_at", cutoff);
+  if (standaloneTasksError) throw standaloneTasksError;
 }

@@ -1311,6 +1311,10 @@ export type Database = {
         Args: { p_document_id: string };
         Returns: boolean;
       };
+      restore_document: {
+        Args: { p_document_id: string };
+        Returns: boolean;
+      };
       claim_expired_trash_documents: {
         Args: { p_cutoff: string; p_claim_id: string };
         Returns: { id: string; file_url: string | null }[];

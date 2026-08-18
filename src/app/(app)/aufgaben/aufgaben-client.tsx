@@ -582,8 +582,20 @@ export function AufgabenClient({
     async (task: TaskCardData) => {
       const ok = await patch(
         task.id,
-        { status: "open", due_date: task.due_date },
-        { status: "dismissed", due_date: task.due_date },
+        {
+          status: task.status,
+          due_date: task.due_date,
+          deleted_at: null,
+          status_before_trash: null,
+          trashed_by_document_id: null,
+        },
+        {
+          status: "dismissed",
+          due_date: task.due_date,
+          deleted_at: new Date().toISOString(),
+          status_before_trash: task.status,
+          trashed_by_document_id: null,
+        },
       );
       if (ok) {
         toast.success("Wieder da — kein Problem");

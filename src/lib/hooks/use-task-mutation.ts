@@ -16,6 +16,9 @@ export interface TaskPatch {
   status?: string;
   due_date?: string | null;
   assigned_to?: string | null;
+  deleted_at?: string | null;
+  status_before_trash?: string | null;
+  trashed_by_document_id?: string | null;
   /**
    * Rarely passed. A database trigger stamps and clears this alongside
    * `status` for every writer — including the chat tools, which do not go
