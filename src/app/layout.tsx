@@ -12,7 +12,7 @@ const figtree = Figtree({
 export const metadata: Metadata = {
   title: "Ordilo",
   description:
-    "Dein privater AI-Familienordner. Erfasse, verstehe und durchsuche Dokumente auf natürliche Weise.",
+    "Das Familiengedächtnis für euren Papierkram: Ordilo liest Briefe, Rechnungen und Verträge, sortiert sie ein und beantwortet eure Fragen.",
   applicationName: "Ordilo",
   appleWebApp: {
     capable: true,
