@@ -65,6 +65,32 @@ create trigger contacts_touch_updated_at
   before update on public.contacts
   for each row execute function public.touch_updated_at();
 
+-- The supported invite flow records a family merge before deleting the
+-- source family. Move contacts in that same transaction so their family
+-- foreign key cannot cascade-delete them with the source family.
+create or replace function public.transfer_contacts_for_family_merge()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.contacts
+  set family_id = new.target_family_id
+  where family_id = new.source_family_id;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.transfer_contacts_for_family_merge() from public;
+
+drop trigger if exists transfer_contacts_on_family_merge
+  on public.family_merge_operations;
+create trigger transfer_contacts_on_family_merge
+after insert on public.family_merge_operations
+for each row execute function public.transfer_contacts_for_family_merge();
+
 create or replace function public.sync_contact_from_entity()
 returns trigger
 language plpgsql

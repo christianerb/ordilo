@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { ExtractedContact } from "@/lib/schemas/extraction";
 
 export const contactInputSchema = z
   .object({
@@ -34,11 +33,9 @@ export const contactInputSchema = z
 
 export type ContactInput = z.infer<typeof contactInputSchema>;
 
-/** Stable identity used to reconcile one extracted contact across re-analysis. */
-export function contactSourceKey(contact: Pick<ExtractedContact, "name" | "phone" | "email">) {
-  return [contact.name, contact.phone, contact.email]
-    .map((value) => value.toLocaleLowerCase("de").replace(/\s+/g, " ").trim())
-    .join("|");
+/** Stable identity for a contact's position within one document extraction. */
+export function contactSourceKey(index: number): string {
+  return `contact:${index}`;
 }
 
 /** Keep only digits and an optional leading plus for tel/WhatsApp URLs. */

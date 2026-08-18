@@ -30,4 +30,12 @@ describe("0065_family_contacts migration", () => {
     expect(migration).toContain("user_edited_at is null");
     expect(migration).toContain("when contacts.user_edited_at is null");
   });
+
+  it("transfers contacts before a merged source family is deleted", () => {
+    expect(migration).toContain(
+      "create trigger transfer_contacts_on_family_merge",
+    );
+    expect(migration).toContain("set family_id = new.target_family_id");
+    expect(migration).toContain("where family_id = new.source_family_id");
+  });
 });

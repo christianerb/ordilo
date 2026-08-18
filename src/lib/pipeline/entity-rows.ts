@@ -60,11 +60,11 @@ export function buildEntityRows(analysis: EntitySource): ConfirmRpcEntity[] {
     });
   }
 
-  for (const contact of analysis.contacts ?? []) {
+  for (const [contactIndex, contact] of (analysis.contacts ?? []).entries()) {
     entities.push({
       entity_type: "contact",
       entity_value: JSON.stringify(contact),
-      normalized_value: contactSourceKey(contact),
+      normalized_value: contactSourceKey(contactIndex),
       label: contact.name,
       confidence: contact.confidence,
       linked_object_id: null,

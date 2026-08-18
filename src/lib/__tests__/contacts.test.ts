@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   buildWhatsAppHref,
   contactInputSchema,
+  contactSourceKey,
   normalizePhoneForLink,
   whatsappNumber,
 } from "@/lib/contacts";
 
 describe("contact actions", () => {
+  it("keys extracted contacts only by their stable document position", () => {
+    expect(contactSourceKey(0)).toBe("contact:0");
+    expect(contactSourceKey(1)).toBe("contact:1");
+  });
+
   it("keeps a leading plus for dialer links", () => {
     expect(normalizePhoneForLink("+49 (176) 123 45")).toBe("+4917612345");
   });
