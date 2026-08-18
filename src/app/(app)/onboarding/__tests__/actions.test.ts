@@ -68,6 +68,10 @@ function mockSupabase(options: {
       error: options.families?.insertError ?? null,
     }),
   };
+  const aliasesSelectChain = {
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
 
   // families update chain — for completeOnboarding which updates
   // onboarding_completed_at on the user's family. The .eq() method
@@ -130,6 +134,9 @@ function mockSupabase(options: {
         })),
         delete: membersDeleteMock,
       };
+    }
+    if (table === "family_email_aliases") {
+      return { select: vi.fn(() => aliasesSelectChain) };
     }
     if (table === "family_member_relations") {
       return {

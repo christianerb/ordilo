@@ -1,6 +1,7 @@
 "use client";
 
-import { Cake, Users } from "lucide-react";
+import Link from "next/link";
+import { Cake, Mail, Users } from "lucide-react";
 import { getDaysUntilBirthday } from "@/lib/format";
 import { getGreeting } from "@/components/ordilo/app-shell-shared";
 import { InviteAction } from "@/components/ordilo/invite-action";
@@ -115,6 +116,14 @@ export function FamilyBanner({
             aria-hidden="true"
           />
         )}
+
+        <Link
+          href="/familie/einstellungen"
+          className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-ordilo-sm px-3 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Mail className="size-4" aria-hidden="true" />
+          <span className="hidden sm:inline">E-Mail-Adresse</span>
+        </Link>
 
         <InviteAction />
       </div>

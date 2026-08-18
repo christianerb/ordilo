@@ -86,6 +86,10 @@ function mockServerClient(options: {
       error: options.memberError ?? null,
     }),
   };
+  const aliasesChain = {
+    eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+  };
 
   const fromMock = vi.fn((table: string) => {
     if (table === "families") {
@@ -96,6 +100,9 @@ function mockServerClient(options: {
     }
     if (table === "family_members") {
       return { select: vi.fn(() => membersChain) };
+    }
+    if (table === "family_email_aliases") {
+      return { select: vi.fn(() => aliasesChain) };
     }
     throw new Error(`Unexpected table: ${table}`);
   });

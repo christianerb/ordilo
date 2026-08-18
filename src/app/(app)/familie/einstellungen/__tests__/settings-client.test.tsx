@@ -62,9 +62,35 @@ describe("FamilySettingsClient", () => {
       />,
     );
 
-    expect(screen.getByTestId("family-inbound-email")).toHaveTextContent(
+    expect(screen.getByTestId("inbound-email-address-card")).toHaveTextContent(
       "dokumente+geheim@mail.ordilo.de",
     );
+  });
+
+  it("confirms that the forwarding address was copied", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+
+    render(
+      <FamilySettingsClient
+        inboundEmail="dokumente+geheim@mail.ordilo.de"
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "E-Mail-Adresse kopieren" }),
+    );
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith(
+        "dokumente+geheim@mail.ordilo.de",
+      );
+    });
+    expect(
+      screen.getByText(
+        "Adresse kopiert. Du kannst sie jetzt beim Weiterleiten einfügen.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("disables the save button until the name actually changes", () => {

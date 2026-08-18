@@ -17,6 +17,7 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { RoleChipGroup } from "@/components/ordilo/role-chips";
 import { createFamily, addMember, completeOnboarding } from "./actions";
+import { InboundEmailAddressCard } from "@/components/ordilo/inbound-email-address-card";
 
 /**
  * The onboarding step the user is currently on.
@@ -50,6 +51,7 @@ export interface OnboardingState {
   step: OnboardingStep;
   familyId: string | null;
   familyName: string | null;
+  inboundEmail: string | null;
   members: OnboardingMember[];
 }
 
@@ -86,6 +88,9 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
   );
   const [familyId, setFamilyId] = useState<string | null>(initialState.familyId);
   const [familyName, setFamilyName] = useState<string | null>(initialState.familyName);
+  const [inboundEmail, setInboundEmail] = useState<string | null>(
+    initialState.inboundEmail,
+  );
   const [members, setMembers] = useState<OnboardingMember[]>(initialState.members);
 
   // Step 1 form state
@@ -125,6 +130,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
 
         setFamilyId(result.data.id);
         setFamilyName(result.data.name);
+        setInboundEmail(result.data.inboundEmail);
 
         // Create the self-member in the same step (optional field). A
         // failure here must not strand the flow — the member can be added
@@ -461,6 +467,14 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
               </div>
 
               {serverError && <ErrorBanner message={serverError} />}
+
+              {inboundEmail && (
+                <div className="pt-4">
+                  <InboundEmailAddressCard
+                    email={inboundEmail}
+                  />
+                </div>
+              )}
 
               <div className="space-y-2 pt-2">
                 <Button
