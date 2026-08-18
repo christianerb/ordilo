@@ -177,6 +177,8 @@ describe("DocumentsBrowser", () => {
     // Default: newest first.
     expect(rows()[0].textContent).toContain("Zahnarzt");
 
+    // The sort control lives inside the filter panel — open it first.
+    fireEvent.click(screen.getByTestId("documents-more-filters"));
     fireEvent.change(screen.getByTestId("documents-sort"), {
       target: { value: "title" },
     });

@@ -8,12 +8,22 @@ import {
   AlertCircle,
   RefreshCw,
   FileText,
+  MoreHorizontal,
+  NotebookPen,
   Plus,
+  Trash2,
+  Users,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
 import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   OrdiloDrawer,
   OrdiloDrawerFooter,
@@ -26,9 +36,27 @@ import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import { toast } from "sonner";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
+import {
+  LibraryList,
+  LibraryNoResults,
+  LibraryPageHeader,
+  LibraryRow,
+  LibrarySearchField,
+  LibraryTile,
+  LibraryToolbar,
+} from "@/components/ordilo/library-surface";
 import { formatGermanDate } from "@/lib/format";
 import { ContactsView } from "./contacts-view";
 import type { ContactRow } from "./actions";
+
+type LibraryView = "dokumente" | "notizen" | "kontakte";
+
+/** One line under the page title, so each tab says what it is for. */
+const VIEW_DESCRIPTIONS: Record<LibraryView, string> = {
+  dokumente: "Alles Wichtige an einem Ort — gescannt, gelesen, einsortiert.",
+  notizen: "Kurze Notizen für alles, was sonst nur einer im Kopf hat.",
+  kontakte: "Nummern und Adressen, die du im Alltag wirklich brauchst.",
+};
 
 // ---------------------------------------------------------------------------
 // Page
@@ -36,7 +64,11 @@ import type { ContactRow } from "./actions";
 
 /**
  * Dokumente client — the family's document library.
- * A filterable, sortable table of all family documents.
+ *
+ * Three tabs on one page: scanned documents, hand-written notes, and the
+ * contacts found in them. They share the page header, the search toolbar
+ * and one grouped list, so switching tabs stays a switch of content and
+ * not of layout.
  *
  * Hybrid SSR: the server component (page.tsx) hands over the documents it
  * loaded server-side as `initialDocuments`, and this component renders
@@ -57,32 +89,18 @@ export function DokumenteClient({
   const {
     documents,
     loadingDocs,
-    documentsError,
-    loadDocuments,
     seedDocuments,
-    uploads,
-    isDragOver,
     openDocument,
     closeDocument,
-    cameraInputRef,
-    pdfInputRef,
-    dropZoneRef,
-    handleCameraSelect,
-    handlePdfSelect,
-    handleDragEnter,
-    handleDragOver,
-    handleDragLeave,
-    handleDrop,
-    handleRetry,
-    dismissUpload,
     handleDeleteDocument,
-    openWizard,
     openCreateNote,
+    openWizard,
   } = useScan();
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [contactFormOpen, setContactFormOpen] = useState(false);
   const currentTab = useSearchParams().get("tab");
-  const view =
+  const view: LibraryView =
     currentTab === "notizen"
       ? "notizen"
       : currentTab === "kontakte"
@@ -119,82 +137,212 @@ export function DokumenteClient({
     () => displayDocuments.filter((document) => document.source === "manual"),
     [displayDocuments],
   );
-  const activeDocuments = view === "notizen" ? noteDocuments : libraryDocuments;
-  const hasDocuments = activeDocuments.length > 0;
-  const hasActiveUploads = uploads.length > 0;
+  const confirmedContacts = initialContacts.filter(
+    (contact) => contact.status === "confirmed",
+  );
   const activeCount =
     view === "kontakte"
-      ? initialContacts.filter((contact) => contact.status === "confirmed").length
-      : activeDocuments.length;
+      ? confirmedContacts.length
+      : view === "notizen"
+        ? noteDocuments.length
+        : libraryDocuments.length;
+
+  // A note and a scan are deleted the same way, but they are not the same
+  // thing to lose — the confirmation says which one is about to go.
+  const deleteTarget = displayDocuments.find((doc) => doc.id === deleteConfirmId);
+  const deletingNote = deleteTarget?.source === "manual";
+
+  function handleCreate() {
+    if (view === "notizen") {
+      openCreateNote();
+      return;
+    }
+    if (view === "kontakte") {
+      setContactFormOpen(true);
+      return;
+    }
+    openWizard();
+  }
 
   return (
-    <div
-      ref={view === "dokumente" ? dropZoneRef : undefined}
-      onDragEnter={view === "dokumente" ? handleDragEnter : undefined}
-      onDragOver={view === "dokumente" ? handleDragOver : undefined}
-      onDragLeave={view === "dokumente" ? handleDragLeave : undefined}
-      onDrop={view === "dokumente" ? handleDrop : undefined}
-      className="app-page-stack overflow-x-hidden"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--petrol)]">
-            Dokumente
-          </h1>
-          <span className="rounded-full bg-[var(--sand-warm)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]">
-            {activeCount}
-          </span>
-        </div>
-        {view === "notizen" && (
+    <div className="app-page-stack overflow-x-hidden">
+      <LibraryPageHeader
+        title="Dokumente"
+        count={activeCount}
+        description={VIEW_DESCRIPTIONS[view]}
+        action={
           <Button
-            size="icon"
-            className="size-11 shrink-0 rounded-full"
-            onClick={() => openCreateNote()}
-            aria-label="Neue Notiz"
+            type="button"
+            onClick={handleCreate}
+            className="h-11 gap-2 rounded-full px-3 sm:px-4"
+            data-testid="library-create-button"
           >
-            <Plus className="size-5" />
+            <span
+              className="flex size-6 items-center justify-center rounded-full bg-white/20"
+              aria-hidden="true"
+            >
+              <Plus className="size-4" />
+            </span>
+            <span className="sr-only sm:not-sr-only">Neu erstellen</span>
           </Button>
+        }
+      />
+
+      <OrdiloSegmentedNav
+        label="Ansicht in Dokumente"
+        items={[
+          {
+            href: "/dokumente",
+            label: "Dokumente",
+            active: view === "dokumente",
+            icon: FileText,
+            count: libraryDocuments.length,
+          },
+          {
+            href: "/dokumente?tab=notizen",
+            label: "Notizen",
+            active: view === "notizen",
+            icon: NotebookPen,
+            count: noteDocuments.length,
+          },
+          {
+            href: "/dokumente?tab=kontakte",
+            label: "Kontakte",
+            active: view === "kontakte",
+            icon: Users,
+            count: confirmedContacts.length,
+          },
+        ]}
+        testId="documents-view-switcher"
+      />
+
+      {/* Keyed on the view so switching tabs plays the content in
+          rather than swapping it in place. */}
+      <div key={view} className="animate-card-in">
+        {view === "kontakte" ? (
+          <ContactsView
+            key={initialContacts
+              .map(
+                (contact) =>
+                  `${contact.id}:${contact.status}:${contact.updated_at}`,
+              )
+              .join("|")}
+            initialContacts={initialContacts}
+            formOpen={contactFormOpen}
+            onFormOpenChange={setContactFormOpen}
+            onOpenSource={(documentId) => void openDocument(documentId)}
+          />
+        ) : view === "notizen" ? (
+          <NotesView
+            notes={noteDocuments}
+            previews={initialNotePreviews}
+            loading={loadingDocs}
+            onCreate={() => openCreateNote()}
+            onOpen={(documentId) => void openDocument(documentId)}
+            onDelete={setDeleteConfirmId}
+          />
+        ) : (
+          <DocumentsView
+            documents={libraryDocuments}
+            onDelete={setDeleteConfirmId}
+          />
         )}
       </div>
 
-      <section className="rounded-ordilo-md bg-[var(--sand-light)] pb-1">
-        <OrdiloSegmentedNav
-          label="Ansicht in Dokumente"
-          items={[
-            { href: "/dokumente", label: "Dokumente", active: view === "dokumente" },
-            {
-              href: "/dokumente?tab=notizen",
-              label: "Notizen",
-              active: view === "notizen",
-            },
-            {
-              href: "/dokumente?tab=kontakte",
-              label: "Kontakte",
-              active: view === "kontakte",
-            },
-          ]}
-          testId="documents-view-switcher"
-          variant="morphing"
+      {/* Delete confirmation drawer */}
+      <OrdiloDrawer
+        variant="form"
+        open={!!deleteConfirmId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmId(null);
+        }}
+        data-testid="delete-confirm-sheet"
+      >
+        <OrdiloDrawerHeader
+          title={deletingNote ? "Notiz löschen?" : "Dokument löschen?"}
+          description={
+            deletingNote
+              ? "Die Notiz wird für immer entfernt. Vielleicht vorher noch kurz nachlesen?"
+              : "Das Dokument wird für immer entfernt. Vielleicht vorher noch kurz durchschauen?"
+          }
         />
-        <div className="relative z-10 mx-1 rounded-b-[16px] rounded-tr-[16px] bg-[var(--surface-box)] p-3">
-        {view === "kontakte" ? (
-        <ContactsView
-          key={initialContacts
-            .map((contact) => `${contact.id}:${contact.status}:${contact.updated_at}`)
-            .join("|")}
-          initialContacts={initialContacts}
-          onOpenSource={(documentId) => void openDocument(documentId)}
-        />
-      ) : view === "notizen" ? (
-        <NotesView
-          notes={noteDocuments}
-          previews={initialNotePreviews}
-          loading={loadingDocs}
-          onCreate={() => openCreateNote()}
-          onOpen={(documentId) => void openDocument(documentId)}
-        />
-      ) : (
-        <>
+        <OrdiloDrawerFooter>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => setDeleteConfirmId(null)}
+          >
+            Abbrechen
+          </Button>
+          <Button
+            variant="destructive"
+            className="flex-1"
+            onClick={async () => {
+              if (!deleteConfirmId) return;
+              const wasNote = deletingNote;
+              const deleted = await handleDeleteDocument(deleteConfirmId);
+              setDeleteConfirmId(null);
+              closeDocument();
+              // On failure handleDeleteDocument restores the row and shows
+              // its own error toast — do not also claim success.
+              if (deleted) toast.success(wasNote ? "Notiz entfernt" : "Dokument entfernt");
+            }}
+            data-testid="confirm-delete-button"
+          >
+            Löschen
+          </Button>
+        </OrdiloDrawerFooter>
+      </OrdiloDrawer>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Dokumente tab
+// ---------------------------------------------------------------------------
+
+/**
+ * The scanned library, plus everything that gets a document into it:
+ * the drop zone, the hidden file inputs and the running uploads.
+ */
+function DocumentsView({
+  documents,
+  onDelete,
+}: {
+  documents: DocumentRow[];
+  onDelete: (documentId: string) => void;
+}) {
+  const {
+    loadingDocs,
+    documentsError,
+    loadDocuments,
+    uploads,
+    isDragOver,
+    cameraInputRef,
+    pdfInputRef,
+    dropZoneRef,
+    handleCameraSelect,
+    handlePdfSelect,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+    handleRetry,
+    dismissUpload,
+    openWizard,
+  } = useScan();
+
+  const hasDocuments = documents.length > 0;
+
+  return (
+    <div
+      ref={dropZoneRef}
+      onDragEnter={handleDragEnter}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="space-y-4"
+    >
       {/* Drag overlay */}
       {isDragOver && (
         <div className="flex flex-col items-center justify-center rounded-ordilo-sm border-2 border-dashed border-[var(--petrol)] bg-[var(--blue-soft)] py-8 text-center animate-card-in">
@@ -232,7 +380,7 @@ export function DokumenteClient({
       />
 
       {/* Active uploads */}
-      {hasActiveUploads && (
+      {uploads.length > 0 && (
         <div className="space-y-3" data-testid="upload-progress-list">
           {uploads.map((upload) => (
             <UploadProgressCard
@@ -253,7 +401,7 @@ export function DokumenteClient({
       ) : documentsError && !hasDocuments ? (
         // A failed read must not masquerade as an empty family.
         <div
-          className="flex flex-col items-center gap-3 rounded-ordilo-md border border-border bg-card p-8 text-center shadow-card"
+          className="flex flex-col items-center gap-3 rounded-ordilo-sm border border-border bg-[var(--surface-story)] p-8 text-center"
           data-testid="documents-load-error"
         >
           <AlertCircle className="size-7 text-destructive" aria-hidden="true" />
@@ -275,11 +423,24 @@ export function DokumenteClient({
           </Button>
         </div>
       ) : hasDocuments ? (
-        <div className="space-y-3" data-testid="document-list">
-          <DocumentsBrowser
-            documents={libraryDocuments}
-            onDelete={setDeleteConfirmId}
-          />
+        <div className="space-y-4" data-testid="document-list">
+          <DocumentsBrowser documents={documents} onDelete={onDelete} />
+          {/* Compact upload hint below the list */}
+          <div className="flex flex-wrap items-center justify-center gap-2 rounded-ordilo-sm border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+            <UploadCloud
+              className="size-3.5 text-[var(--petrol)]"
+              aria-hidden="true"
+            />
+            <button
+              type="button"
+              onClick={() => pdfInputRef.current?.click()}
+              className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              PDF hochladen
+            </button>
+            <span aria-hidden="true">·</span>
+            <span>oder Datei hierher fallen lassen</span>
+          </div>
         </div>
       ) : (
         <EmptyState
@@ -290,83 +451,56 @@ export function DokumenteClient({
           onAction={openWizard}
         />
       )}
-
-      {/* Compact upload link at the bottom */}
-      {hasDocuments && (
-        <div className="flex flex-wrap items-center justify-center gap-2 rounded-ordilo-sm border border-dashed border-border bg-[var(--sand)] px-3 py-2 text-xs text-muted-foreground">
-          <UploadCloud className="size-3.5 text-[var(--petrol)]" aria-hidden="true" />
-          <button
-            type="button"
-            onClick={() => pdfInputRef.current?.click()}
-            className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          >
-            PDF hochladen
-          </button>
-          <span aria-hidden="true">·</span>
-          <span>oder Datei hierher fallen lassen</span>
-        </div>
-      )}
-        </>
-      )}
-        </div>
-      </section>
-
-      {/* Delete confirmation drawer */}
-      <OrdiloDrawer
-        variant="form"
-        open={!!deleteConfirmId}
-        onOpenChange={(open) => {
-          if (!open) setDeleteConfirmId(null);
-        }}
-        data-testid="delete-confirm-sheet"
-      >
-        <OrdiloDrawerHeader
-          title="Dokument löschen?"
-          description="Das Dokument wird für immer entfernt. Vielleicht vorher noch kurz durchschauen?"
-        />
-        <OrdiloDrawerFooter>
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => setDeleteConfirmId(null)}
-          >
-            Abbrechen
-          </Button>
-          <Button
-            variant="destructive"
-            className="flex-1"
-            onClick={async () => {
-              if (!deleteConfirmId) return;
-              const deleted = await handleDeleteDocument(deleteConfirmId);
-              setDeleteConfirmId(null);
-              closeDocument();
-              // On failure handleDeleteDocument restores the row and shows
-              // its own error toast — do not also claim success.
-              if (deleted) toast.success("Dokument entfernt");
-            }}
-            data-testid="confirm-delete-button"
-          >
-            Löschen
-          </Button>
-        </OrdiloDrawerFooter>
-      </OrdiloDrawer>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Notizen tab
+// ---------------------------------------------------------------------------
+
+/**
+ * Hand-written notes. Same list shape as the documents tab — a note is
+ * just a document the family typed itself.
+ */
 function NotesView({
   notes,
   loading,
   previews,
   onCreate,
   onOpen,
+  onDelete,
 }: {
   notes: DocumentRow[];
   loading: boolean;
   previews: Record<string, string>;
   onCreate: () => void;
   onOpen: (documentId: string) => void;
+  onDelete: (documentId: string) => void;
 }) {
+  const [search, setSearch] = useState("");
+
+  function previewOf(note: DocumentRow) {
+    return (
+      note.summary?.trim() ||
+      previews[note.id] ||
+      note.ocr_text?.trim() ||
+      "Notiz öffnen, um den Inhalt zu lesen"
+    );
+  }
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase("de");
+    if (!needle) return notes;
+    return notes.filter((note) =>
+      [note.title, note.summary, previews[note.id]]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("de")
+        .includes(needle),
+    );
+  }, [notes, previews, search]);
+
   if (loading && notes.length === 0) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -380,6 +514,7 @@ function NotesView({
       <EmptyState
         title="Noch keine Notizen"
         description="Halte Familienwissen fest, bevor es wieder jemand im Kopf behalten muss."
+        icon={NotebookPen}
         actionLabel="Notiz schreiben"
         onAction={onCreate}
       />
@@ -387,36 +522,71 @@ function NotesView({
   }
 
   return (
-    <div
-      className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--sand)] shadow-card animate-card-in"
-      data-testid="notes-list"
-    >
-      {notes.map((note) => (
-        <button
-          type="button"
-          key={note.id}
-          onClick={() => onOpen(note.id)}
-          className="flex min-h-20 w-full items-center gap-3 p-3 text-left transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
-        >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)]">
-            <FileText className="size-4.5 text-[var(--mist-dark)]" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">
-              {note.title?.trim() || "Notiz"}
-            </span>
-            <span className="block truncate text-sm text-muted-foreground">
-              {note.summary?.trim() ||
-                previews[note.id] ||
-                note.ocr_text?.trim() ||
-                "Notiz öffnen, um den Inhalt zu lesen"}
-            </span>
-          </span>
-          <span className="shrink-0 text-xs text-muted-foreground">
-            {formatGermanDate(note.created_at)}
-          </span>
-        </button>
-      ))}
+    <div className="space-y-4">
+      <LibraryToolbar>
+        <LibrarySearchField
+          value={search}
+          onChange={setSearch}
+          placeholder="Notizen durchsuchen …"
+          label="Notizen durchsuchen"
+          testId="notes-search-input"
+        />
+      </LibraryToolbar>
+
+      {filtered.length === 0 ? (
+        <LibraryNoResults
+          message="Keine Notiz gefunden."
+          hint="Vielleicht mit einem anderen Wort versuchen?"
+          onReset={() => setSearch("")}
+        />
+      ) : (
+        <LibraryList testId="notes-list">
+          {filtered.map((note) => (
+            <LibraryRow
+              key={note.id}
+              testId="notes-row"
+              leading={<LibraryTile icon={NotebookPen} />}
+              title={note.title?.trim() || "Notiz"}
+              subtitle={previewOf(note)}
+              actionLabel={`${note.title?.trim() || "Notiz"} öffnen`}
+              onClick={() => onOpen(note.id)}
+              meta={
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {formatGermanDate(note.created_at)}
+                </span>
+              }
+              trailing={
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      aria-label={`Aktionen für ${note.title?.trim() || "Notiz"}`}
+                      data-testid={`notes-row-menu-${note.id}`}
+                    >
+                      <MoreHorizontal className="size-4.5" aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => onOpen(note.id)}>
+                      <FileText className="size-4" aria-hidden="true" />
+                      Öffnen
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => onDelete(note.id)}
+                      data-testid={`notes-row-delete-${note.id}`}
+                    >
+                      <Trash2 className="size-4" aria-hidden="true" />
+                      Löschen
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              }
+            />
+          ))}
+        </LibraryList>
+      )}
     </div>
   );
 }

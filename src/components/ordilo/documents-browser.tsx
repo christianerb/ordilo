@@ -2,9 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  Search,
   Sparkles,
-  SlidersHorizontal,
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
@@ -27,6 +25,16 @@ import { useCollections } from "@/lib/collections/collections-context";
 import { fetchDocumentsTableMeta } from "@/lib/documents-table";
 import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
+import {
+  LibraryBadge,
+  LibraryFilterButton,
+  LibraryList,
+  LibraryNoResults,
+  LibraryRow,
+  LibrarySearchField,
+  LibraryTile,
+  LibraryToolbar,
+} from "@/components/ordilo/library-surface";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -59,58 +67,21 @@ interface EnrichedRow {
 }
 
 /**
- * Status dot color. The label already says what the state is; the dot is
- * what the eye picks up when scanning a long list.
+ * Status pill colors, in the warm palette: Harbor Blue once a document is
+ * filed, apricot while it waits for someone to look at it, destructive
+ * when it failed, and calm sand for everything still in progress.
  */
-function getStatusDotClass(status: string) {
-  if (status === "confirmed") return "bg-[var(--petrol)]";
-  if (status === "failed") return "bg-destructive";
-  if (status === "uploaded" || status === "ocr_processing") return "bg-[var(--mist)]";
-  return "bg-[var(--apricot)]";
-}
-
-function getStatusTextClass(status: string) {
-  if (status === "confirmed") return "text-[var(--petrol)]";
-  if (status === "failed") return "text-destructive";
-  return "text-muted-foreground";
-}
-
-/**
- * The colored icon tile in front of every document.
- *
- * A document filed into a collection wears that collection's icon and
- * color — the same one the sidebar shows — so a glance down the list
- * groups documents by where they live without a single extra word.
- * Everything else falls back to its file-type icon on a calm sand tile.
- */
-function DocumentTile({
-  doc,
-  collection,
-  className,
-}: {
-  doc: DocRow;
-  collection?: { icon: string | null; color: string | null };
-  className?: string;
-}) {
-  const Icon = collection ? getCollectionIcon(collection.icon) : getFileIcon(doc.mime_type);
-  const color = collection ? getCollectionColor(collection.color) : null;
-
-  return (
-    <span
-      className={cn(
-        "flex size-10 shrink-0 items-center justify-center rounded-ordilo-sm",
-        !color && "bg-[var(--sand-light)]",
-        className,
-      )}
-      style={color ? { backgroundColor: color.bg } : undefined}
-      aria-hidden="true"
-    >
-      <Icon
-        className="size-4.5"
-        style={{ color: color ? color.fg : "var(--mist-dark)" }}
-      />
-    </span>
-  );
+function getStatusPillClass(status: string) {
+  if (status === "confirmed") {
+    return "border-[var(--petrol)]/20 bg-[var(--petrol)]/10 text-[var(--petrol)]";
+  }
+  if (status === "failed") {
+    return "border-[var(--destructive)]/20 bg-[var(--destructive)]/10 text-[var(--destructive)]";
+  }
+  if (status === "analyzed") {
+    return "border-[var(--apricot)]/25 bg-[var(--apricot)]/10 text-[var(--apricot-text)]";
+  }
+  return "border-[var(--mist-light)] bg-[var(--sand-light)] text-[var(--mist-dark)]";
 }
 
 /**
@@ -217,6 +188,7 @@ export function DocumentsBrowser({
     setCollectionFilter("");
     setTypeFilter("");
     setStatusFilter("");
+    setSort("newest");
     setPage(1);
   }
 
@@ -298,91 +270,50 @@ export function DocumentsBrowser({
 
   const askHref = `/suche${search.trim() ? `?q=${encodeURIComponent(search.trim())}` : ""}`;
 
-  /** Full-bleed inside the page's padded column, for horizontal rails. */
+  /** Full-bleed inside the panel's padding, for horizontal rails. */
   const railBleed =
-    "-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+    "-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:-mx-4 sm:px-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
 
   return (
     <div data-testid="documents-browser" className="space-y-4">
       {/* Search — filters as you type, or hands the question to Ordilo */}
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-4 size-4.5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <input
-          type="search"
+      <LibraryToolbar>
+        <LibrarySearchField
           value={search}
-          onChange={(e) => setFilterAndResetPage(setSearch, e.target.value)}
-          placeholder="Dokumente suchen oder Ordilo fragen …"
-          className="h-13 w-full rounded-full border border-border bg-card py-3.5 pr-14 pl-11 text-sm text-foreground shadow-card placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          aria-label="Dokumente durchsuchen"
-          data-testid="documents-search-input"
+          onChange={(value) => setFilterAndResetPage(setSearch, value)}
+          placeholder="Dokumente durchsuchen …"
+          label="Dokumente durchsuchen"
+          testId="documents-search-input"
+          trailing={
+            <Link
+              href={askHref}
+              className="flex size-8 items-center justify-center rounded-full bg-[var(--petrol)]/10 text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/15 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              aria-label="Ordilo dazu fragen"
+              title="Ordilo fragen"
+              data-testid="documents-ask-ordilo"
+            >
+              <Sparkles className="size-4" aria-hidden="true" />
+            </Link>
+          }
         />
-        <Link
-          href={askHref}
-          className="absolute top-1/2 right-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--petrol)]/10 text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/15 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          aria-label="Ordilo dazu fragen"
-          title="Ordilo fragen"
-          data-testid="documents-ask-ordilo"
-        >
-          <Sparkles className="size-4.5" aria-hidden="true" />
-        </Link>
-      </div>
-
-      {/* Collection chips + the rest of the filters behind one button */}
-      <div className={railBleed} data-testid="documents-collection-chips">
-        <FilterChip
-          label="Alle"
-          icon={FileText}
-          active={!collectionFilter}
-          onClick={() => setFilterAndResetPage(setCollectionFilter, "")}
-          testId="documents-chip-all"
+        <LibraryFilterButton
+          open={moreFiltersOpen}
+          onToggle={() => setMoreFiltersOpen((open) => !open)}
+          active={Boolean(typeFilter || statusFilter || sort !== "newest")}
+          testId="documents-more-filters"
         />
-        {collections.map((collection) => (
-          <FilterChip
-            key={collection.id}
-            label={collection.name}
-            icon={getCollectionIcon(collection.icon)}
-            active={collectionFilter === collection.name}
-            onClick={() =>
-              setFilterAndResetPage(
-                setCollectionFilter,
-                collectionFilter === collection.name ? "" : collection.name,
-              )
-            }
-            testId={`documents-chip-${collection.id}`}
-          />
-        ))}
-        <button
-          type="button"
-          onClick={() => setMoreFiltersOpen((open) => !open)}
-          aria-expanded={moreFiltersOpen}
-          aria-label="Weitere Filter"
-          title="Weitere Filter"
-          className={cn(
-            "ml-auto flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            moreFiltersOpen || typeFilter || statusFilter
-              ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-              : "border-border bg-card text-muted-foreground hover:text-foreground",
-          )}
-          data-testid="documents-more-filters"
-        >
-          <SlidersHorizontal className="size-4.5" aria-hidden="true" />
-        </button>
-      </div>
+      </LibraryToolbar>
 
       {moreFiltersOpen && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded-ordilo-md border border-border bg-card p-3 shadow-card"
+          className="grid gap-3 rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] p-3 sm:grid-cols-3"
           data-testid="documents-filter-panel"
         >
-          <select
+          <FilterSelect
+            label="Art"
             value={typeFilter}
-            onChange={(e) => setFilterAndResetPage(setTypeFilter, e.target.value)}
-            className="h-9 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            aria-label="Nach Typ filtern"
-            data-testid="documents-filter-type"
+            onChange={(value) => setFilterAndResetPage(setTypeFilter, value)}
+            testId="documents-filter-type"
           >
             <option value="">Alle Typen</option>
             {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
@@ -390,33 +321,73 @@ export function DocumentsBrowser({
                 {label}
               </option>
             ))}
-          </select>
+          </FilterSelect>
 
-          <select
+          <FilterSelect
+            label="Status"
             value={statusFilter}
-            onChange={(e) => setFilterAndResetPage(setStatusFilter, e.target.value)}
-            className="h-9 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            aria-label="Nach Status filtern"
-            data-testid="documents-filter-status"
+            onChange={(value) => setFilterAndResetPage(setStatusFilter, value)}
+            testId="documents-filter-status"
           >
             <option value="">Alle Status</option>
             <option value="pending">Zum Durchsehen</option>
             <option value="confirmed">Im Familienbuch</option>
             <option value="new">Neu</option>
             <option value="failed">Fehler</option>
-          </select>
+          </FilterSelect>
+
+          <FilterSelect
+            label="Sortierung"
+            value={sort}
+            onChange={(value) => setSort(value as SortKey)}
+            testId="documents-sort"
+          >
+            {Object.entries(SORT_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </FilterSelect>
 
           {hasActiveFilters && (
             <button
               type="button"
               onClick={resetFilters}
-              className="inline-flex items-center gap-1 rounded-ordilo-sm px-1 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="inline-flex items-center gap-1 self-end justify-self-start rounded-ordilo-sm px-1 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:col-span-3"
               data-testid="documents-filter-reset"
             >
               <X className="size-4" aria-hidden="true" />
               Zurücksetzen
             </button>
           )}
+        </div>
+      )}
+
+      {/* Collection chips — the filter people actually reach for */}
+      {collections.length > 0 && (
+        <div className={railBleed} data-testid="documents-collection-chips">
+          <FilterChip
+            label="Alle"
+            icon={FileText}
+            active={!collectionFilter}
+            onClick={() => setFilterAndResetPage(setCollectionFilter, "")}
+            testId="documents-chip-all"
+          />
+          {collections.map((collection) => (
+            <FilterChip
+              key={collection.id}
+              label={collection.name}
+              icon={getCollectionIcon(collection.icon)}
+              active={collectionFilter === collection.name}
+              onClick={() =>
+                setFilterAndResetPage(
+                  setCollectionFilter,
+                  collectionFilter === collection.name ? "" : collection.name,
+                )
+              }
+              testId={`documents-chip-${collection.id}`}
+            />
+          ))}
         </div>
       )}
 
@@ -429,37 +400,33 @@ export function DocumentsBrowser({
           <div className={cn(railBleed, "gap-3 pt-0.5")}>
             {recentRows.map((row) => {
               const collection = collectionFor(row.category);
+              const color = collection
+                ? getCollectionColor(collection.color)
+                : null;
               return (
                 <button
                   key={row.doc.id}
                   type="button"
                   onClick={() => void openDocument(row.doc.id)}
-                  className="card-lift flex w-44 shrink-0 flex-col items-start gap-2.5 rounded-ordilo-md border border-border bg-card p-3 text-left shadow-card hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="card-lift flex w-40 shrink-0 flex-col items-start gap-2.5 rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] p-3 text-left hover:border-[var(--petrol)]/25 hover:bg-[var(--sand)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   data-testid="documents-recent-card"
                 >
-                  <DocumentTile doc={row.doc} collection={collection} />
+                  <LibraryTile
+                    icon={
+                      collection
+                        ? getCollectionIcon(collection.icon)
+                        : getFileIcon(row.doc.mime_type)
+                    }
+                    background={color?.bg}
+                    foreground={color?.fg}
+                  />
                   <span className="line-clamp-2 text-sm font-medium text-foreground">
                     {row.displayTitle}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-xs tabular-nums text-muted-foreground">
                     {[formatGermanDate(row.resolvedDate), row.typeLabel]
                       .filter(Boolean)
                       .join(" · ")}
-                  </span>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 text-xs font-medium",
-                      getStatusTextClass(row.doc.status),
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        getStatusDotClass(row.doc.status),
-                      )}
-                      aria-hidden="true"
-                    />
-                    {getStatusLabel(row.doc.status)}
                   </span>
                 </button>
               );
@@ -474,147 +441,132 @@ export function DocumentsBrowser({
           <h2 className="text-sm font-semibold text-foreground">
             Alle Dokumente
           </h2>
-          <label className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-            <span>Sortieren:</span>
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-ordilo-sm border border-transparent bg-transparent py-1 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-              aria-label="Sortierung"
-              data-testid="documents-sort"
-            >
-              {Object.entries(SORT_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <span className="text-xs text-muted-foreground">
+            {sortedRows.length}{" "}
+            {sortedRows.length === 1 ? "Dokument" : "Dokumente"}
+            {sort !== "newest" && ` · ${SORT_LABELS[sort]}`}
+          </span>
         </div>
 
         {pageRows.length === 0 ? (
-          <div className="rounded-ordilo-md border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card">
-            <p>Keine Dokumente gefunden.</p>
-            {hasActiveFilters && (
-              <p className="mt-1 text-xs text-[var(--mist-dark)]">
-                Gerade passt nichts zu deiner Auswahl.{" "}
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline"
-                >
-                  Alles wieder zeigen
-                </button>
-              </p>
-            )}
-          </div>
+          <LibraryNoResults
+            message="Keine Dokumente gefunden."
+            hint={
+              hasActiveFilters
+                ? "Gerade passt nichts zu deiner Auswahl."
+                : undefined
+            }
+            onReset={hasActiveFilters ? resetFilters : undefined}
+          />
         ) : (
-          <ul
-            className="divide-y divide-border/70 overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card"
-            data-testid="documents-list"
-          >
+          <LibraryList testId="documents-list">
             {pageRows.map((row) => {
               const collection = collectionFor(row.category);
+              const color = collection
+                ? getCollectionColor(collection.color)
+                : null;
               return (
-                <li
+                <LibraryRow
                   key={row.doc.id}
-                  className="group flex items-center gap-1 pr-2 transition-colors hover:bg-[var(--sand-warm)]/40"
-                  data-testid="documents-row"
-                >
-                  <button
-                    type="button"
-                    onClick={() => void openDocument(row.doc.id)}
-                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
-                    aria-label={`${row.displayTitle} öffnen`}
-                  >
-                    <DocumentTile doc={row.doc} collection={collection} />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
-                        <span className="min-w-0 truncate font-medium text-foreground">
-                          {row.displayTitle}
-                        </span>
-                        <ArrowUpRight
-                          className="hidden size-3.5 shrink-0 text-[var(--petrol)] opacity-0 transition-opacity group-hover:opacity-100 lg:block"
-                          aria-hidden="true"
-                        />
+                  testId="documents-row"
+                  leading={
+                    <LibraryTile
+                      icon={
+                        collection
+                          ? getCollectionIcon(collection.icon)
+                          : getFileIcon(row.doc.mime_type)
+                      }
+                      background={color?.bg}
+                      foreground={color?.fg}
+                    />
+                  }
+                  title={row.displayTitle}
+                  titleAdornment={
+                    <ArrowUpRight
+                      className="hidden size-3.5 shrink-0 text-[var(--petrol)] opacity-0 transition-opacity group-hover:opacity-100 lg:block"
+                      aria-hidden="true"
+                    />
+                  }
+                  subtitle={
+                    <>
+                      <span>{row.typeLabel}</span>
+                      {row.category && (
+                        <>
+                          <span aria-hidden="true"> · </span>
+                          <span>{row.category}</span>
+                        </>
+                      )}
+                    </>
+                  }
+                  meta={
+                    <>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatGermanDate(row.resolvedDate) ?? "–"}
                       </span>
-                      <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
-                        <span>{row.typeLabel}</span>
-                        <span aria-hidden="true">·</span>
-                        <span className="tabular-nums">
-                          {formatGermanDate(row.resolvedDate) ?? "–"}
-                        </span>
-                        <span aria-hidden="true">·</span>
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1.5 font-medium",
-                            getStatusTextClass(row.doc.status),
-                          )}
+                      <LibraryBadge
+                        className={getStatusPillClass(row.doc.status)}
+                      >
+                        {getStatusLabel(row.doc.status)}
+                      </LibraryBadge>
+                    </>
+                  }
+                  actionLabel={`${row.displayTitle} öffnen`}
+                  onClick={() => void openDocument(row.doc.id)}
+                  trailing={
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          type="button"
+                          className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                          aria-label={`Aktionen für ${row.displayTitle}`}
+                          data-testid={`documents-row-menu-${row.doc.id}`}
                         >
-                          <span
-                            className={cn(
-                              "size-1.5 rounded-full",
-                              getStatusDotClass(row.doc.status),
-                            )}
+                          <MoreHorizontal
+                            className="size-4.5"
                             aria-hidden="true"
                           />
-                          {getStatusLabel(row.doc.status)}
-                        </span>
-                      </span>
-                    </span>
-                  </button>
-
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                        aria-label={`Aktionen für ${row.displayTitle}`}
-                        data-testid={`documents-row-menu-${row.doc.id}`}
-                      >
-                        <MoreHorizontal className="size-4.5" aria-hidden="true" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onSelect={() => void openDocument(row.doc.id)}
-                        data-testid={`documents-row-open-${row.doc.id}`}
-                      >
-                        <FileText className="size-4" aria-hidden="true" />
-                        Öffnen
-                      </DropdownMenuItem>
-                      {onDelete && (
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
                         <DropdownMenuItem
-                          variant="destructive"
-                          onSelect={() => onDelete(row.doc.id)}
-                          data-testid={`documents-row-delete-${row.doc.id}`}
+                          onSelect={() => void openDocument(row.doc.id)}
+                          data-testid={`documents-row-open-${row.doc.id}`}
                         >
-                          <Trash2 className="size-4" aria-hidden="true" />
-                          Löschen
+                          <FileText className="size-4" aria-hidden="true" />
+                          Öffnen
                         </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </li>
+                        {onDelete && (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onSelect={() => onDelete(row.doc.id)}
+                            data-testid={`documents-row-delete-${row.doc.id}`}
+                          >
+                            <Trash2 className="size-4" aria-hidden="true" />
+                            Löschen
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  }
+                />
               );
             })}
-          </ul>
+          </LibraryList>
         )}
       </section>
 
       {/* Pagination — only once a family has more than one page */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between rounded-ordilo-sm border border-border bg-[var(--sand)] px-3 py-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-between rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] px-3 py-2 text-xs text-muted-foreground">
           <span data-testid="documents-page-info">
-            Seite {currentPage} von {totalPages} · {sortedRows.length}{" "}
-            {sortedRows.length === 1 ? "Dokument" : "Dokumente"}
+            Seite {currentPage} von {totalPages}
           </span>
           <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
-              className="flex size-8 items-center justify-center rounded-ordilo-sm border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-9 items-center justify-center rounded-ordilo-sm border border-border bg-[var(--surface-box)] text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               aria-label="Vorherige Seite"
               data-testid="documents-prev-page"
             >
@@ -624,7 +576,7 @@ export function DocumentsBrowser({
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage >= totalPages}
-              className="flex size-8 items-center justify-center rounded-ordilo-sm border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-9 items-center justify-center rounded-ordilo-sm border border-border bg-[var(--surface-box)] text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
               aria-label="Nächste Seite"
               data-testid="documents-next-page"
             >
@@ -634,6 +586,37 @@ export function DocumentsBrowser({
         </div>
       )}
     </div>
+  );
+}
+
+/** One labelled select inside the filter panel. */
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  testId,
+  children,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-muted-foreground">
+        {label}
+      </span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-10 w-full rounded-ordilo-sm border border-border bg-[var(--surface-box)] px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        data-testid={testId}
+      >
+        {children}
+      </select>
+    </label>
   );
 }
 
@@ -660,10 +643,10 @@ function FilterChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "press-scale inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "press-scale inline-flex h-10 shrink-0 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
         active
           ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-          : "border-border bg-card text-muted-foreground hover:text-foreground",
+          : "border-border bg-[var(--sand)] text-[var(--mist-dark)] hover:text-foreground",
       )}
       data-testid={testId}
     >

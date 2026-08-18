@@ -37,14 +37,21 @@ const EMPTY_CONTACT: ContactInput = {
 export function ContactsView({
   initialContacts,
   onOpenSource,
+  formOpen: externalFormOpen,
+  onFormOpenChange,
 }: {
   initialContacts: ContactRow[];
   onOpenSource: (documentId: string) => void;
+  /** Controlled externally by the page header's "Neu erstellen" button. */
+  formOpen?: boolean;
+  onFormOpenChange?: (open: boolean) => void;
 }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ContactRow | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
+  const [internalFormOpen, setInternalFormOpen] = useState(false);
+  const formOpen = externalFormOpen ?? internalFormOpen;
+  const setFormOpen = onFormOpenChange ?? setInternalFormOpen;
   const [editing, setEditing] = useState<ContactRow | null>(null);
 
   const suggestions = contacts.filter((contact) => contact.status === "suggested");
