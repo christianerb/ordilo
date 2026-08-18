@@ -67,12 +67,31 @@ export function InboundEmailAddressCard({
           title={copied ? "Kopiert" : "Adresse kopieren"}
         >
           {copied ? (
-            <Check className="size-4 text-[var(--petrol)]" aria-hidden="true" />
+            <Check
+              className="size-4 animate-check-pop text-[var(--petrol)]"
+              aria-hidden="true"
+            />
           ) : (
             <Copy className="size-4" aria-hidden="true" />
           )}
         </Button>
       </div>
+      <p
+        className="mt-2 flex min-h-5 items-center gap-1.5 px-1 text-xs text-muted-foreground"
+        aria-live="polite"
+      >
+        {copied ? (
+          <>
+            <Check
+              className="size-3.5 shrink-0 animate-check-pop text-[var(--petrol)]"
+              aria-hidden="true"
+            />
+            Adresse kopiert. Du kannst sie jetzt beim Weiterleiten einfügen.
+          </>
+        ) : (
+          "Nur eure Familie kann diese Adresse nutzen."
+        )}
+      </p>
     </section>
   );
 }
