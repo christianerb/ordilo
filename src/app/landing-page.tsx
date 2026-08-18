@@ -11,6 +11,11 @@ import {
   ArrowRight,
   Hash,
   CalendarClock,
+  Heart,
+  Server,
+  EyeOff,
+  ShieldCheck,
+  ChevronDown,
 } from "lucide-react";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
@@ -20,9 +25,13 @@ import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
  * Landing page — what an unauthenticated visitor sees on `/`.
  *
  * One promise, told three ways: scan it once, find it forever, miss
- * nothing. Pure server-rendered marketing content (no client JS beyond
- * the mascot's CSS animations), warm palette per DESIGN.md, one CTA
- * ("Kostenlos starten" → /login) repeated at top and bottom.
+ * nothing. Then the two questions every first-time visitor brings:
+ * "why not just a cloud folder?" (persona card + FAQ) and "can I trust
+ * you with my family's papers?" (trust facts + FAQ). Pure
+ * server-rendered marketing content (no client JS beyond the mascot's
+ * CSS animations — the FAQ uses native <details>), warm palette per
+ * DESIGN.md, one CTA ("Kostenlos starten" → /login) repeated at top
+ * and bottom.
  *
  * The product mock is built from real design tokens instead of a
  * screenshot, so it never goes stale and weighs nothing.
@@ -63,7 +72,7 @@ export function LandingPage() {
               <p className="mt-5 max-w-lg text-base leading-relaxed text-muted-foreground">
                 Ordilo liest eure Briefe, Rechnungen und Verträge, sortiert sie
                 von selbst ein und merkt sich jedes wichtige Detail. Ihr fragt
-                einfach.
+                einfach und bekommt eine Antwort statt einer Trefferliste.
               </p>
               <div className="mt-5 flex flex-wrap gap-2" aria-label="Ordilo Vorteile">
                 {["Dokumente scannen", "Antworten finden", "Fristen merken"].map((item) => (
@@ -127,9 +136,18 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section className="overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--auth-surface)] px-6 py-10 text-center shadow-card sm:px-9 sm:py-12">
+          <p className="text-sm font-medium text-[var(--petrol)]">Kennst du das?</p>
+          <p className="mx-auto mt-3 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+            Die Rechnung liegt irgendwo im Stapel. Die Garantie ist genau
+            gestern abgelaufen. Und die Versicherungsfrage kommt immer beim
+            Abendessen.
+          </p>
+        </section>
+
         <section className="overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--auth-surface)] shadow-card">
           <div className="grid md:grid-cols-3">
-            <ValueProp icon={ScanLine} title="Scannen & vergessen" text="Kamera draufhalten, fertig. Ordilo erkennt, was es ist, für wen es ist und sortiert es selbst ein." />
+            <ValueProp icon={ScanLine} title="Scannen & vergessen" text="Kamera draufhalten, fertig. Kein Sortieren, kein Benennen, kein Ablegen. Ordilo erkennt, was es ist und für wen." />
             <ValueProp icon={MessageCircleQuestion} title="Einfach fragen" text="Ordilo findet die Antwort in euren Dokumenten — nicht nur das richtige Dokument." />
             <ValueProp icon={BellRing} title="Nichts mehr verpassen" text="Fristen, Zahlungen und Garantien werden erkannt, bevor etwas wichtig oder teuer wird." />
           </div>
@@ -140,7 +158,9 @@ export function LandingPage() {
             <div>
               <h2 className="text-2xl font-semibold tracking-[-0.03em]">So funktioniert&apos;s</h2>
               <p className="mt-3 max-w-sm text-sm leading-relaxed text-white/70">
-                Aus einem Foto wird ein Familiengedächtnis. Den Rest erledigt Ordilo im Hintergrund.
+                Aus einem Foto wird ein Familiengedächtnis. Den Rest erledigt
+                Ordilo im Hintergrund. Und mit jedem Dokument wird es
+                hilfreicher.
               </p>
             </div>
             <OrdiloMascot size={54} mood="greeting" className="mt-8 text-[var(--auth-sage)]" />
@@ -159,17 +179,95 @@ export function LandingPage() {
             </span>
             <h2 className="mt-4 text-xl font-semibold tracking-[-0.025em]">Für die ganze Familie</h2>
             <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Ein gemeinsames Familienbuch statt fünf Ablagesysteme. Jeder scannt, alle finden.
+              Einer scannt, alle wissen Bescheid. Nie wieder „Wo ist nochmal
+              die Rechnung?“ beim Abendessen.
             </p>
           </div>
           <div className="bg-[var(--auth-story-surface)] p-7 sm:p-10">
             <span className="flex size-10 items-center justify-center rounded-ordilo-sm bg-[var(--auth-surface)] text-[var(--petrol)]">
-              <Lock className="size-5" aria-hidden="true" />
+              <Heart className="size-5" aria-hidden="true" />
             </span>
-            <h2 className="mt-4 text-xl font-semibold tracking-[-0.025em]">Eure Dokumente gehören euch</h2>
+            <h2 className="mt-4 text-xl font-semibold tracking-[-0.025em]">Für die, die alles im Kopf haben</h2>
             <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
-              Private Ablage, nur für eure Familie. Keine Werbung und kein Verkauf eurer Daten.
+              Kita-Brief, Rechnung, Impfpass: Meistens merkt sich ein Mensch in
+              der Familie den ganzen Papierkram. Ordilo übernimmt das Merken,
+              damit im Kopf wieder Platz ist.
             </p>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--auth-surface)] shadow-card">
+          <div className="px-6 py-8 sm:px-9 sm:py-10">
+            <h2 className="text-2xl font-semibold tracking-[-0.03em]">Eure Dokumente gehören euch</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
+              Ihr vertraut Ordilo eure privatesten Papiere an. Darum ist Ordilo
+              so gebaut:
+            </p>
+            <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+              <TrustFact icon={Server} title="Server in der EU" text="Alle Daten liegen auf Servern in der Europäischen Union." />
+              <TrustFact icon={Lock} title="Verschlüsselt" text="Eure Dokumente sind verschlüsselt, auf dem Weg zu uns und im Speicher." />
+              <TrustFact icon={EyeOff} title="Nur eure Familie" text="Private Ablage. Ihr entscheidet, wer dazugehört." />
+              <TrustFact icon={ShieldCheck} title="Keine Werbung" text="Kein Verkauf eurer Daten. Eure Dokumente sind nicht das Geschäftsmodell." />
+            </div>
+            <p className="mt-6 max-w-2xl text-xs leading-relaxed text-muted-foreground">
+              Damit Ordilo eure Dokumente versteht, lesen geprüfte KI-Partner
+              mit. Sie sind vertraglich gebunden (Auftragsverarbeitung) und
+              lernen nicht aus euren Daten. Mehr dazu in der{" "}
+              <Link
+                href="/datenschutz"
+                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              >
+                Datenschutzerklärung
+              </Link>
+              .
+            </p>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-ordilo-md border border-white/80 bg-[var(--auth-surface)] shadow-card">
+          <div className="px-6 py-8 sm:px-9 sm:py-10">
+            <h2 className="text-2xl font-semibold tracking-[-0.03em]">Noch Fragen?</h2>
+            <div className="mt-2 divide-y divide-border">
+              <FaqItem question="Was ist der Unterschied zu einem Cloud-Ordner?">
+                Ein Cloud-Ordner speichert Dateien. Ordilo versteht, was
+                drinsteht: Beträge, Fristen, Personen. Ihr fragt „Wann läuft
+                die Garantie ab?“ und bekommt die Antwort, nicht eine Liste
+                aus Dateien.
+              </FaqItem>
+              <FaqItem question="Kann das nicht auch ChatGPT?">
+                ChatGPT kennt das Internet, aber nicht eure Ablage. Du
+                müsstest jedes Dokument neu hochladen, und nach dem Chat ist
+                alles wieder vergessen. Ordilo behält alles dauerhaft, kennt
+                eure Familie und erinnert von selbst an Fristen. Mit jedem
+                Scan wird Ordilo hilfreicher.
+              </FaqItem>
+              <FaqItem question="Wo werden meine Dokumente gespeichert?">
+                Auf Servern in der Europäischen Union, verschlüsselt. Der
+                Zugriff ist auf eure Familie beschränkt.
+              </FaqItem>
+              <FaqItem question="Wer kann meine Dokumente lesen?">
+                Nur eure Familie. Wir lesen nicht mit, zeigen keine Werbung
+                und verkaufen keine Daten. Damit Ordilo Inhalte erkennt,
+                arbeiten geprüfte KI-Partner unter Auftragsverarbeitung. Die
+                Details stehen in der{" "}
+                <Link
+                  href="/datenschutz"
+                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
+                  Datenschutzerklärung
+                </Link>
+                .
+              </FaqItem>
+              <FaqItem question="Was kostet Ordilo?">
+                Der Einstieg ist kostenlos und bleibt kostenlos. Für größere
+                Familienarchive kommt später ein faires Abo dazu.
+              </FaqItem>
+              <FaqItem question="Was, wenn mir mal etwas passiert?">
+                Dann findet deine Familie alles Wichtige: Versicherungen,
+                Verträge, Ansprechpartner. Ohne Ordner zu durchsuchen, ohne
+                Rätselraten. Einfach fragen.
+              </FaqItem>
+            </div>
           </div>
         </section>
 
@@ -180,7 +278,8 @@ export function LandingPage() {
             <OrdiloMascot size={56} mood="greeting" className="mx-auto text-[var(--petrol)]" />
             <h2 className="mt-4 text-2xl font-semibold tracking-[-0.03em]">Weniger Papierkram im Kopf.</h2>
             <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
-              Der erste Scan dauert 30 Sekunden — und ab dann weiß Ordilo Bescheid.
+              Der erste Scan dauert 30 Sekunden. Ab dann ist jede Antwort nur
+              eine Frage entfernt.
             </p>
             <ul className="mx-auto mt-5 flex max-w-md flex-wrap justify-center gap-x-5 gap-y-2 text-sm text-muted-foreground">
               {["Kostenlos", "Ohne Passwort", "Sofort startklar"].map((point) => (
@@ -199,7 +298,8 @@ export function LandingPage() {
 
         <footer className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-muted-foreground sm:flex-row sm:justify-between">
           <p>© {new Date().getFullYear()} Ordilo — Dein Familienordner</p>
-          <nav className="flex items-center gap-4" aria-label="Rechtliches">
+          <nav className="flex items-center gap-4" aria-label="Kontakt und Rechtliches">
+            <a href="mailto:info@ordilo.de" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Kontakt</a>
             <Link href="/impressum" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Impressum</Link>
             <Link href="/datenschutz" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Datenschutz</Link>
           </nav>
@@ -253,5 +353,48 @@ function HowStep({
         <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text}</p>
       </div>
     </div>
+  );
+}
+
+function TrustFact({
+  icon: Icon,
+  title,
+  text,
+}: {
+  icon: React.ComponentType<{ className?: string; "aria-hidden"?: boolean | "true" }>;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div>
+      <span className="flex size-10 items-center justify-center rounded-ordilo-sm bg-[var(--auth-sage)]">
+        <Icon className="size-5 text-[var(--petrol)]" aria-hidden="true" />
+      </span>
+      <h3 className="mt-3 text-sm font-semibold">{title}</h3>
+      <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{text}</p>
+    </div>
+  );
+}
+
+function FaqItem({
+  question,
+  children,
+}: {
+  question: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group py-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+        {question}
+        <ChevronDown
+          className="size-4 shrink-0 text-[var(--mist-dark)] transition-transform group-open:rotate-180"
+          aria-hidden="true"
+        />
+      </summary>
+      <div className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+        {children}
+      </div>
+    </details>
   );
 }

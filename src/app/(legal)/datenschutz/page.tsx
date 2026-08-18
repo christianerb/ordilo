@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
-import { PlaceholderNotice } from "../placeholder-notice";
 
 export const metadata: Metadata = {
   title: "Datenschutzerklärung — Ordilo",
-  robots: { index: false },
 };
 
 function Section({
@@ -22,12 +20,13 @@ function Section({
 }
 
 /**
- * Datenschutzerklärung — the CONTROLLER details are placeholders
- * ([brackets], see PlaceholderNotice), but the described processing
- * matches the actual product architecture: Supabase (EU) for auth,
- * database and storage, OpenAI for document analysis, Resend for
- * transactional email, no ads, no tracking. Keep this page in sync when
- * processors change. noindex until the placeholders are replaced.
+ * Datenschutzerklärung — complete: real controller (Erb Invest UG,
+ * Hamburg) and processing that matches the actual product architecture:
+ * Supabase (EU) for auth, database and storage, OpenAI for document
+ * analysis, Datalab for OCR, Resend for transactional email, Vercel for
+ * hosting, Sentry for error diagnostics (incl. session replay on
+ * errors), no ads, no tracking. Keep this page in sync when processors
+ * change.
  */
 export default function DatenschutzPage() {
   return (
@@ -36,12 +35,10 @@ export default function DatenschutzPage() {
         Datenschutzerklärung
       </h1>
 
-      <PlaceholderNotice />
-
       <Section title="1. Verantwortlicher">
         <p>
-          [Musterfirma UG (haftungsbeschränkt)], [Musterstraße 1],
-          [12345 Musterstadt], E-Mail: [datenschutz@ordilo.example]
+          Erb Invest UG (haftungsbeschränkt), c/o unicorn workspaces,
+          Burchardstr. 14, 20095 Hamburg, E-Mail: info@ordilo.de
         </p>
       </Section>
 
@@ -76,6 +73,11 @@ export default function DatenschutzPage() {
             Aufgabe oder Kalendertermin. Wir speichern dabei keine
             Dokumentinhalte, Dateinamen, Suchbegriffe oder Chat-Nachrichten.
           </li>
+          <li>
+            <strong>Fehlerdiagnose:</strong> bei technischen Fehlern
+            Informationen zu Gerät, Browser und dem Kontext des Fehlers
+            (Details siehe Abschnitt 5).
+          </li>
         </ul>
       </Section>
 
@@ -99,7 +101,30 @@ export default function DatenschutzPage() {
         </ul>
       </Section>
 
-      <Section title="4. Auftragsverarbeiter">
+      <Section title="4. Wo deine Daten liegen und wie sie geschützt sind">
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            Deine Dokumente und Kontodaten liegen auf Servern in der
+            Europäischen Union.
+          </li>
+          <li>
+            Die Übertragung deiner Daten ist verschlüsselt (TLS), und auch
+            die Speicherung ist verschlüsselt.
+          </li>
+          <li>
+            Deine Dokumente sind nicht öffentlich. Der Zugriff ist technisch
+            auf deine Familie beschränkt; Dateien werden nur über
+            kurzlebige, signierte Links ausgeliefert.
+          </li>
+          <li>
+            Wir als Betreiber lesen deine Dokumente nicht mit. Zugriff auf
+            die Systeme haben nur berechtigte Admins, gesichert durch einen
+            zusätzlichen Zugangsschutz.
+          </li>
+        </ul>
+      </Section>
+
+      <Section title="5. Auftragsverarbeiter">
         <p>Wir setzen folgende Dienstleister ein:</p>
         <ul className="list-disc space-y-1 pl-5">
           <li>
@@ -117,10 +142,18 @@ export default function DatenschutzPage() {
             Dokumente).
           </li>
           <li>
-            <strong>Resend</strong> (Versand von Erinnerungs-E-Mails).
+            <strong>Resend</strong> (Versand von E-Mail-Benachrichtigungen,
+            z. B. Einladungen und Erinnerungen).
           </li>
           <li>
             <strong>Vercel</strong> (Hosting der Anwendung).
+          </li>
+          <li>
+            <strong>Sentry</strong> (Fehlerdiagnose) — bei technischen
+            Fehlern werden Gerät, Browser und der Fehlerkontext
+            übermittelt. Bei einem Fehler kann zudem eine Aufzeichnung der
+            Sitzung angelegt werden, in der Texte und Bilder maskiert
+            werden.
           </li>
         </ul>
         <p className="text-muted-foreground">
@@ -129,7 +162,17 @@ export default function DatenschutzPage() {
         </p>
       </Section>
 
-      <Section title="5. Rechtsgrundlagen">
+      <Section title="6. Übermittlung in Drittländer">
+        <p>
+          Einige unserer Dienstleister sitzen in den USA (OpenAI, Datalab,
+          Resend, Vercel, Sentry). Die Übermittlung personenbezogener Daten
+          erfolgt auf Grundlage von Standardvertragsklauseln (Art. 46 Abs. 2
+          lit. c DSGVO) beziehungsweise des EU-US Data Privacy Framework,
+          soweit der jeweilige Anbieter zertifiziert ist.
+        </p>
+      </Section>
+
+      <Section title="7. Rechtsgrundlagen">
         <p>
           Vertragserfüllung (Art. 6 Abs. 1 lit. b DSGVO) für den Betrieb
           des Dienstes; berechtigtes Interesse (lit. f) für Sicherheit und
@@ -138,7 +181,7 @@ export default function DatenschutzPage() {
         </p>
       </Section>
 
-      <Section title="6. Cookies">
+      <Section title="8. Cookies">
         <p>
           Ordilo verwendet ausschließlich technisch notwendige Cookies für
           die Anmeldung (Session). Keine Analyse-, Marketing- oder
@@ -146,7 +189,7 @@ export default function DatenschutzPage() {
         </p>
       </Section>
 
-      <Section title="7. Speicherdauer und Löschung">
+      <Section title="9. Speicherdauer und Löschung">
         <p>
           Deine Inhalte bleiben gespeichert, solange dein Konto besteht.
           Gelöschte Dokumente werden endgültig entfernt. Bei Löschung des
@@ -155,24 +198,24 @@ export default function DatenschutzPage() {
         </p>
         <p>
           Inhaltsfreie Nutzungsereignisse bewahren wir höchstens 12 Monate
-          auf. Fehlversuche beim zusätzlichen Admin-Zugang werden nur kurz
+          auf. Fehlerdiagnose-Daten werden nach 90 Tagen gelöscht.
+          Fehlversuche beim zusätzlichen Admin-Zugang werden nur kurz
           für den Schutz vor Missbrauch gespeichert.
         </p>
       </Section>
 
-      <Section title="8. Deine Rechte">
+      <Section title="10. Deine Rechte">
         <p>
           Du hast das Recht auf Auskunft, Berichtigung, Löschung,
           Einschränkung der Verarbeitung, Datenübertragbarkeit und
           Widerspruch (Art. 15–21 DSGVO) sowie das Recht auf Beschwerde bei
           einer Datenschutz-Aufsichtsbehörde. Wende dich dafür an
-          [datenschutz@ordilo.example].
+          info@ordilo.de.
         </p>
       </Section>
 
       <p className="text-xs text-muted-foreground">
-        Stand: [Monat Jahr] — diese Erklärung wird vor dem Launch final
-        geprüft und mit den echten Angaben versehen.
+        Stand: August 2026
       </p>
     </article>
   );

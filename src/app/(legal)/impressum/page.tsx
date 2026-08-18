@@ -1,35 +1,29 @@
 import type { Metadata } from "next";
-import { PlaceholderNotice } from "../placeholder-notice";
 
 export const metadata: Metadata = {
   title: "Impressum — Ordilo",
-  robots: { index: false },
 };
 
 /**
- * Impressum (§ 5 DDG) — PLACEHOLDER content.
- *
- * Every value in [brackets] is dummy data and MUST be replaced with the
- * real operator's details before launch. The page is marked noindex and
- * carries a visible placeholder banner until then.
+ * Impressum (§ 5 DDG) — complete. Operator: Erb Invest UG
+ * (haftungsbeschränkt), Hamburg. Add a USt-IdNr. line under
+ * "Registereintrag" once one is assigned.
  */
 export default function ImpressumPage() {
   return (
     <article className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Impressum</h1>
 
-      <PlaceholderNotice />
-
       <section className="space-y-1.5 text-sm leading-relaxed">
         <h2 className="text-base font-semibold">Angaben gemäß § 5 DDG</h2>
         <p>
-          [Max Mustermann]
+          Erb Invest UG (haftungsbeschränkt)
           <br />
-          [Musterfirma UG (haftungsbeschränkt)]
+          c/o unicorn workspaces
           <br />
-          [Musterstraße 1]
+          Burchardstr. 14
           <br />
-          [12345 Musterstadt]
+          20095 Hamburg
           <br />
           Deutschland
         </p>
@@ -37,25 +31,17 @@ export default function ImpressumPage() {
 
       <section className="space-y-1.5 text-sm leading-relaxed">
         <h2 className="text-base font-semibold">Kontakt</h2>
-        <p>
-          E-Mail: [hallo@ordilo.example]
-          <br />
-          Telefon: [+49 000 0000000]
-        </p>
+        <p>E-Mail: info@ordilo.de</p>
       </section>
 
       <section className="space-y-1.5 text-sm leading-relaxed">
         <h2 className="text-base font-semibold">Vertreten durch</h2>
-        <p>[Max Mustermann, Geschäftsführer]</p>
+        <p>Christian Erb, Geschäftsführer</p>
       </section>
 
       <section className="space-y-1.5 text-sm leading-relaxed">
         <h2 className="text-base font-semibold">Registereintrag</h2>
-        <p>
-          [Handelsregister: Amtsgericht Musterstadt, HRB 00000]
-          <br />
-          [USt-IdNr.: DE000000000]
-        </p>
+        <p>Handelsregister: Amtsgericht Hamburg, HRB 142639</p>
       </section>
 
       <section className="space-y-1.5 text-sm leading-relaxed">
@@ -63,9 +49,9 @@ export default function ImpressumPage() {
           Verantwortlich für den Inhalt nach § 18 Abs. 2 MStV
         </h2>
         <p>
-          [Max Mustermann]
+          Christian Erb
           <br />
-          [Musterstraße 1, 12345 Musterstadt]
+          c/o unicorn workspaces, Burchardstr. 14, 20095 Hamburg
         </p>
       </section>
 
