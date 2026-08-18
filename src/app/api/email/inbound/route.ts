@@ -79,14 +79,14 @@ export async function POST(request: Request): Promise<Response> {
       resend,
     });
 
-    if (imported.importedDocumentIds.length > 0) {
+    if (imported.acceptedDocumentCount > 0) {
       after(async () => {
         const appUrl = process.env.APP_BASE_URL ?? new URL(request.url).origin;
         await queueInboundReceipt({
           familyId: alias.family_id,
           sourceEmailId: event.data.email_id,
           recipientEmail: notificationRecipient,
-          documentCount: imported.importedDocumentIds.length,
+          documentCount: imported.acceptedDocumentCount,
         });
         for (let round = 0; round < 5; round++) {
           const summary = await runPendingJobs(admin, 3);

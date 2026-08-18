@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { requireUser } from "@/lib/auth/require-user";
 import { deliverSignupNotification } from "@/lib/signup-notification-delivery";
 
@@ -13,6 +14,8 @@ export async function POST(): Promise<Response> {
   const auth = await requireUser();
   if (auth.status) return Response.json(auth.json, { status: auth.status });
 
-  await deliverSignupNotification(auth.user.id);
+  after(async () => {
+    await deliverSignupNotification(auth.user.id);
+  });
   return Response.json({ ok: true });
 }

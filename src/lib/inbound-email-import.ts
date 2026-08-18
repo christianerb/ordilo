@@ -10,7 +10,7 @@ import { buildStoragePath, sanitizeFilename } from "@/lib/api/storage";
 
 const DAILY_UPLOAD_LIMIT = 50;
 
-type InboundAttachment = {
+export type InboundAttachment = {
   id: string;
   filename: string | null;
   content_type: string;
@@ -19,8 +19,35 @@ type InboundAttachment = {
 
 export type InboundImportResult = {
   importedDocumentIds: string[];
+  acceptedDocumentCount: number;
   skippedAttachments: number;
 };
+
+export function planInboundAttachmentImport(params: {
+  attachments: readonly InboundAttachment[];
+  existingAttachmentIds: ReadonlySet<string>;
+  todayDocumentCount: number;
+}) {
+  const existingAttachmentCount = params.attachments.filter((attachment) =>
+    params.existingAttachmentIds.has(attachment.id),
+  ).length;
+  // An earlier attempt may have stored an attachment from this very email.
+  // It already occupies one row in today's count, but must not consume a
+  // second slot when the webhook is retried.
+  const availableSlots = Math.max(
+    0,
+    DAILY_UPLOAD_LIMIT -
+      Math.max(0, params.todayDocumentCount - existingAttachmentCount),
+  );
+  const newAttachments = params.attachments.filter(
+    (attachment) => !params.existingAttachmentIds.has(attachment.id),
+  );
+  return {
+    attachmentsToImport: newAttachments.slice(0, availableSlots),
+    existingAttachmentCount,
+    quotaSkippedAttachments: Math.max(0, newAttachments.length - availableSlots),
+  };
+}
 
 /**
  * Download supported attachments from a verified Resend inbound message and
@@ -42,6 +69,18 @@ export async function importInboundEmailAttachments(params: {
 
   const attachments = list.data as InboundAttachment[];
   const admin = createAdminClient();
+  const { data: existingDocuments, error: existingError } = await admin
+    .from("documents")
+    .select("source_attachment_id")
+    .eq("source_email_id", params.emailId);
+  if (existingError) throw existingError;
+
+  const existingAttachmentIds = new Set(
+    (existingDocuments ?? [])
+      .map((document) => document.source_attachment_id)
+      .filter((attachmentId): attachmentId is string => Boolean(attachmentId)),
+  );
+
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const { count, error: countError } = await admin
@@ -52,16 +91,15 @@ export async function importInboundEmailAttachments(params: {
 
   if (countError) throw countError;
 
-  const availableSlots = Math.max(0, DAILY_UPLOAD_LIMIT - (count ?? 0));
-  let skippedAttachments = 0;
+  const plan = planInboundAttachmentImport({
+    attachments,
+    existingAttachmentIds,
+    todayDocumentCount: count ?? 0,
+  });
+  let skippedAttachments = plan.quotaSkippedAttachments;
   const importedDocumentIds: string[] = [];
 
-  for (const attachment of attachments) {
-    if (importedDocumentIds.length >= availableSlots) {
-      skippedAttachments += 1;
-      continue;
-    }
-
+  for (const attachment of plan.attachmentsToImport) {
     const response = await fetch(attachment.download_url);
     if (!response.ok) throw new Error("Resend attachment could not be downloaded.");
 
@@ -116,13 +154,25 @@ export async function importInboundEmailAttachments(params: {
       throw insertError ?? new Error("Document insert returned no row.");
     }
 
-    importedDocumentIds.push(document.id);
-    await enqueueJob(admin, {
+    const jobQueued = await enqueueJob(admin, {
       family_id: params.familyId,
       document_id: document.id,
       job_type: "ocr",
     });
+    if (!jobQueued) {
+      // An inbound webhook has no client-side fallback to trigger OCR. Roll
+      // the insert back so Resend can retry the complete attachment safely.
+      await admin.from("documents").delete().eq("id", document.id);
+      await admin.storage.from("documents").remove([storagePath]);
+      throw new Error("Inbound OCR job could not be queued.");
+    }
+    importedDocumentIds.push(document.id);
   }
 
-  return { importedDocumentIds, skippedAttachments };
+  return {
+    importedDocumentIds,
+    acceptedDocumentCount:
+      plan.existingAttachmentCount + importedDocumentIds.length,
+    skippedAttachments,
+  };
 }
