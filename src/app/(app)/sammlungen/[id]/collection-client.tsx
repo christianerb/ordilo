@@ -25,6 +25,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { CollectionFolder } from "@/components/ordilo/collection-folder";
 import { updateCollection, deleteCollection } from "../actions";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 
@@ -119,28 +120,13 @@ export function CollectionClient({
 
   return (
     <div className="app-page-stack">
-      {/* Header */}
-      <div className="app-page-heading">
-        <span
-          className="flex size-12 shrink-0 items-center justify-center rounded-ordilo-md"
-          style={{ backgroundColor: colorOption.bg }}
-          aria-hidden="true"
-        >
-          <Icon className="size-6" style={{ color: colorOption.fg }} strokeWidth={1.75} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-xl font-semibold tracking-tight text-foreground">
-            {current.name}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {documents.length === 0
-              ? "Keine Dokumente"
-              : documents.length === 1
-                ? "1 Dokument"
-                : `${documents.length} Dokumente`}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
+      <CollectionFolder
+        name={current.name}
+        documentCount={documents.length}
+        Icon={Icon}
+        color={colorOption}
+        actions={
+          <>
           <button
             type="button"
             onClick={handleAddNote}
@@ -172,8 +158,9 @@ export function CollectionClient({
           >
             <Trash2 className="size-4" aria-hidden="true" />
           </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Document list or empty state */}
       {documents.length === 0 ? (

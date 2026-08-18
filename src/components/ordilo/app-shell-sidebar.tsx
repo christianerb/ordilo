@@ -10,7 +10,7 @@ import {
   LogOut,
   Settings,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { logout } from "@/app/(app)/actions";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
@@ -23,6 +23,11 @@ import {
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   DESKTOP_SHELL_SURFACE_STYLE,
   getGreeting,
   getProfileDisplayName,
@@ -34,6 +39,27 @@ import {
   type TimeOfDay,
   TIME_REFRESH_INTERVAL_MS,
 } from "./app-shell-shared";
+
+function CollapsedSidebarTooltip({
+  label,
+  collapsed,
+  children,
+}: {
+  label: string;
+  collapsed: boolean;
+  children: ReactElement;
+}) {
+  if (!collapsed) return children;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={10}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 function SidebarFooter({
   profile,
@@ -314,40 +340,41 @@ export function SidebarNav({
             const Icon = tab.icon;
             return (
               <li key={tab.href}>
-                <Link
-                  href={tab.href}
-                  aria-current={selected ? "page" : undefined}
-                  title={collapsed ? tab.label : undefined}
-                  className={cn(
-                    "group flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 transition-colors duration-150",
-                    collapsed ? "justify-center" : "justify-start",
-                    selected
-                      ? "bg-[color-mix(in_srgb,var(--petrol)_8%,var(--sand-light))] font-medium text-[var(--petrol)]"
-                      : "text-muted-foreground hover:bg-[var(--sand-warm)] hover:text-foreground",
-                  )}
-                >
-                  <Icon
-                    className="size-5 shrink-0 transition-colors"
-                    aria-hidden="true"
-                    strokeWidth={selected ? 2.1 : 1.75}
-                  />
-                  <span
+                <CollapsedSidebarTooltip label={tab.label} collapsed={collapsed}>
+                  <Link
+                    href={tab.href}
+                    aria-current={selected ? "page" : undefined}
                     className={cn(
-                      "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
-                      collapsed
-                        ? "ml-0 max-w-0 opacity-0"
-                        : "ml-3 max-w-[7rem] opacity-100",
+                      "group flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 transition-colors duration-150",
+                      collapsed ? "justify-center" : "justify-start",
+                      selected
+                        ? "bg-[color-mix(in_srgb,var(--petrol)_8%,var(--sand-light))] font-medium text-[var(--petrol)]"
+                        : "text-muted-foreground hover:bg-[var(--sand-warm)] hover:text-foreground",
                     )}
                   >
-                    {tab.label}
-                  </span>
-                  {!collapsed && selected && (
-                    <span
-                      className="ml-auto size-1.5 rounded-full bg-[var(--apricot)] animate-nav-dot"
+                    <Icon
+                      className="size-5 shrink-0 transition-colors"
                       aria-hidden="true"
+                      strokeWidth={selected ? 2.1 : 1.75}
                     />
-                  )}
-                </Link>
+                    <span
+                      className={cn(
+                        "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
+                        collapsed
+                          ? "ml-0 max-w-0 opacity-0"
+                          : "ml-3 max-w-[7rem] opacity-100",
+                      )}
+                    >
+                      {tab.label}
+                    </span>
+                    {!collapsed && selected && (
+                      <span
+                        className="ml-auto size-1.5 rounded-full bg-[var(--apricot)] animate-nav-dot"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </Link>
+                </CollapsedSidebarTooltip>
                 {tab.children && !collapsed && (
                   <ul className="mt-px space-y-px">
                     {tab.children.map((child) => {
@@ -376,25 +403,26 @@ export function SidebarNav({
             );
           })}
           <li>
-            <Link
-              href="/suche?history=1"
-              title={collapsed ? "Chat-Verlauf" : undefined}
-              className={cn(
-                "flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground",
-                collapsed ? "justify-center" : "justify-start",
-              )}
-              data-testid="sidebar-chat-history-link"
-            >
-              <History className="size-5 shrink-0" aria-hidden="true" strokeWidth={1.75} />
-              <span
+            <CollapsedSidebarTooltip label="Chat-Verlauf" collapsed={collapsed}>
+              <Link
+                href="/suche?history=1"
                 className={cn(
-                  "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
-                  collapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-[7rem] opacity-100",
+                  "flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground",
+                  collapsed ? "justify-center" : "justify-start",
                 )}
+                data-testid="sidebar-chat-history-link"
               >
-                Chat-Verlauf
-              </span>
-            </Link>
+                <History className="size-5 shrink-0" aria-hidden="true" strokeWidth={1.75} />
+                <span
+                  className={cn(
+                    "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
+                    collapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-[7rem] opacity-100",
+                  )}
+                >
+                  Chat-Verlauf
+                </span>
+              </Link>
+            </CollapsedSidebarTooltip>
           </li>
         </ul>
 

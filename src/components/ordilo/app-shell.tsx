@@ -22,6 +22,7 @@ import { ActiveSearchProvider, useActiveSearch } from "@/lib/search/active-searc
 import { SuggestionChipsProvider } from "@/lib/search/suggestion-chips-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export { NAV_TABS } from "@/components/ordilo/app-shell-shared";
 export { isTabActive, shouldShowNav } from "@/components/ordilo/app-shell-shared";
@@ -72,21 +73,23 @@ export function AppShell({
 }) {
   const hasServerData = initialCollections !== undefined;
   return (
-    <ActiveSearchProvider>
-      <ScanProvider initialFamilyId={familyId}>
-        <CollectionsProvider initialCollections={initialCollections}>
-          <SuggestionChipsProvider>
-            <AppShellContent
-              profile={profile}
-              hasServerData={hasServerData}
-              recentQueries={recentQueries ?? []}
-            >
-              {children}
-            </AppShellContent>
-          </SuggestionChipsProvider>
-        </CollectionsProvider>
-      </ScanProvider>
-    </ActiveSearchProvider>
+    <TooltipProvider delayDuration={300}>
+      <ActiveSearchProvider>
+        <ScanProvider initialFamilyId={familyId}>
+          <CollectionsProvider initialCollections={initialCollections}>
+            <SuggestionChipsProvider>
+              <AppShellContent
+                profile={profile}
+                hasServerData={hasServerData}
+                recentQueries={recentQueries ?? []}
+              >
+                {children}
+              </AppShellContent>
+            </SuggestionChipsProvider>
+          </CollectionsProvider>
+        </ScanProvider>
+      </ActiveSearchProvider>
+    </TooltipProvider>
   );
 }
 

@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { Check, Copy, Loader2, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createFamilyInvite } from "@/app/(app)/familie/actions";
+import { OrdiloActionSwap } from "@/components/ordilo/ordilo-action-swap";
 
 /**
  * Invite action — a compact button inside the family banner that creates
@@ -115,17 +116,13 @@ export function InviteAction() {
                   className="shrink-0 rounded-ordilo-sm"
                   data-testid="copy-invite-button"
                 >
-                  {copied ? (
-                    <>
-                      <Check className="size-4" aria-hidden="true" />
-                      Kopiert
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="size-4" aria-hidden="true" />
-                      Kopieren
-                    </>
-                  )}
+                  <OrdiloActionSwap
+                    active={copied}
+                    idleLabel="Kopieren"
+                    activeLabel="Kopiert"
+                    IdleIcon={Copy}
+                    ActiveIcon={Check}
+                  />
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">

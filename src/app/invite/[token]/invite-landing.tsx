@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { AuthShell } from "@/components/ordilo/auth-shell";
+import { OtpCodeInput } from "@/components/ordilo/otp-code-input";
 import { ProcessingInviteState } from "./processing-invite-state";
 
 type MergePreview = {
@@ -88,7 +89,6 @@ export function InviteLanding({
 }) {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
-  const [focusedCodeIndex, setFocusedCodeIndex] = useState(0);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
@@ -115,7 +115,6 @@ export function InviteLanding({
   const loginRequestInFlightRef = useRef(false);
   const resendRequestInFlightRef = useRef(false);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const codeInputRefs = useRef<Array<HTMLInputElement | null>>([]);
 
   function notifyInviter(notificationId?: string) {
     if (!notificationId) return;
@@ -198,41 +197,8 @@ export function InviteLanding({
     }
     setCode("");
     setErrorMessage(null);
-    codeInputRefs.current[0]?.focus();
     startCooldown();
   }, [email, resendCooldown, resending, sendInviteCode, startCooldown]);
-
-  function handleCodeChange(value: string, index: number) {
-    const digits = value.replace(/\D/g, "").slice(0, 6);
-    if (!digits) {
-      setCode((current) => {
-        const next = current.padEnd(6, " ").split("");
-        next[index] = " ";
-        return next.join("").trimEnd();
-      });
-      return;
-    }
-
-    setCode((current) => {
-      const next = current.padEnd(6, " ").split("");
-      digits.split("").forEach((digit, offset) => {
-        if (index + offset < 6) next[index + offset] = digit;
-      });
-      return next.join("").trimEnd();
-    });
-
-    const nextIndex = Math.min(index + digits.length, 5);
-    codeInputRefs.current[nextIndex]?.focus();
-  }
-
-  function handleCodeKeyDown(
-    event: React.KeyboardEvent<HTMLInputElement>,
-    index: number,
-  ) {
-    if (event.key === "Backspace" && !code[index] && index > 0) {
-      codeInputRefs.current[index - 1]?.focus();
-    }
-  }
 
   async function handleVerify(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -763,8 +729,6 @@ export function InviteLanding({
   // ---------------------------------------------------------------------------
   if (sent) {
     const webmail = webmailFor(email);
-    const codeDigits = Array.from({ length: 6 }, (_, index) => code[index] ?? "");
-
     return (
       <AuthShell compact>
         <div className="space-y-6 text-center">
@@ -798,32 +762,13 @@ export function InviteLanding({
               <legend className="mb-3 text-sm font-medium text-foreground">
                 Dein 6-stelliger Code
               </legend>
-              <div className="grid grid-cols-6 gap-2 sm:gap-3">
-                {codeDigits.map((digit, index) => (
-                  <input
-                    key={index}
-                    ref={(element) => {
-                      codeInputRefs.current[index] = element;
-                    }}
-                    autoFocus={index === 0}
-                    aria-label={`Ziffer ${index + 1} des Anmelde-Codes`}
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete={index === 0 ? "one-time-code" : "off"}
-                    maxLength={6}
-                    value={digit}
-                    onChange={(event) => handleCodeChange(event.target.value, index)}
-                    onKeyDown={(event) => handleCodeKeyDown(event, index)}
-                    onFocus={() => setFocusedCodeIndex(index)}
-                    disabled={verifying}
-                    className={`h-14 min-w-0 rounded-ordilo-sm border bg-[var(--warm-white)] text-center text-xl font-medium tabular-nums text-foreground outline-none transition-[border-color,box-shadow,transform] duration-200 ${
-                      focusedCodeIndex === index
-                        ? "border-primary ring-[3px] ring-ring/20"
-                        : "border-border"
-                    } disabled:cursor-wait disabled:opacity-60`}
-                  />
-                ))}
-              </div>
+              <OtpCodeInput
+                value={code}
+                onChange={setCode}
+                label="Anmelde-Codes"
+                autoFocus
+                disabled={verifying}
+              />
             </fieldset>
 
             <div className="flex items-center justify-center gap-1.5 text-sm text-muted-foreground">

@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AnimatedNumber } from "@/components/ordilo/animated-number";
+import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
 import {
   PlannerActionsProvider,
   usePlannerActions,
@@ -61,7 +62,7 @@ function PlannerHeader({
               className="shrink-0 text-sm text-muted-foreground tabular-nums"
               data-testid="planner-open-count"
             >
-              {openCount} offen
+              <AnimatedNumber value={openCount} /> offen
             </span>
           )}
         </div>
@@ -79,34 +80,18 @@ function PlannerHeader({
         )}
       </div>
 
-      <nav
-        aria-label="Ansicht im Familienplaner"
-        className="grid w-full grid-cols-2 rounded-ordilo-sm bg-secondary p-1 text-sm"
-        data-testid="planner-view-switcher"
-      >
-        <Link
-          href="/aufgaben"
-          aria-current={!showPlaner ? "page" : undefined}
-          className={
-            !showPlaner
-              ? "rounded-[8px] bg-card px-3 py-2 text-center font-medium text-foreground shadow-sm"
-              : "rounded-[8px] px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          }
-        >
-          Aufgaben
-        </Link>
-        <Link
-          href="/aufgaben?tab=planer"
-          aria-current={showPlaner ? "page" : undefined}
-          className={
-            showPlaner
-              ? "rounded-[8px] bg-card px-3 py-2 text-center font-medium text-foreground shadow-sm"
-              : "rounded-[8px] px-3 py-2 text-center font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          }
-        >
-          Planer
-        </Link>
-      </nav>
+      <OrdiloSegmentedNav
+        label="Ansicht im Familienplaner"
+        items={[
+          { href: "/aufgaben", label: "Aufgaben", active: !showPlaner },
+          {
+            href: "/aufgaben?tab=planer",
+            label: "Planer",
+            active: showPlaner,
+          },
+        ]}
+        testId="planner-view-switcher"
+      />
     </div>
   );
 }
