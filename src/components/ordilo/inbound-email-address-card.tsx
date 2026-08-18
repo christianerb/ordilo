@@ -53,7 +53,13 @@ export function InboundEmailAddressCard({
           </p>
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-2 rounded-ordilo-sm bg-[var(--surface-box)] p-2">
+      <div
+        className={`mt-3 flex items-center gap-2 rounded-ordilo-sm p-2 transition-colors duration-200 motion-reduce:transition-none ${
+          copied
+            ? "bg-[color-mix(in_srgb,var(--petrol)_10%,var(--surface-box))]"
+            : "bg-[var(--surface-box)]"
+        }`}
+      >
         <p className="min-w-0 flex-1 select-all break-all px-1 text-sm font-medium text-foreground">
           {email}
         </p>
@@ -81,13 +87,13 @@ export function InboundEmailAddressCard({
         aria-live="polite"
       >
         {copied ? (
-          <>
+          <span className="flex items-center gap-1.5 animate-message-in">
             <Check
               className="size-3.5 shrink-0 animate-check-pop text-[var(--petrol)]"
               aria-hidden="true"
             />
             Adresse kopiert. Du kannst sie jetzt beim Weiterleiten einfügen.
-          </>
+          </span>
         ) : (
           "Nur eure Familie kann diese Adresse nutzen."
         )}
