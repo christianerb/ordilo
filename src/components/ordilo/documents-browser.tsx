@@ -306,7 +306,7 @@ export function DocumentsBrowser({
 
       {moreFiltersOpen && (
         <div
-          className="grid gap-3 rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] p-3 sm:grid-cols-3"
+          className="animate-card-in grid gap-3 rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] p-3 sm:grid-cols-3"
           data-testid="documents-filter-panel"
         >
           <FilterSelect

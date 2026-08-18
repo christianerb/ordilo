@@ -188,7 +188,7 @@ export function LibraryList({
     <ul
       data-testid={testId}
       className={cn(
-        "animate-card-in divide-y divide-[color-mix(in_srgb,var(--border)_60%,transparent)] overflow-hidden rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)]",
+        "stagger-children divide-y divide-[color-mix(in_srgb,var(--border)_60%,transparent)] overflow-hidden rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)]",
         className,
       )}
     >
@@ -336,7 +336,7 @@ export function LibraryNoResults({
   resetLabel?: string;
 }) {
   return (
-    <div className="rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] p-6 text-center text-sm text-muted-foreground">
+    <div className="animate-card-in rounded-ordilo-sm border border-[color-mix(in_srgb,var(--border)_75%,transparent)] bg-[var(--surface-story)] p-6 text-center text-sm text-muted-foreground">
       <p className="font-medium text-foreground">{message}</p>
       {hint && <p className="mt-1">{hint}</p>}
       {onReset && (
