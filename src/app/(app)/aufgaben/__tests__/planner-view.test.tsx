@@ -52,6 +52,38 @@ describe("PlannerView", () => {
     expect(screen.queryByTestId("tasks-view")).not.toBeInTheDocument();
   });
 
+  it("shows a local switcher for Aufgaben and Planer", () => {
+    renderView();
+
+    const switcher = screen.getByTestId("planner-view-switcher");
+    expect(switcher).toHaveAccessibleName("Ansicht im Familienplaner");
+    expect(
+      screen.getByRole("link", { name: "Aufgaben" }),
+    ).toHaveAttribute("href", "/aufgaben");
+    expect(
+      screen.getByRole("link", { name: "Planer" }),
+    ).toHaveAttribute("href", "/aufgaben?tab=planer");
+    expect(screen.getByRole("link", { name: "Aufgaben" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+  });
+
+  it("marks Planer as the active local view", () => {
+    mockSearchParamsGet.mockImplementation((key: string) =>
+      key === "tab" ? "planer" : null,
+    );
+    renderView();
+
+    expect(screen.getByRole("link", { name: "Planer" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(
+      screen.getByRole("link", { name: "Aufgaben" }),
+    ).not.toHaveAttribute("aria-current");
+  });
+
   it("labels the header action after the active view", () => {
     const { unmount } = render(
       <PlannerView

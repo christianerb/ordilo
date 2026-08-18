@@ -33,6 +33,7 @@ import {
   meaningfulLabel,
 } from "@/lib/analysis-cleanup";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { OrdiloDisclosure } from "@/components/ordilo/ordilo-disclosure";
 import {
   FieldRow,
   ReviewFieldSection,
@@ -123,35 +124,6 @@ export function ConfirmedAnalysisDetails({
       )}
 
       <div>
-        {analysis.family_members.length > 0 && (
-          <ReviewFieldSection icon={User} title={countedTitle(analysis.family_members.length, "Person", "Personen")} testId="confirmed-persons">
-            {analysis.family_members.map((member, i) => (
-              <FieldRow key={i}>
-                <span className="block truncate">{member.name}</span>
-              </FieldRow>
-            ))}
-          </ReviewFieldSection>
-        )}
-
-        {analysis.organizations.length > 0 && (
-          <ReviewFieldSection
-            icon={Building2}
-            title={countedTitle(analysis.organizations.length, "Organisation", "Organisationen")}
-            testId="confirmed-organizations"
-          >
-            {analysis.organizations.map((org, i) => (
-              <FieldRow key={i}>
-                <span className="block truncate">{org.name}</span>
-                {shouldShowOrganizationType(org.name, org.type) && (
-                  <span className="block truncate font-normal text-muted-foreground">
-                    {org.type}
-                  </span>
-                )}
-              </FieldRow>
-            ))}
-          </ReviewFieldSection>
-        )}
-
         {dates.length > 0 && (
           <ReviewFieldSection
             icon={Calendar}
@@ -231,14 +203,48 @@ export function ConfirmedAnalysisDetails({
           </ReviewFieldSection>
         )}
 
-        {/* Numbers sit with the other exact values, below the extracted
-            fields and above the collection — close to the amounts they
-            usually belong to, and out of the way when there are none. */}
-        {documentId && <EditableFactsSection documentId={documentId} />}
+        <OrdiloDisclosure
+          title="Weitere Angaben"
+          description="Personen, Organisationen, Kennungen und Sammlung"
+          testId="confirmed-secondary-details"
+        >
+          {analysis.family_members.length > 0 && (
+            <ReviewFieldSection icon={User} title={countedTitle(analysis.family_members.length, "Person", "Personen")} testId="confirmed-persons">
+              {analysis.family_members.map((member, i) => (
+                <FieldRow key={i}>
+                  <span className="block truncate">{member.name}</span>
+                </FieldRow>
+              ))}
+            </ReviewFieldSection>
+          )}
 
-        <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
-          <span className="block truncate">{analysis.suggested_category}</span>
-        </FieldRow>
+          {analysis.organizations.length > 0 && (
+            <ReviewFieldSection
+              icon={Building2}
+              title={countedTitle(analysis.organizations.length, "Organisation", "Organisationen")}
+              testId="confirmed-organizations"
+            >
+              {analysis.organizations.map((org, i) => (
+                <FieldRow key={i}>
+                  <span className="block truncate">{org.name}</span>
+                  {shouldShowOrganizationType(org.name, org.type) && (
+                    <span className="block truncate font-normal text-muted-foreground">
+                      {org.type}
+                    </span>
+                  )}
+                </FieldRow>
+              ))}
+            </ReviewFieldSection>
+          )}
+
+          {/* Numbers sit with their exact values, but do not crowd the
+              first glance at a document's important deadlines and tasks. */}
+          {documentId && <EditableFactsSection documentId={documentId} />}
+
+          <FieldRow icon={Tag} label="Sammlung" testId="confirmed-category">
+            <span className="block truncate">{analysis.suggested_category}</span>
+          </FieldRow>
+        </OrdiloDisclosure>
       </div>
 
       {onViewOriginal && (
