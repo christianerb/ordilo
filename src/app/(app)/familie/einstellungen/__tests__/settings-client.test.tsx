@@ -55,6 +55,18 @@ describe("FamilySettingsClient", () => {
     expect(screen.getByText("1 Person")).toBeInTheDocument();
   });
 
+  it("shows the private document forwarding address when configured", () => {
+    render(
+      <FamilySettingsClient
+        inboundEmail="dokumente+geheim@mail.ordilo.de"
+      />,
+    );
+
+    expect(screen.getByTestId("family-inbound-email")).toHaveTextContent(
+      "dokumente+geheim@mail.ordilo.de",
+    );
+  });
+
   it("disables the save button until the name actually changes", () => {
     render(
       <FamilySettingsClient familyName="Familie Müller" memberCount={2} />,

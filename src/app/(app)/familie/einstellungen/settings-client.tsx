@@ -32,6 +32,8 @@ export interface FamilySettingsClientProps {
   createdAt?: string | null;
   /** Number of family members (for the info card). */
   memberCount?: number;
+  /** Private address for forwarding document attachments. */
+  inboundEmail?: string | null;
   /** When true, the server-side family query failed — shows an error state. */
   fetchError?: boolean;
 }
@@ -51,6 +53,7 @@ export function FamilySettingsClient({
   familyName = "",
   createdAt,
   memberCount = 0,
+  inboundEmail,
   fetchError = false,
 }: FamilySettingsClientProps) {
   const router = useRouter();
@@ -198,6 +201,24 @@ export function FamilySettingsClient({
           )}
         </Button>
       </div>
+
+      {inboundEmail && (
+        <div className="space-y-2 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
+          <h2 className="text-base font-semibold text-foreground">
+            Dokumente per E-Mail
+          </h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Leite PDFs und Bilder an diese private Adresse weiter. Sie landen
+            automatisch bei euren Dokumenten.
+          </p>
+          <p
+            className="select-all break-all rounded-ordilo-sm bg-[var(--sand-light)] px-3 py-2 text-sm font-medium text-foreground"
+            data-testid="family-inbound-email"
+          >
+            {inboundEmail}
+          </p>
+        </div>
+      )}
 
       {/* Family info */}
       <div className="space-y-4 rounded-ordilo-md border border-border bg-card p-4 shadow-card">

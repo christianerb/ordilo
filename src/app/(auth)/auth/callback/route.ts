@@ -4,6 +4,7 @@ import { getPostAuthDestination } from "@/lib/auth/routing";
 import { INVITE_COOKIE } from "@/lib/invite";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 import { deliverInviteNotification } from "@/lib/invite-notification-delivery";
+import { deliverSignupNotification } from "@/lib/signup-notification-delivery";
 
 /**
  * Magic link callback route.
@@ -86,6 +87,12 @@ export async function GET(request: NextRequest) {
     await recordProductEvent(supabase, {
       userId: authData.user.id,
       eventName: "onboarding_started",
+    });
+  }
+  if (authData.user) {
+    const signedInUser = authData.user;
+    after(async () => {
+      await deliverSignupNotification(signedInUser.id);
     });
   }
 
