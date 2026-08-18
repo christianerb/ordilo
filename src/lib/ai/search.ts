@@ -1438,6 +1438,7 @@ export async function fetchConfirmedDocuments(
     .select("id, title, status")
     .eq("family_id", familyId)
     .eq("status", "confirmed")
+    .is("deleted_at", null)
     .in("id", documentIds);
 
   if (error) {

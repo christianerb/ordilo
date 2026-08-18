@@ -30,6 +30,7 @@ function chainableQuery(result: { data: unknown; error: unknown }) {
   const self: Record<string, unknown> = {
     select: vi.fn(() => self),
     eq: vi.fn(() => self),
+    is: vi.fn(() => self),
     ilike: vi.fn(() => self),
     in: vi.fn(() => self),
     or: vi.fn(() => self),
@@ -102,6 +103,23 @@ function fact(overrides: Partial<FactRow> & { document_id: string }): FactRow {
 }
 
 describe("factSearch", () => {
+  it("filters confirmed-document lookups to active rows", async () => {
+    const client = mockClient({
+      facts: [fact({ document_id: "doc-1" })],
+    });
+
+    await factSearch(client, "Wie ist die Steuernummer?", FAMILY_ID);
+
+    const fromMock = client.from as unknown as ReturnType<typeof vi.fn>;
+    const documentsCallIndex = fromMock.mock.calls.findIndex(
+      (call: unknown[]) => call[0] === "documents",
+    );
+    const documentsQuery = fromMock.mock.results[documentsCallIndex].value as {
+      is: ReturnType<typeof vi.fn>;
+    };
+    expect(documentsQuery.is).toHaveBeenCalledWith("deleted_at", null);
+  });
+
   it("finds a Steuer-ID when the family asks for the 'Steuernummer'", async () => {
     const client = mockClient({
       facts: [fact({ document_id: "doc-1" })],

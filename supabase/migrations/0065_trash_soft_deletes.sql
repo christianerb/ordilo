@@ -59,6 +59,11 @@ as $$
   returning documents.id, documents.file_url;
 $$;
 
+revoke all on function public.claim_expired_trash_documents(timestamptz, uuid)
+  from public, anon, authenticated;
+grant execute on function public.claim_expired_trash_documents(timestamptz, uuid)
+  to service_role;
+
 create or replace function public.restore_document(p_document_id uuid)
 returns boolean
 language plpgsql
@@ -87,6 +92,13 @@ begin
   return true;
 end;
 $$;
+
+revoke all on function public.trash_document(uuid) from public, anon;
+grant execute on function public.trash_document(uuid)
+  to authenticated, service_role;
+revoke all on function public.restore_document(uuid) from public, anon;
+grant execute on function public.restore_document(uuid)
+  to authenticated, service_role;
 
 create or replace function public.semantic_search(
   p_query_embedding vector(1536),

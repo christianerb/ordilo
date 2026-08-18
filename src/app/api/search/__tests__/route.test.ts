@@ -62,7 +62,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
 /**
  * Build a chainable mock query builder that resolves to { data, error }.
  *
- * Supports: select, eq, ilike, in, lte, not, order, limit, maybeSingle.
+ * Supports: select, eq, is, ilike, in, lte, not, order, limit, maybeSingle.
  * All chain methods return the builder so any order of calls works.
  * The terminal await resolves to the configured result.
  */
@@ -70,6 +70,7 @@ function chainableQuery(result: { data: unknown; error: unknown }) {
   const self: Record<string, unknown> = {
     select: vi.fn(() => self),
     eq: vi.fn(() => self),
+    is: vi.fn(() => self),
     ilike: vi.fn(() => self),
     in: vi.fn(() => self),
     lte: vi.fn(() => self),
