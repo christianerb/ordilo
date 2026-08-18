@@ -611,8 +611,7 @@ export type Database = {
           created_at: string;
           confirmed_at: string | null;
           deleted_at: string | null;
-          purge_claim_id: string | null;
-          purge_claimed_at: string | null;
+          purge_started_at: string | null;
           tags: string[];
           source: string;
           /** Pipeline version that produced the current extraction (see 0026). */
@@ -643,8 +642,7 @@ export type Database = {
           created_at?: string;
           confirmed_at?: string | null;
           deleted_at?: string | null;
-          purge_claim_id?: string | null;
-          purge_claimed_at?: string | null;
+          purge_started_at?: string | null;
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
@@ -672,8 +670,7 @@ export type Database = {
           created_at?: string;
           confirmed_at?: string | null;
           deleted_at?: string | null;
-          purge_claim_id?: string | null;
-          purge_claimed_at?: string | null;
+          purge_started_at?: string | null;
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
@@ -779,7 +776,6 @@ export type Database = {
           confirmed: boolean;
           created_at: string;
           deleted_at: string | null;
-          status_before_trash: string | null;
           trashed_by_document_id: string | null;
           tags: string[];
           assigned_to: string | null;
@@ -797,7 +793,6 @@ export type Database = {
           confirmed?: boolean;
           created_at?: string;
           deleted_at?: string | null;
-          status_before_trash?: string | null;
           trashed_by_document_id?: string | null;
           tags?: string[];
           assigned_to?: string | null;
@@ -815,7 +810,6 @@ export type Database = {
           confirmed?: boolean;
           created_at?: string;
           deleted_at?: string | null;
-          status_before_trash?: string | null;
           trashed_by_document_id?: string | null;
           tags?: string[];
           assigned_to?: string | null;
@@ -1315,8 +1309,25 @@ export type Database = {
         Args: { p_document_id: string };
         Returns: boolean;
       };
+      trash_task: {
+        Args: { p_task_id: string };
+        Returns: boolean;
+      };
+      restore_task: {
+        Args: { p_task_id: string };
+        Returns: boolean;
+      };
+      list_trash: {
+        Args: { p_family_id: string };
+        Returns: {
+          item_type: "document" | "task";
+          id: string;
+          label: string;
+          deleted_at: string;
+        }[];
+      };
       claim_expired_trash_documents: {
-        Args: { p_cutoff: string; p_claim_id: string };
+        Args: { p_cutoff: string };
         Returns: { id: string; file_url: string | null }[];
       };
       user_belongs_to_family: {

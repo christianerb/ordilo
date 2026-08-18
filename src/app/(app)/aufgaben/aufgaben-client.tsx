@@ -435,7 +435,7 @@ export function AufgabenClient({
   // calendar day so sections and row labels always agree.
   const nowStr = todayLocalDate();
 
-  const { toggleDone, dismiss, patch } = useTaskMutation({
+  const { toggleDone, dismiss, restore, patch } = useTaskMutation({
     onOptimisticToggle: (taskId, newStatus) =>
       setTasks((prev) =>
         prev.map((t) =>
@@ -464,9 +464,11 @@ export function AufgabenClient({
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: "dismissed" } : t)),
       ),
-    onRevertDismiss: (taskId) =>
+    onRevertDismiss: (taskId, previousStatus) =>
       setTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? { ...t, status: "open" } : t)),
+        prev.map((t) =>
+          t.id === taskId ? { ...t, status: previousStatus } : t,
+        ),
       ),
     onToggleError: () =>
       toast.error("Speichern hat nicht geklappt — bitte nochmal versuchen"),
@@ -580,28 +582,15 @@ export function AufgabenClient({
   /** Restore a dismissed task to its exact prior schedule. */
   const handleUndoDismiss = useCallback(
     async (task: TaskCardData) => {
-      const ok = await patch(
-        task.id,
-        {
-          status: task.status,
-          due_date: task.due_date,
-          deleted_at: null,
-          status_before_trash: null,
-          trashed_by_document_id: null,
-        },
-        {
-          status: "dismissed",
-          due_date: task.due_date,
-          deleted_at: new Date().toISOString(),
-          status_before_trash: task.status,
-          trashed_by_document_id: null,
-        },
-      );
+      const ok = await restore(task.id);
       if (ok) {
+        setTasks((prev) =>
+          prev.map((item) => (item.id === task.id ? task : item)),
+        );
         toast.success("Wieder da — kein Problem");
       }
     },
-    [patch],
+    [restore],
   );
 
   const handleDismiss = useCallback(

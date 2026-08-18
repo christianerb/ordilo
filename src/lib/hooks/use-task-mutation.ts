@@ -16,9 +16,6 @@ export interface TaskPatch {
   status?: string;
   due_date?: string | null;
   assigned_to?: string | null;
-  deleted_at?: string | null;
-  status_before_trash?: string | null;
-  trashed_by_document_id?: string | null;
   /**
    * Rarely passed. A database trigger stamps and clears this alongside
    * `status` for every writer — including the chat tools, which do not go
@@ -78,7 +75,7 @@ export interface UseTaskMutationOptions {
    * Revert a failed dismiss. Called when the Supabase update returns an
    * error or throws.
    */
-  onRevertDismiss: (taskId: string) => void;
+  onRevertDismiss: (taskId: string, previousStatus: string) => void;
   /**
    * Called when a toggle-done mutation fails with a Supabase error object.
    * The component decides how to surface the error (e.g. a toast or an
@@ -151,6 +148,7 @@ export interface UseTaskMutationOptions {
 export function useTaskMutation(options: UseTaskMutationOptions): {
   toggleDone: (taskId: string, newStatus: string) => Promise<boolean>;
   dismiss: (taskId: string, previousStatus?: string) => Promise<boolean>;
+  restore: (taskId: string) => Promise<boolean>;
   patch: (
     taskId: string,
     updates: TaskPatch,
@@ -209,25 +207,40 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
       opts.onOptimisticDismiss(taskId);
 
       try {
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            status: "dismissed",
-            deleted_at: new Date().toISOString(),
-            status_before_trash: previousStatus,
-            trashed_by_document_id: null,
-          })
-          .eq("id", taskId);
+        const { data: trashed, error } = await supabase.rpc("trash_task", {
+          p_task_id: taskId,
+        });
 
-        if (error) {
-          opts.onRevertDismiss(taskId);
+        if (error || !trashed) {
+          opts.onRevertDismiss(taskId, previousStatus);
           opts.onDismissError();
           return false;
         }
         opts.onSettled?.();
         return true;
       } catch {
-        opts.onRevertDismiss(taskId);
+        opts.onRevertDismiss(taskId, previousStatus);
+        (opts.onDismissException ?? opts.onDismissError)();
+        return false;
+      }
+    },
+    [supabase],
+  );
+
+  const restore = useCallback(
+    async (taskId: string): Promise<boolean> => {
+      const opts = optionsRef.current;
+      try {
+        const { data: restored, error } = await supabase.rpc("restore_task", {
+          p_task_id: taskId,
+        });
+        if (error || !restored) {
+          opts.onDismissError();
+          return false;
+        }
+        opts.onSettled?.();
+        return true;
+      } catch {
         (opts.onDismissException ?? opts.onDismissError)();
         return false;
       }
@@ -266,5 +279,5 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
     [supabase],
   );
 
-  return { toggleDone, dismiss, patch };
+  return { toggleDone, dismiss, restore, patch };
 }

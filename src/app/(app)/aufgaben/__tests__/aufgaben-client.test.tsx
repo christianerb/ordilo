@@ -13,8 +13,10 @@ vi.mock("next/navigation", () => ({
 // Mock @/lib/supabase/client — backs useTaskMutation's `tasks` updates.
 const mockUpdate = vi.fn();
 const mockEq = vi.fn();
+const mockRpc = vi.fn();
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
+    rpc: mockRpc,
     from: vi.fn(() => ({
       update: mockUpdate,
     })),
@@ -120,8 +122,10 @@ function lastToast(): [string, { action?: { label: string; onClick: () => void }
 beforeEach(() => {
   mockUpdate.mockClear();
   mockEq.mockClear();
+  mockRpc.mockClear();
   mockUpdate.mockReturnValue({ eq: mockEq });
   mockEq.mockResolvedValue({ error: null });
+  mockRpc.mockResolvedValue({ data: true, error: null });
   vi.mocked(toast.success).mockClear();
   vi.mocked(toast.error).mockClear();
 });
@@ -541,13 +545,10 @@ describe("AufgabenClient — verwerfen", () => {
     await act(async () => {
       options.action?.onClick();
     });
-    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(2));
-    expect(mockUpdate.mock.calls[1][0]).toEqual({
-      status: "open",
-      due_date: null,
-      deleted_at: null,
-      status_before_trash: null,
-      trashed_by_document_id: null,
-    });
+    await waitFor(() => expect(mockRpc).toHaveBeenCalledTimes(2));
+    expect(mockRpc.mock.calls).toEqual([
+      ["trash_task", { p_task_id: "task-1" }],
+      ["restore_task", { p_task_id: "task-1" }],
+    ]);
   });
 });

@@ -32,10 +32,9 @@ export async function purgeExpiredTrash(): Promise<void> {
   const cutoff = new Date(
     Date.now() - TRASH_RETENTION_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
-  const claimId = crypto.randomUUID();
   const { data: documents, error: documentReadError } = await admin.rpc(
     "claim_expired_trash_documents",
-    { p_cutoff: cutoff, p_claim_id: claimId },
+    { p_cutoff: cutoff },
   );
   if (documentReadError) throw documentReadError;
 
@@ -46,30 +45,20 @@ export async function purgeExpiredTrash(): Promise<void> {
     const { error: storageError } = await admin.storage
       .from("documents")
       .remove(filePaths);
-    if (storageError) {
-      await admin
-        .from("documents")
-        .update({ purge_claim_id: null, purge_claimed_at: null })
-        .eq("purge_claim_id", claimId);
-      throw storageError;
-    }
+    // Keep the purge claim on failure. Restoring a row after its object may
+    // have been partly removed would be worse than retrying the cleanup.
+    if (storageError) throw storageError;
   }
 
   const claimedDocumentIds = (documents ?? []).map((document) => document.id);
   if (claimedDocumentIds.length > 0) {
-    const { error: linkedTasksError } = await admin
-      .from("tasks")
+    const { error: documentsError } = await admin
+      .from("documents")
       .delete()
-      .in("trashed_by_document_id", claimedDocumentIds)
-      .not("deleted_at", "is", null);
-    if (linkedTasksError) throw linkedTasksError;
+      .in("id", claimedDocumentIds)
+      .not("purge_started_at", "is", null);
+    if (documentsError) throw documentsError;
   }
-
-  const { error: documentsError } = await admin
-    .from("documents")
-    .delete()
-    .eq("purge_claim_id", claimId);
-  if (documentsError) throw documentsError;
 
   const { error: standaloneTasksError } = await admin
     .from("tasks")

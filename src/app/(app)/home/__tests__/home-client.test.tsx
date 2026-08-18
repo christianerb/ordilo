@@ -24,8 +24,10 @@ vi.mock("next/navigation", () => ({
 // resolving to no family short-circuits the provider's document fetch.
 const mockUpdate = vi.fn();
 const mockEq = vi.fn();
+const mockRpc = vi.fn().mockResolvedValue({ data: true, error: null });
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
+    rpc: mockRpc,
     from: vi.fn(() => ({
       update: mockUpdate,
       eq: mockEq,
@@ -182,6 +184,8 @@ beforeEach(() => {
   mockPush.mockClear();
   mockUpdate.mockClear();
   mockEq.mockClear();
+  mockRpc.mockClear();
+  mockRpc.mockResolvedValue({ data: true, error: null });
   mockUpdate.mockReturnValue({ eq: mockEq });
   mockEq.mockResolvedValue({ error: null });
   vi.mocked(toast.success).mockClear();
