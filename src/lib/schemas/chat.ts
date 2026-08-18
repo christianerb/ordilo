@@ -540,6 +540,7 @@ export const ANSWER_CARD_TYPES = [
   "aufgabe",
   "dokument",
   "zugangsdaten",
+  "kontakt",
   "allgemein",
 ] as const;
 
@@ -573,6 +574,14 @@ export interface AnswerCard {
    * sees a password and must not claim one exists.
    */
   hasSecret: boolean;
+  /** Verified server-side contact action. External apps open only on click. */
+  contact?: {
+    id: string;
+    phone: string | null;
+    email: string | null;
+    action: "phone" | "email" | "whatsapp" | null;
+    messageDraft: string;
+  };
 }
 
 /** Maximum number of detail fields shown on an answer card. */
@@ -599,9 +608,15 @@ export const answerCardArgsSchema = z
       .max(MAX_ANSWER_CARD_FIELDS)
       .optional(),
     source_document_id: z.string().trim().min(1).optional(),
+    contact_id: z.string().trim().min(1).optional(),
+    contact_action: z.enum(["phone", "email", "whatsapp"]).optional(),
+    message_draft: z.string().trim().max(500).optional(),
   })
   .refine(
-    (args) => args.card_type === "zugangsdaten" || (args.fields?.length ?? 0) > 0,
+    (args) =>
+      args.card_type === "zugangsdaten" ||
+      args.card_type === "kontakt" ||
+      (args.fields?.length ?? 0) > 0,
     {
       // Every other card type is only worth showing with detail rows. A
       // credentials card is the exception: its rows are filled from the
@@ -612,6 +627,12 @@ export const answerCardArgsSchema = z
       message: "Mindestens ein Detailfeld erforderlich.",
     },
   );
+// A contact card is actionable only when the model points at a contact
+// returned by lookup_contact; the server verifies family ownership.
+export const validatedAnswerCardArgsSchema = answerCardArgsSchema.refine(
+  (args) => args.card_type !== "kontakt" || Boolean(args.contact_id),
+  { path: ["contact_id"], message: "Kontakt-ID erforderlich." },
+);
 
 export type AnswerCardArgs = z.infer<typeof answerCardArgsSchema>;
 
@@ -636,10 +657,18 @@ export type AnswerCardArgs = z.infer<typeof answerCardArgsSchema>;
  *          database), or `null` if invalid.
  */
 export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
-  const result = answerCardArgsSchema.safeParse(rawArgs);
+  const result = validatedAnswerCardArgsSchema.safeParse(rawArgs);
   if (!result.success) return null;
 
-  const { card_type, title, subtitle, source_document_id } = result.data;
+  const {
+    card_type,
+    title,
+    subtitle,
+    source_document_id,
+    contact_id,
+    contact_action,
+    message_draft,
+  } = result.data;
   const fields = result.data.fields ?? [];
 
   const allText = [
@@ -658,5 +687,15 @@ export function parseAnswerCardArgs(rawArgs: unknown): AnswerCard | null {
     // The model cannot know this — the caller sets it from the database
     // once the document reference has been verified.
     hasSecret: false,
+    contact:
+      card_type === "kontakt"
+        ? {
+            id: contact_id!,
+            phone: null,
+            email: null,
+            action: contact_action ?? null,
+            messageDraft: message_draft ?? "",
+          }
+        : undefined,
   };
 }

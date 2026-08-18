@@ -3,6 +3,7 @@ import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { DOCUMENT_LIST_COLUMNS } from "@/lib/scan/document-list-columns";
 import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import { DokumenteClient } from "./dokumente-client";
+import type { ContactRow } from "./actions";
 
 /**
  * Dokumente page (server component).
@@ -17,7 +18,12 @@ import { DokumenteClient } from "./dokumente-client";
  * only falls back to `initialDocuments` while the provider's own initial
  * load is in flight, then realtime/polling delta updates take over.
  */
-export default async function DokumentePage() {
+export default async function DokumentePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
+  const tab = (await searchParams).tab;
   const supabase = await createClient();
 
   // Fetch the user's family (RLS-scoped). On full page loads the
@@ -39,15 +45,54 @@ export default async function DokumentePage() {
     redirect("/onboarding");
   }
 
-  const { data } = await supabase
+  const documentsPromise = supabase
     .from("documents")
     .select(DOCUMENT_LIST_COLUMNS)
     .eq("family_id", family.id)
     .order("created_at", { ascending: false });
+  const contactsPromise =
+    tab === "kontakte"
+      ? supabase
+          .from("contacts")
+          .select("*")
+          .eq("family_id", family.id)
+          .order("updated_at", { ascending: false })
+      : Promise.resolve({ data: [] as ContactRow[] });
+  const notePreviewsPromise =
+    tab === "notizen"
+      ? supabase
+          .from("documents")
+          .select("id, ocr_text")
+          .eq("family_id", family.id)
+          .eq("source", "manual")
+      : Promise.resolve({
+          data: [] as Array<{ id: string; ocr_text: string | null }>,
+        });
+
+  const [
+    { data },
+    { data: contactData },
+    { data: notePreviewData },
+  ] = await Promise.all([
+    documentsPromise,
+    contactsPromise,
+    notePreviewsPromise,
+  ]);
 
   // The trimmed selection carries every column except the heavy
   // `ocr_text`, which no list consumer reads (same cast the provider does).
   const initialDocuments = (data as DocumentRow[] | null) ?? [];
 
-  return <DokumenteClient initialDocuments={initialDocuments} />;
+  return (
+    <DokumenteClient
+      initialDocuments={initialDocuments}
+      initialContacts={(contactData as ContactRow[] | null) ?? []}
+      initialNotePreviews={Object.fromEntries(
+        (notePreviewData ?? []).map((note) => [
+          note.id,
+          note.ocr_text?.trim().slice(0, 180) ?? "",
+        ]),
+      )}
+    />
+  );
 }

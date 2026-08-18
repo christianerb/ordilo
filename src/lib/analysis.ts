@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getFamilyId } from "@/lib/supabase/client-helpers";
 import {
   computeNeedsUserReview,
+  extractedContactSchema,
   DOCUMENT_TYPES,
   IDENTIFIER_FACT_TYPE,
   AMOUNT_KINDS,
@@ -200,6 +201,7 @@ function reconstructAnalysis(
   const organizations = entities.filter(
     (e) => e.entity_type === "organization",
   );
+  const contacts = entities.filter((e) => e.entity_type === "contact");
   const dates = entities.filter((e) => e.entity_type === "date");
   const amounts = entities.filter((e) => e.entity_type === "amount");
   const categoryEntities = entities.filter(
@@ -229,6 +231,18 @@ function reconstructAnalysis(
     type: o.normalized_value || "organization",
     confidence: o.confidence ?? 0,
   }));
+
+  const contactEntries = contacts.flatMap((contact) => {
+    try {
+      const parsed = extractedContactSchema.safeParse({
+        ...(JSON.parse(contact.entity_value) as Record<string, unknown>),
+        confidence: contact.confidence ?? 0,
+      });
+      return parsed.success ? [parsed.data] : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Reconstruct dates. `label` carries what the date means ("Zahlungsfrist");
   // it is null for rows stored before extracted_entities.label existed, and
@@ -283,6 +297,7 @@ function reconstructAnalysis(
     summary: document.summary || "",
     family_members: familyMembers,
     organizations: orgs,
+    contacts: contactEntries,
     dates: dateEntries,
     amounts: amountEntries,
     tasks: taskEntries,

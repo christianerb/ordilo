@@ -181,6 +181,7 @@ export function buildConfirmPayload(
     suggested_category: suggestedCategory,
     dates,
     organizations,
+    contacts: analysis.contacts ?? [],
     amounts,
     tasks,
     facts,
@@ -232,6 +233,7 @@ export async function patchDocument(
     amounts: payload.amounts,
     suggested_category: payload.suggested_category,
     tags: payload.tags,
+    contacts: payload.contacts ?? [],
   };
 
   try {
