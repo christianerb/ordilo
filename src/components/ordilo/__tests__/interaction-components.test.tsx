@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { Check, Copy, Folder } from "lucide-react";
+import { Check, Copy, Folder, NotebookPen } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
 import { CollectionFolder } from "@/components/ordilo/collection-folder";
 import { OrdiloActionSwap } from "@/components/ordilo/ordilo-action-swap";
@@ -100,5 +100,32 @@ describe("Ordilo interaction components", () => {
       "href",
       "/dokumente?tab=kontakte",
     );
+  });
+
+  it("aligns icons and counts in the default segmented tabs", () => {
+    render(
+      <OrdiloSegmentedNav
+        label="Dokumentansicht"
+        items={[
+          {
+            href: "/dokumente?tab=notizen",
+            label: "Notizen",
+            active: true,
+            icon: NotebookPen,
+            count: 3,
+          },
+        ]}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: "Notizen 3" });
+    expect(link).toHaveClass(
+      "flex",
+      "items-center",
+      "justify-center",
+      "gap-1.5",
+    );
+    expect(link.querySelector("svg")).not.toBeNull();
+    expect(screen.getByText("3")).toHaveClass("sm:inline");
   });
 });
