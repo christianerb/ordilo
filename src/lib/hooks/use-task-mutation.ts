@@ -147,7 +147,7 @@ export interface UseTaskMutationOptions {
  */
 export function useTaskMutation(options: UseTaskMutationOptions): {
   toggleDone: (taskId: string, newStatus: string) => Promise<boolean>;
-  dismiss: (taskId: string) => Promise<boolean>;
+  dismiss: (taskId: string, previousStatus?: string) => Promise<boolean>;
   patch: (
     taskId: string,
     updates: TaskPatch,
@@ -201,14 +201,19 @@ export function useTaskMutation(options: UseTaskMutationOptions): {
   );
 
   const dismiss = useCallback(
-    async (taskId: string): Promise<boolean> => {
+    async (taskId: string, previousStatus = "open"): Promise<boolean> => {
       const opts = optionsRef.current;
       opts.onOptimisticDismiss(taskId);
 
       try {
         const { error } = await supabase
           .from("tasks")
-          .update({ status: "dismissed", deleted_at: new Date().toISOString() })
+          .update({
+            status: "dismissed",
+            deleted_at: new Date().toISOString(),
+            status_before_trash: previousStatus,
+            trashed_by_document_id: null,
+          })
           .eq("id", taskId);
 
         if (error) {

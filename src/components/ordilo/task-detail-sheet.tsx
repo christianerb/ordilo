@@ -202,7 +202,7 @@ export function TaskDetailSheet({
       variant="detail"
       open={open}
       onOpenChange={handleOpenChange}
-      onOpenAutoFocus={(event) => {
+      onOpenAutoFocus={(event: Event) => {
         event.preventDefault();
         sheetTitleRef.current?.focus();
       }}

@@ -595,7 +595,7 @@ export function AufgabenClient({
   const handleDismiss = useCallback(
     async (taskId: string) => {
       const task = tasks.find((item) => item.id === taskId);
-      const ok = await dismiss(taskId);
+      const ok = await dismiss(taskId, task?.status);
       if (ok) {
         toast.success("Verworfen", {
           action: task

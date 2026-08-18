@@ -206,7 +206,7 @@ describe("OrdiloDrawer", () => {
           variant="detail"
           open
           onOpenChange={vi.fn()}
-          onOpenAutoFocus={(event) => {
+          onOpenAutoFocus={(event: Event) => {
             event.preventDefault();
             titleRef.current?.focus();
           }}

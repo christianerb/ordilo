@@ -12,16 +12,26 @@ export async function POST(
   const { id } = await params;
   if (!isValidUuid(id)) return jsonError("Ungültige Dokument-ID.", "INVALID_DOCUMENT_ID", 400);
   const supabase = await createClient();
-  const { error } = await supabase
+  const { data: restoredDocument, error } = await supabase
     .from("documents")
     .update({ deleted_at: null })
     .eq("id", id)
-    .not("deleted_at", "is", null);
+    .not("deleted_at", "is", null)
+    .is("purge_claim_id", null)
+    .select("id")
+    .maybeSingle();
   if (error) {
     return jsonError(
       "Dokument konnte nicht wiederhergestellt werden.",
       "DB_RESTORE_FAILED",
       500,
+    );
+  }
+  if (!restoredDocument) {
+    return jsonError(
+      "Dokument kann nicht mehr wiederhergestellt werden.",
+      "DOCUMENT_NOT_RESTORABLE",
+      409,
     );
   }
 

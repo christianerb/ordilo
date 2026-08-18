@@ -73,12 +73,10 @@ export async function DELETE(
     );
   }
 
-  const deletedAt = new Date().toISOString();
-  const { error: deleteError } = await serverClient
-    .from("documents")
-    .update({ deleted_at: deletedAt })
-    .eq("id", documentId)
-    .is("deleted_at", null);
+  const { data: trashed, error: deleteError } = await serverClient.rpc(
+    "trash_document",
+    { p_document_id: documentId },
+  );
 
   if (deleteError) {
     return jsonError(
@@ -88,39 +86,11 @@ export async function DELETE(
     );
   }
 
-  const { data: linkedTasks, error: linkedTasksError } = await serverClient
-    .from("tasks")
-    .select("id, status")
-    .eq("document_id", documentId)
-    .is("deleted_at", null);
-
-  if (linkedTasksError) {
+  if (!trashed) {
     return jsonError(
-      "Verknüpfte Aufgaben konnten nicht in den Papierkorb gelegt werden.",
-      "TASKS_DELETE_FAILED",
-      500,
-    );
-  }
-
-  const taskResults = await Promise.all(
-    (linkedTasks ?? []).map((task) =>
-      serverClient
-        .from("tasks")
-        .update({
-          status: "dismissed",
-          deleted_at: deletedAt,
-          status_before_trash: task.status,
-          trashed_by_document_id: documentId,
-        })
-        .eq("id", task.id),
-    ),
-  );
-  const taskUpdateError = taskResults.find((result) => result.error)?.error;
-  if (taskUpdateError) {
-    return jsonError(
-      "Verknüpfte Aufgaben konnten nicht in den Papierkorb gelegt werden.",
-      "TASKS_DELETE_FAILED",
-      500,
+      "Dokument ist bereits im Papierkorb.",
+      "DOCUMENT_ALREADY_TRASHED",
+      409,
     );
   }
 

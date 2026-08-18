@@ -38,10 +38,11 @@ export async function purgeExpiredTrash(): Promise<void> {
     .lt("deleted_at", cutoff);
   if (tasksError) throw tasksError;
 
-  const { data: documents, error: documentReadError } = await admin
-    .from("documents")
-    .select("file_url")
-    .lt("deleted_at", cutoff);
+  const claimId = crypto.randomUUID();
+  const { data: documents, error: documentReadError } = await admin.rpc(
+    "claim_expired_trash_documents",
+    { p_cutoff: cutoff, p_claim_id: claimId },
+  );
   if (documentReadError) throw documentReadError;
 
   const filePaths = (documents ?? [])
@@ -51,12 +52,18 @@ export async function purgeExpiredTrash(): Promise<void> {
     const { error: storageError } = await admin.storage
       .from("documents")
       .remove(filePaths);
-    if (storageError) throw storageError;
+    if (storageError) {
+      await admin
+        .from("documents")
+        .update({ purge_claim_id: null, purge_claimed_at: null })
+        .eq("purge_claim_id", claimId);
+      throw storageError;
+    }
   }
 
   const { error: documentsError } = await admin
     .from("documents")
     .delete()
-    .lt("deleted_at", cutoff);
+    .eq("purge_claim_id", claimId);
   if (documentsError) throw documentsError;
 }

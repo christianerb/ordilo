@@ -138,7 +138,10 @@ export function HomeClient({
     },
     [toggleDone],
   );
-  const handleDismiss = dismiss;
+  const handleDismiss = useCallback(
+    (task: HomeTask) => dismiss(task.id, task.status),
+    [dismiss],
+  );
 
   // -------------------------------------------------------------------------
   // Derived data
@@ -398,7 +401,7 @@ export function HomeClient({
                     onToggleDone={(newStatus) =>
                       handleToggleDone(task.id, newStatus)
                     }
-                    onDismiss={() => handleDismiss(task.id)}
+                    onDismiss={() => void handleDismiss(task)}
                     showConfidence={false}
                   />
                 ))}
@@ -568,4 +571,3 @@ function PaperPreview({ mimeType }: { mimeType: string | null }) {
     </div>
   );
 }
-

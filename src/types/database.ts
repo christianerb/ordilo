@@ -611,6 +611,8 @@ export type Database = {
           created_at: string;
           confirmed_at: string | null;
           deleted_at: string | null;
+          purge_claim_id: string | null;
+          purge_claimed_at: string | null;
           tags: string[];
           source: string;
           /** Pipeline version that produced the current extraction (see 0026). */
@@ -641,6 +643,8 @@ export type Database = {
           created_at?: string;
           confirmed_at?: string | null;
           deleted_at?: string | null;
+          purge_claim_id?: string | null;
+          purge_claimed_at?: string | null;
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
@@ -668,6 +672,8 @@ export type Database = {
           created_at?: string;
           confirmed_at?: string | null;
           deleted_at?: string | null;
+          purge_claim_id?: string | null;
+          purge_claimed_at?: string | null;
           tags?: string[];
           source?: string;
           extraction_version?: number | null;
@@ -1301,6 +1307,14 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      trash_document: {
+        Args: { p_document_id: string };
+        Returns: boolean;
+      };
+      claim_expired_trash_documents: {
+        Args: { p_cutoff: string; p_claim_id: string };
+        Returns: { id: string; file_url: string | null }[];
+      };
       user_belongs_to_family: {
         Args: { fam_id: string };
         Returns: boolean;

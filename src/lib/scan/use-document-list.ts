@@ -208,6 +208,9 @@ export function useDocumentList({
       ) ?? null;
 
       if (error || !document) {
+        if (!error && options?.syncList && documentsLoadedRef.current) {
+          setDocuments((prev) => prev.filter((doc) => doc.id !== documentId));
+        }
         if (options?.syncExpanded && expandedDocIdRef.current === documentId) {
           setExpandedDocument(null);
         }
