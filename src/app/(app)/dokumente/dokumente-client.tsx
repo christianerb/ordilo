@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   UploadCloud,
@@ -106,6 +106,19 @@ export function DokumenteClient({
       : currentTab === "kontakte"
         ? "kontakte"
         : "dokumente";
+
+  // Track which direction the tabs slid so the content follows — the
+  // journal has pages you flip, not slots that swap.
+  const VIEW_ORDER: LibraryView[] = ["dokumente", "notizen", "kontakte"];
+  const prevViewIndex = useRef<number>(VIEW_ORDER.indexOf(view));
+  const currentIndex = VIEW_ORDER.indexOf(view);
+  const slideClass =
+    currentIndex > prevViewIndex.current
+      ? "animate-panel-right"
+      : currentIndex < prevViewIndex.current
+        ? "animate-panel-left"
+        : "animate-card-in";
+  prevViewIndex.current = currentIndex;
 
   // Seed the provider from the server-rendered list instead of refetching
   // the full table — the server component already ran the exact same
@@ -218,7 +231,7 @@ export function DokumenteClient({
 
       {/* Keyed on the view so switching tabs plays the content in
           rather than swapping it in place. */}
-      <div key={view} className="animate-card-in">
+      <div key={view} className={slideClass}>
         {view === "kontakte" ? (
           <ContactsView
             key={initialContacts

@@ -42,7 +42,8 @@ export function LibraryPageHeader({
           </h1>
           {count !== undefined && (
             <span
-              className="rounded-full bg-[var(--surface-box)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]"
+              key={count}
+              className="animate-count-settle rounded-full bg-[var(--surface-box)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]"
               data-testid="library-header-count"
             >
               {count}
@@ -235,7 +236,7 @@ export function LibraryRow({
         type="button"
         onClick={onClick}
         aria-label={actionLabel}
-        className="flex min-h-18 min-w-0 flex-1 items-center gap-3 rounded-ordilo-sm px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
+        className="press-scale flex min-h-18 min-w-0 flex-1 items-center gap-3 rounded-ordilo-sm px-3 py-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
       >
         {leading}
         <span className="min-w-0 flex-1">

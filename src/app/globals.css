@@ -205,6 +205,45 @@
     }
   }
 
+  /* Tab-panel directional slide — content enters from the direction the
+     tab was travelled to, so the journal feels like it has pages you
+     flip rather than slots that swap. */
+  @keyframes panel-slide-right {
+    from {
+      opacity: 0;
+      transform: translateX(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes panel-slide-left {
+    from {
+      opacity: 0;
+      transform: translateX(-12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  /* Count pill settle — a barely-there pop when the number changes, so
+     the journal acknowledges "yes, I see you have 8 notes" without
+     celebrating a page turn. */
+  @keyframes count-settle {
+    0% {
+      transform: scale(1);
+    }
+    40% {
+      transform: scale(1.18);
+    }
+    100% {
+      transform: scale(1);
+    }
+  }
+
   /* Card list item entrance — fade + slide up, used with stagger delays */
   @keyframes card-in {
     from {
@@ -741,6 +780,15 @@
   .animate-card-in {
     animation: card-in 0.25s var(--ease-out-quart) backwards;
   }
+  .animate-panel-right {
+    animation: panel-slide-right 0.28s var(--ease-out-quart) backwards;
+  }
+  .animate-panel-left {
+    animation: panel-slide-left 0.28s var(--ease-out-quart) backwards;
+  }
+  .animate-count-settle {
+    animation: count-settle 0.3s var(--ease-out-quart);
+  }
   .animate-check-pop {
     animation: check-pop 0.2s var(--ease-out-quart);
   }
@@ -1069,6 +1117,9 @@
   .animate-page-fade-in,
   .animate-message-in,
   .animate-card-in,
+  .animate-panel-right,
+  .animate-panel-left,
+  .animate-count-settle,
   .animate-check-pop,
   .animate-task-done,
   .animate-strike,
