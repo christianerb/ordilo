@@ -722,7 +722,6 @@ export type Database = {
           confirmed: boolean;
           linked_object_id: string | null;
           created_at: string;
-          deleted_at: string | null;
         };
         Insert: {
           id?: string;
@@ -740,7 +739,6 @@ export type Database = {
           confirmed?: boolean;
           linked_object_id?: string | null;
           created_at?: string;
-          deleted_at?: string | null;
         };
         Update: {
           id?: string;
@@ -758,7 +756,6 @@ export type Database = {
           confirmed?: boolean;
           linked_object_id?: string | null;
           created_at?: string;
-          deleted_at?: string | null;
         };
         Relationships: [];
       };
@@ -776,6 +773,8 @@ export type Database = {
           confirmed: boolean;
           created_at: string;
           deleted_at: string | null;
+          status_before_trash: string | null;
+          trashed_by_document_id: string | null;
           tags: string[];
           assigned_to: string | null;
           completed_at: string | null;
@@ -792,6 +791,8 @@ export type Database = {
           confirmed?: boolean;
           created_at?: string;
           deleted_at?: string | null;
+          status_before_trash?: string | null;
+          trashed_by_document_id?: string | null;
           tags?: string[];
           assigned_to?: string | null;
           completed_at?: string | null;
@@ -808,6 +809,8 @@ export type Database = {
           confirmed?: boolean;
           created_at?: string;
           deleted_at?: string | null;
+          status_before_trash?: string | null;
+          trashed_by_document_id?: string | null;
           tags?: string[];
           assigned_to?: string | null;
           completed_at?: string | null;

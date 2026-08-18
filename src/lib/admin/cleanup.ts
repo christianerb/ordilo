@@ -37,6 +37,23 @@ export async function purgeExpiredTrash(): Promise<void> {
     .delete()
     .lt("deleted_at", cutoff);
   if (tasksError) throw tasksError;
+
+  const { data: documents, error: documentReadError } = await admin
+    .from("documents")
+    .select("file_url")
+    .lt("deleted_at", cutoff);
+  if (documentReadError) throw documentReadError;
+
+  const filePaths = (documents ?? [])
+    .map((document) => document.file_url)
+    .filter((fileUrl): fileUrl is string => Boolean(fileUrl));
+  if (filePaths.length > 0) {
+    const { error: storageError } = await admin.storage
+      .from("documents")
+      .remove(filePaths);
+    if (storageError) throw storageError;
+  }
+
   const { error: documentsError } = await admin
     .from("documents")
     .delete()

@@ -164,6 +164,7 @@ export default async function HomePage({
       .from("documents")
       .select("id, title, original_filename, mime_type, status, created_at, file_url, summary")
       .eq("family_id", family.id)
+      .is("deleted_at", null)
       .eq("status", "analyzed")
       .order("created_at", { ascending: false })
       .limit(3),
@@ -173,6 +174,7 @@ export default async function HomePage({
       .from("documents")
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
+      .is("deleted_at", null)
       .eq("status", "analyzed"),
     // 3c. Total documents in the family book (all non-failed) — the quiet
     //     "… Dokumente sicher im Familienbuch" line in the journal header.
@@ -180,6 +182,7 @@ export default async function HomePage({
       .from("documents")
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
+      .is("deleted_at", null)
       .neq("status", "failed"),
     // The first-success nudge is deliberately based on confirmed documents
     // only: an uploaded or pending scan is not a lasting family result yet.
@@ -187,6 +190,7 @@ export default async function HomePage({
       .from("documents")
       .select("id", { count: "exact", head: true })
       .eq("family_id", family.id)
+      .is("deleted_at", null)
       .eq("status", "confirmed"),
     // 4. Fetch confirmed open tasks with due dates (for "Heute wichtig" and
     //    "Fristen"). We fetch all confirmed open tasks and let the client
@@ -197,6 +201,7 @@ export default async function HomePage({
         "id, family_id, title, description, due_date, status, confidence, confirmed, created_at, document_id, tags",
       )
       .eq("family_id", family.id)
+      .is("deleted_at", null)
       .eq("confirmed", true)
       .eq("status", "open")
       .order("created_at", { ascending: false }),
@@ -212,6 +217,7 @@ export default async function HomePage({
       .from("documents")
       .select("id, title, original_filename, mime_type, status, created_at, file_url, summary")
       .eq("family_id", family.id)
+      .is("deleted_at", null)
       .neq("status", "failed")
       .order("created_at", { ascending: false })
       .limit(JOURNAL_DOCS_LIMIT),
@@ -249,7 +255,8 @@ export default async function HomePage({
     const { data: taskDocs } = await supabase
       .from("documents")
       .select("id, title")
-      .in("id", taskDocIds);
+      .in("id", taskDocIds)
+      .is("deleted_at", null);
     for (const doc of taskDocs ?? []) {
       docTitleMap.set(doc.id, doc.title);
     }
