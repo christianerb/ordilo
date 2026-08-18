@@ -204,7 +204,7 @@ export function FamilySettingsClient({
       </div>
 
       {inboundEmail && (
-        <InboundEmailAddressCard email={inboundEmail} context="settings" />
+        <InboundEmailAddressCard email={inboundEmail} />
       )}
 
       {/* Family info */}

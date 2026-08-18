@@ -10,10 +10,8 @@ import { Button } from "@/components/ui/button";
  */
 export function InboundEmailAddressCard({
   email,
-  context = "documents",
 }: {
   email: string;
-  context?: "documents" | "onboarding" | "settings";
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -26,11 +24,6 @@ export function InboundEmailAddressCard({
       setCopied(false);
     }
   }
-
-  const description =
-    context === "onboarding"
-      ? "Leite PDFs und Bilder hierher weiter. Sie landen direkt bei euren Dokumenten."
-      : "Leite PDFs und Bilder hierher weiter. Ordilo legt sie bei euren Dokumenten ab.";
 
   return (
     <section
@@ -49,7 +42,7 @@ export function InboundEmailAddressCard({
             Dokumente per E-Mail
           </h2>
           <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-            {description}
+            Leite PDFs und Bilder hierher weiter.
           </p>
         </div>
       </div>
@@ -69,8 +62,8 @@ export function InboundEmailAddressCard({
           size="icon"
           onClick={() => void copyAddress()}
           className="size-9 shrink-0 rounded-ordilo-sm"
-          aria-label={copied ? "Adresse kopiert" : "E-Mail-Adresse kopieren"}
-          title={copied ? "Kopiert" : "Adresse kopieren"}
+          aria-label="E-Mail-Adresse kopieren"
+          title="Adresse kopieren"
         >
           {copied ? (
             <Check
@@ -82,22 +75,18 @@ export function InboundEmailAddressCard({
           )}
         </Button>
       </div>
-      <p
-        className="mt-2 flex min-h-5 items-center gap-1.5 px-1 text-xs text-muted-foreground"
-        aria-live="polite"
-      >
-        {copied ? (
-          <span className="flex items-center gap-1.5 animate-message-in">
-            <Check
-              className="size-3.5 shrink-0 animate-check-pop text-[var(--petrol)]"
-              aria-hidden="true"
-            />
-            Adresse kopiert. Du kannst sie jetzt beim Weiterleiten einfügen.
-          </span>
-        ) : (
-          "Nur eure Familie kann diese Adresse nutzen."
-        )}
-      </p>
+      {copied && (
+        <p
+          className="mt-2 flex items-center gap-1.5 px-1 text-xs text-muted-foreground animate-message-in"
+          aria-live="polite"
+        >
+          <Check
+            className="size-3.5 shrink-0 animate-check-pop text-[var(--petrol)]"
+            aria-hidden="true"
+          />
+          Adresse kopiert. Du kannst sie jetzt beim Weiterleiten einfügen.
+        </p>
+      )}
     </section>
   );
 }

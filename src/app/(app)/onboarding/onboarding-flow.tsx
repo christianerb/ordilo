@@ -472,7 +472,6 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                 <div className="pt-4">
                   <InboundEmailAddressCard
                     email={inboundEmail}
-                    context="onboarding"
                   />
                 </div>
               )}
