@@ -1,7 +1,9 @@
+import { after } from "next/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runPendingJobs } from "@/lib/jobs";
 import { requireSchedulerAuth } from "@/lib/scheduler-auth";
 import { jobsRunRequestSchema } from "@/lib/schemas/jobs";
+import { deliverInboundEmailNotifications } from "@/lib/inbound-email-notifications";
 
 /**
  * POST /api/jobs/run — the pipeline job worker.
@@ -49,6 +51,11 @@ export async function POST(request: Request): Promise<Response> {
   try {
     const adminClient = createAdminClient();
     const summary = await runPendingJobs(adminClient, limit);
+    after(async () => {
+      await deliverInboundEmailNotifications(
+        process.env.APP_BASE_URL ?? new URL(request.url).origin,
+      );
+    });
     return Response.json(summary, { status: 200 });
   } catch (err) {
     const message =

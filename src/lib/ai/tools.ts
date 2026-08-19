@@ -341,6 +341,25 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
   {
     type: "function",
     function: {
+      name: "lookup_contact",
+      description:
+        "Findet bestätigte Kontakte der Familie nach Name oder Organisation. " +
+        "Verwende dies für Telefonnummern, E-Mail-Adressen und Bitten, jemanden anzurufen oder eine WhatsApp-Nachricht vorzubereiten.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "Name oder Organisation des gesuchten Kontakts.",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "present_answer_card",
       description:
         "Zeigt die Antwort als strukturierte Karte statt als Fliesstext an. " +
@@ -360,7 +379,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         properties: {
           card_type: {
             type: "string",
-            enum: ["termin", "aufgabe", "dokument", "zugangsdaten", "allgemein"],
+            enum: ["termin", "aufgabe", "dokument", "zugangsdaten", "kontakt", "allgemein"],
             description: "Die Art des Ergebnisses.",
           },
           title: {
@@ -393,6 +412,22 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
             description:
               "Optional: die ID des Quelldokuments (aus den Suchergebnissen), " +
               "aus dem die Information stammt.",
+          },
+          contact_id: {
+            type: "string",
+            description:
+              "Bei card_type 'kontakt': die von lookup_contact gelieferte Kontakt-ID.",
+          },
+          contact_action: {
+            type: "string",
+            enum: ["phone", "email", "whatsapp"],
+            description:
+              "Optional: welche Aktion die Karte hervorheben soll.",
+          },
+          message_draft: {
+            type: "string",
+            description:
+              "Nur bei WhatsApp: der vom Nutzer gewünschte Entwurf. Niemals automatisch senden.",
           },
         },
         required: ["card_type", "title", "fields"],
@@ -866,6 +901,8 @@ export async function executeTool(
       return executeListDocuments(args, ctx);
     case "list_family_members":
       return executeListFamilyMembers(ctx);
+    case "lookup_contact":
+      return executeLookupContact(args, ctx);
     case "mark_task_done":
       return executeMarkTaskDone(args, ctx);
     case "graph_query":
@@ -887,6 +924,35 @@ export async function executeTool(
     default:
       return JSON.stringify({ error: `Unbekanntes Tool: ${name}` });
   }
+}
+
+async function executeLookupContact(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const query = String(args.query ?? "").trim().toLocaleLowerCase("de");
+  if (!query) return JSON.stringify({ error: "Kein Name angegeben." });
+
+  const { data, error } = await ctx.client.rpc("search_family_contacts", {
+    p_family_id: ctx.familyId,
+    p_query: query,
+    p_limit: 10,
+  });
+
+  if (error) return JSON.stringify({ error: "Kontakte konnten nicht geladen werden." });
+
+  const contacts = data ?? [];
+
+  return JSON.stringify({
+    contacts: contacts.map((contact) => ({
+      id: contact.id,
+      name: contact.name,
+      organisation: contact.organization,
+      rolle: contact.role,
+      telefon: contact.phone,
+      email: contact.email,
+    })),
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -1,21 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   UploadCloud,
   Loader2,
+  FileText,
+  Plus,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
 import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
 import { EmptyState } from "@/components/ordilo/empty-state";
 import { ErrorState } from "@/components/ordilo/error-state";
 import { ConfirmAction } from "@/components/ordilo/confirm-action";
+import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { UploadProgressCard } from "@/components/ordilo/scan-wizard/upload-progress";
 import { useScan } from "@/lib/scan/scan-context";
 import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import { toast } from "sonner";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
+import { formatGermanDate } from "@/lib/format";
+import { ContactsView } from "./contacts-view";
+import type { ContactRow } from "./actions";
 
 // ---------------------------------------------------------------------------
 // Page
@@ -34,8 +42,12 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
  */
 export function DokumenteClient({
   initialDocuments,
+  initialContacts = [],
+  initialNotePreviews = {},
 }: {
   initialDocuments: DocumentRow[];
+  initialContacts?: ContactRow[];
+  initialNotePreviews?: Record<string, string>;
 }) {
   const {
     documents,
@@ -60,9 +72,17 @@ export function DokumenteClient({
     dismissUpload,
     handleDeleteDocument,
     openWizard,
+    openCreateNote,
   } = useScan();
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const currentTab = useSearchParams().get("tab");
+  const view =
+    currentTab === "notizen"
+      ? "notizen"
+      : currentTab === "kontakte"
+        ? "kontakte"
+        : "dokumente";
 
   // Seed the provider from the server-rendered list instead of refetching
   // the full table — the server component already ran the exact same
@@ -86,27 +106,90 @@ export function DokumenteClient({
   // rows after a delete).
   const displayDocuments =
     loadingDocs && documents.length === 0 ? initialDocuments : documents;
-  const hasDocuments = displayDocuments.length > 0;
+  const libraryDocuments = useMemo(
+    () => displayDocuments.filter((document) => document.source !== "manual"),
+    [displayDocuments],
+  );
+  const noteDocuments = useMemo(
+    () => displayDocuments.filter((document) => document.source === "manual"),
+    [displayDocuments],
+  );
+  const activeDocuments = view === "notizen" ? noteDocuments : libraryDocuments;
+  const hasDocuments = activeDocuments.length > 0;
   const hasActiveUploads = uploads.length > 0;
+  const activeCount =
+    view === "kontakte"
+      ? initialContacts.filter((contact) => contact.status === "confirmed").length
+      : activeDocuments.length;
 
   return (
     <div
-      ref={dropZoneRef}
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      ref={view === "dokumente" ? dropZoneRef : undefined}
+      onDragEnter={view === "dokumente" ? handleDragEnter : undefined}
+      onDragOver={view === "dokumente" ? handleDragOver : undefined}
+      onDragLeave={view === "dokumente" ? handleDragLeave : undefined}
+      onDrop={view === "dokumente" ? handleDrop : undefined}
       className="app-page-stack overflow-x-hidden"
     >
-      <div className="flex items-center gap-2.5">
-        <h1 className="text-2xl font-semibold tracking-tight text-[var(--petrol)]">
-          Dokumente
-        </h1>
-        <span className="rounded-full bg-[var(--sand-warm)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]">
-          {displayDocuments.length}
-        </span>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--petrol)]">
+            Dokumente
+          </h1>
+          <span className="rounded-full bg-[var(--sand-warm)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]">
+            {activeCount}
+          </span>
+        </div>
+        {view === "notizen" && (
+          <Button
+            size="icon"
+            className="size-11 shrink-0 rounded-full"
+            onClick={() => openCreateNote()}
+            aria-label="Neue Notiz"
+          >
+            <Plus className="size-5" />
+          </Button>
+        )}
       </div>
 
+      <section className="rounded-ordilo-md bg-[var(--sand-light)] pb-1">
+        <OrdiloSegmentedNav
+          label="Ansicht in Dokumente"
+          items={[
+            { href: "/dokumente", label: "Dokumente", active: view === "dokumente" },
+            {
+              href: "/dokumente?tab=notizen",
+              label: "Notizen",
+              active: view === "notizen",
+            },
+            {
+              href: "/dokumente?tab=kontakte",
+              label: "Kontakte",
+              active: view === "kontakte",
+            },
+          ]}
+          testId="documents-view-switcher"
+          variant="morphing"
+        />
+        <div className="relative z-10 mx-1 rounded-b-[16px] rounded-tr-[16px] bg-[var(--surface-box)] p-3">
+        {view === "kontakte" ? (
+        <ContactsView
+          key={initialContacts
+            .map((contact) => `${contact.id}:${contact.status}:${contact.updated_at}`)
+            .join("|")}
+          initialContacts={initialContacts}
+          onOpenSource={(documentId) => void openDocument(documentId)}
+        />
+      ) : view === "notizen" ? (
+        <NotesView
+          notes={noteDocuments}
+          previews={initialNotePreviews}
+          loading={loadingDocs}
+          onCreate={() => openCreateNote()}
+          onOpen={(documentId) => void openDocument(documentId)}
+        />
+      ) : (
+        <>
       {/* Drag overlay */}
       {isDragOver && (
         <div className="flex flex-col items-center justify-center rounded-ordilo-sm border-2 border-dashed border-[var(--petrol)] bg-[var(--blue-soft)] py-8 text-center animate-card-in">
@@ -174,7 +257,7 @@ export function DokumenteClient({
       ) : hasDocuments ? (
         <div className="space-y-3" data-testid="document-list">
           <DocumentsBrowser
-            documents={displayDocuments}
+            documents={libraryDocuments}
             onDelete={setDeleteConfirmId}
           />
         </div>
@@ -203,6 +286,10 @@ export function DokumenteClient({
           <span>oder Datei hierher fallen lassen</span>
         </div>
       )}
+        </>
+      )}
+        </div>
+      </section>
 
       {/* Delete confirmation */}
       <ConfirmAction
@@ -226,6 +313,73 @@ export function DokumenteClient({
         testId="delete-confirm-sheet"
         confirmTestId="confirm-delete-button"
       />
+    </div>
+  );
+}
+
+function NotesView({
+  notes,
+  loading,
+  previews,
+  onCreate,
+  onOpen,
+}: {
+  notes: DocumentRow[];
+  loading: boolean;
+  previews: Record<string, string>;
+  onCreate: () => void;
+  onOpen: (documentId: string) => void;
+}) {
+  if (loading && notes.length === 0) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (notes.length === 0) {
+    return (
+      <EmptyState
+        title="Noch keine Notizen"
+        description="Halte Familienwissen fest, bevor es wieder jemand im Kopf behalten muss."
+        actionLabel="Notiz schreiben"
+        onAction={onCreate}
+      />
+    );
+  }
+
+  return (
+    <div
+      className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--sand)] shadow-card animate-card-in"
+      data-testid="notes-list"
+    >
+      {notes.map((note) => (
+        <button
+          type="button"
+          key={note.id}
+          onClick={() => onOpen(note.id)}
+          className="flex min-h-20 w-full items-center gap-3 p-3 text-left transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--sand-light)]">
+            <FileText className="size-4.5 text-[var(--mist-dark)]" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">
+              {note.title?.trim() || "Notiz"}
+            </span>
+            <span className="block truncate text-sm text-muted-foreground">
+              {note.summary?.trim() ||
+                previews[note.id] ||
+                note.ocr_text?.trim() ||
+                "Notiz öffnen, um den Inhalt zu lesen"}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {formatGermanDate(note.created_at)}
+          </span>
+        </button>
+      ))}
     </div>
   );
 }

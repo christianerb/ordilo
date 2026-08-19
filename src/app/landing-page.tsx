@@ -215,8 +215,7 @@ export function LandingPage() {
               lernen nicht aus euren Daten. Mehr dazu in der{" "}
               <Link
                 href="/datenschutz"
-                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
-              >
+                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"              >
                 Datenschutzerklärung
               </Link>
               .
@@ -252,8 +251,7 @@ export function LandingPage() {
                 Details stehen in der{" "}
                 <Link
                   href="/datenschutz"
-                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
-                >
+                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"                >
                   Datenschutzerklärung
                 </Link>
                 .
@@ -301,8 +299,7 @@ export function LandingPage() {
           <nav className="flex items-center gap-4" aria-label="Kontakt und Rechtliches">
             <a href="mailto:info@ordilo.de" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Kontakt</a>
             <Link href="/impressum" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Impressum</Link>
-            <Link href="/datenschutz" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Datenschutz</Link>
-          </nav>
+            <Link href="/datenschutz" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Datenschutz</Link>          </nav>
         </footer>
       </div>
     </div>

@@ -3,11 +3,7 @@ import type { Database } from "@/types/database";
 import { runExtraction } from "@/lib/ai/extraction";
 import {
   cleanupAnalysisEntities,
-  meaningfulLabel,
-  parseAmountToMinor,
   toIsoDateOrNull,
-  GENERIC_DATE_LABELS,
-  GENERIC_AMOUNT_LABELS,
 } from "@/lib/analysis-cleanup";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import {
@@ -24,6 +20,7 @@ import {
   previewFieldCount,
   type PartialAnalysisPreview,
 } from "@/lib/ai/partial-json";
+import { buildEntityRows } from "@/lib/pipeline/entity-rows";
 
 /** Minimum time between `partial_analysis` writes — keeps the realtime/
  * polling load down to a couple of updates per document instead of one
@@ -492,80 +489,14 @@ export async function storeExtractionResults(
   // 2. Insert new extracted_entities rows ----------------------------------
   type EntityInsert =
     Database["public"]["Tables"]["extracted_entities"]["Insert"];
-  const entityInserts: EntityInsert[] = [];
-
-  for (const member of analysis.family_members) {
-    entityInserts.push({
+  const entityInserts: EntityInsert[] = buildEntityRows(analysis).map(
+    (entity) => ({
+      ...entity,
       document_id: documentId,
       family_id: familyId,
-      entity_type: "person",
-      entity_value: member.name,
-      normalized_value: member.name.toLowerCase().trim(),
-      confidence: member.confidence,
-      linked_object_id: member.person_id ?? null,
-    });
-  }
-
-  for (const org of analysis.organizations) {
-    entityInserts.push({
-      document_id: documentId,
-      family_id: familyId,
-      entity_type: "organization",
-      entity_value: org.name,
-      normalized_value: org.name.toLowerCase().trim(),
-      confidence: org.confidence,
-    });
-  }
-
-  for (const date of analysis.dates) {
-    entityInserts.push({
-      document_id: documentId,
-      family_id: familyId,
-      entity_type: "date",
-      entity_value: date.date,
-      normalized_value: date.date,
-      label: meaningfulLabel(date.label, GENERIC_DATE_LABELS),
-      confidence: date.confidence,
-    });
-  }
-
-  for (const amount of analysis.amounts) {
-    entityInserts.push({
-      document_id: documentId,
-      family_id: familyId,
-      entity_type: "amount",
-      entity_value: `${amount.amount} ${amount.currency}`.trim(),
-      normalized_value: amount.amount,
-      label: meaningfulLabel(amount.label, GENERIC_AMOUNT_LABELS),
-      amount_minor: parseAmountToMinor(amount.amount),
-      currency: amount.currency.trim().toUpperCase() || "EUR",
-      amount_kind: amount.kind,
-      value_date: sanitizeDate(amount.value_date),
-      confidence: amount.confidence,
-    });
-  }
-
-  if (analysis.suggested_category) {
-    entityInserts.push({
-      document_id: documentId,
-      family_id: familyId,
-      entity_type: "category",
-      entity_value: analysis.suggested_category,
-      normalized_value: analysis.suggested_category.toLowerCase().trim(),
-      confidence: 1.0,
-    });
-  }
-
-  for (const tag of analysis.tags) {
-    entityInserts.push({
-      document_id: documentId,
-      family_id: familyId,
-      entity_type: "tag",
-      entity_value: tag,
-      normalized_value: tag.toLowerCase().trim(),
-      confidence: 1.0,
-    });
-  }
+      confirmed: wasConfirmed,
+    }),
+  );
 
   if (entityInserts.length > 0) {
     const { error: entitiesInsertError } = await client

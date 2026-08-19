@@ -199,6 +199,87 @@ export type Database = {
         };
         Relationships: [];
       };
+      family_email_aliases: {
+        Row: {
+          family_id: string;
+          local_part: string;
+          created_at: string;
+        };
+        Insert: {
+          family_id: string;
+          local_part: string;
+          created_at?: string;
+        };
+        Update: {
+          family_id?: string;
+          local_part?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      signup_notifications: {
+        Row: {
+          user_id: string;
+          email: string;
+          created_at: string;
+          email_claimed_at: string | null;
+          email_sent_at: string | null;
+        };
+        Insert: {
+          user_id: string;
+          email: string;
+          created_at?: string;
+          email_claimed_at?: string | null;
+          email_sent_at?: string | null;
+        };
+        Update: {
+          user_id?: string;
+          email?: string;
+          created_at?: string;
+          email_claimed_at?: string | null;
+          email_sent_at?: string | null;
+        };
+        Relationships: [];
+      };
+      inbound_email_notifications: {
+        Row: {
+          id: string;
+          family_id: string;
+          recipient_email: string;
+          kind: "received" | "failed";
+          source_email_id: string;
+          document_id: string | null;
+          document_count: number;
+          created_at: string;
+          email_claimed_at: string | null;
+          email_sent_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          recipient_email: string;
+          kind: "received" | "failed";
+          source_email_id: string;
+          document_id?: string | null;
+          document_count?: number;
+          created_at?: string;
+          email_claimed_at?: string | null;
+          email_sent_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          recipient_email?: string;
+          kind?: "received" | "failed";
+          source_email_id?: string;
+          document_id?: string | null;
+          document_count?: number;
+          created_at?: string;
+          email_claimed_at?: string | null;
+          email_sent_at?: string | null;
+        };
+        Relationships: [];
+      };
       family_merge_document_paths: {
         Row: {
           document_id: string;
@@ -618,6 +699,9 @@ export type Database = {
           partial_analysis: Record<string, unknown> | null;
           /** AES-256-GCM envelope (ciphertext only) for a hidden value; plaintext never stored. */
           secret: string | null;
+          source_email_id: string | null;
+          source_attachment_id: string | null;
+          source_email_recipient: string | null;
         };
         Insert: {
           id?: string;
@@ -644,6 +728,9 @@ export type Database = {
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
           secret?: string | null;
+          source_email_id?: string | null;
+          source_attachment_id?: string | null;
+          source_email_recipient?: string | null;
         };
         Update: {
           id?: string;
@@ -670,6 +757,55 @@ export type Database = {
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
           secret?: string | null;
+          source_email_id?: string | null;
+          source_attachment_id?: string | null;
+          source_email_recipient?: string | null;
+        };
+        Relationships: [];
+      };
+      // contacts -----------------------------------------------------------
+      contacts: {
+        Row: {
+          id: string;
+          family_id: string;
+          source_document_id: string | null;
+          source_key: string | null;
+          name: string;
+          organization: string | null;
+          role: string | null;
+          phone: string | null;
+          email: string | null;
+          status: "suggested" | "confirmed";
+          user_edited_at: string | null;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          source_document_id?: string | null;
+          source_key?: string | null;
+          name: string;
+          organization?: string | null;
+          role?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          status?: "suggested" | "confirmed";
+          user_edited_at?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          name?: string;
+          organization?: string | null;
+          role?: string | null;
+          phone?: string | null;
+          email?: string | null;
+          status?: "suggested" | "confirmed";
+          user_edited_at?: string | null;
+          updated_at?: string;
         };
         Relationships: [];
       };
@@ -1289,6 +1425,17 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      search_family_contacts: {
+        Args: { p_family_id: string; p_query: string; p_limit?: number };
+        Returns: {
+          id: string;
+          name: string;
+          organization: string | null;
+          role: string | null;
+          phone: string | null;
+          email: string | null;
+        }[];
+      };
       user_belongs_to_family: {
         Args: { fam_id: string };
         Returns: boolean;

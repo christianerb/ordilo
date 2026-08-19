@@ -778,6 +778,30 @@ describe("parseAnswerCardArgs", () => {
     expect(card?.fields).toEqual([]);
   });
 
+  it("accepts a contact card only with a lookup result ID", () => {
+    const card = parseAnswerCardArgs({
+      card_type: "kontakt",
+      title: "Ursula Meyer",
+      contact_id: "contact-1",
+      contact_action: "whatsapp",
+      message_draft: "Wir kommen später.",
+    });
+
+    expect(card?.contact).toEqual({
+      id: "contact-1",
+      phone: null,
+      email: null,
+      action: "whatsapp",
+      messageDraft: "Wir kommen später.",
+    });
+    expect(
+      parseAnswerCardArgs({
+        card_type: "kontakt",
+        title: "Ursula Meyer",
+      }),
+    ).toBeNull();
+  });
+
   it("rejects more than 6 fields", () => {
     const fields = Array.from({ length: 7 }, (_, i) => ({
       label: `Feld ${i}`,

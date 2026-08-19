@@ -91,6 +91,40 @@ describe("AnswerCard", () => {
     );
   });
 
+  it("renders verified contact actions and a WhatsApp draft", () => {
+    render(
+      <AnswerCard
+        card={buildCard({
+          type: "kontakt",
+          title: "Ursula Meyer",
+          subtitle: "Kita Sonnenblume",
+          fields: [{ label: "Telefon", value: "+49 176 12345" }],
+          contact: {
+            id: "contact-1",
+            phone: "+49 176 12345",
+            email: "ursula@example.de",
+            action: "whatsapp",
+            messageDraft: "Wir kommen später.",
+          },
+        })}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /Anrufen/ })).toHaveAttribute(
+      "href",
+      "tel:+4917612345",
+    );
+    expect(screen.getByRole("link", { name: /E-Mail/ })).toHaveAttribute(
+      "href",
+      "mailto:ursula@example.de",
+    );
+    expect(screen.getByRole("link", { name: /WhatsApp/ })).toHaveAttribute(
+      "href",
+      "https://wa.me/4917612345?text=Wir%20kommen%20sp%C3%A4ter.",
+    );
+    expect(screen.getByText(/Du prüfst und sendest selbst/)).toBeDefined();
+  });
+
   it("renders an icon", () => {
     const { container } = render(<AnswerCard card={buildCard()} />);
     expect(container.querySelector("svg")).not.toBeNull();

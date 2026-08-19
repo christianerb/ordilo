@@ -228,10 +228,11 @@ export function LoginForm() {
     }
 
     // A first verified login creates one server-side notification record.
-    // Delivery failures must never block the user from entering Ordilo.
-    await fetch("/api/auth/signup-notification", { method: "POST" }).catch(
-      () => undefined,
-    );
+    // Do not make a non-essential operator notification part of login.
+    void fetch("/api/auth/signup-notification", {
+      method: "POST",
+      keepalive: true,
+    }).catch(() => undefined);
 
     clearPendingLogin();
     window.location.assign("/");
