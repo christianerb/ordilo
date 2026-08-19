@@ -2,8 +2,6 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
-  Search,
-  Sparkles,
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
@@ -12,7 +10,6 @@ import {
   ArrowUpRight,
   X,
 } from "lucide-react";
-import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { formatGermanDate } from "@/lib/format";
 import { getStatusLabel, getFileIcon } from "@/lib/schemas/document";
@@ -31,7 +28,7 @@ import {
   type OrdiloFilterTabItem,
 } from "@/components/ordilo/ordilo-filter-tabs";
 import { MoreFiltersButton } from "@/components/ordilo/more-filters-button";
-import { RAIL_BLEED } from "@/lib/ui-styles";
+import { AblageSearchInput } from "@/components/ordilo/ablage-search-input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,8 +40,6 @@ import type { Database } from "@/types/database";
 type DocRow = Database["public"]["Tables"]["documents"]["Row"];
 
 const PAGE_SIZE = 20;
-/** How many documents the "Zuletzt hinzugefügt" rail shows. */
-const RECENT_COUNT = 6;
 
 type SortKey = "newest" | "oldest" | "title";
 
@@ -121,11 +116,10 @@ function DocumentTile({
 /**
  * Documents Browser — the family's document library.
  *
- * Built for a thumb: one search field that either filters the list or
- * hands the question to Ordilo, collection chips for the filter people
- * actually use, a rail of what was added most recently, and one calm row
- * per document. The old sortable five-column table needed 640px and a
- * sideways scroll on a phone to show what these rows say in one line.
+ * Built for a thumb: one local search field, collection chips for the filters
+ * people actually use, and one calm row per document. The old sortable
+ * five-column table needed 640px and a sideways scroll on a phone to show
+ * what these rows say in one line.
  */
 export function DocumentsBrowser({
   documents,
@@ -298,54 +292,20 @@ export function DocumentsBrowser({
     currentPage * PAGE_SIZE,
   );
 
-  // The rail is a shortcut to "the thing I just added", so it only makes
-  // sense on the unfiltered list — and only when there is more to scroll
-  // through than the rail itself would show.
-  const recentRows = useMemo(() => {
-    if (hasActiveFilters) return [];
-    if (enrichedRows.length <= RECENT_COUNT) return [];
-    return [...enrichedRows]
-      .sort((a, b) => b.doc.created_at.localeCompare(a.doc.created_at))
-      .slice(0, RECENT_COUNT);
-  }, [enrichedRows, hasActiveFilters]);
-
   function setFilterAndResetPage<T>(setter: (value: T) => void, value: T) {
     setter(value);
     setPage(1);
   }
 
-  const askHref = `/suche${search.trim() ? `?q=${encodeURIComponent(search.trim())}` : ""}`;
-
-  /** Full-bleed inside the page's padded column, for horizontal rails. */
-  const railBleed = RAIL_BLEED;
-
   return (
     <div data-testid="documents-browser" className="space-y-4">
-      {/* Search — filters as you type, or hands the question to Ordilo */}
-      <div className="relative">
-        <Search
-          className="pointer-events-none absolute top-1/2 left-4 size-4.5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setFilterAndResetPage(setSearch, e.target.value)}
-          placeholder="Dokumente suchen oder Ordilo fragen …"
-          className="h-13 w-full rounded-full border border-border bg-card py-3.5 pr-14 pl-11 text-sm text-foreground shadow-card placeholder:text-muted-foreground focus-ring"
-          aria-label="Dokumente durchsuchen"
-          data-testid="documents-search-input"
-        />
-        <Link
-          href={askHref}
-          className="absolute top-1/2 right-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--petrol)]/10 text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/15 focus-ring"
-          aria-label="Ordilo dazu fragen"
-          title="Ordilo fragen"
-          data-testid="documents-ask-ordilo"
-        >
-          <Sparkles className="size-4.5" aria-hidden="true" />
-        </Link>
-      </div>
+      <AblageSearchInput
+        value={search}
+        onChange={(value) => setFilterAndResetPage(setSearch, value)}
+        placeholder="Dokumente durchsuchen"
+        ariaLabel="Dokumente durchsuchen"
+        testId="documents-search-input"
+      />
 
       {/* Collection tabs + the rest of the filters behind one button */}
       <div className="flex items-center gap-2">
@@ -410,54 +370,6 @@ export function DocumentsBrowser({
             </button>
           )}
         </div>
-      )}
-
-      {/* Zuletzt hinzugefügt */}
-      {recentRows.length > 0 && (
-        <section className="space-y-2" data-testid="documents-recent">
-          <h2 className="text-sm font-semibold text-foreground">
-            Zuletzt hinzugefügt
-          </h2>
-          <div className={cn(railBleed, "gap-3 pt-0.5")}>
-            {recentRows.map((row) => {
-              const collection = collectionFor(row.category);
-              return (
-                <button
-                  key={row.doc.id}
-                  type="button"
-                  onClick={() => void openDocument(row.doc.id)}
-                  className="card-lift flex w-44 shrink-0 flex-col items-start gap-2.5 rounded-ordilo-md border border-border bg-card p-3 text-left shadow-card hover:shadow-card-hover focus-ring"
-                  data-testid="documents-recent-card"
-                >
-                  <DocumentTile doc={row.doc} collection={collection} />
-                  <span className="line-clamp-2 text-sm font-medium text-foreground">
-                    {row.displayTitle}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {[formatGermanDate(row.resolvedDate), row.typeLabel]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1.5 text-xs font-medium",
-                      getStatusTextClass(row.doc.status),
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        getStatusDotClass(row.doc.status),
-                      )}
-                      aria-hidden="true"
-                    />
-                    {getStatusLabel(row.doc.status)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
       )}
 
       {/* All documents */}

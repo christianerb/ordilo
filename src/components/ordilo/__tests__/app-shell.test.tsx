@@ -132,14 +132,14 @@ function openMobileMenu() {
 // --- Tests -----------------------------------------------------------------
 
 describe("NAV_TABS", () => {
-  it("exports exactly four tabs (Heute, Dokumente, Familienplaner, Familie)", () => {
+  it("exports exactly four tabs (Heute, Meine Ablage, Familienplaner, Familie)", () => {
     expect(NAV_TABS).toHaveLength(4);
   });
 
   it("has tabs in the correct order with correct labels and hrefs", () => {
     const expected = [
       { label: "Heute", href: "/home" },
-      { label: "Dokumente", href: "/dokumente" },
+      { label: "Meine Ablage", href: "/dokumente" },
       { label: "Familienplaner", href: "/aufgaben" },
       { label: "Familie", href: "/familie" },
     ];
@@ -157,8 +157,25 @@ describe("NAV_TABS", () => {
   it("nests Aufgaben and Planer under Familienplaner", () => {
     const planner = NAV_TABS.find((tab) => tab.label === "Familienplaner");
     expect(planner?.children).toEqual([
-      { label: "Aufgaben", href: "/aufgaben" },
-      { label: "Planer", href: "/aufgaben?tab=planer" },
+      { label: "Aufgaben", href: "/aufgaben", icon: expect.anything() },
+      { label: "Planer", href: "/aufgaben?tab=planer", icon: expect.anything() },
+    ]);
+  });
+
+  it("nests Dokumente, Notizen, and Kontakte under Meine Ablage", () => {
+    const filing = NAV_TABS.find((tab) => tab.label === "Meine Ablage");
+    expect(filing?.children).toEqual([
+      { label: "Dokumente", href: "/dokumente", icon: expect.anything() },
+      {
+        label: "Notizen",
+        href: "/dokumente?tab=notizen",
+        icon: expect.anything(),
+      },
+      {
+        label: "Kontakte",
+        href: "/dokumente?tab=kontakte",
+        icon: expect.anything(),
+      },
     ]);
   });
 });
@@ -201,12 +218,12 @@ describe("AppShell", () => {
     expect(surface.className).not.toContain("border");
   });
 
-  it("renders a nav drawer with the primary links, planner sub-items, and chat history", () => {
+  it("renders a nav drawer with the primary links, sub-items, and chat history", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation", { name: /navigation/i });
     const links = within(nav).getAllByRole("link");
-    expect(links).toHaveLength(7);
+    expect(links).toHaveLength(10);
   });
 
   it("labels the drawer nav so it is identifiable as navigation", () => {
@@ -225,7 +242,10 @@ describe("AppShell", () => {
 
     const expected = [
       { label: "Heute", href: "/home" },
+      { label: "Meine Ablage", href: "/dokumente" },
       { label: "Dokumente", href: "/dokumente" },
+      { label: "Notizen", href: "/dokumente?tab=notizen" },
+      { label: "Kontakte", href: "/dokumente?tab=kontakte" },
       { label: "Familienplaner", href: "/aufgaben" },
       { label: "Aufgaben", href: "/aufgaben" },
       { label: "Planer", href: "/aufgaben?tab=planer" },
@@ -239,29 +259,29 @@ describe("AppShell", () => {
     });
   });
 
-  it("marks the Dokumente tab as active when on /dokumente", () => {
+  it("marks Meine Ablage as active when on /dokumente", () => {
     renderShell("/dokumente");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    const dokumenteLink = within(nav).getByText("Dokumente").closest("a");
-    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
+    const filingLink = within(nav).getByText("Meine Ablage").closest("a");
+    expect(filingLink?.getAttribute("aria-current")).toBe("page");
   });
 
-  it("keeps Dokumente active on /sammlungen (collections live under it)", () => {
+  it("keeps Meine Ablage active on /sammlungen (collections live under it)", () => {
     renderShell("/sammlungen/col-1");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    const dokumenteLink = within(nav).getByText("Dokumente").closest("a");
-    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
+    const filingLink = within(nav).getByText("Meine Ablage").closest("a");
+    expect(filingLink?.getAttribute("aria-current")).toBe("page");
   });
 
   it("updates the active tab when pathname changes", () => {
     const { rerender } = renderShell("/dokumente");
     openMobileMenu();
     let nav = screen.getByRole("navigation");
-    let dokumenteLink = within(nav).getByText("Dokumente").closest("a");
+    let filingLink = within(nav).getByText("Meine Ablage").closest("a");
     let familieLink = within(nav).getByText("Familie").closest("a");
-    expect(dokumenteLink?.getAttribute("aria-current")).toBe("page");
+    expect(filingLink?.getAttribute("aria-current")).toBe("page");
     expect(familieLink?.getAttribute("aria-current")).toBeNull();
 
     mockUsePathname.mockReturnValue("/familie");
@@ -271,9 +291,9 @@ describe("AppShell", () => {
       </AppShell>,
     );
     nav = screen.getByRole("navigation");
-    dokumenteLink = within(nav).getByText("Dokumente").closest("a");
+    filingLink = within(nav).getByText("Meine Ablage").closest("a");
     familieLink = within(nav).getByText("Familie").closest("a");
-    expect(dokumenteLink?.getAttribute("aria-current")).toBeNull();
+    expect(filingLink?.getAttribute("aria-current")).toBeNull();
     expect(familieLink?.getAttribute("aria-current")).toBe("page");
   });
 
@@ -323,11 +343,11 @@ describe("AppShell", () => {
     expect(activeLinks.length).toBe(0);
   });
 
-  it("closes the drawer and navigates when a tab link is clicked", () => {
+  it("closes the drawer and navigates when the filing link is clicked", () => {
     renderShell("/home");
     openMobileMenu();
     const nav = screen.getByRole("navigation");
-    fireEvent.click(within(nav).getByText("Dokumente"));
+    fireEvent.click(within(nav).getByText("Meine Ablage"));
     // Sheet content unmounts once closed (Radix default, no forceMount).
     expect(screen.queryByRole("navigation")).toBeNull();
   });

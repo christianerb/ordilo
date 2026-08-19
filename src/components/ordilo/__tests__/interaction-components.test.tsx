@@ -5,7 +5,6 @@ import { CollectionFolder } from "@/components/ordilo/collection-folder";
 import { OrdiloActionSwap } from "@/components/ordilo/ordilo-action-swap";
 import { OrdiloDisclosure } from "@/components/ordilo/ordilo-disclosure";
 import { OtpCodeInput } from "@/components/ordilo/otp-code-input";
-import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
 
 describe("Ordilo interaction components", () => {
   it("discloses secondary information on request", () => {
@@ -77,28 +76,4 @@ describe("Ordilo interaction components", () => {
     expect(screen.getByText("2 Dokumente")).toBeDefined();
   });
 
-  it("exposes stable URL-driven morphing tabs", () => {
-    render(
-      <OrdiloSegmentedNav
-        label="Ansicht in Dokumente"
-        items={[
-          { href: "/dokumente", label: "Dokumente", active: false },
-          { href: "/dokumente?tab=notizen", label: "Notizen", active: true },
-          { href: "/dokumente?tab=kontakte", label: "Kontakte", active: false },
-        ]}
-        testId="document-tabs"
-        variant="morphing"
-      />,
-    );
-
-    expect(screen.getByRole("navigation", { name: "Ansicht in Dokumente" })).toBeDefined();
-    expect(screen.getByRole("link", { name: "Notizen" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("link", { name: "Kontakte" })).toHaveAttribute(
-      "href",
-      "/dokumente?tab=kontakte",
-    );
-  });
 });

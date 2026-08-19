@@ -18,12 +18,7 @@ import type { ContactRow } from "./actions";
  * only falls back to `initialDocuments` while the provider's own initial
  * load is in flight, then realtime/polling delta updates take over.
  */
-export default async function DokumentePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ tab?: string }>;
-}) {
-  const tab = (await searchParams).tab;
+export default async function DokumentePage() {
   const supabase = await createClient();
 
   // Fetch the user's family (RLS-scoped). On full page loads the
@@ -50,24 +45,18 @@ export default async function DokumentePage({
     .select(DOCUMENT_LIST_COLUMNS)
     .eq("family_id", family.id)
     .order("created_at", { ascending: false });
-  const contactsPromise =
-    tab === "kontakte"
-      ? supabase
-          .from("contacts")
-          .select("*")
-          .eq("family_id", family.id)
-          .order("updated_at", { ascending: false })
-      : Promise.resolve({ data: [] as ContactRow[] });
-  const notePreviewsPromise =
-    tab === "notizen"
-      ? supabase
-          .from("documents")
-          .select("id, ocr_text")
-          .eq("family_id", family.id)
-          .eq("source", "manual")
-      : Promise.resolve({
-          data: [] as Array<{ id: string; ocr_text: string | null }>,
-        });
+  // Every local tab is prepared at once. The client can then switch views
+  // immediately while the URL update continues in the background.
+  const contactsPromise = supabase
+    .from("contacts")
+    .select("*")
+    .eq("family_id", family.id)
+    .order("updated_at", { ascending: false });
+  const notePreviewsPromise = supabase
+    .from("documents")
+    .select("id, ocr_text")
+    .eq("family_id", family.id)
+    .eq("source", "manual");
 
   const [
     { data },

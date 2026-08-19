@@ -2,15 +2,21 @@
 
 import {
   BookOpen,
+  CalendarDays,
+  CircleCheck,
+  FileText,
   House,
   ListChecks,
+  NotebookPen,
   Users,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
 export interface NavSubItem {
   label: string;
   href: string;
+  icon: LucideIcon;
 }
 
 export interface NavTab {
@@ -32,7 +38,7 @@ export interface NavTab {
 }
 
 /**
- * The four-tab information architecture.
+ * The four-place information architecture.
  *
  * The product promise is two verbs — ask (the ever-present search bar)
  * and add (the Scannen button) — so navigation carries only the family's
@@ -46,18 +52,23 @@ export const NAV_TABS: NavTab[] = [
     icon: House,
   },
   {
-    label: "Dokumente",
+    label: "Meine Ablage",
     href: "/dokumente",
     icon: BookOpen,
     match: ["/sammlungen"],
+    children: [
+      { label: "Dokumente", href: "/dokumente", icon: FileText },
+      { label: "Notizen", href: "/dokumente?tab=notizen", icon: NotebookPen },
+      { label: "Kontakte", href: "/dokumente?tab=kontakte", icon: UsersRound },
+    ],
   },
   {
     label: "Familienplaner",
     href: "/aufgaben",
     icon: ListChecks,
     children: [
-      { label: "Aufgaben", href: "/aufgaben" },
-      { label: "Planer", href: "/aufgaben?tab=planer" },
+      { label: "Aufgaben", href: "/aufgaben", icon: CircleCheck },
+      { label: "Planer", href: "/aufgaben?tab=planer", icon: CalendarDays },
     ],
   },
   { label: "Familie", href: "/familie", icon: Users },

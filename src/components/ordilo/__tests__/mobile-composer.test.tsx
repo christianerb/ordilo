@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 import { MobileComposer } from "@/components/ordilo/app-shell-navigation";
+import {
+  SuggestionChipsProvider,
+  SuggestionChipsRegistrar,
+} from "@/lib/search/suggestion-chips-context";
 
 /**
  * The composer is the app's most-used control on a phone, so the mechanics
@@ -85,6 +89,22 @@ describe("MobileComposer", () => {
 
     fireEvent.focus(screen.getByRole("textbox"));
     expect(screen.getByTestId("composer-overlay")).toBeDefined();
+  });
+
+  it("shows frequent questions only after the composer becomes active", () => {
+    render(
+      <SuggestionChipsProvider>
+        <SuggestionChipsRegistrar chips={["Was ist überfällig?"]} />
+        <MobileComposer onSearch={vi.fn()} onOpenActions={vi.fn()} />
+      </SuggestionChipsProvider>,
+    );
+
+    expect(screen.queryByText("Häufig gefragt")).toBeNull();
+
+    fireEvent.focus(screen.getByRole("textbox"));
+
+    expect(screen.getByText("Häufig gefragt")).toBeDefined();
+    expect(screen.getByText("Was ist überfällig?")).toBeDefined();
   });
 
   it("does not zoom when enableOverlay is false (already inside /suche)", () => {

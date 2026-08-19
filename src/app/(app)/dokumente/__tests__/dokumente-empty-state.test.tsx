@@ -1,13 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 
+const mockPush = vi.fn();
+
 // Mock the supabase browser client and the upload/ocr helpers so the
 // page can render without network calls.
 // The scan provider calls router.refresh() after a confirmed review so the
 // server components (home's first-visit state) pick the new document up.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: vi.fn(),
+    push: mockPush,
     replace: vi.fn(),
     refresh: vi.fn(),
   }),
@@ -108,10 +110,37 @@ describe("DokumentePage empty state", () => {
       name: /dokument scannen/i,
     });
     expect(cta).toBeDefined();
+    expect(
+      screen.getByRole("heading", { name: "Meine Ablage" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Dokument hochladen" }),
+    ).toBeDefined();
 
     // The warm empty-state container is present.
     expect(screen.getByTestId("empty-state")).toBeDefined();
     expect(screen.getByText("Noch nichts gescannt")).toBeDefined();
+  });
+
+  it("uses the shared tabs to navigate between document views", async () => {
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockSupabaseClient([]),
+    );
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient initialDocuments={[]} />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Notizen" }));
+
+    expect(mockPush).toHaveBeenCalledWith("/dokumente?tab=notizen");
+    expect(
+      screen.getAllByRole("button", { name: "Notiz schreiben" }),
+    ).not.toHaveLength(0);
   });
 
   it("does not render the empty state when documents exist", async () => {

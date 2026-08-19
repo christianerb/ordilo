@@ -1,12 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   UploadCloud,
   Loader2,
   FileText,
+  NotebookPen,
   Plus,
+  UsersRound,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
 import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
@@ -20,10 +22,24 @@ import { useScan } from "@/lib/scan/scan-context";
 import type { DocumentRow } from "@/lib/scan/scan-context-types";
 import { toast } from "sonner";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
-import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
+import { OrdiloFilterTabs } from "@/components/ordilo/ordilo-filter-tabs";
+import { AblageSearchInput } from "@/components/ordilo/ablage-search-input";
 import { formatGermanDate } from "@/lib/format";
 import { ContactsView } from "./contacts-view";
 import type { ContactRow } from "./actions";
+
+type FilingView = "dokumente" | "notizen" | "kontakte";
+
+function getFilingView(tab: string | null): FilingView {
+  if (tab === "notizen" || tab === "kontakte") return tab;
+  return "dokumente";
+}
+
+function getFilingHref(view: FilingView): string {
+  if (view === "notizen") return "/dokumente?tab=notizen";
+  if (view === "kontakte") return "/dokumente?tab=kontakte";
+  return "/dokumente";
+}
 
 // ---------------------------------------------------------------------------
 // Page
@@ -76,13 +92,24 @@ export function DokumenteClient({
   } = useScan();
 
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const currentTab = useSearchParams().get("tab");
-  const view =
-    currentTab === "notizen"
-      ? "notizen"
-      : currentTab === "kontakte"
-        ? "kontakte"
-        : "dokumente";
+  const [contactCreateRequest, setContactCreateRequest] = useState(0);
+  const router = useRouter();
+  const routeView = getFilingView(useSearchParams().get("tab"));
+  const [view, setView] = useState<FilingView>(routeView);
+  const [renderedRouteView, setRenderedRouteView] = useState(routeView);
+  // Browser back/forward and deep links still own the URL. A tab click updates
+  // local state first, so the next view appears before the RSC navigation
+  // finishes; this render-time adjustment only reconciles later URL changes.
+  if (routeView !== renderedRouteView) {
+    setRenderedRouteView(routeView);
+    setView(routeView);
+  }
+
+  const handleViewChange = (nextView: FilingView) => {
+    if (nextView === view) return;
+    setView(nextView);
+    router.push(getFilingHref(nextView));
+  };
 
   // Seed the provider from the server-rendered list instead of refetching
   // the full table — the server component already ran the exact same
@@ -121,6 +148,21 @@ export function DokumenteClient({
     view === "kontakte"
       ? initialContacts.filter((contact) => contact.status === "confirmed").length
       : activeDocuments.length;
+  const headerAction =
+    view === "dokumente"
+      ? {
+          label: "Dokument hochladen",
+          onClick: () => pdfInputRef.current?.click(),
+        }
+      : view === "notizen"
+        ? {
+            label: "Notiz schreiben",
+            onClick: () => openCreateNote(),
+          }
+        : {
+            label: "Kontakt hinzufügen",
+            onClick: () => setContactCreateRequest((current) => current + 1),
+          };
 
   return (
     <div
@@ -134,51 +176,43 @@ export function DokumenteClient({
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
           <h1 className="text-2xl font-semibold tracking-tight text-[var(--petrol)]">
-            Dokumente
+            Meine Ablage
           </h1>
           <span className="rounded-full bg-[var(--sand-warm)] px-2.5 py-0.5 text-sm font-medium tabular-nums text-[var(--mist-dark)]">
             {activeCount}
           </span>
         </div>
-        {view === "notizen" && (
-          <Button
-            size="icon"
-            className="size-11 shrink-0 rounded-full"
-            onClick={() => openCreateNote()}
-            aria-label="Neue Notiz"
-          >
-            <Plus className="size-5" />
-          </Button>
-        )}
+        <Button
+          size="icon"
+          aria-label={headerAction.label}
+          title={headerAction.label}
+          className="size-11 shrink-0 rounded-full"
+          onClick={headerAction.onClick}
+        >
+          <Plus className="size-5" aria-hidden="true" />
+        </Button>
       </div>
 
-      <section className="rounded-ordilo-md bg-[var(--sand-light)] pb-1">
-        <OrdiloSegmentedNav
-          label="Ansicht in Dokumente"
-          items={[
-            { href: "/dokumente", label: "Dokumente", active: view === "dokumente" },
-            {
-              href: "/dokumente?tab=notizen",
-              label: "Notizen",
-              active: view === "notizen",
-            },
-            {
-              href: "/dokumente?tab=kontakte",
-              label: "Kontakte",
-              active: view === "kontakte",
-            },
-          ]}
-          testId="documents-view-switcher"
-          variant="morphing"
-        />
-        <div className="relative z-10 mx-1 rounded-b-[16px] rounded-tr-[16px] bg-[var(--surface-box)] p-3">
-        {view === "kontakte" ? (
+      <OrdiloFilterTabs
+        value={view}
+        onChange={handleViewChange}
+        ariaLabel="Ansicht in Dokumente"
+        tabs={[
+          { key: "dokumente", label: "Dokumente", icon: FileText },
+          { key: "notizen", label: "Notizen", icon: NotebookPen },
+          { key: "kontakte", label: "Kontakte", icon: UsersRound },
+        ]}
+        testId="documents-view-switcher"
+      />
+
+      {view === "kontakte" ? (
         <ContactsView
           key={initialContacts
             .map((contact) => `${contact.id}:${contact.status}:${contact.updated_at}`)
             .join("|")}
           initialContacts={initialContacts}
           onOpenSource={(documentId) => void openDocument(documentId)}
+          createRequest={contactCreateRequest}
         />
       ) : view === "notizen" ? (
         <NotesView
@@ -190,106 +224,104 @@ export function DokumenteClient({
         />
       ) : (
         <>
-      {/* Drag overlay */}
-      {isDragOver && (
-        <div className="flex flex-col items-center justify-center rounded-ordilo-sm border-2 border-dashed border-[var(--petrol)] bg-[var(--blue-soft)] py-8 text-center animate-card-in">
-          <OrdiloMascot
-            size={48}
-            mood="helping"
-            animate
-            style={{ color: "var(--petrol)" }}
+          {/* Drag overlay */}
+          {isDragOver && (
+            <div className="flex flex-col items-center justify-center rounded-ordilo-sm border-2 border-dashed border-[var(--petrol)] bg-[var(--blue-soft)] py-8 text-center animate-card-in">
+              <OrdiloMascot
+                size={48}
+                mood="helping"
+                animate
+                style={{ color: "var(--petrol)" }}
+              />
+              <p className="mt-3 font-medium text-[var(--petrol)]">
+                Datei hier ablegen
+              </p>
+            </div>
+          )}
+
+          {/* Hidden file inputs */}
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={handleCameraSelect}
+            aria-label="Foto mit Kamera aufnehmen"
+            data-testid="camera-input"
           />
-          <p className="mt-3 font-medium text-[var(--petrol)]">
-            Datei hier ablegen
-          </p>
-        </div>
-      )}
+          <input
+            ref={pdfInputRef}
+            type="file"
+            accept={ACCEPTED_FILE_EXTENSIONS}
+            className="hidden"
+            onChange={handlePdfSelect}
+            aria-label="PDF oder Bild hochladen"
+            data-testid="pdf-input"
+          />
 
-      {/* Hidden file inputs */}
-      <input
-        ref={cameraInputRef}
-        type="file"
-        accept="image/*"
-        capture="environment"
-        className="hidden"
-        onChange={handleCameraSelect}
-        aria-label="Foto mit Kamera aufnehmen"
-        data-testid="camera-input"
-      />
-      <input
-        ref={pdfInputRef}
-        type="file"
-        accept={ACCEPTED_FILE_EXTENSIONS}
-        className="hidden"
-        onChange={handlePdfSelect}
-        aria-label="PDF oder Bild hochladen"
-        data-testid="pdf-input"
-      />
+          {/* Active uploads */}
+          {hasActiveUploads && (
+            <div className="space-y-3" data-testid="upload-progress-list">
+              {uploads.map((upload) => (
+                <UploadProgressCard
+                  key={upload.id}
+                  upload={upload}
+                  onRetry={() => handleRetry(upload.id)}
+                  onDismiss={() => dismissUpload(upload.id)}
+                />
+              ))}
+            </div>
+          )}
 
-      {/* Active uploads */}
-      {hasActiveUploads && (
-        <div className="space-y-3" data-testid="upload-progress-list">
-          {uploads.map((upload) => (
-            <UploadProgressCard
-              key={upload.id}
-              upload={upload}
-              onRetry={() => handleRetry(upload.id)}
-              onDismiss={() => dismissUpload(upload.id)}
+          {/* Document library / empty state */}
+          {loadingDocs && !hasDocuments ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="size-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : documentsError && !hasDocuments ? (
+            // A failed read must not masquerade as an empty family.
+            <ErrorState
+              title="Deine Dokumente konnten nicht geladen werden"
+              description={documentsError}
+              retryLabel="Nochmal versuchen"
+              onRetry={() => void loadDocuments()}
+              testId="documents-load-error"
             />
-          ))}
-        </div>
-      )}
+          ) : hasDocuments ? (
+            <div className="space-y-3" data-testid="document-list">
+              <DocumentsBrowser
+                documents={libraryDocuments}
+                onDelete={setDeleteConfirmId}
+              />
+            </div>
+          ) : (
+            <EmptyState
+              title="Noch nichts gescannt"
+              description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
+              mascotMood="greeting"
+              actionLabel="Dokument scannen"
+              onAction={openWizard}
+            />
+          )}
 
-      {/* Document library / empty state */}
-      {loadingDocs && !hasDocuments ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : documentsError && !hasDocuments ? (
-        // A failed read must not masquerade as an empty family.
-        <ErrorState
-          title="Deine Dokumente konnten nicht geladen werden"
-          description={documentsError}
-          retryLabel="Nochmal versuchen"
-          onRetry={() => void loadDocuments()}
-          testId="documents-load-error"
-        />
-      ) : hasDocuments ? (
-        <div className="space-y-3" data-testid="document-list">
-          <DocumentsBrowser
-            documents={libraryDocuments}
-            onDelete={setDeleteConfirmId}
-          />
-        </div>
-      ) : (
-        <EmptyState
-          title="Noch nichts gescannt"
-          description="Halte die Kamera auf ein Dokument — Notizen und Uploads findest du gleich dort."
-          mascotMood="greeting"
-          actionLabel="Dokument scannen"
-          onAction={openWizard}
-        />
-      )}
-
-      {/* Compact upload link at the bottom */}
-      {hasDocuments && (
-        <div className="flex flex-wrap items-center justify-center gap-2 rounded-ordilo-sm border border-dashed border-border bg-[var(--sand)] px-3 py-2 text-xs text-muted-foreground">
-          <UploadCloud className="size-3.5 text-[var(--petrol)]" aria-hidden="true" />
-          <button
-            type="button"
-            onClick={() => pdfInputRef.current?.click()}
-            className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
-          >
-            PDF hochladen
-          </button>
-          <span aria-hidden="true">·</span>
-          <span>oder Datei hierher fallen lassen</span>
-        </div>
-      )}
+          {/* Compact upload link at the bottom */}
+          {hasDocuments && (
+            <div className="flex flex-wrap items-center justify-center gap-2 rounded-ordilo-sm border border-dashed border-border bg-[var(--sand)] px-3 py-2 text-xs text-muted-foreground">
+              <UploadCloud className="size-3.5 text-[var(--petrol)]" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={() => pdfInputRef.current?.click()}
+                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
+              >
+                PDF hochladen
+              </button>
+              <span aria-hidden="true">·</span>
+              <span>oder Datei hierher fallen lassen</span>
+            </div>
+          )}
         </>
       )}
-        </div>
-      </section>
 
       {/* Delete confirmation */}
       <ConfirmAction
@@ -330,6 +362,17 @@ function NotesView({
   onCreate: () => void;
   onOpen: (documentId: string) => void;
 }) {
+  const [search, setSearch] = useState("");
+  const visibleNotes = notes.filter((note) => {
+    const needle = search.trim().toLocaleLowerCase("de");
+    if (!needle) return true;
+    return [note.title, note.summary, previews[note.id], note.ocr_text]
+      .filter(Boolean)
+      .join(" ")
+      .toLocaleLowerCase("de")
+      .includes(needle);
+  });
+
   if (loading && notes.length === 0) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -350,11 +393,24 @@ function NotesView({
   }
 
   return (
-    <div
-      className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--sand)] shadow-card animate-card-in"
-      data-testid="notes-list"
-    >
-      {notes.map((note) => (
+    <div className="space-y-4">
+      <AblageSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Notizen durchsuchen"
+        ariaLabel="Notizen durchsuchen"
+        testId="notes-search-input"
+      />
+      {visibleNotes.length === 0 ? (
+        <p className="rounded-ordilo-md border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card">
+          Keine Notiz gefunden.
+        </p>
+      ) : (
+        <div
+          className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--sand)] shadow-card animate-card-in"
+          data-testid="notes-list"
+        >
+          {visibleNotes.map((note) => (
         <button
           type="button"
           key={note.id}
@@ -379,7 +435,9 @@ function NotesView({
             {formatGermanDate(note.created_at)}
           </span>
         </button>
-      ))}
+          ))}
+        </div>
+      )}
     </div>
   );
 }

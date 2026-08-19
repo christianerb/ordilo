@@ -12,13 +12,20 @@ import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 /**
  * Suggestion chips for the global composer.
  *
- * Pages (currently /home) register a few contextual, ready-to-send
- * questions; the AppShell composers render them as tappable chips above
- * the input. Submitting a chip behaves exactly like typing the question.
+ * The global defaults keep the composer useful on every page. Individual
+ * pages, currently /home, can temporarily replace them with contextual,
+ * ready-to-send questions. Submitting a chip behaves exactly like typing
+ * the question.
  *
- * The default context value is a no-op, so components work without the
+ * The default context value is still a no-op, so components work without the
  * provider (unit tests render pages in isolation).
  */
+
+export const DEFAULT_SUGGESTION_CHIPS = [
+  "Was ist überfällig?",
+  "Welche Dokumente muss ich bestätigen?",
+  "Was wurde zuletzt gescannt?",
+];
 
 interface SuggestionChipsContextValue {
   chips: string[];
@@ -31,7 +38,7 @@ const SuggestionChipsContext = createContext<SuggestionChipsContextValue>({
 });
 
 export function SuggestionChipsProvider({ children }: { children: ReactNode }) {
-  const [chips, setChips] = useState<string[]>([]);
+  const [chips, setChips] = useState<string[]>(DEFAULT_SUGGESTION_CHIPS);
   const value = useMemo(() => ({ chips, setChips }), [chips]);
   return (
     <SuggestionChipsContext.Provider value={value}>
@@ -46,7 +53,7 @@ export function useSuggestionChips(): string[] {
 }
 
 /**
- * Registers chips while mounted; clears them on unmount.
+ * Registers chips while mounted; restores the global defaults on unmount.
  *
  * Render it with `key={chips.join("\n")}`: when the questions change, the
  * key change forces a clean remount and the mount effect registers the
@@ -56,8 +63,8 @@ export function useSuggestionChips(): string[] {
 export function SuggestionChipsRegistrar({ chips }: { chips: string[] }) {
   const { setChips } = useContext(SuggestionChipsContext);
   useMountEffect(() => {
-    setChips(chips);
-    return () => setChips([]);
+    setChips(chips.length > 0 ? chips : DEFAULT_SUGGESTION_CHIPS);
+    return () => setChips(DEFAULT_SUGGESTION_CHIPS);
   });
   return null;
 }
