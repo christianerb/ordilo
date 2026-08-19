@@ -799,7 +799,7 @@ export function SucheClient({
         <button
           type="button"
           onClick={() => setShowChatList(!showChatList)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded-ordilo-sm px-2 py-1.5 text-left transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:max-w-[42%]"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-ordilo-sm px-2 py-1.5 text-left transition-colors hover:bg-card focus-ring sm:max-w-[42%]"
           aria-label="Chat-Historie öffnen"
           data-testid="chat-history-toggle"
         >
@@ -831,7 +831,7 @@ export function SucheClient({
         <button
           type="button"
           onClick={handleNewChat}
-          className="ml-auto flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-auto sm:px-3"
+          className="ml-auto flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring sm:w-auto sm:px-3"
           aria-label="Neuer Chat"
           data-testid="new-chat-button"
         >
@@ -952,7 +952,7 @@ export function SucheClient({
                     onClick={() => setQuotedMessage(null)}
                     aria-label="Zitat entfernen"
                     data-testid="quoted-message-clear"
-                    className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:bg-secondary/60 hover:text-foreground focus-ring"
                   >
                     <X className="size-3.5" aria-hidden="true" />
                   </button>
@@ -1044,7 +1044,7 @@ function ChatList({
                       aria-label={`Chat „${title}" öffnen`}
                       aria-current={isActive ? "true" : undefined}
                       className={cn(
-                        "group flex items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        "group flex items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors cursor-pointer focus-ring",
                         isActive
                           ? "bg-secondary/50"
                           : "hover:bg-secondary/20",
@@ -1080,7 +1080,7 @@ function ChatList({
                         // Visible and thumb-sized on touch; the old
                         // opacity-0 + group-hover had no touch equivalent, so
                         // deleting a chat was unreachable on a phone.
-                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-all hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:size-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-all hover:text-destructive focus-ring sm:size-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                         aria-label="Chat löschen"
                       >
                         <Trash2 className="size-4 sm:size-3" aria-hidden="true" />
@@ -1137,7 +1137,7 @@ function EmptyState({
             type="button"
             onClick={() => onExampleClick(query)}
             data-testid="example-query"
-            className="flex w-full items-center gap-3 rounded-ordilo-sm bg-[var(--sand)] px-4 py-3 text-left transition-colors hover:bg-[var(--sand-warm)] press-scale focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex w-full items-center gap-3 rounded-ordilo-sm bg-[var(--sand)] px-4 py-3 text-left transition-colors hover:bg-[var(--sand-warm)] press-scale focus-ring"
           >
             <Sparkles
               className="size-4 shrink-0"

@@ -112,7 +112,7 @@ export function SourceCard({
       className={cn(
         "flex w-full items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors animate-source-card-in",
         isInteractive &&
-          "cursor-pointer hover:bg-secondary/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "cursor-pointer hover:bg-secondary/50 focus-ring",
         className,
       )}
     >

@@ -91,7 +91,7 @@ export function TaskScheduleSheet({
                 onClick={() => commit(date)}
                 aria-pressed={selected}
                 className={cn(
-                  "press-scale flex min-h-14 flex-col items-start justify-center gap-0.5 rounded-ordilo-sm border px-3.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  "press-scale flex min-h-14 flex-col items-start justify-center gap-0.5 rounded-ordilo-sm border px-3.5 py-2 text-left transition-colors focus-ring",
                   selected
                     ? "border-[var(--petrol)]/30 bg-[var(--petrol)]/10"
                     : "border-border bg-[var(--surface-story)] hover:bg-secondary",
@@ -139,7 +139,7 @@ export function TaskScheduleSheet({
         <button
           type="button"
           onClick={() => commit(null)}
-          className="mt-3 flex min-h-12 w-full items-center gap-2.5 rounded-ordilo-sm px-3.5 text-left text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="mt-3 flex min-h-12 w-full items-center gap-2.5 rounded-ordilo-sm px-3.5 text-left text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-ring"
           data-testid="task-schedule-none"
         >
           <CalendarOff className="size-4 shrink-0" aria-hidden="true" />

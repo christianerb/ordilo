@@ -132,7 +132,7 @@ export function RelationshipList({
                   type="button"
                   onClick={() => setRolePickerFor(relation.memberId)}
                   disabled={disabled}
-                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-ring"
                   data-testid={`relationship-row-${relation.memberId}`}
                   aria-label={`${member.name}: ${relation.role}. Beziehung ändern`}
                 >
@@ -171,7 +171,7 @@ export function RelationshipList({
           onClick={() => setPersonPickerOpen(true)}
           disabled={disabled}
           data-testid="relationship-add"
-          className="flex h-10 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+          className="flex h-10 items-center gap-1.5 rounded-full border border-border bg-card px-4 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent/40 focus-ring disabled:opacity-50"
         >
           <Plus className="size-4" aria-hidden="true" />
           Beziehung hinzufügen
@@ -202,7 +202,7 @@ export function RelationshipList({
                   setRolePickerFor(member.id);
                 }}
                 data-testid={`relationship-pick-${member.id}`}
-                className="flex w-full items-center gap-3 rounded-ordilo-sm px-2 py-2 text-left transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex w-full items-center gap-3 rounded-ordilo-sm px-2 py-2 text-left transition-colors hover:bg-accent/40 focus-ring"
               >
                 <MemberAvatar
                   name={member.name}
@@ -299,7 +299,7 @@ function RoleRow({
       type="button"
       onClick={onOpen}
       disabled={disabled}
-      className="flex w-full items-center gap-3 rounded-ordilo-md border border-border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex w-full items-center gap-3 rounded-ordilo-md border border-border bg-card px-3 py-2.5 text-left transition-colors hover:bg-accent/30 focus-ring"
       data-testid="relationship-solo-row"
     >
       <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--sand-warm)]">
@@ -352,7 +352,7 @@ function RolePicker({
             aria-pressed={role === option}
             data-testid={`${testIdPrefix}-chip-${option}`}
             className={cn(
-              "rounded-full px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "rounded-full px-3.5 py-2 text-sm font-medium transition-colors focus-ring",
               role === option
                 ? "bg-[var(--petrol)] text-white"
                 : "bg-secondary text-muted-foreground hover:text-foreground",
@@ -367,7 +367,7 @@ function RolePicker({
           aria-pressed={customOpen}
           data-testid={`${testIdPrefix}-chip-custom`}
           className={cn(
-            "rounded-full px-3.5 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "rounded-full px-3.5 py-2 text-sm font-medium transition-colors focus-ring",
             customOpen
               ? "bg-[var(--petrol)] text-white"
               : "bg-secondary text-muted-foreground hover:text-foreground",
@@ -401,7 +401,7 @@ function RolePicker({
             onClick={() => customRole.trim() && onPick(customRole)}
             disabled={!customRole.trim()}
             data-testid={`${testIdPrefix}-custom-confirm`}
-            className="h-11 shrink-0 rounded-ordilo-md bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-40"
+            className="h-11 shrink-0 rounded-ordilo-md bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 focus-ring disabled:opacity-40"
           >
             Übernehmen
           </button>
@@ -413,7 +413,7 @@ function RolePicker({
           type="button"
           onClick={onRemove}
           data-testid={`${testIdPrefix}-remove`}
-          className="flex items-center gap-1.5 text-sm font-medium text-destructive transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex items-center gap-1.5 text-sm font-medium text-destructive transition-opacity hover:opacity-80 focus-ring"
         >
           <X className="size-4" />
           {removeLabel}

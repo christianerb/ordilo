@@ -65,7 +65,7 @@ export function TaskAssignSheet({
               onClick={() => commit(member.id)}
               aria-pressed={selected}
               className={cn(
-                "flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                "flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left transition-colors focus-ring",
                 selected
                   ? "bg-[var(--petrol)]/10"
                   : "hover:bg-secondary",
@@ -102,7 +102,7 @@ export function TaskAssignSheet({
           type="button"
           onClick={() => commit(null)}
           aria-pressed={task?.assigned_to === null}
-          className="mt-1 flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="mt-1 flex min-h-14 w-full items-center gap-3 rounded-ordilo-sm px-3 text-left text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-ring"
           data-testid="task-assign-none"
         >
           <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-dashed border-[var(--mist)]">

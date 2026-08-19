@@ -244,7 +244,7 @@ export function DateInput({
             disabled={disabled}
             aria-label="Kalender öffnen"
             data-testid="date-input-calendar-trigger"
-            className="absolute top-1/2 right-1 flex size-9 -translate-y-1/2 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50"
+            className="absolute top-1/2 right-1 flex size-9 -translate-y-1/2 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring disabled:pointer-events-none disabled:opacity-50"
           >
             <CalendarIcon className="size-4" aria-hidden="true" />
           </button>

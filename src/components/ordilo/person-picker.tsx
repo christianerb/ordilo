@@ -138,7 +138,7 @@ export function PersonPicker({
               aria-pressed={selected}
               data-testid={`${testIdPrefix}-chip-${member.id}`}
               className={cn(
-                "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-ring",
                 // Freshly created members get a one-time entrance.
                 !initialIds.has(member.id) && "animate-card-in",
                 selected
@@ -175,7 +175,7 @@ export function PersonPicker({
           aria-pressed={explicitNone}
           data-testid={`${testIdPrefix}-chip-none`}
           className={cn(
-            "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-ring",
             explicitNone
               ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
               : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
@@ -204,7 +204,7 @@ export function PersonPicker({
               setCreateFailed(!ok);
             }}
             data-testid={`${testIdPrefix}-chip-create`}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-ring disabled:opacity-60"
           >
             {creating ? (
               <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
@@ -224,7 +224,7 @@ export function PersonPicker({
               setFormOpen(true);
             }}
             data-testid={`${testIdPrefix}-chip-new`}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-3 py-1 text-sm font-medium text-muted-foreground transition-all hover:border-[var(--petrol)]/50 hover:text-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-3 py-1 text-sm font-medium text-muted-foreground transition-all hover:border-[var(--petrol)]/50 hover:text-[var(--petrol)] focus-ring"
           >
             <Plus className="size-3.5 shrink-0" aria-hidden="true" />
             Neue Person
@@ -236,7 +236,7 @@ export function PersonPicker({
             type="button"
             onClick={onDismiss}
             data-testid={`${testIdPrefix}-chip-dismiss`}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
           >
             <X className="size-3.5" aria-hidden="true" />
             Abbrechen
@@ -271,14 +271,14 @@ export function PersonPicker({
             autoComplete="off"
             disabled={submitting}
             data-testid={`${testIdPrefix}-create-input`}
-            className="h-11 min-w-0 flex-1 rounded-full border border-[var(--petrol)]/50 bg-card px-4 text-base text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60 sm:text-sm"
+            className="h-11 min-w-0 flex-1 rounded-full border border-[var(--petrol)]/50 bg-card px-4 text-base text-foreground placeholder:text-muted-foreground focus-ring disabled:opacity-60 sm:text-sm"
           />
           <button
             type="submit"
             disabled={!draftName.trim() || submitting}
             aria-busy={submitting}
             data-testid={`${testIdPrefix}-create-submit`}
-            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+            className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-[var(--petrol)] px-4 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:opacity-50"
           >
             {submitting ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -292,7 +292,7 @@ export function PersonPicker({
             onClick={closeForm}
             aria-label="Anlegen abbrechen"
             data-testid={`${testIdPrefix}-create-cancel`}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
           >
             <X className="size-4" aria-hidden="true" />
           </button>

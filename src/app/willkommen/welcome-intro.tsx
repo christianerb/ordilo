@@ -120,7 +120,7 @@ export function WelcomeIntro({ familyName }: { familyName: string | null }) {
                 type="button"
                 onClick={() => void leave()}
                 disabled={leaving}
-                className="w-full rounded-ordilo-sm py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="w-full rounded-ordilo-sm py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default focus-ring"
                 data-testid="welcome-direct-button"
               >
                 {leaving ? "Einen Moment…" : "Direkt loslegen"}
@@ -250,7 +250,7 @@ export function WelcomeIntro({ familyName }: { familyName: string | null }) {
               aria-label={`Karte ${dot + 1} von ${CARD_COUNT}`}
               aria-current={dot === cardIndex ? "step" : undefined}
               data-testid={`welcome-dot-${dot}`}
-              className="flex h-9 min-w-9 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex h-9 min-w-9 items-center justify-center rounded-full focus-ring"
             >
               <span
                 aria-hidden="true"
@@ -290,7 +290,7 @@ export function WelcomeIntro({ familyName }: { familyName: string | null }) {
               type="button"
               onClick={() => void leave()}
               disabled={leaving}
-              className="w-full rounded-ordilo-sm py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="w-full rounded-ordilo-sm py-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground disabled:cursor-default focus-ring"
               data-testid="welcome-skip-button"
             >
               Überspringen

@@ -510,7 +510,7 @@ export function AISearchBar({
           aria-pressed={listening}
           data-testid="voice-search-button"
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-ring",
             listening
               ? "bg-[var(--petrol)] text-white animate-pulse"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -530,7 +530,7 @@ export function AISearchBar({
           disabled={isLoading || !currentValue.trim()}
           aria-label="Senden"
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-ring",
             isLoading || !currentValue.trim()
               ? "bg-muted text-muted-foreground cursor-not-allowed"
               : "bg-[var(--petrol)] text-white hover:bg-[var(--petrol-dark)]",

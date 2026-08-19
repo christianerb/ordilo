@@ -464,7 +464,7 @@ export function FieldRow({
                 <button
                   type="button"
                   onClick={() => onShowSource(sourceText)}
-                  className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--petrol)]/10 hover:text-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--petrol)]/10 hover:text-[var(--petrol)] focus-ring"
                   aria-label="Im Original zeigen"
                   title="Im Original zeigen"
                 >
@@ -485,7 +485,7 @@ export function FieldRow({
           <button
             type="button"
             onClick={onCompareOriginal}
-            className="mt-2 inline-flex items-center rounded-ordilo-sm py-0.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="mt-2 inline-flex items-center rounded-ordilo-sm py-0.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
           >
             Im Original vergleichen
           </button>

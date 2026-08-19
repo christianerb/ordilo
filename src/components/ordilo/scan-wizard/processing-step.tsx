@@ -187,7 +187,7 @@ export function ScanProcessingStep({
         <button
           type="button"
           onClick={onClose}
-          className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent focus-ring"
           aria-label="Schließen"
         >
           <X className="size-5" aria-hidden="true" />

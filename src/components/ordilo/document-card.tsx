@@ -199,7 +199,7 @@ export function DocumentCard({
               e.stopPropagation();
               onRetry();
             }}
-            className="inline-flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
             aria-label="Nochmal versuchen"
             data-testid="document-retry-button"
           >
@@ -228,7 +228,7 @@ export function DocumentCard({
         data-testid="document-card"
         data-status={status}
         className={cn(
-          "flex items-center gap-2 rounded-ordilo-sm bg-card p-2.5 shadow-card card-lift focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 cursor-pointer",
+          "flex items-center gap-2 rounded-ordilo-sm bg-card p-2.5 shadow-card card-lift focus-ring cursor-pointer",
           className,
         )}
       >

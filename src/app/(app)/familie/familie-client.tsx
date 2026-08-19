@@ -3,25 +3,16 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
-  Loader2,
-  RefreshCw,
-  SlidersHorizontal,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { MemberFormValues } from "@/components/ordilo/member-form";
 import { nameMap } from "@/lib/family/relations";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { FILTER_ACTIVE } from "@/lib/ui-styles";
+import { MoreFiltersButton } from "@/components/ordilo/more-filters-button";
+import { ErrorState } from "@/components/ordilo/error-state";
+import { ConfirmAction } from "@/components/ordilo/confirm-action";
 import {
   addFamilyMember,
   removeFamilyMember,
@@ -149,25 +140,12 @@ export function FamilieClient({
 
   if (fetchError) {
     return (
-      <div
-        data-testid="familie-fetch-error"
-        className="flex flex-col items-center justify-center px-6 py-16 text-center"
-      >
-        <AlertCircle className="size-7 text-muted-foreground" strokeWidth={1.5} />
-        <p className="mt-3 text-sm text-muted-foreground">
-          Daten konnten nicht geladen werden.
-        </p>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => router.refresh()}
-          className="mt-4"
-        >
-          <RefreshCw className="size-4" />
-          Erneut versuchen
-        </Button>
-      </div>
+      <ErrorState
+        title="Daten konnten nicht geladen werden."
+        onRetry={() => router.refresh()}
+        testId="familie-fetch-error"
+        variant="simple"
+      />
     );
   }
 
@@ -207,22 +185,12 @@ export function FamilieClient({
         <>
           <div className="flex items-center gap-2">
             <FamilyFilterTabs value={filter} onChange={setFilter} />
-            <button
-              type="button"
+            <MoreFiltersButton
+              active={moreFiltersOpen || documentsOnly}
+              open={moreFiltersOpen}
               onClick={() => setMoreFiltersOpen((open) => !open)}
-              aria-expanded={moreFiltersOpen}
-              aria-label="Weitere Filter"
-              title="Weitere Filter"
-              className={cn(
-                "flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                moreFiltersOpen || documentsOnly
-                  ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                  : "border-border bg-card text-muted-foreground hover:text-foreground",
-              )}
-              data-testid="family-more-filters"
-            >
-              <SlidersHorizontal className="size-4.5" aria-hidden="true" />
-            </button>
+              testId="family-more-filters"
+            />
           </div>
 
           {moreFiltersOpen && (
@@ -235,9 +203,9 @@ export function FamilieClient({
                 onClick={() => setDocumentsOnly((only) => !only)}
                 aria-pressed={documentsOnly}
                 className={cn(
-                  "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-ring",
                   documentsOnly
-                    ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+                    ? FILTER_ACTIVE
                     : "border-border bg-[var(--sand)] text-muted-foreground hover:text-foreground",
                 )}
                 data-testid="family-filter-documents-only"
@@ -278,7 +246,7 @@ export function FamilieClient({
           resetErrors();
           setAddSheetOpen(true);
         }}
-        className="flex w-full flex-col items-center justify-center gap-0.5 rounded-ordilo-sm border border-dashed border-border px-3 py-4 text-center transition-colors hover:border-[var(--petrol)]/40 hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 press-scale animate-card-in"
+        className="flex w-full flex-col items-center justify-center gap-0.5 rounded-ordilo-sm border border-dashed border-border px-3 py-4 text-center transition-colors hover:border-[var(--petrol)]/40 hover:bg-accent/20 focus-ring press-scale animate-card-in"
         style={{ animationDelay: "100ms" }}
         data-testid="add-member-button"
       >
@@ -315,57 +283,26 @@ export function FamilieClient({
         otherMembers={relationOptions}
       />
 
-      <Dialog open={removeDialogOpen} onOpenChange={setRemoveDialogOpen}>
-        <DialogContent className="max-w-md rounded-ordilo-md">
-          <DialogHeader>
-            <DialogTitle>Person entfernen</DialogTitle>
-            <DialogDescription>
-              Möchtest du{" "}
-              <span className="font-semibold text-foreground">
-                {removeTarget?.name}
-              </span>{" "}
-              wirklich entfernen?
-            </DialogDescription>
-          </DialogHeader>
-
-          {removeError && (
-            <div
-              role="alert"
-              className="rounded-ordilo-sm border border-destructive/30 bg-destructive/5 px-3 py-2"
-            >
-              <p className="text-sm font-medium text-destructive">{removeError}</p>
-            </div>
-          )}
-
-          <DialogFooter className="flex-col gap-2 sm:flex-col">
-            <Button
-              type="button"
-              variant="destructive"
-              disabled={isRemoving}
-              onClick={handleConfirmRemove}
-              className="w-full"
-            >
-              {isRemoving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Wird entfernt…
-                </>
-              ) : (
-                "Entfernen"
-              )}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isRemoving}
-              onClick={() => setRemoveDialogOpen(false)}
-              className="w-full"
-            >
-              Abbrechen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConfirmAction
+        variant="dialog"
+        open={removeDialogOpen}
+        onOpenChange={setRemoveDialogOpen}
+        title="Person entfernen"
+        description={
+          <>
+            Möchtest du{" "}
+            <span className="font-semibold text-foreground">
+              {removeTarget?.name}
+            </span>{" "}
+            wirklich entfernen?
+          </>
+        }
+        confirmLabel="Entfernen"
+        loadingLabel="Wird entfernt…"
+        loading={isRemoving}
+        error={removeError}
+        onConfirm={handleConfirmRemove}
+      />
     </div>
   );
 }

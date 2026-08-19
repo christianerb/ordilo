@@ -203,7 +203,7 @@ export function ReviewCardContent({
               value={documentTitle}
               onChange={(event) => onEditTitle(event.target.value)}
               maxLength={200}
-              className="mt-1 w-full rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              className="mt-1 w-full rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base text-foreground focus-ring sm:text-sm"
               data-testid="review-title-input"
             />
             {titleMissing && (
@@ -223,7 +223,7 @@ export function ReviewCardContent({
               value={documentSummary}
               onChange={(event) => onEditSummary(event.target.value)}
               rows={3}
-              className="mt-1 w-full resize-y rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base leading-relaxed text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm"
+              className="mt-1 w-full resize-y rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base leading-relaxed text-foreground focus-ring sm:text-sm"
               data-testid="review-summary-input"
             />
           </label>
@@ -560,7 +560,7 @@ export function ReviewCardContent({
                         <button
                           type="button"
                           onClick={() => onDeleteTask(index)}
-                          className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                          className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-ring"
                           aria-label="Aufgabe löschen"
                           title="Aufgabe löschen"
                           data-testid={`delete-task-${index}`}
@@ -615,7 +615,7 @@ export function ReviewCardContent({
           <button
             type="button"
             onClick={onUndoDeleteTask}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
             data-testid="undo-delete-task"
           >
             <Undo2 className="size-4" aria-hidden="true" />
@@ -664,7 +664,7 @@ export function ReviewCardContent({
           <button
             type="button"
             onClick={() => onViewOriginal()}
-            className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
             data-testid="review-view-original"
           >
             Original vergleichen
@@ -737,7 +737,7 @@ export function ReviewCardContent({
             type="button"
             onClick={onReanalyze}
             disabled={confirming}
-            className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+            className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-ring rounded-ordilo-sm"
             data-testid="reanalyze-button"
           >
             <RefreshCw className="size-3" aria-hidden="true" />
@@ -898,7 +898,7 @@ function CreateMemberButton({
           const ok = await onCreate().catch(() => false);
           setState(ok ? "done" : "error");
         }}
-        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)] underline-offset-2 hover:underline disabled:opacity-60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)] underline-offset-2 hover:underline disabled:opacity-60 focus-ring rounded-ordilo-sm"
         data-testid="create-member-button"
       >
         {state === "saving" ? (

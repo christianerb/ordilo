@@ -36,7 +36,7 @@ export function OrdiloDisclosure({
         onClick={() => setOpen((current) => !current)}
         aria-expanded={open}
         aria-controls={contentId}
-        className="flex min-h-12 w-full items-center gap-3 py-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex min-h-12 w-full items-center gap-3 py-3 text-left focus-ring"
       >
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium text-foreground">{title}</span>

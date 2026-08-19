@@ -5,20 +5,15 @@ import { useSearchParams } from "next/navigation";
 import {
   UploadCloud,
   Loader2,
-  AlertCircle,
-  RefreshCw,
   FileText,
   Plus,
 } from "lucide-react";
 import { ACCEPTED_FILE_EXTENSIONS } from "@/lib/schemas/document";
 import { DocumentsBrowser } from "@/components/ordilo/documents-browser";
 import { EmptyState } from "@/components/ordilo/empty-state";
+import { ErrorState } from "@/components/ordilo/error-state";
+import { ConfirmAction } from "@/components/ordilo/confirm-action";
 import { Button } from "@/components/ui/button";
-import {
-  OrdiloDrawer,
-  OrdiloDrawerFooter,
-  OrdiloDrawerHeader,
-} from "@/components/ordilo/ordilo-drawer";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { UploadProgressCard } from "@/components/ordilo/scan-wizard/upload-progress";
 import { useScan } from "@/lib/scan/scan-context";
@@ -252,28 +247,13 @@ export function DokumenteClient({
         </div>
       ) : documentsError && !hasDocuments ? (
         // A failed read must not masquerade as an empty family.
-        <div
-          className="flex flex-col items-center gap-3 rounded-ordilo-md border border-border bg-card p-8 text-center shadow-card"
-          data-testid="documents-load-error"
-        >
-          <AlertCircle className="size-7 text-destructive" aria-hidden="true" />
-          <h2 className="text-base font-semibold text-foreground">
-            Deine Dokumente konnten nicht geladen werden
-          </h2>
-          <p className="max-w-xs text-sm text-muted-foreground">
-            {documentsError}
-          </p>
-          <Button
-            type="button"
-            size="lg"
-            onClick={() => void loadDocuments()}
-            className="mt-1 h-11 rounded-ordilo-md"
-            data-testid="documents-load-retry"
-          >
-            <RefreshCw className="size-4" aria-hidden="true" />
-            Nochmal versuchen
-          </Button>
-        </div>
+        <ErrorState
+          title="Deine Dokumente konnten nicht geladen werden"
+          description={documentsError}
+          retryLabel="Nochmal versuchen"
+          onRetry={() => void loadDocuments()}
+          testId="documents-load-error"
+        />
       ) : hasDocuments ? (
         <div className="space-y-3" data-testid="document-list">
           <DocumentsBrowser
@@ -298,7 +278,7 @@ export function DokumenteClient({
           <button
             type="button"
             onClick={() => pdfInputRef.current?.click()}
-            className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
           >
             PDF hochladen
           </button>
@@ -311,45 +291,28 @@ export function DokumenteClient({
         </div>
       </section>
 
-      {/* Delete confirmation drawer */}
-      <OrdiloDrawer
-        variant="form"
+      {/* Delete confirmation */}
+      <ConfirmAction
+        variant="drawer"
         open={!!deleteConfirmId}
         onOpenChange={(open) => {
           if (!open) setDeleteConfirmId(null);
         }}
-        data-testid="delete-confirm-sheet"
-      >
-        <OrdiloDrawerHeader
-          title="Dokument löschen?"
-          description="Das Dokument wird für immer entfernt. Vielleicht vorher noch kurz durchschauen?"
-        />
-        <OrdiloDrawerFooter>
-          <Button
-            variant="outline"
-            className="flex-1"
-            onClick={() => setDeleteConfirmId(null)}
-          >
-            Abbrechen
-          </Button>
-          <Button
-            variant="destructive"
-            className="flex-1"
-            onClick={async () => {
-              if (!deleteConfirmId) return;
-              const deleted = await handleDeleteDocument(deleteConfirmId);
-              setDeleteConfirmId(null);
-              closeDocument();
-              // On failure handleDeleteDocument restores the row and shows
-              // its own error toast — do not also claim success.
-              if (deleted) toast.success("Dokument entfernt");
-            }}
-            data-testid="confirm-delete-button"
-          >
-            Löschen
-          </Button>
-        </OrdiloDrawerFooter>
-      </OrdiloDrawer>
+        title="Dokument löschen?"
+        description="Das Dokument wird für immer entfernt. Vielleicht vorher noch kurz durchschauen?"
+        confirmLabel="Löschen"
+        onConfirm={async () => {
+          if (!deleteConfirmId) return;
+          const deleted = await handleDeleteDocument(deleteConfirmId);
+          setDeleteConfirmId(null);
+          closeDocument();
+          // On failure handleDeleteDocument restores the row and shows
+          // its own error toast — do not also claim success.
+          if (deleted) toast.success("Dokument entfernt");
+        }}
+        testId="delete-confirm-sheet"
+        confirmTestId="confirm-delete-button"
+      />
     </div>
   );
 }

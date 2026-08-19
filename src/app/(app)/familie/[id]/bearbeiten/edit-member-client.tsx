@@ -170,7 +170,7 @@ export function EditMemberClient({
               type="button"
               aria-label="Aktionen"
               data-testid="edit-member-actions"
-              className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground focus-ring"
             >
               <MoreHorizontal className="size-4" aria-hidden="true" />
             </button>

@@ -120,7 +120,7 @@ export function TodayHero({
           onClick={handleComplete}
           disabled={completing !== null}
           data-testid="today-hero-done"
-          className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[var(--mist-light)] bg-[var(--surface-box)] transition-transform press-scale hover:border-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex size-12 shrink-0 items-center justify-center rounded-full border border-[var(--mist-light)] bg-[var(--surface-box)] transition-transform press-scale hover:border-[var(--petrol)] focus-ring"
         >
           <span
             className={cn(
@@ -180,7 +180,7 @@ export function TodayHero({
         </div>
         <Link
           href={`/aufgaben?task=${task.id}`}
-          className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-[var(--surface-box)] px-2.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-[var(--surface-box)] px-2.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-white focus-ring"
         >
           Details
           <ChevronRight className="size-3.5" aria-hidden="true" />

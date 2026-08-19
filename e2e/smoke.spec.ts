@@ -53,12 +53,12 @@ test("unauthenticated visit to / shows the landing page", async ({ page }) => {
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("legal pages render with their placeholder notice", async ({ page }) => {
-  for (const path of ["/impressum", "/datenschutz"]) {
-    await page.goto(path);
-    await expect(
-      page.getByTestId("legal-placeholder-notice"),
-      `placeholder notice on ${path}`,
-    ).toBeVisible();
-  }
+test("legal pages render their content", async ({ page }) => {
+  await page.goto("/impressum");
+  await expect(page.getByRole("heading", { name: "Impressum" })).toBeVisible();
+
+  await page.goto("/datenschutz");
+  await expect(
+    page.getByRole("heading", { name: "Datenschutzerklärung" }),
+  ).toBeVisible();
 });

@@ -50,7 +50,7 @@ export function CardActions({
           type="button"
           onClick={(e) => e.stopPropagation()}
           className={cn(
-            "flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "flex size-7 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground/50 transition-colors hover:bg-accent hover:text-foreground focus-ring",
             className,
           )}
           aria-label="Aktionen"

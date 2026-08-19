@@ -105,7 +105,7 @@ export function ComposerOverlay({
             onClick={onClose}
             aria-label="Schließen"
             data-testid="composer-overlay-close"
-            className="flex size-11 items-center justify-center rounded-full bg-[var(--surface-box)] text-foreground shadow-card transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-11 items-center justify-center rounded-full bg-[var(--surface-box)] text-foreground shadow-card transition-colors hover:bg-accent focus-ring"
           >
             <X className="size-5" aria-hidden="true" />
           </button>
@@ -113,7 +113,7 @@ export function ComposerOverlay({
             href="/suche?history=1"
             onClick={onClose}
             aria-label="Chat-Verlauf"
-            className="flex size-11 items-center justify-center rounded-full bg-[var(--surface-box)] text-foreground shadow-card transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-11 items-center justify-center rounded-full bg-[var(--surface-box)] text-foreground shadow-card transition-colors hover:bg-accent focus-ring"
           >
             <History className="size-5" aria-hidden="true" />
           </Link>

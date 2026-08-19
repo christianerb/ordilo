@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FILTER_ACTIVE } from "@/lib/ui-styles";
 
 export type FilterType = "person" | "category" | "document_type";
 
@@ -65,7 +66,7 @@ export function FilterChips({
         <button
           type="button"
           onClick={onClearAll}
-          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground focus-ring"
           aria-label="Filter zurücksetzen"
         >
           <X className="size-3" aria-hidden="true" />
@@ -91,9 +92,9 @@ function FilterChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition-all focus-ring",
         active
-          ? "border-[var(--petrol)]/20 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+          ? FILTER_ACTIVE
           : "border-border/80 bg-card/70 text-muted-foreground hover:border-border hover:bg-card hover:text-foreground",
       )}
     >

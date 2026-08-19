@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCodeEligibleAdmin, getVerifiedAdmin } from "@/lib/admin/access";
 import { getPlatformOverview } from "@/lib/admin/platform-data";
+import { formatGermanDateTime } from "@/lib/format";
 import { AdminLogoutButton } from "./admin-logout-button";
 
 export const metadata = {
@@ -25,14 +26,6 @@ function parsePage(value: string | string[] | undefined): number {
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat("de-DE", { maximumFractionDigits: 1 }).format(value);
-}
-
-function formatDate(value: string | null): string {
-  if (!value) return "Noch nie";
-  return new Intl.DateTimeFormat("de-DE", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
 }
 
 export default async function AdminDashboardPage({
@@ -165,9 +158,9 @@ export default async function AdminDashboardPage({
                 {visibleAccounts.map((account) => (
                   <tr key={account.id} className="border-t border-border">
                     <td className="px-5 py-3 font-medium text-foreground">{account.email}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{formatDate(account.createdAt)}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{formatDate(account.lastSignInAt)}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{formatDate(account.lastActivityAt)}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.createdAt)}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastSignInAt)}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastActivityAt)}</td>
                     <td className="px-5 py-3 text-muted-foreground">{account.familyCount}</td>
                   </tr>
                 ))}

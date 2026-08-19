@@ -183,7 +183,7 @@ export function NoteEditor({
             type="button"
             onClick={() => setMode("edit")}
             className={cn(
-              "flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium transition-colors focus-ring",
               mode === "edit"
                 ? "bg-white text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
@@ -197,7 +197,7 @@ export function NoteEditor({
             type="button"
             onClick={() => setMode("preview")}
             className={cn(
-              "flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "flex items-center gap-1 rounded-ordilo-sm px-2 py-1 text-xs font-medium transition-colors focus-ring",
               mode === "preview"
                 ? "bg-white text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
@@ -223,7 +223,7 @@ export function NoteEditor({
             <button
               type="button"
               onClick={onRemoveImage}
-              className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-foreground text-background shadow-md transition-colors hover:bg-foreground/80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="absolute -right-2 -top-2 flex size-6 items-center justify-center rounded-full bg-foreground text-background shadow-md transition-colors hover:bg-foreground/80 focus-ring"
               aria-label="Bild entfernen"
             >
               <X className="size-3.5" aria-hidden="true" />
@@ -279,7 +279,7 @@ function ToolbarButton({
     <button
       type="button"
       onClick={onClick}
-      className="flex size-8 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex size-8 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
       aria-label={label}
       title={label}
     >

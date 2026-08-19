@@ -727,6 +727,16 @@
     transform: scale(0.97);
   }
 
+  /* Shared focus ring — the single Ordilo focus treatment.
+     Replaces 198 inline `focus-visible:outline-none focus-visible:ring-[3px]
+     focus-visible:ring-ring/50` strings across the codebase. */
+  .focus-ring {
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 50%, transparent);
+    }
+  }
+
   /* Tabular numbers — for aligned numeric data (counts, dates, scores) */
   .tabular-nums {
     font-variant-numeric: tabular-nums;

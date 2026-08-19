@@ -73,7 +73,7 @@ function SecretReveal({ documentId }: { documentId: string }) {
               <button
                 type="button"
                 onClick={toggleShow}
-                className="rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-ring"
                 aria-label={show ? "Geheim verbergen" : "Geheim anzeigen"}
               >
                 {show ? (
@@ -85,7 +85,7 @@ function SecretReveal({ documentId }: { documentId: string }) {
               <button
                 type="button"
                 onClick={copy}
-                className="rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-ring"
                 aria-label="Geheim kopieren"
               >
                 {copied ? (
@@ -204,7 +204,7 @@ function SecretEditor({
         <button
           type="button"
           onClick={() => setShow((s) => !s)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-ordilo-sm p-1 text-muted-foreground hover:text-foreground focus-ring"
           aria-label={show ? "Passwort verbergen" : "Passwort anzeigen"}
         >
           {show ? (
@@ -327,7 +327,7 @@ function CredentialsPanel({
                 type="button"
                 onClick={onEditSecret}
                 data-testid="secret-add-button"
-                className="rounded-ordilo-sm px-1.5 py-0.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="rounded-ordilo-sm px-1.5 py-0.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent focus-ring"
               >
                 Hinterlegen
               </button>
@@ -341,7 +341,7 @@ function CredentialsPanel({
           <button
             type="button"
             onClick={onEditSecret}
-            className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-ring"
             data-testid="secret-change-button"
           >
             Passwort ändern
@@ -408,7 +408,7 @@ function SecretSection({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="rounded-ordilo-sm px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-ring"
           data-testid="secret-change-button"
         >
           Passwort ändern

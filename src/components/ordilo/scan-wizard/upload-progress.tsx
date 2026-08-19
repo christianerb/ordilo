@@ -166,7 +166,7 @@ export function UploadProgressCard({
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-1.5 rounded-ordilo-sm px-2.5 py-1.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex items-center gap-1.5 rounded-ordilo-sm px-2.5 py-1.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
             aria-label="Nochmal versuchen"
           >
             <RefreshCw className="size-3.5" aria-hidden="true" />
@@ -175,7 +175,7 @@ export function UploadProgressCard({
           <button
             type="button"
             onClick={onDismiss}
-            className="inline-flex items-center justify-center rounded-ordilo-sm px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex items-center justify-center rounded-ordilo-sm px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent focus-ring"
             aria-label="Schließen"
           >
             Schließen

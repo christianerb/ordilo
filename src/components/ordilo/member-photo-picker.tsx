@@ -168,7 +168,7 @@ export function MemberPhotoPicker({
             type="button"
             onClick={() => inputRef.current?.click()}
             disabled={uploading || disabled}
-            className="flex h-9 items-center gap-1.5 rounded-full bg-secondary px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex h-9 items-center gap-1.5 rounded-full bg-secondary px-4 text-sm font-medium text-foreground transition-colors hover:bg-accent focus-ring"
             data-testid="member-photo-change"
           >
             <Camera className="size-4" aria-hidden="true" />

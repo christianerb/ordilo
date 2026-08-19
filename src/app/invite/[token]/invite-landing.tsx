@@ -828,7 +828,7 @@ export function InviteLanding({
                 type="button"
                 onClick={handleResend}
                 disabled={resendCooldown > 0 || resending || verifying}
-                className="inline-flex items-center gap-1.5 rounded-ordilo-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] disabled:cursor-default disabled:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="inline-flex items-center gap-1.5 rounded-ordilo-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] disabled:cursor-default disabled:text-muted-foreground focus-ring"
                 data-testid="resend-button"
               >
                 <RefreshCw
@@ -845,7 +845,7 @@ export function InviteLanding({
               <button
                 type="button"
                 onClick={handleChangeEmail}
-                className="inline-flex items-center gap-1.5 rounded-ordilo-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="inline-flex items-center gap-1.5 rounded-ordilo-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
                 data-testid="change-email-button"
               >
                 <Pencil className="size-4" aria-hidden="true" />

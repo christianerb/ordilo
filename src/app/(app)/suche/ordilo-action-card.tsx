@@ -231,7 +231,7 @@ export function OrdiloActionCard({
             type="button"
             onClick={onConfirm}
             disabled={isWorking}
-            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-3.5 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+            className="inline-flex min-h-10 items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-3.5 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:opacity-60"
             data-testid="action-card-confirm"
           >
             {isWorking ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Check className="size-4" aria-hidden="true" />}
@@ -241,7 +241,7 @@ export function OrdiloActionCard({
             type="button"
             onClick={onAdjust}
             disabled={isWorking}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring disabled:opacity-60"
             data-testid="action-card-adjust"
           >
             <Pencil className="size-3.5" aria-hidden="true" />
@@ -251,7 +251,7 @@ export function OrdiloActionCard({
             type="button"
             onClick={onDismiss}
             disabled={isWorking}
-            className="ml-auto flex size-10 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-60"
+            className="ml-auto flex size-10 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-ring disabled:opacity-60"
             aria-label="Nicht übernehmen"
             title="Nicht übernehmen"
             data-testid="action-card-dismiss"
@@ -267,7 +267,7 @@ export function OrdiloActionCard({
           <button
             type="button"
             onClick={onUndo}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
             data-testid="action-card-undo"
           >
             <RotateCcw className="size-3.5" aria-hidden="true" />

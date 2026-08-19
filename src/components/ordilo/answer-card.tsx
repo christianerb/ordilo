@@ -142,7 +142,7 @@ export function AnswerCard({ card, onActionClick, className }: AnswerCardProps) 
           type="button"
           onClick={() => onActionClick?.(card.actionDocumentId!)}
           data-testid="answer-card-action"
-          className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
         >
           {actionLabel}
           <ArrowRight className="size-4" aria-hidden="true" />

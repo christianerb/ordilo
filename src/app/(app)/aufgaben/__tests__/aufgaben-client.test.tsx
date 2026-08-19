@@ -522,7 +522,7 @@ describe("AufgabenClient — verwerfen", () => {
     fireEvent.click(await screen.findByTestId("card-action-delete"));
 
     const dialog = await screen.findByTestId("task-delete-confirm-dialog");
-    expect(dialog.className).toContain("max-w-sm");
+    expect(dialog.className).toContain("max-w-md");
     expect(screen.queryByTestId("task-delete-confirm-sheet")).toBeNull();
   });
 

@@ -76,7 +76,7 @@ function SidebarFooter({
             type="submit"
             title={collapsed ? "Abmelden" : undefined}
             className={cn(
-              "flex w-full items-center rounded-ordilo-sm py-3 text-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "flex w-full items-center rounded-ordilo-sm py-3 text-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-ring",
               collapsed ? "justify-center px-0" : "gap-3 px-3",
             )}
           >
@@ -109,7 +109,7 @@ function SidebarFooter({
           aria-label={displayName}
           title={collapsed ? displayName : profile.familyName}
           className={cn(
-            "group relative flex items-center rounded-ordilo-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "group relative flex items-center rounded-ordilo-sm transition-colors focus-ring",
             collapsed
               ? "justify-center p-1.5 hover:bg-[var(--sand-warm)]"
               : "w-full gap-2.5 p-2 hover:bg-white/60",
@@ -291,7 +291,7 @@ export function SidebarNav({
         <Link
           href="/home"
           className={cn(
-            "rounded-ordilo-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "rounded-ordilo-sm focus-ring",
             collapsed && "flex justify-center",
           )}
           aria-label="Ordilo Startseite"
@@ -308,7 +308,7 @@ export function SidebarNav({
           aria-label={collapsed ? "Seitenleiste ausklappen" : "Seitenleiste einklappen"}
           aria-pressed={collapsed}
           className={cn(
-            "flex size-10 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "flex size-10 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-ring",
             !collapsed && "absolute right-2 top-2.5",
           )}
         >

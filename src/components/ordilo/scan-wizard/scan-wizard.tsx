@@ -121,7 +121,7 @@ export function ScanWizard({
               <button
                 type="button"
                 onClick={onRetake}
-                className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
                 aria-label="Neu scannen — dieses Dokument verwerfen"
                 data-testid="review-step-retake-button"
               >
@@ -131,7 +131,7 @@ export function ScanWizard({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex size-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent focus-ring"
                 aria-label="Schließen"
                 data-testid="review-step-close-button"
               >

@@ -106,7 +106,7 @@ export function InviteAction() {
                   onFocus={(e) => e.target.select()}
                   aria-label="Einladungslink"
                   data-testid="invite-link-input"
-                  className="min-w-0 flex-1 truncate rounded-ordilo-sm border border-border bg-[var(--warm-white)]/70 px-2.5 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="min-w-0 flex-1 truncate rounded-ordilo-sm border border-border bg-[var(--warm-white)]/70 px-2.5 py-1.5 text-xs text-foreground focus-ring"
                 />
                 <Button
                   type="button"
