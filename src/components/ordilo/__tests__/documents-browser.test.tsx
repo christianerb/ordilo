@@ -249,50 +249,26 @@ describe("DocumentsBrowser", () => {
     expect(mockOpenDocument).not.toHaveBeenCalled();
   });
 
-  it("shows the recently added rail only for an unfiltered, longer list", async () => {
+  it("filters documents locally without an Ordilo search action", async () => {
     vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
 
-    const docs = Array.from({ length: 8 }, (_, i) =>
-      buildDoc({
-        id: `doc-${i}`,
-        title: `Dokument ${i}`,
-        created_at: `2026-01-${String(i + 1).padStart(2, "0")}T10:00:00Z`,
-      }),
+    render(
+      <DocumentsBrowser
+        documents={[
+          buildDoc({ id: "doc-1", title: "Kita-Vertrag" }),
+          buildDoc({ id: "doc-2", title: "Stromrechnung" }),
+        ]}
+      />,
     );
-
-    const { rerender } = render(<DocumentsBrowser documents={docs} />);
 
     await screen.findAllByTestId("documents-row");
-    expect(screen.getAllByTestId("documents-recent-card")).toHaveLength(6);
-    // Newest first.
-    expect(screen.getAllByTestId("documents-recent-card")[0].textContent).toContain(
-      "Dokument 7",
-    );
-
-    // Searching turns the whole screen into a result list — no rail.
     fireEvent.change(screen.getByTestId("documents-search-input"), {
-      target: { value: "Dokument 1" },
-    });
-    expect(screen.queryByTestId("documents-recent")).toBeNull();
-
-    // A short library has nothing to shortcut to either.
-    rerender(<DocumentsBrowser documents={docs.slice(0, 3)} />);
-    expect(screen.queryByTestId("documents-recent")).toBeNull();
-  });
-
-  it("hands the typed text to Ordilo instead of searching, when asked", async () => {
-    vi.mocked(fetchDocumentsTableMeta).mockResolvedValue({});
-
-    render(<DocumentsBrowser documents={[buildDoc({ id: "doc-1" })]} />);
-
-    await screen.findByTestId("documents-row");
-    fireEvent.change(screen.getByTestId("documents-search-input"), {
-      target: { value: "Was kostet die Kita?" },
+      target: { value: "kita" },
     });
 
-    expect(
-      screen.getByTestId("documents-ask-ordilo").getAttribute("href"),
-    ).toBe("/suche?q=Was%20kostet%20die%20Kita%3F");
+    expect(screen.getAllByTestId("documents-row")).toHaveLength(1);
+    expect(screen.getByPlaceholderText("Dokumente durchsuchen")).toBeDefined();
+    expect(screen.queryByTestId("documents-ask-ordilo")).toBeNull();
   });
 
   it("fetches metadata only for documents it has not loaded yet", async () => {

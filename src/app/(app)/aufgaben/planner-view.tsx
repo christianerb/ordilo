@@ -1,15 +1,25 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import type { ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, type ReactNode } from "react";
+import { CalendarDays, ListChecks, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AnimatedNumber } from "@/components/ordilo/animated-number";
-import { OrdiloSegmentedNav } from "@/components/ordilo/ordilo-segmented-nav";
+import { OrdiloFilterTabs } from "@/components/ordilo/ordilo-filter-tabs";
 import {
   PlannerActionsProvider,
   usePlannerActions,
 } from "./planner-actions-context";
+
+type PlannerViewId = "aufgaben" | "planer";
+
+function getPlannerView(tab: string | null): PlannerViewId {
+  return tab === "planer" ? "planer" : "aufgaben";
+}
+
+function getPlannerHref(view: PlannerViewId): string {
+  return view === "planer" ? "/aufgaben?tab=planer" : "/aufgaben";
+}
 
 /**
  * The Familienplaner page shell: page heading with the primary create
@@ -31,24 +41,46 @@ export function PlannerView({
   calendar: ReactNode;
   familyId: string | null;
 }) {
-  const showPlaner = useSearchParams().get("tab") === "planer";
+  const router = useRouter();
+  const routeView = getPlannerView(useSearchParams().get("tab"));
+  const [view, setView] = useState<PlannerViewId>(routeView);
+  const [renderedRouteView, setRenderedRouteView] = useState(routeView);
+  // Switch the visible client view before the URL navigation reaches the
+  // server. Later deep links and browser back/forward still reconcile to
+  // the URL, just like the immediate switcher in Meine Ablage.
+  if (routeView !== renderedRouteView) {
+    setRenderedRouteView(routeView);
+    setView(routeView);
+  }
+  const showPlaner = view === "planer";
 
   return (
     <PlannerActionsProvider>
-      <PlannerHeader showPlaner={showPlaner} familyId={familyId} />
+      <PlannerHeader
+        view={view}
+        familyId={familyId}
+        onViewChange={(nextView) => {
+          if (nextView === view) return;
+          setView(nextView);
+          router.push(getPlannerHref(nextView));
+        }}
+      />
       {showPlaner ? calendar : tasks}
     </PlannerActionsProvider>
   );
 }
 
 function PlannerHeader({
-  showPlaner,
+  view,
   familyId,
+  onViewChange,
 }: {
-  showPlaner: boolean;
+  view: PlannerViewId;
   familyId: string | null;
+  onViewChange: (view: PlannerViewId) => void;
 }) {
   const { openCreate, openCount } = usePlannerActions();
+  const showPlaner = view === "planer";
 
   return (
     <div className="space-y-3">
@@ -80,17 +112,16 @@ function PlannerHeader({
         )}
       </div>
 
-      <OrdiloSegmentedNav
-        label="Ansicht im Familienplaner"
-        items={[
-          { href: "/aufgaben", label: "Aufgaben", active: !showPlaner },
-          {
-            href: "/aufgaben?tab=planer",
-            label: "Planer",
-            active: showPlaner,
-          },
+      <OrdiloFilterTabs
+        value={view}
+        onChange={onViewChange}
+        ariaLabel="Ansicht im Familienplaner"
+        tabs={[
+          { key: "aufgaben", label: "Aufgaben", icon: ListChecks },
+          { key: "planer", label: "Planer", icon: CalendarDays },
         ]}
         testId="planner-view-switcher"
+        className="w-full max-w-[17rem] flex-none"
       />
     </div>
   );

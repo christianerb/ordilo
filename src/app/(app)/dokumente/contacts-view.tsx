@@ -5,8 +5,6 @@ import {
   Building2,
   Mail,
   Phone,
-  Plus,
-  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +18,7 @@ import {
   type ContactInput,
 } from "@/lib/contacts";
 import { ContactActionLinks } from "@/components/ordilo/contact-actions";
+import { AblageSearchInput } from "@/components/ordilo/ablage-search-input";
 import {
   createContact,
   updateContact,
@@ -37,15 +36,23 @@ const EMPTY_CONTACT: ContactInput = {
 export function ContactsView({
   initialContacts,
   onOpenSource,
+  createRequest = 0,
 }: {
   initialContacts: ContactRow[];
   onOpenSource: (documentId: string) => void;
+  createRequest?: number;
 }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ContactRow | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ContactRow | null>(null);
+  const [handledCreateRequest, setHandledCreateRequest] = useState(createRequest);
+  if (createRequest !== handledCreateRequest) {
+    setHandledCreateRequest(createRequest);
+    setEditing(null);
+    setFormOpen(true);
+  }
 
   const suggestions = contacts.filter((contact) => contact.status === "suggested");
   const confirmed = useMemo(() => {
@@ -65,30 +72,13 @@ export function ContactsView({
 
   return (
     <div className="space-y-5 animate-card-in" data-testid="contacts-view">
-      <div className="flex items-center gap-2">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Name oder Organisation"
-            aria-label="Kontakte durchsuchen"
-            className="h-12 w-full rounded-full border border-border bg-card pl-11 pr-4 text-sm shadow-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-          />
-        </div>
-        <Button
-          size="icon"
-          className="size-12 shrink-0 rounded-full"
-          aria-label="Kontakt hinzufügen"
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus className="size-5" />
-        </Button>
-      </div>
+      <AblageSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Kontakte durchsuchen"
+        ariaLabel="Kontakte durchsuchen"
+        testId="contacts-search-input"
+      />
 
       {suggestions.length > 0 && (
         <section aria-labelledby="contact-suggestions-heading">

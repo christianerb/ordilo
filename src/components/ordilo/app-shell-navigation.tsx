@@ -3,11 +3,9 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
-  CalendarDays,
   ChevronDown,
   ChevronRight,
   ChevronsLeft,
-  CircleCheck,
   History,
   LogOut,
   Menu,
@@ -18,8 +16,8 @@ import { logout } from "@/app/(app)/actions";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import { ComposerOverlay } from "@/components/ordilo/composer-overlay";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
-import { useSuggestionChips } from "@/lib/search/suggestion-chips-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { ComposerSuggestionChips } from "@/components/ordilo/composer-suggestion-chips";
 import {
   Drawer,
   DrawerClose,
@@ -151,6 +149,7 @@ export function Topbar({
                       <div className="ml-10 mt-1 space-y-0.5 rounded-ordilo-sm bg-[var(--surface-story)] px-2 py-1">
                         {tab.children.map((child) => {
                           const childActive = isSubItemActive(child, pathname, currentTab);
+                          const ChildIcon = child.icon;
                           return (
                             <Link
                               key={child.href}
@@ -163,11 +162,10 @@ export function Topbar({
                                   : "text-foreground hover:bg-[var(--sand-warm)]",
                               )}
                             >
-                              {child.label === "Aufgaben" ? (
-                                <CircleCheck className="size-4 text-[var(--petrol)]" aria-hidden="true" />
-                              ) : (
-                                <CalendarDays className="size-4 text-[var(--petrol)]" aria-hidden="true" />
-                              )}
+                              <ChildIcon
+                                className="size-4 text-[var(--petrol)]"
+                                aria-hidden="true"
+                              />
                               {child.label}
                             </Link>
                           );
@@ -223,7 +221,7 @@ function NavIcon({
       backgroundColor: "color-mix(in srgb, var(--petrol) 8%, var(--warm-white))",
       color: "var(--petrol)",
     },
-    Dokumente: {
+    "Meine Ablage": {
       backgroundColor: "var(--wash-blue)",
       color: "var(--petrol)",
     },
@@ -260,37 +258,6 @@ function NavIcon({
  * them via SuggestionChipsProvider (currently /home, derived from the
  * daily briefing). Tapping a chip submits it like a typed question.
  */
-function SuggestionChipsRow({
-  onSelect,
-}: {
-  onSelect: (query: string) => void;
-}) {
-  const chips = useSuggestionChips();
-  if (chips.length === 0) return null;
-  return (
-    <div className="pb-2">
-      <p className="mb-1.5 text-xs font-medium text-[var(--mist-dark)]">
-        Häufig gefragt
-      </p>
-      <div
-        data-testid="suggestion-chips"
-        className="flex gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        {chips.map((chip) => (
-          <button
-            key={chip}
-            type="button"
-            onClick={() => onSelect(chip)}
-            className="shrink-0 rounded-full border border-border/70 bg-[var(--surface-box)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-ring"
-          >
-            {chip}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 export function MobileComposer({
   onSearch,
   onOpenActions,
@@ -355,9 +322,6 @@ export function MobileComposer({
             for everything else (scan, note, collection) — Granola-style.
             Focusing the pill zooms into the fullscreen overlay below instead
             of growing in place. */}
-        <div className="mx-auto w-full max-w-md">
-          <SuggestionChipsRow onSelect={onSearch} />
-        </div>
         <div className="mx-auto flex w-full max-w-md items-center gap-2">
           <div className="min-w-0 flex-1">
             <AISearchBar
@@ -409,6 +373,8 @@ export function DesktopBottomBar({
   onOpenActions: () => void;
   isLoading?: boolean;
 }) {
+  const [composerActive, setComposerActive] = useState(false);
+
   return (
     <div
       data-testid="desktop-bottom-bar"
@@ -421,26 +387,36 @@ export function DesktopBottomBar({
         data-testid="desktop-floating-dock"
         className="pointer-events-auto mx-auto flex w-full max-w-6xl flex-col gap-1 rounded-ordilo-md border border-white/80 bg-[var(--sand-light)] p-2 shadow-card-hover"
       >
-        <SuggestionChipsRow onSelect={onSearch} />
-        <div className="flex w-full items-center gap-2">
-          <div className="min-w-0 flex-1">
-            <AISearchBar
-              onSubmit={onSearch}
-              isLoading={isLoading}
-              placeholder="Frage Ordilo oder suche nach Dokumenten…"
-              className="py-1"
-            />
+        <div
+          className="space-y-2"
+          onFocusCapture={() => setComposerActive(true)}
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              setComposerActive(false);
+            }
+          }}
+        >
+          {composerActive && <ComposerSuggestionChips onSelect={onSearch} />}
+          <div className="flex w-full items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <AISearchBar
+                onSubmit={onSearch}
+                isLoading={isLoading}
+                placeholder="Frage Ordilo oder suche nach Dokumenten…"
+                className="py-1"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={onOpenActions}
+              disabled={isLoading}
+              aria-label="Aktionen"
+              data-testid="composer-actions-button"
+              className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:opacity-50"
+            >
+              <Plus className="size-5" aria-hidden="true" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onOpenActions}
-            disabled={isLoading}
-            aria-label="Aktionen"
-            data-testid="composer-actions-button"
-            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:opacity-50"
-          >
-            <Plus className="size-5" aria-hidden="true" />
-          </button>
         </div>
       </div>
     </div>

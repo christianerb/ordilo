@@ -2,9 +2,11 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSearchParamsGet = vi.fn<(key: string) => string | null>(() => null);
+const mockPush = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => ({ get: mockSearchParamsGet }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 import { PlannerView } from "@/app/(app)/aufgaben/planner-view";
@@ -57,15 +59,16 @@ describe("PlannerView", () => {
 
     const switcher = screen.getByTestId("planner-view-switcher");
     expect(switcher).toHaveAccessibleName("Ansicht im Familienplaner");
+    expect(switcher.className).toContain("max-w-[17rem]");
     expect(
-      screen.getByRole("link", { name: "Aufgaben" }),
-    ).toHaveAttribute("href", "/aufgaben");
-    expect(
-      screen.getByRole("link", { name: "Planer" }),
-    ).toHaveAttribute("href", "/aufgaben?tab=planer");
-    expect(screen.getByRole("link", { name: "Aufgaben" })).toHaveAttribute(
-      "aria-current",
-      "page",
+      screen.getByRole("tab", { name: "Aufgaben" }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Planer" })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(screen.getByRole("tab", { name: "Planer" }).className).toContain(
+      "cursor-pointer",
     );
   });
 
@@ -75,13 +78,23 @@ describe("PlannerView", () => {
     );
     renderView();
 
-    expect(screen.getByRole("link", { name: "Planer" })).toHaveAttribute(
-      "aria-current",
-      "page",
+    expect(screen.getByRole("tab", { name: "Planer" })).toHaveAttribute(
+      "aria-selected",
+      "true",
     );
     expect(
-      screen.getByRole("link", { name: "Aufgaben" }),
-    ).not.toHaveAttribute("aria-current");
+      screen.getByRole("tab", { name: "Aufgaben" }),
+    ).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("navigates to Planer when that tab is selected", () => {
+    renderView();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Planer" }));
+
+    expect(mockPush).toHaveBeenCalledWith("/aufgaben?tab=planer");
+    expect(screen.getByTestId("calendar-view")).toBeInTheDocument();
+    expect(screen.queryByTestId("tasks-view")).not.toBeInTheDocument();
   });
 
   it("labels the header action after the active view", () => {

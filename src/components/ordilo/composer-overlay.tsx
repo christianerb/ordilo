@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { X, History } from "lucide-react";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
+import { ComposerSuggestionChips } from "@/components/ordilo/composer-suggestion-chips";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { getGreeting } from "@/components/ordilo/app-shell-shared";
 
@@ -128,6 +129,9 @@ export function ComposerOverlay({
         </div>
 
         <div className="px-4 pb-2">
+          <div className="mb-3">
+            <ComposerSuggestionChips onSelect={submitQuery} />
+          </div>
           {recentQueries.length > 0 && (
             <div
               className="mb-3 flex gap-2 overflow-x-auto pb-1"
