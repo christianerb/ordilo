@@ -162,6 +162,18 @@ export function todayLocalDate(now = new Date()): string {
   return now.toLocaleDateString("sv-SE");
 }
 
+/**
+ * Today's date as an ISO `YYYY-MM-DD` string in the local timezone, for
+ * the `min` attribute of date inputs. Unlike `todayLocalDate` this uses
+ * `toISOString()` (UTC) which is fine for a min boundary — a few hours
+ * of drift never makes "today" an invalid minimum.
+ */
+export function todayAsIsoDate(): string {
+  const today = new Date();
+  const offset = today.getTimezoneOffset() * 60_000;
+  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
+}
+
 // ---------------------------------------------------------------------------
 // Sections
 // ---------------------------------------------------------------------------

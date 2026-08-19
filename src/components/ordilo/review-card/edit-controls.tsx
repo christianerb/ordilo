@@ -30,7 +30,7 @@ export function FieldEditButton({
       ref={buttonRef}
       type="button"
       onClick={onClick}
-      className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
       aria-label={label}
       title={label}
       data-testid={testId}
@@ -88,7 +88,7 @@ export function CategoryEditControl({
           }}
           onBlur={() => setIsEditing(false)}
           placeholder="Eigene Sammlung"
-          className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="w-32 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-base sm:text-sm text-foreground focus-ring"
           aria-label="Sammlung eingeben"
           data-testid="category-edit-input"
         />
@@ -96,7 +96,7 @@ export function CategoryEditControl({
           <button
             type="button"
             onClick={() => setIsFreeText(false)}
-            className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent focus-ring"
             aria-label="Zurück zur Auswahl"
           >
             <ChevronDown className="size-4" aria-hidden="true" />
@@ -122,7 +122,7 @@ export function CategoryEditControl({
             setIsEditing(false);
           }
         }}
-        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-w-[16rem]"
+        className="w-full min-w-[12rem] appearance-none truncate rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 pr-7 text-base sm:text-sm text-foreground focus-ring sm:min-w-[16rem]"
       aria-label="Sammlung wechseln"
         data-testid="category-edit-select"
       >
@@ -182,7 +182,7 @@ export function FactEditControl({
       onChange={(e) => onChange(e.target.value)}
       onBlur={() => setIsEditing(false)}
       autoFocus
-      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 font-mono text-base sm:text-sm text-foreground focus-ring sm:w-52"
       aria-label={label}
       data-testid="fact-edit-input"
     />
@@ -230,7 +230,7 @@ export function TextEditControl({
         }
       }}
       autoFocus
-      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:w-52"
+      className="w-40 rounded-ordilo-sm border border-border bg-card px-2.5 py-2 text-base sm:text-sm text-foreground focus-ring sm:w-52"
       aria-label={label}
       data-testid={`${testId}-input`}
     />
@@ -267,7 +267,7 @@ export function DateEditControl({
       <button
         type="button"
         onClick={() => setIsEditing(true)}
-        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+        className="inline-flex items-center gap-1 text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring rounded-ordilo-sm"
         aria-label={label}
         data-testid="add-date-button"
       >
@@ -283,7 +283,7 @@ export function DateEditControl({
         type="button"
         onClick={() => setIsEditing(true)}
         className={cn(
-          "inline-flex min-h-11 items-center justify-center rounded-ordilo-sm transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "inline-flex min-h-11 items-center justify-center rounded-ordilo-sm transition-colors focus-ring",
           compact
             ? "gap-1 px-1.5 text-[var(--petrol)] hover:text-[var(--petrol-dark)]"
             : "size-11 text-muted-foreground hover:bg-accent hover:text-foreground",

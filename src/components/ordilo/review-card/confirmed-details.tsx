@@ -251,7 +251,7 @@ export function ConfirmedAnalysisDetails({
         <button
           type="button"
           onClick={() => onViewOriginal()}
-          className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
           data-testid="view-original-file-button"
         >
           <FileText className="size-4" aria-hidden="true" />
@@ -389,7 +389,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
       <button
         type="button"
         onClick={() => setAdding(true)}
-        className="flex w-full items-center gap-2 border-b border-border/60 py-4 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex w-full items-center gap-2 border-b border-border/60 py-4 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-ring"
         data-testid="confirmed-fact-add-button"
       >
         <Plus className="size-4 shrink-0" aria-hidden="true" />
@@ -409,7 +409,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 type="button"
                 onClick={() => startEdit(fact)}
                 aria-label={`${fact.label} korrigieren`}
-                className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex size-11 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
                 data-testid="confirmed-fact-edit-button"
               >
                 <Pencil className="size-4" aria-hidden="true" />
@@ -441,7 +441,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                   type="submit"
                   disabled={saving || !editValue.trim()}
                   aria-label="Speichern"
-                  className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-ring disabled:opacity-50"
                   data-testid="confirmed-fact-save-button"
                 >
                   {saving ? (
@@ -454,7 +454,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                   type="button"
                   onClick={() => setEditingId(null)}
                   aria-label="Abbrechen"
-                  className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-ring"
                 >
                   <X className="size-3.5" aria-hidden="true" />
                 </button>
@@ -521,7 +521,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
               type="submit"
               disabled={saving || !newValue.trim()}
               aria-label="Nummer speichern"
-              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm bg-[var(--petrol)] text-white focus-ring disabled:opacity-50"
               data-testid="confirmed-fact-add-save"
             >
               {saving ? (
@@ -538,7 +538,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
                 setNewLabel("");
               }}
               aria-label="Abbrechen"
-              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground hover:text-foreground focus-ring"
             >
               <X className="size-4" aria-hidden="true" />
             </button>
@@ -548,7 +548,7 @@ function EditableFactsSection({ documentId }: { documentId: string }) {
         <button
           type="button"
           onClick={() => setAdding(true)}
-          className="flex w-full items-center gap-2 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex w-full items-center gap-2 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:text-foreground focus-ring"
           data-testid="confirmed-fact-add-button"
         >
           <Plus className="size-4 shrink-0" aria-hidden="true" />

@@ -8,7 +8,6 @@ import {
   Trash2,
   RotateCcw,
   Loader2,
-  UserX,
   ChevronDown,
 } from "lucide-react";
 import {
@@ -33,13 +32,11 @@ import { cn } from "@/lib/utils";
 import type { TaskCardData, AssigneeOption } from "@/components/ordilo/task-card";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import { TagInput } from "@/components/ordilo/tag-input";
-import { MemberAvatar } from "@/components/ordilo/member-avatar";
+import { DuePresetChips } from "@/components/ordilo/due-preset-chips";
+import { AssigneePicker } from "@/components/ordilo/assignee-picker";
 import {
-  formatTaskDayHint,
-  resolveSchedulePreset,
   TASK_SCHEDULE_PRESET_LABELS,
-  todayLocalDate,
-  type TaskSchedulePreset,
+  todayAsIsoDate,
 } from "@/lib/task-utils";
 
 /** Order-insensitive comparison of two tag arrays. */
@@ -47,12 +44,6 @@ function areTagsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const setB = new Set(b);
   return a.every((tag) => setB.has(tag));
-}
-
-function todayAsIsoDate(): string {
-  const today = new Date();
-  const offset = today.getTimezoneOffset() * 60_000;
-  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
 }
 
 // ---------------------------------------------------------------------------
@@ -70,9 +61,6 @@ export interface TaskDetailSheetProps {
   /** Signed avatar URLs by member id (photoless members show initials). */
   memberPhotoUrls?: Record<string, string>;
 }
-
-/** The quick "wann?" answers offered above the date field. */
-const DUE_PRESETS: TaskSchedulePreset[] = ["today", "tomorrow", "weekend"];
 
 export function TaskDetailSheet({
   task,
@@ -101,9 +89,6 @@ export function TaskDetailSheet({
   const [error, setError] = useState<string | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const minDueDate = todayAsIsoDate();
-  // Read on every render so a sheet left open overnight cannot offer
-  // yesterday as "Heute".
-  const todayStr = todayLocalDate();
 
   const isDone = task?.status === "done";
   const isOpen = task?.status === "open";
@@ -296,40 +281,22 @@ export function TaskDetailSheet({
                 </label>
                 {/* Typing a date is the slow path. "Heute" and "Morgen"
                     cover most of what actually changes here. */}
-                <div className="mb-2 flex flex-wrap gap-2">
-                  {DUE_PRESETS.map((preset) => {
-                    const date = resolveSchedulePreset(preset, todayStr);
-                    const selected = Boolean(date) && dueDate === date;
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setDueDate(date ?? "")}
-                        aria-pressed={selected}
-                        title={formatTaskDayHint(date) ?? undefined}
-                        className={cn(
-                          "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                          selected
-                            ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                            : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
-                        )}
-                        data-testid={`task-detail-due-${preset}`}
-                      >
-                        {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                      </button>
-                    );
-                  })}
+                <DuePresetChips
+                  value={dueDate}
+                  onChange={setDueDate}
+                  testIdPrefix="task-detail"
+                >
                   {dueDate && (
                     <button
                       type="button"
                       onClick={() => setDueDate("")}
-                      className="inline-flex h-9 items-center rounded-full border border-border bg-[var(--surface-box)] px-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      className="inline-flex h-9 items-center rounded-full border border-border bg-[var(--surface-box)] px-3 text-sm text-muted-foreground transition-colors hover:text-foreground focus-ring"
                       data-testid="task-detail-due-none"
                     >
                       {TASK_SCHEDULE_PRESET_LABELS.none}
                     </button>
                   )}
-                </div>
+                </DuePresetChips>
                 <DateInput
                   id="task-detail-due-date"
                   value={dueDate}
@@ -346,67 +313,13 @@ export function TaskDetailSheet({
                   className="border-t border-border/70 p-4"
                   data-testid="task-detail-assignee-section"
                 >
-                  <p className="mb-2 text-sm font-medium text-foreground">
-                    Wer macht das?
-                  </p>
-                  {/* Faces, not a dropdown: a family recognises each other
-                      faster than it reads a list, and every option is a
-                      44px target instead of a native picker. */}
-                  <div
-                    role="radiogroup"
-                    aria-label="Wer macht das?"
-                    className="flex flex-wrap gap-2"
-                  >
-                    {members.map((member) => {
-                      const selected = assignedTo === member.id;
-                      return (
-                        <button
-                          key={member.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={selected}
-                          onClick={() => setAssignedTo(member.id)}
-                          className={cn(
-                            "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                            selected
-                              ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                              : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
-                          )}
-                          data-testid={`task-detail-assignee-${member.id}`}
-                        >
-                          <MemberAvatar
-                            name={member.name}
-                            color={member.avatar_color}
-                            photoUrl={memberPhotoUrls[member.id]}
-                            size="md"
-                          />
-                          <span className="max-w-28 truncate">
-                            {member.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      role="radio"
-                      aria-checked={assignedTo === ""}
-                      onClick={() => setAssignedTo("")}
-                      className={cn(
-                        "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                        assignedTo === ""
-                          ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                          : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
-                      )}
-                      data-testid="task-detail-assignee-none"
-                    >
-                      <UserX
-                        className="size-4 shrink-0"
-                        aria-hidden="true"
-                        strokeWidth={1.75}
-                      />
-                      Niemand
-                    </button>
-                  </div>
+                  <AssigneePicker
+                    value={assignedTo}
+                    onChange={setAssignedTo}
+                    members={members}
+                    memberPhotoUrls={memberPhotoUrls}
+                    testIdPrefix="task-detail"
+                  />
                 </div>
               )}
             </section>
@@ -454,7 +367,7 @@ export function TaskDetailSheet({
                 onClick={() => setShowMore((current) => !current)}
                 aria-expanded={showMore}
                 aria-controls="task-detail-more"
-                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-ordilo-sm px-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-ordilo-sm px-2 text-left text-sm font-medium text-foreground transition-colors hover:bg-secondary focus-ring"
                 data-testid="task-detail-more-toggle"
               >
                 <span>Weitere Angaben</span>
@@ -504,7 +417,7 @@ export function TaskDetailSheet({
                       <button
                         type="button"
                         onClick={handleDismiss}
-                        className="ml-auto flex min-h-11 items-center gap-2 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="ml-auto flex min-h-11 items-center gap-2 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive focus-ring"
                         data-testid="task-detail-dismiss"
                       >
                         <Trash2
@@ -611,7 +524,7 @@ export function TaskDetailSheet({
               setConfirmDiscard(false);
               onOpenChange(false);
             }}
-            className="mx-auto flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm text-muted-foreground transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="mx-auto flex min-h-11 items-center rounded-ordilo-sm px-3 text-sm text-muted-foreground transition-colors hover:text-destructive focus-ring"
             data-testid="task-detail-discard"
           >
             Änderungen verwerfen

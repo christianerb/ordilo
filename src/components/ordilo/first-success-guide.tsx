@@ -61,7 +61,7 @@ export function FirstSuccessGuide({
       <button
         type="button"
         onClick={dismiss}
-        className="absolute right-2 top-2 inline-flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="absolute right-2 top-2 inline-flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-ring"
         aria-label="Hinweis schließen"
       >
         <X className="size-4" aria-hidden="true" />

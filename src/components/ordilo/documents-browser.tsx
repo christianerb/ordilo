@@ -4,7 +4,6 @@ import { useMemo, useRef, useState } from "react";
 import {
   Search,
   Sparkles,
-  SlidersHorizontal,
   MoreHorizontal,
   ChevronLeft,
   ChevronRight,
@@ -27,6 +26,12 @@ import { useCollections } from "@/lib/collections/collections-context";
 import { fetchDocumentsTableMeta } from "@/lib/documents-table";
 import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
+import {
+  OrdiloFilterTabs,
+  type OrdiloFilterTabItem,
+} from "@/components/ordilo/ordilo-filter-tabs";
+import { MoreFiltersButton } from "@/components/ordilo/more-filters-button";
+import { RAIL_BLEED } from "@/lib/ui-styles";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -208,6 +213,19 @@ export function DocumentsBrowser({
     };
   }, [collections]);
 
+  const collectionTabs = useMemo<OrdiloFilterTabItem<string>[]>(
+    () => [
+      { key: "", label: "Alle", icon: FileText, testId: "documents-chip-all" },
+      ...collections.map((collection) => ({
+        key: collection.name,
+        label: collection.name,
+        icon: getCollectionIcon(collection.icon),
+        testId: `documents-chip-${collection.id}`,
+      })),
+    ],
+    [collections],
+  );
+
   const hasActiveFilters = Boolean(
     search || collectionFilter || typeFilter || statusFilter,
   );
@@ -299,8 +317,7 @@ export function DocumentsBrowser({
   const askHref = `/suche${search.trim() ? `?q=${encodeURIComponent(search.trim())}` : ""}`;
 
   /** Full-bleed inside the page's padded column, for horizontal rails. */
-  const railBleed =
-    "-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden";
+  const railBleed = RAIL_BLEED;
 
   return (
     <div data-testid="documents-browser" className="space-y-4">
@@ -315,13 +332,13 @@ export function DocumentsBrowser({
           value={search}
           onChange={(e) => setFilterAndResetPage(setSearch, e.target.value)}
           placeholder="Dokumente suchen oder Ordilo fragen …"
-          className="h-13 w-full rounded-full border border-border bg-card py-3.5 pr-14 pl-11 text-sm text-foreground shadow-card placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="h-13 w-full rounded-full border border-border bg-card py-3.5 pr-14 pl-11 text-sm text-foreground shadow-card placeholder:text-muted-foreground focus-ring"
           aria-label="Dokumente durchsuchen"
           data-testid="documents-search-input"
         />
         <Link
           href={askHref}
-          className="absolute top-1/2 right-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--petrol)]/10 text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/15 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="absolute top-1/2 right-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-[var(--petrol)]/10 text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/15 focus-ring"
           aria-label="Ordilo dazu fragen"
           title="Ordilo fragen"
           data-testid="documents-ask-ordilo"
@@ -330,46 +347,21 @@ export function DocumentsBrowser({
         </Link>
       </div>
 
-      {/* Collection chips + the rest of the filters behind one button */}
-      <div className={railBleed} data-testid="documents-collection-chips">
-        <FilterChip
-          label="Alle"
-          icon={FileText}
-          active={!collectionFilter}
-          onClick={() => setFilterAndResetPage(setCollectionFilter, "")}
-          testId="documents-chip-all"
+      {/* Collection tabs + the rest of the filters behind one button */}
+      <div className="flex items-center gap-2">
+        <OrdiloFilterTabs
+          value={collectionFilter}
+          onChange={(value) => setFilterAndResetPage(setCollectionFilter, value)}
+          tabs={collectionTabs}
+          ariaLabel="Nach Sammlung filtern"
+          testId="documents-collection-chips"
         />
-        {collections.map((collection) => (
-          <FilterChip
-            key={collection.id}
-            label={collection.name}
-            icon={getCollectionIcon(collection.icon)}
-            active={collectionFilter === collection.name}
-            onClick={() =>
-              setFilterAndResetPage(
-                setCollectionFilter,
-                collectionFilter === collection.name ? "" : collection.name,
-              )
-            }
-            testId={`documents-chip-${collection.id}`}
-          />
-        ))}
-        <button
-          type="button"
+        <MoreFiltersButton
+          active={Boolean(moreFiltersOpen || typeFilter || statusFilter)}
+          open={moreFiltersOpen}
           onClick={() => setMoreFiltersOpen((open) => !open)}
-          aria-expanded={moreFiltersOpen}
-          aria-label="Weitere Filter"
-          title="Weitere Filter"
-          className={cn(
-            "ml-auto flex size-11 shrink-0 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-            moreFiltersOpen || typeFilter || statusFilter
-              ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-              : "border-border bg-card text-muted-foreground hover:text-foreground",
-          )}
-          data-testid="documents-more-filters"
-        >
-          <SlidersHorizontal className="size-4.5" aria-hidden="true" />
-        </button>
+          testId="documents-more-filters"
+        />
       </div>
 
       {moreFiltersOpen && (
@@ -380,7 +372,7 @@ export function DocumentsBrowser({
           <select
             value={typeFilter}
             onChange={(e) => setFilterAndResetPage(setTypeFilter, e.target.value)}
-            className="h-9 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="h-9 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 text-sm text-foreground focus-ring"
             aria-label="Nach Typ filtern"
             data-testid="documents-filter-type"
           >
@@ -395,7 +387,7 @@ export function DocumentsBrowser({
           <select
             value={statusFilter}
             onChange={(e) => setFilterAndResetPage(setStatusFilter, e.target.value)}
-            className="h-9 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="h-9 rounded-ordilo-sm border border-border bg-[var(--sand)] px-2 text-sm text-foreground focus-ring"
             aria-label="Nach Status filtern"
             data-testid="documents-filter-status"
           >
@@ -410,7 +402,7 @@ export function DocumentsBrowser({
             <button
               type="button"
               onClick={resetFilters}
-              className="inline-flex items-center gap-1 rounded-ordilo-sm px-1 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="inline-flex items-center gap-1 rounded-ordilo-sm px-1 text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
               data-testid="documents-filter-reset"
             >
               <X className="size-4" aria-hidden="true" />
@@ -434,7 +426,7 @@ export function DocumentsBrowser({
                   key={row.doc.id}
                   type="button"
                   onClick={() => void openDocument(row.doc.id)}
-                  className="card-lift flex w-44 shrink-0 flex-col items-start gap-2.5 rounded-ordilo-md border border-border bg-card p-3 text-left shadow-card hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="card-lift flex w-44 shrink-0 flex-col items-start gap-2.5 rounded-ordilo-md border border-border bg-card p-3 text-left shadow-card hover:shadow-card-hover focus-ring"
                   data-testid="documents-recent-card"
                 >
                   <DocumentTile doc={row.doc} collection={collection} />
@@ -479,7 +471,7 @@ export function DocumentsBrowser({
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortKey)}
-              className="rounded-ordilo-sm border border-transparent bg-transparent py-1 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="rounded-ordilo-sm border border-transparent bg-transparent py-1 text-xs font-medium text-foreground focus-ring"
               aria-label="Sortierung"
               data-testid="documents-sort"
             >
@@ -524,7 +516,7 @@ export function DocumentsBrowser({
                   <button
                     type="button"
                     onClick={() => void openDocument(row.doc.id)}
-                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+                    className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left focus-ring rounded-ordilo-sm"
                     aria-label={`${row.displayTitle} öffnen`}
                   >
                     <DocumentTile doc={row.doc} collection={collection} />
@@ -568,7 +560,7 @@ export function DocumentsBrowser({
                     <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
                         aria-label={`Aktionen für ${row.displayTitle}`}
                         data-testid={`documents-row-menu-${row.doc.id}`}
                       >
@@ -614,7 +606,7 @@ export function DocumentsBrowser({
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={currentPage <= 1}
-              className="flex size-8 items-center justify-center rounded-ordilo-sm border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-8 items-center justify-center rounded-ordilo-sm border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-ring"
               aria-label="Vorherige Seite"
               data-testid="documents-prev-page"
             >
@@ -624,7 +616,7 @@ export function DocumentsBrowser({
               type="button"
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={currentPage >= totalPages}
-              className="flex size-8 items-center justify-center rounded-ordilo-sm border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-8 items-center justify-center rounded-ordilo-sm border border-border bg-card text-foreground transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-40 focus-ring"
               aria-label="Nächste Seite"
               data-testid="documents-next-page"
             >
@@ -634,41 +626,5 @@ export function DocumentsBrowser({
         </div>
       )}
     </div>
-  );
-}
-
-/**
- * One collection chip. Active state uses the Harbor Blue wash (never
- * apricot — that stays reserved for the nav's "you are here").
- */
-function FilterChip({
-  label,
-  icon: Icon,
-  active,
-  onClick,
-  testId,
-}: {
-  label: string;
-  icon: React.ComponentType<{ className?: string }>;
-  active: boolean;
-  onClick: () => void;
-  testId: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "press-scale inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-        active
-          ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-          : "border-border bg-card text-muted-foreground hover:text-foreground",
-      )}
-      data-testid={testId}
-    >
-      <Icon className="size-4 shrink-0" />
-      <span className="max-w-32 truncate">{label}</span>
-    </button>
   );
 }

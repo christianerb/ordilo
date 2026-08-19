@@ -52,7 +52,7 @@ export function LandingPage() {
             />
             <Link
               href="/login"
-              className="rounded-ordilo-sm px-3 py-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--auth-sage)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="rounded-ordilo-sm px-3 py-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--auth-sage)] focus-ring"
             >
               Anmelden
             </Link>
@@ -85,7 +85,7 @@ export function LandingPage() {
               <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Link
                   href="/login"
-                  className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-6 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-6 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
                   data-testid="landing-cta-hero"
                 >
                   Kostenlos starten
@@ -215,7 +215,7 @@ export function LandingPage() {
               lernen nicht aus euren Daten. Mehr dazu in der{" "}
               <Link
                 href="/datenschutz"
-                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
               >
                 Datenschutzerklärung
               </Link>
@@ -252,7 +252,7 @@ export function LandingPage() {
                 Details stehen in der{" "}
                 <Link
                   href="/datenschutz"
-                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
                 >
                   Datenschutzerklärung
                 </Link>
@@ -289,7 +289,7 @@ export function LandingPage() {
                 </li>
               ))}
             </ul>
-            <Link href="/login" className="mt-6 inline-flex h-12 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-8 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" data-testid="landing-cta-bottom">
+            <Link href="/login" className="mt-6 inline-flex h-12 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-8 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring" data-testid="landing-cta-bottom">
               Kostenlos starten
               <ArrowRight className="size-4" aria-hidden="true" />
             </Link>
@@ -299,9 +299,9 @@ export function LandingPage() {
         <footer className="flex flex-col items-center gap-2 px-3 py-4 text-center text-xs text-muted-foreground sm:flex-row sm:justify-between">
           <p>© {new Date().getFullYear()} Ordilo — Dein Familienordner</p>
           <nav className="flex items-center gap-4" aria-label="Kontakt und Rechtliches">
-            <a href="mailto:info@ordilo.de" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Kontakt</a>
-            <Link href="/impressum" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Impressum</Link>
-            <Link href="/datenschutz" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">Datenschutz</Link>
+            <a href="mailto:info@ordilo.de" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Kontakt</a>
+            <Link href="/impressum" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Impressum</Link>
+            <Link href="/datenschutz" className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring">Datenschutz</Link>
           </nav>
         </footer>
       </div>

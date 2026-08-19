@@ -28,7 +28,7 @@ export function OrdiloSegmentedNav({
           href={item.href}
           aria-current={item.active ? "page" : undefined}
           className={cn(
-            "rounded-[8px] px-3 py-2 text-center font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "rounded-[8px] px-3 py-2 text-center font-medium transition-colors focus-ring",
             item.active
               ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",

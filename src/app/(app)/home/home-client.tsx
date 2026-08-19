@@ -285,7 +285,7 @@ export function HomeClient({
               {members.length > 0 && (
                 <Link
                   href="/familie"
-                  className="relative z-10 flex shrink-0 -space-x-2 rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="relative z-10 flex shrink-0 -space-x-2 rounded-full transition-opacity hover:opacity-80 focus-ring"
                   data-testid="member-list"
                   aria-label={`Familie ${familyName}`}
                 >
@@ -361,7 +361,7 @@ export function HomeClient({
                 {hasMoreJournalDocs && (
                   <Link
                     href="/dokumente"
-                    className="block border-t border-border/70 px-4 py-2.5 text-center text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--sand-warm)]/60 hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="block border-t border-border/70 px-4 py-2.5 text-center text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--sand-warm)]/60 hover:text-[var(--petrol-dark)] focus-ring"
                   >
                     Mehr anzeigen
                   </Link>
@@ -373,7 +373,7 @@ export function HomeClient({
                 <button
                   type="button"
                   onClick={openWizard}
-                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
                 >
                   Dokument scannen
                 </button>
@@ -406,7 +406,7 @@ export function HomeClient({
               {hiddenTaskCount > 0 && (
                 <Link
                   href="/aufgaben"
-                  className="mt-1 inline-flex items-center gap-1 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="mt-1 inline-flex items-center gap-1 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
                   data-testid="home-tasks-show-all"
                 >
                   Alle {totalTasks} Aufgaben anzeigen
@@ -467,7 +467,7 @@ function JournalDocRow({
         void onOpenDocument(doc.id);
       }}
       className={cn(
-        "flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors focus-ring",
         highlighted
           ? "bg-[var(--wash-sage-soft)] hover:bg-[var(--wash-sage)]"
           : "border-t border-border/70 first:border-t-0 hover:bg-[var(--sand-warm)]/60",

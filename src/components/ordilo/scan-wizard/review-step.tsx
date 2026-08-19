@@ -512,7 +512,7 @@ export function ScanReviewStep({
             <button
               type="button"
               onClick={() => setOriginalPreviewOpen(true)}
-              className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
               data-testid="autofile-view-original"
             >
               Original vergleichen

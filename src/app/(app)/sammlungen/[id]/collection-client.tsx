@@ -130,7 +130,7 @@ export function CollectionClient({
           <button
             type="button"
             onClick={handleAddNote}
-            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
             aria-label="Notiz hinzufügen"
             data-testid="collection-add-note"
           >
@@ -142,7 +142,7 @@ export function CollectionClient({
               setServerError(null);
               setEditOpen(true);
             }}
-            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
             aria-label="Bearbeiten"
           >
             <Pencil className="size-4" aria-hidden="true" />
@@ -153,7 +153,7 @@ export function CollectionClient({
               setDeleteError(null);
               setDeleteOpen(true);
             }}
-            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex size-9 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-ring"
             aria-label="Sammlung löschen"
           >
             <Trash2 className="size-4" aria-hidden="true" />

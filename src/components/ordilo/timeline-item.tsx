@@ -149,7 +149,7 @@ export function TimelineItem({
           <button
             type="button"
             onClick={onClick}
-            className="w-full rounded-ordilo-md border border-border bg-card p-3 text-left shadow-card transition-all hover:shadow-card-hover focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="w-full rounded-ordilo-md border border-border bg-card p-3 text-left shadow-card transition-all hover:shadow-card-hover focus-ring"
             data-testid="timeline-content"
           >
             {content}

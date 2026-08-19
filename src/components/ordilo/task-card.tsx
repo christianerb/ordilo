@@ -142,7 +142,7 @@ export function TaskCard({
             : "Aufgabe als erledigt markieren"
         }
         onClick={handleToggle}
-        className="press-scale -ml-1 flex size-11 shrink-0 items-center justify-center rounded-full transition-transform hover:[&>span]:border-[var(--petrol)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="press-scale -ml-1 flex size-11 shrink-0 items-center justify-center rounded-full transition-transform hover:[&>span]:border-[var(--petrol)] focus-ring"
         data-testid="task-checkbox"
       >
         <span
@@ -168,7 +168,7 @@ export function TaskCard({
         <button
           type="button"
           onClick={onClick}
-          className="min-w-0 flex-1 rounded-ordilo-sm py-1 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="min-w-0 flex-1 rounded-ordilo-sm py-1 text-left focus-ring"
           aria-label={`Aufgabe öffnen: ${task.title}`}
         >
           <CardContent
@@ -301,7 +301,7 @@ function TaskAssigneeControl({
           : "Niemand zuständig. Jemandem zuweisen"
       }
       className={cn(
-        "press-scale flex size-11 shrink-0 items-center justify-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "press-scale flex size-11 shrink-0 items-center justify-center rounded-full transition-colors focus-ring",
         isDone && "opacity-50",
       )}
       data-testid="task-assignee"

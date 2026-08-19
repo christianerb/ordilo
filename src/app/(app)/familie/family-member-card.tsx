@@ -58,7 +58,7 @@ export function FamilyMemberCard({
         <button
           type="button"
           onClick={onOpen}
-          className="flex min-w-0 flex-1 flex-col items-start gap-2 rounded-ordilo-sm text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="flex min-w-0 flex-1 flex-col items-start gap-2 rounded-ordilo-sm text-left focus-ring"
           aria-label={`${member.name} öffnen`}
         >
           <MemberAvatar

@@ -429,7 +429,7 @@ export function EventSheet({
               target="_blank"
               rel="noreferrer"
               aria-label={`Dokument „${event.document_title ?? "öffnen"}“ in einem neuen Tab öffnen`}
-              className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-secondary/50 px-3 py-2.5 text-sm transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex items-center gap-2 rounded-ordilo-sm border border-border bg-secondary/50 px-3 py-2.5 text-sm transition-colors hover:bg-secondary focus-ring"
               data-testid="event-document-link"
             >
               <FileText
@@ -590,7 +590,7 @@ export function EventSheet({
 
           <button
             type="button"
-            className="flex w-full items-center justify-between rounded-ordilo-sm bg-secondary/60 px-3 py-2.5 text-left transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex w-full items-center justify-between rounded-ordilo-sm bg-secondary/60 px-3 py-2.5 text-left transition-colors hover:bg-secondary focus-ring"
             onClick={() => setShowDetails((current) => !current)}
             aria-expanded={showDetails}
             aria-controls="event-details"
@@ -690,7 +690,7 @@ export function EventSheet({
                       aria-pressed={selected}
                       data-testid={`event-attendee-chip-${member.id}`}
                       className={cn(
-                        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-ring",
                         selected
                           ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
                           : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",

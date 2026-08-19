@@ -211,7 +211,7 @@ function PreviewHeader({
       <button
         type="button"
         onClick={onClose}
-        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
         aria-label={mobile ? "Zurück zu den Angaben" : "Original schließen"}
         data-testid="original-document-preview-close"
       >
@@ -264,7 +264,7 @@ function DocumentFrame({
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex items-center gap-1.5 rounded-ordilo-sm px-3 py-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex items-center gap-1.5 rounded-ordilo-sm px-3 py-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
         >
           <RotateCw className="size-4" aria-hidden="true" />
           Nochmal versuchen

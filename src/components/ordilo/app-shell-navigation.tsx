@@ -66,14 +66,14 @@ export function Topbar({
               type="button"
               onClick={() => setMenuOpen(true)}
               aria-label="Menü öffnen"
-              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-foreground transition-colors hover:bg-accent focus-ring"
             >
               <Menu className="h-5 w-5" aria-hidden="true" />
             </button>
           )}
           <Link
             href="/home"
-            className="rounded-ordilo-sm text-sm font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="rounded-ordilo-sm text-sm font-semibold tracking-tight text-foreground focus-ring"
             aria-label="Ordilo Startseite"
           >
             <OrdiloWordmark mascotSize={24} />
@@ -82,7 +82,7 @@ export function Topbar({
             <Link
               href="/familie/einstellungen"
               aria-label={`Profil von ${profileName}`}
-              className="relative ml-auto flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-sm font-semibold text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="relative ml-auto flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-sm font-semibold text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
             >
               {profileName.charAt(0).toUpperCase()}
               <span
@@ -104,14 +104,14 @@ export function Topbar({
         <DrawerContent className="inset-y-2! left-2! h-auto! w-[calc(100vw-1rem)]! max-w-[28rem]! rounded-ordilo-xl border border-white/80 bg-[var(--surface-box)] p-0 shadow-card lg:hidden">
           <div className="relative flex flex-col gap-1 px-5 pb-5 pt-[max(1.25rem,env(safe-area-inset-top))]">
             <DrawerTitle className="flex items-center gap-2">
-              <Link href="/home" className="rounded-ordilo-sm text-base font-semibold focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50" aria-label="Ordilo Startseite">
+              <Link href="/home" className="rounded-ordilo-sm text-base font-semibold focus-ring" aria-label="Ordilo Startseite">
                 <OrdiloWordmark mascotSize={28} />
               </Link>
             </DrawerTitle>
             <DrawerDescription className="sr-only">Hauptmenü</DrawerDescription>
             <DrawerClose
               aria-label="Menü schließen"
-              className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] flex size-10 items-center justify-center rounded-full bg-[var(--sand)] text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] flex size-10 items-center justify-center rounded-full bg-[var(--sand)] text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-ring"
             >
               <ChevronsLeft className="size-4" aria-hidden="true" />
             </DrawerClose>
@@ -180,7 +180,7 @@ export function Topbar({
               <Link
                 href="/suche?history=1"
                 onClick={() => setMenuOpen(false)}
-                className="flex min-h-12 items-center gap-3 rounded-ordilo-sm px-3 text-sm font-medium text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="flex min-h-12 items-center gap-3 rounded-ordilo-sm px-3 text-sm font-medium text-foreground transition-colors hover:bg-[var(--sand-warm)] focus-ring"
                 data-testid="topbar-chat-history-link"
               >
                 <NavIcon label="Chat-Verlauf" active={false}>
@@ -196,7 +196,7 @@ export function Topbar({
             <form action={logout}>
               <button
                 type="submit"
-                className="inline-flex w-full items-center gap-2 rounded-ordilo-sm px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="inline-flex w-full items-center gap-2 rounded-ordilo-sm px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
               >
                 <LogOut className="size-4" aria-hidden="true" />
                 Abmelden
@@ -281,7 +281,7 @@ function SuggestionChipsRow({
             key={chip}
             type="button"
             onClick={() => onSelect(chip)}
-            className="shrink-0 rounded-full border border-border/70 bg-[var(--surface-box)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="shrink-0 rounded-full border border-border/70 bg-[var(--surface-box)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)] transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground focus-ring"
           >
             {chip}
           </button>
@@ -375,7 +375,7 @@ export function MobileComposer({
             disabled={isLoading}
             aria-label="Aktionen"
             data-testid="composer-actions-button"
-            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white shadow-card transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white shadow-card transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:opacity-50"
           >
             <Plus className="size-5" aria-hidden="true" />
           </button>
@@ -437,7 +437,7 @@ export function DesktopBottomBar({
             disabled={isLoading}
             aria-label="Aktionen"
             data-testid="composer-actions-button"
-            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:opacity-50"
+            className="flex size-12 shrink-0 items-center justify-center rounded-full bg-[var(--petrol)] text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:opacity-50"
           >
             <Plus className="size-5" aria-hidden="true" />
           </button>

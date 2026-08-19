@@ -304,7 +304,7 @@ export function ReviewCardConfirmed({
               type="button"
               onClick={onReanalyze}
               disabled={reanalyzing}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-ordilo-sm px-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-ring"
               data-testid="confirmed-reanalyze-button"
             >
               {reanalyzing ? (
@@ -367,7 +367,7 @@ export function ReviewCardConfirmed({
             <button
               type="button"
               onClick={onEdit}
-              className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-xs text-muted-foreground transition-colors hover:text-foreground focus-ring"
               data-testid="confirmed-edit-button"
             >
               <Pencil className="size-3" aria-hidden="true" />
@@ -379,7 +379,7 @@ export function ReviewCardConfirmed({
               type="button"
               onClick={onReanalyze}
               disabled={reanalyzing}
-              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+              className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-ring rounded-ordilo-sm"
               data-testid="confirmed-reanalyze-button"
             >
               {reanalyzing ? (

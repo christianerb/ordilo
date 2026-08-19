@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { Loader2, UserX } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
   OrdiloDrawer,
   OrdiloDrawerBody,
@@ -13,24 +13,9 @@ import { DateInput } from "@/components/ordilo/date-input";
 import { createClient } from "@/lib/supabase/client";
 import { recordProductEvent } from "@/lib/analytics/product-events";
 import type { AssigneeOption } from "@/components/ordilo/task-card";
-import { MemberAvatar } from "@/components/ordilo/member-avatar";
-import { cn } from "@/lib/utils";
-import {
-  formatTaskDayHint,
-  resolveSchedulePreset,
-  TASK_SCHEDULE_PRESET_LABELS,
-  todayLocalDate,
-  type TaskSchedulePreset,
-} from "@/lib/task-utils";
-
-function todayAsIsoDate(): string {
-  const today = new Date();
-  const offset = today.getTimezoneOffset() * 60_000;
-  return new Date(today.getTime() - offset).toISOString().slice(0, 10);
-}
-
-/** The quick "wann?" answers offered above the date field. */
-const DUE_PRESETS: TaskSchedulePreset[] = ["today", "tomorrow", "weekend"];
+import { DuePresetChips } from "@/components/ordilo/due-preset-chips";
+import { AssigneePicker } from "@/components/ordilo/assignee-picker";
+import { todayAsIsoDate } from "@/lib/task-utils";
 
 export interface TaskCreateSheetProps {
   open: boolean;
@@ -66,9 +51,6 @@ export function TaskCreateSheet({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const minDueDate = todayAsIsoDate();
-  // Read on every render so a sheet left open overnight cannot offer
-  // yesterday as "Heute".
-  const todayStr = todayLocalDate();
 
   const resetForm = useCallback(() => {
     setTitle("");
@@ -213,30 +195,12 @@ export function TaskCreateSheet({
           >
             Fällig am
           </label>
-          <div className="mb-2 flex flex-wrap gap-2">
-            {DUE_PRESETS.map((preset) => {
-              const date = resolveSchedulePreset(preset, todayStr);
-              const selected = Boolean(date) && dueDate === date;
-              return (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setDueDate(selected ? "" : date ?? "")}
-                  aria-pressed={selected}
-                  title={formatTaskDayHint(date) ?? undefined}
-                  className={cn(
-                    "inline-flex h-9 items-center rounded-full border px-3 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                    selected
-                      ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                      : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
-                  )}
-                  data-testid={`task-create-due-${preset}`}
-                >
-                  {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                </button>
-              );
-            })}
-          </div>
+          <DuePresetChips
+            value={dueDate}
+            onChange={setDueDate}
+            testIdPrefix="task-create"
+            toggle
+          />
           <DateInput
             id="task-create-due-date"
             value={dueDate}
@@ -251,62 +215,13 @@ export function TaskCreateSheet({
         {/* Assignee — faces, matching the detail sheet and the row */}
         {members.length > 0 && (
           <div className="mt-4" data-testid="task-create-assignee-section">
-            <p className="mb-2 text-sm font-medium text-foreground">
-              Wer macht das?
-            </p>
-            <div
-              role="radiogroup"
-              aria-label="Wer macht das?"
-              className="flex flex-wrap gap-2"
-            >
-              {members.map((member) => {
-                const selected = assignedTo === member.id;
-                return (
-                  <button
-                    key={member.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setAssignedTo(member.id)}
-                    className={cn(
-                      "press-scale inline-flex h-11 items-center gap-2 rounded-full border py-1 pr-3.5 pl-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                      selected
-                        ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                        : "border-border bg-[var(--surface-box)] text-foreground hover:bg-secondary",
-                    )}
-                    data-testid={`task-create-assignee-${member.id}`}
-                  >
-                    <MemberAvatar
-                      name={member.name}
-                      color={member.avatar_color}
-                      photoUrl={memberPhotoUrls[member.id]}
-                      size="md"
-                    />
-                    <span className="max-w-28 truncate">{member.name}</span>
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                role="radio"
-                aria-checked={assignedTo === ""}
-                onClick={() => setAssignedTo("")}
-                className={cn(
-                  "press-scale inline-flex h-11 items-center gap-2 rounded-full border px-3.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
-                  assignedTo === ""
-                    ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
-                    : "border-border bg-[var(--surface-box)] text-muted-foreground hover:text-foreground",
-                )}
-                data-testid="task-create-assignee-none"
-              >
-                <UserX
-                  className="size-4 shrink-0"
-                  aria-hidden="true"
-                  strokeWidth={1.75}
-                />
-                Niemand
-              </button>
-            </div>
+            <AssigneePicker
+              value={assignedTo}
+              onChange={setAssignedTo}
+              members={members}
+              memberPhotoUrls={memberPhotoUrls}
+              testIdPrefix="task-create"
+            />
           </div>
         )}
       </OrdiloDrawerBody>

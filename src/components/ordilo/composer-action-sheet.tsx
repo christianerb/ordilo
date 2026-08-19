@@ -142,7 +142,7 @@ function ActionRow({
       type="button"
       data-testid={testId}
       onClick={onClick}
-      className="flex items-center gap-3 rounded-ordilo-sm px-3 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex items-center gap-3 rounded-ordilo-sm px-3 py-3 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent focus-ring"
     >
       <span
         className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-foreground"

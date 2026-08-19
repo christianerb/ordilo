@@ -8,8 +8,6 @@ import {
   Users,
   CalendarDays,
   Loader2,
-  AlertCircle,
-  RefreshCw,
   Check,
   Trash2,
 } from "lucide-react";
@@ -17,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CalendarFeedCard } from "@/components/ordilo/calendar-feed-card";
+import { ErrorState } from "@/components/ordilo/error-state";
 import { formatGermanDate } from "@/lib/format";
 import { updateFamilyName, deleteFamilyAccount } from "../actions";
 
@@ -32,6 +31,8 @@ export interface FamilySettingsClientProps {
   createdAt?: string | null;
   /** Number of family members (for the info card). */
   memberCount?: number;
+  /** Private address for forwarding document attachments. */
+  inboundEmail?: string | null;
   /** When true, the server-side family query failed — shows an error state. */
   fetchError?: boolean;
 }
@@ -51,6 +52,7 @@ export function FamilySettingsClient({
   familyName = "",
   createdAt,
   memberCount = 0,
+  inboundEmail,
   fetchError = false,
 }: FamilySettingsClientProps) {
   const router = useRouter();
@@ -111,33 +113,13 @@ export function FamilySettingsClient({
 
   if (fetchError) {
     return (
-      <div
-        data-testid="familie-settings-fetch-error"
-        className="flex flex-col items-center justify-center px-6 py-12 text-center"
-      >
-        <div
-          className="mb-5 flex size-20 items-center justify-center rounded-full"
-          style={{ backgroundColor: "var(--destructive)" }}
-          aria-hidden="true"
-        >
-          <AlertCircle className="size-9 text-white" strokeWidth={1.5} />
-        </div>
-        <h3 className="text-base font-semibold text-foreground">
-          Daten konnten nicht geladen werden
-        </h3>
-        <p className="mt-1.5 max-w-xs text-sm leading-relaxed text-muted-foreground">
-          Es ist ein Fehler aufgetreten. Bitte versuche es erneut.
-        </p>
-        <Button
-          type="button"
-          size="lg"
-          onClick={() => router.refresh()}
-          className="mt-6 h-12 rounded-ordilo-md px-6"
-        >
-          <RefreshCw className="h-5 w-5" />
-          Erneut versuchen
-        </Button>
-      </div>
+      <ErrorState
+        title="Daten konnten nicht geladen werden"
+        description="Es ist ein Fehler aufgetreten. Bitte versuche es erneut."
+        onRetry={() => router.refresh()}
+        testId="familie-settings-fetch-error"
+        variant="prominent"
+      />
     );
   }
 
@@ -198,6 +180,24 @@ export function FamilySettingsClient({
           )}
         </Button>
       </div>
+
+      {inboundEmail && (
+        <div className="space-y-2 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
+          <h2 className="text-base font-semibold text-foreground">
+            Dokumente per E-Mail
+          </h2>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Leite PDFs und Bilder an diese private Adresse weiter. Sie landen
+            automatisch bei euren Dokumenten.
+          </p>
+          <p
+            className="select-all break-all rounded-ordilo-sm bg-[var(--sand-light)] px-3 py-2 text-sm font-medium text-foreground"
+            data-testid="family-inbound-email"
+          >
+            {inboundEmail}
+          </p>
+        </div>
+      )}
 
       {/* Family info */}
       <div className="space-y-4 rounded-ordilo-md border border-border bg-card p-4 shadow-card">

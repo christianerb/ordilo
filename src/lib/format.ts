@@ -231,3 +231,22 @@ export function toDateInputValue(
 
   return dateOnly;
 }
+
+/**
+ * Format an ISO datetime string as a German date + time (e.g. "19.08.2026, 14:30").
+ *
+ * Uses `Intl.DateTimeFormat` with the German locale, so the exact format
+ * follows the platform's ICU data. Returns a fallback when the input is
+ * null or not a valid date.
+ */
+export function formatGermanDateTime(
+  iso: string | null | undefined,
+): string {
+  if (!iso) return "Noch nie";
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "Noch nie";
+  return new Intl.DateTimeFormat("de-DE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}

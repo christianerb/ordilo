@@ -12,18 +12,10 @@ import { TaskCreateSheet } from "@/components/ordilo/task-create-sheet";
 import { TaskScheduleSheet } from "@/components/ordilo/task-schedule-sheet";
 import { TaskAssignSheet } from "@/components/ordilo/task-assign-sheet";
 import { EmptyState } from "@/components/ordilo/empty-state";
-import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/ordilo/confirm-action";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { usePlannerActionsOptional } from "./planner-actions-context";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   formatTaskDayHint,
   getTaskSection,
@@ -38,6 +30,7 @@ import { useScanActions } from "@/lib/scan/scan-context";
 import { createClient } from "@/lib/supabase/client";
 import { useTaskMutation, type TaskPatch } from "@/lib/hooks/use-task-mutation";
 import { cn } from "@/lib/utils";
+import { FILTER_ACTIVE, RAIL_BLEED } from "@/lib/ui-styles";
 
 interface SectionConfig {
   id: TaskSectionId;
@@ -153,7 +146,7 @@ function SectionHeading({
       type="button"
       onClick={onToggle}
       aria-expanded={expanded}
-      className="flex w-full items-center gap-2 rounded-ordilo-sm px-1 py-2 text-left focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="flex w-full items-center gap-2 rounded-ordilo-sm px-1 py-2 text-left focus-ring"
       data-testid={`task-section-header-${section.id}`}
     >
       {content}
@@ -270,7 +263,7 @@ function TaskSection({
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="flex w-full items-center justify-between gap-2 px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:text-foreground focus-ring"
             data-testid={`task-section-expand-${section.id}`}
           >
             <span>
@@ -735,7 +728,7 @@ export function AufgabenClient({
 
       {hasAnyTasks && (
         <div
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 md:-mx-6 md:px-6 lg:-mx-8 lg:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className={RAIL_BLEED}
           data-testid="task-member-chips"
         >
           <FilterChip
@@ -901,46 +894,24 @@ export function AufgabenClient({
         />
       )}
 
-      <Dialog
+      <ConfirmAction
+        variant="dialog"
         open={!!deleteConfirmId}
         onOpenChange={(open) => {
           if (!open) setDeleteConfirmId(null);
         }}
-      >
-        <DialogContent
-          className="max-w-sm"
-          data-testid="task-delete-confirm-dialog"
-        >
-          <DialogHeader>
-            <DialogTitle>Aufgabe verwerfen?</DialogTitle>
-            <DialogDescription>
-              Die Aufgabe wird aus deiner Liste entfernt.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="mt-2 flex-row gap-3 sm:justify-end">
-            <Button
-              variant="outline"
-              className="flex-1"
-              onClick={() => setDeleteConfirmId(null)}
-            >
-              Abbrechen
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              onClick={async () => {
-                if (!deleteConfirmId) return;
-                const id = deleteConfirmId;
-                setDeleteConfirmId(null);
-                await handleDismiss(id);
-              }}
-              data-testid="confirm-delete-task-button"
-            >
-              Verwerfen
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title="Aufgabe verwerfen?"
+        description="Die Aufgabe wird aus deiner Liste entfernt."
+        confirmLabel="Verwerfen"
+        onConfirm={async () => {
+          if (!deleteConfirmId) return;
+          const id = deleteConfirmId;
+          setDeleteConfirmId(null);
+          await handleDismiss(id);
+        }}
+        testId="task-delete-confirm-dialog"
+        confirmTestId="confirm-delete-task-button"
+      />
     </div>
   );
 }
@@ -973,9 +944,9 @@ function FilterChip({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        "press-scale inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "press-scale inline-flex h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-ring",
         active
-          ? "border-[var(--petrol)]/25 bg-[var(--petrol)]/10 text-[var(--petrol)]"
+          ? FILTER_ACTIVE
           : "border-border bg-card text-foreground hover:bg-accent/40",
         className,
       )}

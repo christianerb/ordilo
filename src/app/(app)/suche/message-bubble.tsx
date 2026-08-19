@@ -293,7 +293,7 @@ function RestSources({
       <button
         type="button"
         onClick={() => setExpanded(true)}
-        className="px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+        className="px-2 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-ring rounded-ordilo-sm"
         data-testid="show-more-sources"
       >
         {sources.length === 1
@@ -437,7 +437,7 @@ function AnswerFeedback({
         aria-label="Antwort war hilfreich"
         data-testid="feedback-up"
         className={cn(
-          "rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-ring",
           feedback === "up" && "bg-[var(--petrol)]/10 text-[var(--petrol)]",
         )}
       >
@@ -454,7 +454,7 @@ function AnswerFeedback({
         aria-label="Antwort war nicht hilfreich"
         data-testid="feedback-down"
         className={cn(
-          "rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+          "rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-ring",
           feedback === "down" && "text-destructive",
         )}
       >
@@ -465,7 +465,7 @@ function AnswerFeedback({
         onClick={handleCopy}
         aria-label="Antwort kopieren"
         data-testid="feedback-copy"
-        className="rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        className="rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-ring"
       >
         {copied ? (
           <Check
@@ -483,7 +483,7 @@ function AnswerFeedback({
           onClick={() => onQuote(message)}
           aria-label="Antwort zitieren"
           data-testid="feedback-quote"
-          className="rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="rounded-ordilo-sm p-1.5 text-muted-foreground transition-colors hover:bg-secondary/60 focus-ring"
         >
           <Reply className="size-3.5" aria-hidden="true" />
         </button>
@@ -517,7 +517,7 @@ function AnswerFeedback({
                 aria-pressed={selectedReasons.has(reason.key)}
                 data-testid={`feedback-reason-${reason.key}`}
                 className={cn(
-                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  "rounded-full px-2.5 py-1 text-xs font-medium transition-colors focus-ring",
                   selectedReasons.has(reason.key)
                     ? "bg-[var(--petrol)] text-white"
                     : "bg-secondary text-muted-foreground hover:text-foreground",
@@ -535,14 +535,14 @@ function AnswerFeedback({
             maxLength={500}
             aria-label="Anmerkung zum Feedback"
             data-testid="feedback-comment-input"
-            className="w-full rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="w-full rounded-ordilo-sm border border-border bg-card px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus-ring"
           />
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
               onClick={handleSubmitDown}
               data-testid="feedback-submit-button"
-              className="rounded-ordilo-sm bg-[var(--petrol)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="rounded-ordilo-sm bg-[var(--petrol)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
             >
               Senden
             </button>

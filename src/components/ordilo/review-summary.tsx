@@ -315,7 +315,7 @@ export function ReviewSummary({
                     <button
                       type="button"
                       onClick={onViewOriginal}
-                      className="mt-1 rounded-ordilo-sm text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                      className="mt-1 rounded-ordilo-sm text-xs font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
                     >
                       Im Original vergleichen
                     </button>
@@ -341,7 +341,7 @@ export function ReviewSummary({
         <button
           type="button"
           onClick={onViewOriginal}
-          className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="inline-flex items-center gap-1.5 rounded-ordilo-sm text-sm font-medium text-[var(--petrol)] transition-colors hover:text-[var(--petrol-dark)] focus-ring"
           data-testid="review-summary-view-original"
         >
           <FileText className="size-4" aria-hidden="true" />
@@ -414,7 +414,7 @@ export function ReviewSummary({
           type="button"
           onClick={onReanalyze}
           disabled={confirming}
-          className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+          className="mx-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground focus-ring rounded-ordilo-sm"
           data-testid="review-summary-reanalyze-link"
         >
           <RefreshCw className="size-3" aria-hidden="true" />

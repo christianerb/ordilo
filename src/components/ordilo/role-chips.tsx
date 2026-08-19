@@ -69,7 +69,7 @@ export function RoleChipGroup({
           disabled={disabled}
           aria-pressed={value === role}
           className={cn(
-            "rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+            "rounded-full px-3 py-1.5 text-sm font-medium transition-colors focus-ring",
             value === role
               ? "bg-[var(--petrol)] text-white"
               : "bg-secondary text-muted-foreground hover:text-foreground",

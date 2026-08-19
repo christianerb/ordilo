@@ -86,7 +86,7 @@ export function PersonCard({
     <button
       type="button"
       onClick={onClick}
-      className="flex flex-1 items-center focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-ordilo-sm"
+      className="flex flex-1 items-center focus-ring rounded-ordilo-sm"
       aria-label={`${name} öffnen`}
     >
       {content}

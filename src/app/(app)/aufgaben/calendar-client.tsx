@@ -631,7 +631,7 @@ export function CalendarClient({
                 onClick={() => setMemberFilter(null)}
                 aria-pressed={memberFilter === null}
                 className={cn(
-                  "inline-flex h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                  "inline-flex h-9 items-center rounded-full border px-3 text-xs font-medium transition-colors focus-ring",
                   memberFilter === null
                     ? "border-foreground/70 bg-foreground text-background"
                     : "border-border bg-card text-foreground",
@@ -655,7 +655,7 @@ export function CalendarClient({
                     aria-label={`Nur Termine von ${member.name}`}
                     data-testid={`calendar-filter-${member.id}`}
                     className={cn(
-                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 px-2.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 px-2.5 text-sm font-medium transition-all focus-ring",
                       selected ? "text-white shadow-sm" : "bg-card",
                     )}
                     style={
@@ -773,7 +773,7 @@ export function CalendarClient({
                     onClick={() => selectDay(day)}
                     aria-label={`${formatGermanDate(toCalendarDate(day))} auswählen`}
                     aria-pressed={isSelected}
-                    className="flex w-11 shrink-0 flex-col items-center rounded-ordilo-sm py-1 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    className="flex w-11 shrink-0 flex-col items-center rounded-ordilo-sm py-1 focus-ring"
                   >
                     <span className="text-xs font-medium text-muted-foreground">
                       {day.toLocaleDateString("de-DE", { weekday: "short" })}
@@ -798,7 +798,7 @@ export function CalendarClient({
                             onClick={() => openEdit(event)}
                             aria-label={`„${event.title}“ bearbeiten`}
                             className={cn(
-                              "group flex min-h-12 w-full items-center gap-3 rounded-ordilo-sm border border-transparent bg-secondary/60 px-3 py-2 text-left transition-all hover:border-border hover:bg-card hover:shadow-card active:translate-y-px focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                              "group flex min-h-12 w-full items-center gap-3 rounded-ordilo-sm border border-transparent bg-secondary/60 px-3 py-2 text-left transition-all hover:border-border hover:bg-card hover:shadow-card active:translate-y-px focus-ring",
                               celebratedEventId === event.id && "animate-card-in",
                             )}
                             data-testid={`week-event-${event.id}`}
@@ -850,7 +850,7 @@ export function CalendarClient({
                           openCreate();
                         }}
                         aria-label={`Termin am ${formatGermanDate(toCalendarDate(day))} eintragen`}
-                        className="flex h-8 w-full items-center gap-1.5 rounded-ordilo-sm px-2 text-xs text-muted-foreground/70 transition-colors hover:bg-secondary/60 hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="flex h-8 w-full items-center gap-1.5 rounded-ordilo-sm px-2 text-xs text-muted-foreground/70 transition-colors hover:bg-secondary/60 hover:text-muted-foreground focus-ring"
                       >
                         <Plus className="size-3" aria-hidden="true" />
                         Eintragen
@@ -886,7 +886,7 @@ export function CalendarClient({
                 type="button"
                 onClick={() => selectDay(day)}
                 className={cn(
-                  "relative flex min-h-11 flex-col items-center rounded-ordilo-sm px-1 py-1 text-xs transition-colors focus-visible:z-10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:min-h-16 sm:items-start sm:p-2",
+                  "relative flex min-h-11 flex-col items-center rounded-ordilo-sm px-1 py-1 text-xs transition-colors focus-visible:z-10 focus-ring sm:min-h-16 sm:items-start sm:p-2",
                   !isCurrentMonth && "text-muted-foreground/45",
                   isCurrentMonth && "text-foreground hover:bg-secondary",
                   isSelected && "bg-secondary font-medium",
@@ -948,7 +948,7 @@ export function CalendarClient({
                   onClick={() => openEdit(event)}
                   aria-label={`„${event.title}“ bearbeiten`}
                   className={cn(
-                    "group flex w-full items-start gap-3 rounded-ordilo-sm border border-border bg-card px-3 py-3 text-left shadow-card transition-all hover:-translate-y-px hover:border-primary/30 hover:shadow-card-hover active:translate-y-0 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+                    "group flex w-full items-start gap-3 rounded-ordilo-sm border border-border bg-card px-3 py-3 text-left shadow-card transition-all hover:-translate-y-px hover:border-primary/30 hover:shadow-card-hover active:translate-y-0 focus-ring",
                     celebratedEventId === event.id && "animate-card-in",
                   )}
                   data-testid={`calendar-event-${event.id}`}

@@ -85,7 +85,7 @@ export function CopyButton({
       aria-label={copied ? `${label} kopiert` : `${label} kopieren`}
       data-testid="credential-copy"
       className={cn(
-        "shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+        "shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-ring",
         className,
       )}
     >
@@ -116,7 +116,7 @@ export function CredentialRow({ label, value }: { label: string; value: string }
             target="_blank"
             rel="noopener noreferrer"
             data-testid="credential-link"
-            className="inline-flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            className="inline-flex min-w-0 items-center gap-1 truncate text-sm font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
           >
             <span className="truncate">{value}</span>
             <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
@@ -157,7 +157,7 @@ export function SecretValueRow({ documentId }: { documentId: string }) {
               onClick={reveal}
               disabled={loading}
               data-testid="credential-secret-reveal"
-              className="inline-flex items-center gap-1.5 rounded-ordilo-sm px-1.5 py-0.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="inline-flex items-center gap-1.5 rounded-ordilo-sm px-1.5 py-0.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-accent focus-ring"
             >
               {loading ? (
                 <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -178,7 +178,7 @@ export function SecretValueRow({ documentId }: { documentId: string }) {
                 type="button"
                 onClick={toggleShow}
                 aria-label={show ? "Passwort verbergen" : "Passwort anzeigen"}
-                className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-ring"
               >
                 {show ? (
                   <EyeOff className="size-3.5" aria-hidden="true" />
@@ -191,7 +191,7 @@ export function SecretValueRow({ documentId }: { documentId: string }) {
                 onClick={copy}
                 aria-label={copied ? "Passwort kopiert" : "Passwort kopieren"}
                 data-testid="credential-secret-copy"
-                className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="shrink-0 rounded-ordilo-sm p-1 text-muted-foreground transition-colors hover:text-foreground focus-ring"
               >
                 {copied ? (
                   <Check
