@@ -59,11 +59,14 @@ describe("0067_email_insights migration", () => {
     expect(migration).toContain("if suggestion.status <> 'pending' then");
   });
 
-  it("erases the stored copy when the family says delete", () => {
+  it("erases the source and every derived proposal when the family says delete", () => {
     expect(migration).toContain("body_text = case when p_keep then body_text else null end");
     expect(migration).toContain("subject = case when p_keep then subject else '' end");
     expect(migration).toContain(
       "from_address = case when p_keep then from_address else '' end",
     );
+    expect(migration).toContain("if not p_keep then");
+    expect(migration).toContain("delete from public.inbound_suggestions");
+    expect(migration).toContain("where inbound_email_id = p_inbound_email_id");
   });
 });

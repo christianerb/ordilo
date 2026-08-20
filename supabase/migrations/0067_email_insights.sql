@@ -360,6 +360,14 @@ begin
       subject = case when p_keep then subject else '' end,
       from_address = case when p_keep then from_address else '' end
   where id = p_inbound_email_id;
+
+  -- Suggestions are derived from this email too. A calendar event or task
+  -- already accepted by the family is its own record, so deleting these
+  -- proposal rows cannot undo it.
+  if not p_keep then
+    delete from public.inbound_suggestions
+    where inbound_email_id = p_inbound_email_id;
+  end if;
 end;
 $$;
 

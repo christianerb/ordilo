@@ -130,6 +130,36 @@ describe("InboundDiscovery", () => {
     );
   });
 
+  it("names every email before offering a retention choice", () => {
+    render(
+      <InboundDiscovery
+        discoveries={[
+          discovery({ id: "e-1", suggestions: [], subject: "U7-Termin" }),
+          discovery({
+            id: "e-2",
+            fromAddress: "Kita Sonnenschein <kita@example.com>",
+            suggestions: [],
+            subject: "Elternabend",
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("home-inbound-discovery"));
+
+    expect(screen.getByTestId("inbound-discovery-group-e-1")).toHaveTextContent(
+      "E-Mail von Praxis Weber",
+    );
+    expect(screen.getByTestId("inbound-discovery-group-e-1")).toHaveTextContent(
+      "Betreff: U7-Termin",
+    );
+    expect(screen.getByTestId("inbound-discovery-group-e-2")).toHaveTextContent(
+      "E-Mail von Kita Sonnenschein",
+    );
+    expect(screen.getByTestId("inbound-discovery-group-e-2")).toHaveTextContent(
+      "Betreff: Elternabend",
+    );
+  });
+
   it("keeps the proposal on screen when saving fails", async () => {
     acceptInboundSuggestion.mockResolvedValue({
       success: false,

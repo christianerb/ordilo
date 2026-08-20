@@ -162,29 +162,20 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
       <OrdiloDrawer variant="form" open={open} onOpenChange={setOpen}>
         <OrdiloDrawerHeader
           title="Neu für dich"
-          description={`Das habe ich in einer E-Mail von ${sender} gelesen.`}
+          description="Das habe ich in euren E-Mails gelesen."
         />
         <OrdiloDrawerBody className="space-y-3">
-          {pending.map((discovery) =>
-            discovery.suggestions.length > 0 ? (
-              discovery.suggestions.map((suggestion) => (
-                <SuggestionCard
-                  key={suggestion.id}
-                  suggestion={suggestion}
-                  busy={busyId === suggestion.id}
-                  onAccept={() => void handleAccept(discovery, suggestion)}
-                  onDismiss={() => void handleDismiss(discovery, suggestion)}
-                />
-              ))
-            ) : (
-              <RetentionCard
-                key={discovery.id}
-                busy={busyId === discovery.id}
-                onKeep={() => void handleRetention(discovery, true)}
-                onDelete={() => void handleRetention(discovery, false)}
-              />
-            ),
-          )}
+          {pending.map((discovery) => (
+            <DiscoveryGroup
+              key={discovery.id}
+              discovery={discovery}
+              busyId={busyId}
+              onAccept={(suggestion) => void handleAccept(discovery, suggestion)}
+              onDismiss={(suggestion) => void handleDismiss(discovery, suggestion)}
+              onKeep={() => void handleRetention(discovery, true)}
+              onDelete={() => void handleRetention(discovery, false)}
+            />
+          ))}
         </OrdiloDrawerBody>
       </OrdiloDrawer>
     </>
@@ -194,6 +185,61 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+/** One clearly named email, so a keep-or-delete decision never feels vague. */
+function DiscoveryGroup({
+  discovery,
+  busyId,
+  onAccept,
+  onDismiss,
+  onKeep,
+  onDelete,
+}: {
+  discovery: InboundEmailDiscovery;
+  busyId: string | null;
+  onAccept: (suggestion: InboundSuggestion) => void;
+  onDismiss: (suggestion: InboundSuggestion) => void;
+  onKeep: () => void;
+  onDelete: () => void;
+}) {
+  const sender = formatSender(discovery.fromAddress);
+  const subject = discovery.subject.trim();
+
+  return (
+    <section
+      className="space-y-2"
+      data-testid={`inbound-discovery-group-${discovery.id}`}
+    >
+      <header className="px-1">
+        <p className="text-sm font-medium text-foreground">
+          E-Mail von {sender}
+        </p>
+        {subject && (
+          <p className="truncate text-xs text-muted-foreground" title={subject}>
+            Betreff: {subject}
+          </p>
+        )}
+      </header>
+      {discovery.suggestions.length > 0 ? (
+        discovery.suggestions.map((suggestion) => (
+          <SuggestionCard
+            key={suggestion.id}
+            suggestion={suggestion}
+            busy={busyId === suggestion.id}
+            onAccept={() => onAccept(suggestion)}
+            onDismiss={() => onDismiss(suggestion)}
+          />
+        ))
+      ) : (
+        <RetentionCard
+          busy={busyId === discovery.id}
+          onKeep={onKeep}
+          onDelete={onDelete}
+        />
+      )}
+    </section>
+  );
+}
 
 function SuggestionCard({
   suggestion,
