@@ -11,6 +11,7 @@ import type {
   InboundEmailDiscovery,
   InboundSuggestion,
 } from "@/lib/inbound-suggestions";
+import { MAX_EMAIL_SUGGESTIONS } from "@/lib/schemas/inbound-email";
 
 /** How many forwarded emails the home screen asks about at once. */
 const INBOUND_DISCOVERY_LIMIT = 3;
@@ -24,14 +25,6 @@ async function loadInboundDiscoveries(
   supabase: ServerClient,
   familyId: string,
 ): Promise<InboundEmailDiscovery[]> {
-  const { data: emailRows } = await supabase
-    .from("inbound_emails")
-    .select("id, subject, from_address, received_at, retention")
-    .eq("family_id", familyId)
-    .order("received_at", { ascending: false })
-    .limit(INBOUND_DISCOVERY_LIMIT);
-  if (!emailRows || emailRows.length === 0) return [];
-
   const { data: suggestionRows } = await supabase
     .from("inbound_suggestions")
     .select(
@@ -39,11 +32,10 @@ async function loadInboundDiscoveries(
     )
     .eq("family_id", familyId)
     .eq("status", "pending")
-    .in(
-      "inbound_email_id",
-      emailRows.map((row) => row.id),
-    )
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    // A single email yields at most MAX_EMAIL_SUGGESTIONS proposals, so this
+    // always reaches three distinct emails that still need an answer.
+    .limit(INBOUND_DISCOVERY_LIMIT * MAX_EMAIL_SUGGESTIONS);
 
   const byEmail = new Map<string, InboundSuggestion[]>();
   for (const row of suggestionRows ?? []) {
@@ -61,7 +53,29 @@ async function loadInboundDiscoveries(
     byEmail.set(row.inbound_email_id, list);
   }
 
-  return emailRows
+  const candidateEmailIds = [...byEmail.keys()];
+  const { data: retentionRows } = await supabase
+    .from("inbound_emails")
+    .select("id")
+    .eq("family_id", familyId)
+    .eq("retention", "pending")
+    .order("received_at", { ascending: false })
+    .limit(INBOUND_DISCOVERY_LIMIT);
+
+  const unresolvedEmailIds = [
+    ...candidateEmailIds,
+    ...(retentionRows ?? []).map((row) => row.id),
+  ];
+  if (unresolvedEmailIds.length === 0) return [];
+
+  const { data: emailRows } = await supabase
+    .from("inbound_emails")
+    .select("id, subject, from_address, received_at, retention")
+    .eq("family_id", familyId)
+    .in("id", unresolvedEmailIds)
+    .order("received_at", { ascending: false });
+
+  return (emailRows ?? [])
     .map((row) => ({
       id: row.id,
       subject: row.subject,
@@ -75,7 +89,8 @@ async function loadInboundDiscoveries(
     .filter(
       (discovery) =>
         discovery.suggestions.length > 0 || discovery.retentionPending,
-    );
+    )
+    .slice(0, INBOUND_DISCOVERY_LIMIT);
 }
 
 /** How long journal thumbnail signed URLs stay valid, in seconds. */

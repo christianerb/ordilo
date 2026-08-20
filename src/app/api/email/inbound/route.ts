@@ -107,6 +107,7 @@ export async function POST(request: Request): Promise<Response> {
           emailId: event.data.email_id,
           familyId: alias.family_id,
           resend,
+          admin,
         });
       });
     }

@@ -1,10 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-
-vi.mock("@/lib/supabase/admin", () => ({
-  createClient: () => {
-    throw new Error("not used in these tests");
-  },
-}));
 
 vi.mock("@/lib/ai/inbound-email-insights", () => ({
   extractEmailSuggestions: vi.fn(),
@@ -13,6 +9,17 @@ vi.mock("@/lib/ai/inbound-email-insights", () => ({
 const { berlinToday, toSuggestionRow } = await import(
   "@/lib/inbound-email-insights"
 );
+
+describe("inbound email insight boundary", () => {
+  it("receives the service-role client from the API route", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/inbound-email-insights.ts"),
+      "utf8",
+    );
+    expect(source).not.toContain("@/lib/supabase/admin");
+    expect(source).toContain("admin: SupabaseClient<Database>");
+  });
+});
 
 describe("berlinToday", () => {
   it("anchors relative dates on the family's day, not on UTC", () => {

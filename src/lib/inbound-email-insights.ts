@@ -1,8 +1,9 @@
 import type { Resend } from "resend";
-import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractEmailSuggestions } from "@/lib/ai/inbound-email-insights";
 import { plainTextFromEmail } from "@/lib/inbound-email-text";
 import type { EmailSuggestion } from "@/lib/schemas/inbound-email";
+import type { Database } from "@/types/database";
 
 /**
  * Turns a plain forwarded email into questions the family can answer with one
@@ -53,8 +54,10 @@ export async function recordInboundEmailInsights(params: {
   emailId: string;
   familyId: string;
   resend: Resend;
+  /** Created by the inbound API route, the only service-role boundary. */
+  admin: SupabaseClient<Database>;
 }): Promise<RecordInsightsResult> {
-  const admin = createAdminClient();
+  const { admin } = params;
 
   // The unique index on source_email_id is the real guard; this check keeps a
   // Resend retry from paying for a second model call.
