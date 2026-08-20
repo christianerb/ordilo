@@ -160,6 +160,38 @@ describe("InboundDiscovery", () => {
     );
   });
 
+  it("locks every suggestion action while one is saving", () => {
+    acceptInboundSuggestion.mockReturnValueOnce(new Promise(() => {}));
+    render(
+      <InboundDiscovery
+        discoveries={[
+          discovery({
+            suggestions: [
+              suggestion({ id: "s-1" }),
+              suggestion({ id: "s-2", kind: "task", title: "Zettel abgeben" }),
+            ],
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("home-inbound-discovery"));
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "In den Kalender" })[0],
+    );
+
+    for (const button of screen.getAllByRole("button", {
+      name: "In den Kalender",
+    })) {
+      expect(button).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "Auf die Liste" })).toBeDisabled();
+    for (const button of screen.getAllByRole("button", {
+      name: "Nein, danke",
+    })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
   it("locks every retention decision while one is saving", () => {
     decideInboundEmailRetention.mockReturnValueOnce(
       new Promise(() => {}),

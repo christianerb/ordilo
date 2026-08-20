@@ -350,17 +350,26 @@ security definer
 set search_path = public
 as $$
 declare
-  target_family uuid;
+  target public.inbound_emails;
 begin
-  select family_id into target_family
+  -- Lock the row first: two family members can answer the keep-or-delete
+  -- question at the same time, and the first answer must win. Without the
+  -- lock a slower "Behalten" could overwrite a committed "Löschen" and mark
+  -- an already-erased email as kept.
+  select * into target
   from public.inbound_emails
-  where id = p_inbound_email_id;
+  where id = p_inbound_email_id
+  for update;
 
-  if target_family is null then
+  if target.id is null then
     raise exception 'E-Mail nicht gefunden.';
   end if;
-  if not public.user_belongs_to_family(target_family) then
+  if not public.user_belongs_to_family(target.family_id) then
     raise exception 'Kein Zugriff auf diese E-Mail.';
+  end if;
+  -- Already decided — the first answer stands and this call is a no-op.
+  if target.retention <> 'pending' then
+    return;
   end if;
 
   update public.inbound_emails
@@ -369,7 +378,8 @@ begin
       body_text = case when p_keep then body_text else null end,
       subject = case when p_keep then subject else '' end,
       from_address = case when p_keep then from_address else '' end
-  where id = p_inbound_email_id;
+  where id = p_inbound_email_id
+    and retention = 'pending';
 
   -- Suggestions are derived from this email too. A calendar event or task
   -- already accepted by the family is its own record, so deleting these

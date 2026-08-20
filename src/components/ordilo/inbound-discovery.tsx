@@ -253,7 +253,10 @@ function DiscoveryGroup({
           <SuggestionCard
             key={suggestion.id}
             suggestion={suggestion}
-            busy={busyId === suggestion.id}
+            // One decision at a time across the whole drawer: a second tap
+            // while the first request runs would race the same answer.
+            busy={busyId !== null}
+            saving={busyId === suggestion.id}
             onAccept={() => onAccept(suggestion)}
             onDismiss={() => onDismiss(suggestion)}
           />
@@ -261,6 +264,7 @@ function DiscoveryGroup({
       ) : (
         <RetentionCard
           busy={busyId !== null}
+          saving={busyId === discovery.id}
           onKeep={onKeep}
           onDelete={onDelete}
         />
@@ -272,11 +276,13 @@ function DiscoveryGroup({
 function SuggestionCard({
   suggestion,
   busy,
+  saving,
   onAccept,
   onDismiss,
 }: {
   suggestion: InboundSuggestion;
   busy: boolean;
+  saving: boolean;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
@@ -330,7 +336,7 @@ function SuggestionCard({
           onClick={onAccept}
           className="h-11 flex-1 rounded-ordilo-md text-sm"
         >
-          {busy ? (
+          {saving ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : null}
           {suggestionAcceptLabel(suggestion.kind)}
@@ -356,10 +362,12 @@ function SuggestionCard({
  */
 function RetentionCard({
   busy,
+  saving,
   onKeep,
   onDelete,
 }: {
   busy: boolean;
+  saving: boolean;
   onKeep: () => void;
   onDelete: () => void;
 }) {
@@ -384,7 +392,7 @@ function RetentionCard({
           onClick={onDelete}
           className="h-11 flex-1 rounded-ordilo-md text-sm"
         >
-          {busy ? (
+          {saving ? (
             <Loader2 className="size-4 animate-spin" aria-hidden="true" />
           ) : null}
           Bitte löschen

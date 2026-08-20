@@ -38,14 +38,16 @@ export function toSuggestionRow(
     title: suggestion.title,
     starts_on: suggestion.date,
     // Times only ever belong to an appointment; a task carries a due date.
-    // An end without a start, or one not after the start, is dropped here —
-    // a backwards time range would surface as a broken calendar entry.
+    // An end without a start is dropped; an end earlier on the clock is
+    // kept, because overnight appointments (23:00–01:00) are real — the
+    // accept RPC rolls the end date onto the next day in that case. Only an
+    // end equal to the start (zero duration) is discarded.
     starts_time: isEvent ? suggestion.start_time : null,
     ends_time:
       isEvent &&
       suggestion.start_time !== null &&
       suggestion.end_time !== null &&
-      suggestion.end_time > suggestion.start_time
+      suggestion.end_time !== suggestion.start_time
         ? suggestion.end_time
         : null,
     location: isEvent ? suggestion.location : null,
@@ -71,11 +73,17 @@ export async function recordInboundEmailInsights(params: {
   // Resend retry from paying for a second model call.
   const { data: existing, error: existingError } = await admin
     .from("inbound_emails")
-    .select("id")
+    .select("id, retention")
     .eq("source_email_id", params.emailId)
     .maybeSingle();
   if (existingError) throw existingError;
   if (existing) {
+    // A row the family already decided about is a tombstone, not an
+    // incomplete insert: a "deleted" row has no suggestions left by design,
+    // and re-reading the email from Resend would resurrect exactly the
+    // content the family asked to erase.
+    if (existing.retention !== "pending") return { suggestionCount: 0 };
+
     const { count, error: countError } = await admin
       .from("inbound_suggestions")
       .select("id", { count: "exact", head: true })
@@ -89,7 +97,10 @@ export async function recordInboundEmailInsights(params: {
     const { error: cleanupError } = await admin
       .from("inbound_emails")
       .delete()
-      .eq("id", existing.id);
+      .eq("id", existing.id)
+      // Only while still untouched — a decision that landed between our
+      // reads must never be undone here.
+      .eq("retention", "pending");
     if (cleanupError) throw cleanupError;
   }
 

@@ -94,14 +94,34 @@ describe("toSuggestionRow", () => {
     });
   });
 
-  it("drops an end time that is not after the start", () => {
+  it("keeps an overnight end time — the accept RPC rolls it onto the next day", () => {
+    const row = toSuggestionRow(
+      {
+        kind: "calendar_event",
+        title: "Silvesterfeier",
+        date: "2026-12-31",
+        start_time: "23:00",
+        end_time: "01:00",
+        location: null,
+        note: null,
+        confidence: 0.8,
+      },
+      context,
+    );
+    expect(row).toMatchObject({
+      starts_time: "23:00",
+      ends_time: "01:00",
+    });
+  });
+
+  it("drops an end time identical to the start — a zero-duration event is noise", () => {
     const row = toSuggestionRow(
       {
         kind: "calendar_event",
         title: "Elternabend",
         date: "2026-03-10",
         start_time: "19:00",
-        end_time: "18:30",
+        end_time: "19:00",
         location: null,
         note: null,
         confidence: 0.8,

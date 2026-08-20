@@ -59,6 +59,12 @@ describe("0067_email_insights migration", () => {
     expect(migration).toContain("if suggestion.status <> 'pending' then");
   });
 
+  it("makes the retention decision first-writer-wins under concurrency", () => {
+    expect(migration).toContain("for update;");
+    expect(migration).toContain("if target.retention <> 'pending' then");
+    expect(migration).toContain("and retention = 'pending'");
+  });
+
   it("moves the end date past midnight instead of storing a backwards event", () => {
     expect(migration).toContain("suggestion.starts_time + interval '1 hour'");
     expect(migration).toContain("then 1");
