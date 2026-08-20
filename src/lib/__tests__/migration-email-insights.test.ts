@@ -59,6 +59,11 @@ describe("0067_email_insights migration", () => {
     expect(migration).toContain("if suggestion.status <> 'pending' then");
   });
 
+  it("moves the end date past midnight instead of storing a backwards event", () => {
+    expect(migration).toContain("suggestion.starts_time + interval '1 hour'");
+    expect(migration).toContain("then 1");
+  });
+
   it("erases the source and every derived proposal when the family says delete", () => {
     expect(migration).toContain("body_text = case when p_keep then body_text else null end");
     expect(migration).toContain("subject = case when p_keep then subject else '' end");

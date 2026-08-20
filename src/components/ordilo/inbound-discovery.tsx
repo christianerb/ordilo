@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { CalendarDays, Loader2, ListTodo, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,13 +41,42 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(discoveries);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Emails this session has already answered. The server only omits them from
+  // the next payload after the decision is stored, so a stale revalidation
+  // must not be able to bring one back.
+  const answeredRef = useRef<Set<string>>(new Set());
+
+  // Every decision revalidates /home on the server, and a fresh render brings
+  // the next discoveries as props while React keeps this state alive. Adjust
+  // the queue during render (the sanctioned set-state-in-render pattern):
+  // merge only additions, so an email the family just handled stays gone.
+  const [seenDiscoveries, setSeenDiscoveries] = useState(discoveries);
+  if (seenDiscoveries !== discoveries) {
+    setSeenDiscoveries(discoveries);
+    setPending((current) => {
+      const known = new Set(current.map((discovery) => discovery.id));
+      const additions = discoveries.filter(
+        (discovery) =>
+          !known.has(discovery.id) && !answeredRef.current.has(discovery.id),
+      );
+      return additions.length > 0 ? [...current, ...additions] : current;
+    });
+  }
 
   if (pending.length === 0) return null;
 
   const sender = formatSender(pending[0].fromAddress);
 
   /** Drops a decided proposal, and the whole email once it has no more. */
-  const removeSuggestion = (emailId: string, suggestionId: string) => {
+  const removeSuggestion = (
+    discovery: InboundEmailDiscovery,
+    suggestionId: string,
+  ) => {
+    // An email that leaves the list here stays answered for this session.
+    if (discovery.suggestions.length === 1 && !discovery.retentionPending) {
+      answeredRef.current.add(discovery.id);
+    }
+    const emailId = discovery.id;
     setPending((current) =>
       current
         .map((discovery) =>
@@ -85,7 +114,7 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
         ? "Termin ist im Kalender."
         : "Steht auf der Aufgabenliste.",
     );
-    removeSuggestion(discovery.id, suggestion.id);
+    removeSuggestion(discovery, suggestion.id);
   };
 
   const handleDismiss = async (
@@ -99,7 +128,7 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
       toast.error(result.error);
       return;
     }
-    removeSuggestion(discovery.id, suggestion.id);
+    removeSuggestion(discovery, suggestion.id);
   };
 
   const handleRetention = async (
@@ -116,6 +145,7 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
     toast.success(keep ? "Die E-Mail bleibt bei euch." : "E-Mail gelöscht.");
     // Each request resolves at its own time. Functional state keeps a later
     // response from reviving an email a previous decision already removed.
+    answeredRef.current.add(discovery.id);
     setPending((current) =>
       current.filter((item) => item.id !== discovery.id),
     );

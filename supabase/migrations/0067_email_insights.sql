@@ -242,7 +242,17 @@ begin
       suggestion.title,
       suggestion.note,
       coalesce(suggestion.starts_on, current_date),
-      coalesce(suggestion.starts_on, current_date),
+      -- The end lands on the next day when the (possibly defaulted) end
+      -- time wraps past midnight, e.g. 23:30 with a one-hour default end.
+      coalesce(suggestion.starts_on, current_date) + case
+        when suggestion.starts_time is not null
+          and coalesce(
+            suggestion.ends_time,
+            suggestion.starts_time + interval '1 hour'
+          ) <= suggestion.starts_time
+        then 1
+        else 0
+      end,
       suggestion.starts_time is null,
       suggestion.starts_time,
       case

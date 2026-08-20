@@ -38,8 +38,16 @@ export function toSuggestionRow(
     title: suggestion.title,
     starts_on: suggestion.date,
     // Times only ever belong to an appointment; a task carries a due date.
+    // An end without a start, or one not after the start, is dropped here —
+    // a backwards time range would surface as a broken calendar entry.
     starts_time: isEvent ? suggestion.start_time : null,
-    ends_time: isEvent ? suggestion.end_time : null,
+    ends_time:
+      isEvent &&
+      suggestion.start_time !== null &&
+      suggestion.end_time !== null &&
+      suggestion.end_time > suggestion.start_time
+        ? suggestion.end_time
+        : null,
     location: isEvent ? suggestion.location : null,
     note: suggestion.note,
     confidence: suggestion.confidence,

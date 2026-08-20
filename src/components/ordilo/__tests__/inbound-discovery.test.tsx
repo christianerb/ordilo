@@ -185,6 +185,59 @@ describe("InboundDiscovery", () => {
     }
   });
 
+  it("picks up the next discovery when revalidation delivers fresh props", async () => {
+    const { rerender } = render(
+      <InboundDiscovery discoveries={[discovery({ id: "e-1", suggestions: [] })]} />,
+    );
+    fireEvent.click(screen.getByTestId("home-inbound-discovery"));
+    fireEvent.click(screen.getByRole("button", { name: "Behalten" }));
+    await waitFor(() =>
+      expect(decideInboundEmailRetention).toHaveBeenCalledWith("e-1", true),
+    );
+    await waitFor(() =>
+      expect(screen.queryByTestId("home-inbound-discovery")).toBeNull(),
+    );
+
+    // The server answered the decision and revalidated /home: the next
+    // pending email arrives as new props while this component stays mounted.
+    rerender(
+      <InboundDiscovery
+        discoveries={[
+          discovery({
+            id: "e-2",
+            subject: "Elternabend",
+            suggestions: [],
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByTestId("home-inbound-discovery")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("home-inbound-discovery"));
+    expect(screen.getByTestId("inbound-discovery-group-e-2")).toHaveTextContent(
+      "Betreff: Elternabend",
+    );
+  });
+
+  it("never revives an email the family already answered", async () => {
+    const { rerender } = render(
+      <InboundDiscovery discoveries={[discovery({ id: "e-1", suggestions: [] })]} />,
+    );
+    fireEvent.click(screen.getByTestId("home-inbound-discovery"));
+    fireEvent.click(screen.getByRole("button", { name: "Bitte löschen" }));
+    await waitFor(() =>
+      expect(decideInboundEmailRetention).toHaveBeenCalledWith("e-1", false),
+    );
+
+    // A stale revalidation payload still carrying the deleted email must not
+    // bring it back.
+    rerender(
+      <InboundDiscovery
+        discoveries={[discovery({ id: "e-1", suggestions: [] })]}
+      />,
+    );
+    expect(screen.queryByTestId("home-inbound-discovery")).toBeNull();
+  });
+
   it("keeps the proposal on screen when saving fails", async () => {
     acceptInboundSuggestion.mockResolvedValue({
       success: false,

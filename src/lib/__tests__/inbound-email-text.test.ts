@@ -45,6 +45,14 @@ describe("inbound email text", () => {
     );
   });
 
+  it("turns numeric entities beyond the Unicode range into a space", () => {
+    // fromCodePoint would throw a RangeError here, which would otherwise make
+    // the webhook fail on every retry of one malformed mail.
+    expect(htmlToPlainText("<p>Hallo&#x110000;Welt &#99999999;</p>")).toBe(
+      "Hallo Welt",
+    );
+  });
+
   it("keeps a label and its value on separate lines", () => {
     expect(htmlToPlainText("<div>Wann</div><div>Dienstag</div>")).toBe(
       "Wann\nDienstag",

@@ -93,4 +93,44 @@ describe("toSuggestionRow", () => {
       location: null,
     });
   });
+
+  it("drops an end time that is not after the start", () => {
+    const row = toSuggestionRow(
+      {
+        kind: "calendar_event",
+        title: "Elternabend",
+        date: "2026-03-10",
+        start_time: "19:00",
+        end_time: "18:30",
+        location: null,
+        note: null,
+        confidence: 0.8,
+      },
+      context,
+    );
+    expect(row).toMatchObject({
+      starts_time: "19:00",
+      ends_time: null,
+    });
+  });
+
+  it("drops an end time that has no start", () => {
+    const row = toSuggestionRow(
+      {
+        kind: "calendar_event",
+        title: "U7 für Emma",
+        date: "2026-03-04",
+        start_time: null,
+        end_time: "11:00",
+        location: null,
+        note: null,
+        confidence: 0.8,
+      },
+      context,
+    );
+    expect(row).toMatchObject({
+      starts_time: null,
+      ends_time: null,
+    });
+  });
 });

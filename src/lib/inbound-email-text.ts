@@ -43,7 +43,11 @@ function decodeEntity(entity: string): string {
     const code = raw[0].toLowerCase() === "x"
       ? Number.parseInt(raw.slice(1), 16)
       : Number.parseInt(raw, 10);
-    return Number.isFinite(code) && code > 0 ? String.fromCodePoint(code) : " ";
+    // fromCodePoint throws a RangeError above the Unicode ceiling, so a
+    // malformed entity like &#x110000; must fall back before it gets there.
+    return Number.isFinite(code) && code > 0 && code <= 0x10_ffff
+      ? String.fromCodePoint(code)
+      : " ";
   }
   const name = /^&([a-z]+);$/i.exec(entity)?.[1];
   return (name && NAMED_ENTITIES[name]) ?? " ";
