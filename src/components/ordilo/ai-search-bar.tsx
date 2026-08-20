@@ -228,6 +228,7 @@ function isStandalonePwa(): boolean {
  * Submit behaviour:
  *   - Enter always inserts a newline — it never submits, so a message can
  *     be drafted across multiple lines without accidentally sending early.
+ *   - Cmd+Enter, Ctrl+Enter or Alt+Enter → submit on a desktop keyboard.
  *   - Send button click → submit
  *   - Empty / whitespace-only input → no submit
  *
@@ -458,7 +459,10 @@ export function AISearchBar({
           handleInput();
         }}
         onKeyDown={(event) => {
-          if (event.key === "Enter" && event.ctrlKey) {
+          if (
+            event.key === "Enter" &&
+            (event.metaKey || event.ctrlKey || event.altKey)
+          ) {
             event.preventDefault();
             handleSubmit();
           }

@@ -103,12 +103,16 @@ describe("AISearchBar", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("calls onSubmit when Ctrl+Enter is pressed", () => {
+  it.each([
+    ["Cmd", { metaKey: true }],
+    ["Ctrl", { ctrlKey: true }],
+    ["Alt", { altKey: true }],
+  ])("calls onSubmit when %s+Enter is pressed", (_label, modifier) => {
     const onSubmit = vi.fn();
     render(<AISearchBar onSubmit={onSubmit} />);
     const input = screen.getByRole("textbox") as HTMLTextAreaElement;
     fireEvent.change(input, { target: { value: "Finde die letzte Rechnung" } });
-    fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(input, { key: "Enter", ...modifier });
 
     expect(onSubmit).toHaveBeenCalledWith("Finde die letzte Rechnung");
   });
