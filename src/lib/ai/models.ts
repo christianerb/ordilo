@@ -18,6 +18,16 @@ export const EXTRACTION_MODEL = REASONING_MODEL;
 /** Model for user-facing, tool-calling chat. */
 export const CHAT_MODEL = REASONING_MODEL;
 
+/**
+ * Model for reading a plain inbound email and proposing an appointment or
+ * task from it. Short input, but the date arithmetic behind "nächsten
+ * Dienstag" is exactly where the cheap model gets it wrong.
+ */
+export const EMAIL_INSIGHT_MODEL = REASONING_MODEL;
+
+/** Reasoning effort for inbound-email proposals. */
+export const EMAIL_INSIGHT_REASONING_EFFORT = "low" as const;
+
 /** Model for query expansion, HyDE search variants, and result re-ranking. */
 export const SEARCH_AUGMENTATION_MODEL = GENERAL_MODEL;
 

@@ -30,6 +30,8 @@ import {
 } from "@/lib/home-briefing";
 import { TodayHero } from "./today-hero";
 import { FirstSuccessGuide } from "@/components/ordilo/first-success-guide";
+import { InboundDiscovery } from "@/components/ordilo/inbound-discovery";
+import type { InboundEmailDiscovery } from "@/lib/inbound-suggestions";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -59,6 +61,8 @@ export interface HomeClientProps {
   recentDocuments: HomeDocument[];
   /** Signed thumbnail URLs keyed by document id (image documents only). */
   thumbUrls: Record<string, string>;
+  /** Forwarded emails Ordilo read and still has a question about. */
+  inboundDiscoveries?: InboundEmailDiscovery[];
   /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
   autoOpenScan?: boolean;
 }
@@ -85,6 +89,7 @@ export function HomeClient({
   upcomingTasks,
   recentDocuments,
   thumbUrls,
+  inboundDiscoveries = [],
   autoOpenScan = false,
 }: HomeClientProps) {
   const { openWizard } = useScanActions();
@@ -232,6 +237,11 @@ export function HomeClient({
 
   return (
     <div className="app-page-stack">
+      {/* Outside the first-visit branch on purpose: a family whose very
+          first move was forwarding an email has nothing scanned yet, and
+          that discovery must not be the one thing the screen hides. */}
+      <InboundDiscovery discoveries={inboundDiscoveries} />
+
       {isFirstVisit ? (
         <EmptyState
           title="Schön, dass du da bist"

@@ -58,12 +58,12 @@ describe("FamilySettingsClient", () => {
   it("shows the private document forwarding address when configured", () => {
     render(
       <FamilySettingsClient
-        inboundEmail="dokumente+geheim@mail.ordilo.de"
+        inboundEmail="post-4m7q2x9kha@ordilo.de"
       />,
     );
 
     expect(screen.getByTestId("family-inbound-email")).toHaveTextContent(
-      "dokumente+geheim@mail.ordilo.de",
+      "post-4m7q2x9kha@ordilo.de",
     );
   });
 

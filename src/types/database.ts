@@ -280,6 +280,105 @@ export type Database = {
         };
         Relationships: [];
       };
+      inbound_emails: {
+        Row: {
+          id: string;
+          family_id: string;
+          source_email_id: string;
+          from_address: string;
+          subject: string;
+          body_text: string | null;
+          received_at: string;
+          retention: "pending" | "kept" | "deleted";
+          retention_decided_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          source_email_id: string;
+          from_address?: string;
+          subject?: string;
+          body_text?: string | null;
+          received_at?: string;
+          retention?: "pending" | "kept" | "deleted";
+          retention_decided_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          source_email_id?: string;
+          from_address?: string;
+          subject?: string;
+          body_text?: string | null;
+          received_at?: string;
+          retention?: "pending" | "kept" | "deleted";
+          retention_decided_at?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      inbound_suggestions: {
+        Row: {
+          id: string;
+          family_id: string;
+          inbound_email_id: string;
+          kind: "calendar_event" | "task";
+          title: string;
+          starts_on: string | null;
+          starts_time: string | null;
+          ends_time: string | null;
+          location: string | null;
+          note: string | null;
+          confidence: number;
+          status: "pending" | "accepted" | "dismissed";
+          created_calendar_event_id: string | null;
+          created_task_id: string | null;
+          decided_at: string | null;
+          decided_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          inbound_email_id: string;
+          kind: "calendar_event" | "task";
+          title: string;
+          starts_on?: string | null;
+          starts_time?: string | null;
+          ends_time?: string | null;
+          location?: string | null;
+          note?: string | null;
+          confidence?: number;
+          status?: "pending" | "accepted" | "dismissed";
+          created_calendar_event_id?: string | null;
+          created_task_id?: string | null;
+          decided_at?: string | null;
+          decided_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          inbound_email_id?: string;
+          kind?: "calendar_event" | "task";
+          title?: string;
+          starts_on?: string | null;
+          starts_time?: string | null;
+          ends_time?: string | null;
+          location?: string | null;
+          note?: string | null;
+          confidence?: number;
+          status?: "pending" | "accepted" | "dismissed";
+          created_calendar_event_id?: string | null;
+          created_task_id?: string | null;
+          decided_at?: string | null;
+          decided_by?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       family_merge_document_paths: {
         Row: {
           document_id: string;
@@ -1439,6 +1538,21 @@ export type Database = {
       user_belongs_to_family: {
         Args: { fam_id: string };
         Returns: boolean;
+      };
+      // Inbound-email proposals. Writes go through these RPCs so a client can
+      // only ever accept the exact proposal it was shown, never a rewritten
+      // one. See supabase/migrations/0067_email_insights.sql.
+      accept_inbound_suggestion: {
+        Args: { p_suggestion_id: string };
+        Returns: string | null;
+      };
+      dismiss_inbound_suggestion: {
+        Args: { p_suggestion_id: string };
+        Returns: undefined;
+      };
+      decide_inbound_email_retention: {
+        Args: { p_inbound_email_id: string; p_keep: boolean };
+        Returns: undefined;
       };
       // replace_member_relations — swaps one member's relationship rows in a
       // single transaction and returns the rows as they were before, for the

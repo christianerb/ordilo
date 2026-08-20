@@ -184,11 +184,13 @@ export function FamilySettingsClient({
       {inboundEmail && (
         <div className="space-y-2 rounded-ordilo-md border border-border bg-card p-4 shadow-card">
           <h2 className="text-base font-semibold text-foreground">
-            Dokumente per E-Mail
+            Eure E-Mail-Adresse
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Leite PDFs und Bilder an diese private Adresse weiter. Sie landen
-            automatisch bei euren Dokumenten.
+            Leite PDFs und Bilder an diese private Adresse weiter — sie landen
+            automatisch bei euren Dokumenten. Auch eine E-Mail ohne Anhang
+            reicht: Ordilo liest sie und fragt dich, ob ein Termin oder eine
+            Aufgabe daraus werden soll.
           </p>
           <p
             className="select-all break-all rounded-ordilo-sm bg-[var(--sand-light)] px-3 py-2 text-sm font-medium text-foreground"
