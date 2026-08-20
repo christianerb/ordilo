@@ -110,31 +110,6 @@ create trigger create_family_email_alias_on_family
 after insert on public.families
 for each row execute function public.create_family_email_alias();
 
--- Families still carrying the long address move to the short one. The old
--- address was private and never published, so nothing points at it.
-do $$
-declare
-  alias record;
-  candidate text;
-begin
-  for alias in
-    select family_id from public.family_email_aliases where local_part like 'dokumente+%'
-  loop
-    loop
-      candidate := public.generate_inbound_email_local_part();
-      begin
-        update public.family_email_aliases
-        set local_part = candidate
-        where family_id = alias.family_id;
-        exit;
-      exception when unique_violation then
-        null;
-      end;
-    end loop;
-  end loop;
-end;
-$$;
-
 -- Families created before the trigger existed (or while it was broken).
 do $$
 declare

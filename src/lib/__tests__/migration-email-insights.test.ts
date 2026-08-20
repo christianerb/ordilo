@@ -15,9 +15,12 @@ describe("0067_email_insights migration", () => {
     expect(migration).toContain("return 'post-' || code;");
   });
 
-  it("keeps the legacy address a family may already have saved", () => {
+  it("accepts the legacy address without overwriting an existing family alias", () => {
     expect(migration).toContain("^post-[0-9abcdefghjkmnpqrstvwxyz]{10}$");
     expect(migration).toContain("^dokumente\\+[a-f0-9]{32}$");
+    expect(migration).not.toContain(
+      "set local_part = candidate\n        where family_id = alias.family_id",
+    );
   });
 
   it("retries a code collision instead of failing the family creation", () => {
