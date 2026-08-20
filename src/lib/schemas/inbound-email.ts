@@ -12,6 +12,25 @@ export type InboundSuggestionKind = z.infer<typeof inboundSuggestionKindSchema>;
 const isoDate = /^\d{4}-\d{2}-\d{2}$/;
 const isoTime = /^\d{2}:\d{2}$/;
 
+/** Validates a real Gregorian calendar day, not just YYYY-MM-DD-shaped text. */
+function isCalendarDate(value: string): boolean {
+  if (!isoDate.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+/** Validates the 24-hour clock value stored by Postgres `time`. */
+function isClockTime(value: string): boolean {
+  if (!isoTime.test(value)) return false;
+  const [hours, minutes] = value.split(":").map(Number);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
+}
+
 const nullableText = z
   .string()
   .nullable()
@@ -24,15 +43,15 @@ const nullableText = z
 export const emailSuggestionSchema = z.object({
   kind: inboundSuggestionKindSchema,
   title: z.string().min(1).max(120),
-  date: nullableText.refine((value) => value === null || isoDate.test(value), {
+  date: nullableText.refine((value) => value === null || isCalendarDate(value), {
     message: "Datum muss YYYY-MM-DD sein.",
   }),
   start_time: nullableText.refine(
-    (value) => value === null || isoTime.test(value),
+    (value) => value === null || isClockTime(value),
     { message: "Uhrzeit muss HH:MM sein." },
   ),
   end_time: nullableText.refine(
-    (value) => value === null || isoTime.test(value),
+    (value) => value === null || isClockTime(value),
     { message: "Uhrzeit muss HH:MM sein." },
   ),
   location: nullableText,

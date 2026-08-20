@@ -61,25 +61,44 @@ export async function recordInboundEmailInsights(params: {
 
   // The unique index on source_email_id is the real guard; this check keeps a
   // Resend retry from paying for a second model call.
-  const { data: existing } = await admin
+  const { data: existing, error: existingError } = await admin
     .from("inbound_emails")
     .select("id")
     .eq("source_email_id", params.emailId)
     .maybeSingle();
-  if (existing) return { suggestionCount: 0 };
+  if (existingError) throw existingError;
+  if (existing) {
+    const { count, error: countError } = await admin
+      .from("inbound_suggestions")
+      .select("id", { count: "exact", head: true })
+      .eq("inbound_email_id", existing.id);
+    if (countError) throw countError;
+    if ((count ?? 0) > 0) return { suggestionCount: 0 };
+
+    // A previous attempt failed after persisting the source row but before
+    // creating its proposals. Remove that incomplete state so this Resend
+    // retry can perform the full operation.
+    const { error: cleanupError } = await admin
+      .from("inbound_emails")
+      .delete()
+      .eq("id", existing.id);
+    if (cleanupError) throw cleanupError;
+  }
 
   const { data: received, error } = await params.resend.emails.receiving.get(
     params.emailId,
   );
-  if (error || !received) return { suggestionCount: 0 };
+  if (error) throw error;
+  if (!received) throw new Error("Received email could not be loaded.");
 
   const bodyText = plainTextFromEmail(received.text, received.html);
   if (!bodyText) return { suggestionCount: 0 };
 
-  const { data: memberRows } = await admin
+  const { data: memberRows, error: memberError } = await admin
     .from("family_members")
     .select("name")
     .eq("family_id", params.familyId);
+  if (memberError) throw memberError;
 
   const suggestions = await extractEmailSuggestions({
     subject: received.subject ?? "",
@@ -102,7 +121,8 @@ export async function recordInboundEmailInsights(params: {
     })
     .select("id")
     .maybeSingle();
-  if (emailError || !emailRow) return { suggestionCount: 0 };
+  if (emailError) throw emailError;
+  if (!emailRow) throw new Error("Inbound email insert returned no row.");
 
   const { error: suggestionError } = await admin
     .from("inbound_suggestions")
@@ -116,9 +136,10 @@ export async function recordInboundEmailInsights(params: {
     );
   if (suggestionError) {
     // An email row with no questions attached would leave a stored copy
-    // nobody can ever decide about.
+    // nobody can ever decide about. If cleanup fails, the next retry repairs
+    // it via the incomplete-row path above.
     await admin.from("inbound_emails").delete().eq("id", emailRow.id);
-    return { suggestionCount: 0 };
+    throw suggestionError;
   }
 
   return { suggestionCount: suggestions.length };

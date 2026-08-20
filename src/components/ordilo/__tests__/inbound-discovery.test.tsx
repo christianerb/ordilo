@@ -160,6 +160,31 @@ describe("InboundDiscovery", () => {
     );
   });
 
+  it("locks every retention decision while one is saving", () => {
+    decideInboundEmailRetention.mockReturnValueOnce(
+      new Promise(() => {}),
+    );
+    render(
+      <InboundDiscovery
+        discoveries={[
+          discovery({ id: "e-1", suggestions: [] }),
+          discovery({ id: "e-2", suggestions: [] }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("home-inbound-discovery"));
+    fireEvent.click(screen.getAllByRole("button", { name: "Bitte löschen" })[0]);
+
+    for (const button of screen.getAllByRole("button", {
+      name: "Bitte löschen",
+    })) {
+      expect(button).toBeDisabled();
+    }
+    for (const button of screen.getAllByRole("button", { name: "Behalten" })) {
+      expect(button).toBeDisabled();
+    }
+  });
+
   it("keeps the proposal on screen when saving fails", async () => {
     acceptInboundSuggestion.mockResolvedValue({
       success: false,

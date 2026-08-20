@@ -101,14 +101,14 @@ export async function POST(request: Request): Promise<Response> {
       // app instead of an email that got read and forgotten. Deliberately
       // not for emails that carried a document: that content already goes
       // through OCR and extraction, and two routes to the same date would
-      // ask the family twice.
-      after(async () => {
-        await recordInboundEmailInsights({
-          emailId: event.data.email_id,
-          familyId: alias.family_id,
-          resend,
-          admin,
-        });
+      // ask the family twice. This stays inside the webhook response: an
+      // OpenAI, Resend, or database failure must return 500 so Resend can
+      // retry the message, rather than being lost in a detached callback.
+      await recordInboundEmailInsights({
+        emailId: event.data.email_id,
+        familyId: alias.family_id,
+        resend,
+        admin,
       });
     }
 

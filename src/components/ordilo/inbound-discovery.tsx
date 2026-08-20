@@ -69,10 +69,6 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
     );
   };
 
-  const finishIfDone = (remaining: InboundEmailDiscovery[]) => {
-    if (remaining.length === 0) setOpen(false);
-  };
-
   const handleAccept = async (
     discovery: InboundEmailDiscovery,
     suggestion: InboundSuggestion,
@@ -118,9 +114,11 @@ export function InboundDiscovery({ discoveries }: InboundDiscoveryProps) {
       return;
     }
     toast.success(keep ? "Die E-Mail bleibt bei euch." : "E-Mail gelöscht.");
-    const remaining = pending.filter((item) => item.id !== discovery.id);
-    setPending(remaining);
-    finishIfDone(remaining);
+    // Each request resolves at its own time. Functional state keeps a later
+    // response from reviving an email a previous decision already removed.
+    setPending((current) =>
+      current.filter((item) => item.id !== discovery.id),
+    );
   };
 
   return (
@@ -232,7 +230,7 @@ function DiscoveryGroup({
         ))
       ) : (
         <RetentionCard
-          busy={busyId === discovery.id}
+          busy={busyId !== null}
           onKeep={onKeep}
           onDelete={onDelete}
         />

@@ -54,12 +54,27 @@ describe("selectEmailSuggestions", () => {
     ).toHaveLength(1);
   });
 
-  it("rejects a malformed date or time instead of storing it", () => {
+  it("rejects malformed or impossible dates and times before storing them", () => {
     expect(
       selectEmailSuggestions({ suggestions: [raw({ date: "04.03.2026" })] }),
     ).toEqual([]);
     expect(
+      selectEmailSuggestions({ suggestions: [raw({ date: "2026-02-31" })] }),
+    ).toEqual([]);
+    expect(
+      selectEmailSuggestions({ suggestions: [raw({ date: "2025-02-29" })] }),
+    ).toEqual([]);
+    expect(
+      selectEmailSuggestions({ suggestions: [raw({ date: "2028-02-29" })] }),
+    ).toHaveLength(1);
+    expect(
       selectEmailSuggestions({ suggestions: [raw({ start_time: "10 Uhr" })] }),
+    ).toEqual([]);
+    expect(
+      selectEmailSuggestions({ suggestions: [raw({ start_time: "29:00" })] }),
+    ).toEqual([]);
+    expect(
+      selectEmailSuggestions({ suggestions: [raw({ end_time: "10:60" })] }),
     ).toEqual([]);
   });
 

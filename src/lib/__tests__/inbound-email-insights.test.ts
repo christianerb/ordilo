@@ -19,6 +19,17 @@ describe("inbound email insight boundary", () => {
     expect(source).not.toContain("@/lib/supabase/admin");
     expect(source).toContain("admin: SupabaseClient<Database>");
   });
+
+  it("keeps attachment-free insight work inside the webhook response", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "src/app/api/email/inbound/route.ts"),
+      "utf8",
+    );
+    expect(source).toContain("await recordInboundEmailInsights({");
+    expect(source).not.toContain(
+      "after(async () => {\n        await recordInboundEmailInsights({",
+    );
+  });
 });
 
 describe("berlinToday", () => {

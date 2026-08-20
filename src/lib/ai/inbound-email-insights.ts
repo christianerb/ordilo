@@ -64,7 +64,9 @@ export async function extractEmailSuggestions(
   input: EmailInsightInput,
 ): Promise<EmailSuggestion[]> {
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return [];
+  if (!apiKey) {
+    throw new Error("OpenAI API key is not configured.");
+  }
 
   const client = new OpenAI({ apiKey });
   const userInput = [
@@ -74,27 +76,25 @@ export async function extractEmailSuggestions(
     input.bodyText,
   ].join("\n");
 
-  try {
-    const response = await client.responses.create({
-      model: EMAIL_INSIGHT_MODEL,
-      instructions: buildEmailInsightPrompt(input),
-      input: userInput,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "email_insights",
-          strict: true,
-          schema: emailInsightsJsonSchema as unknown as Record<string, unknown>,
-        },
+  const response = await client.responses.create({
+    model: EMAIL_INSIGHT_MODEL,
+    instructions: buildEmailInsightPrompt(input),
+    input: userInput,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "email_insights",
+        strict: true,
+        schema: emailInsightsJsonSchema as unknown as Record<string, unknown>,
       },
-      reasoning: { effort: EMAIL_INSIGHT_REASONING_EFFORT },
-      store: false,
-    });
+    },
+    reasoning: { effort: EMAIL_INSIGHT_REASONING_EFFORT },
+    store: false,
+  });
 
-    const content = response.output_text;
-    if (!content) return [];
-    return selectEmailSuggestions(JSON.parse(content));
-  } catch {
-    return [];
+  const content = response.output_text;
+  if (!content) {
+    throw new Error("OpenAI returned an empty email-insight response.");
   }
+  return selectEmailSuggestions(JSON.parse(content));
 }
