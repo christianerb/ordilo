@@ -109,6 +109,14 @@ function mockServerClient(options: {
     if (table === "extracted_entities") {
       return { select: vi.fn(() => entitiesChain) };
     }
+    if (table === "family_email_aliases") {
+      // Inbound-address lookup — not under test here, resolves empty.
+      const aliasChain = {
+        eq: vi.fn().mockReturnThis(),
+        maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+      };
+      return { select: vi.fn(() => aliasChain) };
+    }
     throw new Error(`Unexpected table: ${table}`);
   });
 

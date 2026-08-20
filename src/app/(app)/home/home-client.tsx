@@ -31,6 +31,7 @@ import {
 import { TodayHero } from "./today-hero";
 import { FirstSuccessGuide } from "@/components/ordilo/first-success-guide";
 import { InboundDiscovery } from "@/components/ordilo/inbound-discovery";
+import { InboundEmailHint } from "@/components/ordilo/inbound-email-hint";
 import type { InboundEmailDiscovery } from "@/lib/inbound-suggestions";
 
 // ---------------------------------------------------------------------------
@@ -63,6 +64,8 @@ export interface HomeClientProps {
   thumbUrls: Record<string, string>;
   /** Forwarded emails Ordilo read and still has a question about. */
   inboundDiscoveries?: InboundEmailDiscovery[];
+  /** The family's private inbound address, if receiving is configured. */
+  inboundEmailAddress?: string | null;
   /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
   autoOpenScan?: boolean;
 }
@@ -90,6 +93,7 @@ export function HomeClient({
   recentDocuments,
   thumbUrls,
   inboundDiscoveries = [],
+  inboundEmailAddress = null,
   autoOpenScan = false,
 }: HomeClientProps) {
   const { openWizard } = useScanActions();
@@ -423,6 +427,12 @@ export function HomeClient({
                 </Link>
               )}
             </section>
+          )}
+
+          {/* The inbound address lives at the end of the page: present when
+              someone looks for it, quiet when nobody does. */}
+          {inboundEmailAddress && (
+            <InboundEmailHint address={inboundEmailAddress} />
           )}
         </>
       )}

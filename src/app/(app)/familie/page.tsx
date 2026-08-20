@@ -3,6 +3,7 @@ import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { resolveUserFamily } from "@/lib/supabase/resolve-user-family";
 import { resolveMemberPhotoUrls } from "@/lib/member-photos";
 import { loadFamilyRelations } from "@/lib/family/relations-db";
+import { familyInboundEmail } from "@/lib/family-inbound-email";
 import { FamilieClient } from "./familie-client";
 import type { MemberWithRelations } from "./actions";
 import type { Database } from "@/types/database";
@@ -82,21 +83,29 @@ export default async function FamiliePage() {
   // on the member list — run them concurrently. Failures are non-critical
   // (the page still renders; counts simply omit, photos fall back to the
   // colored-initial avatar), so we don't surface error states for these.
-  const [{ data: personEntities }, photoUrls, relationsByMember] = await Promise.all([
-    memberRows.length > 0
-      ? supabase
-          .from("extracted_entities")
-          .select("linked_object_id, document_id")
-          .eq("entity_type", "person")
-          .eq("confirmed", true)
-          .in(
-            "linked_object_id",
-            memberRows.map((m) => m.id),
-          )
-      : Promise.resolve({ data: null }),
-    resolveMemberPhotoUrls(memberRows),
-    loadFamilyRelations(supabase, family.id),
-  ]);
+  const [{ data: personEntities }, photoUrls, relationsByMember, { data: emailAlias }] =
+    await Promise.all([
+      memberRows.length > 0
+        ? supabase
+            .from("extracted_entities")
+            .select("linked_object_id, document_id")
+            .eq("entity_type", "person")
+            .eq("confirmed", true)
+            .in(
+              "linked_object_id",
+              memberRows.map((m) => m.id),
+            )
+        : Promise.resolve({ data: null }),
+      resolveMemberPhotoUrls(memberRows),
+      loadFamilyRelations(supabase, family.id),
+      // The family's private inbound address — shown right on the page,
+      // because nobody opens the settings to forward an email.
+      supabase
+        .from("family_email_aliases")
+        .select("local_part")
+        .eq("family_id", family.id)
+        .maybeSingle(),
+    ]);
 
   const members: MemberWithRelations[] = memberRows.map((member) => ({
     ...member,
@@ -123,6 +132,10 @@ export default async function FamiliePage() {
       members={members}
       documentCounts={documentCounts}
       photoUrls={photoUrls}
+      inboundEmail={familyInboundEmail(
+        emailAlias?.local_part ?? "",
+        process.env.INBOUND_EMAIL_DOMAIN,
+      )}
     />
   );
 }

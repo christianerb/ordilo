@@ -11,6 +11,7 @@ import { nameMap } from "@/lib/family/relations";
 import { cn } from "@/lib/utils";
 import { FILTER_ACTIVE } from "@/lib/ui-styles";
 import { MoreFiltersButton } from "@/components/ordilo/more-filters-button";
+import { InboundEmailHint } from "@/components/ordilo/inbound-email-hint";
 import { ErrorState } from "@/components/ordilo/error-state";
 import { ConfirmAction } from "@/components/ordilo/confirm-action";
 import {
@@ -32,6 +33,8 @@ export interface FamilieClientProps {
   documentCounts?: Record<string, number>;
   /** Signed URLs for members that have an uploaded photo, keyed by member ID. */
   photoUrls?: Record<string, string>;
+  /** The family's private inbound address, if receiving is configured. */
+  inboundEmail?: string | null;
   fetchError?: boolean;
 }
 
@@ -40,6 +43,7 @@ export function FamilieClient({
   members,
   documentCounts = {},
   photoUrls = {},
+  inboundEmail = null,
   fetchError = false,
 }: FamilieClientProps) {
   const router = useRouter();
@@ -180,6 +184,8 @@ export function FamilieClient({
         members={memberList}
         photoUrls={photoUrlMap}
       />
+
+      {inboundEmail && <InboundEmailHint address={inboundEmail} />}
 
       {memberList.length > 0 && (
         <>

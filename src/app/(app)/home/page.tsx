@@ -12,9 +12,26 @@ import type {
   InboundSuggestion,
 } from "@/lib/inbound-suggestions";
 import { MAX_EMAIL_SUGGESTIONS } from "@/lib/schemas/inbound-email";
+import { familyInboundEmail } from "@/lib/family-inbound-email";
 
 /** How many forwarded emails the home screen asks about at once. */
 const INBOUND_DISCOVERY_LIMIT = 3;
+
+/** The family's private inbound address, or null when not configured. */
+async function loadInboundEmailAddress(
+  supabase: ServerClient,
+  familyId: string,
+): Promise<string | null> {
+  const { data: emailAlias } = await supabase
+    .from("family_email_aliases")
+    .select("local_part")
+    .eq("family_id", familyId)
+    .maybeSingle();
+  return familyInboundEmail(
+    emailAlias?.local_part ?? "",
+    process.env.INBOUND_EMAIL_DOMAIN,
+  );
+}
 
 /**
  * The emails Ordilo read and made something of, together with the questions
@@ -236,6 +253,7 @@ export default async function HomePage({
     { data: taskRows },
     { data: recentRows },
     inboundDiscoveries,
+    inboundEmailAddress,
   ] = await Promise.all([
     // 2. Fetch family members (for greeting area).
     supabase
@@ -304,6 +322,9 @@ export default async function HomePage({
     // 7. What Ordilo found in forwarded emails and is still waiting on an
     //    answer for.
     loadInboundDiscoveries(supabase, family.id),
+    // 8. The family's inbound address — the quiet hint at the bottom of
+    //    the page is the one place everyone actually finds it.
+    loadInboundEmailAddress(supabase, family.id),
   ]);
 
   const members: HomeMember[] = (memberRows ?? []).map((m) => ({
@@ -412,6 +433,7 @@ export default async function HomePage({
       recentDocuments={recentDocuments}
       thumbUrls={thumbUrls}
       inboundDiscoveries={inboundDiscoveries}
+      inboundEmailAddress={inboundEmailAddress}
       autoOpenScan={autoOpenScan}
     />
   );
