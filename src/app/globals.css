@@ -366,6 +366,14 @@
     50% { transform: rotate(6deg); }
   }
 
+  /* Ordilo leans in from the edge of a card because it noticed something —
+     one brief look, then it stays put. Plays once, not on a loop. */
+  @keyframes ordilo-peek {
+    from { opacity: 0; transform: translateX(20px) rotate(6deg); }
+    70% { opacity: 1; transform: translateX(-2px) rotate(-2deg); }
+    to { opacity: 1; transform: translateX(0) rotate(0deg); }
+  }
+
   /* A one-time welcome: two Ordilos meet when a family becomes shared. */
   @keyframes invite-family-meet-left {
     from { opacity: 0; transform: translateX(-24px) scale(0.9); }
@@ -844,6 +852,9 @@
   .ordilo-mascot-ear-wiggle {
     animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
   }
+  .ordilo-peek {
+    animation: ordilo-peek 640ms var(--ease-out-quart) 1 both;
+  }
 
   .invite-join-celebration__glow {
     opacity: 0;
@@ -1098,6 +1109,7 @@
   .ordilo-mascot-greet,
   .ordilo-mascot-success,
   .ordilo-mascot-ear-wiggle,
+  .ordilo-peek,
   .invite-join-celebration__glow,
   .invite-join-celebration__elephant,
   .invite-join-celebration__heart,

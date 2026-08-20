@@ -3,6 +3,7 @@ import { Resend } from "resend";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { inboundAliasCandidates } from "@/lib/family-inbound-email";
 import { importInboundEmailAttachments } from "@/lib/inbound-email-import";
+import { recordInboundEmailInsights } from "@/lib/inbound-email-insights";
 import { runPendingJobs } from "@/lib/jobs";
 import {
   deliverInboundEmailNotifications,
@@ -93,6 +94,21 @@ export async function POST(request: Request): Promise<Response> {
           if (summary.claimed === 0) break;
         }
         await deliverInboundEmailNotifications(appUrl);
+      });
+    } else {
+      // Nothing to file away — so the words themselves are the message. A
+      // U7 appointment or a "Zettel bis Freitag" becomes a question in the
+      // app instead of an email that got read and forgotten. Deliberately
+      // not for emails that carried a document: that content already goes
+      // through OCR and extraction, and two routes to the same date would
+      // ask the family twice. This stays inside the webhook response: an
+      // OpenAI, Resend, or database failure must return 500 so Resend can
+      // retry the message, rather than being lost in a detached callback.
+      await recordInboundEmailInsights({
+        emailId: event.data.email_id,
+        familyId: alias.family_id,
+        resend,
+        admin,
       });
     }
 

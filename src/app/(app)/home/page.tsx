@@ -7,6 +7,91 @@ import {
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
+import type {
+  InboundEmailDiscovery,
+  InboundSuggestion,
+} from "@/lib/inbound-suggestions";
+import { MAX_EMAIL_SUGGESTIONS } from "@/lib/schemas/inbound-email";
+
+/** How many forwarded emails the home screen asks about at once. */
+const INBOUND_DISCOVERY_LIMIT = 3;
+
+/**
+ * The emails Ordilo read and made something of, together with the questions
+ * still open on them — either a proposal nobody has answered yet, or the
+ * keep-or-delete question about the email itself.
+ */
+async function loadInboundDiscoveries(
+  supabase: ServerClient,
+  familyId: string,
+): Promise<InboundEmailDiscovery[]> {
+  const { data: suggestionRows } = await supabase
+    .from("inbound_suggestions")
+    .select(
+      "id, inbound_email_id, kind, title, starts_on, starts_time, ends_time, location, note",
+    )
+    .eq("family_id", familyId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    // A single email yields at most MAX_EMAIL_SUGGESTIONS proposals, so this
+    // always reaches three distinct emails that still need an answer.
+    .limit(INBOUND_DISCOVERY_LIMIT * MAX_EMAIL_SUGGESTIONS);
+
+  const byEmail = new Map<string, InboundSuggestion[]>();
+  for (const row of suggestionRows ?? []) {
+    const list = byEmail.get(row.inbound_email_id) ?? [];
+    list.push({
+      id: row.id,
+      kind: row.kind,
+      title: row.title,
+      starts_on: row.starts_on,
+      starts_time: row.starts_time,
+      ends_time: row.ends_time,
+      location: row.location,
+      note: row.note,
+    });
+    byEmail.set(row.inbound_email_id, list);
+  }
+
+  const candidateEmailIds = [...byEmail.keys()];
+  const { data: retentionRows } = await supabase
+    .from("inbound_emails")
+    .select("id")
+    .eq("family_id", familyId)
+    .eq("retention", "pending")
+    .order("received_at", { ascending: false })
+    .limit(INBOUND_DISCOVERY_LIMIT);
+
+  const unresolvedEmailIds = [
+    ...candidateEmailIds,
+    ...(retentionRows ?? []).map((row) => row.id),
+  ];
+  if (unresolvedEmailIds.length === 0) return [];
+
+  const { data: emailRows } = await supabase
+    .from("inbound_emails")
+    .select("id, subject, from_address, received_at, retention")
+    .eq("family_id", familyId)
+    .in("id", unresolvedEmailIds)
+    .order("received_at", { ascending: false });
+
+  return (emailRows ?? [])
+    .map((row) => ({
+      id: row.id,
+      subject: row.subject,
+      fromAddress: row.from_address,
+      receivedAt: row.received_at,
+      retentionPending: row.retention === "pending",
+      suggestions: byEmail.get(row.id) ?? [],
+    }))
+    // A fully answered email with its retention settled has nothing left to
+    // say, and the home screen should not carry a card that only reports it.
+    .filter(
+      (discovery) =>
+        discovery.suggestions.length > 0 || discovery.retentionPending,
+    )
+    .slice(0, INBOUND_DISCOVERY_LIMIT);
+}
 
 /** How long journal thumbnail signed URLs stay valid, in seconds. */
 const THUMB_SIGNED_URL_TTL_SECONDS = 300;
@@ -150,6 +235,7 @@ export default async function HomePage({
     { count: confirmedDocumentCount },
     { data: taskRows },
     { data: recentRows },
+    inboundDiscoveries,
   ] = await Promise.all([
     // 2. Fetch family members (for greeting area).
     supabase
@@ -215,6 +301,9 @@ export default async function HomePage({
       .neq("status", "failed")
       .order("created_at", { ascending: false })
       .limit(JOURNAL_DOCS_LIMIT),
+    // 7. What Ordilo found in forwarded emails and is still waiting on an
+    //    answer for.
+    loadInboundDiscoveries(supabase, family.id),
   ]);
 
   const members: HomeMember[] = (memberRows ?? []).map((m) => ({
@@ -322,6 +411,7 @@ export default async function HomePage({
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
       thumbUrls={thumbUrls}
+      inboundDiscoveries={inboundDiscoveries}
       autoOpenScan={autoOpenScan}
     />
   );
