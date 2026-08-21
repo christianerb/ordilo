@@ -674,7 +674,7 @@ describe("ReviewCard", () => {
 
     expect(screen.getAllByText("Wichtige Termine")).toHaveLength(1);
     expect(screen.getAllByText("Beträge")).toHaveLength(1);
-    expect(screen.getAllByText("Nächste Schritte (2)")).toHaveLength(1);
+    expect(screen.getAllByText("Das müsst ihr noch erledigen")).toHaveLength(1);
     const dates = screen.getByTestId("review-dates");
     expect(within(dates).getByText("15.08.2026")).toBeDefined();
     expect(within(dates).getByText("01.08.2026")).toBeDefined();

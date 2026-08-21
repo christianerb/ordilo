@@ -4,6 +4,7 @@ import {
   RefreshCw,
   AlertCircle,
   Calendar,
+  CalendarPlus,
   Tag,
   User,
   Building2,
@@ -25,6 +26,8 @@ import {
   type DocumentAnalysis,
 } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
+import { findCalendarCandidates } from "@/lib/calendar-heuristics";
+import { cn } from "@/lib/utils";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import type { EditState } from "./helpers";
 import {
@@ -93,6 +96,7 @@ export function ReviewCardContent({
   documentId,
   onViewOriginal,
   onBack,
+  onToggleCalendarDate,
   className,
 }: {
   /**
@@ -139,12 +143,34 @@ export function ReviewCardContent({
   onViewOriginal?: (sourceText?: string) => void;
   /** "Zurück" — returns to the summary view (scan wizard only). */
   onBack?: () => void;
+  /**
+   * Flip a date's planner toggle ("In den Familienplaner legen?"). The
+   * next selected state is computed by the caller, so this component
+   * stays free of override-vs-default bookkeeping.
+   */
+  onToggleCalendarDate?: (dateIndex: number, nextSelected: boolean) => void;
   className?: string;
 }) {
   const isEditMode = mode === "edit";
   const activeTasks = analysis.tasks
     .map((t, i) => ({ task: t, index: i }))
     .filter(({ index }) => !edits.deletedTasks.has(index));
+  // The planner offer: future dates Ordilo can put straight into the
+  // Familienplaner. Computed from the EDITED dates, so a date the user
+  // just fixed is offered (and later created) in its corrected form.
+  // Edit mode skips it — a confirmed document's planner entries already
+  // exist, and this screen's save deliberately leaves them alone.
+  const calendarCandidates = isEditMode
+    ? []
+    : findCalendarCandidates(
+        analysis.dates.map((d, i) => ({
+          date: edits.dates.get(i) ?? d.date,
+          label: d.label,
+        })),
+      );
+  const calendarCandidateIndices = new Set(
+    calendarCandidates.map((candidate) => candidate.index),
+  );
   const documentTitle = edits.title ?? analysis.title;
   const documentSummary = edits.summary ?? analysis.summary;
   const titleMissing = isEditMode && !documentTitle.trim();
@@ -398,14 +424,104 @@ export function ReviewCardContent({
           </ReviewFieldSection>
         )}
 
-        {/* Dates */}
-        {analysis.dates.length > 0 && (
+        {/* Planner offer — the moment Ordilo works ahead: future dates
+            are offered as Familienplaner entries before the family even
+            asks. Appointments start checked, deadlines (which live on
+            their task's due date) start unchecked. */}
+        {calendarCandidates.length > 0 && (
+          <section
+            data-testid="review-calendar-offer"
+            className="mb-4 rounded-ordilo-md bg-[var(--sand-warm)]/60 p-4"
+          >
+            <div className="flex items-start gap-2.5">
+              <CalendarPlus
+                className="mt-0.5 size-4 shrink-0 text-[var(--petrol)]"
+                aria-hidden="true"
+              />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  {calendarCandidates.length === 1
+                    ? "Da steht ein Termin drin."
+                    : `Da stehen ${calendarCandidates.length} Termine drin.`}
+                </p>
+                <p className="mt-0.5 text-sm text-[var(--mist-dark)]">
+                  {calendarCandidates.length === 1
+                    ? "Soll ich ihn direkt in euren Familienplaner legen?"
+                    : "Soll ich sie direkt in euren Familienplaner legen?"}
+                </p>
+              </div>
+            </div>
+            <ul className="mt-2">
+              {calendarCandidates.map((candidate) => {
+                const displayDate = edits.dates.get(candidate.index) ?? candidate.date;
+                const formatted = formatGermanDate(displayDate) || displayDate;
+                const selected =
+                  edits.calendarDates.get(candidate.index) ??
+                  candidate.defaultSelected;
+                return (
+                  <li
+                    key={candidate.index}
+                    className="flex items-center gap-1"
+                  >
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={selected}
+                      onClick={() =>
+                        onToggleCalendarDate?.(candidate.index, !selected)
+                      }
+                      className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 rounded-ordilo-sm px-2 py-1.5 text-left transition-colors hover:bg-[var(--warm-white)]/70 focus-ring"
+                      data-testid={`calendar-toggle-${candidate.index}`}
+                    >
+                      <span
+                        className={cn(
+                          "flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+                          selected
+                            ? "border-[var(--petrol)] bg-[var(--petrol)] text-[var(--warm-white)]"
+                            : "border-[var(--mist-light)] bg-transparent",
+                        )}
+                        aria-hidden="true"
+                      >
+                        {selected && (
+                          <Check className="size-3" strokeWidth={3} />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-foreground">
+                          {formatted}
+                        </span>
+                        {candidate.label && (
+                          <span className="block truncate text-xs text-[var(--mist-dark)]">
+                            {candidate.label}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 text-xs text-[var(--mist-dark)]">
+                        {selected ? "Kommt in den Planer" : "Nicht übernehmen"}
+                      </span>
+                    </button>
+                    <DateEditControl
+                      value={displayDate}
+                      label={candidate.label}
+                      onChange={(d) => onEditDate(candidate.index, d)}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {/* Dates — the ones NOT offered to the planner (past dates like
+            "Gezahlt am …"); candidates live in the offer above. */}
+        {analysis.dates.some((_, i) => !calendarCandidateIndices.has(i)) && (
           <ReviewFieldSection
             icon={Calendar}
             title="Wichtige Termine"
             testId="review-dates"
           >
             {analysis.dates.map((date, i) => {
+              if (calendarCandidateIndices.has(i)) return null;
               const edited = edits.dates.get(i);
               const isEdited = Boolean(edited);
               const displayDate = edited ?? date.date;
@@ -532,7 +648,7 @@ export function ReviewCardContent({
         {activeTasks.length > 0 && (
           <ReviewFieldSection
             icon={ListTodo}
-            title={`Nächste Schritte (${activeTasks.length})`}
+            title="Das müsst ihr noch erledigen"
             testId="review-tasks"
           >
             {activeTasks.map(({ task, index }) => {

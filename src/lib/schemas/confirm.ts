@@ -34,6 +34,23 @@ import type { ApiErrorResponse } from "@/lib/schemas/api";
  */
 export const confirmPayloadSchema = documentAnalysisSchema.extend({
   deletedTaskIndices: z.array(z.number().int().min(0)).default([]),
+  /**
+   * Dates the user kept checked in the review step's planner offer
+   * ("Soll ich sie direkt in euren Familienplaner legen?"). The confirm
+   * RPC turns them into calendar_events rows linked to the document in
+   * the same transaction. Defaults to empty so payloads built before
+   * this field existed still validate.
+   */
+  calendar_events: z
+    .array(
+      z.object({
+        /** ISO date "YYYY-MM-DD". */
+        date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        /** What the date means ("Elternabend Kita") — the event title. */
+        label: z.string().min(1),
+      }),
+    )
+    .default([]),
 });
 
 export type ConfirmPayload = z.infer<typeof confirmPayloadSchema>;
@@ -48,6 +65,8 @@ export type ConfirmPayload = z.infer<typeof confirmPayloadSchema>;
 export type ConfirmSuccessResponse = {
   status: "confirmed";
   document_id: string;
+  /** How many planner events were created from the reviewed dates. */
+  events_created: number;
 };
 
 /**

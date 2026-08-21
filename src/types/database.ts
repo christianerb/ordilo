@@ -73,6 +73,17 @@ export type ConfirmRpcTask = {
   confidence: number;
 };
 
+/**
+ * A planner event to create during confirm — a date the user kept checked
+ * in the review step's "In den Familienplaner" offer.
+ */
+export type ConfirmRpcEvent = {
+  /** ISO date "YYYY-MM-DD". */
+  date: string;
+  /** Event title ("Elternabend Kita"). */
+  label: string;
+};
+
 /** A typed document fact to insert (confirmed = true) during confirm. */
 export type ConfirmRpcFact = {
   fact_type: string;
@@ -89,6 +100,8 @@ export type ConfirmRpcResult = {
   status: "confirmed" | "status_changed";
   /** Present when status === "confirmed". */
   document_id?: string;
+  /** Present when status === "confirmed": how many planner events were created. */
+  events_created?: number;
 };
 
 /** Result of the update_confirmed_document RPC (editing a confirmed document). */
@@ -1599,6 +1612,7 @@ export type Database = {
           p_entities: ConfirmRpcEntity[];
           p_tasks: ConfirmRpcTask[];
           p_facts: ConfirmRpcFact[];
+          p_events: ConfirmRpcEvent[];
           p_pipeline_version: number;
         };
         Returns: ConfirmRpcResult;

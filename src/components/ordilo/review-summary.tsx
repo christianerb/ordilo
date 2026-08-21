@@ -25,6 +25,7 @@ import {
   type DocumentAnalysis,
 } from "@/lib/schemas/extraction";
 import { buildHeadline } from "@/components/ordilo/review-card/helpers";
+import { findCalendarCandidates } from "@/lib/calendar-heuristics";
 import {
   PersonPicker,
   unmatchedPersonName,
@@ -90,12 +91,33 @@ function buildHighlights(
     });
   }
 
+  // Dates Ordilo puts straight into the Familienplaner on confirm (the
+  // pre-checked set from the planner offer) get their own rows, so the
+  // summary shows what "Passt so" will do — not just what was read.
+  const plannerDates = findCalendarCandidates(analysis.dates).filter(
+    (candidate) => candidate.defaultSelected,
+  );
+  const plannerDateValues = new Set(plannerDates.map((c) => c.date));
+  for (const candidate of plannerDates.slice(0, 2)) {
+    const formatted = formatGermanDate(candidate.date) || candidate.date;
+    highlights.push({
+      icon: Calendar,
+      value: candidate.label
+        ? `${formatted} — ${candidate.label}`
+        : formatted,
+      caption: "Kommt in den Planer",
+      isVerifiable: true,
+    });
+  }
+
   const dueDates = analysis.tasks
     .map((t) => t.due_date)
     .filter((d): d is string => Boolean(d))
     .sort();
   const topDate = dueDates[0] ?? analysis.dates[0]?.date;
-  if (topDate) {
+  // A date already shown as "Kommt in den Planer" is not repeated as a
+  // bare "Frist" row underneath.
+  if (topDate && !plannerDateValues.has(topDate)) {
     const formatted = formatGermanDate(topDate) || topDate;
     highlights.push({
       icon: Calendar,

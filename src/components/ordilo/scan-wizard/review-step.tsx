@@ -7,6 +7,7 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
+import { findCalendarCandidates } from "@/lib/calendar-heuristics";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import { fetchDocumentAnalysis, fetchFamilyMembers } from "@/lib/analysis";
 import { ReviewCard } from "@/components/ordilo/review-card";
@@ -104,6 +105,19 @@ function buildAutoActions(analysis: DocumentAnalysis): string[] {
     const formatted = formatGermanDate(dueDates[0]) || dueDates[0];
     actions.push(`Erinnerung am ${formatted}`);
   }
+  // The dates Ordilo puts straight into the Familienplaner — the same
+  // pre-checked set buildConfirmPayload sends on "Passt so", so this
+  // checklist never promises something the tap does not deliver.
+  const plannerDates = findCalendarCandidates(analysis.dates).filter(
+    (candidate) => candidate.defaultSelected,
+  );
+  for (const candidate of plannerDates.slice(0, 2)) {
+    const label = candidate.label.trim() || "Termin";
+    actions.push(`Termin „${label}" in den Planer legen`);
+  }
+  if (plannerDates.length > 2) {
+    actions.push(`${plannerDates.length - 2} weitere Termine in den Planer legen`);
+  }
   if (analysis.suggested_category && analysis.suggested_category.trim()) {
     actions.push(`In „${analysis.suggested_category}" einsortieren`);
   }
@@ -143,6 +157,7 @@ export function ScanReviewStep({
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [eventsCreated, setEventsCreated] = useState(0);
   const [edits, setEdits] = useState<EditState>(EMPTY_EDITS);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
@@ -241,6 +256,14 @@ export function ScanReviewStep({
           errorBody.error || "Bestätigen hat nicht geklappt. Bitte nochmal versuchen.",
         );
       }
+      // The success state names what Ordilo took care of ("2 Termine
+      // liegen jetzt im Planer").
+      const body = (await response.json().catch(() => null)) as {
+        events_created?: number;
+      } | null;
+      setEventsCreated(
+        typeof body?.events_created === "number" ? body.events_created : 0,
+      );
     } catch (err) {
       setConfirmed(false);
       setConfirmError(
@@ -364,6 +387,18 @@ export function ScanReviewStep({
           <p className="mt-1 text-sm text-muted-foreground">
             {milestoneMessage ?? analysis?.title ?? "Dokument gespeichert."}
           </p>
+          {eventsCreated > 0 && (
+            <p
+              className="mt-1 text-sm font-medium text-[var(--petrol)]"
+              data-testid="review-step-calendar-events"
+            >
+              Erledigt —{" "}
+              {eventsCreated === 1
+                ? "1 Termin liegt"
+                : `${eventsCreated} Termine liegen`}{" "}
+              jetzt im Planer.
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2.5">
           <Button

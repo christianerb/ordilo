@@ -170,6 +170,46 @@ describe("confirmPayloadSchema", () => {
     const result = confirmPayloadSchema.safeParse(payload);
     expect(result.success).toBe(true);
   });
+
+  it("defaults calendar_events to empty array when omitted", () => {
+    const result = confirmPayloadSchema.safeParse(validAnalysis());
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.calendar_events).toEqual([]);
+    }
+  });
+
+  it("validates calendar_events with ISO date and label", () => {
+    const payload = {
+      ...validPayload(),
+      calendar_events: [{ date: "2026-07-15", label: "Elternabend" }],
+    };
+    const result = confirmPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.calendar_events).toEqual([
+        { date: "2026-07-15", label: "Elternabend" },
+      ]);
+    }
+  });
+
+  it("rejects calendar_events with a non-ISO date", () => {
+    const payload = {
+      ...validPayload(),
+      calendar_events: [{ date: "Montag", label: "Elternabend" }],
+    };
+    const result = confirmPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects calendar_events with an empty label", () => {
+    const payload = {
+      ...validPayload(),
+      calendar_events: [{ date: "2026-07-15", label: "" }],
+    };
+    const result = confirmPayloadSchema.safeParse(payload);
+    expect(result.success).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------

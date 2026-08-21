@@ -2,6 +2,10 @@ import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import {
   DOCUMENT_TYPE_LABELS,
 } from "@/lib/schemas/extraction";
+import {
+  findCalendarCandidates,
+  selectedCalendarEvents,
+} from "@/lib/calendar-heuristics";
 import type { FamilyMemberOption } from "@/lib/analysis";
 import { cn } from "@/lib/utils";
 import { Check, AlertTriangle, Search } from "lucide-react";
@@ -21,6 +25,11 @@ import {
 export interface EditedAnalysisPayload extends DocumentAnalysis {
   /** IDs of deleted tasks (excluded from confirm). */
   deletedTaskIndices: number[];
+  /**
+   * Dates kept checked in the review step's planner offer — the confirm
+   * route turns them into Familienplaner events linked to the document.
+   */
+  calendar_events: { date: string; label: string }[];
 }
 
 /**
@@ -53,6 +62,13 @@ export interface EditState {
   deletedTasks: Set<number>;
   /** Edited fact values (by fact index) — e.g. a corrected serial number. */
   factValues: Map<number, string>;
+  /**
+   * Planner-toggle overrides (by date index) for the review step's
+   * "In den Familienplaner legen?" offer. An entry only exists once the
+   * user has flipped a date away from its heuristic default — no entry
+   * means the default (appointments on, deadlines off) applies.
+   */
+  calendarDates: Map<number, boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +189,17 @@ export function buildConfirmPayload(
     return f;
   });
 
+  // Planner events: the future dates the user kept checked in the
+  // "In den Familienplaner legen?" offer. The candidates are computed
+  // from the EDITED dates, so a corrected date lands in the planner
+  // exactly as fixed. With untouched toggles (empty overrides) the
+  // heuristic defaults apply — which is also what the scan wizard's
+  // one-tap "Passt so" path sends.
+  const calendarEvents = selectedCalendarEvents(
+    findCalendarCandidates(dates),
+    edits.calendarDates,
+  );
+
   return {
     ...analysis,
     title: edits.title ?? analysis.title,
@@ -185,6 +212,7 @@ export function buildConfirmPayload(
     amounts,
     tasks,
     facts,
+    calendar_events: calendarEvents,
     deletedTaskIndices: [...edits.deletedTasks],
   };
 }
@@ -207,6 +235,7 @@ export function emptyEditState(): EditState {
     taskTitles: new Map(),
     taskDueDates: new Map(),
     deletedTasks: new Set(),
+    calendarDates: new Map(),
   };
 }
 
@@ -267,7 +296,8 @@ export function hasReviewEdits(edits: EditState): boolean {
     edits.amountValues.size > 0 ||
     edits.taskTitles.size > 0 ||
     edits.taskDueDates.size > 0 ||
-    edits.deletedTasks.size > 0
+    edits.deletedTasks.size > 0 ||
+    edits.calendarDates.size > 0
   );
 }
 
