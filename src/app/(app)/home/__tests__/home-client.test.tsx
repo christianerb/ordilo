@@ -160,7 +160,7 @@ const recentDocuments = [
 const defaultProps: HomeClientProps = {
   familyId: "family-1",
   greeting: "Guten Abend",
-  familyName: "Erb",
+  familyName: "Familie Erb",
   members,
   analyzedDocuments,
   unconfirmedDocCount: 2,

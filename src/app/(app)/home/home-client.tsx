@@ -47,6 +47,8 @@ export interface HomeMember {
 export interface HomeClientProps {
   familyId: string;
   greeting: string;
+  /** The family's full display name (e.g. "Familie Erb") — already
+      carries the "Familie" convention, so it is rendered as-is. */
   familyName: string;
   members: HomeMember[];
   analyzedDocuments: HomeDocument[];
@@ -288,7 +290,7 @@ export function HomeClient({
                 </h1>
                 {familyName && (
                   <p className="mt-1 truncate text-sm text-muted-foreground">
-                    Familie {familyName}
+                    {familyName}
                   </p>
                 )}
               </div>
@@ -297,7 +299,7 @@ export function HomeClient({
                   href="/familie"
                   className="relative z-10 flex shrink-0 -space-x-2 rounded-full transition-opacity hover:opacity-80 focus-ring"
                   data-testid="member-list"
-                  aria-label={`Familie ${familyName}`}
+                  aria-label={familyName}
                 >
                   {members.slice(0, 3).map((m) => (
                     <div
