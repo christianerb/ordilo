@@ -3,10 +3,16 @@ import { createClient, getMiddlewareFamily } from "@/lib/supabase/server";
 import { HomeClient, type HomeMember } from "./home-client";
 import {
   filterRecentDocuments,
+  toLocalDateStr,
   JOURNAL_DOCS_LIMIT,
   type HomeTask,
   type HomeDocument,
 } from "@/lib/home-utils";
+import {
+  HOME_EVENTS_HORIZON_DAYS,
+  type HomeEventRow,
+} from "@/lib/home-events";
+import type { CalendarEvent } from "@/lib/calendar";
 import type {
   InboundEmailDiscovery,
   InboundSuggestion,
@@ -91,6 +97,73 @@ async function loadInboundDiscoveries(
         discovery.suggestions.length > 0 || discovery.retentionPending,
     )
     .slice(0, INBOUND_DISCOVERY_LIMIT);
+}
+
+/**
+ * Calendar events within Home's own horizon (today through
+ * HOME_EVENTS_HORIZON_DAYS ahead), for the "Heute" timeline and the
+ * "Demnächst" preview.
+ *
+ * Mirrors the digest email's query shape (lib/digest.ts / api/digest/run):
+ * a recurring series can have started long before today, so the filter
+ * keeps every series plus any one-off that has not ended yet — occurrence
+ * expansion (expandHomeEventOccurrences) does the rest, client-side.
+ */
+async function loadHomeEventRows(
+  supabase: ServerClient,
+  familyId: string,
+): Promise<HomeEventRow[]> {
+  const today = toLocalDateStr(new Date());
+  const horizon = toLocalDateStr(
+    new Date(Date.now() + HOME_EVENTS_HORIZON_DAYS * 86_400_000),
+  );
+
+  const { data: rows } = await supabase
+    .from("calendar_events")
+    .select(
+      "id, title, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id",
+    )
+    .eq("family_id", familyId)
+    .lte("starts_on", horizon)
+    .or(`ends_on.gte.${today},recurrence.neq.none`);
+
+  const eventRows = rows ?? [];
+  const eventIds = eventRows.map((row) => row.id);
+  const { data: attendeeRows } = eventIds.length
+    ? await supabase
+      .from("calendar_event_attendees")
+      .select("event_id, family_member_id")
+      .in("event_id", eventIds)
+    : { data: [] };
+
+  const memberIds = [
+    ...new Set((attendeeRows ?? []).map((row) => row.family_member_id)),
+  ];
+  const memberNames = new Map<string, string>();
+  if (memberIds.length > 0) {
+    const { data: memberRows } = await supabase
+      .from("family_members")
+      .select("id, name")
+      .in("id", memberIds);
+    for (const member of memberRows ?? []) {
+      memberNames.set(member.id, member.name);
+    }
+  }
+
+  const namesByEvent = new Map<string, string[]>();
+  for (const attendee of attendeeRows ?? []) {
+    const list = namesByEvent.get(attendee.event_id) ?? [];
+    const name = memberNames.get(attendee.family_member_id);
+    if (name) list.push(name);
+    namesByEvent.set(attendee.event_id, list);
+  }
+
+  return eventRows.map((row) => ({
+    ...row,
+    recurrence: row.recurrence as CalendarEvent["recurrence"],
+    recurrence_exceptions: row.recurrence_exceptions ?? [],
+    attendee_names: namesByEvent.get(row.id) ?? [],
+  }));
 }
 
 /** How long journal thumbnail signed URLs stay valid, in seconds. */
@@ -236,6 +309,7 @@ export default async function HomePage({
     { data: taskRows },
     { data: recentRows },
     inboundDiscoveries,
+    eventRows,
   ] = await Promise.all([
     // 2. Fetch family members (for greeting area).
     supabase
@@ -304,6 +378,9 @@ export default async function HomePage({
     // 7. What Ordilo found in forwarded emails and is still waiting on an
     //    answer for.
     loadInboundDiscoveries(supabase, family.id),
+    // 8. Calendar events within the Home horizon, for the "Heute" timeline
+    //    and the "Demnächst" preview.
+    loadHomeEventRows(supabase, family.id),
   ]);
 
   const members: HomeMember[] = (memberRows ?? []).map((m) => ({
@@ -359,6 +436,16 @@ export default async function HomePage({
     document_title: t.document_id ? docTitleMap.get(t.document_id) ?? null : null,
   }));
 
+  // HomeClient snapshots upcomingTasks into local state on mount (for
+  // optimistic toggle/dismiss), so a plain router.refresh() after creating
+  // a task from the new quick-actions grid would not surface it — same
+  // reasoning, same fix as AufgabenClient's taskKey (aufgaben/page.tsx):
+  // key the client component on the task list's content so a refresh that
+  // actually changed the data forces a remount and re-seeds local state.
+  const taskKey = upcomingTasks
+    .map((t) => `${t.id}:${t.status}:${t.title}:${t.due_date ?? ""}`)
+    .join("|");
+
   const recentDocuments: HomeDocument[] = filterRecentDocuments(
     (recentRows ?? []).map((d) => ({
       id: d.id,
@@ -400,6 +487,7 @@ export default async function HomePage({
 
   return (
     <HomeClient
+      key={taskKey}
       familyId={family.id}
       greeting={getGreeting()}
       familyName={family.name}
@@ -411,6 +499,7 @@ export default async function HomePage({
       upcomingTasks={upcomingTasks}
       recentDocuments={recentDocuments}
       thumbUrls={thumbUrls}
+      eventRows={eventRows}
       inboundDiscoveries={inboundDiscoveries}
       autoOpenScan={autoOpenScan}
     />

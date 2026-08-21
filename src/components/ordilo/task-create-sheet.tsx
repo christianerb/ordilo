@@ -182,7 +182,7 @@ export function TaskCreateSheet({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Notizen, Details, was zu tun ist…"
             rows={3}
-            className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-sm leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20"
+            className="w-full resize-none rounded-ordilo-sm border border-border/70 bg-[var(--surface-story)] px-3.5 py-3 text-base leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground hover:border-border focus:border-[var(--petrol)] focus:ring-[3px] focus:ring-ring/20 md:text-sm"
             data-testid="task-create-description"
           />
         </div>

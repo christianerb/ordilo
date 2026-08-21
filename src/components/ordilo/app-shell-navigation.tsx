@@ -11,12 +11,13 @@ import {
   Menu,
   Plus,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { logout } from "@/app/(app)/actions";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import { ComposerOverlay } from "@/components/ordilo/composer-overlay";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useRegisterComposerFocusHandler } from "@/lib/search/composer-focus-context";
 import { ComposerSuggestionChips } from "@/components/ordilo/composer-suggestion-chips";
 import {
   Drawer,
@@ -310,6 +311,21 @@ export function MobileComposer({
   const [value, setValue] = useState("");
   const [expanded, setExpanded] = useState(false);
 
+  // Lets any page (currently /home's "Fragen" quick action) ask the
+  // composer to zoom into its fullscreen overlay, the same way focusing
+  // the collapsed pill already does. A no-op on /suche, where the overlay
+  // is disabled and the pill behaves like a plain inline composer.
+  //
+  // Memoized on enableOverlay so the registered handler updates when it
+  // changes (see useRegisterComposerFocusHandler) instead of forever
+  // running the check from whichever route this component first mounted
+  // on — it is part of the persistent app shell, so it never remounts on
+  // its own between /suche and everywhere else.
+  const handleComposerFocusRequest = useCallback(() => {
+    if (enableOverlay) setExpanded(true);
+  }, [enableOverlay]);
+  useRegisterComposerFocusHandler(handleComposerFocusRequest);
+
   return (
     <>
       <div
@@ -374,6 +390,16 @@ export function DesktopBottomBar({
   isLoading?: boolean;
 }) {
   const [composerActive, setComposerActive] = useState(false);
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Desktop has no fullscreen overlay to zoom into — its composer is
+  // already fully visible in the floating dock, so a focus request just
+  // focuses the real input directly (which also flips composerActive via
+  // the existing onFocusCapture below, surfacing the suggestion chips).
+  const handleComposerFocusRequest = useCallback(() => {
+    searchInputRef.current?.focus();
+  }, []);
+  useRegisterComposerFocusHandler(handleComposerFocusRequest);
 
   return (
     <div
@@ -400,6 +426,7 @@ export function DesktopBottomBar({
           <div className="flex w-full items-center gap-2">
             <div className="min-w-0 flex-1">
               <AISearchBar
+                ref={searchInputRef}
                 onSubmit={onSearch}
                 isLoading={isLoading}
                 placeholder="Frage Ordilo oder suche nach Dokumenten…"

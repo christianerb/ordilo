@@ -2,15 +2,19 @@
 
 import { useCallback, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { TaskCard, type TaskCardData } from "@/components/ordilo/task-card";
+import { TaskCard, type TaskCardData, type AssigneeOption } from "@/components/ordilo/task-card";
 import { EmptyState } from "@/components/ordilo/empty-state";
+import { EventSheet } from "@/components/ordilo/event-sheet";
+import { TaskCreateSheet } from "@/components/ordilo/task-create-sheet";
 import { formatRelativeTime } from "@/lib/format";
 import { getStatusLabel } from "@/lib/schemas/document";
 import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 import { useDocumentViewer, useScanActions } from "@/lib/scan/scan-context";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { SuggestionChipsRegistrar } from "@/lib/search/suggestion-chips-context";
+import { useComposerFocusRequest } from "@/lib/search/composer-focus-context";
 import { cn } from "@/lib/utils";
 import {
   getAvatarTextColor,
@@ -19,6 +23,7 @@ import {
 import {
   filterRecentDocuments,
   mergeJournalDocuments,
+  toLocalDateStr,
   JOURNAL_DOCS_LIMIT,
   type HomeTask,
   type HomeDocument,
@@ -28,7 +33,22 @@ import {
   selectHomeHero,
   deriveSuggestionChips,
 } from "@/lib/home-briefing";
+import {
+  buildTodayTimeline,
+  buildUpcomingPreview,
+  expandHomeEventOccurrences,
+  filterNext7DaysTasks,
+  filterTodayOccurrences,
+  filterUpcomingOccurrences,
+  toConflictCheckEvent,
+  type HomeEventRow,
+} from "@/lib/home-events";
+import { deriveDiscoveryInsight } from "@/lib/home-insights";
 import { TodayHero } from "./today-hero";
+import { HomeTimeline } from "./home-timeline";
+import { UpcomingPreviewCard } from "./upcoming-preview-card";
+import { QuickActionsGrid } from "./quick-actions-grid";
+import { AiDiscoveryCard } from "./ai-discovery-card";
 import { FirstSuccessGuide } from "@/components/ordilo/first-success-guide";
 import { InboundDiscovery } from "@/components/ordilo/inbound-discovery";
 import type { InboundEmailDiscovery } from "@/lib/inbound-suggestions";
@@ -47,6 +67,8 @@ export interface HomeMember {
 export interface HomeClientProps {
   familyId: string;
   greeting: string;
+  /** The family's full display name (e.g. "Familie Erb") — already
+      carries the "Familie" convention, so it is rendered as-is. */
   familyName: string;
   members: HomeMember[];
   analyzedDocuments: HomeDocument[];
@@ -61,6 +83,9 @@ export interface HomeClientProps {
   recentDocuments: HomeDocument[];
   /** Signed thumbnail URLs keyed by document id (image documents only). */
   thumbUrls: Record<string, string>;
+  /** Calendar events within the Home horizon (today + next 7 days), for
+      the "Heute" timeline and the "Demnächst" preview. */
+  eventRows: HomeEventRow[];
   /** Forwarded emails Ordilo read and still has a question about. */
   inboundDiscoveries?: InboundEmailDiscovery[];
   /** Open the scan wizard on mount (onboarding springboard: /home?scan=1). */
@@ -89,11 +114,17 @@ export function HomeClient({
   upcomingTasks,
   recentDocuments,
   thumbUrls,
+  eventRows,
   inboundDiscoveries = [],
   autoOpenScan = false,
 }: HomeClientProps) {
-  const { openWizard } = useScanActions();
+  const router = useRouter();
+  const { openWizard, openUploadPicker } = useScanActions();
   const { openDocument } = useDocumentViewer();
+  const requestComposerFocus = useComposerFocusRequest();
+  const [eventSheetOpen, setEventSheetOpen] = useState(false);
+  const [taskSheetOpen, setTaskSheetOpen] = useState(false);
+  const assigneeOptions: AssigneeOption[] = members;
 
   // Onboarding springboard: /home?scan=1 opens the scanner immediately —
   // the user tapped "Erstes Dokument scannen" and should land in the
@@ -206,10 +237,36 @@ export function HomeClient({
   );
   const hasMoreJournalDocs = journalDocCount > journalDocs.length;
 
+  // "Heute": today's fixed appointments plus today's open tasks, in one
+  // timeline. Expanding recurring events onto the horizon here (rather
+  // than on the server) keeps the same pure, tested logic as the digest
+  // email (lib/digest.ts) — just with a 7-day window instead of two days.
+  const today = toLocalDateStr(new Date());
+  const eventOccurrences = expandHomeEventOccurrences(eventRows);
+  const todayEvents = filterTodayOccurrences(eventOccurrences, today);
+  const todayTasks = datedOpenTasks.filter((t) => t.due_date === today);
+  const timelineItems = buildTodayTimeline(todayEvents, todayTasks);
+
+  // "Demnächst": a one-line preview of the rest of the week, deliberately
+  // excluding today (that's the timeline above) and anything overdue
+  // (the hero already owns that).
+  const upcomingEvents = filterUpcomingOccurrences(eventOccurrences, today);
+  const upcomingTasksNext7 = filterNext7DaysTasks(localTasks);
+  const upcomingPreviewItems = buildUpcomingPreview(
+    upcomingTasksNext7,
+    upcomingEvents,
+  );
+
+  // "Ordilo hat etwas entdeckt": scans only what's already on the page
+  // (the journal, capped at HOME_JOURNAL_LIMIT) — no extra query, and the
+  // same documents the family can already see for themselves.
+  const discoveryInsight = deriveDiscoveryInsight(journalDocs);
+
   const isFirstVisit =
     totalTasks === 0 &&
     analyzedDocuments.length === 0 &&
-    visibleRecentDocs.length === 0;
+    visibleRecentDocs.length === 0 &&
+    eventOccurrences.length === 0;
 
   const toTaskCardData = (t: HomeTask): TaskCardData => ({
     id: t.id,
@@ -230,6 +287,12 @@ export function HomeClient({
     // it has no use for the completion stamp.
     completed_at: null,
   });
+
+  // Existing events, converted for EventSheet's double-booking check.
+  // Home only fetches events within its own horizon, so a conflict just
+  // outside that window would go unflagged — an acceptable gap for a
+  // quick-create shortcut; the full check still runs on /aufgaben.
+  const conflictCheckEvents = eventRows.map(toConflictCheckEvent);
 
   // -------------------------------------------------------------------------
   // Render
@@ -288,7 +351,17 @@ export function HomeClient({
                 </h1>
                 {familyName && (
                   <p className="mt-1 truncate text-sm text-muted-foreground">
-                    Familie {familyName}
+                    {familyName}
+                  </p>
+                )}
+                {timelineItems.length > 0 && (
+                  <p
+                    className="mt-0.5 text-sm text-muted-foreground"
+                    data-testid="home-today-count"
+                  >
+                    Heute {timelineItems.length === 1 ? "steht" : "stehen"}{" "}
+                    {timelineItems.length}{" "}
+                    {timelineItems.length === 1 ? "Ding" : "Dinge"} an
                   </p>
                 )}
               </div>
@@ -297,7 +370,7 @@ export function HomeClient({
                   href="/familie"
                   className="relative z-10 flex shrink-0 -space-x-2 rounded-full transition-opacity hover:opacity-80 focus-ring"
                   data-testid="member-list"
-                  aria-label={`Familie ${familyName}`}
+                  aria-label={familyName}
                 >
                   {members.slice(0, 3).map((m) => (
                     <div
@@ -333,6 +406,19 @@ export function HomeClient({
               />
             </div>
           </section>
+
+          <HomeTimeline items={timelineItems} />
+
+          <UpcomingPreviewCard items={upcomingPreviewItems} />
+
+          <QuickActionsGrid
+            onNewEvent={() => setEventSheetOpen(true)}
+            onNewTask={() => setTaskSheetOpen(true)}
+            onNewDocument={openUploadPicker}
+            onAskQuestion={requestComposerFocus}
+          />
+
+          <AiDiscoveryCard insight={discoveryInsight} onView={openDocument} />
 
           {/* Documents are their own quiet book surface, with the one item
               that needs confirmation gently lifted inside the list. */}
@@ -424,6 +510,24 @@ export function HomeClient({
               )}
             </section>
           )}
+
+          <EventSheet
+            open={eventSheetOpen}
+            onOpenChange={setEventSheetOpen}
+            familyId={familyId}
+            members={assigneeOptions}
+            event={null}
+            defaultDate={today}
+            existingEvents={conflictCheckEvents}
+            onSaved={() => router.refresh()}
+          />
+          <TaskCreateSheet
+            open={taskSheetOpen}
+            onOpenChange={setTaskSheetOpen}
+            familyId={familyId}
+            members={assigneeOptions}
+            onCreated={() => router.refresh()}
+          />
         </>
       )}
     </div>

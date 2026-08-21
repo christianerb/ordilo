@@ -107,6 +107,18 @@ vi.mock("@/lib/ocr", () => ({ triggerOcr: vi.fn() }));
 
 // Import AFTER mocks are registered.
 import { AppShell, NAV_TABS } from "@/components/ordilo/app-shell";
+import { useComposerFocusRequest } from "@/lib/search/composer-focus-context";
+
+/** Stand-in for a page (e.g. Home's "Fragen" quick action) that asks the
+    shared composer to open/focus itself. */
+function ComposerFocusTrigger() {
+  const requestFocus = useComposerFocusRequest();
+  return (
+    <button type="button" data-testid="request-composer-focus" onClick={requestFocus}>
+      Fragen
+    </button>
+  );
+}
 
 // --- Helpers ---------------------------------------------------------------
 
@@ -421,6 +433,56 @@ describe("AppShell", () => {
     renderShell("/home");
     const [pill] = screen.getAllByRole("textbox");
     fireEvent.focus(pill);
+    expect(screen.getByTestId("composer-overlay")).toBeDefined();
+  });
+
+  it("a composer focus request (e.g. Home's 'Fragen' quick action) also focuses the desktop search bar, not just the mobile overlay", () => {
+    mockUsePathname.mockReturnValue("/home");
+    render(
+      <AppShell>
+        <ComposerFocusTrigger />
+      </AppShell>,
+    );
+    const dock = screen.getByTestId("desktop-floating-dock");
+    const desktopInput = within(dock).getByRole("textbox");
+    const focusSpy = vi.spyOn(desktopInput, "focus");
+
+    fireEvent.click(screen.getByTestId("request-composer-focus"));
+
+    // Mobile: the fullscreen overlay opens.
+    expect(screen.getByTestId("composer-overlay")).toBeDefined();
+    // Desktop has no overlay to zoom into (its search bar is already
+    // visible) — the request must reach it directly too. Asserting the
+    // call rather than the final document.activeElement: in a real
+    // browser the overlay's own `lg:hidden` root keeps its autofocus from
+    // ever winning at desktop widths, but jsdom does not enforce
+    // CSS-based focusability, so checking global focus here would depend
+    // on styles this test cannot evaluate.
+    expect(focusSpy).toHaveBeenCalled();
+  });
+
+  it("keeps the composer focus request working after navigating away from /suche without a remount", () => {
+    // AppShellContent never remounts on a route change (see "does not
+    // remount the content..." below) — this exercises whether the
+    // composer's registered handler actually observes the new
+    // enableOverlay value after such a change, instead of running the
+    // stale check captured on its first mount.
+    mockUsePathname.mockReturnValue("/suche");
+    const { rerender } = render(
+      <AppShell>
+        <ComposerFocusTrigger />
+      </AppShell>,
+    );
+    fireEvent.click(screen.getByTestId("request-composer-focus"));
+    expect(screen.queryByTestId("composer-overlay")).toBeNull();
+
+    mockUsePathname.mockReturnValue("/home");
+    rerender(
+      <AppShell>
+        <ComposerFocusTrigger />
+      </AppShell>,
+    );
+    fireEvent.click(screen.getByTestId("request-composer-focus"));
     expect(screen.getByTestId("composer-overlay")).toBeDefined();
   });
 

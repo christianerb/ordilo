@@ -160,7 +160,7 @@ const recentDocuments = [
 const defaultProps: HomeClientProps = {
   familyId: "family-1",
   greeting: "Guten Abend",
-  familyName: "Erb",
+  familyName: "Familie Erb",
   members,
   analyzedDocuments,
   unconfirmedDocCount: 2,
@@ -169,6 +169,7 @@ const defaultProps: HomeClientProps = {
   upcomingTasks,
   recentDocuments,
   thumbUrls: {},
+  eventRows: [],
 };
 
 // Reference date for test data: 2026-07-06 (matches system date)
@@ -315,8 +316,9 @@ describe("HomeClient — Heute hero", () => {
     expect(within(hero).getByTestId("today-hero-done").className).toContain(
       "size-12",
     );
-    // Details stays a real deep link that opens the task on the board
-    const details = within(hero).getByRole("link", { name: "Details" });
+    // Erledigen stays a real deep link that opens the task on the board —
+    // the round checkbox on the left is the only actual complete action.
+    const details = within(hero).getByRole("link", { name: "Erledigen" });
     expect(details.getAttribute("href")).toMatch(/^\/aufgaben\?task=.+/);
   });
 
@@ -597,6 +599,60 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
     await waitFor(() => {
       expect(screen.getByTestId("scan-wizard")).toBeDefined();
     });
+  });
+});
+
+describe("HomeClient — First Visit", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows the whole-page first-visit empty state when there are no tasks, documents, or events", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        analyzedDocuments={[]}
+        recentDocuments={[]}
+        eventRows={[]}
+      />,
+    );
+    expect(screen.getByText("Schön, dass du da bist")).toBeDefined();
+    expect(screen.queryByTestId("home-priority-card")).toBeNull();
+  });
+
+  it("skips the first-visit empty state for an event-only family (calendar entries but no tasks or documents)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-06T12:00:00Z"));
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        analyzedDocuments={[]}
+        recentDocuments={[]}
+        eventRows={[
+          {
+            id: "event-1",
+            title: "Zahnarzt",
+            starts_on: "2026-07-06",
+            ends_on: "2026-07-06",
+            all_day: false,
+            starts_time: "09:00:00",
+            ends_time: "09:30:00",
+            location: null,
+            responsible_member_id: null,
+            recurrence: "none",
+            recurrence_until: null,
+            recurrence_exceptions: [],
+            attendee_names: [],
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByText("Schön, dass du da bist")).toBeNull();
+    expect(screen.getByTestId("home-priority-card")).toBeDefined();
+    expect(screen.getByTestId("home-timeline")).toBeDefined();
+    expect(screen.getByText("Zahnarzt")).toBeDefined();
   });
 });
 

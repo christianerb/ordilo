@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import { X, History } from "lucide-react";
 import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import { ComposerSuggestionChips } from "@/components/ordilo/composer-suggestion-chips";
@@ -33,6 +34,8 @@ export function ComposerOverlay({
   /** Family/display name for the greeting headline, when known. */
   greetingName?: string;
 }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+
   // Locks background scroll while the overlay covers the screen, and
   // restores it on close — the fixed layer has no scroll container of its
   // own for the page behind it.
@@ -41,6 +44,36 @@ export function ComposerOverlay({
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
+    };
+  });
+
+  // `h-dvh` plus `interactiveWidget: resizes-content` (root layout viewport)
+  // is meant to shrink this box for the keyboard so it never needs panning.
+  // In practice that CSS resize is not reliable on every iOS version — when
+  // it doesn't kick in, Safari falls back to panning the whole fixed layer
+  // to reveal the focused input, dragging the close/history row above the
+  // top edge (the exact "verschwundenes X" bug). `visualViewport` reports
+  // the actually-visible rectangle regardless of whether the CSS resize
+  // happened, so pinning the container to it directly — instead of trusting
+  // `h-dvh`/`top-0` — keeps the header on-screen no matter what WebKit does
+  // with the layout viewport underneath.
+  useMountEffect(() => {
+    const viewport = window.visualViewport;
+    const el = containerRef.current;
+    if (!viewport || !el) return;
+
+    const sync = () => {
+      el.style.height = `${viewport.height}px`;
+      el.style.top = `${viewport.offsetTop}px`;
+    };
+    sync();
+    viewport.addEventListener("resize", sync);
+    viewport.addEventListener("scroll", sync);
+    return () => {
+      viewport.removeEventListener("resize", sync);
+      viewport.removeEventListener("scroll", sync);
+      el.style.height = "";
+      el.style.top = "";
     };
   });
 
@@ -59,13 +92,13 @@ export function ComposerOverlay({
 
   return (
     <div
+      ref={containerRef}
       data-testid="composer-overlay"
-      // h-dvh (not inset-0's implicit 100%) so this tracks the *visual*
-      // viewport on iOS Safari: with a plain 100%-of-viewport height, the
-      // keyboard doesn't shrink it — the browser instead pans the whole
-      // page to keep the focused input visible, shoving the close/history
-      // buttons above the top edge. dvh + interactiveWidget:resizes-content
-      // (root layout viewport) together keep this actually full-height.
+      // h-dvh/top-0 are the fallback for browsers without `visualViewport`
+      // (e.g. during tests, or non-WebKit engines); the effect above
+      // overrides both with the real visible rectangle whenever it's
+      // available, which is the part that actually keeps this pinned on
+      // iOS Safari once the keyboard opens.
       className="fixed inset-x-0 top-0 z-40 flex h-dvh flex-col animate-composer-overlay lg:hidden"
     >
       {/* Backdrop — a self-contained soft-glow scene (not just a blur of
