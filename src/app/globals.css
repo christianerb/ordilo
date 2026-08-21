@@ -654,6 +654,20 @@
     border-color: var(--border);
   }
 
+  /*
+   * Horizontal-overflow guard. The app shell root already clips its own
+   * children (`overflow-x-clip`), but drawers portal to <body> and any future
+   * over-wide content would otherwise let the whole page scroll sideways.
+   * `clip` (not `hidden`) is used deliberately: it prevents horizontal scroll
+   * without turning html/body into a scroll container, so `position: sticky`
+   * and `position: fixed` (the bottom nav, sticky footers) keep working
+   * relative to the viewport. Supported in Safari 16+, the app's baseline.
+   */
+  html,
+  body {
+    overflow-x: clip;
+  }
+
   body {
     background-color: var(--background);
     /* Barely-visible ambient wash — the same restrained Harbor Blue glow
@@ -679,6 +693,31 @@
   /* Long prose: reduce orphans on the last line */
   p {
     text-wrap: pretty;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Mobile input zoom guard
+   ---------------------------------------------------------------------------
+   iOS Safari zooms the viewport in whenever an input gains focus and its
+   computed font-size is below 16px — the "weird zoom-in" users see across
+   every form. The base shadcn Input/Textarea already guard this with
+   `text-base md:text-sm` (16px on phones, 14px from `md` up), but the app
+   has many hand-rolled fields (task create, note editor, composer, …) and
+   every new one would have to remember the guard too.
+
+   This enforces 16px on every form control below the `md` breakpoint, so the
+   whole app is covered once instead of per-field. It is intentionally
+   unlayered: in the CSS cascade-layers model, unlayered declarations beat
+   all layered ones, so this wins over Tailwind's `@layer utilities`
+   (`.text-sm`/`.text-xs`) without resorting to `!important`. Above 768px it
+   does nothing, so desktop keeps the denser 14px sizing the design calls for.
+   Pinch-to-zoom stays available (the viewport meta never disables it).
+   --------------------------------------------------------------------------- */
+
+@media (max-width: 767px) {
+  input, select, textarea {
+    font-size: 1rem; /* 16px — the iOS no-zoom threshold */
   }
 }
 

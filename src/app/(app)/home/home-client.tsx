@@ -67,6 +67,8 @@ export interface HomeMember {
 export interface HomeClientProps {
   familyId: string;
   greeting: string;
+  /** The family's full display name (e.g. "Familie Erb") — already
+      carries the "Familie" convention, so it is rendered as-is. */
   familyName: string;
   members: HomeMember[];
   analyzedDocuments: HomeDocument[];
