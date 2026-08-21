@@ -17,6 +17,7 @@ import { AISearchBar } from "@/components/ordilo/ai-search-bar";
 import { ComposerOverlay } from "@/components/ordilo/composer-overlay";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { useRegisterComposerFocusHandler } from "@/lib/search/composer-focus-context";
 import { ComposerSuggestionChips } from "@/components/ordilo/composer-suggestion-chips";
 import {
   Drawer,
@@ -309,6 +310,14 @@ export function MobileComposer({
   // (AISearchBar's own controlled-mode contract).
   const [value, setValue] = useState("");
   const [expanded, setExpanded] = useState(false);
+
+  // Lets any page (currently /home's "Fragen" quick action) ask the
+  // composer to zoom into its fullscreen overlay, the same way focusing
+  // the collapsed pill already does. A no-op on /suche, where the overlay
+  // is disabled and the pill behaves like a plain inline composer.
+  useRegisterComposerFocusHandler(() => {
+    if (enableOverlay) setExpanded(true);
+  });
 
   return (
     <>

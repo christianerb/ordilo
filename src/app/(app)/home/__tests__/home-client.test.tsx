@@ -160,7 +160,7 @@ const recentDocuments = [
 const defaultProps: HomeClientProps = {
   familyId: "family-1",
   greeting: "Guten Abend",
-  familyName: "Erb",
+  familyName: "Familie Erb",
   members,
   analyzedDocuments,
   unconfirmedDocCount: 2,
@@ -169,6 +169,7 @@ const defaultProps: HomeClientProps = {
   upcomingTasks,
   recentDocuments,
   thumbUrls: {},
+  eventRows: [],
 };
 
 // Reference date for test data: 2026-07-06 (matches system date)
@@ -315,8 +316,9 @@ describe("HomeClient — Heute hero", () => {
     expect(within(hero).getByTestId("today-hero-done").className).toContain(
       "size-12",
     );
-    // Details stays a real deep link that opens the task on the board
-    const details = within(hero).getByRole("link", { name: "Details" });
+    // Erledigen stays a real deep link that opens the task on the board —
+    // the round checkbox on the left is the only actual complete action.
+    const details = within(hero).getByRole("link", { name: "Erledigen" });
     expect(details.getAttribute("href")).toMatch(/^\/aufgaben\?task=.+/);
   });
 

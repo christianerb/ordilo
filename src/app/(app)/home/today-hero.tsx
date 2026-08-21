@@ -24,7 +24,12 @@ const COMPLETION_HOLD_MS = 650;
  *   - calm           → sage wash + mascot, no action needed
  *
  * The card never competes with the sections below it: when the hero shows
- * a task, the "Als Nächstes" list starts with the NEXT task.
+ * a task, the "Als Nächstes" list starts with the NEXT task. The small
+ * "Jetzt dran" badge above the title names the card's role — deliberately
+ * NOT "Als Nächstes" (that phrase already means the section below); the
+ * "Erledigen" link is deliberately still a deep link to the task on
+ * /aufgaben, not a second complete action — that stays the round
+ * checkbox on the left, so there is exactly one way to tick it off.
  */
 
 /** Format a YYYY-MM-DD due date as DD.MM.YYYY (German). */
@@ -146,6 +151,18 @@ export function TodayHero({
         </button>
 
         <div className="min-w-0 flex-1">
+          {!completing && (
+            <span
+              className={cn(
+                "mb-1 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                isOverdue
+                  ? "bg-[var(--apricot)]/15 text-[var(--apricot-text)]"
+                  : "bg-[var(--surface-box)] text-[var(--petrol)]",
+              )}
+            >
+              Jetzt dran
+            </span>
+          )}
           <p
             className={cn(
               "line-clamp-2 text-sm font-semibold leading-snug text-foreground",
@@ -180,9 +197,9 @@ export function TodayHero({
         </div>
         <Link
           href={`/aufgaben?task=${task.id}`}
-          className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-[var(--surface-box)] px-2.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-white focus-ring"
+          className="inline-flex h-8 shrink-0 items-center gap-0.5 rounded-full bg-[var(--petrol)] px-3 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
         >
-          Details
+          Erledigen
           <ChevronRight className="size-3.5" aria-hidden="true" />
         </Link>
       </div>

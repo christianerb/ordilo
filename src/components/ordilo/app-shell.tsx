@@ -20,6 +20,7 @@ import {
 } from "@/lib/collections/collections-context";
 import { ActiveSearchProvider, useActiveSearch } from "@/lib/search/active-search-context";
 import { SuggestionChipsProvider } from "@/lib/search/suggestion-chips-context";
+import { ComposerFocusProvider } from "@/lib/search/composer-focus-context";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -78,13 +79,15 @@ export function AppShell({
         <ScanProvider initialFamilyId={familyId}>
           <CollectionsProvider initialCollections={initialCollections}>
             <SuggestionChipsProvider>
-              <AppShellContent
-                profile={profile}
-                hasServerData={hasServerData}
-                recentQueries={recentQueries ?? []}
-              >
-                {children}
-              </AppShellContent>
+              <ComposerFocusProvider>
+                <AppShellContent
+                  profile={profile}
+                  hasServerData={hasServerData}
+                  recentQueries={recentQueries ?? []}
+                >
+                  {children}
+                </AppShellContent>
+              </ComposerFocusProvider>
             </SuggestionChipsProvider>
           </CollectionsProvider>
         </ScanProvider>
