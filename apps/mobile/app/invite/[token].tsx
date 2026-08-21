@@ -79,8 +79,19 @@ type InviteScreenState =
 
 const SAGE = "#DDEBE5"; // --auth-sage from the web palette
 
-export default function InviteScreen() {
+/**
+ * Route wrapper — remounts the flow when the token changes. A second
+ * deep link while this route is mounted must never inherit the previous
+ * invite's UI: without a remount, a confirmation naming family A could
+ * stay visible while the (recreated) handlers already join family B.
+ * The key forces a synchronous reset to the loading state.
+ */
+export default function InviteRoute() {
   const { token } = useLocalSearchParams<{ token: string }>();
+  return <InviteScreen key={token} token={token} />;
+}
+
+function InviteScreen({ token }: { token: string }) {
   const router = useRouter();
   const { session, isLoading: sessionLoading } = useSession();
   const { refresh } = useFamily();
@@ -125,7 +136,7 @@ export default function InviteScreen() {
     let cancelled = false;
 
     void (async () => {
-      const info = await getInviteInfo(token ?? "");
+      const info = await getInviteInfo(token);
       if (cancelled) return;
       if (info.status !== "valid") {
         setScreen("invalid");
@@ -138,7 +149,7 @@ export default function InviteScreen() {
         return;
       }
 
-      const resolved = await resolveSignedInInviteState(token ?? "");
+      const resolved = await resolveSignedInInviteState(token);
       if (cancelled) return;
       setMergePreview(resolved.preview);
       if (resolved.state === "source_processing") {
@@ -235,7 +246,7 @@ export default function InviteScreen() {
         return false;
       }
       if (result.reason === "merge_required") {
-        const preparation = await getInviteMergePreparation(token ?? "");
+        const preparation = await getInviteMergePreparation(token);
         if (!preparation.success) {
           setErrorMessage(preparation.error);
           return false;
@@ -360,7 +371,7 @@ export default function InviteScreen() {
 
     // The code was requested FOR this invite and typed in by hand — that is
     // the consent. Accept right here instead of a second confirmation.
-    const navigated = await routeAcceptResult(await acceptInvite(token ?? ""));
+    const navigated = await routeAcceptResult(await acceptInvite(token));
     if (!navigated) setAccepting(false);
   }
 
@@ -372,7 +383,7 @@ export default function InviteScreen() {
     if (accepting) return;
     setAccepting(true);
     setErrorMessage(null);
-    const navigated = await routeAcceptResult(await acceptInvite(token ?? ""));
+    const navigated = await routeAcceptResult(await acceptInvite(token));
     if (!navigated) setAccepting(false);
   }
 
@@ -382,7 +393,7 @@ export default function InviteScreen() {
     setErrorMessage(null);
 
     const result = await mergeOwnedFamilyIntoInvite(
-      token ?? "",
+      token,
       mergePreview?.fingerprint ?? "",
     );
     if (result.success) {
