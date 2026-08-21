@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies, headers } from "next/headers";
 import type { Database } from "@/types/database";
 import {
@@ -8,14 +9,60 @@ import {
 } from "@/lib/supabase/family-context";
 
 /**
+ * Extract a Supabase access token from an `Authorization: Bearer …` header,
+ * if the request carries one.
+ *
+ * The native mobile app (apps/mobile) holds its Supabase session in the OS
+ * keychain, not in cookies, and authenticates API requests with this
+ * header. Browsers never send it, so cookie auth stays the default.
+ */
+export async function getBearerToken(): Promise<string | null> {
+  const headerList = await headers();
+  const raw = headerList.get("authorization");
+  if (!raw) return null;
+  const match = /^Bearer\s+(\S+)\s*$/i.exec(raw.trim());
+  return match ? match[1] : null;
+}
+
+/**
+ * Request-scoped client for a caller authenticated via bearer token. The
+ * token rides in a global Authorization header, so `auth.getUser()`
+ * validates it against the auth server and every PostgREST/Storage query
+ * runs under RLS exactly as a browser cookie session would.
+ */
+export function createBearerClient(accessToken: string) {
+  return createSupabaseClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+      global: {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    },
+  );
+}
+
+/**
  * Server-side Supabase client for use in Server Components, Route Handlers,
  * and Server Actions.
  *
  * Reads auth cookies from the incoming request so that the session is
- * shared with the browser client. Always create a new client per request —
+ * shared with the browser client. When the request instead carries an
+ * `Authorization: Bearer …` header (native mobile app), the returned
+ * client is scoped to that token. Always create a new client per request —
  * never share across requests.
  */
 export async function createClient() {
+  const bearerToken = await getBearerToken();
+  if (bearerToken) {
+    return createBearerClient(bearerToken);
+  }
+
   const cookieStore = await cookies();
 
   return createServerClient<Database>(
