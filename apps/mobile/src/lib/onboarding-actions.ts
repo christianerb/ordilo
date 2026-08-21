@@ -278,12 +278,19 @@ export async function completeOnboarding(
 
 /**
  * Load the family's current members for the onboarding resume state.
+ * A failed query is surfaced, not swallowed — otherwise a resumed run
+ * would claim nobody has been added and invite duplicate people.
  */
-export async function listMembers(familyId: string): Promise<MemberRow[]> {
-  const { data } = await getSupabase()
+export async function listMembers(
+  familyId: string,
+): Promise<ActionResult<MemberRow[]>> {
+  const { data, error } = await getSupabase()
     .from("family_members")
     .select("*")
     .eq("family_id", familyId)
     .order("created_at", { ascending: true });
-  return (data ?? []) as MemberRow[];
+  if (error) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+  return { success: true, data: (data ?? []) as MemberRow[] };
 }

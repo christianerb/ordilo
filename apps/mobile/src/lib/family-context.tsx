@@ -24,6 +24,13 @@ interface FamilyContextValue {
   error: string | null;
   /** Re-resolve after onboarding, joining a family, or the welcome intro. */
   refresh: () => Promise<void>;
+  /**
+   * Dismiss the welcome intro locally when the server write failed, so
+   * the app gate cannot bounce the user back into a willkommen loop. A
+   * later refresh re-reads the server state — worst case the intro shows
+   * once more in a future session (same trade-off as the web).
+   */
+  markIntroSeenLocally: () => void;
 }
 
 const FamilyContext = createContext<FamilyContextValue>({
@@ -31,6 +38,7 @@ const FamilyContext = createContext<FamilyContextValue>({
   isLoading: true,
   error: null,
   refresh: async () => {},
+  markIntroSeenLocally: () => {},
 });
 
 /**
@@ -73,9 +81,15 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(() => fetchFamily(userId), [fetchFamily, userId]);
 
+  const markIntroSeenLocally = useCallback(() => {
+    setFamily((current) =>
+      current ? { ...current, introSeenAt: new Date().toISOString() } : current,
+    );
+  }, []);
+
   const value = useMemo<FamilyContextValue>(
-    () => ({ family, isLoading, error, refresh }),
-    [family, isLoading, error, refresh],
+    () => ({ family, isLoading, error, refresh, markIntroSeenLocally }),
+    [family, isLoading, error, refresh, markIntroSeenLocally],
   );
 
   return (

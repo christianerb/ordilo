@@ -43,3 +43,35 @@ export async function recordProductEvent(
     // Analytics must never block a user-facing action.
   }
 }
+
+/**
+ * Record the activation funnel start after a successful code login.
+ *
+ * Port of the web login form (src/app/(auth)/login/login-form.tsx) and
+ * its getPostAuthDestination helper: a user with no visible `families`
+ * row is first-time and enters onboarding. A query error counts as
+ * first-time there (onboarding is the safe default) — same here.
+ *
+ * Only the plain login path calls this; invite joins are never
+ * first-time (the web callback fixes isFirstTime=false for them).
+ */
+export async function recordOnboardingStartedIfFirstTime(
+  client: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  try {
+    const { data, error } = await client
+      .from("families")
+      .select("id")
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) {
+      await recordProductEvent(client, {
+        userId,
+        eventName: "onboarding_started",
+      });
+    }
+  } catch {
+    // Analytics must never block login.
+  }
+}

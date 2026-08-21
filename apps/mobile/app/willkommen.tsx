@@ -31,8 +31,10 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  * one arrival moment, then three passive cards that show the product
  * instead of describing it. Every step leaves a way out.
  *
- * Leaving writes mark_family_intro_seen; a failed write is not worth
- * blocking on — worst case the intro shows once more (same as web).
+ * Leaving writes mark_family_intro_seen and its result is checked (RPC
+ * failures resolve instead of throwing). A failed write is not worth
+ * blocking on: the dismissal is kept locally so the app gate cannot
+ * loop, and worst case the intro shows once more (same as web).
  */
 
 const CARD_COUNT = 3;
@@ -40,7 +42,7 @@ const SWIPE_THRESHOLD_PX = 48;
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { family, refresh } = useFamily();
+  const { family, refresh, markIntroSeenLocally } = useFamily();
 
   // 0 = arrival (celebration), 1–3 = the product cards.
   const [step, setStep] = useState(0);
@@ -52,14 +54,31 @@ export default function WelcomeScreen() {
   const leave = useCallback(async () => {
     if (leaving) return;
     setLeaving(true);
+
+    // Supabase returns RPC failures in { error } rather than throwing —
+    // check the result like the web action does (it also rejects the
+    // "unauthenticated" status).
+    let marked = false;
     try {
-      await getSupabase().rpc("mark_family_intro_seen");
+      const { data, error } = await getSupabase().rpc(
+        "mark_family_intro_seen",
+      );
+      const status = (data as { status?: string } | null)?.status;
+      marked = !error && status !== "unauthenticated";
     } catch {
-      // Worst case the intro shows once more — never block leaving.
+      marked = false;
     }
-    await refresh();
+
+    if (marked) {
+      await refresh();
+    } else {
+      // Best effort: dismiss locally so the gate cannot bounce the user
+      // back into a willkommen loop. Worst case the intro shows once
+      // more in a later session — never block leaving.
+      markIntroSeenLocally();
+    }
     router.replace("/(tabs)");
-  }, [leaving, refresh, router]);
+  }, [leaving, refresh, markIntroSeenLocally, router]);
 
   const goTo = useCallback(
     (next: number) => {

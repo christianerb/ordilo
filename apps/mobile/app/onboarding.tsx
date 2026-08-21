@@ -77,20 +77,30 @@ export default function OnboardingScreen() {
 
   const [validationError, setValidationError] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [membersError, setMembersError] = useState<string | null>(null);
+  const [membersReloadKey, setMembersReloadKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Load existing members when resuming into the quick-add step.
+  // Load existing members when resuming into the quick-add step. A failed
+  // load is shown with a retry — never silently treated as "no members",
+  // which would invite duplicate people or hide who is already there.
   useEffect(() => {
     if (!familyId || step !== "add-member") return;
     let cancelled = false;
-    void listMembers(familyId).then((rows) => {
-      if (!cancelled) setMembers(rows);
+    void listMembers(familyId).then((result) => {
+      if (cancelled) return;
+      if (result.success) {
+        setMembers(result.data);
+        setMembersError(null);
+      } else {
+        setMembersError(result.error);
+      }
     });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per family
-  }, [familyId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per family, plus explicit retry
+  }, [familyId, membersReloadKey]);
 
   // ---------------------------------------------------------------------------
   // Step 1: family + self in one submit
@@ -315,9 +325,23 @@ export default function OnboardingScreen() {
               </MascotBubble>
 
               <View style={styles.card}>
-                {members.map((member) => (
-                  <PersonRow key={member.id} member={member} />
-                ))}
+                {membersError ? (
+                  <View style={styles.membersErrorBox}>
+                    <ErrorBanner message={membersError} />
+                    <OrdiloButton
+                      onPress={() => {
+                        setMembersError(null);
+                        setMembersReloadKey((key) => key + 1);
+                      }}
+                      title="Liste erneut laden"
+                      variant="ghost"
+                    />
+                  </View>
+                ) : (
+                  members.map((member) => (
+                    <PersonRow key={member.id} member={member} />
+                  ))
+                )}
 
                 <View style={styles.fieldGroup}>
                   <Text style={[typography.title, styles.label]}>Name</Text>
@@ -631,6 +655,10 @@ const styles = StyleSheet.create({
   },
   personName: { color: colors.graphite, flex: 1 },
   personRole: { color: colors.mistDark },
+  membersErrorBox: {
+    alignItems: "center",
+    gap: spacing.sm,
+  },
   errorBanner: {
     backgroundColor: "rgba(192, 57, 43, 0.05)",
     borderColor: "rgba(192, 57, 43, 0.3)",

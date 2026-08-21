@@ -13,13 +13,16 @@ import {
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import { CloudOff } from "lucide-react-native";
 import { useEffect } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { OrdiloButton, Screen } from "@/src/components/ui";
 import { SessionProvider, useSession } from "@/src/lib/session";
 import { FamilyProvider, useFamily } from "@/src/lib/family-context";
 import { isOnboardingComplete, needsWelcomeIntro } from "@/src/lib/family";
-import { colors } from "@/src/theme/tokens";
+import { colors, spacing, typography } from "@/src/theme/tokens";
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -87,8 +90,13 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const { session, isLoading: sessionLoading } = useSession();
-  const { family, isLoading: familyLoading } = useFamily();
+  const { session, isLoading: sessionLoading, signOut } = useSession();
+  const {
+    family,
+    isLoading: familyLoading,
+    error: familyError,
+    refresh: refreshFamily,
+  } = useFamily();
   const segments = useSegments();
   const router = useRouter();
 
@@ -113,6 +121,12 @@ function RootLayoutNav() {
       }
       return;
     }
+
+    // A failed family lookup must never read as "no family" — the web
+    // middleware fails safe the same way (a transient error would
+    // otherwise bounce an onboarded user back into onboarding). Keep
+    // the current route; the error surface below offers a retry.
+    if (familyError) return;
 
     if (inAuthGroup) {
       // Logged in on the login screen — route by family state.
@@ -139,11 +153,51 @@ function RootLayoutNav() {
     if (onOnboarding || onWelcome) {
       router.replace("/(tabs)");
     }
-  }, [session, sessionLoading, family, familyLoading, segments, router]);
+  }, [
+    session,
+    sessionLoading,
+    family,
+    familyLoading,
+    familyError,
+    segments,
+    router,
+  ]);
 
   // No protected content flashes while session or family state loads.
   if (sessionLoading || (session && familyLoading)) {
     return null;
+  }
+
+  // Family lookup failed: surface the error with a retry instead of
+  // routing anywhere. Invite links keep their own flow (they re-resolve
+  // everything they need themselves).
+  if (session && familyError && segments[0] !== "invite") {
+    return (
+      <ThemeProvider value={ordiloTheme}>
+        <Screen style={gateStyles.errorScreen}>
+          <View style={gateStyles.errorIconCircle}>
+            <CloudOff color={colors.harborBlue} size={28} strokeWidth={1.75} />
+          </View>
+          <Text style={gateStyles.errorTitle}>
+            Deine Familie konnte nicht geladen werden
+          </Text>
+          <Text style={[typography.body, gateStyles.errorText]}>
+            {familyError}
+          </Text>
+          <OrdiloButton
+            onPress={() => void refreshFamily()}
+            size="lg"
+            title="Erneut versuchen"
+          />
+          <OrdiloButton
+            onPress={() => void signOut()}
+            size="lg"
+            title="Abmelden"
+            variant="ghost"
+          />
+        </Screen>
+      </ThemeProvider>
+    );
   }
 
   return (
@@ -163,3 +217,32 @@ function RootLayoutNav() {
     </ThemeProvider>
   );
 }
+
+const gateStyles = StyleSheet.create({
+  errorScreen: {
+    alignItems: "center",
+    gap: spacing.md,
+    justifyContent: "center",
+  },
+  errorIconCircle: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderRadius: 32,
+    height: 64,
+    justifyContent: "center",
+    width: 64,
+  },
+  errorTitle: {
+    color: colors.graphite,
+    fontFamily: typography.display.fontFamily,
+    fontSize: 20,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  errorText: {
+    color: colors.mistDark,
+    lineHeight: 24,
+    maxWidth: 300,
+    textAlign: "center",
+  },
+});

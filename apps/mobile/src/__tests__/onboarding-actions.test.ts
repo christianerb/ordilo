@@ -2,6 +2,7 @@ import {
   addMember,
   completeOnboarding,
   createFamily,
+  listMembers,
 } from "../lib/onboarding-actions";
 
 /**
@@ -221,6 +222,35 @@ describe("addMember", () => {
       error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
     });
     expect(rollback.delete).toHaveBeenCalled();
+  });
+});
+
+describe("listMembers", () => {
+  it("returns the family's members ordered by creation", async () => {
+    const rows = [
+      { id: "m1", family_id: "fam-1", name: "Anna" },
+      { id: "m2", family_id: "fam-1", name: "Emma" },
+    ];
+    const query = makeQuery({ data: rows });
+    mockFromHandler = scriptedFrom(query);
+
+    const result = await listMembers("fam-1");
+
+    expect(result).toEqual({ success: true, data: rows });
+    expect(query.eq).toHaveBeenCalledWith("family_id", "fam-1");
+  });
+
+  it("propagates query failures instead of returning an empty list", async () => {
+    mockFromHandler = scriptedFrom(
+      makeQuery({ data: null, error: { message: "connection lost" } }),
+    );
+
+    const result = await listMembers("fam-1");
+
+    expect(result).toEqual({
+      success: false,
+      error: "Etwas ist schiefgelaufen. Bitte versuche es erneut.",
+    });
   });
 });
 
