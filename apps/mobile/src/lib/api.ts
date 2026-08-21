@@ -22,7 +22,12 @@ export class ApiError extends Error {
   }
 }
 
-function getApiUrl(): string {
+/**
+ * Absolute web origin without a trailing slash. Invite links are built
+ * from it (recipients may open them on any device), so it must point at
+ * the deployed web app in production.
+ */
+export function getApiUrl(): string {
   const url = process.env.EXPO_PUBLIC_API_URL;
   if (!url) {
     throw new Error(

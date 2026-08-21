@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -52,8 +53,13 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
   const [family, setFamily] = useState<ResolvedFamily | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Monotonic fetch id — only the latest request may write state. An
+  // auto-load that started before an invite accept committed must not
+  // overwrite the fresher refresh() that can already see the membership.
+  const fetchSeqRef = useRef(0);
 
   const fetchFamily = useCallback(async (uid: string | null) => {
+    const seq = ++fetchSeqRef.current;
     if (!uid) {
       setFamily(null);
       setError(null);
@@ -62,6 +68,7 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(true);
     const result = await resolveUserFamily(getSupabase() as SupabaseClient, uid);
+    if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
     setFamily(result.data);
     setError(result.error);
     setIsLoading(false);
@@ -79,7 +86,18 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
     };
   }, [userId, fetchFamily]);
 
-  const refresh = useCallback(() => fetchFamily(userId), [fetchFamily, userId]);
+  /**
+   * Re-resolve on demand. The user id is read from the stored session AT
+   * CALL TIME, not from the render closure: the invite screen accepts an
+   * invite right after verifyOtp, when this closure's userId is still
+   * null but getSession() already returns the new account.
+   */
+  const refresh = useCallback(async () => {
+    const {
+      data: { session: current },
+    } = await getSupabase().auth.getSession();
+    await fetchFamily(current?.user?.id ?? null);
+  }, [fetchFamily]);
 
   const markIntroSeenLocally = useCallback(() => {
     setFamily((current) =>
