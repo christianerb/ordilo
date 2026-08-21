@@ -14,6 +14,7 @@ import {
 import { Mail, ShieldCheck } from "lucide-react-native";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
+import { recordOnboardingStartedIfFirstTime } from "@/src/lib/analytics";
 import { getSupabase } from "@/src/lib/supabase";
 import { validateLoginEmail } from "@/src/lib/validation";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
@@ -178,7 +179,7 @@ export default function LoginScreen() {
     setErrorMessage(null);
     setFormState("verifying");
 
-    const { error } = await getSupabase().auth.verifyOtp({
+    const { data, error } = await getSupabase().auth.verifyOtp({
       email,
       token,
       type: "email",
@@ -188,6 +189,14 @@ export default function LoginScreen() {
       setErrorMessage("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.");
       setFormState("sent");
       return;
+    }
+
+    // Activation funnel: the web login form records onboarding_started
+    // for first-time users — same here, otherwise mobile signups would
+    // enter the data mid-funnel. Invite joins verify on the invite
+    // screen instead and are never first-time.
+    if (data.user) {
+      void recordOnboardingStartedIfFirstTime(getSupabase(), data.user.id);
     }
 
     // Success: onAuthStateChange picks up the session and the auth gate

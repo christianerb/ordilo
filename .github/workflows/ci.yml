@@ -3,8 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request — including stacked PRs whose base is a feature
+  # branch — so quality gates run before anything merges, not only after
+  # a PR is retargeted to main.
   pull_request:
-    branches: [main]
 
 # Cancel in-progress runs for the same ref (saves CI minutes)
 concurrency:
