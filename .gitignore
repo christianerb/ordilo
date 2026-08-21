@@ -38,5 +38,7 @@ coverage/
 /test-results/
 /playwright-report/
 
-# UI screenshot artifacts (design iteration work, never committed)
-*.png
+# UI screenshot artifacts at the repo root (design iteration work, never
+# committed). Scoped to the root so bundled app assets (e.g.
+# apps/mobile/assets/images/*.png) remain committable.
+/*.png

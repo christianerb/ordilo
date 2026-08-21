@@ -51,6 +51,15 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Mobile lint
+        run: npm run lint:mobile
+
+      - name: Mobile typecheck
+        run: npm run typecheck:mobile
+
+      - name: Mobile unit tests
+        run: npm run test:mobile
+
   # ── Build gate + E2E smoke: compile once, then boot the BUILT app ────
   # Smoke tests live in the build job so the production build happens
   # exactly once per run instead of twice.

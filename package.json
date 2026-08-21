@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -11,7 +15,11 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "dev:mobile": "npm run start --workspace @ordilo/mobile",
+    "lint:mobile": "npm run lint --workspace @ordilo/mobile",
+    "typecheck:mobile": "npm run typecheck --workspace @ordilo/mobile",
+    "test:mobile": "npm run test --workspace @ordilo/mobile"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.7",
