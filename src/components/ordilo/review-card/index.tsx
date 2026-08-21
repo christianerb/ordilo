@@ -148,6 +148,12 @@ export function ReviewCard({
   const [reanalyzing, setReanalyzing] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   /**
+   * How many Familienplaner events the last confirm created — feeds the
+   * "Erledigt — n Termine liegen jetzt im Planer" line in the success
+   * state. Reset on re-analyze, when the numbers no longer apply.
+   */
+  const [eventsCreated, setEventsCreated] = useState(0);
+  /**
    * True while the user is correcting a document that is already in the
    * family book. It reuses the full review editor — the same pickers and
    * inputs as before confirming — but saves through PATCH instead of
@@ -425,6 +431,22 @@ export function ReviewCard({
     });
   }, [updateEdits]);
 
+  /**
+   * Flip a date's planner toggle. Only the override is stored — an
+   * untouched date keeps following its heuristic default even when the
+   * analysis is reloaded.
+   */
+  const handleToggleCalendarDate = useCallback(
+    (dateIndex: number, nextSelected: boolean) => {
+      updateEdits((prev) => {
+        const calendarDates = new Map(prev.calendarDates);
+        calendarDates.set(dateIndex, nextSelected);
+        return { ...prev, calendarDates };
+      });
+    },
+    [updateEdits],
+  );
+
   const handleUndoDeleteTask = useCallback(() => {
     updateEdits((prev) => {
       const deletedTasks = new Set(prev.deletedTasks);
@@ -487,6 +509,15 @@ export function ReviewCard({
             "Bestätigen hat nicht geklappt. Bitte nochmal versuchen.",
         );
       }
+
+      // How many planner events came out of the reviewed dates — the
+      // success state names them ("2 Termine liegen jetzt im Planer").
+      const body = (await response.json().catch(() => null)) as {
+        events_created?: number;
+      } | null;
+      setEventsCreated(
+        typeof body?.events_created === "number" ? body.events_created : 0,
+      );
 
       onDirtyChange?.(false);
       onConfirmSuccess?.();
@@ -614,6 +645,7 @@ export function ReviewCard({
       onDirtyChange?.(false);
       setConfirmed(false);
       setEditing(false);
+      setEventsCreated(0);
       await loadAnalysis();
       onReanalyzeSuccess?.();
     } catch (err) {
@@ -805,6 +837,7 @@ export function ReviewCard({
         // (status === "confirmed" from the server) shows the same calm,
         // static state instead of replaying the celebration.
         celebrate={confirmed}
+        calendarEventsCreated={confirmed ? eventsCreated : 0}
         // The follow-up CTA belongs to the same fresh-confirm moment as the
         // celebration: right after adding, invite the next natural action —
         // asking Ordilo about the document.
@@ -866,6 +899,7 @@ export function ReviewCard({
       documentId={documentId}
       onViewOriginal={hasOriginalFile ? handleOpenOriginal : undefined}
       onBack={onBack ? () => onBack(edits) : undefined}
+      onToggleCalendarDate={handleToggleCalendarDate}
     />
   );
 }

@@ -227,6 +227,7 @@ export function ReviewCardConfirmed({
   analysis = null,
   analysisLoading = false,
   celebrate = false,
+  calendarEventsCreated = 0,
   askTitle = null,
   onEdit,
   onReanalyze,
@@ -253,6 +254,12 @@ export function ReviewCardConfirmed({
    * the 100th time?").
    */
   celebrate?: boolean;
+  /**
+   * How many Familienplaner events the confirm just created — named in
+   * the success line ("Erledigt — 2 Termine liegen jetzt im Planer").
+   * 0 (or revisiting an already-confirmed document) hides the line.
+   */
+  calendarEventsCreated?: number;
   /**
    * Document title for the "Frag Ordilo dazu" follow-up CTA — the reward
    * moment right after confirming. Links to /suche with a prefilled,
@@ -347,6 +354,24 @@ export function ReviewCardConfirmed({
         <p className="mt-1 text-sm text-muted-foreground">
           Ist im Familienbuch und kann durchsucht werden.
         </p>
+        {calendarEventsCreated > 0 && (
+          <p
+            className="mt-2 text-sm font-medium text-[var(--petrol)]"
+            data-testid="confirmed-calendar-events"
+          >
+            Erledigt —{" "}
+            {calendarEventsCreated === 1
+              ? "1 Termin liegt"
+              : `${calendarEventsCreated} Termine liegen`}{" "}
+            jetzt im Planer.{" "}
+            <Link
+              href="/aufgaben?tab=planer"
+              className="underline underline-offset-2 transition-colors hover:text-[var(--petrol-dark)]"
+            >
+              Zum Planer
+            </Link>
+          </p>
+        )}
         {askTitle && (
           <Button
             asChild

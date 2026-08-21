@@ -26,6 +26,7 @@ import type {
   ConfirmRpcEntity,
   ConfirmRpcTask,
   ConfirmRpcFact,
+  ConfirmRpcEvent,
   ConfirmRpcResult,
 } from "@/types/database";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
@@ -283,6 +284,7 @@ export async function POST(
   const entitiesParam: ConfirmRpcEntity[] = buildEntityRows(payload);
   const tasksParam: ConfirmRpcTask[] = buildTaskRows(payload);
   const factsParam: ConfirmRpcFact[] = buildFactRows(payload);
+  const eventsParam: ConfirmRpcEvent[] = buildEventRows(payload);
 
   // 10. Call the confirm_document RPC (single transaction) -----------------
   const { data: rpcResult, error: rpcError } = await serverClient.rpc(
@@ -301,6 +303,7 @@ export async function POST(
       p_entities: entitiesParam,
       p_tasks: tasksParam,
       p_facts: factsParam,
+      p_events: eventsParam,
       p_pipeline_version: PIPELINE_VERSION,
     },
   );
@@ -371,6 +374,7 @@ export async function POST(
   const body: ConfirmSuccessResponse = {
     status: "confirmed",
     document_id: documentId,
+    events_created: result.events_created ?? 0,
   };
   return Response.json(body, { status: 200 });
 }
@@ -394,6 +398,26 @@ function buildTaskRows(payload: ConfirmPayload): ConfirmRpcTask[] {
     due_date: toIsoDateOrNull(task.due_date),
     confidence: task.confidence,
   }));
+}
+
+/**
+ * Build the calendar event rows (as RPC params) from the confirm payload.
+ *
+ * These are the dates the user kept checked in the review step's planner
+ * offer. Defence in depth: the RPC skips malformed rows, but a value like
+ * "Montag" should never leave this route — an invalid date cast would roll
+ * the whole confirm back.
+ */
+function buildEventRows(payload: ConfirmPayload): ConfirmRpcEvent[] {
+  return payload.calendar_events
+    .map((event) => ({
+      date: toIsoDateOrNull(event.date),
+      label: event.label.trim(),
+    }))
+    .filter(
+      (event): event is ConfirmRpcEvent =>
+        event.date !== null && event.label.length > 0,
+    );
 }
 
 /**
