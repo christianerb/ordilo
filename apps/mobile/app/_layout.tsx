@@ -17,6 +17,8 @@ import { useEffect } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { SessionProvider, useSession } from "@/src/lib/session";
+import { FamilyProvider, useFamily } from "@/src/lib/family-context";
+import { isOnboardingComplete, needsWelcomeIntro } from "@/src/lib/family";
 import { colors } from "@/src/theme/tokens";
 
 export {
@@ -75,32 +77,72 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <SessionProvider>
-        <StatusBar style="dark" />
-        <RootLayoutNav />
+        <FamilyProvider>
+          <StatusBar style="dark" />
+          <RootLayoutNav />
+        </FamilyProvider>
       </SessionProvider>
     </SafeAreaProvider>
   );
 }
 
 function RootLayoutNav() {
-  const { session, isLoading } = useSession();
+  const { session, isLoading: sessionLoading } = useSession();
+  const { family, isLoading: familyLoading } = useFamily();
   const segments = useSegments();
   const router = useRouter();
 
-  // Auth gate: without a session only the (auth) group is reachable;
-  // with a session the login screen is left behind automatically.
+  // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
+  // no session → login; no family or unfinished owner setup → onboarding;
+  // invited member with a pending intro → willkommen; else the tabs.
   useEffect(() => {
-    if (isLoading) return;
-    const inAuthGroup = segments[0] === "(auth)";
-    if (!session && !inAuthGroup) {
-      router.replace("/(auth)/login");
-    } else if (session && inAuthGroup) {
+    if (sessionLoading) return;
+    if (session && familyLoading) return;
+
+    const first = segments[0];
+    const inAuthGroup = first === "(auth)";
+    const onOnboarding = first === "onboarding";
+    const onWelcome = first === "willkommen";
+    // Invite links run their own flow and must never be bounced by the
+    // gate — including while signed out (the invite screen handles login).
+    const onInvite = first === "invite";
+
+    if (!session) {
+      if (!inAuthGroup && !onInvite) {
+        router.replace("/(auth)/login");
+      }
+      return;
+    }
+
+    if (inAuthGroup) {
+      // Logged in on the login screen — route by family state.
+      if (!family || !isOnboardingComplete(family)) {
+        router.replace("/onboarding");
+      } else if (needsWelcomeIntro(family)) {
+        router.replace("/willkommen");
+      } else {
+        router.replace("/(tabs)");
+      }
+      return;
+    }
+
+    if (onInvite) return;
+
+    if (!family || !isOnboardingComplete(family)) {
+      if (!onOnboarding) router.replace("/onboarding");
+      return;
+    }
+    if (needsWelcomeIntro(family)) {
+      if (!onWelcome) router.replace("/willkommen");
+      return;
+    }
+    if (onOnboarding || onWelcome) {
       router.replace("/(tabs)");
     }
-  }, [session, isLoading, segments, router]);
+  }, [session, sessionLoading, family, familyLoading, segments, router]);
 
-  // No protected content flashes while the persisted session loads.
-  if (isLoading) {
+  // No protected content flashes while session or family state loads.
+  if (sessionLoading || (session && familyLoading)) {
     return null;
   }
 
@@ -114,6 +156,8 @@ function RootLayoutNav() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="willkommen" />
         <Stack.Screen name="scan" options={{ presentation: "modal" }} />
       </Stack>
     </ThemeProvider>
