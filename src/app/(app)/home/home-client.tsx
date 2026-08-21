@@ -265,7 +265,8 @@ export function HomeClient({
   const isFirstVisit =
     totalTasks === 0 &&
     analyzedDocuments.length === 0 &&
-    visibleRecentDocs.length === 0;
+    visibleRecentDocs.length === 0 &&
+    eventOccurrences.length === 0;
 
   const toTaskCardData = (t: HomeTask): TaskCardData => ({
     id: t.id,

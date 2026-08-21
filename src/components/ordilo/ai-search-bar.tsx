@@ -5,6 +5,7 @@ import {
   useCallback,
   useRef,
   useSyncExternalStore,
+  type Ref,
 } from "react";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { ArrowUp, Mic, MicOff } from "lucide-react";
@@ -56,6 +57,11 @@ export interface AISearchBarProps {
   autoFocus?: boolean;
   /** Optional additional className for the outer container. */
   className?: string;
+  /** Exposes the underlying textarea node — React 19 accepts `ref` as a
+      plain prop, no forwardRef needed. Used by DesktopBottomBar to focus
+      the bar imperatively when a page requests the composer's focus
+      (there is no fullscreen overlay to zoom into on desktop). */
+  ref?: Ref<HTMLTextAreaElement>;
 }
 
 // ---------------------------------------------------------------------------
@@ -248,6 +254,7 @@ export function AISearchBar({
   onFocus,
   autoFocus = false,
   className,
+  ref,
 }: AISearchBarProps) {
   // Controlled mode is active when the parent provides a `value` prop.
   // In controlled mode the parent owns the value; in uncontrolled mode the
@@ -452,7 +459,11 @@ export function AISearchBar({
 
       {/* Textarea input (grows with content) */}
       <textarea
-        ref={inputRef}
+        ref={(el) => {
+          inputRef.current = el;
+          if (typeof ref === "function") ref(el);
+          else if (ref) ref.current = el;
+        }}
         value={currentValue}
         onChange={(e) => {
           setValue(e.target.value);

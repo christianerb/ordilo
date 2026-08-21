@@ -436,6 +436,16 @@ export default async function HomePage({
     document_title: t.document_id ? docTitleMap.get(t.document_id) ?? null : null,
   }));
 
+  // HomeClient snapshots upcomingTasks into local state on mount (for
+  // optimistic toggle/dismiss), so a plain router.refresh() after creating
+  // a task from the new quick-actions grid would not surface it — same
+  // reasoning, same fix as AufgabenClient's taskKey (aufgaben/page.tsx):
+  // key the client component on the task list's content so a refresh that
+  // actually changed the data forces a remount and re-seeds local state.
+  const taskKey = upcomingTasks
+    .map((t) => `${t.id}:${t.status}:${t.title}:${t.due_date ?? ""}`)
+    .join("|");
+
   const recentDocuments: HomeDocument[] = filterRecentDocuments(
     (recentRows ?? []).map((d) => ({
       id: d.id,
@@ -477,6 +487,7 @@ export default async function HomePage({
 
   return (
     <HomeClient
+      key={taskKey}
       familyId={family.id}
       greeting={getGreeting()}
       familyName={family.name}

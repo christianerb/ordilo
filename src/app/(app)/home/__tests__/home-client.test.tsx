@@ -602,6 +602,60 @@ describe("HomeClient — Deine Dokumente (journal)", () => {
   });
 });
 
+describe("HomeClient — First Visit", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows the whole-page first-visit empty state when there are no tasks, documents, or events", () => {
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        analyzedDocuments={[]}
+        recentDocuments={[]}
+        eventRows={[]}
+      />,
+    );
+    expect(screen.getByText("Schön, dass du da bist")).toBeDefined();
+    expect(screen.queryByTestId("home-priority-card")).toBeNull();
+  });
+
+  it("skips the first-visit empty state for an event-only family (calendar entries but no tasks or documents)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-06T12:00:00Z"));
+    render(
+      <HomeClient
+        {...defaultProps}
+        upcomingTasks={[]}
+        analyzedDocuments={[]}
+        recentDocuments={[]}
+        eventRows={[
+          {
+            id: "event-1",
+            title: "Zahnarzt",
+            starts_on: "2026-07-06",
+            ends_on: "2026-07-06",
+            all_day: false,
+            starts_time: "09:00:00",
+            ends_time: "09:30:00",
+            location: null,
+            responsible_member_id: null,
+            recurrence: "none",
+            recurrence_until: null,
+            recurrence_exceptions: [],
+            attendee_names: [],
+          },
+        ]}
+      />,
+    );
+    expect(screen.queryByText("Schön, dass du da bist")).toBeNull();
+    expect(screen.getByTestId("home-priority-card")).toBeDefined();
+    expect(screen.getByTestId("home-timeline")).toBeDefined();
+    expect(screen.getByText("Zahnarzt")).toBeDefined();
+  });
+});
+
 describe("HomeClient — Layout", () => {
   it("renders all sections in the correct order", () => {
     render(<HomeClient {...defaultProps} />);
