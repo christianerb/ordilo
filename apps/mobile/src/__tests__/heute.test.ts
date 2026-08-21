@@ -2,8 +2,11 @@ import {
   acceptInboundSuggestion,
   eventOccursOn,
   formatDueLabel,
+  formatInboundWhen,
   getEventOccurrences,
+  getFirstSuccessGuideKey,
   getHomeGreeting,
+  getHomePriorityTask,
   getInboundHeadline,
   getUpcomingEntries,
   mergeJournalDocuments,
@@ -111,6 +114,29 @@ describe("Heute pure helpers", () => {
     });
   });
 
+  it("keeps far-future tasks out of the immediate priority hero", () => {
+    const now = new Date(2026, 7, 21, 12);
+    expect(
+      getHomePriorityTask(
+        [TASK({ dueDate: "2026-08-29", title: "Nächste Woche" })],
+        now,
+      ),
+    ).toBeNull();
+    expect(
+      getHomePriorityTask(
+        [TASK({ dueDate: "2026-08-22", title: "Morgen" })],
+        now,
+      )?.title,
+    ).toBe("Morgen");
+  });
+
+  it("uses an Expo SecureStore-safe key for the first-success guide", () => {
+    expect(getFirstSuccessGuideKey("fam-1")).toBe(
+      "ordilo.first-success-guide-fam-1",
+    );
+    expect(getFirstSuccessGuideKey("fam-1")).toMatch(/^[A-Za-z0-9._-]+$/);
+  });
+
   it("expands recurring events but respects exceptions", () => {
     const weekly = EVENT({
       recurrence: "weekly",
@@ -173,6 +199,21 @@ describe("Heute pure helpers", () => {
     expect(getInboundHeadline(discovery)).toBe(
       "Ich habe eine Aufgabe in einer E-Mail gefunden.",
     );
+  });
+
+  it("shows a proposal's German date and time before it can be accepted", () => {
+    expect(
+      formatInboundWhen({
+        id: "suggestion-2",
+        kind: "calendar_event",
+        title: "Elternabend",
+        startsOn: "2026-08-27",
+        startsTime: "18:00:00",
+        endsTime: "19:30:00",
+        location: null,
+        note: null,
+      }),
+    ).toBe("Donnerstag, 27. August, 18:00–19:30 Uhr");
   });
 });
 

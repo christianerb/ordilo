@@ -3,13 +3,11 @@ import { useRouter } from "expo-router";
 import {
   CalendarDays,
   Check,
-  ChevronRight,
   Clock3,
   FileText,
   Inbox,
   ListChecks,
   MapPin,
-  MessageCircle,
   ScanLine,
   Sparkles,
 } from "lucide-react-native";
@@ -41,13 +39,16 @@ import {
   getDatedOpenTasks,
   getDiscoveryInsight,
   getEventOccurrences,
+  getFirstSuccessGuideKey,
   getHomeGreeting,
+  getHomePriorityTask,
   getInboundHeadline,
   getTodayEvents,
   getTodayTasks,
   getUpcomingEntries,
   loadHeuteData,
   mergeJournalDocuments,
+  formatInboundWhen,
   setHeuteTaskStatus,
   type HeuteData,
   type HeuteInboundDiscovery,
@@ -55,8 +56,6 @@ import {
   type HeuteTask,
 } from "@/src/lib/heute";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-
-const FIRST_SUCCESS_GUIDE_PREFIX = "ordilo:first-success-guide";
 
 /**
  * Heute — the native home for a family's next useful action.
@@ -126,10 +125,15 @@ export default function HeuteScreen() {
         if (!cancelled) setGuideDismissed(true);
         return;
       }
-      const value = await SecureStore.getItemAsync(
-        `${FIRST_SUCCESS_GUIDE_PREFIX}:${family.id}`,
-      );
-      if (!cancelled) setGuideDismissed(value === "dismissed");
+      try {
+        const value = await SecureStore.getItemAsync(
+          getFirstSuccessGuideKey(family.id),
+        );
+        if (!cancelled) setGuideDismissed(value === "dismissed");
+      } catch {
+        // The guide is a quiet enhancement. Show it when persistence fails.
+        if (!cancelled) setGuideDismissed(false);
+      }
     });
     return () => {
       cancelled = true;
@@ -168,15 +172,21 @@ export default function HeuteScreen() {
     !todayEvents.length &&
     !journalDocuments.length &&
     !discoveries.length;
-  const heroTask = datedTasks[0] ?? null;
-  const nextTasks = datedTasks.slice(1, 1 + 3);
+  const heroTask = useMemo(() => getHomePriorityTask(tasks), [tasks]);
+  const nextTasks = useMemo(
+    () =>
+      datedTasks
+        .filter((task) => task.id !== heroTask?.id)
+        .slice(0, 3),
+    [datedTasks, heroTask?.id],
+  );
 
   const markGuideDismissed = useCallback(async () => {
     if (!family) return;
     setGuideDismissed(true);
     try {
       await SecureStore.setItemAsync(
-        `${FIRST_SUCCESS_GUIDE_PREFIX}:${family.id}`,
+        getFirstSuccessGuideKey(family.id),
         "dismissed",
       );
     } catch {
@@ -335,11 +345,7 @@ export default function HeuteScreen() {
         ) : (
           <>
             {(todayEvents.length > 0 || todayTasks.length > 0) && (
-              <Section
-                action="Plan öffnen"
-                onAction={() => router.push("/(tabs)/plan")}
-                title="Heute"
-              >
+              <Section title="Heute">
                 {todayEvents.map((event) => (
                   <TodayEventRow event={event} key={`${event.id}-${event.date}`} />
                 ))}
@@ -355,14 +361,7 @@ export default function HeuteScreen() {
             )}
 
             {upcomingEntries.length > 0 ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push("/(tabs)/plan")}
-                style={({ pressed }) => [
-                  styles.upcoming,
-                  pressed && styles.pressed,
-                ]}
-              >
+              <View style={styles.upcoming}>
                 <CalendarDays color={colors.harborBlue} size={20} />
                 <View style={styles.upcomingText}>
                   <Text style={[typography.title, styles.upcomingTitle]}>
@@ -375,22 +374,17 @@ export default function HeuteScreen() {
                     {formatUpcomingCopy(upcomingEntries)}
                   </Text>
                 </View>
-                <ChevronRight color={colors.mistDark} size={18} />
-              </Pressable>
+              </View>
             ) : null}
 
             {journalDocuments.length > 0 ? (
-              <Section
-                action="Ablage öffnen"
-                onAction={() => router.push("/(tabs)/ablage")}
-                title="Deine Dokumente"
-              >
+              <Section title="Deine Dokumente">
                 {data?.unconfirmedDocumentCount ? (
                   <View style={styles.documentNotice}>
                     <Text style={styles.documentNoticeText}>
                       {data.unconfirmedDocumentCount === 1
-                        ? "1 wartet auf dein OK"
-                        : `${data.unconfirmedDocumentCount} warten auf dein OK`}
+                        ? "1 neues Dokument"
+                        : `${data.unconfirmedDocumentCount} neue Dokumente`}
                     </Text>
                   </View>
                 ) : (
@@ -401,14 +395,11 @@ export default function HeuteScreen() {
                   </Text>
                 )}
                 {journalDocuments.map((document) => (
-                  <Pressable
-                    accessibilityRole="button"
+                  <View
                     key={document.id}
-                    onPress={() => router.push("/(tabs)/ablage")}
-                    style={({ pressed }) => [
+                    style={[
                       styles.documentRow,
                       document.status === "analyzed" && styles.documentRowPending,
-                      pressed && styles.pressed,
                     ]}
                   >
                     <View style={styles.documentIcon}>
@@ -435,21 +426,15 @@ export default function HeuteScreen() {
                       </Text>
                     </View>
                     {document.status === "analyzed" ? (
-                      <Text style={styles.reviewPill}>Bitte bestätigen</Text>
-                    ) : (
-                      <ChevronRight color={colors.mistDark} size={18} />
-                    )}
-                  </Pressable>
+                      <Text style={styles.reviewPill}>Neu</Text>
+                    ) : null}
+                  </View>
                 ))}
               </Section>
             ) : null}
 
             {nextTasks.length > 0 ? (
-              <Section
-                action="Alle Aufgaben"
-                onAction={() => router.push("/(tabs)/plan")}
-                title="Als Nächstes"
-              >
+              <Section title="Als Nächstes">
                 {nextTasks.map((task) => (
                   <TodayTaskRow
                     busy={mutatingTaskId === task.id}
@@ -462,14 +447,7 @@ export default function HeuteScreen() {
             ) : null}
 
             {discoveryInsight ? (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push("/(tabs)/ablage")}
-                style={({ pressed }) => [
-                  styles.discoveryInsight,
-                  pressed && styles.pressed,
-                ]}
-              >
+              <View style={styles.discoveryInsight}>
                 <View style={styles.insightIcon}>
                   <Sparkles color={colors.harborBlue} size={18} />
                 </View>
@@ -484,8 +462,7 @@ export default function HeuteScreen() {
                     {discoveryInsight.message}
                   </Text>
                 </View>
-                <ChevronRight color={colors.harborBlue} size={18} />
-              </Pressable>
+              </View>
             ) : null}
           </>
         )}
@@ -494,7 +471,6 @@ export default function HeuteScreen() {
           <FirstSuccessGuide
             onDismiss={() => void markGuideDismissed()}
             onScan={() => router.push("/scan")}
-            onSearch={() => router.push("/(tabs)/ablage")}
           />
         ) : null}
       </ScrollView>
@@ -796,6 +772,14 @@ function InboundDiscoveryCard({
                   </Text>
                 </View>
               ) : null}
+              <Text style={[typography.timestamp, styles.inboundWhen]}>
+                {formatInboundWhen(suggestion)}
+              </Text>
+              {suggestion.note ? (
+                <Text style={[typography.timestamp, styles.rowSubtitle]}>
+                  {suggestion.note}
+                </Text>
+              ) : null}
               <View style={styles.inboundActions}>
                 <OrdiloButton
                   disabled={busy}
@@ -843,11 +827,9 @@ function InboundDiscoveryCard({
 function FirstSuccessGuide({
   onDismiss,
   onScan,
-  onSearch,
 }: {
   onDismiss: () => void;
   onScan: () => void;
-  onSearch: () => void;
 }) {
   return (
     <Card style={styles.firstSuccess}>
@@ -867,17 +849,11 @@ function FirstSuccessGuide({
         Dein Familienbuch wächst
       </Text>
       <Text style={[typography.timestamp, styles.firstSuccessText]}>
-        Ordilo merkt sich jetzt, was wichtig ist. Du kannst weiter sammeln
-        oder einfach eine Frage stellen.
+        Ordilo merkt sich jetzt, was wichtig ist. Scanne weiter, damit euer
+        Familienbuch wächst.
       </Text>
       <View style={styles.firstSuccessActions}>
         <OrdiloButton onPress={onScan} title="Nächstes Dokument scannen" />
-        <OrdiloButton
-          icon={<MessageCircle color={colors.harborBlue} size={16} />}
-          onPress={onSearch}
-          title="Etwas fragen"
-          variant="ghost"
-        />
       </View>
     </Card>
   );
@@ -1186,6 +1162,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   inboundKind: { color: colors.harborBlue },
+  inboundWhen: {
+    color: colors.graphite,
+    fontFamily: typography.title.fontFamily,
+  },
   inboundLocation: {
     alignItems: "center",
     flexDirection: "row",

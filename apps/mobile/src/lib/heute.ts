@@ -15,6 +15,7 @@ export const JOURNAL_DOCS_LIMIT = 6;
 export const HOME_VISIBLE_DOCUMENTS = 3;
 export const HOME_VISIBLE_TASKS = 3;
 export const INBOUND_DISCOVERY_LIMIT = 3;
+export const FIRST_SUCCESS_GUIDE_KEY_PREFIX = "ordilo.first-success-guide";
 const MAX_EMAIL_SUGGESTIONS = 3;
 
 const FRIENDLY_ERROR =
@@ -447,6 +448,30 @@ export function getDatedOpenTasks(tasks: HeuteTask[]): HeuteTask[] {
     .sort((a, b) => a.dueDate!.localeCompare(b.dueDate!));
 }
 
+/**
+ * The hero promises an immediate next step only for overdue, today, or
+ * tomorrow tasks. Farther-out work belongs in "Als Nächstes", not under
+ * "Jetzt dran" — identical to the web Home priority chain.
+ */
+export function getHomePriorityTask(
+  tasks: HeuteTask[],
+  date = new Date(),
+): HeuteTask | null {
+  const tomorrow = toLocalDateStr(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
+  );
+  return (
+    getDatedOpenTasks(tasks).find(
+      (task) => task.dueDate !== null && task.dueDate <= tomorrow,
+    ) ?? null
+  );
+}
+
+/** SecureStore only accepts alphanumeric keys plus `.`, `-`, and `_`. */
+export function getFirstSuccessGuideKey(familyId: string): string {
+  return `${FIRST_SUCCESS_GUIDE_KEY_PREFIX}-${familyId}`;
+}
+
 export function formatDueLabel(
   dueDate: string | null,
   now = new Date(),
@@ -659,6 +684,38 @@ export function formatInboundSender(address: string | null): string {
   if (!address) return "eurer E-Mail";
   const nameMatch = address.match(/^([^<]+)</);
   return nameMatch?.[1]?.trim() || address;
+}
+
+/**
+ * The one line under an inbound proposal that answers "wann?" before a
+ * family accepts it. It uses date components at noon so a timezone can
+ * never shift the weekday.
+ */
+export function formatInboundWhen(suggestion: HeuteInboundSuggestion): string {
+  if (!suggestion.startsOn) {
+    return suggestion.kind === "task" ? "Ohne Frist" : "Ohne Datum";
+  }
+
+  const [year, month, day] = suggestion.startsOn.split("-").map(Number);
+  const date =
+    year && month && day
+      ? new Intl.DateTimeFormat("de-DE", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+        }).format(new Date(year, month - 1, day, 12))
+      : suggestion.startsOn;
+  const start = toDisplayTime(suggestion.startsTime);
+  const end = toDisplayTime(suggestion.endsTime);
+  if (!start) return date;
+  return end && end !== start
+    ? `${date}, ${start}–${end} Uhr`
+    : `${date}, ${start} Uhr`;
+}
+
+function toDisplayTime(value: string | null): string | null {
+  const match = value ? /^(\d{2}):(\d{2})/.exec(value) : null;
+  return match ? `${match[1]}:${match[2]}` : null;
 }
 
 export async function setHeuteTaskStatus(
