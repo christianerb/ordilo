@@ -240,7 +240,7 @@ export function NoteEditor({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           rows={8}
-          className="w-full resize-y rounded-ordilo-sm border border-border bg-[var(--sand)] px-3 py-2.5 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="w-full resize-y rounded-ordilo-sm border border-border bg-[var(--sand)] px-3 py-2.5 text-base leading-relaxed text-foreground placeholder:text-muted-foreground focus:border-[var(--petrol)] focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 md:text-sm"
           aria-label="Notiz bearbeiten"
           data-testid="note-editor-textarea"
         />
