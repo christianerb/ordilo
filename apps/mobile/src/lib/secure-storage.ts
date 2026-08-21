@@ -7,17 +7,22 @@ import * as SecureStore from "expo-secure-store";
  * beyond roughly 2048 bytes (historically on iOS). A Supabase session JSON
  * holds two JWTs and regularly exceeds that, so values are split into
  * chunks and reassembled on read. The chunk count lives under a
- * `<key>::chunks` meta entry; a missing meta entry falls back to a direct
+ * `<key>-chunks` meta entry; a missing meta entry falls back to a direct
  * read so values written before this adapter existed still load.
+ *
+ * Key format note: expo-secure-store only accepts keys made of letters,
+ * digits, `.`, `-` and `_`. The Supabase storage key
+ * (`sb-<ref>-auth-token`) already complies, and the `-chunks` / `-chunk-N`
+ * suffixes keep every derived key inside that alphabet.
  *
  * Implements the SupportedStorage interface expected by @supabase/supabase-js.
  */
 
 const CHUNK_SIZE = 1800;
-const META_SUFFIX = "::chunks";
+const META_SUFFIX = "-chunks";
 
 function chunkKey(key: string, index: number): string {
-  return `${key}::${index}`;
+  return `${key}-chunk-${index}`;
 }
 
 async function removeChunks(key: string): Promise<void> {

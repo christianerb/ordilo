@@ -31,7 +31,7 @@ describe("secureStorage", () => {
     const largeValue = "x".repeat(1800 * 3 + 42);
     await secureStorage.setItem("session", largeValue);
 
-    expect(mockStore.get("session::chunks")).toBe("4");
+    expect(mockStore.get("session-chunks")).toBe("4");
     expect(mockStore.has("session")).toBe(false);
     await expect(secureStorage.getItem("session")).resolves.toBe(largeValue);
   });
@@ -52,8 +52,8 @@ describe("secureStorage", () => {
     await secureStorage.setItem("session", "z".repeat(4000));
     await secureStorage.setItem("session", "tiny");
 
-    expect(mockStore.get("session::chunks")).toBe("1");
-    expect(mockStore.has("session::1")).toBe(false);
+    expect(mockStore.get("session-chunks")).toBe("1");
+    expect(mockStore.has("session-chunk-1")).toBe(false);
     await expect(secureStorage.getItem("session")).resolves.toBe("tiny");
   });
 
@@ -64,7 +64,17 @@ describe("secureStorage", () => {
 
   it("returns null when a chunk is missing", async () => {
     await secureStorage.setItem("broken", "a".repeat(4000));
-    mockStore.delete("broken::1");
+    mockStore.delete("broken-chunk-1");
     await expect(secureStorage.getItem("broken")).resolves.toBeNull();
+  });
+
+  it("only writes keys that expo-secure-store accepts", async () => {
+    // SecureStore keys may contain letters, digits, ".", "-" and "_" only —
+    // anything else rejects on real devices. The Supabase storage key
+    // format is `sb-<project-ref>-auth-token`.
+    await secureStorage.setItem("sb-testproject-auth-token", "v".repeat(5000));
+    for (const key of mockStore.keys()) {
+      expect(key).toMatch(/^[A-Za-z0-9._-]+$/);
+    }
   });
 });

@@ -62,6 +62,7 @@ export default function LoginScreen() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const resendInFlightRef = useRef(false);
 
   function startCooldown(seconds = RESEND_COOLDOWN_SECONDS) {
     setResendCooldown(seconds);
@@ -146,16 +147,24 @@ export default function LoginScreen() {
   }
 
   async function handleResend() {
-    if (resendCooldown > 0) return;
-    const ok = await sendLoginCode(email);
-    if (!ok) {
-      setErrorMessage("Der Code konnte nicht gesendet werden. Bitte versuch's nochmal.");
-      return;
+    // Guard synchronously: state updates lag a frame, so without the ref a
+    // fast double-tap on a slow connection would send two codes and the
+    // second one invalidates the first.
+    if (resendCooldown > 0 || resendInFlightRef.current) return;
+    resendInFlightRef.current = true;
+    try {
+      const ok = await sendLoginCode(email);
+      if (!ok) {
+        setErrorMessage("Der Code konnte nicht gesendet werden. Bitte versuch's nochmal.");
+        return;
+      }
+      setCode("");
+      setErrorMessage(null);
+      void savePendingLogin(email);
+      startCooldown();
+    } finally {
+      resendInFlightRef.current = false;
     }
-    setCode("");
-    setErrorMessage(null);
-    void savePendingLogin(email);
-    startCooldown();
   }
 
   async function handleVerify() {
