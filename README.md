@@ -91,6 +91,26 @@ Then open http://localhost:3100.
 - `npm run typecheck` - run the TypeScript compiler with no emit
 - `npm run test` - run the Vitest suite once
 - `npm run test:watch` - run Vitest in watch mode
+- `npm run dev:mobile` - start the Expo dev server for the native app
+- `npm run lint:mobile` / `typecheck:mobile` / `test:mobile` - mobile checks
+
+## Mobile app (Expo)
+
+The native iOS/Android app lives in `apps/mobile` (npm workspace
+`@ordilo/mobile`). It talks to the same Supabase project and the same Next.js
+API routes as the web app — only the publishable Supabase key is used there.
+
+Setup:
+
+1. Create `apps/mobile/.env` from `apps/mobile/.env.example` with the same
+   Supabase URL and publishable key as the web app.
+2. Start the dev server: `npm run dev:mobile`.
+3. Open in the iOS simulator (`i`) or scan the QR code with a development
+   build on a real device. Native features (camera, secure storage) require
+   a development build via `eas build --profile development`, not Expo Go.
+
+Login is the same passwordless email code as on the web; the session persists
+in the iOS Keychain / Android Keystore.
 
 ## Architecture overview
 
