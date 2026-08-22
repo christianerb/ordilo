@@ -4,7 +4,9 @@ import {
   buildNoteUpdatePayload,
   createNote,
   getNoteContent,
+  maxNoteContentLength,
   triggerNoteAnalysis,
+  updateDocumentSecret,
   updateConfirmedNote,
 } from "../lib/notes";
 import type { ReviewAnalysis } from "../lib/document-review";
@@ -53,6 +55,17 @@ describe("native notes helpers", () => {
     ).toBe(
       "# Netflix\n\n- **URL:** https://netflix.example\n\n- **Benutzername:** familie@example.de\n\nFamilienkonto",
     );
+  });
+
+  it("makes credential content length measurable before submitting it", () => {
+    expect(
+      buildCredentialsContent({
+        title: "WLAN",
+        url: "https://familie.example",
+        username: "familie@example.de",
+        description: "x".repeat(maxNoteContentLength),
+      }).length,
+    ).toBeGreaterThan(maxNoteContentLength);
   });
 
   it("always renders a note body from OCR text, never credential metadata", () => {
@@ -123,6 +136,18 @@ describe("native notes helpers", () => {
 
     expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/note-1/analyze", {
       method: "POST",
+    });
+  });
+
+  it("uses the protected route to set, change, or remove a credential secret", async () => {
+    mockApiFetch.mockResolvedValue({} as Response);
+
+    await updateDocumentSecret("note-1", "");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/note-1/secret", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ secret: "" }),
     });
   });
 });

@@ -34,6 +34,7 @@ import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
 import {
   buildNoteUpdatePayload,
   getNoteContent,
+  updateDocumentSecret,
   updateConfirmedNote,
 } from "@/src/lib/notes";
 import {
@@ -271,6 +272,7 @@ function SecretSection({ documentId }: { documentId: string }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
+  const [editing, setEditing] = useState(false);
   const secretExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSecret = useRef<string | null>(null);
@@ -361,7 +363,100 @@ function SecretSection({ documentId }: { documentId: string }) {
           title={loading ? "Wird geladen …" : "Passwort anzeigen"}
         />
       )}
+      <OrdiloButton
+        icon={<Pencil color={colors.graphite} size={16} />}
+        onPress={() => setEditing(true)}
+        title="Passwort ändern"
+        variant="outline"
+      />
+      {editing ? (
+        <SecretEditor
+          documentId={documentId}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            clearSecret();
+            setEditing(false);
+          }}
+        />
+      ) : null}
     </Card>
+  );
+}
+
+function SecretEditor({
+  documentId,
+  onClose,
+  onSaved,
+}: {
+  documentId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [secret, setSecret] = useState("");
+  const [showSecret, setShowSecret] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await updateDocumentSecret(documentId, secret);
+      setSecret("");
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onSaved();
+    } catch {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError("Das Passwort konnte nicht gespeichert werden. Bitte versuch es nochmal.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal animationType="slide" onRequestClose={saving ? undefined : onClose} presentationStyle="pageSheet" transparent visible>
+      <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
+        <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
+          <View style={styles.handle} />
+          <Text style={styles.editorTitle}>Passwort ändern</Text>
+          <Text style={styles.editorHint}>Leer lassen, um das gespeicherte Passwort zu entfernen.</Text>
+          <View style={styles.secretEditorField}>
+            <TextInput
+              accessibilityLabel="Neues Passwort"
+              autoCapitalize="none"
+              autoCorrect={false}
+              maxLength={10_000}
+              onChangeText={setSecret}
+              placeholder="Passwort, PIN oder Code"
+              placeholderTextColor={colors.mistDark}
+              secureTextEntry={!showSecret}
+              style={styles.secretEditorInput}
+              value={secret}
+            />
+            <Pressable
+              accessibilityLabel={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => setShowSecret((current) => !current)}
+            >
+              {showSecret
+                ? <EyeOff color={colors.mistDark} size={19} />
+                : <Eye color={colors.mistDark} size={19} />}
+            </Pressable>
+          </View>
+          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+          <View style={styles.editorFooter}>
+            <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
+            <OrdiloButton
+              disabled={saving}
+              icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+              onPress={() => void save()}
+              title={saving ? "Wird gespeichert …" : "Speichern"}
+            />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -478,6 +573,8 @@ const styles = StyleSheet.create({
   secretHeader: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   secretValue: { backgroundColor: colors.sandLight, borderRadius: radii.base, color: colors.graphite, padding: 12, ...typography.body },
   secretActions: { flexDirection: "row", gap: spacing.sm },
+  secretEditorField: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, margin: spacing.md, minHeight: 44, paddingHorizontal: 12 },
+  secretEditorInput: { color: colors.graphite, flex: 1, minHeight: 44, ...typography.body },
   overlay: { backgroundColor: "rgba(38, 36, 33, 0.28)", flex: 1, justifyContent: "flex-end" },
   editorSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "85%", paddingBottom: spacing.md },
   handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.md, marginTop: spacing.sm, width: 40 },

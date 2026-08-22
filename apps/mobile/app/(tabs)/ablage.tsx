@@ -569,11 +569,11 @@ function NotesView({
     return notes.filter((note) => getDocumentSearchText(note).includes(query));
   }, [notes, search]);
 
-  if (loading && notes.length === 0) {
+  if (loading && notes.length === 0 && !search.trim()) {
     return <ActivityIndicator accessibilityLabel="Notizen werden geladen" color={colors.harborBlue} style={styles.notesLoading} />;
   }
 
-  if (error && notes.length === 0) {
+  if (error && notes.length === 0 && !search.trim()) {
     return (
       <EmptyState icon={AlertCircle} heading="Notizen nicht erreichbar" description={error}>
         <OrdiloButton onPress={onRetry} size="lg" title="Erneut versuchen" />
@@ -581,7 +581,7 @@ function NotesView({
     );
   }
 
-  if (notes.length === 0) {
+  if (notes.length === 0 && !search.trim()) {
     return (
       <EmptyState
         icon={NotebookPen}
