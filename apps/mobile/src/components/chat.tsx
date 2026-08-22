@@ -24,10 +24,11 @@ import {
 } from "react-native";
 
 import { OrdiloButton } from "./ui";
-import { ContactActionGrid } from "./contacts";
+import { ContactActionGrid, openContactHref } from "./contacts";
 import {
   CHAT_FEEDBACK_REASONS,
   getActionContent,
+  getSuggestedContactAction,
   getToolStepLabel,
   type AnswerCard,
   type ChatAction,
@@ -182,6 +183,7 @@ export function AnswerCardView({
   onOpenContact: (contactId: string) => void;
 }) {
   const contact = card.contact;
+  const suggested = getSuggestedContactAction(contact);
   return (
     <View style={styles.answerCard}>
       <Text style={styles.answerTitle}>{card.title}</Text>
@@ -195,22 +197,31 @@ export function AnswerCardView({
         </View>
       ))}
       {card.type === "kontakt" && contact ? (
-        <ContactActionGrid
-          compact
-          contact={{
-            id: contact.id,
-            family_id: "",
-            source_document_id: null,
-            name: card.title,
-            organization: null,
-            role: null,
-            phone: contact.phone,
-            email: contact.email,
-            status: "confirmed",
-            created_at: "",
-            updated_at: "",
-          }}
-        />
+        suggested ? (
+          // The server suggested one action with a verified message draft —
+          // keep it, otherwise the draft would be lost in an empty composer.
+          <OrdiloButton
+            onPress={() => void openContactHref(suggested.href)}
+            title={suggested.label}
+          />
+        ) : (
+          <ContactActionGrid
+            compact
+            contact={{
+              id: contact.id,
+              family_id: "",
+              source_document_id: null,
+              name: card.title,
+              organization: null,
+              role: null,
+              phone: contact.phone,
+              email: contact.email,
+              status: "confirmed",
+              created_at: "",
+              updated_at: "",
+            }}
+          />
+        )
       ) : null}
       {card.type === "kontakt" && contact ? (
         <Pressable
@@ -355,7 +366,11 @@ export function ActionCardView({
           <Text accessibilityRole="alert" style={styles.actionError}>
             {action.error ?? "Das hat nicht geklappt. Bitte versuch es nochmal."}
           </Text>
-          <OrdiloButton onPress={onConfirm} title="Erneut versuchen" variant="outline" />
+          <OrdiloButton
+            onPress={action.errorOperation === "undo" ? onUndo : onConfirm}
+            title="Erneut versuchen"
+            variant="outline"
+          />
         </>
       ) : null}
 
