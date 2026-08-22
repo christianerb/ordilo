@@ -27,6 +27,7 @@ export const documentTypeLabels: Record<DocumentType, string> = {
 };
 
 export type ReviewAnalysis = {
+  status: "analyzed" | "confirmed";
   document_type: DocumentType;
   title: string;
   summary: string;
@@ -43,6 +44,7 @@ export type ReviewAnalysis = {
 };
 
 type DocumentRow = {
+  status: string;
   title: string | null;
   summary: string | null;
   document_type: string | null;
@@ -67,7 +69,7 @@ export async function loadDocumentReview(documentId: string): Promise<ReviewAnal
   const supabase = getSupabase();
   const [{ data: document }, { data: entities }, { data: tasks }, { data: facts }] =
     await Promise.all([
-      supabase.from("documents").select("title, summary, document_type, category, tags").eq("id", documentId).maybeSingle(),
+      supabase.from("documents").select("status, title, summary, document_type, category, tags").eq("id", documentId).maybeSingle(),
       supabase.from("extracted_entities").select("*").eq("document_id", documentId),
       supabase.from("tasks").select("*").eq("document_id", documentId),
       supabase.from("document_facts").select("*").eq("document_id", documentId),
@@ -81,8 +83,10 @@ export async function loadDocumentReview(documentId: string): Promise<ReviewAnal
     ? row.document_type as DocumentType
     : "other";
   const category = ofType("category")[0];
+  if (row.status !== "analyzed" && row.status !== "confirmed") return null;
 
   return {
+    status: row.status,
     document_type: type,
     title: row.title ?? "Dokument",
     summary: row.summary ?? "",
@@ -122,9 +126,15 @@ export async function loadDocumentReview(documentId: string): Promise<ReviewAnal
 }
 
 export async function confirmDocumentReview(documentId: string, analysis: ReviewAnalysis): Promise<void> {
+  const { status: _status, ...payload } = analysis;
   await apiFetch(`/api/documents/${documentId}/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...analysis, deletedTaskIndices: [], calendar_events: [] }),
+    body: JSON.stringify({ ...payload, deletedTaskIndices: [], calendar_events: [] }),
   });
+}
+
+/** Only an analysed document is eligible for the atomic confirmation API. */
+export function canReviewDocument(status: string): boolean {
+  return status === "analyzed";
 }

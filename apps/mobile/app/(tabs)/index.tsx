@@ -416,6 +416,8 @@ export default function HeuteScreen() {
                 )}
                 {journalDocuments.map((document) => (
                   <Pressable
+                    accessibilityRole={document.status === "analyzed" ? "button" : undefined}
+                    disabled={document.status !== "analyzed"}
                     key={document.id}
                     onPress={() => router.push(`/document/${document.id}`)}
                     style={[

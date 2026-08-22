@@ -27,15 +27,17 @@ export default function DocumentReviewScreen() {
   }, [id]);
   useEffect(() => {
     if (!id) return;
-    void loadDocumentReview(id).then((value) => {
-      setAnalysis(value);
-      if (!value) setError("Das Dokument konnte nicht geladen werden.");
-      setLoading(false);
-    });
+    void loadDocumentReview(id)
+      .then((value) => {
+        setAnalysis(value);
+        if (!value) setError("Dieses Dokument kann gerade nicht geprüft werden.");
+      })
+      .catch(() => setError("Das Dokument konnte nicht geladen werden."))
+      .finally(() => setLoading(false));
   }, [id]);
 
   const confirm = async () => {
-    if (!analysis || !id) return;
+    if (!analysis || analysis.status !== "analyzed" || !id) return;
     setSaving(true);
     try {
       await confirmDocumentReview(id, analysis);
@@ -52,6 +54,7 @@ export default function DocumentReviewScreen() {
   if (loading) return <Screen style={styles.center}><ActivityIndicator color={colors.harborBlue} /></Screen>;
   if (!analysis) return <Screen style={styles.center}><AlertCircle color={colors.destructive} size={32} /><Text style={styles.error}>{error}</Text><OrdiloButton title="Erneut versuchen" onPress={() => void load()} /></Screen>;
 
+  const isReadOnly = analysis.status === "confirmed";
   return (
     <Screen style={styles.screen}>
       <View style={styles.topbar}>
@@ -59,15 +62,15 @@ export default function DocumentReviewScreen() {
         <Text style={styles.topTitle}>Dokument prüfen</Text>
       </View>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.intro}><View style={styles.fileIcon}><FileText color={colors.harborBlue} size={24} /></View><View><Text style={styles.type}>{documentTypeLabels[analysis.document_type]}</Text><Text style={styles.help}>Ordilo hat das gefunden. Du kannst es noch ändern.</Text></View></View>
+        <View style={styles.intro}><View style={styles.fileIcon}><FileText color={colors.harborBlue} size={24} /></View><View><Text style={styles.type}>{documentTypeLabels[analysis.document_type]}</Text><Text style={styles.help}>{isReadOnly ? "Dieses Dokument ist sicher in eurem Familienbuch." : "Ordilo hat das gefunden. Du kannst es noch ändern."}</Text></View></View>
         {analysis.needs_user_review ? <View style={styles.notice}><AlertCircle color={colors.warmApricot} size={18}/><Text style={styles.noticeText}>Ein paar Angaben sind unsicher. Schau bitte kurz drauf.</Text></View> : null}
-        <Card style={styles.card}><Label text="Name" /><TextInput value={analysis.title} onChangeText={(title) => setAnalysis({ ...analysis, title })} style={styles.input} /><Label text="Worum geht's?" /><TextInput multiline value={analysis.summary} onChangeText={(summary) => setAnalysis({ ...analysis, summary })} style={[styles.input, styles.summary]} /></Card>
+        <Card style={styles.card}><Label text="Name" /><TextInput editable={!isReadOnly} value={analysis.title} onChangeText={(title) => setAnalysis({ ...analysis, title })} style={[styles.input, isReadOnly && styles.readOnly]} /><Label text="Worum geht's?" /><TextInput editable={!isReadOnly} multiline value={analysis.summary} onChangeText={(summary) => setAnalysis({ ...analysis, summary })} style={[styles.input, styles.summary, isReadOnly && styles.readOnly]} /></Card>
         <Facts icon={Tag} title="Ablage" values={[analysis.suggested_category, ...analysis.tags]} />
         <Facts icon={UserRound} title="Personen" values={analysis.family_members.map((member) => member.name)} />
         <Facts icon={CalendarDays} title="Termine" values={analysis.dates.map((date) => `${date.label || date.type}: ${date.date}`)} />
         <Facts icon={ListChecks} title="Aufgaben" values={analysis.tasks.map((task) => task.due_date ? `${task.title} · ${task.due_date}` : task.title)} />
         {analysis.amounts.length ? <Facts icon={FileText} title="Beträge" values={analysis.amounts.map((amount) => `${amount.label || "Betrag"}: ${amount.amount} ${amount.currency}`)} /> : null}
-        <View style={styles.actions}><OrdiloButton disabled={saving || !analysis.title.trim()} size="lg" title={saving ? "Wird gespeichert …" : "Passt so"} icon={saving ? <ActivityIndicator color={colors.warmWhite} /> : <Check color={colors.warmWhite} size={19} />} onPress={() => void confirm()} /><OrdiloButton title="Später prüfen" variant="ghost" onPress={() => router.replace("/(tabs)")} /></View>
+        <View style={styles.actions}>{isReadOnly ? <OrdiloButton title="Zur Übersicht" size="lg" onPress={() => router.replace("/(tabs)")} /> : <><OrdiloButton disabled={saving || !analysis.title.trim()} size="lg" title={saving ? "Wird gespeichert …" : "Passt so"} icon={saving ? <ActivityIndicator color={colors.warmWhite} /> : <Check color={colors.warmWhite} size={19} />} onPress={() => void confirm()} /><OrdiloButton title="Später prüfen" variant="ghost" onPress={() => router.replace("/(tabs)")} /></>}</View>
       </ScrollView>
     </Screen>
   );
@@ -83,6 +86,6 @@ const styles = StyleSheet.create({
   topbar: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", gap: spacing.sm, height: 54, paddingHorizontal: spacing.md }, back: { alignItems: "center", height: 44, justifyContent: "center", width: 44 }, topTitle: { color: colors.graphite, ...typography.title },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing["2xl"] }, intro: { alignItems: "center", flexDirection: "row", gap: spacing.sm }, fileIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 48, justifyContent: "center", width: 48 }, type: { color: colors.graphite, ...typography.title }, help: { color: colors.mistDark, ...typography.timestamp, maxWidth: 270 },
   notice: { alignItems: "center", backgroundColor: colors.sandWarm, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.sm }, noticeText: { color: colors.graphite, flex: 1, ...typography.timestamp },
-  card: { gap: spacing.sm }, label: { color: colors.mistDark, ...typography.label }, input: { borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 40, paddingHorizontal: spacing.sm, ...typography.body }, summary: { minHeight: 88, paddingTop: spacing.sm, textAlignVertical: "top" },
+  card: { gap: spacing.sm }, label: { color: colors.mistDark, ...typography.label }, input: { borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 40, paddingHorizontal: spacing.sm, ...typography.body }, readOnly: { backgroundColor: colors.sandLight }, summary: { minHeight: 88, paddingTop: spacing.sm, textAlignVertical: "top" },
   sectionTitle: { alignItems: "center", flexDirection: "row", gap: spacing.sm }, sectionText: { color: colors.graphite, ...typography.title }, value: { color: colors.mistDark, ...typography.body }, actions: { gap: spacing.sm, marginTop: spacing.sm },
 });

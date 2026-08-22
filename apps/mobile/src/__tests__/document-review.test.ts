@@ -1,5 +1,6 @@
 import {
   confirmDocumentReview,
+  canReviewDocument,
   documentTypeLabels,
   type ReviewAnalysis,
 } from "../lib/document-review";
@@ -27,12 +28,19 @@ const analysis: ReviewAnalysis = {
   suggested_category: "Haushalt",
   tags: ["Strom"],
   needs_user_review: false,
+  status: "analyzed",
 };
 
 describe("document review", () => {
   it("uses German labels for the document type", () => {
     expect(documentTypeLabels.invoice).toBe("Rechnung");
     expect(documentTypeLabels.credentials).toBe("Zugangsdaten");
+  });
+
+  it("only offers review for an analysed document", () => {
+    expect(canReviewDocument("analyzed")).toBe(true);
+    expect(canReviewDocument("confirmed")).toBe(false);
+    expect(canReviewDocument("failed")).toBe(false);
   });
 
   it("posts the complete analysis only to the protected confirm route", async () => {
@@ -45,6 +53,7 @@ describe("document review", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...analysis,
+        status: undefined,
         deletedTaskIndices: [],
         calendar_events: [],
       }),
