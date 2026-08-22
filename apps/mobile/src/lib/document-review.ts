@@ -119,6 +119,53 @@ function documentType(value: string | null): DocumentType {
   return documentTypes.has(value as DocumentType) ? value as DocumentType : "other";
 }
 
+type Contact = ReviewAnalysis["contacts"][number];
+type Amount = ReviewAnalysis["amounts"][number];
+
+/**
+ * Contacts are stored as JSON in `entity_value`, matching the web review
+ * reconstruction. Invalid legacy rows stay out of the confirm payload.
+ */
+export function parseStoredContact(
+  entityValue: unknown,
+  entityConfidence: unknown,
+): Contact | null {
+  if (typeof entityValue !== "string") return null;
+  try {
+    const details = asRecord(JSON.parse(entityValue));
+    const contact = {
+      name: text(details.name),
+      organization: text(details.organization),
+      role: text(details.role),
+      phone: text(details.phone),
+      email: text(details.email),
+      confidence: confidence(entityConfidence),
+    };
+    return contact.name && (contact.phone.trim() || contact.email.trim())
+      ? contact
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Rebuild typed amount columns, with a display-value fallback for old rows. */
+export function reconstructStoredAmount(entity: Record<string, unknown>): Amount {
+  const displayValue = text(entity.entity_value);
+  const parts = displayValue.split(" ");
+  const fallbackCurrency = parts.length > 1 ? parts.at(-1) ?? "EUR" : "EUR";
+  const fallbackAmount = parts.slice(0, -1).join(" ") || displayValue;
+  const kind = text(entity.amount_kind);
+  return {
+    amount: text(entity.normalized_value).trim() || fallbackAmount,
+    currency: text(entity.currency) || fallbackCurrency,
+    label: text(entity.label),
+    kind: amountKinds.has(kind as Amount["kind"]) ? kind as Amount["kind"] : "other",
+    value_date: text(entity.value_date) || null,
+    confidence: confidence(entity.confidence),
+  };
+}
+
 /**
  * Rebuilds the web review payload from the same RLS-scoped tables. A document
  * outside the review states deliberately returns its status instead of a
@@ -176,26 +223,14 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
       const details = asRecord(entity.metadata);
       return { name: text(entity.entity_value), type: text(details.type), confidence: confidence(entity.confidence) };
     }),
-    contacts: ofType("contact").map((entity) => {
-      const details = asRecord(entity.metadata);
-      return { name: text(entity.entity_value), organization: text(details.organization), role: text(details.role), phone: text(details.phone), email: text(details.email), confidence: confidence(entity.confidence) };
-    }),
+    contacts: ofType("contact")
+      .map((entity) => parseStoredContact(entity.entity_value, entity.confidence))
+      .filter((contact): contact is Contact => contact !== null),
     dates: ofType("date").map((entity) => {
       const details = asRecord(entity.metadata);
       return { date: text(entity.entity_value), type: text(details.type), label: text(details.label), confidence: confidence(entity.confidence) };
     }),
-    amounts: ofType("amount").map((entity) => {
-      const details = asRecord(entity.metadata);
-      const kind = text(details.kind);
-      return {
-        amount: text(entity.entity_value),
-        currency: text(details.currency),
-        label: text(details.label),
-        kind: amountKinds.has(kind as ReviewAnalysis["amounts"][number]["kind"]) ? kind as ReviewAnalysis["amounts"][number]["kind"] : "other",
-        value_date: text(details.value_date) || null,
-        confidence: confidence(entity.confidence),
-      };
-    }),
+    amounts: ofType("amount").map(reconstructStoredAmount),
     tasks: (tasks ?? []).map((task) => {
       const entry = asRecord(task);
       return { title: text(entry.title), due_date: text(entry.due_date) || null, confidence: confidence(entry.confidence) };

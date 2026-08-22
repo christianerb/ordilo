@@ -1,3 +1,5 @@
+import * as SecureStore from "expo-secure-store";
+
 import {
   defaultAppSettings,
   loadAppSettings,
@@ -44,7 +46,10 @@ describe("parseAppSettings", () => {
 });
 
 describe("load/saveAppSettings", () => {
-  beforeEach(() => mockStore.clear());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockStore.clear();
+  });
 
   it("round-trips a partial update", async () => {
     const saved = await saveAppSettings({ appLockEnabled: true });
@@ -57,5 +62,16 @@ describe("load/saveAppSettings", () => {
     const saved = await saveAppSettings({ notificationsEnabled: true });
     expect(saved.privacyShieldEnabled).toBe(false);
     expect(saved.notificationsEnabled).toBe(true);
+  });
+
+  it("does not report a settings update when SecureStore rejects it", async () => {
+    jest.mocked(SecureStore.setItemAsync).mockRejectedValueOnce(
+      new Error("Keychain unavailable"),
+    );
+
+    await expect(saveAppSettings({ appLockEnabled: true })).rejects.toThrow(
+      "Keychain unavailable",
+    );
+    expect(await loadAppSettings()).toEqual(defaultAppSettings);
   });
 });

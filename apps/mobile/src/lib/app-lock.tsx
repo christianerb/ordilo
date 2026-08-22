@@ -122,7 +122,13 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       if (stored.appLockEnabled && !cold.keepAppLockEnabled) {
         // Biometrics vanished since the user enabled the lock — disable
         // it rather than risk locking them out of their own device.
-        setSettings(await saveAppSettings({ appLockEnabled: false }));
+        try {
+          setSettings(await saveAppSettings({ appLockEnabled: false }));
+        } catch {
+          // The device no longer supports the stored lock. Continue with
+          // the safe in-memory setting even if SecureStore is unavailable.
+          setSettings({ ...stored, appLockEnabled: false });
+        }
       } else {
         setSettings(stored);
       }
@@ -185,14 +191,23 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
         if (!passed) return false;
         haptics.success();
       }
-      setSettings(await saveAppSettings({ appLockEnabled: enabled }));
-      return true;
+      try {
+        setSettings(await saveAppSettings({ appLockEnabled: enabled }));
+        return true;
+      } catch {
+        haptics.error();
+        return false;
+      }
     },
     [biometry.available],
   );
 
   const setPrivacyShieldEnabled = useCallback(async (enabled: boolean) => {
-    setSettings(await saveAppSettings({ privacyShieldEnabled: enabled }));
+    try {
+      setSettings(await saveAppSettings({ privacyShieldEnabled: enabled }));
+    } catch {
+      haptics.error();
+    }
   }, []);
 
   const value = useMemo<AppLockContextValue>(

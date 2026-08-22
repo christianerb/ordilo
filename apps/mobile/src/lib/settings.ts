@@ -63,10 +63,6 @@ export async function saveAppSettings(
   patch: Partial<AppSettings>,
 ): Promise<AppSettings> {
   const next = { ...(await loadAppSettings()), ...patch };
-  try {
-    await SecureStore.setItemAsync(SETTINGS_KEY, JSON.stringify(next));
-  } catch {
-    // Persistence is best-effort; the in-memory state still updates.
-  }
+  await SecureStore.setItemAsync(SETTINGS_KEY, JSON.stringify(next));
   return next;
 }
