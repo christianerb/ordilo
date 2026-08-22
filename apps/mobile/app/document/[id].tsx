@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   FileText,
@@ -290,9 +291,9 @@ export default function DocumentReviewScreen() {
           )}
         </Section>
 
+        <TasksSection analysis={document} editable={editable} onChange={updateAnalysis} />
         <PeopleSection analysis={document} editable={editable} onChange={updateAnalysis} />
         <DatesSection analysis={document} editable={editable} onChange={updateAnalysis} />
-        <TasksSection analysis={document} editable={editable} onChange={updateAnalysis} />
         <AmountsSection analysis={document} editable={editable} onChange={updateAnalysis} />
         <FactsSection analysis={document} editable={editable} onChange={updateAnalysis} />
 
@@ -407,25 +408,39 @@ function SwipePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose:
 }
 
 function PeopleSection({ analysis, editable, onChange }: SectionProps) {
+  const people = analysis.family_members;
   return (
-    <Section icon={UserRound} title="Personen" onAdd={editable ? () => onChange((current) => ({ ...current, family_members: [...current.family_members, { name: "", person_id: null, confidence: 1 }] })) : undefined}>
-      {analysis.family_members.length === 0 ? <EmptyRows text="Keine Person erkannt." /> : null}
-      {analysis.family_members.map((person, index) => editable ? (
+    <CollapsibleSection
+      defaultExpanded={hasUncertainValue(people)}
+      icon={UserRound}
+      onAdd={editable ? () => onChange((current) => ({ ...current, family_members: [...current.family_members, { name: "", person_id: null, confidence: 1 }] })) : undefined}
+      subtitle={entitySummary(people.length, "Person", "Personen", people.map((person) => person.name))}
+      title="Personen"
+    >
+      {people.length === 0 ? <EmptyRows text="Keine Person erkannt." /> : null}
+      {people.map((person, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("family_members", index, onChange)}>
           <FieldLabel text="Name" />
           <TextInput accessibilityLabel={`Person ${index + 1}`} onChangeText={(name) => updateAt("family_members", index, { name }, onChange)} style={styles.input} value={person.name} />
           <Confidence confidence={person.confidence} />
         </EditableRow>
       ) : <ReadValue key={index} value={person.name} />)}
-    </Section>
+    </CollapsibleSection>
   );
 }
 
 function DatesSection({ analysis, editable, onChange }: SectionProps) {
+  const dates = analysis.dates;
   return (
-    <Section icon={CalendarDays} title="Termine" onAdd={editable ? () => onChange((current) => ({ ...current, dates: [...current.dates, { date: "", label: "", type: "other", confidence: 1 }] })) : undefined}>
-      {analysis.dates.length === 0 ? <EmptyRows text="Kein Termin erkannt." /> : null}
-      {analysis.dates.map((date, index) => editable ? (
+    <CollapsibleSection
+      defaultExpanded={hasUncertainValue(dates)}
+      icon={CalendarDays}
+      onAdd={editable ? () => onChange((current) => ({ ...current, dates: [...current.dates, { date: "", label: "", type: "other", confidence: 1 }] })) : undefined}
+      subtitle={entitySummary(dates.length, "Termin", "Termine", dates.map((date) => date.label || date.date))}
+      title="Termine"
+    >
+      {dates.length === 0 ? <EmptyRows text="Kein Termin erkannt." /> : null}
+      {dates.map((date, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("dates", index, onChange)}>
           <FieldLabel text="Worum geht's?" />
           <TextInput accessibilityLabel={`Bezeichnung Termin ${index + 1}`} onChangeText={(label) => updateAt("dates", index, { label }, onChange)} placeholder="Zum Beispiel: Elternabend" placeholderTextColor={colors.mistDark} style={styles.input} value={date.label} />
@@ -434,15 +449,22 @@ function DatesSection({ analysis, editable, onChange }: SectionProps) {
           <Confidence confidence={date.confidence} />
         </EditableRow>
       ) : <ReadValue key={index} value={[date.label, date.date].filter(Boolean).join(" · ")} />)}
-    </Section>
+    </CollapsibleSection>
   );
 }
 
 function TasksSection({ analysis, editable, onChange }: SectionProps) {
+  const tasks = analysis.tasks;
   return (
-    <Section icon={ListChecks} title="Aufgaben" onAdd={editable ? () => onChange((current) => ({ ...current, tasks: [...current.tasks, { title: "", due_date: null, confidence: 1 }] })) : undefined}>
-      {analysis.tasks.length === 0 ? <EmptyRows text="Keine Aufgabe erkannt." /> : null}
-      {analysis.tasks.map((task, index) => editable ? (
+    <CollapsibleSection
+      defaultExpanded={tasks.length > 0}
+      icon={ListChecks}
+      onAdd={editable ? () => onChange((current) => ({ ...current, tasks: [...current.tasks, { title: "", due_date: null, confidence: 1 }] })) : undefined}
+      subtitle={entitySummary(tasks.length, "Aufgabe", "Aufgaben", tasks.map((task) => task.title))}
+      title="Aufgaben"
+    >
+      {tasks.length === 0 ? <EmptyRows text="Keine Aufgabe erkannt." /> : null}
+      {tasks.map((task, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("tasks", index, onChange)}>
           <FieldLabel text="Aufgabe" />
           <TextInput accessibilityLabel={`Aufgabe ${index + 1}`} onChangeText={(title) => updateAt("tasks", index, { title }, onChange)} style={styles.input} value={task.title} />
@@ -451,15 +473,22 @@ function TasksSection({ analysis, editable, onChange }: SectionProps) {
           <Confidence confidence={task.confidence} />
         </EditableRow>
       ) : <ReadValue key={index} value={task.due_date ? `${task.title} · ${task.due_date}` : task.title} />)}
-    </Section>
+    </CollapsibleSection>
   );
 }
 
 function AmountsSection({ analysis, editable, onChange }: SectionProps) {
+  const amounts = analysis.amounts;
   return (
-    <Section icon={WalletCards} title="Beträge" onAdd={editable ? () => onChange((current) => ({ ...current, amounts: [...current.amounts, { amount: "", currency: "EUR", label: "", kind: "other", value_date: null, confidence: 1 }] })) : undefined}>
-      {analysis.amounts.length === 0 ? <EmptyRows text="Kein Betrag erkannt." /> : null}
-      {analysis.amounts.map((amount, index) => editable ? (
+    <CollapsibleSection
+      defaultExpanded={hasUncertainValue(amounts)}
+      icon={WalletCards}
+      onAdd={editable ? () => onChange((current) => ({ ...current, amounts: [...current.amounts, { amount: "", currency: "EUR", label: "", kind: "other", value_date: null, confidence: 1 }] })) : undefined}
+      subtitle={entitySummary(amounts.length, "Betrag", "Beträge", amounts.map((amount) => amount.label || amount.amount))}
+      title="Beträge"
+    >
+      {amounts.length === 0 ? <EmptyRows text="Kein Betrag erkannt." /> : null}
+      {amounts.map((amount, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("amounts", index, onChange)}>
           <FieldLabel text="Bezeichnung" />
           <TextInput accessibilityLabel={`Bezeichnung Betrag ${index + 1}`} onChangeText={(label) => updateAt("amounts", index, { label }, onChange)} placeholder="Zum Beispiel: Gesamtbetrag" placeholderTextColor={colors.mistDark} style={styles.input} value={amount.label} />
@@ -470,15 +499,22 @@ function AmountsSection({ analysis, editable, onChange }: SectionProps) {
           <Confidence confidence={amount.confidence} />
         </EditableRow>
       ) : <ReadValue key={index} value={[amount.label || "Betrag", amount.amount, amount.currency].filter(Boolean).join(" · ")} />)}
-    </Section>
+    </CollapsibleSection>
   );
 }
 
 function FactsSection({ analysis, editable, onChange }: SectionProps) {
+  const facts = analysis.facts;
   return (
-    <Section icon={FileText} title="Nummern & Kennungen" onAdd={editable ? () => onChange((current) => ({ ...current, facts: [...current.facts, { fact_type: "identifier", label: "", value: "", confidence: 1 }] })) : undefined}>
-      {analysis.facts.length === 0 ? <EmptyRows text="Keine Nummer erkannt." /> : null}
-      {analysis.facts.map((fact, index) => editable ? (
+    <CollapsibleSection
+      defaultExpanded={hasUncertainValue(facts)}
+      icon={FileText}
+      onAdd={editable ? () => onChange((current) => ({ ...current, facts: [...current.facts, { fact_type: "identifier", label: "", value: "", confidence: 1 }] })) : undefined}
+      subtitle={entitySummary(facts.length, "Kennung", "Kennungen", facts.map((fact) => fact.label || fact.value))}
+      title="Nummern & Kennungen"
+    >
+      {facts.length === 0 ? <EmptyRows text="Keine Nummer erkannt." /> : null}
+      {facts.map((fact, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("facts", index, onChange)}>
           <FieldLabel text="Bezeichnung" />
           <TextInput accessibilityLabel={`Bezeichnung Kennung ${index + 1}`} onChangeText={(label) => updateAt("facts", index, { label }, onChange)} placeholder="Zum Beispiel: Vertragsnummer" placeholderTextColor={colors.mistDark} style={styles.input} value={fact.label} />
@@ -487,7 +523,7 @@ function FactsSection({ analysis, editable, onChange }: SectionProps) {
           <Confidence confidence={fact.confidence} />
         </EditableRow>
       ) : <ReadValue key={index} value={`${fact.label}: ${fact.value}`} />)}
-    </Section>
+    </CollapsibleSection>
   );
 }
 
@@ -497,14 +533,64 @@ type SectionProps = {
   onChange: (updater: (current: ReviewAnalysis) => ReviewAnalysis) => void;
 };
 
-function Section({ icon: IconComponent, title, onAdd, children }: { icon: Icon; title: string; onAdd?: () => void; children: React.ReactNode }) {
+function Section({ icon: IconComponent, title, children }: { icon: Icon; title: string; children: React.ReactNode }) {
   return (
     <Card style={styles.card}>
-      <View style={styles.sectionHeader}>
-        <View style={styles.sectionTitle}><IconComponent color={colors.mistDark} size={18} /><Text style={styles.sectionHeading}>{title}</Text></View>
-        {onAdd ? <Pressable accessibilityLabel={`${title} hinzufügen`} accessibilityRole="button" onPress={onAdd} style={styles.addButton}><Plus color={colors.harborBlue} size={17} /><Text style={styles.addButtonText}>Hinzufügen</Text></Pressable> : null}
+      <View style={styles.staticSectionHeader}>
+        <IconComponent color={colors.mistDark} size={18} />
+        <Text style={styles.sectionHeading}>{title}</Text>
       </View>
       {children}
+    </Card>
+  );
+}
+
+function CollapsibleSection({
+  defaultExpanded,
+  icon: IconComponent,
+  title,
+  subtitle,
+  onAdd,
+  children,
+}: {
+  defaultExpanded: boolean;
+  icon: Icon;
+  title: string;
+  subtitle: string;
+  onAdd?: () => void;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const toggle = () => {
+    void Haptics.selectionAsync();
+    setExpanded((current) => !current);
+  };
+
+  return (
+    <Card style={styles.card}>
+      <Pressable
+        accessibilityHint={expanded ? "Klappt die Angaben zu." : "Zeigt die Angaben zum Prüfen und Ändern."}
+        accessibilityLabel={`${title}, ${subtitle}`}
+        accessibilityRole="button"
+        accessibilityState={{ expanded }}
+        onPress={toggle}
+        style={({ pressed }) => [styles.collapsibleHeader, pressed && styles.pressed]}
+      >
+        <View style={styles.sectionTitle}>
+          <IconComponent color={colors.mistDark} size={18} />
+          <View style={styles.sectionCopy}>
+            <Text style={styles.sectionHeading}>{title}</Text>
+            <Text numberOfLines={1} style={styles.sectionSubtitle}>{subtitle}</Text>
+          </View>
+        </View>
+        <ChevronDown color={colors.harborBlue} size={20} style={expanded ? styles.chevronUp : undefined} />
+      </Pressable>
+      {expanded ? (
+        <>
+          {children}
+          {onAdd ? <Pressable accessibilityLabel={`${title} hinzufügen`} accessibilityRole="button" onPress={onAdd} style={styles.addButton}><Plus color={colors.harborBlue} size={17} /><Text style={styles.addButtonText}>Hinzufügen</Text></Pressable> : null}
+        </>
+      ) : null}
     </Card>
   );
 }
@@ -538,6 +624,16 @@ function EmptyRows({ text }: { text: string }) {
 
 function Confidence({ confidence }: { confidence: number }) {
   return confidence < 0.7 ? <Text style={styles.confidence}>Bitte prüfen</Text> : null;
+}
+
+function hasUncertainValue(values: { confidence: number }[]) {
+  return values.some((value) => value.confidence < 0.7);
+}
+
+function entitySummary(count: number, singular: string, plural: string, values: string[]) {
+  if (count === 0) return `Keine ${plural.toLocaleLowerCase("de")} erkannt`;
+  const firstValue = values.find((value) => value.trim());
+  return `${count} ${count === 1 ? singular : plural}${firstValue ? ` · ${firstValue}` : ""}`;
 }
 
 function updateAt<Key extends "family_members" | "dates" | "tasks" | "amounts" | "facts">(
@@ -593,9 +689,13 @@ const styles = StyleSheet.create({
   notice: { alignItems: "center", backgroundColor: colors.sandWarm, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.sm },
   noticeText: { color: colors.graphite, flex: 1, ...typography.timestamp },
   card: { gap: spacing.sm },
-  sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: 28 },
+  staticSectionHeader: { alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 28 },
+  collapsibleHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: 48 },
   sectionTitle: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
+  sectionCopy: { flex: 1, gap: 2 },
   sectionHeading: { color: colors.graphite, ...typography.title },
+  sectionSubtitle: { color: colors.mistDark, ...typography.timestamp },
+  chevronUp: { transform: [{ rotate: "180deg" }] },
   label: { color: colors.mistDark, marginTop: spacing.xs, ...typography.label },
   input: { backgroundColor: colors.warmWhite, borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 40, paddingHorizontal: spacing.sm, ...typography.body },
   summary: { minHeight: 88, paddingTop: spacing.sm },
@@ -605,7 +705,7 @@ const styles = StyleSheet.create({
   editableRow: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.xs, paddingTop: spacing.sm },
   rowContent: { flex: 1, gap: spacing.xs },
   deleteButton: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
-  addButton: { alignItems: "center", flexDirection: "row", gap: 2, minHeight: 44, paddingHorizontal: spacing.xs },
+  addButton: { alignItems: "center", alignSelf: "flex-start", flexDirection: "row", gap: 2, minHeight: 44, paddingHorizontal: spacing.xs },
   addButtonText: { color: colors.harborBlue, ...typography.label },
   addLine: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   addInput: { flex: 1 },

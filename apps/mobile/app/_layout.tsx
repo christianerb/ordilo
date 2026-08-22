@@ -216,7 +216,14 @@ function RootLayoutNav() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="willkommen" />
         <Stack.Screen name="scan" options={{ presentation: "modal" }} />
-        <Stack.Screen name="document/[id]" />
+        <Stack.Screen
+          name="document/[id]"
+          options={{
+            animation: "slide_from_right",
+            fullScreenGestureEnabled: true,
+            gestureEnabled: true,
+          }}
+        />
       </Stack>
     </ThemeProvider>
   );
