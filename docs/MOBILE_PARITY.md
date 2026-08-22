@@ -28,8 +28,8 @@ eine seiner Zeilen offen ist.
 | C | Familienplaner | Kalender, Wiederholungen, Konflikte, Vorschläge | Plan | Supabase/RPC | ⬜ | ⬜ | ⬜ | ⬜ |
 | C | Familie | Mitglieder, Profile, Fotos, Beziehungen, Timeline | Familie | Supabase/API | 🟡 | ⬜ | ⬜ | 🟡 |
 | C | Familie | Einstellungen, Inbound-Adresse, Kalenderfeed | Familie/Einstellungen | API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
-| D | Datenschutz | Rechtliches, Konto-/Familien-Löschung | Einstellungen | API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
-| D | Qualitätslayer | Deep Links, Share, Push, Privacy-Overlay, Biometrie | App-weit | Native APIs | 🟡 | ⬜ | ⬜ | 🟡 |
+| D | Datenschutz | Rechtliches, Konto-/Familien-Löschung | Einstellungen | API/Supabase | ✅ | ⬜ | ⬜ | 🟡 |
+| D | Qualitätslayer | Deep Links, Share, Push, Privacy-Overlay, Biometrie | App-weit | Native APIs | ✅ | ⬜ | ⬜ | 🟡 |
 
 ## Agenten-Aufteilung und Übergaben
 

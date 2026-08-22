@@ -10,8 +10,13 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ordilo.app",
+      "associatedDomains": [
+        "applinks:ordilo.de",
+        "applinks:www.ordilo.de"
+      ],
       "infoPlist": {
-        "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen."
+        "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
+        "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -23,6 +28,17 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION"
       ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            { "scheme": "https", "host": "ordilo.de", "pathPrefix": "/invite" },
+            { "scheme": "https", "host": "www.ordilo.de", "pathPrefix": "/invite" }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#FDFCFA",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -33,6 +49,13 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst."
+        }
+      ],
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -47,7 +70,8 @@
         {
           "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true

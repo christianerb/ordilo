@@ -20,6 +20,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
+import { AppLockProvider } from "@/src/lib/app-lock";
 import { SessionProvider, useSession } from "@/src/lib/session";
 import { FamilyProvider, useFamily } from "@/src/lib/family-context";
 import { isOnboardingComplete, needsWelcomeIntro } from "@/src/lib/family";
@@ -83,8 +84,10 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <SessionProvider>
           <FamilyProvider>
-            <StatusBar style="dark" />
-            <RootLayoutNav />
+            <AppLockProvider>
+              <StatusBar style="dark" />
+              <RootLayoutNav />
+            </AppLockProvider>
           </FamilyProvider>
         </SessionProvider>
       </SafeAreaProvider>
@@ -219,6 +222,7 @@ function RootLayoutNav() {
         <Stack.Screen name="document/[id]" />
         <Stack.Screen name="sammlungen/index" />
         <Stack.Screen name="sammlungen/[id]" />
+        <Stack.Screen name="einstellungen" />
       </Stack>
     </ThemeProvider>
   );

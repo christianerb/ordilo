@@ -1,5 +1,4 @@
 import { Tabs, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   BookOpen,
   CalendarDays,
@@ -9,6 +8,7 @@ import {
 } from "lucide-react-native";
 import { Pressable, StyleSheet, View } from "react-native";
 
+import { haptics } from "@/src/lib/haptics";
 import { colors, fonts } from "@/src/theme/tokens";
 
 /**
@@ -59,7 +59,7 @@ export default function TabLayout() {
                 accessibilityLabel="Dokument scannen"
                 accessibilityRole="button"
                 onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  haptics.tap();
                   router.push("/scan");
                 }}
                 style={({ pressed }) => [
