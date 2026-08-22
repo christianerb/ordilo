@@ -25,6 +25,7 @@ import {
 import { OrdiloButton } from "@/src/components/ui";
 import {
   buildCredentialsContent,
+  maxNoteContentLength,
   type NoteAttachment,
 } from "@/src/lib/notes";
 import {
@@ -146,19 +147,24 @@ export function NoteFormSheet({
       setError("Bitte gib mindestens URL, Benutzername, Passwort oder Beschreibung an.");
       return;
     }
+    const credentialContent = isCredentials
+      ? buildCredentialsContent({
+          title: trimmedTitle,
+          url: trimmedUrl,
+          username: trimmedUsername,
+          description: trimmedContent,
+        })
+      : trimmedContent;
+    if (credentialContent.length > maxNoteContentLength) {
+      setError("Die Zugangsdaten sind insgesamt zu lang. Bitte kürz die Beschreibung etwas.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
       await onSubmit({
         title: trimmedTitle,
-        content: isCredentials
-          ? buildCredentialsContent({
-              title: trimmedTitle,
-              url: trimmedUrl,
-              username: trimmedUsername,
-              description: trimmedContent,
-            })
-          : trimmedContent,
+        content: credentialContent,
         documentType,
         secret,
         attachment,

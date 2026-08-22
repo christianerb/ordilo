@@ -1,6 +1,8 @@
 import { apiFetch } from "./api";
 import type { DocumentType, ReviewAnalysis } from "./document-review";
 
+export const maxNoteContentLength = 10_000;
+
 export type NoteAttachment = {
   uri: string;
   name: string;
@@ -108,6 +110,18 @@ export async function createNote(input: CreateNoteInput): Promise<CreateNoteResp
 export async function triggerNoteAnalysis(documentId: string): Promise<void> {
   await apiFetch(`/api/documents/${documentId}/analyze`, {
     method: "POST",
+  });
+}
+
+/** Sets, changes, or removes an encrypted credential secret. */
+export async function updateDocumentSecret(
+  documentId: string,
+  secret: string,
+): Promise<void> {
+  await apiFetch(`/api/documents/${documentId}/secret`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ secret }),
   });
 }
 
