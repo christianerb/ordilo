@@ -213,6 +213,7 @@ function RootLayoutNav() {
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="willkommen" />
         <Stack.Screen name="scan" options={{ presentation: "modal" }} />
+        <Stack.Screen name="document/[id]" />
       </Stack>
     </ThemeProvider>
   );
