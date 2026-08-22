@@ -30,6 +30,12 @@ type ReviewStatus = "analyzed" | "confirmed";
 
 export type ReviewAnalysis = {
   status: ReviewStatus;
+  created_at: string;
+  confirmed_at: string | null;
+  original_filename: string | null;
+  mime_type: string | null;
+  page_count: number | null;
+  credential_text: string | null;
   document_type: DocumentType;
   title: string;
   summary: string;
@@ -49,12 +55,27 @@ export type ReviewAnalysis = {
 export type UnavailableDocument = {
   status: string;
   title: string | null;
+  created_at: string;
+  confirmed_at: string | null;
+  original_filename: string | null;
+  mime_type: string | null;
+  page_count: number | null;
+  credential_text: string | null;
   document_type: DocumentType;
 };
 
 export type DocumentReview = ReviewAnalysis | UnavailableDocument;
 
-export type ConfirmDocumentPayload = Omit<ReviewAnalysis, "status"> & {
+export type ConfirmDocumentPayload = Omit<
+  ReviewAnalysis,
+  | "status"
+  | "created_at"
+  | "confirmed_at"
+  | "original_filename"
+  | "mime_type"
+  | "page_count"
+  | "credential_text"
+> & {
   deletedTaskIndices: number[];
   calendar_events: { date: string; label: string }[];
 };
@@ -71,6 +92,12 @@ type DocumentRow = {
   document_type: string | null;
   category: string | null;
   tags: string[] | null;
+  created_at: string;
+  confirmed_at: string | null;
+  original_filename: string | null;
+  mime_type: string | null;
+  page_count: number | null;
+  ocr_text: string | null;
 };
 
 const documentTypes = new Set<DocumentType>([
@@ -98,7 +125,7 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
   const supabase = getSupabase();
   const [{ data: document, error: documentError }, { data: entities, error: entitiesError }, { data: tasks, error: tasksError }, { data: facts, error: factsError }] =
     await Promise.all([
-      supabase.from("documents").select("status, title, summary, document_type, category, tags").eq("id", documentId).maybeSingle(),
+      supabase.from("documents").select("status, title, summary, document_type, category, tags, created_at, confirmed_at, original_filename, mime_type, page_count, ocr_text").eq("id", documentId).maybeSingle(),
       supabase.from("extracted_entities").select("*").eq("document_id", documentId),
       supabase.from("tasks").select("*").eq("document_id", documentId),
       supabase.from("document_facts").select("*").eq("document_id", documentId),
@@ -112,7 +139,17 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
   const row = document as DocumentRow;
   const type = documentType(row.document_type);
   if (row.status !== "analyzed" && row.status !== "confirmed") {
-    return { status: row.status, title: row.title, document_type: type };
+    return {
+      status: row.status,
+      title: row.title,
+      created_at: row.created_at,
+      confirmed_at: row.confirmed_at,
+      original_filename: row.original_filename,
+      mime_type: row.mime_type,
+      page_count: row.page_count,
+      credential_text: row.ocr_text,
+      document_type: type,
+    };
   }
 
   const items = (entities ?? []).map(asRecord);
@@ -121,6 +158,12 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
 
   return {
     status: row.status,
+    created_at: row.created_at,
+    confirmed_at: row.confirmed_at,
+    original_filename: row.original_filename,
+    mime_type: row.mime_type,
+    page_count: row.page_count,
+    credential_text: row.ocr_text,
     document_type: type,
     title: row.title ?? "Dokument",
     summary: row.summary ?? "",
@@ -161,6 +204,31 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     tags: row.tags ?? ofType("tag").map((entity) => text(entity.entity_value)).filter(Boolean),
     needs_user_review: items.some((entity) => confidence(entity.confidence) < 0.7),
   };
+}
+
+export type CredentialFields = {
+  url: string | null;
+  username: string | null;
+};
+
+const credentialField = /^-\s+\*\*(URL|Benutzername):\*\*\s*(.+)$/i;
+
+/**
+ * Only extracts the known credentials layout. Unknown document text remains
+ * untouched instead of being guessed into a login field.
+ */
+export function parseCredentialFields(content: string | null): CredentialFields {
+  const fields: CredentialFields = { url: null, username: null };
+  if (!content) return fields;
+  for (const line of content.split("\n")) {
+    const match = credentialField.exec(line.trim());
+    if (!match) continue;
+    const value = match[2].trim();
+    if (!value) continue;
+    if (match[1].toLocaleLowerCase("de") === "url") fields.url ??= value;
+    else fields.username ??= value;
+  }
+  return fields;
 }
 
 /**
@@ -212,6 +280,19 @@ export async function loadOriginalFile(documentId: string): Promise<OriginalFile
     throw new Error("Invalid original file URL.");
   }
   return file;
+}
+
+/** Reveals an encrypted secret only after a deliberate press. */
+export async function revealDocumentSecret(documentId: string): Promise<string> {
+  const response = await apiJson<{ secret?: unknown }>(`/api/documents/${documentId}/secret`, {
+    method: "POST",
+  });
+  return typeof response.secret === "string" ? response.secret : "";
+}
+
+/** Deletes via the protected API so the private storage original is removed too. */
+export async function deleteDocument(documentId: string): Promise<void> {
+  await apiFetch(`/api/documents/${documentId}`, { method: "DELETE" });
 }
 
 /** Signed storage URLs must be HTTPS before handing them to the OS. */
