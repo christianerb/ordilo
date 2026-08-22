@@ -1,4 +1,5 @@
 import { Tabs, useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import {
   BookOpen,
   CalendarDays,
@@ -13,8 +14,8 @@ import { colors, fonts } from "@/src/theme/tokens";
 /**
  * Native tab shell: Heute, Ablage, Plan, Familie — plus the scan action
  * as the prominent center button. Scanning is Ordilo's core mobile loop,
- * so it is reachable from everywhere with one tap; the actual camera
- * arrives with the scan/upload milestone.
+ * so it is reachable from everywhere with one tap and opens the system
+ * document scanner (VisionKit on iOS, ML Kit on Android).
  */
 export default function TabLayout() {
   const router = useRouter();
@@ -57,7 +58,10 @@ export default function TabLayout() {
               <Pressable
                 accessibilityLabel="Dokument scannen"
                 accessibilityRole="button"
-                onPress={() => router.push("/scan")}
+                onPress={() => {
+                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push("/scan");
+                }}
                 style={({ pressed }) => [
                   styles.scanButton,
                   pressed && styles.scanButtonPressed,

@@ -22,6 +22,7 @@ describe("design tokens", () => {
       warmApricotLight: "#F0B4A0",
       blueSoft: "#E4F0FC",
       destructive: "#C0392B",
+      destructiveBackground: "#F9E8E5",
     });
   });
 

@@ -1,17 +1,15 @@
-import { apiFetch } from "./api";
+import { ApiError, apiFetch } from "./api";
+import {
+  ACCEPTED_DOCUMENT_MIME_TYPES,
+  MAX_DOCUMENT_FILE_SIZE,
+  MAX_DOCUMENT_FILE_SIZE_LABEL,
+} from "@ordilo/document-contract";
 import { z } from "zod";
 
-export const MAX_SCAN_FILE_SIZE = 4 * 1024 * 1024;
-export const MAX_SCAN_FILE_SIZE_LABEL = "4 MB";
+export const MAX_SCAN_FILE_SIZE = MAX_DOCUMENT_FILE_SIZE;
+export const MAX_SCAN_FILE_SIZE_LABEL = MAX_DOCUMENT_FILE_SIZE_LABEL;
 
-const acceptedMimeTypes = [
-  "application/pdf",
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-] as const;
-const acceptedMimeTypeSchema = z.enum(acceptedMimeTypes, {
+const acceptedMimeTypeSchema = z.enum(ACCEPTED_DOCUMENT_MIME_TYPES, {
   error: "Bitte wähle ein Bild oder eine PDF-Datei aus.",
 });
 
@@ -28,6 +26,20 @@ export type ScanUploadResponse = {
   status: "uploaded";
   server_pipeline: boolean;
 };
+
+export type ScanProcessingStep = "ocr" | "analysis";
+
+async function postPipelineStep(path: string): Promise<void> {
+  try {
+    await apiFetch(path, { method: "POST" });
+  } catch (error) {
+    // A 409 means another server/client worker already claimed this state.
+    // Treat it as a handoff instead of retrying the upload and creating a
+    // duplicate document.
+    if (error instanceof ApiError && error.status === 409) return;
+    throw error;
+  }
+}
 
 const scannedDocumentSchema = z.object({
   mimeType: acceptedMimeTypeSchema,
@@ -101,10 +113,20 @@ export async function uploadScannedDocument(
 }
 
 /**
- * Starts OCR only when the server upload response says its job pipeline is
- * unavailable. The endpoint performs the work on the server and keeps
- * provider credentials out of the app.
+ * Completes the client-driven pipeline when the upload endpoint could not
+ * enqueue server jobs. Both operations stay on authenticated server routes,
+ * so provider credentials never enter the app. `startAt` lets a retry resume
+ * analysis without repeating a successful OCR call.
  */
-export async function triggerScannedDocumentOcr(documentId: string): Promise<void> {
-  await apiFetch(`/api/documents/${documentId}/ocr`, { method: "POST" });
+export async function continueScannedDocumentPipeline(
+  documentId: string,
+  startAt: ScanProcessingStep = "ocr",
+  onStep?: (step: ScanProcessingStep) => void,
+): Promise<void> {
+  if (startAt === "ocr") {
+    onStep?.("ocr");
+    await postPipelineStep(`/api/documents/${documentId}/ocr`);
+  }
+  onStep?.("analysis");
+  await postPipelineStep(`/api/documents/${documentId}/analyze`);
 }

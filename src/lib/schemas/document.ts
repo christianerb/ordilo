@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { FileText, ImageIcon, type LucideIcon } from "lucide-react";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
+import {
+  ACCEPTED_DOCUMENT_MIME_TYPES,
+  MAX_DOCUMENT_FILE_SIZE,
+  MAX_DOCUMENT_FILE_SIZE_LABEL,
+  type AcceptedDocumentMimeType,
+} from "@ordilo/document-contract";
 
 /**
  * Document-related schemas, constants, and helpers.
@@ -17,15 +23,8 @@ import type { ApiErrorResponse } from "@/lib/schemas/api";
  * Accepted MIME types for document uploads.
  * Images (JPEG, PNG, WebP, GIF) and PDF only — per the feature requirements.
  */
-export const ACCEPTED_MIME_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "application/pdf",
-] as const;
-
-export type AcceptedMimeType = (typeof ACCEPTED_MIME_TYPES)[number];
+export const ACCEPTED_MIME_TYPES = ACCEPTED_DOCUMENT_MIME_TYPES;
+export type AcceptedMimeType = AcceptedDocumentMimeType;
 
 /**
  * Maximum upload file size: 4 MB.
@@ -37,12 +36,12 @@ export type AcceptedMimeType = (typeof ACCEPTED_MIME_TYPES)[number];
  * field). Images are already downscaled to ~2000 px JPEG by
  * prepareImageForUpload, so this mainly constrains raw PDFs.
  */
-export const MAX_FILE_SIZE = 4 * 1024 * 1024;
+export const MAX_FILE_SIZE = MAX_DOCUMENT_FILE_SIZE;
 
 /**
  * Human-readable max size label for German UI messages.
  */
-export const MAX_FILE_SIZE_LABEL = "4 MB";
+export const MAX_FILE_SIZE_LABEL = MAX_DOCUMENT_FILE_SIZE_LABEL;
 
 /**
  * File extensions accepted by the file picker inputs.
