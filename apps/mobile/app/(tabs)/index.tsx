@@ -1,4 +1,3 @@
-import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import {
   CalendarDays,
@@ -19,6 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AppState,
   ActivityIndicator,
   Pressable,
   RefreshControl,
@@ -39,7 +39,6 @@ import {
   getDatedOpenTasks,
   getDiscoveryInsight,
   getEventOccurrences,
-  getFirstSuccessGuideKey,
   getHomeGreeting,
   getHomePriorityTask,
   getInboundHeadline,
@@ -82,7 +81,7 @@ export default function HeuteScreen() {
   const [mutatingRetentionId, setMutatingRetentionId] = useState<
     string | null
   >(null);
-  const [guideDismissed, setGuideDismissed] = useState(true);
+  const [clock, setClock] = useState(() => Date.now());
 
   const load = useCallback(
     async (isRefresh = false) => {
@@ -118,41 +117,50 @@ export default function HeuteScreen() {
     void Promise.resolve().then(() => load());
   }, [load]);
 
+  // Keep date-derived groups truthful after midnight and when the app comes
+  // back to foreground. The data itself remains fresh via pull-to-refresh.
   useEffect(() => {
-    let cancelled = false;
-    void Promise.resolve().then(async () => {
-      if (!family || data?.confirmedDocumentCount !== 1) {
-        if (!cancelled) setGuideDismissed(true);
-        return;
-      }
-      try {
-        const value = await SecureStore.getItemAsync(
-          getFirstSuccessGuideKey(family.id),
-        );
-        if (!cancelled) setGuideDismissed(value === "dismissed");
-      } catch {
-        // The guide is a quiet enhancement. Show it when persistence fails.
-        if (!cancelled) setGuideDismissed(false);
-      }
+    let midnightTimer: ReturnType<typeof setTimeout> | null = null;
+    const refreshClock = () => setClock(Date.now());
+    const scheduleMidnight = () => {
+      const now = new Date();
+      const nextMidnight = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate() + 1,
+      ).getTime();
+      midnightTimer = setTimeout(() => {
+        refreshClock();
+        scheduleMidnight();
+      }, nextMidnight - now.getTime() + 100);
+    };
+    scheduleMidnight();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refreshClock();
     });
     return () => {
-      cancelled = true;
+      if (midnightTimer) clearTimeout(midnightTimer);
+      subscription.remove();
     };
-  }, [family, data?.confirmedDocumentCount]);
+  }, []);
 
+  const referenceDate = useMemo(() => new Date(clock), [clock]);
   const datedTasks = useMemo(() => getDatedOpenTasks(tasks), [tasks]);
-  const todayTasks = useMemo(() => getTodayTasks(tasks), [tasks]);
+  const todayTasks = useMemo(
+    () => getTodayTasks(tasks, referenceDate),
+    [tasks, referenceDate],
+  );
   const eventOccurrences = useMemo(
-    () => getEventOccurrences(data?.events ?? []),
-    [data?.events],
+    () => getEventOccurrences(data?.events ?? [], referenceDate),
+    [data?.events, referenceDate],
   );
   const todayEvents = useMemo(
-    () => getTodayEvents(eventOccurrences),
-    [eventOccurrences],
+    () => getTodayEvents(eventOccurrences, referenceDate),
+    [eventOccurrences, referenceDate],
   );
   const upcomingEntries = useMemo(
-    () => getUpcomingEntries(tasks, eventOccurrences),
-    [tasks, eventOccurrences],
+    () => getUpcomingEntries(tasks, eventOccurrences, referenceDate),
+    [tasks, eventOccurrences, referenceDate],
   );
   const journalDocuments = useMemo(
     () =>
@@ -172,7 +180,10 @@ export default function HeuteScreen() {
     !todayEvents.length &&
     !journalDocuments.length &&
     !discoveries.length;
-  const heroTask = useMemo(() => getHomePriorityTask(tasks), [tasks]);
+  const heroTask = useMemo(
+    () => getHomePriorityTask(tasks, referenceDate),
+    [tasks, referenceDate],
+  );
   const nextTasks = useMemo(
     () =>
       datedTasks
@@ -180,19 +191,6 @@ export default function HeuteScreen() {
         .slice(0, 3),
     [datedTasks, heroTask?.id],
   );
-
-  const markGuideDismissed = useCallback(async () => {
-    if (!family) return;
-    setGuideDismissed(true);
-    try {
-      await SecureStore.setItemAsync(
-        getFirstSuccessGuideKey(family.id),
-        "dismissed",
-      );
-    } catch {
-      // This is a quiet, client-only nudge. The local UI remains dismissed.
-    }
-  }, [family]);
 
   const toggleTask = useCallback(
     async (task: HeuteTask) => {
@@ -238,9 +236,10 @@ export default function HeuteScreen() {
           ),
         })),
       );
+      await load(true);
       setMutatingSuggestionId(null);
     },
-    [mutatingSuggestionId],
+    [load, mutatingSuggestionId],
   );
 
   const handleRetention = useCallback(
@@ -306,6 +305,7 @@ export default function HeuteScreen() {
           heroTask={heroTask}
           memberNames={data?.members ?? []}
           onCompleteTask={toggleTask}
+          referenceDate={referenceDate}
           taskBusy={mutatingTaskId === heroTask?.id}
         />
 
@@ -354,6 +354,7 @@ export default function HeuteScreen() {
                     busy={mutatingTaskId === task.id}
                     key={task.id}
                     onToggle={() => void toggleTask(task)}
+                    referenceDate={referenceDate}
                     task={task}
                   />
                 ))}
@@ -440,6 +441,7 @@ export default function HeuteScreen() {
                     busy={mutatingTaskId === task.id}
                     key={task.id}
                     onToggle={() => void toggleTask(task)}
+                    referenceDate={referenceDate}
                     task={task}
                   />
                 ))}
@@ -467,12 +469,6 @@ export default function HeuteScreen() {
           </>
         )}
 
-        {!guideDismissed && data?.confirmedDocumentCount === 1 ? (
-          <FirstSuccessGuide
-            onDismiss={() => void markGuideDismissed()}
-            onScan={() => router.push("/scan")}
-          />
-        ) : null}
       </ScrollView>
     </Screen>
   );
@@ -483,21 +479,23 @@ function HeuteHero({
   heroTask,
   memberNames,
   onCompleteTask,
+  referenceDate,
   taskBusy,
 }: {
   familyName: string;
   heroTask: HeuteTask | null;
   memberNames: HeuteData["members"];
   onCompleteTask: (task: HeuteTask) => Promise<void>;
+  referenceDate: Date;
   taskBusy: boolean;
 }) {
-  const due = heroTask ? formatDueLabel(heroTask.dueDate) : null;
+  const due = heroTask ? formatDueLabel(heroTask.dueDate, referenceDate) : null;
   const isOverdue = due?.overdue ?? false;
   const dateLine = new Intl.DateTimeFormat("de-DE", {
     weekday: "long",
     day: "numeric",
     month: "long",
-  }).format(new Date());
+  }).format(referenceDate);
 
   return (
     <View
@@ -660,12 +658,14 @@ function TodayTaskRow({
   task,
   onToggle,
   busy,
+  referenceDate,
 }: {
   task: HeuteTask;
   onToggle: () => void;
   busy: boolean;
+  referenceDate: Date;
 }) {
-  const due = formatDueLabel(task.dueDate);
+  const due = formatDueLabel(task.dueDate, referenceDate);
   return (
     <View style={styles.timelineRow}>
       <Pressable
@@ -820,41 +820,6 @@ function InboundDiscoveryCard({
           </View>
         </View>
       ) : null}
-    </Card>
-  );
-}
-
-function FirstSuccessGuide({
-  onDismiss,
-  onScan,
-}: {
-  onDismiss: () => void;
-  onScan: () => void;
-}) {
-  return (
-    <Card style={styles.firstSuccess}>
-      <View style={styles.firstSuccessHeader}>
-        <View style={styles.firstSuccessIcon}>
-          <Sparkles color={colors.harborBlue} size={20} />
-        </View>
-        <Pressable
-          accessibilityLabel="Hinweis schließen"
-          accessibilityRole="button"
-          onPress={onDismiss}
-        >
-          <Text style={styles.firstSuccessDismiss}>Schließen</Text>
-        </Pressable>
-      </View>
-      <Text style={[typography.display, styles.firstSuccessTitle]}>
-        Dein Familienbuch wächst
-      </Text>
-      <Text style={[typography.timestamp, styles.firstSuccessText]}>
-        Ordilo merkt sich jetzt, was wichtig ist. Scanne weiter, damit euer
-        Familienbuch wächst.
-      </Text>
-      <View style={styles.firstSuccessActions}>
-        <OrdiloButton onPress={onScan} title="Nächstes Dokument scannen" />
-      </View>
     </Card>
   );
 }
@@ -1178,36 +1143,4 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   retention: { gap: spacing.sm },
-  firstSuccess: {
-    backgroundColor: "#E8F0EC",
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  firstSuccessHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  firstSuccessIcon: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: 18,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  firstSuccessDismiss: {
-    color: colors.mistDark,
-    fontFamily: typography.label.fontFamily,
-    fontSize: typography.label.fontSize,
-  },
-  firstSuccessTitle: { color: colors.graphite },
-  firstSuccessText: { color: colors.mistDark },
-  firstSuccessActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
 });

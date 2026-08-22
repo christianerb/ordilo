@@ -4,7 +4,6 @@ import {
   formatDueLabel,
   formatInboundWhen,
   getEventOccurrences,
-  getFirstSuccessGuideKey,
   getHomeGreeting,
   getHomePriorityTask,
   getInboundHeadline,
@@ -27,10 +26,6 @@ jest.mock("../lib/supabase", () => ({
     from: mockFrom,
     rpc: mockRpc,
   }),
-}));
-
-jest.mock("../lib/analytics", () => ({
-  recordProductEvent: jest.fn(async () => {}),
 }));
 
 const DOCUMENT = (id: string, status = "confirmed"): HeuteDocument => ({
@@ -128,13 +123,6 @@ describe("Heute pure helpers", () => {
         now,
       )?.title,
     ).toBe("Morgen");
-  });
-
-  it("uses an Expo SecureStore-safe key for the first-success guide", () => {
-    expect(getFirstSuccessGuideKey("fam-1")).toBe(
-      "ordilo.first-success-guide-fam-1",
-    );
-    expect(getFirstSuccessGuideKey("fam-1")).toMatch(/^[A-Za-z0-9._-]+$/);
   });
 
   it("expands recurring events but respects exceptions", () => {
@@ -245,15 +233,39 @@ describe("Heute mutations", () => {
   });
 
   it("calls the inbound-accept RPC with the suggestion id", async () => {
+    const suggestionQuery = {} as {
+      select: jest.Mock;
+      eq: jest.Mock;
+      maybeSingle: jest.Mock;
+    };
+    suggestionQuery.select = jest.fn(() => suggestionQuery);
+    suggestionQuery.eq = jest.fn(() => suggestionQuery);
+    suggestionQuery.maybeSingle = jest.fn(async () => ({
+      data: { kind: "calendar_event", family_id: "fam-1" },
+      error: null,
+    }));
+    const productEventsQuery = {
+      insert: jest.fn(async () => ({ error: null })),
+    };
+    mockFrom.mockImplementation((table: string) =>
+      table === "inbound_suggestions" ? suggestionQuery : productEventsQuery,
+    );
     mockRpc.mockResolvedValue({ error: null });
 
     await expect(acceptInboundSuggestion("suggestion-1")).resolves.toEqual({
       success: true,
       data: null,
     });
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(mockRpc).toHaveBeenCalledWith("accept_inbound_suggestion", {
       p_suggestion_id: "suggestion-1",
+    });
+    expect(productEventsQuery.insert).toHaveBeenCalledWith({
+      user_id: "user-1",
+      family_id: "fam-1",
+      event_name: "calendar_event_created",
+      properties: { source: "inbound_email" },
     });
   });
 });

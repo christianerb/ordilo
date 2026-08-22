@@ -15,7 +15,6 @@ export const JOURNAL_DOCS_LIMIT = 6;
 export const HOME_VISIBLE_DOCUMENTS = 3;
 export const HOME_VISIBLE_TASKS = 3;
 export const INBOUND_DISCOVERY_LIMIT = 3;
-export const FIRST_SUCCESS_GUIDE_KEY_PREFIX = "ordilo.first-success-guide";
 const MAX_EMAIL_SUGGESTIONS = 3;
 
 const FRIENDLY_ERROR =
@@ -467,11 +466,6 @@ export function getHomePriorityTask(
   );
 }
 
-/** SecureStore only accepts alphanumeric keys plus `.`, `-`, and `_`. */
-export function getFirstSuccessGuideKey(familyId: string): string {
-  return `${FIRST_SUCCESS_GUIDE_KEY_PREFIX}-${familyId}`;
-}
-
 export function formatDueLabel(
   dueDate: string | null,
   now = new Date(),
@@ -732,16 +726,18 @@ export async function setHeuteTaskStatus(
     if (error) return { success: false, error: FRIENDLY_ERROR };
 
     if (status === "done") {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        void recordProductEvent(supabase as SupabaseClient, {
-          userId: user.id,
-          familyId,
-          eventName: "task_completed",
-        });
-      }
+      void Promise.resolve()
+        .then(() => supabase.auth.getUser())
+        .then(({ data: { user } }) =>
+          user
+            ? recordProductEvent(supabase as SupabaseClient, {
+                userId: user.id,
+                familyId,
+                eventName: "task_completed",
+              })
+            : undefined,
+        )
+        .catch(() => undefined);
     }
     return { success: true, data: null };
   } catch {
@@ -753,12 +749,36 @@ export async function acceptInboundSuggestion(
   suggestionId: string,
 ): Promise<ActionResult<null>> {
   try {
-    const { error } = await getSupabase().rpc("accept_inbound_suggestion", {
+    const supabase = getSupabase();
+    // Read before the accepting RPC changes its status. The web action
+    // records the same event after its transaction succeeds.
+    const { data: suggestion } = await supabase
+      .from("inbound_suggestions")
+      .select("kind, family_id")
+      .eq("id", suggestionId)
+      .maybeSingle();
+    const { error } = await supabase.rpc("accept_inbound_suggestion", {
       p_suggestion_id: suggestionId,
     });
-    return error
-      ? { success: false, error: FRIENDLY_ERROR }
-      : { success: true, data: null };
+    if (error) return { success: false, error: FRIENDLY_ERROR };
+
+    void Promise.resolve()
+      .then(() => supabase.auth.getUser())
+      .then(({ data: { user } }) =>
+        user && suggestion
+          ? recordProductEvent(supabase as SupabaseClient, {
+              userId: user.id,
+              familyId: suggestion.family_id,
+              eventName:
+                suggestion.kind === "calendar_event"
+                  ? "calendar_event_created"
+                  : "task_created",
+              properties: { source: "inbound_email" },
+            })
+          : undefined,
+      )
+      .catch(() => undefined);
+    return { success: true, data: null };
   } catch {
     return { success: false, error: FRIENDLY_ERROR };
   }
