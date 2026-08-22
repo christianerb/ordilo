@@ -24,6 +24,7 @@ const invoice: LibraryDocument = {
   summary: "Rechnung für den Strom.",
   ocr_text: "Stadtwerke Juli",
   created_at: "2026-07-04T12:00:00.000Z",
+  source: "scan",
 };
 
 const review: LibraryDocument = {

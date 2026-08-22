@@ -5,6 +5,8 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
+  NotebookPen,
+  Plus,
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
@@ -13,6 +15,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -28,15 +31,18 @@ import {
 } from "react-native";
 
 import { EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import { NoteFormSheet } from "@/src/components/note-form-sheet";
 import {
   documentTypeLabels,
   type DocumentType,
 } from "@/src/lib/document-review";
 import { useFamily } from "@/src/lib/family-context";
+import { createNote, triggerNoteAnalysis } from "@/src/lib/notes";
 import {
   filterLibraryDocuments,
   formatDocumentDate,
   getDocumentStatusLabel,
+  getDocumentSearchText,
   getDocumentTitle,
   getDocumentTypeLabel,
   getLibraryPageRange,
@@ -73,6 +79,8 @@ export default function AblageScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [createNoteOpen, setCreateNoteOpen] = useState(false);
+  const [view, setView] = useState<"documents" | "notes">("documents");
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
   const [sort, setSort] = useState<LibrarySort>("newest");
   const [hasMore, setHasMore] = useState(false);
@@ -83,13 +91,19 @@ export default function AblageScreen() {
     status: "all",
     documentType: "all",
   });
+  const requestGeneration = useRef(0);
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
+      const requestId = requestGeneration.current + 1;
+      requestGeneration.current = requestId;
+      const isCurrentRequest = () => requestGeneration.current === requestId;
       if (!family) {
-        setDocuments([]);
-        setHasMore(false);
-        setLoading(false);
+        if (isCurrentRequest()) {
+          setDocuments([]);
+          setHasMore(false);
+          setLoading(false);
+        }
         return;
       }
       if (refresh) setRefreshing(true);
@@ -105,6 +119,9 @@ export default function AblageScreen() {
           .from("documents")
           .select(libraryDocumentSelect)
           .eq("family_id", family.id);
+        query = view === "notes"
+          ? query.eq("source", "manual")
+          : query.neq("source", "manual");
         if (filters.status === "needs_review") query = query.eq("status", "analyzed");
         if (filters.status === "confirmed") query = query.eq("status", "confirmed");
         if (filters.status === "failed") query = query.eq("status", "failed");
@@ -125,20 +142,26 @@ export default function AblageScreen() {
           .range(range.from, range.to);
         if (queryError) throw queryError;
         const next = (data ?? []) as LibraryDocument[];
-        setDocuments((current) => append ? mergeLibraryDocuments(current, next) : next);
-        setHasMore(next.length === libraryPageSize);
-        setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        if (isCurrentRequest()) {
+          setDocuments((current) => append ? mergeLibraryDocuments(current, next) : next);
+          setHasMore(next.length === libraryPageSize);
+          setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        }
       } catch {
-        setError(
-          "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
-        );
+        if (isCurrentRequest()) {
+          setError(
+            "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
+          );
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        if (isCurrentRequest()) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
-    [family, filters, sort],
+    [family, filters, sort, view],
   );
 
   useFocusEffect(useCallback(() => {
@@ -173,9 +196,10 @@ export default function AblageScreen() {
   );
 
   const documentCountLabel = useMemo(() => {
-    if (documents.length === 1) return "1 Dokument der Familie";
-    return `${documents.length}${hasMore ? "+" : ""} Dokumente der Familie`;
-  }, [documents.length, hasMore]);
+    const noun = view === "notes" ? "Notiz" : "Dokument";
+    if (documents.length === 1) return `1 ${noun} der Familie`;
+    return `${documents.length}${hasMore ? "+" : ""} ${noun}${documents.length === 1 ? "" : "en"} der Familie`;
+  }, [documents.length, hasMore, view]);
 
   const visibleDocuments = useMemo(
     () => filterLibraryDocuments(documents, filters),
@@ -188,31 +212,31 @@ export default function AblageScreen() {
       ? "Art"
       : documentTypeLabels[filters.documentType];
 
-  if (loading && documents.length === 0) {
-    return (
-      <Screen style={styles.center}>
-        <ActivityIndicator accessibilityLabel="Dokumente werden geladen" color={colors.harborBlue} />
-      </Screen>
-    );
-  }
+  const createNewNote = useCallback(async (
+    draft: Omit<Parameters<typeof createNote>[0], "familyId">,
+  ) => {
+    if (!family) throw new Error("Deine Familie konnte nicht geladen werden.");
+    const result = await createNote({ ...draft, familyId: family.id });
+    if (!result.server_pipeline) {
+      void triggerNoteAnalysis(result.document_id).catch(() => undefined);
+    }
+    void loadDocuments({ refresh: true });
+    router.push(`/note/${result.document_id}`);
+  }, [family, loadDocuments, router]);
 
-  if (error && documents.length === 0) {
-    return (
-      <Screen style={styles.center}>
-        <EmptyState
-          icon={AlertCircle}
-          heading="Ablage nicht erreichbar"
-          description={error}
-        >
-          <OrdiloButton
-            onPress={() => void loadDocuments()}
-            size="lg"
-            title="Erneut versuchen"
-          />
-        </EmptyState>
-      </Screen>
-    );
-  }
+  const switchView = useCallback((nextView: "documents" | "notes") => {
+    if (nextView === view) return;
+    // Invalidate the previous source query before replacing the visible
+    // list. A slow Documents response must never populate the Notes view.
+    requestGeneration.current += 1;
+    setDocuments([]);
+    setError(null);
+    setHasMore(false);
+    setLoading(true);
+    setNextPage(1);
+    setFilters({ query: "", status: "all", documentType: "all" });
+    setView(nextView);
+  }, [view]);
 
   return (
     <Screen>
@@ -234,7 +258,50 @@ export default function AblageScreen() {
           title="Ablage"
         />
 
-        {documents.length > 0 ? (
+        <View style={styles.segmented}>
+          <SegmentButton
+            icon={FileText}
+            label="Dokumente"
+            onPress={() => switchView("documents")}
+            selected={view === "documents"}
+          />
+          <SegmentButton
+            icon={NotebookPen}
+            label="Notizen"
+            onPress={() => switchView("notes")}
+            selected={view === "notes"}
+          />
+        </View>
+
+        {view === "notes" ? (
+          <NotesView
+            error={error}
+            hasMore={hasMore}
+            loading={loading}
+            loadingMore={loadingMore}
+            notes={documents}
+            onCreate={() => setCreateNoteOpen(true)}
+            onLoadMore={loadMore}
+            onOpen={(documentId) => router.push(`/note/${documentId}`)}
+            onSearchChange={(query) =>
+              setFilters((current) => ({ ...current, query }))
+            }
+            onRetry={() => void loadDocuments()}
+            search={filters.query}
+          />
+        ) : loading && documents.length === 0 ? (
+          <View style={styles.centeredContent}>
+            <ActivityIndicator accessibilityLabel="Dokumente werden geladen" color={colors.harborBlue} />
+          </View>
+        ) : error && documents.length === 0 ? (
+          <EmptyState
+            icon={AlertCircle}
+            heading="Ablage nicht erreichbar"
+            description={error}
+          >
+            <OrdiloButton onPress={() => void loadDocuments()} size="lg" title="Erneut versuchen" />
+          </EmptyState>
+        ) : documents.length > 0 ? (
           <>
             <View style={styles.search}>
               <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
@@ -396,7 +463,181 @@ export default function AblageScreen() {
         selected={sort}
         visible={sortPickerOpen}
       />
+      <NoteFormSheet
+        onClose={() => setCreateNoteOpen(false)}
+        onSubmit={createNewNote}
+        visible={createNoteOpen}
+      />
     </Screen>
+  );
+}
+
+function SegmentButton({
+  icon: Icon,
+  label,
+  onPress,
+  selected,
+}: {
+  icon: typeof FileText;
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.segment,
+        selected && styles.segmentSelected,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Icon color={selected ? colors.warmWhite : colors.mistDark} size={17} />
+      <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function NotesView({
+  error,
+  hasMore,
+  loading,
+  loadingMore,
+  notes,
+  onCreate,
+  onLoadMore,
+  onOpen,
+  onRetry,
+  onSearchChange,
+  search,
+}: {
+  error: string | null;
+  hasMore: boolean;
+  loading: boolean;
+  loadingMore: boolean;
+  notes: LibraryDocument[];
+  onCreate: () => void;
+  onLoadMore: () => void;
+  onOpen: (documentId: string) => void;
+  onRetry: () => void;
+  onSearchChange: (query: string) => void;
+  search: string;
+}) {
+  const visibleNotes = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("de");
+    if (!query) return notes;
+    return notes.filter((note) => getDocumentSearchText(note).includes(query));
+  }, [notes, search]);
+
+  if (loading && notes.length === 0 && !search.trim()) {
+    return <ActivityIndicator accessibilityLabel="Notizen werden geladen" color={colors.harborBlue} style={styles.notesLoading} />;
+  }
+
+  if (error && notes.length === 0 && !search.trim()) {
+    return (
+      <EmptyState icon={AlertCircle} heading="Notizen nicht erreichbar" description={error}>
+        <OrdiloButton onPress={onRetry} size="lg" title="Erneut versuchen" />
+      </EmptyState>
+    );
+  }
+
+  if (notes.length === 0 && !search.trim()) {
+    return (
+      <EmptyState
+        icon={NotebookPen}
+        heading="Noch keine Notizen"
+        description="Halte Familienwissen fest, bevor es wieder jemand im Kopf behalten muss."
+      >
+        <OrdiloButton
+          icon={<Plus color={colors.warmWhite} size={19} />}
+          onPress={onCreate}
+          size="lg"
+          title="Notiz schreiben"
+        />
+      </EmptyState>
+    );
+  }
+
+  return (
+    <>
+      <OrdiloButton
+        icon={<Plus color={colors.warmWhite} size={17} />}
+        onPress={onCreate}
+        title="Notiz schreiben"
+      />
+      <View style={styles.search}>
+        <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
+        <TextInput
+          accessibilityLabel="Notizen durchsuchen"
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          onChangeText={onSearchChange}
+          placeholder="Notizen durchsuchen"
+          placeholderTextColor={colors.mistDark}
+          returnKeyType="search"
+          style={styles.searchInput}
+          value={search}
+        />
+      </View>
+      {error ? (
+        <View accessibilityRole="alert" style={styles.inlineError}>
+          <Text style={styles.inlineErrorText}>{error}</Text>
+          <Pressable onPress={onRetry}><Text style={styles.dismiss}>Erneut versuchen</Text></Pressable>
+        </View>
+      ) : null}
+      {visibleNotes.length === 0 ? (
+        <View style={styles.filteredEmpty}>
+          <Search color={colors.mist} size={28} strokeWidth={1.5} />
+          <Text style={styles.filteredEmptyTitle}>Keine Notiz gefunden</Text>
+          <Text style={styles.filteredEmptyText}>Versuch es mit einem anderen Wort.</Text>
+        </View>
+      ) : (
+        <View style={styles.list}>
+          {visibleNotes.map((note) => (
+            <NoteRow key={note.id} note={note} onPress={() => onOpen(note.id)} />
+          ))}
+        </View>
+      )}
+      {hasMore ? (
+        <OrdiloButton
+          disabled={loadingMore}
+          icon={loadingMore ? <ActivityIndicator color={colors.harborBlue} size="small" /> : undefined}
+          onPress={onLoadMore}
+          title={loadingMore ? "Weitere Notizen werden geladen …" : "Weitere Notizen laden"}
+          variant="outline"
+        />
+      ) : null}
+    </>
+  );
+}
+
+function NoteRow({
+  note,
+  onPress,
+}: {
+  note: LibraryDocument;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityHint="Öffnet die Notiz"
+      accessibilityLabel={getDocumentTitle(note)}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
+    >
+      <View style={styles.documentIcon}><NotebookPen color={colors.mistDark} size={20} strokeWidth={1.7} /></View>
+      <View style={styles.documentCopy}>
+        <Text numberOfLines={1} style={styles.documentTitle}>{getDocumentTitle(note)}</Text>
+        <Text numberOfLines={1} style={styles.documentSummary}>
+          {note.summary?.trim() || note.ocr_text?.trim() || "Notiz öffnen, um den Inhalt zu lesen"}
+        </Text>
+      </View>
+      <Text style={styles.noteDate}>{formatDocumentDate(note.created_at)}</Text>
+    </Pressable>
   );
 }
 
@@ -637,7 +878,26 @@ function SortPicker({
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
+  centeredContent: { alignItems: "center", minHeight: 240, justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
+  segmented: {
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.sm,
+    flexDirection: "row",
+    padding: spacing.xs,
+  },
+  segment: {
+    alignItems: "center",
+    borderRadius: radii.base,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 40,
+    justifyContent: "center",
+  },
+  segmentSelected: { backgroundColor: colors.harborBlue },
+  segmentText: { color: colors.mistDark, ...typography.label },
+  segmentTextSelected: { color: colors.warmWhite },
   search: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
@@ -730,6 +990,8 @@ const styles = StyleSheet.create({
   documentTitle: { color: colors.graphite, ...typography.title },
   documentMeta: { color: colors.mistDark, ...typography.label },
   documentSummary: { color: colors.mistDark, ...typography.timestamp },
+  noteDate: { color: colors.mistDark, ...typography.label },
+  notesLoading: { marginTop: spacing["2xl"] },
   status: {
     alignItems: "center",
     backgroundColor: colors.blueSoft,
