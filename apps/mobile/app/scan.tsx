@@ -17,7 +17,7 @@ import {
   Upload,
   X,
 } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -33,6 +33,10 @@ import { useFamily } from "@/src/lib/family-context";
 import {
   continueScannedDocumentPipeline,
   getScanMimeType,
+  loadPersistedScanQueue,
+  persistScanQueue,
+  removeStagedScannedDocument,
+  stageScannedDocument,
   type ScannedDocument,
   type ScanProcessingStep,
   uploadScannedDocument,
@@ -108,19 +112,58 @@ export default function ScanModal() {
   const router = useRouter();
   const { family } = useFamily();
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const addToQueue = useCallback((document: ScannedDocument): boolean => {
+  useEffect(() => {
+    void loadPersistedScanQueue().then((stored) => {
+      setQueue(
+        stored.map((item) =>
+          item.state === "uploading" || item.state === "processing"
+            ? {
+                ...item,
+                state: "failed",
+                error: item.documentId
+                  ? "Die Verarbeitung wurde unterbrochen. Du kannst sie fortsetzen."
+                  : "Der Upload wurde unterbrochen. Du kannst ihn fortsetzen.",
+              }
+            : item,
+        ),
+      );
+      setQueueHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!queueHydrated) return;
+    void persistScanQueue(
+      queue
+        .flatMap((item) =>
+          item.state === "done"
+            ? []
+            : [{ ...item, state: item.state }],
+        ),
+    );
+  }, [queue, queueHydrated]);
+
+  const addToQueue = useCallback(async (document: ScannedDocument): Promise<boolean> => {
     const validationError = validateScannedDocument(document);
     if (validationError) {
       setError(validationError);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return false;
     }
-    setQueue((current) => [...current, { ...document, state: "queued" }]);
-    setError(null);
-    return true;
+    try {
+      const staged = await stageScannedDocument(document);
+      setQueue((current) => [...current, { ...staged, state: "queued" }]);
+      setError(null);
+      return true;
+    } catch {
+      setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      return false;
+    }
   }, []);
 
   const runSystemScanner = useCallback(async () => {
@@ -138,7 +181,7 @@ export default function ScanModal() {
           prepareImage(image.uri, image.fileName || `Scan-${index + 1}.jpg`),
         ),
       );
-      if (addToQueue(await combinePages(pages))) {
+      if (await addToQueue(await combinePages(pages))) {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch {
@@ -199,6 +242,7 @@ export default function ScanModal() {
               : candidate,
           ),
         );
+        void removeStagedScannedDocument(item.uri);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
         setQueue((current) =>
@@ -307,7 +351,7 @@ export default function ScanModal() {
           prepareImage(asset.uri, asset.fileName ?? `Foto-${index + 1}.jpg`),
         ),
       );
-      for (const image of images) addToQueue(image);
+      for (const image of images) await addToQueue(image);
     } catch {
       setError("Das Foto konnte nicht vorbereitet werden. Bitte versuch es nochmal.");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -321,7 +365,7 @@ export default function ScanModal() {
     });
     if (result.canceled) return;
     const asset = result.assets[0];
-    addToQueue({
+    await addToQueue({
       id: createDocumentId(),
       uri: asset.uri,
       name: asset.name,
@@ -371,7 +415,7 @@ export default function ScanModal() {
             Kanten, Zuschnitt und mehrere Seiten übernimmt dein Gerät.
           </Text>
           <OrdiloButton
-            disabled={scannerBusy}
+            disabled={scannerBusy || !queueHydrated}
             icon={
               scannerBusy ? (
                 <ActivityIndicator color={colors.warmWhite} />
@@ -389,12 +433,14 @@ export default function ScanModal() {
           <Text style={styles.alternativeLabel}>Oder auswählen</Text>
           <View style={styles.secondaryActions}>
             <OrdiloButton
+              disabled={!queueHydrated}
               icon={<Images color={colors.graphite} size={17} />}
               onPress={() => void pickImages()}
               title="Fotos"
               variant="outline"
             />
             <OrdiloButton
+              disabled={!queueHydrated}
               icon={<FilePlus2 color={colors.graphite} size={17} />}
               onPress={() => void pickFile()}
               title="Datei"

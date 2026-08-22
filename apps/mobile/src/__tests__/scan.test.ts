@@ -12,9 +12,27 @@ jest.mock("../lib/api", () => ({
 }));
 
 const mockApiFetch = jest.mocked(apiFetch);
+const mockMaybeSingle = jest.fn();
+
+jest.mock("../lib/supabase", () => ({
+  getSupabase: () => {
+    const query = {
+      select: jest.fn(),
+      eq: jest.fn(),
+      maybeSingle: mockMaybeSingle,
+    };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    return { from: jest.fn(() => query) };
+  },
+}));
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMaybeSingle.mockResolvedValue({
+    data: { status: "ocr_done" },
+    error: null,
+  });
 });
 
 describe("native scan helpers", () => {
