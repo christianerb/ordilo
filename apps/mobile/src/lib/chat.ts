@@ -1,4 +1,5 @@
 import { apiJson, getApiUrl } from "./api";
+import { buildWhatsAppHref, normalizePhoneForLink } from "./contacts";
 import { getSupabase } from "./supabase";
 
 /**
@@ -85,6 +86,11 @@ export interface ChatAction {
   args: Record<string, unknown>;
   state: ChatActionState;
   error?: string;
+  /**
+   * Which operation produced the error — a failed undo must retry the
+   * undo, not replay the original action.
+   */
+  errorOperation?: "confirm" | "undo";
   undo?: {
     id: string;
     toolName: ChatActionToolName;
@@ -522,6 +528,51 @@ export function getActionContent(action: ChatAction): ActionCardContent {
         title: asText(args.task_title) ?? "Aufgabe anpassen",
         details: [],
       };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Suggested contact action (answer cards of type "kontakt")
+// ---------------------------------------------------------------------------
+
+export interface SuggestedContactAction {
+  href: string;
+  label: string;
+}
+
+/**
+ * Builds the deep link for the server-suggested contact action,
+ * preserving the verified message draft. Without this a prompt like
+ * „Schreib Ursula bei WhatsApp, dass wir später kommen" would open an
+ * empty composer even though the server supplied the text.
+ */
+export function getSuggestedContactAction(
+  contact: AnswerCard["contact"],
+): SuggestedContactAction | null {
+  if (!contact?.action) return null;
+  const draft = contact.messageDraft?.trim() ?? "";
+
+  switch (contact.action) {
+    case "whatsapp": {
+      if (!contact.phone) return null;
+      const href = buildWhatsAppHref(contact.phone, draft);
+      return href
+        ? {
+            href,
+            label: draft ? "WhatsApp-Nachricht schreiben" : "WhatsApp öffnen",
+          }
+        : null;
+    }
+    case "email": {
+      if (!contact.email) return null;
+      const query = draft ? `?body=${encodeURIComponent(draft)}` : "";
+      return { href: `mailto:${contact.email}${query}`, label: "E-Mail schreiben" };
+    }
+    case "phone": {
+      if (!contact.phone) return null;
+      const normalized = normalizePhoneForLink(contact.phone);
+      return normalized ? { href: `tel:${normalized}`, label: "Anrufen" } : null;
+    }
   }
 }
 

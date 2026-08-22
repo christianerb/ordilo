@@ -4,6 +4,7 @@ import {
   buildMarkTaskDoneUndo,
   formatChatDate,
   getActionContent,
+  getSuggestedContactAction,
   getToolStepLabel,
   mergeConfirmationProposal,
   parseChatStreamEvent,
@@ -290,6 +291,58 @@ describe("undo for confirmed actions", () => {
         {},
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("suggested contact action preserves the message draft", () => {
+  const contact = {
+    id: "c1",
+    phone: "+49 171 1234567",
+    email: "ursula@example.de",
+    action: "whatsapp" as const,
+    messageDraft: "Wir kommen später!",
+  };
+
+  it("opens WhatsApp with the verified draft prefilled", () => {
+    expect(getSuggestedContactAction(contact)).toEqual({
+      href: `https://wa.me/491711234567?text=${encodeURIComponent("Wir kommen später!")}`,
+      label: "WhatsApp-Nachricht schreiben",
+    });
+  });
+
+  it("labels an empty draft plainly", () => {
+    expect(getSuggestedContactAction({ ...contact, messageDraft: " " })?.label).toBe(
+      "WhatsApp öffnen",
+    );
+  });
+
+  it("carries the draft into the mail body", () => {
+    expect(
+      getSuggestedContactAction({ ...contact, action: "email" as const }),
+    ).toEqual({
+      href: `mailto:ursula@example.de?body=${encodeURIComponent("Wir kommen später!")}`,
+      label: "E-Mail schreiben",
+    });
+  });
+
+  it("builds a tel link for a suggested call", () => {
+    expect(
+      getSuggestedContactAction({ ...contact, action: "phone" as const }),
+    ).toEqual({ href: "tel:+491711234567", label: "Anrufen" });
+  });
+
+  it("returns null without a suggested action or usable handle", () => {
+    expect(getSuggestedContactAction(undefined)).toBeNull();
+    expect(
+      getSuggestedContactAction({ ...contact, action: null }),
+    ).toBeNull();
+    expect(
+      getSuggestedContactAction({ ...contact, phone: null }),
+    ).toBeNull();
+    // WhatsApp requires an international number — no link without one.
+    expect(
+      getSuggestedContactAction({ ...contact, phone: "0171 1234567" }),
+    ).toBeNull();
   });
 });
 

@@ -95,49 +95,38 @@ export default function SucheScreen() {
     [updateMessage],
   );
 
-  const send = useCallback(
-    async (question: string) => {
-      const trimmed = question.trim();
-      if (!trimmed || busy || !family) return;
+  const createAssistantMessage = useCallback((): ChatMessage => {
+    return {
+      id: nextId("assistant"),
+      dbId: null,
+      role: "assistant",
+      text: "",
+      card: null,
+      sources: [],
+      actions: [],
+      toolCalls: [],
+      status: "streaming",
+      feedback: null,
+    };
+  }, [nextId]);
 
-      lastQuestion.current = trimmed;
+  /** Streams one answer into the given assistant bubble. Owns busy state. */
+  const runStream = useCallback(
+    async (
+      question: string,
+      assistantMessage: ChatMessage,
+      history: { role: "user" | "assistant"; content: string }[],
+    ) => {
+      if (!family) return;
+      lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-      const userMessage: ChatMessage = {
-        id: nextId("user"),
-        dbId: null,
-        role: "user",
-        text: trimmed,
-        card: null,
-        sources: [],
-        actions: [],
-        toolCalls: [],
-        status: "done",
-        feedback: null,
-      };
-      const assistantMessage: ChatMessage = {
-        id: nextId("assistant"),
-        dbId: null,
-        role: "assistant",
-        text: "",
-        card: null,
-        sources: [],
-        actions: [],
-        toolCalls: [],
-        status: "streaming",
-        feedback: null,
-      };
-
-      const history = buildChatHistory(messages);
-      setMessages((current) => [...current, userMessage, assistantMessage]);
-      setInput("");
       setBusy(true);
 
       try {
         await streamChat(
           {
             familyId: family.id,
-            message: trimmed,
+            message: question,
             conversationId,
             history,
           },
@@ -175,19 +164,65 @@ export default function SucheScreen() {
         setBusy(false);
       }
     },
-    [busy, conversationId, family, messages, nextId, updateMessage],
+    [conversationId, family, updateMessage],
   );
 
+  const send = useCallback(
+    async (question: string) => {
+      const trimmed = question.trim();
+      if (!trimmed || busy || !family) return;
+
+      const userMessage: ChatMessage = {
+        id: nextId("user"),
+        dbId: null,
+        role: "user",
+        text: trimmed,
+        card: null,
+        sources: [],
+        actions: [],
+        toolCalls: [],
+        status: "done",
+        feedback: null,
+      };
+      const assistantMessage = createAssistantMessage();
+
+      const history = buildChatHistory(messages);
+      setMessages((current) => [...current, userMessage, assistantMessage]);
+      setInput("");
+      await runStream(trimmed, assistantMessage, history);
+    },
+    [busy, createAssistantMessage, family, messages, nextId, runStream],
+  );
+
+  /**
+   * „Nochmal fragen": replaces only the failed assistant bubble. The
+   * original user bubble stays — the retry must not duplicate the turn
+   * in the UI or send the same question twice in the history.
+   */
   const retry = useCallback(
     (failedMessageId: string) => {
-      const question = lastQuestion.current;
-      if (!question) return;
-      setMessages((current) =>
-        current.filter((message) => message.id !== failedMessageId),
+      if (busy || !family) return;
+      const index = messages.findIndex((message) => message.id === failedMessageId);
+      if (index < 0) return;
+      const userMessage = [...messages.slice(0, index)]
+        .reverse()
+        .find((message) => message.role === "user");
+      if (!userMessage) return;
+
+      const history = buildChatHistory(
+        messages.filter(
+          (message) =>
+            message.id !== failedMessageId && message.id !== userMessage.id,
+        ),
       );
-      void send(question);
+      const assistantMessage = createAssistantMessage();
+      setMessages((current) => [
+        ...current.filter((message) => message.id !== failedMessageId),
+        assistantMessage,
+      ]);
+      void runStream(userMessage.text, assistantMessage, history);
     },
-    [send],
+    [busy, createAssistantMessage, family, messages, runStream],
   );
 
   const confirmAction = useCallback(
@@ -197,6 +232,7 @@ export default function SucheScreen() {
         ...current,
         state: "confirming",
         error: undefined,
+        errorOperation: undefined,
       }));
       try {
         const response = await confirmChatAction(family.id, action);
@@ -215,6 +251,7 @@ export default function SucheScreen() {
           ...current,
           state: "error",
           error: "Das hat nicht geklappt. Bitte versuch es nochmal.",
+          errorOperation: "confirm",
         }));
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
@@ -229,6 +266,7 @@ export default function SucheScreen() {
         ...current,
         state: "undoing",
         error: undefined,
+        errorOperation: undefined,
       }));
       try {
         const response = await confirmChatAction(family.id, {
@@ -249,6 +287,7 @@ export default function SucheScreen() {
           ...current,
           state: "error",
           error: "Rückgängig machen hat nicht geklappt.",
+          errorOperation: "undo",
         }));
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
