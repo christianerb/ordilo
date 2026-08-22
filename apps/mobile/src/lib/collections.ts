@@ -169,30 +169,73 @@ export function validateCollectionInput(
 }
 
 // ---------------------------------------------------------------------------
-// Document counts (Beziehungen)
+// Canonical category matching (Beziehungen)
 // ---------------------------------------------------------------------------
 
 /**
+ * 1:1 port of the matching predicate from src/lib/categories.ts (web).
+ * The contract there demands that EVERY surface linking
+ * `documents.category` to a collection name uses this same equality —
+ * a weaker comparison (plain lowercase) would show "Rechnungen"
+ * documents and a "Rechnung" collection as two different folders.
+ */
+
+/** Normalize a category for comparison: lowercase, trimmed, collapsed whitespace. */
+function normalizeCategoryName(value: string): string {
+  return value.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Fold trivial German singular/plural variants onto a comparable stem:
+ * "rechnungen" → "rechnung", "verträge" → "verträg", "briefe" → "brief".
+ * Deliberately conservative — only common suffixes, only on words long
+ * enough that stripping cannot collide short words.
+ */
+function pluralStem(value: string): string {
+  if (value.length > 5 && value.endsWith("en")) return value.slice(0, -2);
+  if (value.length > 4 && (value.endsWith("e") || value.endsWith("n") || value.endsWith("s"))) {
+    return value.slice(0, -1);
+  }
+  return value;
+}
+
+/** Fold German umlauts so plural umlautation compares equal ("Verträge" ↔ "Vertrag"). */
+function foldUmlauts(value: string): string {
+  return value
+    .replace(/ä/g, "a")
+    .replace(/ö/g, "o")
+    .replace(/ü/g, "u")
+    .replace(/ß/g, "ss");
+}
+
+/** Whether a document category and a collection name refer to the same thing. */
+export function categoriesMatch(a: string, b: string): boolean {
+  const normalizedA = normalizeCategoryName(a);
+  const normalizedB = normalizeCategoryName(b);
+  if (normalizedA === normalizedB) return true;
+  return (
+    foldUmlauts(pluralStem(normalizedA)) ===
+    foldUmlauts(pluralStem(normalizedB))
+  );
+}
+
+/**
  * Count documents per collection from the family's document categories.
- *
- * The link is the case-insensitive name match against `documents.category`
- * — counting happens client-side so one query serves the whole list.
+ * Matching uses the canonical categoriesMatch predicate; counting happens
+ * client-side so one query serves the whole list.
  */
 export function countDocumentsPerCollection(
   collections: Pick<Collection, "id" | "name">[],
   categories: (string | null)[],
 ): Map<string, number> {
   const counts = new Map<string, number>();
-  const lowered = new Map(
-    collections.map((collection) => [
-      collection.name.toLocaleLowerCase("de"),
-      collection.id,
-    ]),
-  );
   for (const category of categories) {
     if (!category) continue;
-    const id = lowered.get(category.toLocaleLowerCase("de"));
-    if (id) counts.set(id, (counts.get(id) ?? 0) + 1);
+    for (const collection of collections) {
+      if (categoriesMatch(category, collection.name)) {
+        counts.set(collection.id, (counts.get(collection.id) ?? 0) + 1);
+      }
+    }
   }
   return counts;
 }
@@ -232,6 +275,9 @@ export async function fetchCollections(familyId: string): Promise<Collection[]> 
       .eq("family_id", familyId)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true })
+      // Unique tiebreaker so rows cannot cross page boundaries between
+      // paged requests (duplicates/omissions otherwise).
+      .order("id", { ascending: true })
       .range(from, to);
     if (error) throw error;
     return (data ?? []) as Collection[];
@@ -251,21 +297,13 @@ export async function fetchDocumentCategories(
       .select("category")
       .eq("family_id", familyId)
       .not("category", "is", null)
+      // Unique order — paged reads need it to be stable (see above).
+      .order("id", { ascending: true })
       .range(from, to);
     if (error) throw error;
     return (data ?? []) as { category: string | null }[];
   });
   return rows.map((row) => row.category);
-}
-
-/**
- * Escapes `%`, `_` and `\` for a PostgREST ilike pattern. Collection
- * names are free text ("50 % Teilzeit" is a plausible name), and without
- * escaping those characters would act as wildcards and break the
- * name-based document link.
- */
-export function escapeIlikePattern(value: string): string {
-  return value.replace(/([%_\\])/g, "\\$1");
 }
 
 /** A document row as the collection detail list needs it. */
@@ -279,24 +317,36 @@ export type CollectionDocument = {
   created_at: string;
 };
 
-/** Documents whose category matches the collection name (the Beziehung). */
+/**
+ * Documents whose category canonically matches the collection name (the
+ * Beziehung). PostgREST cannot express German plural/umlaut stemming, so
+ * membership is decided client-side with categoriesMatch — the same
+ * predicate the web contract mandates for every collection-linking
+ * surface. The family's documents are paged in stable id order and
+ * filtered; the server-side newest-first order survives the filter.
+ */
 export async function fetchCollectionDocuments(
   familyId: string,
   collectionName: string,
 ): Promise<CollectionDocument[]> {
-  return fetchAllRows(async (from, to) => {
+  const rows = await fetchAllRows(async (from, to) => {
     const { data, error } = await getSupabase()
       .from("documents")
       .select(
-        "id, title, original_filename, mime_type, document_type, status, created_at",
+        "id, title, original_filename, mime_type, document_type, status, created_at, category",
       )
       .eq("family_id", familyId)
-      .ilike("category", escapeIlikePattern(collectionName))
       .order("created_at", { ascending: false })
+      // Unique tiebreaker so rows cannot cross page boundaries between
+      // paged requests (duplicates/omissions otherwise).
+      .order("id", { ascending: true })
       .range(from, to);
     if (error) throw error;
-    return (data ?? []) as CollectionDocument[];
+    return (data ?? []) as (CollectionDocument & { category: string | null })[];
   });
+  return rows
+    .filter((row) => row.category != null && categoriesMatch(row.category, collectionName))
+    .map(({ category: _category, ...document }) => document);
 }
 
 // ---------------------------------------------------------------------------
@@ -353,9 +403,7 @@ export async function updateCollection(
     return { success: false, error: validation.error };
   }
 
-  const nameChanged =
-    collection.name.toLocaleLowerCase("de") !==
-    validation.data.name.toLocaleLowerCase("de");
+  const nameChanged = !categoriesMatch(collection.name, validation.data.name);
 
   const { data, error } = await getSupabase()
     .from("collections")
@@ -377,13 +425,27 @@ export async function updateCollection(
 
   // Cascade the rename onto matching documents so the collection keeps
   // its contents (best-effort — the collection itself is already renamed
-  // even if this secondary update fails).
+  // even if this secondary update fails). Every STORED spelling that
+  // canonically matches the old name is rewritten, not just exact case
+  // matches — otherwise "Rechnung" documents would silently fall out of
+  // a renamed "Rechnungen" collection.
   if (nameChanged) {
-    await getSupabase()
-      .from("documents")
-      .update({ category: validation.data.name })
-      .eq("family_id", collection.family_id)
-      .ilike("category", escapeIlikePattern(collection.name));
+    const storedCategories = await fetchDocumentCategories(collection.family_id);
+    const spellings = [
+      ...new Set(
+        storedCategories.filter(
+          (category): category is string =>
+            category != null && categoriesMatch(category, collection.name),
+        ),
+      ),
+    ];
+    if (spellings.length > 0) {
+      await getSupabase()
+        .from("documents")
+        .update({ category: validation.data.name })
+        .eq("family_id", collection.family_id)
+        .in("category", spellings);
+    }
   }
 
   return { success: true, collection: data as Collection };

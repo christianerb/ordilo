@@ -1,13 +1,28 @@
 import {
   COLLECTION_COLOR_OPTIONS,
   COLLECTION_ICON_OPTIONS,
+  categoriesMatch,
   collectionInputSchema,
   countDocumentsPerCollection,
-  escapeIlikePattern,
   fetchAllRows,
   getCollectionColor,
   validateCollectionInput,
 } from "../lib/collections";
+
+describe("categoriesMatch (port of the web predicate)", () => {
+  it("matches case, whitespace, plural and umlaut variants", () => {
+    expect(categoriesMatch("rechnungen", "Rechnungen")).toBe(true);
+    expect(categoriesMatch("Rechnung", "Rechnungen")).toBe(true);
+    expect(categoriesMatch("Verträge", "Vertrag")).toBe(true);
+    expect(categoriesMatch("  Kita   Briefe ", "Kita Briefe")).toBe(true);
+  });
+
+  it("does not fold short words or different words", () => {
+    // "Kfz" must not be stemmed into something else.
+    expect(categoriesMatch("Kfz", "Kita")).toBe(false);
+    expect(categoriesMatch("Steuer", "Rechnungen")).toBe(false);
+  });
+});
 
 describe("fetchAllRows", () => {
   it("pages until a short page arrives and keeps the order", async () => {
@@ -41,15 +56,6 @@ describe("fetchAllRows", () => {
       3,
     );
     expect(result).toEqual([1, 2, 3]);
-  });
-});
-
-describe("escapeIlikePattern", () => {
-  it("escapes PostgREST wildcards so names match literally", () => {
-    expect(escapeIlikePattern("50 % Teilzeit")).toBe("50 \\% Teilzeit");
-    expect(escapeIlikePattern("Auto_1")).toBe("Auto\\_1");
-    expect(escapeIlikePattern("Rechnungen")).toBe("Rechnungen");
-    expect(escapeIlikePattern("C:\\Dokumente")).toBe("C:\\\\Dokumente");
   });
 });
 
@@ -160,6 +166,18 @@ describe("countDocumentsPerCollection", () => {
     ]);
     expect(counts.get("c1")).toBe(3);
     expect(counts.get("c2")).toBe(1);
+  });
+
+  it("counts canonical singular/plural and umlaut variants (web parity)", () => {
+    const counts = countDocumentsPerCollection(
+      [
+        { id: "c1", name: "Rechnungen" },
+        { id: "c3", name: "Vertrag" },
+      ],
+      ["Rechnung", "rechnung", "Verträge"],
+    );
+    expect(counts.get("c1")).toBe(2);
+    expect(counts.get("c3")).toBe(1);
   });
 
   it("ignores categories without a matching collection and vice versa", () => {
