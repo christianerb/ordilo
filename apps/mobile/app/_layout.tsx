@@ -13,11 +13,18 @@ import {
 } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
+import { CloudOff } from "lucide-react-native";
 import { useEffect } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { OrdiloButton, Screen } from "@/src/components/ui";
+import { AppLockProvider } from "@/src/lib/app-lock";
 import { SessionProvider, useSession } from "@/src/lib/session";
-import { colors } from "@/src/theme/tokens";
+import { FamilyProvider, useFamily } from "@/src/lib/family-context";
+import { isOnboardingComplete, needsWelcomeIntro } from "@/src/lib/family";
+import { colors, spacing, typography } from "@/src/theme/tokens";
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -73,35 +80,130 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <SessionProvider>
-        <StatusBar style="dark" />
-        <RootLayoutNav />
-      </SessionProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <SessionProvider>
+          <FamilyProvider>
+            <AppLockProvider>
+              <StatusBar style="dark" />
+              <RootLayoutNav />
+            </AppLockProvider>
+          </FamilyProvider>
+        </SessionProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
 function RootLayoutNav() {
-  const { session, isLoading } = useSession();
+  const { session, isLoading: sessionLoading, signOut } = useSession();
+  const {
+    family,
+    isLoading: familyLoading,
+    error: familyError,
+    refresh: refreshFamily,
+  } = useFamily();
   const segments = useSegments();
   const router = useRouter();
 
-  // Auth gate: without a session only the (auth) group is reachable;
-  // with a session the login screen is left behind automatically.
+  // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
+  // no session → login; no family or unfinished owner setup → onboarding;
+  // invited member with a pending intro → willkommen; else the tabs.
   useEffect(() => {
-    if (isLoading) return;
-    const inAuthGroup = segments[0] === "(auth)";
-    if (!session && !inAuthGroup) {
-      router.replace("/(auth)/login");
-    } else if (session && inAuthGroup) {
+    if (sessionLoading) return;
+    if (session && familyLoading) return;
+
+    const first = segments[0];
+    const inAuthGroup = first === "(auth)";
+    const onOnboarding = first === "onboarding";
+    const onWelcome = first === "willkommen";
+    // Invite links run their own flow and must never be bounced by the
+    // gate — including while signed out (the invite screen handles login).
+    const onInvite = first === "invite";
+
+    if (!session) {
+      if (!inAuthGroup && !onInvite) {
+        router.replace("/(auth)/login");
+      }
+      return;
+    }
+
+    // A failed family lookup must never read as "no family" — the web
+    // middleware fails safe the same way (a transient error would
+    // otherwise bounce an onboarded user back into onboarding). Keep
+    // the current route; the error surface below offers a retry.
+    if (familyError) return;
+
+    if (inAuthGroup) {
+      // Logged in on the login screen — route by family state.
+      if (!family || !isOnboardingComplete(family)) {
+        router.replace("/onboarding");
+      } else if (needsWelcomeIntro(family)) {
+        router.replace("/willkommen");
+      } else {
+        router.replace("/(tabs)");
+      }
+      return;
+    }
+
+    if (onInvite) return;
+
+    if (!family || !isOnboardingComplete(family)) {
+      if (!onOnboarding) router.replace("/onboarding");
+      return;
+    }
+    if (needsWelcomeIntro(family)) {
+      if (!onWelcome) router.replace("/willkommen");
+      return;
+    }
+    if (onOnboarding || onWelcome) {
       router.replace("/(tabs)");
     }
-  }, [session, isLoading, segments, router]);
+  }, [
+    session,
+    sessionLoading,
+    family,
+    familyLoading,
+    familyError,
+    segments,
+    router,
+  ]);
 
-  // No protected content flashes while the persisted session loads.
-  if (isLoading) {
+  // No protected content flashes while session or family state loads.
+  if (sessionLoading || (session && familyLoading)) {
     return null;
+  }
+
+  // Family lookup failed: surface the error with a retry instead of
+  // routing anywhere. Invite links keep their own flow (they re-resolve
+  // everything they need themselves).
+  if (session && familyError && segments[0] !== "invite") {
+    return (
+      <ThemeProvider value={ordiloTheme}>
+        <Screen style={gateStyles.errorScreen}>
+          <View style={gateStyles.errorIconCircle}>
+            <CloudOff color={colors.harborBlue} size={28} strokeWidth={1.75} />
+          </View>
+          <Text style={gateStyles.errorTitle}>
+            Deine Familie konnte nicht geladen werden
+          </Text>
+          <Text style={[typography.body, gateStyles.errorText]}>
+            {familyError}
+          </Text>
+          <OrdiloButton
+            onPress={() => void refreshFamily()}
+            size="lg"
+            title="Erneut versuchen"
+          />
+          <OrdiloButton
+            onPress={() => void signOut()}
+            size="lg"
+            title="Abmelden"
+            variant="ghost"
+          />
+        </Screen>
+      </ThemeProvider>
+    );
   }
 
   return (
@@ -114,8 +216,45 @@ function RootLayoutNav() {
       >
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="onboarding" />
+        <Stack.Screen name="willkommen" />
         <Stack.Screen name="scan" options={{ presentation: "modal" }} />
+        <Stack.Screen name="document/[id]" />
+        <Stack.Screen name="einstellungen" />
       </Stack>
     </ThemeProvider>
   );
 }
+
+const gateStyles = StyleSheet.create({
+  errorScreen: {
+    alignItems: "center",
+    gap: spacing.md,
+    justifyContent: "center",
+  },
+  errorIconCircle: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderRadius: 32,
+    height: 64,
+    justifyContent: "center",
+    width: 64,
+  },
+  errorTitle: {
+    color: colors.graphite,
+    fontFamily: typography.display.fontFamily,
+    fontSize: 20,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  errorText: {
+    color: colors.mistDark,
+    lineHeight: 24,
+    maxWidth: 300,
+    textAlign: "center",
+  },
+});
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

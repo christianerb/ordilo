@@ -4,6 +4,29 @@
 
 product
 
+## Platform
+
+adaptive
+
+The native mobile app is a first-class product surface, iPhone first and
+Android-native by design, rather than a web companion.
+
+- **Web:** Next.js remains the complete desktop and browser experience.
+- **Native app:** Expo/React Native serves iPhone first, then Android, from
+  the same product data and RLS policies. Native parity is required before
+  TestFlight, not an optional companion experience.
+- **Native affordances:** Camera and multi-page capture, photo/file picker,
+  Share Sheet intake and invitation sharing, secure device storage,
+  offline-safe upload resumption, document/image preview, deep links,
+  haptics for clear state changes, push reminders when they add value, and
+  optional biometric/app-switch privacy protection.
+- **Navigation:** Mobile optimizes for one-thumb, 30-second family moments:
+  Heute is the briefing, Scan is always one tap away, and detailed work
+  opens in native stacks or bottom sheets instead of desktop-style panes.
+- **Parity rule:** A mobile screen must never point to a placeholder or
+  promise a web-only action. When the native destination is not ready, keep
+  the current surface honest until that feature group ships.
+
 ## Users
 
 Families — primarily German-speaking parents who manage the household's

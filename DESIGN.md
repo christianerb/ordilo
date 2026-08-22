@@ -166,6 +166,7 @@ A restrained palette where one teal carries authority and one apricot carries wa
 ### Semantic
 
 - **Destructive** (#C0392B): Error states, failed-document indicators, delete confirmations. A warm, muted red — not alarm-red.
+- **Destructive Background** (#F9E8E5): The quiet warm-red surface behind inline errors. It keeps destructive text readable without introducing an undocumented one-off tint.
 - **Blue Soft** (#E4F0FC): Reserved for rare informational accents. Not part of the primary vocabulary.
 
 ### Named Rules

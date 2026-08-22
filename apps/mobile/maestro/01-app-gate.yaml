@@ -1,0 +1,9 @@
+appId: com.ordilo.app
+---
+# App-Gate: ohne Session darf kein geschützter Inhalt aufblitzen —
+# der Login ist der einzige sichtbare Einstieg.
+- launchApp:
+    clearState: true
+- assertVisible: "Schön, dass du da bist"
+- assertVisible: "Melde dich mit deiner E-Mail-Adresse an. Ein Passwort brauchst du nicht."
+- assertVisible: "Loslegen — ohne Passwort"

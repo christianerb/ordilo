@@ -4,7 +4,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,14 +12,18 @@ import {
 } from "react-native";
 import { Mail, ShieldCheck } from "lucide-react-native";
 
+import { FadeInView, PressableScale } from "@/src/components/motion";
 import { OrdiloButton, Screen } from "@/src/components/ui";
+import { haptics } from "@/src/lib/haptics";
+import { recordOnboardingStartedIfFirstTime } from "@/src/lib/analytics";
 import { getSupabase } from "@/src/lib/supabase";
 import { validateLoginEmail } from "@/src/lib/validation";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
-const PENDING_LOGIN_KEY = "ordilo:pending-login";
+// Expo SecureStore accepts only letters, digits, `.`, `-` and `_` in keys.
+const PENDING_LOGIN_KEY = "ordilo.pending-login";
 const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000;
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -123,6 +126,7 @@ export default function LoginScreen() {
   async function handleSendCode() {
     const result = validateLoginEmail(email);
     if (!result.success) {
+      haptics.warning();
       setValidationError(result.error);
       setFormState("idle");
       return;
@@ -134,12 +138,14 @@ export default function LoginScreen() {
 
     const ok = await sendLoginCode(result.data.email);
     if (!ok) {
+      haptics.error();
       // Friendly German error — never surface raw Supabase errors.
       setErrorMessage("Das hat nicht geklappt. Bitte versuch's nochmal.");
       setFormState("error");
       return;
     }
 
+    haptics.success();
     setEmail(result.data.email);
     void savePendingLogin(result.data.email);
     setFormState("sent");
@@ -155,9 +161,11 @@ export default function LoginScreen() {
     try {
       const ok = await sendLoginCode(email);
       if (!ok) {
+        haptics.error();
         setErrorMessage("Der Code konnte nicht gesendet werden. Bitte versuch's nochmal.");
         return;
       }
+      haptics.success();
       setCode("");
       setErrorMessage(null);
       void savePendingLogin(email);
@@ -170,6 +178,7 @@ export default function LoginScreen() {
   async function handleVerify() {
     const token = code.trim();
     if (!/^\d{6}$/.test(token)) {
+      haptics.warning();
       setErrorMessage("Bitte gib den 6-stelligen Code ein.");
       return;
     }
@@ -178,16 +187,27 @@ export default function LoginScreen() {
     setErrorMessage(null);
     setFormState("verifying");
 
-    const { error } = await getSupabase().auth.verifyOtp({
+    const { data, error } = await getSupabase().auth.verifyOtp({
       email,
       token,
       type: "email",
     });
 
     if (error) {
+      haptics.error();
       setErrorMessage("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.");
       setFormState("sent");
       return;
+    }
+
+    haptics.success();
+
+    // Activation funnel: the web login form records onboarding_started
+    // for first-time users — same here, otherwise mobile signups would
+    // enter the data mid-funnel. Invite joins verify on the invite
+    // screen instead and are never first-time.
+    if (data.user) {
+      void recordOnboardingStartedIfFirstTime(getSupabase(), data.user.id);
     }
 
     // Success: onAuthStateChange picks up the session and the auth gate
@@ -214,15 +234,15 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.wordmarkBlock}>
+          <FadeInView index={0} style={styles.wordmarkBlock}>
             <Text style={styles.wordmark}>Ordilo</Text>
             <Text style={[typography.body, styles.claim]}>
               Die wichtigen Dinge deiner Familie. An einem Ort.
             </Text>
-          </View>
+          </FadeInView>
 
           {codeSent ? (
-            <View style={styles.form}>
+            <FadeInView index={1} key="code-step" style={styles.form}>
               <View style={styles.sentHeader}>
                 <View style={styles.sentIconCircle}>
                   <Mail color={colors.harborBlue} size={28} strokeWidth={1.75} />
@@ -270,8 +290,12 @@ export default function LoginScreen() {
                   Nichts angekommen? Schau auch im Spam-Ordner nach.
                 </Text>
                 <View style={styles.sentActions}>
-                  <Pressable
-                    accessibilityRole="button"
+                  <PressableScale
+                    accessibilityLabel={
+                      resendCooldown > 0
+                        ? `Nochmal senden (${resendCooldown}s)`
+                        : "Nochmal senden"
+                    }
                     disabled={resendCooldown > 0}
                     onPress={() => void handleResend()}
                   >
@@ -286,20 +310,20 @@ export default function LoginScreen() {
                         ? `Nochmal senden (${resendCooldown}s)`
                         : "Nochmal senden"}
                     </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
+                  </PressableScale>
+                  <PressableScale
+                    accessibilityLabel="Adresse ändern"
                     onPress={handleChangeEmail}
                   >
                     <Text style={[typography.timestamp, styles.link]}>
                       Adresse ändern
                     </Text>
-                  </Pressable>
+                  </PressableScale>
                 </View>
               </View>
-            </View>
+            </FadeInView>
           ) : (
-            <View style={styles.form}>
+            <FadeInView index={1} key="email-step" style={styles.form}>
               <View style={styles.introBlock}>
                 <Text style={[typography.display, styles.heading]}>
                   Schön, dass du da bist
@@ -374,7 +398,7 @@ export default function LoginScreen() {
                   noch nicht, legen wir es einfach an.
                 </Text>
               </View>
-            </View>
+            </FadeInView>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
