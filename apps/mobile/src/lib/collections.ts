@@ -403,7 +403,12 @@ export async function updateCollection(
     return { success: false, error: validation.error };
   }
 
-  const nameChanged = !categoriesMatch(collection.name, validation.data.name);
+  // An ACTUAL stored-name change, not canonical equivalence: renaming
+  // "Rechnungen" to "Rechnung" matches canonically, but the documents
+  // still carry "Rechnungen" — and surfaces that compare less
+  // canonically (the web detail page uses exact ilike) would then show
+  // an empty collection. Cascade on every exact-name change.
+  const nameChanged = collection.name !== validation.data.name;
 
   const { data, error } = await getSupabase()
     .from("collections")
@@ -424,27 +429,31 @@ export async function updateCollection(
   }
 
   // Cascade the rename onto matching documents so the collection keeps
-  // its contents (best-effort — the collection itself is already renamed
-  // even if this secondary update fails). Every STORED spelling that
-  // canonically matches the old name is rewritten, not just exact case
-  // matches — otherwise "Rechnung" documents would silently fall out of
-  // a renamed "Rechnungen" collection.
+  // its contents. Strictly best-effort: the collection row is ALREADY
+  // renamed at this point, so any failure here (transient network,
+  // paged category read) must be swallowed — never reported back as a
+  // failed save. Every STORED spelling that canonically matches the old
+  // name is rewritten, not just exact case matches.
   if (nameChanged) {
-    const storedCategories = await fetchDocumentCategories(collection.family_id);
-    const spellings = [
-      ...new Set(
-        storedCategories.filter(
-          (category): category is string =>
-            category != null && categoriesMatch(category, collection.name),
+    try {
+      const storedCategories = await fetchDocumentCategories(collection.family_id);
+      const spellings = [
+        ...new Set(
+          storedCategories.filter(
+            (category): category is string =>
+              category != null && categoriesMatch(category, collection.name),
+          ),
         ),
-      ),
-    ];
-    if (spellings.length > 0) {
-      await getSupabase()
-        .from("documents")
-        .update({ category: validation.data.name })
-        .eq("family_id", collection.family_id)
-        .in("category", spellings);
+      ];
+      if (spellings.length > 0) {
+        await getSupabase()
+          .from("documents")
+          .update({ category: validation.data.name })
+          .eq("family_id", collection.family_id)
+          .in("category", spellings);
+      }
+    } catch {
+      // Best-effort by contract — see above.
     }
   }
 
