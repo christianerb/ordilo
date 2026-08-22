@@ -8,6 +8,7 @@ import {
   isSafeOriginalFileUrl,
   parseCredentialFields,
   parseStoredContact,
+  reconstructStoredDate,
   reconstructStoredAmount,
   revealDocumentSecret,
   type ReviewAnalysis,
@@ -139,7 +140,7 @@ describe("document review", () => {
     });
   });
 
-  it("reconstructs stored contacts and typed amount columns for confirmation", () => {
+  it("reconstructs stored contacts, dates, and typed amounts for confirmation", () => {
     expect(parseStoredContact(JSON.stringify({
       name: "Praxis Dr. Koch",
       organization: "Kinderarzt",
@@ -155,6 +156,16 @@ describe("document review", () => {
       confidence: 0.9,
     });
     expect(parseStoredContact("{kaputt", 0.8)).toBeNull();
+    expect(reconstructStoredDate({
+      entity_value: "2026-08-28",
+      label: "Zahlungsfrist",
+      confidence: 0.85,
+    })).toEqual({
+      date: "2026-08-28",
+      type: "date",
+      label: "Zahlungsfrist",
+      confidence: 0.85,
+    });
     expect(reconstructStoredAmount({
       entity_value: "88 EUR",
       normalized_value: "88.00",

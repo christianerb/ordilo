@@ -118,6 +118,7 @@ function documentType(value: string | null): DocumentType {
 
 type Contact = ReviewAnalysis["contacts"][number];
 type Amount = ReviewAnalysis["amounts"][number];
+type ReviewDate = ReviewAnalysis["dates"][number];
 
 /**
  * Contacts are stored as JSON in `entity_value`, matching the web review
@@ -159,6 +160,16 @@ export function reconstructStoredAmount(entity: Record<string, unknown>): Amount
     label: text(entity.label),
     kind: amountKinds.has(kind as Amount["kind"]) ? kind as Amount["kind"] : "other",
     value_date: text(entity.value_date) || null,
+    confidence: confidence(entity.confidence),
+  };
+}
+
+/** Dates use the entity label column to preserve their stored meaning. */
+export function reconstructStoredDate(entity: Record<string, unknown>): ReviewDate {
+  return {
+    date: text(entity.entity_value),
+    type: "date",
+    label: text(entity.label),
     confidence: confidence(entity.confidence),
   };
 }
@@ -222,10 +233,7 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     contacts: ofType("contact")
       .map((entity) => parseStoredContact(entity.entity_value, entity.confidence))
       .filter((contact): contact is Contact => contact !== null),
-    dates: ofType("date").map((entity) => {
-      const details = asRecord(entity.metadata);
-      return { date: text(entity.entity_value), type: text(details.type), label: text(details.label), confidence: confidence(entity.confidence) };
-    }),
+    dates: ofType("date").map(reconstructStoredDate),
     amounts: ofType("amount").map(reconstructStoredAmount),
     tasks: (tasks ?? []).map((task) => {
       const entry = asRecord(task);

@@ -336,6 +336,7 @@ export default function ScanModal() {
               : candidate,
           ),
         );
+        await removeStagedScannedDocument(item.uri);
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
         await markQueueFailed(item.id, {
