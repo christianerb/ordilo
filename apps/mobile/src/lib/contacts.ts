@@ -224,6 +224,59 @@ export function sortContactsByName(contacts: Contact[]): Contact[] {
   return [...contacts].sort((a, b) => a.name.localeCompare(b.name, "de"));
 }
 
+export type ContactSection = { title: string; data: Contact[] };
+
+/**
+ * Address-book section key (DIN 5007-1 phonebook order): umlauts file
+ * under their base vowel, everything non-alphabetic under "#".
+ */
+export function getContactSectionKey(name: string): string {
+  const first = name.trim().charAt(0).toLocaleUpperCase("de");
+  if (first === "Ä") return "A";
+  if (first === "Ö") return "O";
+  if (first === "Ü") return "U";
+  return /^[A-Z]$/.test(first) ? first : "#";
+}
+
+/** Groups a German-sorted contact list into alphabet sections. */
+export function groupContactsIntoSections(
+  contacts: Contact[],
+): ContactSection[] {
+  const sections = new Map<string, Contact[]>();
+  for (const contact of sortContactsByName(contacts)) {
+    const key = getContactSectionKey(contact.name);
+    const bucket = sections.get(key);
+    if (bucket) bucket.push(contact);
+    else sections.set(key, [contact]);
+  }
+  return [...sections.entries()]
+    .sort(([a], [b]) => {
+      if (a === "#") return 1;
+      if (b === "#") return -1;
+      return a.localeCompare(b, "de");
+    })
+    .map(([title, data]) => ({ title, data }));
+}
+
+/**
+ * Loads a single contact for the deep-linkable detail route. Returns
+ * null when the contact does not exist (or RLS hides it); throws on
+ * transport errors so the screen can offer a retry.
+ */
+export async function loadContact(
+  contactId: string,
+  familyId: string,
+): Promise<Contact | null> {
+  const { data, error } = await getSupabase()
+    .from("contacts")
+    .select(contactsSelect)
+    .eq("id", contactId)
+    .eq("family_id", familyId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Contact | null) ?? null;
+}
+
 /** Secondary line on a row: "Hausarztpraxis Dr. Sommer · Kinderärztin". */
 export function getContactSubtitle(contact: Contact): string {
   return [contact.organization, contact.role].filter(Boolean).join(" · ");

@@ -5,7 +5,9 @@ import {
   getContactInitial,
   getContactReachLine,
   getContactSearchText,
+  getContactSectionKey,
   getContactSubtitle,
+  groupContactsIntoSections,
   mergeSavedContact,
   normalizePhoneForLink,
   sortContactsByName,
@@ -169,5 +171,35 @@ describe("contact list helpers", () => {
     );
     expect(getContactInitial("  erna")).toBe("E");
     expect(getContactInitial("")).toBe("?");
+  });
+
+  it("groups contacts into German phonebook sections (DIN 5007-1)", () => {
+    expect(getContactSectionKey("Äpfel")).toBe("A");
+    expect(getContactSectionKey("österreich")).toBe("O");
+    expect(getContactSectionKey(" Übel")).toBe("U");
+    expect(getContactSectionKey("Berger")).toBe("B");
+    expect(getContactSectionKey("123 Serrano")).toBe("#");
+    expect(getContactSectionKey("")).toBe("#");
+
+    const sections = groupContactsIntoSections([
+      { ...base, id: "z", name: "Zimmermann" },
+      { ...base, id: "u", name: "Überall" },
+      { ...base, id: "ae", name: "Äpfel" },
+      { ...base, id: "b", name: "Berger" },
+      { ...base, id: "n", name: "1. Hilfe" },
+    ]);
+    expect(sections.map((section) => section.title)).toEqual([
+      "A",
+      "B",
+      "U",
+      "Z",
+      "#",
+    ]);
+    expect(sections[0]?.data.map((contact) => contact.name)).toEqual([
+      "Äpfel",
+    ]);
+    expect(sections[4]?.data.map((contact) => contact.name)).toEqual([
+      "1. Hilfe",
+    ]);
   });
 });
