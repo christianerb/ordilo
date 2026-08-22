@@ -35,13 +35,15 @@ import { useFamily } from "@/src/lib/family-context";
 import {
   getScanMimeType,
   type ScannedDocument,
+  triggerScannedDocumentOcr,
   uploadScannedDocument,
   validateScannedDocument,
 } from "@/src/lib/scan";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
-type UploadState = "queued" | "uploading" | "failed" | "done";
+type UploadState = "queued" | "uploading" | "processing" | "failed" | "done";
 type QueueItem = ScannedDocument & {
+  documentId?: string;
   error?: string;
   state: UploadState;
 };
@@ -111,14 +113,15 @@ export default function ScanModal() {
   const [captureBusy, setCaptureBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const addToQueue = useCallback((document: ScannedDocument) => {
+  const addToQueue = useCallback((document: ScannedDocument): boolean => {
     const validationError = validateScannedDocument(document);
     if (validationError) {
       setError(validationError);
-      return;
+      return false;
     }
     setQueue((current) => [...current, { ...document, state: "queued" }]);
     setError(null);
+    return true;
   }, []);
 
   const uploadOne = useCallback(
@@ -132,10 +135,30 @@ export default function ScanModal() {
         ),
       );
       try {
-        await uploadScannedDocument(item, family.id);
+        const result = await uploadScannedDocument(item, family.id);
+        if (!result.server_pipeline) {
+          setQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? {
+                    ...candidate,
+                    documentId: result.document_id,
+                    state: "processing",
+                  }
+                : candidate,
+            ),
+          );
+          await triggerScannedDocumentOcr(result.document_id);
+        }
         setQueue((current) =>
           current.map((candidate) =>
-            candidate.id === item.id ? { ...candidate, state: "done" } : candidate,
+            candidate.id === item.id
+              ? {
+                  ...candidate,
+                  documentId: result.document_id,
+                  state: "done",
+                }
+              : candidate,
           ),
         );
       } catch {
@@ -155,6 +178,40 @@ export default function ScanModal() {
     },
     [family],
   );
+
+  const retryProcessing = useCallback(async (item: QueueItem) => {
+    if (!item.documentId) {
+      await uploadOne(item);
+      return;
+    }
+    setQueue((current) =>
+      current.map((candidate) =>
+        candidate.id === item.id
+          ? { ...candidate, state: "processing", error: undefined }
+          : candidate,
+      ),
+    );
+    try {
+      await triggerScannedDocumentOcr(item.documentId);
+      setQueue((current) =>
+        current.map((candidate) =>
+          candidate.id === item.id ? { ...candidate, state: "done" } : candidate,
+        ),
+      );
+    } catch {
+      setQueue((current) =>
+        current.map((candidate) =>
+          candidate.id === item.id
+            ? {
+                ...candidate,
+                state: "failed",
+                error: "Die Texterkennung hat nicht geklappt. Bitte erneut versuchen.",
+              }
+            : candidate,
+          ),
+        );
+    }
+  }, [uploadOne]);
 
   const uploadQueued = useCallback(async () => {
     for (const item of queue) {
@@ -186,8 +243,8 @@ export default function ScanModal() {
     if (!pages.length) return;
     setCaptureBusy(true);
     try {
-      addToQueue(await combinePages(pages));
-      setPages([]);
+      const document = await combinePages(pages);
+      if (addToQueue(document)) setPages([]);
     } catch {
       setError("Die Seiten konnten nicht zusammengefügt werden. Bitte versuch es nochmal.");
     } finally {
@@ -255,6 +312,10 @@ export default function ScanModal() {
         </Pressable>
       </View>
 
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
       {cameraReady ? (
         <View style={styles.cameraFrame}>
           <CameraView
@@ -402,7 +463,7 @@ export default function ScanModal() {
               ) : null}
               {item.state === "failed" ? (
                 <OrdiloButton
-                  onPress={() => void uploadOne(item)}
+                  onPress={() => void retryProcessing(item)}
                   title="Erneut"
                   variant="outline"
                 />
@@ -411,6 +472,7 @@ export default function ScanModal() {
           ))}
         </Card>
       ) : null}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -419,8 +481,11 @@ const styles = StyleSheet.create({
   screen: {
     backgroundColor: colors.warmWhite,
     flex: 1,
-    gap: spacing.md,
     paddingHorizontal: spacing.md,
+  },
+  scrollContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
   },
   header: {
     alignItems: "center",
@@ -441,8 +506,7 @@ const styles = StyleSheet.create({
   cameraFrame: {
     backgroundColor: colors.harborBlueDarker,
     borderRadius: radii.md,
-    flex: 1,
-    minHeight: 240,
+    height: 320,
     overflow: "hidden",
   },
   cameraGuide: {

@@ -1,7 +1,19 @@
 import { apiFetch } from "./api";
+import { z } from "zod";
 
 export const MAX_SCAN_FILE_SIZE = 4 * 1024 * 1024;
 export const MAX_SCAN_FILE_SIZE_LABEL = "4 MB";
+
+const acceptedMimeTypes = [
+  "application/pdf",
+  "image/gif",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+] as const;
+const acceptedMimeTypeSchema = z.enum(acceptedMimeTypes, {
+  error: "Bitte wähle ein Bild oder eine PDF-Datei aus.",
+});
 
 export type ScannedDocument = {
   id: string;
@@ -17,19 +29,24 @@ export type ScanUploadResponse = {
   server_pipeline: boolean;
 };
 
-const acceptedMimeTypes = new Set([
-  "application/pdf",
-  "image/gif",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-]);
+const scannedDocumentSchema = z.object({
+  mimeType: acceptedMimeTypeSchema,
+  size: z
+    .number()
+    .nonnegative()
+    .max(MAX_SCAN_FILE_SIZE, {
+      error: `Die Datei ist zu groß. Maximum: ${MAX_SCAN_FILE_SIZE_LABEL}.`,
+    })
+    .optional(),
+});
 
 export function getScanMimeType(
   mimeType: string | null | undefined,
   filename: string,
 ): string {
-  if (mimeType && acceptedMimeTypes.has(mimeType)) return mimeType;
+  if (typeof mimeType === "string" && acceptedMimeTypeSchema.safeParse(mimeType).success) {
+    return mimeType;
+  }
 
   const extension = filename.split(".").pop()?.toLowerCase();
   switch (extension) {
@@ -52,13 +69,8 @@ export function getScanMimeType(
 export function validateScannedDocument(
   document: Pick<ScannedDocument, "mimeType" | "size">,
 ): string | null {
-  if (!acceptedMimeTypes.has(document.mimeType)) {
-    return "Bitte wähle ein Bild oder eine PDF-Datei aus.";
-  }
-  if (document.size !== undefined && document.size > MAX_SCAN_FILE_SIZE) {
-    return `Die Datei ist zu groß. Maximum: ${MAX_SCAN_FILE_SIZE_LABEL}.`;
-  }
-  return null;
+  const result = scannedDocumentSchema.safeParse(document);
+  return result.success ? null : result.error.issues[0]?.message;
 }
 
 /**
@@ -86,4 +98,13 @@ export async function uploadScannedDocument(
     body: formData,
   });
   return (await response.json()) as ScanUploadResponse;
+}
+
+/**
+ * Starts OCR only when the server upload response says its job pipeline is
+ * unavailable. The endpoint performs the work on the server and keeps
+ * provider credentials out of the app.
+ */
+export async function triggerScannedDocumentOcr(documentId: string): Promise<void> {
+  await apiFetch(`/api/documents/${documentId}/ocr`, { method: "POST" });
 }
