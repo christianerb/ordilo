@@ -3,11 +3,46 @@ import type { DocumentType, ReviewAnalysis } from "./document-review";
 
 export const maxNoteContentLength = 10_000;
 
+const imageMimeTypesByExtension = {
+  gif: "image/gif",
+  jpeg: "image/jpeg",
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+} as const;
+
 export type NoteAttachment = {
   uri: string;
   name: string;
   mimeType: string;
 };
+
+/**
+ * Keeps the declared type aligned with the selected file bytes. ImagePicker
+ * can omit its MIME metadata, so use a known extension before declining an
+ * attachment whose type cannot be determined safely.
+ */
+export function inferNoteAttachmentMimeType({
+  fileName,
+  mimeType,
+  uri,
+}: {
+  fileName?: string | null;
+  mimeType?: string | null;
+  uri: string;
+}): string | null {
+  if (mimeType && Object.values(imageMimeTypesByExtension).includes(
+    mimeType as (typeof imageMimeTypesByExtension)[keyof typeof imageMimeTypesByExtension],
+  )) {
+    return mimeType;
+  }
+
+  const candidate = fileName || uri.split(/[?#]/, 1)[0];
+  const extension = candidate.split(".").pop()?.toLocaleLowerCase("en");
+  return extension && extension in imageMimeTypesByExtension
+    ? imageMimeTypesByExtension[extension as keyof typeof imageMimeTypesByExtension]
+    : null;
+}
 
 export type CreateNoteInput = {
   title: string;
