@@ -119,11 +119,24 @@ export default function SammlungDetailScreen() {
 
   if (loading && !collection) {
     return (
-      <Screen style={styles.center}>
-        <ActivityIndicator
-          accessibilityLabel="Sammlung wird geladen"
-          color={colors.harborBlue}
-        />
+      <Screen>
+        <View style={styles.topBar}>
+          <Pressable
+            accessibilityHint="Zurück zur Übersicht"
+            accessibilityLabel="Zurück"
+            accessibilityRole="button"
+            onPress={() => router.back()}
+            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+          >
+            <ArrowLeft color={colors.graphite} size={22} strokeWidth={1.8} />
+          </Pressable>
+        </View>
+        <View style={styles.centerFill}>
+          <ActivityIndicator
+            accessibilityLabel="Sammlung wird geladen"
+            color={colors.harborBlue}
+          />
+        </View>
       </Screen>
     );
   }
@@ -386,6 +399,7 @@ function DocumentRow({
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
+  centerFill: { alignItems: "center", flex: 1, justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
   topBar: {
     alignItems: "center",

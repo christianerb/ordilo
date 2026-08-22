@@ -4,9 +4,45 @@ import {
   collectionInputSchema,
   countDocumentsPerCollection,
   escapeIlikePattern,
+  fetchAllRows,
   getCollectionColor,
   validateCollectionInput,
 } from "../lib/collections";
+
+describe("fetchAllRows", () => {
+  it("pages until a short page arrives and keeps the order", async () => {
+    const rows = Array.from({ length: 2_500 }, (_, index) => index);
+    const requested: [number, number][] = [];
+    const result = await fetchAllRows(async (from, to) => {
+      requested.push([from, to]);
+      return rows.slice(from, to + 1);
+    });
+    expect(result).toEqual(rows);
+    expect(requested).toEqual([
+      [0, 999],
+      [1000, 1999],
+      [2000, 2999],
+    ]);
+  });
+
+  it("returns a single short page without extra requests", async () => {
+    let calls = 0;
+    const result = await fetchAllRows(async () => {
+      calls += 1;
+      return [1, 2];
+    });
+    expect(result).toEqual([1, 2]);
+    expect(calls).toBe(1);
+  });
+
+  it("keeps paging when a page is exactly full", async () => {
+    const result = await fetchAllRows(
+      async (from) => (from === 0 ? [1, 2, 3] : []),
+      3,
+    );
+    expect(result).toEqual([1, 2, 3]);
+  });
+});
 
 describe("escapeIlikePattern", () => {
   it("escapes PostgREST wildcards so names match literally", () => {

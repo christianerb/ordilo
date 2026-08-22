@@ -201,16 +201,41 @@ export function countDocumentsPerCollection(
 // Reads
 // ---------------------------------------------------------------------------
 
+/** PostgREST page size — matches the default server-side row cap. */
+export const COLLECTIONS_PAGE_SIZE = 1000;
+
+/**
+ * Collects every row of a query by paging until a short page arrives.
+ * PostgREST silently caps responses, so a single un-ranged query would
+ * truncate large families' data (wrong counts, missing documents).
+ */
+export async function fetchAllRows<T>(
+  fetchPage: (from: number, to: number) => Promise<T[]>,
+  pageSize = COLLECTIONS_PAGE_SIZE,
+): Promise<T[]> {
+  const all: T[] = [];
+  let from = 0;
+  for (;;) {
+    const page = await fetchPage(from, from + pageSize - 1);
+    all.push(...page);
+    if (page.length < pageSize) return all;
+    from += pageSize;
+  }
+}
+
 /** The family's collections, sorted by sort_order (then creation). */
 export async function fetchCollections(familyId: string): Promise<Collection[]> {
-  const { data, error } = await getSupabase()
-    .from("collections")
-    .select("id, family_id, name, icon, color, sort_order, created_at")
-    .eq("family_id", familyId)
-    .order("sort_order", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as Collection[];
+  return fetchAllRows(async (from, to) => {
+    const { data, error } = await getSupabase()
+      .from("collections")
+      .select("id, family_id, name, icon, color, sort_order, created_at")
+      .eq("family_id", familyId)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    return (data ?? []) as Collection[];
+  });
 }
 
 /**
@@ -220,13 +245,17 @@ export async function fetchCollections(familyId: string): Promise<Collection[]> 
 export async function fetchDocumentCategories(
   familyId: string,
 ): Promise<(string | null)[]> {
-  const { data, error } = await getSupabase()
-    .from("documents")
-    .select("category")
-    .eq("family_id", familyId)
-    .not("category", "is", null);
-  if (error) throw error;
-  return (data ?? []).map((row) => (row as { category: string | null }).category);
+  const rows = await fetchAllRows(async (from, to) => {
+    const { data, error } = await getSupabase()
+      .from("documents")
+      .select("category")
+      .eq("family_id", familyId)
+      .not("category", "is", null)
+      .range(from, to);
+    if (error) throw error;
+    return (data ?? []) as { category: string | null }[];
+  });
+  return rows.map((row) => row.category);
 }
 
 /**
@@ -255,16 +284,19 @@ export async function fetchCollectionDocuments(
   familyId: string,
   collectionName: string,
 ): Promise<CollectionDocument[]> {
-  const { data, error } = await getSupabase()
-    .from("documents")
-    .select(
-      "id, title, original_filename, mime_type, document_type, status, created_at",
-    )
-    .eq("family_id", familyId)
-    .ilike("category", escapeIlikePattern(collectionName))
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as CollectionDocument[];
+  return fetchAllRows(async (from, to) => {
+    const { data, error } = await getSupabase()
+      .from("documents")
+      .select(
+        "id, title, original_filename, mime_type, document_type, status, created_at",
+      )
+      .eq("family_id", familyId)
+      .ilike("category", escapeIlikePattern(collectionName))
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (error) throw error;
+    return (data ?? []) as CollectionDocument[];
+  });
 }
 
 // ---------------------------------------------------------------------------

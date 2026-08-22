@@ -2,6 +2,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import {
   AlertCircle,
+  ArrowLeft,
   ChevronRight,
   FolderPlus,
 } from "lucide-react-native";
@@ -90,29 +91,35 @@ export default function SammlungenScreen() {
 
   if (loading && collections.length === 0) {
     return (
-      <Screen style={styles.center}>
-        <ActivityIndicator
-          accessibilityLabel="Sammlungen werden geladen"
-          color={colors.harborBlue}
-        />
+      <Screen>
+        <BackBar onBack={() => router.back()} />
+        <View style={styles.centerFill}>
+          <ActivityIndicator
+            accessibilityLabel="Sammlungen werden geladen"
+            color={colors.harborBlue}
+          />
+        </View>
       </Screen>
     );
   }
 
   if (error && collections.length === 0) {
     return (
-      <Screen style={styles.center}>
-        <EmptyState
-          icon={AlertCircle}
-          heading="Sammlungen nicht erreichbar"
-          description={error}
-        >
-          <OrdiloButton
-            onPress={() => void load()}
-            size="lg"
-            title="Erneut versuchen"
-          />
-        </EmptyState>
+      <Screen>
+        <BackBar onBack={() => router.back()} />
+        <View style={styles.centerFill}>
+          <EmptyState
+            icon={AlertCircle}
+            heading="Sammlungen nicht erreichbar"
+            description={error}
+          >
+            <OrdiloButton
+              onPress={() => void load()}
+              size="lg"
+              title="Erneut versuchen"
+            />
+          </EmptyState>
+        </View>
       </Screen>
     );
   }
@@ -131,6 +138,8 @@ export default function SammlungenScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        <BackBar onBack={() => router.back()} />
+
         <ScreenHeader title="Sammlungen" subtitle={subtitle} />
 
         {error ? (
@@ -238,8 +247,37 @@ function CollectionRow({
   );
 }
 
+/**
+ * Explicit way back — the overview is pushed outside the tab navigator
+ * and the root stack shows no header, so the swipe-back gesture must not
+ * be the only exit (visible in the loading and error states too).
+ */
+function BackBar({ onBack }: { onBack: () => void }) {
+  return (
+    <View style={styles.backBar}>
+      <Pressable
+        accessibilityHint="Zurück zur Ablage"
+        accessibilityLabel="Zurück"
+        accessibilityRole="button"
+        onPress={onBack}
+        style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
+      >
+        <ArrowLeft color={colors.graphite} size={22} strokeWidth={1.8} />
+      </Pressable>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
+  centerFill: { alignItems: "center", flex: 1, justifyContent: "center" },
+  backBar: { alignItems: "flex-start", paddingTop: spacing.sm },
+  backButton: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
   inlineError: {
     alignItems: "center",
