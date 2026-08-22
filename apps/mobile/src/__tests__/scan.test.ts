@@ -5,6 +5,7 @@ import {
   getScanMimeType,
   MAX_SCAN_FILE_SIZE,
   persistScanQueue,
+  stageScannedDocument,
   validateScannedDocument,
 } from "../lib/scan";
 
@@ -32,6 +33,8 @@ jest.mock("../lib/supabase", () => ({
 jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///documents/",
   getInfoAsync: jest.fn(),
+  copyAsync: jest.fn().mockResolvedValue(undefined),
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
 }));
@@ -60,6 +63,25 @@ describe("native scan helpers", () => {
         size: MAX_SCAN_FILE_SIZE + 1,
       }),
     ).toBe("Die Datei ist zu groß. Maximum: 4 MB.");
+  });
+
+  it("removes a staged file when its actual size exceeds the upload limit", async () => {
+    jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({
+      exists: true,
+      size: MAX_SCAN_FILE_SIZE + 1,
+    } as never);
+
+    await expect(stageScannedDocument({
+      id: "large-scan",
+      uri: "file:///picked.pdf",
+      name: "rechnung.pdf",
+      mimeType: "application/pdf",
+    })).rejects.toThrow("Die Datei ist zu groß. Maximum: 4 MB.");
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      "file:///documents/ordilo-scan/large-scan-rechnung.pdf",
+      { idempotent: true },
+    );
   });
 
   it("continues from OCR through analysis when no server pipeline runs", async () => {

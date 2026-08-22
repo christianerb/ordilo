@@ -36,6 +36,7 @@ import {
   loadPersistedScanQueue,
   persistScanQueue,
   removeStagedScannedDocument,
+  ScanValidationError,
   stageScannedDocument,
   type ScannedDocument,
   type PersistedScanQueueItem,
@@ -186,8 +187,12 @@ export default function ScanModal() {
       await updateQueue((current) => [...current, { ...staged, state: "queued" }]);
       setError(null);
       return true;
-    } catch {
-      setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
+    } catch (error) {
+      setError(
+        error instanceof ScanValidationError
+          ? error.message
+          : "Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.",
+      );
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return false;
     }

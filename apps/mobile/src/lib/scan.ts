@@ -39,6 +39,8 @@ export type PersistedScanQueueItem = ScannedDocument & {
   state: ScanQueueState;
 };
 
+export class ScanValidationError extends Error {}
+
 const SCAN_QUEUE_DIRECTORY = `${FileSystem.documentDirectory}ordilo-scan/`;
 const SCAN_QUEUE_MANIFEST = `${SCAN_QUEUE_DIRECTORY}queue.json`;
 const PIPELINE_POLL_INTERVAL_MS = 1_000;
@@ -109,7 +111,13 @@ export async function stageScannedDocument(
   const uri = `${SCAN_QUEUE_DIRECTORY}${document.id}-${safeName}`;
   await FileSystem.copyAsync({ from: document.uri, to: uri });
   const info = await FileSystem.getInfoAsync(uri);
-  return { ...document, uri, size: info.exists ? info.size : document.size };
+  const staged = { ...document, uri, size: info.exists ? info.size : document.size };
+  const validationError = validateScannedDocument(staged);
+  if (validationError) {
+    await removeStagedScannedDocument(uri);
+    throw new ScanValidationError(validationError);
+  }
+  return staged;
 }
 
 export async function removeStagedScannedDocument(uri: string): Promise<void> {

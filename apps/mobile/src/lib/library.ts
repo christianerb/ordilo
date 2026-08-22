@@ -110,10 +110,11 @@ export function getLibrarySortOrder(sort: LibrarySort): {
  * deliberately plain text, never a piece of the filter expression.
  */
 export function toLibrarySearchPattern(query: string): string {
-  return `%${query
+  const escaped = query
     .trim()
+    .replace(/[\\"]/g, "\\$&")
     .replace(/[%_]/g, "\\$&")
-    .replace(/[,.()]/g, " ")}%`;
+  return `"%${escaped}%"`;
 }
 
 export function getLibraryPageRange(
@@ -173,6 +174,7 @@ export function getDocumentStatusLabel(status: string): string {
 export function getDocumentSearchText(document: LibraryDocument): string {
   return [
     getDocumentTitle(document),
+    document.original_filename,
     document.summary,
     document.ocr_text,
     getDocumentTypeLabel(document.document_type),

@@ -61,6 +61,14 @@ describe("document library helpers", () => {
         documentType: "all",
       }),
     ).toEqual([invoice]);
+
+    expect(
+      filterLibraryDocuments([invoice], {
+        query: "rechnung.pdf",
+        status: "all",
+        documentType: "all",
+      }),
+    ).toEqual([invoice]);
   });
 
   it("formats recent and older German dates without time-of-day noise", () => {
@@ -86,7 +94,12 @@ describe("document library helpers", () => {
   });
 
   it("turns search text into a single safe PostgREST pattern", () => {
-    expect(toLibrarySearchPattern("  Kita, 100%_  ")).toBe("%Kita  100\\%\\_%");
+    expect(toLibrarySearchPattern("  Kita, 100%_  ")).toBe(
+      '"%Kita, 100\\%\\_%"',
+    );
+    expect(toLibrarySearchPattern("rechnung.pdf (final)")).toBe(
+      '"%rechnung.pdf (final)%"',
+    );
   });
 
   it("creates inclusive ranges and does not repeat boundary documents", () => {
