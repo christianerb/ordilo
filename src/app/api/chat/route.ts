@@ -41,6 +41,9 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
  *   {"type":"sources","sources":[...]}              — accumulated document sources
  *   {"type":"confirmation_request",...}             — destructive action needs confirmation
  *   {"type":"conversation", "conversation_id":"..."} — conversation ID for persistence
+ *   {"type":"message_saved","message_id":"..."}      — persisted assistant message id
+ *                                                     (after "done"; lets clients attach
+ *                                                     feedback to a freshly streamed answer)
  *   {"type":"done"}                                  — stream complete
  *   {"type":"error","error":"...","code":"..."}      — error
  *
@@ -281,6 +284,7 @@ export async function POST(request: Request): Promise<Response> {
         let fullAnswer = "";
         let answerCard = null;
         let streamError = false;
+        let streamDone = false;
         // Write proposals emitted this round — persisted with the message
         // so a page reload restores the action cards instead of leaving
         // answer text that points at cards that no longer exist.
@@ -294,6 +298,58 @@ export async function POST(request: Request): Promise<Response> {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
+        const forwardLine = (line: string) => {
+          if (!line.trim()) return;
+
+          try {
+            const data = JSON.parse(line);
+            // `done` is terminal for clients. Hold it until the best-effort
+            // persistence event has been emitted, so freshly streamed
+            // answers can receive feedback immediately.
+            if (data.type === "done") {
+              streamDone = true;
+              return;
+            }
+
+            ctrl.enqueue(encoder.encode(line + "\n"));
+
+            if (data.type === "text") {
+              fullAnswer += data.content;
+              firstVisibleAt ??= Date.now();
+            } else if (data.type === "replace") {
+              // Guardrail correction or scratchpad retraction — the
+              // persisted answer mirrors what the client ends up seeing.
+              fullAnswer =
+                typeof data.content === "string" ? data.content : "";
+            } else if (data.type === "card") {
+              answerCard = data.card;
+              firstVisibleAt ??= Date.now();
+            } else if (data.type === "confirmation_request") {
+              if (
+                typeof data.tool_name === "string" &&
+                typeof data.action_id === "string" &&
+                data.action_args &&
+                typeof data.action_args === "object"
+              ) {
+                // Persist the SAME merged proposal the live card renders
+                // so a restored card discloses everything the live card did.
+                pendingActions.push({
+                  action_id: data.action_id,
+                  tool_name: data.tool_name,
+                  action_args: mergeConfirmationProposal(data),
+                });
+              }
+            } else if (data.type === "tool" && data.state === "start") {
+              toolCallCount += 1;
+            } else if (data.type === "error") {
+              streamError = true;
+            }
+          } catch {
+            // Preserve malformed upstream lines for clients while keeping
+            // persistence best-effort.
+            ctrl.enqueue(encoder.encode(line + "\n"));
+          }
+        };
 
         try {
           for (;;) {
@@ -305,72 +361,54 @@ export async function POST(request: Request): Promise<Response> {
             buffer = lines.pop() ?? "";
 
             for (const line of lines) {
-              if (!line.trim()) continue;
-              ctrl.enqueue(encoder.encode(line + "\n"));
-
-              // Intercept for persistence
-              try {
-                const data = JSON.parse(line);
-                if (data.type === "text") {
-                  fullAnswer += data.content;
-                  firstVisibleAt ??= Date.now();
-                } else if (data.type === "replace") {
-                  // Guardrail correction or scratchpad retraction — the
-                  // persisted answer mirrors what the client ends up seeing.
-                  fullAnswer =
-                    typeof data.content === "string" ? data.content : "";
-                } else if (data.type === "card") {
-                  answerCard = data.card;
-                  firstVisibleAt ??= Date.now();
-                } else if (data.type === "confirmation_request") {
-                  if (
-                    typeof data.tool_name === "string" &&
-                    typeof data.action_id === "string" &&
-                    data.action_args &&
-                    typeof data.action_args === "object"
-                  ) {
-                    // Persist the SAME merged proposal the live card
-                    // renders (args + server-resolved preview fields like
-                    // task_title or existing_value) — a restored card must
-                    // disclose everything the live card did.
-                    pendingActions.push({
-                      action_id: data.action_id,
-                      tool_name: data.tool_name,
-                      action_args: mergeConfirmationProposal(data),
-                    });
-                  }
-                } else if (data.type === "tool" && data.state === "start") {
-                  toolCallCount += 1;
-                } else if (data.type === "error") {
-                  streamError = true;
-                }
-              } catch {
-                // Ignore unparseable lines
-              }
+              forwardLine(line);
             }
           }
 
           // Flush remaining buffer
           if (buffer.trim()) {
-            ctrl.enqueue(encoder.encode(buffer + "\n"));
+            forwardLine(buffer);
           }
         } finally {
           reader.releaseLock();
         }
 
-        // 12. Persist the assistant message (best-effort, non-blocking)
-        if (conversationId && fullAnswer && !streamError) {
-          void saveAssistantMessage(
-            serverClient,
-            conversationId,
-            familyId,
-            // The prompt forbids repeating a password; this makes a slip
-            // stop at the screen instead of entering the history.
-            redactSecretsForStorage(fullAnswer),
-            toolContext.sources,
-            answerCard,
-            pendingActions,
-          );
+        // 12. Persist the assistant message (best-effort). The persisted
+        //     id is announced before the final `done` event so clients
+        //     without server-rendered history (mobile) can attach feedback
+        //     to the answer they just watched stream in. The web client
+        //     ignores unknown event types, so this is backwards-compatible.
+        if (conversationId && (fullAnswer || answerCard) && !streamError) {
+          try {
+            const savedMessageId = await saveAssistantMessage(
+              serverClient,
+              conversationId,
+              familyId,
+              // The prompt forbids repeating a password; this makes a slip
+              // stop at the screen instead of entering the history.
+              redactSecretsForStorage(fullAnswer),
+              toolContext.sources,
+              answerCard,
+              pendingActions,
+            );
+            if (savedMessageId) {
+              ctrl.enqueue(
+                encoder.encode(
+                  JSON.stringify({
+                    type: "message_saved",
+                    message_id: savedMessageId,
+                  }) + "\n",
+                ),
+              );
+            }
+          } catch {
+            // Persistence is best-effort. The answer has already streamed,
+            // so its response must still end normally without feedback.
+          }
+        }
+
+        if (streamDone) {
+          ctrl.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
         }
 
         // 13. Record usage (best-effort, non-blocking)
