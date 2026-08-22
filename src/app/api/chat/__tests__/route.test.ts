@@ -71,6 +71,7 @@ let membershipResult: { data: unknown; error: unknown };
  * passes the rate-limit check.
  */
 let chatUsageResult: { data: unknown; error: unknown };
+let assistantMessageSaveRejects = false;
 
 /** The mocked .from() of the server client — lets tests assert which
  * tables a request touched (e.g. that a 429 creates no conversation). */
@@ -92,10 +93,15 @@ function mockServerClient() {
   chainable.maybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
   chainable.single = vi.fn().mockResolvedValue({ data: { id: "conv-1" }, error: null });
   // insert returns a chainable too (for .insert().select().single() patterns).
-  chainable.insert = vi.fn().mockReturnValue({
-    select: vi.fn().mockReturnValue({
-      single: vi.fn().mockResolvedValue({ data: { id: "conv-1" }, error: null }),
-    }),
+  chainable.insert = vi.fn().mockImplementation((row: { role?: string }) => {
+    if (row.role === "assistant" && assistantMessageSaveRejects) {
+      return Promise.reject(new Error("Supabase transport failed"));
+    }
+    return {
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({ data: { id: "conv-1" }, error: null }),
+      }),
+    };
   });
 
   // Dedicated builder for the membership verification query so tests can
@@ -182,6 +188,7 @@ beforeEach(() => {
   membershipResult = { data: { family_id: FAMILY_ID }, error: null };
   // Default: no usage row → 0 messages used today (under the limit).
   chatUsageResult = { data: null, error: null };
+  assistantMessageSaveRejects = false;
   mockServerClient();
 });
 
@@ -312,12 +319,56 @@ describe("POST /api/chat", () => {
       .split("\n")
       .map((line) => JSON.parse(line) as { type: string });
     // The mock insert returns id "conv-1"; the event must arrive after the
-    // answer content so clients can attach feedback to what they rendered.
+    // answer content but before the terminal event, so clients can attach
+    // feedback to what they rendered.
     expect(events.some((event) => event.type === "conversation")).toBe(true);
-    expect(events.at(-1)).toEqual({
+    expect(events.at(-2)).toEqual({
       type: "message_saved",
       message_id: "conv-1",
     });
+    expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("persists card-only answers and announces their saved message id", async () => {
+    (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ndjsonStream([
+        { type: "text", content: "Ich prüfe das kurz." },
+        { type: "replace", content: "" },
+        { type: "card", card: { type: "tasks", tasks: [] } },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const events = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string; message_id?: string });
+
+    expect(events).toContainEqual({
+      type: "message_saved",
+      message_id: "conv-1",
+    });
+    expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("finishes the stream when best-effort assistant persistence rejects", async () => {
+    assistantMessageSaveRejects = true;
+    (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ndjsonStream([
+        { type: "text", content: "Die Antwort bleibt sichtbar." },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const events = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string });
+
+    expect(events.some((event) => event.type === "message_saved")).toBe(false);
+    expect(events.at(-1)).toEqual({ type: "done" });
   });
 
   it("passes conversation history to streamAgenticAnswer", async () => {
