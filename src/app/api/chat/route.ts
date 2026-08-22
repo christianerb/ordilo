@@ -41,6 +41,9 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
  *   {"type":"sources","sources":[...]}              — accumulated document sources
  *   {"type":"confirmation_request",...}             — destructive action needs confirmation
  *   {"type":"conversation", "conversation_id":"..."} — conversation ID for persistence
+ *   {"type":"message_saved","message_id":"..."}      — persisted assistant message id
+ *                                                     (after "done"; lets clients attach
+ *                                                     feedback to a freshly streamed answer)
  *   {"type":"done"}                                  — stream complete
  *   {"type":"error","error":"...","code":"..."}      — error
  *
@@ -358,9 +361,13 @@ export async function POST(request: Request): Promise<Response> {
           reader.releaseLock();
         }
 
-        // 12. Persist the assistant message (best-effort, non-blocking)
+        // 12. Persist the assistant message (best-effort). The persisted
+        //     id is announced as a final `message_saved` event so clients
+        //     without server-rendered history (mobile) can attach feedback
+        //     to the answer they just watched stream in. The web client
+        //     ignores unknown event types, so this is backwards-compatible.
         if (conversationId && fullAnswer && !streamError) {
-          void saveAssistantMessage(
+          const savedMessageId = await saveAssistantMessage(
             serverClient,
             conversationId,
             familyId,
@@ -371,6 +378,16 @@ export async function POST(request: Request): Promise<Response> {
             answerCard,
             pendingActions,
           );
+          if (savedMessageId) {
+            ctrl.enqueue(
+              encoder.encode(
+                JSON.stringify({
+                  type: "message_saved",
+                  message_id: savedMessageId,
+                }) + "\n",
+              ),
+            );
+          }
         }
 
         // 13. Record usage (best-effort, non-blocking)

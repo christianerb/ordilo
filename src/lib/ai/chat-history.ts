@@ -193,6 +193,11 @@ export async function saveUserMessage(
 /**
  * Save an assistant message to the database, including sources and card
  * if present.
+ *
+ * Returns the persisted message id so callers can hand it to clients
+ * (e.g. the `message_saved` stream event, which lets mobile clients
+ * attach feedback to a freshly streamed answer). Returns null when the
+ * insert fails — persistence is best-effort and never breaks the chat.
  */
 export async function saveAssistantMessage(
   client: ServerClient,
@@ -202,16 +207,22 @@ export async function saveAssistantMessage(
   sources: ChatSource[],
   card: AnswerCard | null,
   actions: PersistedChatAction[] = [],
-): Promise<void> {
-  await client.from("chat_messages").insert({
-    conversation_id: conversationId,
-    family_id: familyId,
-    role: "assistant",
-    content,
-    sources: sources.length > 0 ? sources as unknown as Record<string, unknown>[] : null,
-    card: card as unknown as Record<string, unknown> | null,
-    actions: actions.length > 0 ? (actions as unknown as Record<string, unknown>[]) : null,
-  });
+): Promise<string | null> {
+  const { data, error } = await client
+    .from("chat_messages")
+    .insert({
+      conversation_id: conversationId,
+      family_id: familyId,
+      role: "assistant",
+      content,
+      sources: sources.length > 0 ? sources as unknown as Record<string, unknown>[] : null,
+      card: card as unknown as Record<string, unknown> | null,
+      actions: actions.length > 0 ? (actions as unknown as Record<string, unknown>[]) : null,
+    })
+    .select("id")
+    .single();
+  if (error) return null;
+  return (data as { id: string } | null)?.id ?? null;
 }
 
 /**

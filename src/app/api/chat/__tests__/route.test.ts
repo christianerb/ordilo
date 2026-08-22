@@ -294,6 +294,32 @@ describe("POST /api/chat", () => {
     expect(response.body).toBeDefined();
   });
 
+  it("announces the persisted assistant message id via message_saved", async () => {
+    (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ndjsonStream([
+        { type: "text", content: "Du hast 2 Aufgaben." },
+        { type: "sources", sources: [] },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    expect(response.status).toBe(200);
+
+    const text = await response.text();
+    const events = text
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { type: string });
+    // The mock insert returns id "conv-1"; the event must arrive after the
+    // answer content so clients can attach feedback to what they rendered.
+    expect(events.some((event) => event.type === "conversation")).toBe(true);
+    expect(events.at(-1)).toEqual({
+      type: "message_saved",
+      message_id: "conv-1",
+    });
+  });
+
   it("passes conversation history to streamAgenticAnswer", async () => {
     (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
       ndjsonStream([{ type: "done" }]),
