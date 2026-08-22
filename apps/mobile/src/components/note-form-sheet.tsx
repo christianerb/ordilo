@@ -25,6 +25,7 @@ import {
 import { OrdiloButton } from "@/src/components/ui";
 import {
   buildCredentialsContent,
+  inferNoteAttachmentMimeType,
   maxNoteContentLength,
   type NoteAttachment,
 } from "@/src/lib/notes";
@@ -117,10 +118,19 @@ export function NoteFormSheet({
         });
     const asset = result.assets?.[0];
     if (result.canceled || !asset?.uri) return;
+    const mimeType = inferNoteAttachmentMimeType({
+      fileName: asset.fileName,
+      mimeType: asset.mimeType,
+      uri: asset.uri,
+    });
+    if (!mimeType) {
+      setError("Das Bildformat konnte nicht erkannt werden. Bitte wähle ein JPG, PNG, WebP oder GIF.");
+      return;
+    }
     setAttachment({
       uri: asset.uri,
-      name: asset.fileName || `Notiz-${Date.now()}.jpg`,
-      mimeType: asset.mimeType || "image/jpeg",
+      name: asset.fileName || `Notiz-${Date.now()}.${mimeType === "image/jpeg" ? "jpg" : mimeType.split("/")[1]}`,
+      mimeType,
     });
   }, []);
 

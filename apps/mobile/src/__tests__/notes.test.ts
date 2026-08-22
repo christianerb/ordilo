@@ -4,6 +4,7 @@ import {
   buildNoteUpdatePayload,
   createNote,
   getNoteContent,
+  inferNoteAttachmentMimeType,
   maxNoteContentLength,
   triggerNoteAnalysis,
   updateDocumentSecret,
@@ -66,6 +67,24 @@ describe("native notes helpers", () => {
         description: "x".repeat(maxNoteContentLength),
       }).length,
     ).toBeGreaterThan(maxNoteContentLength);
+  });
+
+  it("infers an image type from the selected file instead of mislabeling it as JPEG", () => {
+    expect(inferNoteAttachmentMimeType({
+      mimeType: null,
+      fileName: "Familienfoto.PNG",
+      uri: "file:///tmp/Familienfoto.PNG",
+    })).toBe("image/png");
+    expect(inferNoteAttachmentMimeType({
+      mimeType: null,
+      fileName: null,
+      uri: "file:///tmp/Sticker.webp?asset=1",
+    })).toBe("image/webp");
+    expect(inferNoteAttachmentMimeType({
+      mimeType: null,
+      fileName: null,
+      uri: "ph://opaque-image-id",
+    })).toBeNull();
   });
 
   it("always renders a note body from OCR text, never credential metadata", () => {
