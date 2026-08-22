@@ -71,7 +71,7 @@ export function OrdiloButton({
 }: {
   title: string;
   onPress: () => void;
-  variant?: "primary" | "outline" | "ghost";
+  variant?: "primary" | "outline" | "ghost" | "destructive";
   size?: "default" | "lg";
   disabled?: boolean;
   icon?: ReactNode;
@@ -87,6 +87,7 @@ export function OrdiloButton({
         variant === "primary" && styles.buttonPrimary,
         variant === "outline" && styles.buttonOutline,
         variant === "ghost" && styles.buttonGhost,
+        variant === "destructive" && styles.buttonDestructive,
         pressed && styles.buttonPressed,
         disabled && styles.buttonDisabled,
       ]}
@@ -99,6 +100,7 @@ export function OrdiloButton({
           variant === "primary" && styles.buttonTextPrimary,
           variant === "outline" && styles.buttonTextOutline,
           variant === "ghost" && styles.buttonTextGhost,
+          variant === "destructive" && styles.buttonTextPrimary,
         ]}
       >
         {title}
@@ -182,6 +184,9 @@ const styles = StyleSheet.create({
   },
   buttonGhost: {
     backgroundColor: "transparent",
+  },
+  buttonDestructive: {
+    backgroundColor: colors.destructive,
   },
   buttonPressed: {
     opacity: 0.85,

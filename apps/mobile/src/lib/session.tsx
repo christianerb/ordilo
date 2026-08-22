@@ -77,7 +77,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       session,
       isLoading,
       signOut: async () => {
-        await getSupabase().auth.signOut();
+        try {
+          await getSupabase().auth.signOut();
+        } catch {
+          // The server-side session may already be gone (e.g. right after
+          // account deletion) — drop the local tokens regardless, so the
+          // gate can route to the login screen.
+          await getSupabase().auth.signOut({ scope: "local" });
+        }
       },
     }),
     [session, isLoading],

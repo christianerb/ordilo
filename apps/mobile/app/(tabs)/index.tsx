@@ -9,6 +9,7 @@ import {
   ListChecks,
   MapPin,
   ScanLine,
+  Settings,
   Sparkles,
 } from "lucide-react-native";
 import {
@@ -29,6 +30,7 @@ import {
   View,
 } from "react-native";
 
+import { PressableScale } from "@/src/components/motion";
 import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
 import {
@@ -307,6 +309,15 @@ export default function HeuteScreen() {
 
   return (
     <Screen>
+      <View style={styles.topBar}>
+        <PressableScale
+          accessibilityLabel="Einstellungen öffnen"
+          contentStyle={styles.settingsButton}
+          onPress={() => router.push("/einstellungen")}
+        >
+          <Settings color={colors.mistDark} size={20} strokeWidth={1.75} />
+        </PressableScale>
+      </View>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -873,6 +884,15 @@ function getDocumentStatusLabel(status: string): string {
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
+  topBar: {
+    alignItems: "flex-end",
+  },
+  settingsButton: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing["2xl"],
