@@ -101,6 +101,17 @@ export async function createNote(input: CreateNoteInput): Promise<CreateNoteResp
 }
 
 /**
+ * Falls back to direct enrichment when the server could not enqueue its
+ * background job. The note is already stored, so callers can run this
+ * silently without delaying navigation.
+ */
+export async function triggerNoteAnalysis(documentId: string): Promise<void> {
+  await apiFetch(`/api/documents/${documentId}/analyze`, {
+    method: "POST",
+  });
+}
+
+/**
  * The existing protected PATCH route edits confirmed document metadata.
  * It intentionally cannot change note body text, attachments, or secrets.
  */

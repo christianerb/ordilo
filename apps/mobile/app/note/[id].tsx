@@ -271,10 +271,22 @@ function SecretSection({ documentId }: { documentId: string }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
+  const secretExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedSecret = useRef<string | null>(null);
 
+  const clearSecret = useCallback(() => {
+    setSecret(null);
+    setVisible(false);
+  }, []);
+
+  const armSecretExpiry = useCallback(() => {
+    if (secretExpiry.current) clearTimeout(secretExpiry.current);
+    secretExpiry.current = setTimeout(clearSecret, 30_000);
+  }, [clearSecret]);
+
   useEffect(() => () => {
+    if (secretExpiry.current) clearTimeout(secretExpiry.current);
     if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
     const copied = copiedSecret.current;
     if (copied) {
@@ -294,6 +306,7 @@ function SecretSection({ documentId }: { documentId: string }) {
       }
       setSecret(value);
       setVisible(true);
+      armSecretExpiry();
     } catch {
       Alert.alert("Passwort nicht verfügbar", "Bitte prüfe deine Verbindung und versuch es nochmal.");
     } finally {
@@ -305,6 +318,7 @@ function SecretSection({ documentId }: { documentId: string }) {
     if (!secret) return;
     await Clipboard.setStringAsync(secret);
     copiedSecret.current = secret;
+    armSecretExpiry();
     if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
     clipboardExpiry.current = setTimeout(() => {
       void Clipboard.getStringAsync()
@@ -334,7 +348,7 @@ function SecretSection({ documentId }: { documentId: string }) {
             />
             <OrdiloButton
               icon={<EyeOff color={colors.mistDark} size={16} />}
-              onPress={() => setVisible(false)}
+              onPress={clearSecret}
               title="Verbergen"
               variant="ghost"
             />
