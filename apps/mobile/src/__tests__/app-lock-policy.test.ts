@@ -1,4 +1,5 @@
 import {
+  decideOnColdStart,
   decideOnLeaveForeground,
   decideOnReturnToForeground,
 } from "../lib/app-lock-policy";
@@ -52,8 +53,7 @@ describe("decideOnLeaveForeground", () => {
   });
 });
 
-describe("decideOnReturnToForeground", () => {
-  it("lifts the shield and engages a previously armed lock", () => {
+describe("decideOnReturnToForeground", () => {  it("lifts the shield and engages a previously armed lock", () => {
     expect(decideOnReturnToForeground({ lockArmed: true })).toEqual({
       shielded: false,
       lockArmed: false,
@@ -67,5 +67,27 @@ describe("decideOnReturnToForeground", () => {
       lockArmed: false,
       locked: false,
     });
+  });
+});
+
+describe("decideOnColdStart", () => {
+  it("locks immediately when the lock is enabled and biometrics exist", () => {
+    // No background→active transition fires on a fresh process start —
+    // without this, a force-quit would bypass the enabled lock.
+    expect(
+      decideOnColdStart({ appLockEnabled: true, biometryAvailable: true }),
+    ).toEqual({ locked: true, keepAppLockEnabled: true });
+  });
+
+  it("stays unlocked when the lock is off", () => {
+    expect(
+      decideOnColdStart({ appLockEnabled: false, biometryAvailable: true }),
+    ).toEqual({ locked: false, keepAppLockEnabled: false });
+  });
+
+  it("disables the setting instead of bricking the app when biometrics vanished", () => {
+    expect(
+      decideOnColdStart({ appLockEnabled: true, biometryAvailable: false }),
+    ).toEqual({ locked: false, keepAppLockEnabled: false });
   });
 });
