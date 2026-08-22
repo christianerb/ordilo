@@ -415,8 +415,11 @@ export default function HeuteScreen() {
                   </Text>
                 )}
                 {journalDocuments.map((document) => (
-                  <View
+                  <Pressable
+                    accessibilityRole={document.status === "analyzed" ? "button" : undefined}
+                    disabled={document.status !== "analyzed"}
                     key={document.id}
+                    onPress={() => router.push(`/document/${document.id}`)}
                     style={[
                       styles.documentRow,
                       document.status === "analyzed" && styles.documentRowPending,
@@ -448,7 +451,7 @@ export default function HeuteScreen() {
                     {document.status === "analyzed" ? (
                       <Text style={styles.reviewPill}>Neu</Text>
                     ) : null}
-                  </View>
+                  </Pressable>
                 ))}
               </Section>
             ) : null}
