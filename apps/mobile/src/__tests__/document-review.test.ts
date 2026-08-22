@@ -1,7 +1,10 @@
 import {
+  buildConfirmDocumentPayload,
   confirmDocumentReview,
   canReviewDocument,
   documentTypeLabels,
+  isImageFile,
+  isSafeOriginalFileUrl,
   type ReviewAnalysis,
 } from "../lib/document-review";
 
@@ -43,7 +46,7 @@ describe("document review", () => {
     expect(canReviewDocument("failed")).toBe(false);
   });
 
-  it("posts the complete analysis only to the protected confirm route", async () => {
+  it("posts only the ConfirmPayload contract to the protected confirm route", async () => {
     mockApiFetch.mockResolvedValue({ ok: true });
 
     await confirmDocumentReview("doc-1", analysis);
@@ -51,12 +54,45 @@ describe("document review", () => {
     expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/doc-1/confirm", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...analysis,
-        status: undefined,
-        deletedTaskIndices: [],
-        calendar_events: [],
-      }),
+      body: JSON.stringify(buildConfirmDocumentPayload(analysis)),
     });
+  });
+
+  it("does not leak UI status and omits deliberately emptied contract rows", () => {
+    const payload = buildConfirmDocumentPayload({
+      ...analysis,
+      title: "  Stromrechnung  ",
+      tags: [" Strom ", ""],
+      family_members: [{ person_id: null, name: "  ", confidence: 1 }],
+      tasks: [{ title: "  ", due_date: "  ", confidence: 1 }],
+      facts: [{ fact_type: "identifier", label: "  ", value: "4711", confidence: 1 }],
+    });
+
+    expect(payload).toEqual({
+      document_type: "invoice",
+      title: "Stromrechnung",
+      summary: "Rechnung für Juli.",
+      family_members: [],
+      organizations: [],
+      contacts: [],
+      dates: [],
+      amounts: [],
+      tasks: [],
+      facts: [],
+      suggested_category: "Haushalt",
+      tags: ["Strom"],
+      needs_user_review: false,
+      deletedTaskIndices: [],
+      calendar_events: [],
+    });
+    expect(payload).not.toHaveProperty("status");
+  });
+
+  it("only accepts HTTPS signed original URLs and identifies image originals", () => {
+    expect(isSafeOriginalFileUrl("https://project.supabase.co/storage/v1/object/sign/file.pdf")).toBe(true);
+    expect(isSafeOriginalFileUrl("http://project.supabase.co/file.pdf")).toBe(false);
+    expect(isSafeOriginalFileUrl("javascript:alert(1)")).toBe(false);
+    expect(isImageFile("image/jpeg")).toBe(true);
+    expect(isImageFile("application/pdf")).toBe(false);
   });
 });

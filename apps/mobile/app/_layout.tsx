@@ -16,6 +16,7 @@ import { StatusBar } from "expo-status-bar";
 import { CloudOff } from "lucide-react-native";
 import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
@@ -78,14 +79,16 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <SessionProvider>
-        <FamilyProvider>
-          <StatusBar style="dark" />
-          <RootLayoutNav />
-        </FamilyProvider>
-      </SessionProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <SessionProvider>
+          <FamilyProvider>
+            <StatusBar style="dark" />
+            <RootLayoutNav />
+          </FamilyProvider>
+        </SessionProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -246,4 +249,8 @@ const gateStyles = StyleSheet.create({
     maxWidth: 300,
     textAlign: "center",
   },
+});
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
 });
