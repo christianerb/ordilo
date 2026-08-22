@@ -19,7 +19,7 @@ eine seiner Zeilen offen ist.
 | A | Ablage | Details, Original, Metadaten | Dokument-Detail | File API/Supabase | ✅ | ⬜ | ⬜ | 🟡 |
 | A | Ablage | Credentials/Secrets sicher anzeigen | Dokument-Detail | Secret API | ✅ | ⬜ | ⬜ | 🟡 |
 | A | Ablage | Dokument löschen, Bestätigung, Fehlerzustand | Dokument-Detail | Delete API | ✅ | ⬜ | ⬜ | 🟡 |
-| A | Notizen | Liste, erstellen, bearbeiten, löschen | Ablage/Notizen | Notes API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
+| A | Notizen | Liste, erstellen, bearbeiten, löschen | Ablage/Notizen | Notes API/Supabase | ✅ | ⬜ | ⬜ | 🟡 |
 | B | Kontakte | Liste, erstellen, bearbeiten, Aktionen | Ablage/Kontakte | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
 | C | Sammlungen | Liste, erstellen, bearbeiten, Beziehungen | Sammlungen | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
 | B | Ordilo fragen | Suche, Chat, Streaming, Quellen, Feedback | Suche | Search/Chat API | ✅ | ⬜ | ⬜ | 🟡 |
