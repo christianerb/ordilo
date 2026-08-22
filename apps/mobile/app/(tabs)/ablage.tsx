@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   FileText,
+  FolderOpen,
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
@@ -246,6 +247,17 @@ export default function AblageScreen() {
           >
             <Users color={colors.harborBlue} size={16} strokeWidth={1.8} />
             <Text style={styles.contactsLinkText}>Kontakte</Text>
+          </Pressable>
+          {/* Entry to Sammlungen (Agent C) — same compact link pattern as Kontakte. */}
+          <Pressable
+            accessibilityHint="Öffnet die Sammlungen"
+            accessibilityLabel="Sammlungen"
+            accessibilityRole="button"
+            onPress={() => router.push("/sammlungen")}
+            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
+          >
+            <FolderOpen color={colors.harborBlue} size={16} strokeWidth={1.8} />
+            <Text style={styles.contactsLinkText}>Sammlungen</Text>
           </Pressable>
         </View>
 
@@ -653,7 +665,12 @@ function SortPicker({
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  headerRow: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
+  headerRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
   headerGrow: { flex: 1 },
   contactsLink: {
     alignItems: "center",
