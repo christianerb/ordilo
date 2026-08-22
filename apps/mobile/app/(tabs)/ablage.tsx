@@ -8,6 +8,7 @@ import {
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
+  Users,
 } from "lucide-react-native";
 import {
   useCallback,
@@ -229,10 +230,24 @@ export default function AblageScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <ScreenHeader
-          subtitle={documentCountLabel}
-          title="Ablage"
-        />
+        <View style={styles.headerRow}>
+          <View style={styles.headerGrow}>
+            <ScreenHeader
+              subtitle={documentCountLabel}
+              title="Ablage"
+            />
+          </View>
+          <Pressable
+            accessibilityHint="Öffnet das Familien-Adressbuch"
+            accessibilityLabel="Kontakte"
+            accessibilityRole="button"
+            onPress={() => router.push("/contacts")}
+            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
+          >
+            <Users color={colors.harborBlue} size={16} strokeWidth={1.8} />
+            <Text style={styles.contactsLinkText}>Kontakte</Text>
+          </Pressable>
+        </View>
 
         {documents.length > 0 ? (
           <>
@@ -638,6 +653,21 @@ function SortPicker({
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
+  headerRow: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
+  headerGrow: { flex: 1 },
+  contactsLink: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    marginTop: spacing.md,
+    minHeight: 44,
+    paddingHorizontal: 12,
+  },
+  contactsLinkText: { color: colors.harborBlue, ...typography.label },
   search: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
