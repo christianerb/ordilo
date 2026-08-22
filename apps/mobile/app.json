@@ -34,7 +34,20 @@
           "backgroundColor": "#FDFCFA"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Ordilo braucht die Kamera, um Dokumente zu scannen."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
+        }
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
