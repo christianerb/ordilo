@@ -9,6 +9,7 @@ import {
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
+  Sparkles,
   Users,
 } from "lucide-react-native";
 import {
@@ -238,6 +239,16 @@ export default function AblageScreen() {
               title="Ablage"
             />
           </View>
+          <Pressable
+            accessibilityHint="Öffnet den Chat mit Ordilo"
+            accessibilityLabel="Ordilo fragen"
+            accessibilityRole="button"
+            onPress={() => router.push("/suche")}
+            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
+          >
+            <Sparkles color={colors.harborBlue} size={16} strokeWidth={1.8} />
+            <Text style={styles.contactsLinkText}>Fragen</Text>
+          </Pressable>
           <Pressable
             accessibilityHint="Öffnet das Familien-Adressbuch"
             accessibilityLabel="Kontakte"
