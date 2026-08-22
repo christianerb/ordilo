@@ -13,6 +13,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -78,6 +79,10 @@ export default function AblageScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextPage, setNextPage] = useState(1);
+  // Monotonic query id — only the latest request may write state. A
+  // slow first-page response must never overwrite the result of the
+  // query the user already typed past (same pattern as family-context).
+  const requestSeqRef = useRef(0);
   const [filters, setFilters] = useState<LibraryFilters>({
     query: "",
     status: "all",
@@ -86,6 +91,7 @@ export default function AblageScreen() {
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
+      const seq = ++requestSeqRef.current;
       if (!family) {
         setDocuments([]);
         setHasMore(false);
@@ -124,18 +130,24 @@ export default function AblageScreen() {
           .order(order.column, { ascending: order.ascending })
           .range(range.from, range.to);
         if (queryError) throw queryError;
+        if (seq !== requestSeqRef.current) return; // superseded
         const next = (data ?? []) as LibraryDocument[];
         setDocuments((current) => append ? mergeLibraryDocuments(current, next) : next);
         setHasMore(next.length === libraryPageSize);
         setNextPage(next.length === libraryPageSize ? page + 1 : page);
       } catch {
+        if (seq !== requestSeqRef.current) return; // superseded
         setError(
           "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
         );
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        // A superseded request must not clear the spinners of the newer
+        // one that is still in flight.
+        if (seq === requestSeqRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
     [family, filters, sort],
@@ -183,12 +195,16 @@ export default function AblageScreen() {
   );
   const activeFilterCount =
     Number(filters.status !== "all") + Number(filters.documentType !== "all");
+  // Anything narrowing the list right now — the reason an empty result
+  // means "no matches" and not "the library is empty".
+  const hasActiveFilters =
+    filters.query.trim() !== "" || activeFilterCount > 0;
   const selectedTypeLabel =
     filters.documentType === "all"
       ? "Art"
       : documentTypeLabels[filters.documentType];
 
-  if (loading && documents.length === 0) {
+  if (loading && documents.length === 0 && !hasActiveFilters) {
     return (
       <Screen style={styles.center}>
         <ActivityIndicator accessibilityLabel="Dokumente werden geladen" color={colors.harborBlue} />
@@ -196,7 +212,7 @@ export default function AblageScreen() {
     );
   }
 
-  if (error && documents.length === 0) {
+  if (error && documents.length === 0 && !hasActiveFilters) {
     return (
       <Screen style={styles.center}>
         <EmptyState
@@ -230,11 +246,15 @@ export default function AblageScreen() {
         showsVerticalScrollIndicator={false}
       >
         <ScreenHeader
-          subtitle={documentCountLabel}
+          subtitle={
+            hasActiveFilters && documents.length === 0
+              ? "Keine Treffer für deine Suche oder Filter"
+              : documentCountLabel
+          }
           title="Ablage"
         />
 
-        {documents.length > 0 ? (
+        {documents.length > 0 || hasActiveFilters ? (
           <>
             <View style={styles.search}>
               <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
@@ -334,7 +354,15 @@ export default function AblageScreen() {
               </View>
             ) : null}
 
-            {visibleDocuments.length > 0 ? (
+            {loading && documents.length === 0 ? (
+              // Filters active, result pending: keep the controls in
+              // place and show progress where the list will appear.
+              <ActivityIndicator
+                accessibilityLabel="Dokumente werden geladen"
+                color={colors.harborBlue}
+                style={styles.listSpinner}
+              />
+            ) : visibleDocuments.length > 0 ? (
               <>
                 <View style={styles.list}>
                   {visibleDocuments.map((document) => (
@@ -701,6 +729,9 @@ const styles = StyleSheet.create({
   },
   inlineErrorText: { color: colors.destructive, flex: 1, ...typography.timestamp },
   dismiss: { color: colors.destructive, ...typography.label },
+  listSpinner: {
+    paddingVertical: spacing.xl,
+  },
   list: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,
