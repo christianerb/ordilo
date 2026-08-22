@@ -210,6 +210,10 @@ export default function AblageScreen() {
   );
   const activeFilterCount =
     Number(filters.status !== "all") + Number(filters.documentType !== "all");
+  // Anything narrowing the list right now — the reason an empty result
+  // means "no matches" and not "the library is empty".
+  const hasActiveFilters =
+    filters.query.trim() !== "" || activeFilterCount > 0;
   const selectedTypeLabel =
     filters.documentType === "all"
       ? "Art"
@@ -259,7 +263,11 @@ export default function AblageScreen() {
         <View style={styles.headerRow}>
           <View style={styles.headerGrow}>
             <ScreenHeader
-              subtitle={documentCountLabel}
+              subtitle={
+                hasActiveFilters && documents.length === 0
+                  ? "Keine Treffer für deine Suche oder Filter"
+                  : documentCountLabel
+              }
               title="Ablage"
             />
           </View>
@@ -327,11 +335,11 @@ export default function AblageScreen() {
             onRetry={() => void loadDocuments()}
             search={filters.query}
           />
-        ) : loading && documents.length === 0 ? (
+        ) : loading && documents.length === 0 && !hasActiveFilters ? (
           <View style={styles.centeredContent}>
             <ActivityIndicator accessibilityLabel="Dokumente werden geladen" color={colors.harborBlue} />
           </View>
-        ) : error && documents.length === 0 ? (
+        ) : error && documents.length === 0 && !hasActiveFilters ? (
           <EmptyState
             icon={AlertCircle}
             heading="Ablage nicht erreichbar"
@@ -339,7 +347,7 @@ export default function AblageScreen() {
           >
             <OrdiloButton onPress={() => void loadDocuments()} size="lg" title="Erneut versuchen" />
           </EmptyState>
-        ) : documents.length > 0 ? (
+        ) : documents.length > 0 || hasActiveFilters ? (
           <>
             <View style={styles.search}>
               <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
@@ -439,7 +447,15 @@ export default function AblageScreen() {
               </View>
             ) : null}
 
-            {visibleDocuments.length > 0 ? (
+            {loading && documents.length === 0 ? (
+              // Filters active, result pending: keep the controls in
+              // place and show progress where the list will appear.
+              <ActivityIndicator
+                accessibilityLabel="Dokumente werden geladen"
+                color={colors.harborBlue}
+                style={styles.listSpinner}
+              />
+            ) : visibleDocuments.length > 0 ? (
               <>
                 <View style={styles.list}>
                   {visibleDocuments.map((document) => (
@@ -1019,6 +1035,9 @@ const styles = StyleSheet.create({
   },
   inlineErrorText: { color: colors.destructive, flex: 1, ...typography.timestamp },
   dismiss: { color: colors.destructive, ...typography.label },
+  listSpinner: {
+    paddingVertical: spacing.xl,
+  },
   list: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,
