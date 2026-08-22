@@ -1,4 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import {
@@ -8,16 +9,21 @@ import {
   Check,
   ChevronRight,
   CircleAlert,
+  Copy,
+  Eye,
+  EyeOff,
   FileText,
   Image as ImageIcon,
+  KeyRound,
   ListChecks,
+  Lock,
   Plus,
   Tag,
   Trash2,
   UserRound,
   WalletCards,
 } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -42,13 +48,20 @@ import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
 import {
   canReviewDocument,
   confirmDocumentReview,
+  deleteDocument,
   documentTypeLabels,
   isImageFile,
   loadDocumentReview,
   loadOriginalFile,
+  parseCredentialFields,
+  revealDocumentSecret,
   type DocumentReview,
   type ReviewAnalysis,
 } from "@/src/lib/document-review";
+import {
+  refreshLibraryDocuments,
+  removeLibraryDocumentOptimistically,
+} from "@/src/lib/library";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 type Icon = typeof Tag;
@@ -63,6 +76,7 @@ export default function DocumentReviewScreen() {
   const [tagDraft, setTagDraft] = useState("");
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -127,6 +141,41 @@ export default function DocumentReviewScreen() {
     }
   };
 
+  const requestDelete = () => {
+    if (!document || !id || deleting) return;
+    Alert.alert(
+      "Dokument löschen?",
+      `"${document.title?.trim() || "Dieses Dokument"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`,
+      [
+        { text: "Abbrechen", style: "cancel" },
+        {
+          text: "Löschen",
+          style: "destructive",
+          onPress: () => void removeDocument(),
+        },
+      ],
+    );
+  };
+
+  const removeDocument = async () => {
+    if (!id) return;
+    setDeleting(true);
+    removeLibraryDocumentOptimistically(id);
+    try {
+      await deleteDocument(id);
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        "Dokument nicht gelöscht",
+        "Bitte prüfe deine Verbindung und versuch es nochmal.",
+      );
+      refreshLibraryDocuments();
+      setDeleting(false);
+    }
+  };
+
   const viewOriginal = async () => {
     if (!id || openingOriginal) return;
     setOpeningOriginal(true);
@@ -169,7 +218,14 @@ export default function DocumentReviewScreen() {
   }
 
   if (!("summary" in document)) {
-    return <UnavailableState document={document} onBack={() => router.replace("/(tabs)")} />;
+    return (
+      <UnavailableState
+        deleting={deleting}
+        document={document}
+        onBack={() => router.replace("/(tabs)")}
+        onDelete={requestDelete}
+      />
+    );
   }
 
   const isReadOnly = document.status === "confirmed";
@@ -197,6 +253,8 @@ export default function DocumentReviewScreen() {
             </Text>
           </View>
         </View>
+
+        <DocumentMetadata document={document} />
 
         <Pressable
           accessibilityHint="Öffnet das gespeicherte Original."
@@ -304,6 +362,13 @@ export default function DocumentReviewScreen() {
           </Section>
         ) : null}
 
+        {isReadOnly && document.document_type === "credentials" ? (
+          <CredentialsSection
+            documentId={id}
+            credentialText={document.credential_text}
+          />
+        ) : null}
+
         <View style={styles.actions}>
           {isReadOnly ? (
             <OrdiloButton title="Zur Übersicht" size="lg" onPress={() => router.replace("/(tabs)")} />
@@ -319,6 +384,22 @@ export default function DocumentReviewScreen() {
               <OrdiloButton title="Später prüfen" variant="ghost" onPress={() => router.replace("/(tabs)")} />
             </>
           )}
+          <Pressable
+            accessibilityLabel="Dokument löschen"
+            accessibilityRole="button"
+            disabled={deleting}
+            onPress={requestDelete}
+            style={({ pressed }) => [
+              styles.deleteDocument,
+              pressed && styles.pressed,
+              deleting && styles.disabled,
+            ]}
+          >
+            {deleting ? <ActivityIndicator color={colors.destructive} size="small" /> : <Trash2 color={colors.destructive} size={18} />}
+            <Text style={styles.deleteDocumentText}>
+              {deleting ? "Dokument wird gelöscht …" : "Dokument löschen"}
+            </Text>
+          </Pressable>
         </View>
       </ScrollView>
 
@@ -338,7 +419,17 @@ function ReviewHeader({ title, onBack }: { title: string; onBack: () => void }) 
   );
 }
 
-function UnavailableState({ document, onBack }: { document: Exclude<DocumentReview, ReviewAnalysis>; onBack: () => void }) {
+function UnavailableState({
+  deleting,
+  document,
+  onBack,
+  onDelete,
+}: {
+  deleting: boolean;
+  document: Exclude<DocumentReview, ReviewAnalysis>;
+  onBack: () => void;
+  onDelete: () => void;
+}) {
   const failed = document.status === "failed";
   const processing = ["uploaded", "ocr_processing", "ocr_done", "analyzing"].includes(document.status);
   return (
@@ -352,6 +443,28 @@ function UnavailableState({ document, onBack }: { document: Exclude<DocumentRevi
           : "Ordilo bereitet das Dokument gerade vor. Schau in einem Moment noch einmal vorbei."}
       >
         <OrdiloButton title="Zur Übersicht" size="lg" onPress={onBack} />
+        {failed ? (
+          <Pressable
+            accessibilityLabel="Fehlgeschlagenes Dokument löschen"
+            accessibilityRole="button"
+            disabled={deleting}
+            onPress={onDelete}
+            style={({ pressed }) => [
+              styles.deleteDocument,
+              pressed && styles.pressed,
+              deleting && styles.disabled,
+            ]}
+          >
+            {deleting ? (
+              <ActivityIndicator color={colors.destructive} size="small" />
+            ) : (
+              <Trash2 color={colors.destructive} size={18} />
+            )}
+            <Text style={styles.deleteDocumentText}>
+              {deleting ? "Dokument wird gelöscht …" : "Dokument löschen"}
+            </Text>
+          </Pressable>
+        ) : null}
       </EmptyState>
     </Screen>
   );
@@ -363,6 +476,189 @@ function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; 
       <SwipePreview imageUrl={imageUrl} onClose={onClose} />
     </Modal>
   );
+}
+
+function DocumentMetadata({ document }: { document: DocumentReview }) {
+  const rows = [
+    { label: "Datei", value: document.original_filename },
+    { label: "Format", value: document.mime_type?.replace(/^application\//, "").toUpperCase() ?? null },
+    { label: "Seiten", value: document.page_count ? `${document.page_count}` : null },
+    { label: "Hinzugefügt", value: formatDetailDate(document.created_at) },
+    ...(document.confirmed_at ? [{ label: "Gespeichert", value: formatDetailDate(document.confirmed_at) }] : []),
+  ].filter((row): row is { label: string; value: string } => Boolean(row.value));
+
+  return (
+    <Card style={styles.metadataCard}>
+      <Text style={styles.sectionHeading}>Details</Text>
+      {rows.map((row) => (
+        <View key={row.label} style={styles.metadataRow}>
+          <Text style={styles.metadataLabel}>{row.label}</Text>
+          <Text numberOfLines={2} style={styles.metadataValue}>{row.value}</Text>
+        </View>
+      ))}
+    </Card>
+  );
+}
+
+function CredentialsSection({
+  credentialText,
+  documentId,
+}: {
+  credentialText: string | null;
+  documentId: string;
+}) {
+  const fields = useMemo(() => parseCredentialFields(credentialText), [credentialText]);
+
+  return (
+    <Card style={styles.card}>
+      <View style={styles.sectionTitle}>
+        <KeyRound color={colors.mistDark} size={18} />
+        <Text style={styles.sectionHeading}>Zugangsdaten</Text>
+      </View>
+      {fields.url ? <CredentialValue label="URL" value={fields.url} /> : null}
+      {fields.username ? <CredentialValue label="Benutzername" value={fields.username} /> : null}
+      <SecretReveal documentId={documentId} />
+    </Card>
+  );
+}
+
+function CredentialValue({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+  }, []);
+
+  const copy = async () => {
+    const success = await Clipboard.setStringAsync(value);
+    if (!success) return;
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 1_500);
+  };
+
+  return (
+    <View style={styles.credentialRow}>
+      <View style={styles.credentialValue}>
+        <Text style={styles.metadataLabel}>{label}</Text>
+        <Text selectable style={styles.value}>{value}</Text>
+      </View>
+      <Pressable accessibilityLabel={`${label} kopieren`} accessibilityRole="button" onPress={() => void copy()} style={styles.iconButton}>
+        {copied ? <Check color={colors.harborBlue} size={18} /> : <Copy color={colors.harborBlue} size={18} />}
+      </Pressable>
+    </View>
+  );
+}
+
+function SecretReveal({ documentId }: { documentId: string }) {
+  const [secret, setSecret] = useState<string | null>(null);
+  const [show, setShow] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clipboardClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedSecretRef = useRef<string | null>(null);
+
+  const clearSecret = useCallback(() => {
+    setSecret(null);
+    setShow(false);
+    setCopied(false);
+  }, []);
+
+  const armSecretExpiry = useCallback(() => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    clearTimer.current = setTimeout(clearSecret, 30_000);
+  }, [clearSecret]);
+
+  useEffect(() => () => {
+    if (clearTimer.current) clearTimeout(clearTimer.current);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    if (clipboardClearTimer.current) clearTimeout(clipboardClearTimer.current);
+    const copiedSecret = copiedSecretRef.current;
+    if (copiedSecret) {
+      void Clipboard.getStringAsync()
+        .then((clipboard) =>
+          clipboard === copiedSecret ? Clipboard.setStringAsync("") : undefined,
+        )
+        .catch(() => undefined);
+    }
+  }, []);
+
+  const reveal = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setSecret(await revealDocumentSecret(documentId));
+      setShow(true);
+      armSecretExpiry();
+    } catch {
+      setError("Passwort konnte nicht geladen werden. Bitte versuch es nochmal.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copy = async () => {
+    if (secret === null) return;
+    const success = await Clipboard.setStringAsync(secret);
+    if (!success) return;
+    copiedSecretRef.current = secret;
+    setCopied(true);
+    armSecretExpiry();
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 1_500);
+    if (clipboardClearTimer.current) clearTimeout(clipboardClearTimer.current);
+    clipboardClearTimer.current = setTimeout(() => {
+      void Clipboard.getStringAsync()
+        .then((clipboard) => clipboard === secret ? Clipboard.setStringAsync("") : undefined)
+        .finally(() => {
+          copiedSecretRef.current = null;
+        })
+        .catch(() => undefined);
+    }, 30_000);
+  };
+
+  return (
+    <View style={styles.secretBox}>
+      <View style={styles.secretHeader}>
+        <View style={styles.sectionTitle}>
+          <Lock color={colors.mistDark} size={17} />
+          <Text style={styles.metadataLabel}>Passwort</Text>
+        </View>
+        <View style={styles.secretActions}>
+          {secret !== null ? (
+            <>
+              <Pressable accessibilityLabel={show ? "Passwort verbergen" : "Passwort anzeigen"} accessibilityRole="button" onPress={() => { setShow((current) => !current); armSecretExpiry(); }} style={styles.iconButton}>
+                {show ? <EyeOff color={colors.mistDark} size={18} /> : <Eye color={colors.mistDark} size={18} />}
+              </Pressable>
+              <Pressable accessibilityLabel="Passwort kopieren" accessibilityRole="button" onPress={() => void copy()} style={styles.iconButton}>
+                {copied ? <Check color={colors.harborBlue} size={18} /> : <Copy color={colors.harborBlue} size={18} />}
+              </Pressable>
+            </>
+          ) : null}
+          <Pressable accessibilityRole="button" disabled={loading} onPress={() => void reveal()} style={({ pressed }) => [styles.revealButton, pressed && styles.pressed, loading && styles.disabled]}>
+            {loading ? <ActivityIndicator color={colors.harborBlue} size="small" /> : <Text style={styles.revealText}>{secret === null ? "Anzeigen" : "Neu laden"}</Text>}
+          </Pressable>
+        </View>
+      </View>
+      {secret !== null && show ? <Text selectable style={styles.secretValue}>{secret}</Text> : null}
+      <Text style={styles.secretHint}>Wird nach 30 Sekunden wieder verborgen.</Text>
+      {error ? <Text accessibilityRole="alert" style={styles.secretError}>{error}</Text> : null}
+    </View>
+  );
+}
+
+function formatDetailDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
 }
 
 function SwipePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose: () => void }) {
@@ -586,6 +882,10 @@ const styles = StyleSheet.create({
   fileIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 48, justifyContent: "center", width: 48 },
   type: { color: colors.graphite, ...typography.title },
   help: { color: colors.mistDark, ...typography.timestamp, marginTop: 2 },
+  metadataCard: { gap: 0 },
+  metadataRow: { alignItems: "baseline", borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.md, minHeight: 38, paddingVertical: spacing.sm },
+  metadataLabel: { color: colors.mistDark, minWidth: 92, ...typography.label },
+  metadataValue: { color: colors.graphite, flex: 1, textAlign: "right", ...typography.timestamp },
   originalButton: { alignItems: "center", backgroundColor: colors.sandLight, borderColor: colors.mistLight, borderRadius: radii.sm, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.sm },
   originalText: { color: colors.harborBlue, flex: 1, ...typography.title },
   pressed: { opacity: 0.76 },
@@ -617,6 +917,19 @@ const styles = StyleSheet.create({
   twoColumns: { flexDirection: "row", gap: spacing.sm },
   half: { flex: 1, gap: spacing.xs },
   actions: { gap: spacing.sm, marginTop: spacing.sm },
+  deleteDocument: { alignItems: "center", alignSelf: "center", flexDirection: "row", gap: spacing.xs, minHeight: 44, paddingHorizontal: spacing.sm },
+  deleteDocumentText: { color: colors.destructive, ...typography.title },
+  credentialRow: { alignItems: "center", borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 52, paddingVertical: spacing.sm },
+  credentialValue: { flex: 1, gap: 2, minWidth: 0 },
+  iconButton: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
+  secretBox: { backgroundColor: colors.sandLight, borderColor: colors.mistLight, borderRadius: radii.sm, borderWidth: 1, gap: spacing.xs, padding: spacing.sm },
+  secretHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  secretActions: { alignItems: "center", flexDirection: "row", gap: 2 },
+  revealButton: { alignItems: "center", borderColor: colors.harborBlue, borderRadius: radii.sm, borderWidth: 1, justifyContent: "center", minHeight: 36, minWidth: 76, paddingHorizontal: spacing.sm },
+  revealText: { color: colors.harborBlue, ...typography.label },
+  secretValue: { backgroundColor: colors.warmWhite, borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, padding: spacing.sm, ...typography.body },
+  secretHint: { color: colors.mistDark, ...typography.label },
+  secretError: { color: colors.destructive, ...typography.label },
   preview: { backgroundColor: colors.warmWhite, flex: 1 },
   previewHeader: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 56, paddingHorizontal: spacing.md },
   previewTitle: { color: colors.graphite, ...typography.title },

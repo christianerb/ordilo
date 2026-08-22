@@ -2,16 +2,21 @@ import {
   buildConfirmDocumentPayload,
   confirmDocumentReview,
   canReviewDocument,
+  deleteDocument,
   documentTypeLabels,
   isImageFile,
   isSafeOriginalFileUrl,
+  parseCredentialFields,
+  revealDocumentSecret,
   type ReviewAnalysis,
 } from "../lib/document-review";
 
 const mockApiFetch = jest.fn();
+const mockApiJson = jest.fn();
 
 jest.mock("../lib/api", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
+  apiJson: (...args: unknown[]) => mockApiJson(...args),
 }));
 jest.mock("../lib/supabase", () => ({
   getSupabase: jest.fn(),
@@ -32,6 +37,12 @@ const analysis: ReviewAnalysis = {
   tags: ["Strom"],
   needs_user_review: false,
   status: "analyzed",
+  created_at: "2026-07-04T12:00:00.000Z",
+  confirmed_at: null,
+  original_filename: "strom.pdf",
+  mime_type: "application/pdf",
+  page_count: 2,
+  credential_text: null,
 };
 
 describe("document review", () => {
@@ -94,5 +105,35 @@ describe("document review", () => {
     expect(isSafeOriginalFileUrl("javascript:alert(1)")).toBe(false);
     expect(isImageFile("image/jpeg")).toBe(true);
     expect(isImageFile("application/pdf")).toBe(false);
+  });
+
+  it("uses the protected routes for intentional secret reveal and deletion", async () => {
+    mockApiJson.mockResolvedValueOnce({ secret: "nur-kurz" });
+    mockApiFetch.mockResolvedValueOnce({ ok: true });
+
+    await expect(revealDocumentSecret("doc-1")).resolves.toBe("nur-kurz");
+    await deleteDocument("doc-1");
+
+    expect(mockApiJson).toHaveBeenCalledWith("/api/documents/doc-1/secret", {
+      method: "POST",
+    });
+    expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/doc-1", {
+      method: "DELETE",
+    });
+  });
+
+  it("extracts only the known credential fields", () => {
+    expect(
+      parseCredentialFields(
+        "- **URL:** https://familie.example\n- **Benutzername:** familie@example.de\n\nNotiz",
+      ),
+    ).toEqual({
+      url: "https://familie.example",
+      username: "familie@example.de",
+    });
+    expect(parseCredentialFields("Zettel am Router")).toEqual({
+      url: null,
+      username: null,
+    });
   });
 });
