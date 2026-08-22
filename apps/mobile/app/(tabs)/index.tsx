@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import {
   CalendarDays,
   Check,
@@ -221,6 +222,9 @@ export default function HeuteScreen() {
       if (!result.success) {
         setTasks(previousTasks);
         setError(result.error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } else if (nextStatus === "done") {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
       setMutatingTaskId(null);
     },
@@ -236,6 +240,7 @@ export default function HeuteScreen() {
         : await dismissInboundSuggestion(suggestion.id);
       if (!result.success) {
         setError(result.error);
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setMutatingSuggestionId(null);
         return;
       }
@@ -248,6 +253,9 @@ export default function HeuteScreen() {
         })),
       );
       await load(true);
+      if (accept) {
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
       setMutatingSuggestionId(null);
     },
     [load, mutatingSuggestionId],

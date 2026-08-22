@@ -21,7 +21,8 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
 
-const PENDING_LOGIN_KEY = "ordilo:pending-login";
+// Expo SecureStore accepts only letters, digits, `.`, `-` and `_` in keys.
+const PENDING_LOGIN_KEY = "ordilo.pending-login";
 const PENDING_LOGIN_MAX_AGE_MS = 15 * 60 * 1000;
 const RESEND_COOLDOWN_SECONDS = 60;
 

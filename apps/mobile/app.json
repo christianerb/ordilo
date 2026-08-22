@@ -10,12 +10,19 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ordilo.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen."
+      },
       "config": {
         "usesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.ordilo.app",
+      "blockedPermissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#FDFCFA",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -34,7 +41,13 @@
           "backgroundColor": "#FDFCFA"
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

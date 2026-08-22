@@ -6,7 +6,10 @@ product
 
 ## Platform
 
-Adaptive, with a native mobile app as a first-class product surface.
+adaptive
+
+The native mobile app is a first-class product surface, iPhone first and
+Android-native by design, rather than a web companion.
 
 - **Web:** Next.js remains the complete desktop and browser experience.
 - **Native app:** Expo/React Native serves iPhone first, then Android, from

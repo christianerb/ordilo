@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import * as Haptics from "expo-haptics";
 import {
   ArrowRight,
   Camera,
@@ -204,6 +205,7 @@ export default function OnboardingScreen() {
           setServerError(result.error);
           return;
         }
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         // Refresh the family state so the app gate sees the completion
         // marker, then land in the app (scan opens on top when chosen).
         await refresh();
