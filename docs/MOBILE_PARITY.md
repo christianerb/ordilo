@@ -24,7 +24,7 @@ eine seiner Zeilen offen ist.
 | C | Sammlungen | Liste, erstellen, bearbeiten, Beziehungen | Sammlungen | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
 | B | Ordilo fragen | Suche, Chat, Streaming, Quellen, Feedback | Suche | Search/Chat API | ✅ | ⬜ | ⬜ | 🟡 |
 | B | Ordilo fragen | KI-Aktionen, Bestätigen/Anpassen/Verwerfen/Undo | Suche | Actions API | ✅ | ⬜ | ⬜ | 🟡 |
-| C | Familienplaner | Aufgaben, Zuständigkeiten, Fälligkeiten, Undo | Plan | Supabase/RPC | 🟡 | ⬜ | ⬜ | 🟡 |
+| C | Familienplaner | Aufgaben, Zuständigkeiten, Fälligkeiten, Undo | Plan | Supabase/RPC | ✅ | ⬜ | ⬜ | 🟡 |
 | C | Familienplaner | Kalender, Wiederholungen, Konflikte, Vorschläge | Plan | Supabase/RPC | ⬜ | ⬜ | ⬜ | ⬜ |
 | C | Familie | Mitglieder, Profile, Fotos, Beziehungen, Timeline | Familie | Supabase/API | 🟡 | ⬜ | ⬜ | 🟡 |
 | C | Familie | Einstellungen, Inbound-Adresse, Kalenderfeed | Familie/Einstellungen | API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
