@@ -4,6 +4,7 @@ import {
   buildNoteUpdatePayload,
   createNote,
   getNoteContent,
+  triggerNoteAnalysis,
   updateConfirmedNote,
 } from "../lib/notes";
 import type { ReviewAnalysis } from "../lib/document-review";
@@ -112,6 +113,16 @@ describe("native notes helpers", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    });
+  });
+
+  it("triggers the direct analyze fallback when the server pipeline is unavailable", async () => {
+    mockApiFetch.mockResolvedValue({} as Response);
+
+    await triggerNoteAnalysis("note-1");
+
+    expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/note-1/analyze", {
+      method: "POST",
     });
   });
 });

@@ -40,7 +40,7 @@ import {
   type DocumentType,
 } from "@/src/lib/document-review";
 import { useFamily } from "@/src/lib/family-context";
-import { createNote } from "@/src/lib/notes";
+import { createNote, triggerNoteAnalysis } from "@/src/lib/notes";
 import {
   filterLibraryDocuments,
   formatDocumentDate,
@@ -220,6 +220,9 @@ export default function AblageScreen() {
   ) => {
     if (!family) throw new Error("Deine Familie konnte nicht geladen werden.");
     const result = await createNote({ ...draft, familyId: family.id });
+    if (!result.server_pipeline) {
+      void triggerNoteAnalysis(result.document_id).catch(() => undefined);
+    }
     void loadDocuments({ refresh: true });
     router.push(`/note/${result.document_id}`);
   }, [family, loadDocuments, router]);
@@ -318,7 +321,11 @@ export default function AblageScreen() {
             onCreate={() => setCreateNoteOpen(true)}
             onLoadMore={loadMore}
             onOpen={(documentId) => router.push(`/note/${documentId}`)}
+            onSearchChange={(query) =>
+              setFilters((current) => ({ ...current, query }))
+            }
             onRetry={() => void loadDocuments()}
+            search={filters.query}
           />
         ) : loading && documents.length === 0 ? (
           <View style={styles.centeredContent}>
@@ -541,6 +548,8 @@ function NotesView({
   onLoadMore,
   onOpen,
   onRetry,
+  onSearchChange,
+  search,
 }: {
   error: string | null;
   hasMore: boolean;
@@ -551,8 +560,9 @@ function NotesView({
   onLoadMore: () => void;
   onOpen: (documentId: string) => void;
   onRetry: () => void;
+  onSearchChange: (query: string) => void;
+  search: string;
 }) {
-  const [search, setSearch] = useState("");
   const visibleNotes = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("de");
     if (!query) return notes;
@@ -602,7 +612,7 @@ function NotesView({
           autoCapitalize="none"
           autoCorrect={false}
           clearButtonMode="while-editing"
-          onChangeText={setSearch}
+          onChangeText={onSearchChange}
           placeholder="Notizen durchsuchen"
           placeholderTextColor={colors.mistDark}
           returnKeyType="search"
