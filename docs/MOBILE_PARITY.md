@@ -21,7 +21,7 @@ eine seiner Zeilen offen ist.
 | A | Ablage | Dokument löschen, Bestätigung, Fehlerzustand | Dokument-Detail | Delete API | ✅ | ⬜ | ⬜ | 🟡 |
 | A | Notizen | Liste, erstellen, bearbeiten, löschen | Ablage/Notizen | Notes API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
 | B | Kontakte | Liste, erstellen, bearbeiten, Aktionen | Ablage/Kontakte | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
-| C | Sammlungen | Liste, erstellen, bearbeiten, Beziehungen | Sammlungen | Supabase/API | ⬜ | ⬜ | ⬜ | ⬜ |
+| C | Sammlungen | Liste, erstellen, bearbeiten, Beziehungen | Sammlungen | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
 | B | Ordilo fragen | Suche, Chat, Streaming, Quellen, Feedback | Suche | Search/Chat API | ⬜ | ⬜ | ⬜ | ⬜ |
 | B | Ordilo fragen | KI-Aktionen, Bestätigen/Anpassen/Verwerfen/Undo | Suche | Actions API | ⬜ | ⬜ | ⬜ | ⬜ |
 | C | Familienplaner | Aufgaben, Zuständigkeiten, Fälligkeiten, Undo | Plan | Supabase/RPC | 🟡 | ⬜ | ⬜ | 🟡 |
