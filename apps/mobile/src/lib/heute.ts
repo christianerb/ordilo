@@ -448,6 +448,22 @@ export function getDatedOpenTasks(tasks: HeuteTask[]): HeuteTask[] {
 }
 
 /**
+ * Tasks without a deadline never compete with a dated priority, but they
+ * still belong in "Als Nächstes". This keeps a just-accepted inbound task
+ * labeled "Ohne Frist" visible after the discovery card disappears.
+ */
+export function getOpenTasksWithoutDueDate(tasks: HeuteTask[]): HeuteTask[] {
+  return tasks
+    .filter(
+      (task) =>
+        task.status === "open" &&
+        task.confirmed &&
+        task.dueDate === null,
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/**
  * The hero promises an immediate next step only for overdue, today, or
  * tomorrow tasks. Farther-out work belongs in "Als Nächstes", not under
  * "Jetzt dran" — identical to the web Home priority chain.

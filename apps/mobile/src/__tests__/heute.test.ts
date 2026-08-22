@@ -7,6 +7,7 @@ import {
   getHomeGreeting,
   getHomePriorityTask,
   getInboundHeadline,
+  getOpenTasksWithoutDueDate,
   getUpcomingEntries,
   mergeJournalDocuments,
   setHeuteTaskStatus,
@@ -123,6 +124,20 @@ describe("Heute pure helpers", () => {
         now,
       )?.title,
     ).toBe("Morgen");
+  });
+
+  it("keeps open tasks without a deadline available for the next list", () => {
+    const undated = getOpenTasksWithoutDueDate([
+      TASK({ id: "undated-old", dueDate: null, createdAt: "2026-08-20T10:00:00Z" }),
+      TASK({ id: "done", dueDate: null, status: "done" }),
+      TASK({ id: "unconfirmed", dueDate: null, confirmed: false }),
+      TASK({ id: "undated-new", dueDate: null, createdAt: "2026-08-21T10:00:00Z" }),
+    ]);
+
+    expect(undated.map((task) => task.id)).toEqual([
+      "undated-new",
+      "undated-old",
+    ]);
   });
 
   it("expands recurring events but respects exceptions", () => {

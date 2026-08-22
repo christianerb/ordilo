@@ -42,6 +42,7 @@ import {
   getHomeGreeting,
   getHomePriorityTask,
   getInboundHeadline,
+  getOpenTasksWithoutDueDate,
   getTodayEvents,
   getTodayTasks,
   getUpcomingEntries,
@@ -117,11 +118,15 @@ export default function HeuteScreen() {
     void Promise.resolve().then(() => load());
   }, [load]);
 
-  // Keep date-derived groups truthful after midnight and when the app comes
-  // back to foreground. The data itself remains fresh via pull-to-refresh.
+  // Refresh both date-derived groups and the bounded event query after
+  // midnight or returning to foreground. Recalculating occurrences alone
+  // cannot reveal events that newly entered the query horizon.
   useEffect(() => {
     let midnightTimer: ReturnType<typeof setTimeout> | null = null;
-    const refreshClock = () => setClock(Date.now());
+    const refreshDashboard = () => {
+      setClock(Date.now());
+      void load(true);
+    };
     const scheduleMidnight = () => {
       const now = new Date();
       const nextMidnight = new Date(
@@ -130,22 +135,26 @@ export default function HeuteScreen() {
         now.getDate() + 1,
       ).getTime();
       midnightTimer = setTimeout(() => {
-        refreshClock();
+        refreshDashboard();
         scheduleMidnight();
       }, nextMidnight - now.getTime() + 100);
     };
     scheduleMidnight();
     const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") refreshClock();
+      if (state === "active") refreshDashboard();
     });
     return () => {
       if (midnightTimer) clearTimeout(midnightTimer);
       subscription.remove();
     };
-  }, []);
+  }, [load]);
 
   const referenceDate = useMemo(() => new Date(clock), [clock]);
   const datedTasks = useMemo(() => getDatedOpenTasks(tasks), [tasks]);
+  const undatedOpenTasks = useMemo(
+    () => getOpenTasksWithoutDueDate(tasks),
+    [tasks],
+  );
   const todayTasks = useMemo(
     () => getTodayTasks(tasks, referenceDate),
     [tasks, referenceDate],
@@ -177,6 +186,7 @@ export default function HeuteScreen() {
 
   const isFirstVisit =
     !datedTasks.length &&
+    !undatedOpenTasks.length &&
     !todayEvents.length &&
     !journalDocuments.length &&
     !discoveries.length;
@@ -186,10 +196,11 @@ export default function HeuteScreen() {
   );
   const nextTasks = useMemo(
     () =>
-      datedTasks
-        .filter((task) => task.id !== heroTask?.id)
-        .slice(0, 3),
-    [datedTasks, heroTask?.id],
+      [
+        ...datedTasks.filter((task) => task.id !== heroTask?.id),
+        ...undatedOpenTasks,
+      ].slice(0, 3),
+    [datedTasks, heroTask?.id, undatedOpenTasks],
   );
 
   const toggleTask = useCallback(
@@ -665,7 +676,9 @@ function TodayTaskRow({
   busy: boolean;
   referenceDate: Date;
 }) {
-  const due = formatDueLabel(task.dueDate, referenceDate);
+  const due =
+    formatDueLabel(task.dueDate, referenceDate) ??
+    { text: "Ohne Frist", overdue: false };
   return (
     <View style={styles.timelineRow}>
       <Pressable
