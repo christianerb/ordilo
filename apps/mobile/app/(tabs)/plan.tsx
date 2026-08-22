@@ -616,7 +616,14 @@ function AssignSheet({
         >
           <View style={styles.handle} />
           <Text style={styles.pickerTitle}>Wer macht das?</Text>
-          {members.map((member) => {
+          {/* Bounded + scrollable: a large family's member rows must stay
+              reachable instead of spilling past the sheet's edge. */}
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.pickerList}
+          >
+            {members.map((member) => {
             const selected = task?.assigned_to === member.id;
             return (
               <Pressable
@@ -663,6 +670,7 @@ function AssignSheet({
               <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
             ) : null}
           </Pressable>
+          </ScrollView>
         </Pressable>
       </Pressable>
     </Modal>
@@ -807,8 +815,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
+    maxHeight: "70%",
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.md,
+  },
+  pickerList: {
+    flexGrow: 0,
+    flexShrink: 1,
   },
   handle: {
     alignSelf: "center",

@@ -96,7 +96,11 @@ export function TaskFormSheet({
     assignedTo !== (initialTask?.assigned_to ?? "");
 
   const requestClose = useCallback(() => {
-    if (!isDirty || submitting) {
+    // A save in flight owns the sheet: closing now would hide a failure
+    // behind the backdrop (or let a late success close a freshly
+    // reopened draft). Close requests wait until the write resolves.
+    if (submitting) return;
+    if (!isDirty) {
       onClose();
       return;
     }
