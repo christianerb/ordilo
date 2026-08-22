@@ -45,6 +45,19 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const UNDO_BANNER_MS = 6000;
 
+/**
+ * An undo write can itself fail (connectivity inside the banner window).
+ * The local revert is then taken back so the list never claims a state
+ * the database does not have — and the user hears about it.
+ */
+function notifyUndoFailed() {
+  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  Alert.alert(
+    "Rückgängig machen hat nicht geklappt",
+    "Deine letzte Änderung bleibt bestehen. Ziehe zum Aktualisieren nach unten.",
+  );
+}
+
 interface UndoState {
   /** Monotonic id so a new action restarts the banner's countdown. */
   id: number;
@@ -163,11 +176,12 @@ export default function PlanScreen() {
       const previous = { status: task.status, completed_at: task.completed_at };
       // Optimistic: the row moves now; the database trigger stamps the
       // authoritative completed_at behind it.
-      replaceTask({
+      const appliedTask: PlannerTask = {
         ...task,
         status: markingDone ? "done" : "open",
         completed_at: markingDone ? new Date().toISOString() : null,
-      });
+      };
+      replaceTask(appliedTask);
       const ok = await patchTask(task.id, {
         status: markingDone ? "done" : "open",
       });
@@ -181,10 +195,14 @@ export default function PlanScreen() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         showUndo("Erledigt", async () => {
           replaceTask({ ...task, ...previous });
-          await patchTask(task.id, {
+          const undoOk = await patchTask(task.id, {
             status: previous.status,
             completed_at: previous.completed_at,
           });
+          if (!undoOk) {
+            replaceTask(appliedTask);
+            notifyUndoFailed();
+          }
         });
       }
     },
@@ -196,7 +214,8 @@ export default function PlanScreen() {
       setAssignTask(null);
       const previousAssignee = task.assigned_to;
       if (previousAssignee === memberId) return;
-      replaceTask({ ...task, assigned_to: memberId });
+      const assignedTask: PlannerTask = { ...task, assigned_to: memberId };
+      replaceTask(assignedTask);
       const ok = await patchTask(task.id, { assigned_to: memberId });
       if (!ok) {
         replaceTask({ ...task, assigned_to: previousAssignee });
@@ -208,7 +227,11 @@ export default function PlanScreen() {
       const name = memberId ? (memberById.get(memberId)?.name ?? "jemandem") : null;
       showUndo(name ? `Jetzt bei ${name}` : "Niemandem zugeordnet", async () => {
         replaceTask({ ...task, assigned_to: previousAssignee });
-        await patchTask(task.id, { assigned_to: previousAssignee });
+        const undoOk = await patchTask(task.id, { assigned_to: previousAssignee });
+        if (!undoOk) {
+          replaceTask(assignedTask);
+          notifyUndoFailed();
+        }
       });
     },
     [memberById, replaceTask, showUndo],
@@ -218,7 +241,8 @@ export default function PlanScreen() {
     async (task: PlannerTask) => {
       setFormOpen(false);
       setEditingTask(null);
-      replaceTask({ ...task, status: "dismissed" });
+      const dismissedTask: PlannerTask = { ...task, status: "dismissed" };
+      replaceTask(dismissedTask);
       const ok = await patchTask(task.id, { status: "dismissed" });
       if (!ok) {
         replaceTask(task);
@@ -228,7 +252,19 @@ export default function PlanScreen() {
       }
       showUndo("Verworfen", async () => {
         replaceTask(task);
-        await patchTask(task.id, { status: "open", due_date: task.due_date });
+        // Restore the exact prior state — a dismissed task can come from
+        // the Erledigt section, so hard-coding "open" would resurrect a
+        // finished task as unfinished (and the trigger would clear its
+        // completed_at).
+        const undoOk = await patchTask(task.id, {
+          status: task.status,
+          due_date: task.due_date,
+          completed_at: task.completed_at,
+        });
+        if (!undoOk) {
+          replaceTask(dismissedTask);
+          notifyUndoFailed();
+        }
       });
     },
     [replaceTask, showUndo],

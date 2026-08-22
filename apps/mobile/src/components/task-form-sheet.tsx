@@ -86,6 +86,30 @@ export function TaskFormSheet({
 
   const isEdit = Boolean(initialTask);
 
+  // Anything typed or changed since the sheet opened. A dirty form never
+  // closes silently — backdrop tap and Android back both ask first, like
+  // the web task-detail flow.
+  const isDirty =
+    title !== (initialTask?.title ?? "") ||
+    description !== (initialTask?.description ?? "") ||
+    dueDate !== (initialTask?.due_date ?? "") ||
+    assignedTo !== (initialTask?.assigned_to ?? "");
+
+  const requestClose = useCallback(() => {
+    if (!isDirty || submitting) {
+      onClose();
+      return;
+    }
+    Alert.alert(
+      "Änderungen verwerfen?",
+      "Deine Eingaben gehen verloren.",
+      [
+        { style: "cancel", text: "Weiter bearbeiten" },
+        { onPress: onClose, style: "destructive", text: "Verwerfen" },
+      ],
+    );
+  }, [isDirty, onClose, submitting]);
+
   const submit = useCallback(async () => {
     // An unchanged date on an existing task may lie in the past (overdue)
     // — that is the task's reality, not a new mistake to reject.
@@ -135,12 +159,12 @@ export function TaskFormSheet({
   return (
     <Modal
       animationType="slide"
-      onRequestClose={onClose}
+      onRequestClose={requestClose}
       presentationStyle="pageSheet"
       transparent
       visible={visible}
     >
-      <Pressable onPress={onClose} style={styles.overlay}>
+      <Pressable onPress={requestClose} style={styles.overlay}>
         <Pressable
           accessibilityViewIsModal
           onPress={(event) => event.stopPropagation()}
