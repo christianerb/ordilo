@@ -48,3 +48,26 @@ export function decideOnReturnToForeground(params: {
     locked: params.lockArmed,
   };
 }
+
+/**
+ * Cold start. The AppState listener only fires on transitions, so without
+ * this decision an enabled lock would never engage when the process
+ * starts fresh (force-quit, iOS eviction) — the persisted session would
+ * be reachable without authentication.
+ */
+export function decideOnColdStart(params: {
+  appLockEnabled: boolean;
+  biometryAvailable: boolean;
+}): { locked: boolean; keepAppLockEnabled: boolean } {
+  if (!params.appLockEnabled) {
+    return { locked: false, keepAppLockEnabled: false };
+  }
+  if (!params.biometryAvailable) {
+    // Hardware or enrolment vanished after the user enabled the lock.
+    // Locking now could brick the app on a device without any passcode,
+    // so the setting is turned off instead — it can be re-enabled in
+    // the settings once biometrics are set up again.
+    return { locked: false, keepAppLockEnabled: false };
+  }
+  return { locked: true, keepAppLockEnabled: true };
+}

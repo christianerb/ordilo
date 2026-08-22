@@ -18,6 +18,7 @@ import { ShieldCheck } from "lucide-react-native";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton } from "@/src/components/ui";
 import {
+  decideOnColdStart,
   decideOnLeaveForeground,
   decideOnReturnToForeground,
 } from "@/src/lib/app-lock-policy";
@@ -89,18 +90,6 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
   const lockArmedRef = useRef(false);
   const authInFlightRef = useRef(false);
 
-  useEffect(() => {
-    void (async () => {
-      const [stored, support] = await Promise.all([
-        loadAppSettings(),
-        getBiometrySupport(),
-      ]);
-      setSettings(stored);
-      setBiometry(support);
-      setHydrated(true);
-    })();
-  }, []);
-
   const unlock = useCallback(async (): Promise<boolean> => {
     if (authInFlightRef.current) return false;
     authInFlightRef.current = true;
@@ -117,6 +106,36 @@ export function AppLockProvider({ children }: { children: ReactNode }) {
       authInFlightRef.current = false;
     }
   }, []);
+
+  useEffect(() => {
+    void (async () => {
+      const [stored, support] = await Promise.all([
+        loadAppSettings(),
+        getBiometrySupport(),
+      ]);
+      // Cold start: no background→active transition ever fires for a
+      // freshly launched process, so an enabled lock must engage here.
+      const cold = decideOnColdStart({
+        appLockEnabled: stored.appLockEnabled,
+        biometryAvailable: support.available,
+      });
+      if (stored.appLockEnabled && !cold.keepAppLockEnabled) {
+        // Biometrics vanished since the user enabled the lock — disable
+        // it rather than risk locking them out of their own device.
+        setSettings(await saveAppSettings({ appLockEnabled: false }));
+      } else {
+        setSettings(stored);
+      }
+      setBiometry(support);
+      setHydrated(true);
+      if (cold.locked) {
+        setLocked(true);
+        // Prompt right away — the system sheet over the lock screen is
+        // the fastest path back into the app.
+        void unlock();
+      }
+    })();
+  }, [unlock]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (next) => {
