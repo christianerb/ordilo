@@ -43,6 +43,7 @@ const SCAN_QUEUE_DIRECTORY = `${FileSystem.documentDirectory}ordilo-scan/`;
 const SCAN_QUEUE_MANIFEST = `${SCAN_QUEUE_DIRECTORY}queue.json`;
 const PIPELINE_POLL_INTERVAL_MS = 1_000;
 const PIPELINE_POLL_ATTEMPTS = 75;
+let pendingQueueCheckpoint: Promise<void> = Promise.resolve();
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -135,16 +136,24 @@ export async function loadPersistedScanQueue(): Promise<PersistedScanQueueItem[]
   }
 }
 
-export async function persistScanQueue(
+export function persistScanQueue(
   queue: PersistedScanQueueItem[],
 ): Promise<void> {
-  await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
-    intermediates: true,
+  // React state can advance faster than the filesystem. Chain every manifest
+  // write so a late I/O completion never restores an older queue snapshot.
+  const checkpoint = pendingQueueCheckpoint.then(async () => {
+    await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
+      intermediates: true,
+    });
+    await FileSystem.writeAsStringAsync(
+      SCAN_QUEUE_MANIFEST,
+      JSON.stringify(queue),
+    );
   });
-  await FileSystem.writeAsStringAsync(
-    SCAN_QUEUE_MANIFEST,
-    JSON.stringify(queue),
-  );
+  // A failed checkpoint reaches its explicit caller while later updates can
+  // still recover and write the newest queue state.
+  pendingQueueCheckpoint = checkpoint.catch(() => undefined);
+  return checkpoint;
 }
 
 const scannedDocumentSchema = z.object({
@@ -227,12 +236,12 @@ export async function uploadScannedDocument(
 export async function continueScannedDocumentPipeline(
   documentId: string,
   startAt: ScanProcessingStep = "ocr",
-  onStep?: (step: ScanProcessingStep) => void,
+  onStep?: (step: ScanProcessingStep) => void | Promise<void>,
 ): Promise<void> {
   if (startAt === "ocr") {
-    onStep?.("ocr");
+    await onStep?.("ocr");
     await postPipelineStep(`/api/documents/${documentId}/ocr`);
   }
-  onStep?.("analysis");
+  await onStep?.("analysis");
   await postPipelineStep(`/api/documents/${documentId}/analyze`);
 }

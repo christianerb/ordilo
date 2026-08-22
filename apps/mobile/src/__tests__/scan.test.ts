@@ -1,8 +1,10 @@
 import { ApiError, apiFetch } from "../lib/api";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   continueScannedDocumentPipeline,
   getScanMimeType,
   MAX_SCAN_FILE_SIZE,
+  persistScanQueue,
   validateScannedDocument,
 } from "../lib/scan";
 
@@ -25,6 +27,13 @@ jest.mock("../lib/supabase", () => ({
     query.eq.mockReturnValue(query);
     return { from: jest.fn(() => query) };
   },
+}));
+
+jest.mock("expo-file-system/legacy", () => ({
+  documentDirectory: "file:///documents/",
+  getInfoAsync: jest.fn(),
+  makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
+  writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
 beforeEach(() => {
@@ -107,5 +116,36 @@ describe("native scan helpers", () => {
     ).rejects.toThrow("Offline");
 
     expect(steps).toEqual(["ocr", "analysis"]);
+  });
+
+  it("serializes queue checkpoints so a later snapshot cannot be overwritten", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    jest.mocked(FileSystem.writeAsStringAsync)
+      .mockReturnValueOnce(firstWrite)
+      .mockResolvedValueOnce(undefined);
+
+    const first = persistScanQueue([]);
+    const second = persistScanQueue([{
+      id: "scan-1",
+      uri: "file:///documents/scan-1.pdf",
+      name: "scan-1.pdf",
+      mimeType: "application/pdf",
+      state: "queued",
+    }]);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalledTimes(1);
+    releaseFirst?.();
+    await Promise.all([first, second]);
+
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalledTimes(2);
+    expect(FileSystem.writeAsStringAsync).toHaveBeenLastCalledWith(
+      "file:///documents/ordilo-scan/queue.json",
+      expect.stringContaining('"id":"scan-1"'),
+    );
   });
 });

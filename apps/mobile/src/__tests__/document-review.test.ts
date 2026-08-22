@@ -7,6 +7,8 @@ import {
   isImageFile,
   isSafeOriginalFileUrl,
   parseCredentialFields,
+  parseStoredContact,
+  reconstructStoredAmount,
   revealDocumentSecret,
   type ReviewAnalysis,
 } from "../lib/document-review";
@@ -134,6 +136,40 @@ describe("document review", () => {
     expect(parseCredentialFields("Zettel am Router")).toEqual({
       url: null,
       username: null,
+    });
+  });
+
+  it("reconstructs stored contacts and typed amount columns for confirmation", () => {
+    expect(parseStoredContact(JSON.stringify({
+      name: "Praxis Dr. Koch",
+      organization: "Kinderarzt",
+      role: "Rezeption",
+      phone: "089 123456",
+      email: "",
+    }), 0.9)).toEqual({
+      name: "Praxis Dr. Koch",
+      organization: "Kinderarzt",
+      role: "Rezeption",
+      phone: "089 123456",
+      email: "",
+      confidence: 0.9,
+    });
+    expect(parseStoredContact("{kaputt", 0.8)).toBeNull();
+    expect(reconstructStoredAmount({
+      entity_value: "88 EUR",
+      normalized_value: "88.00",
+      currency: "EUR",
+      label: "Rechnungsbetrag",
+      amount_kind: "total",
+      value_date: "2026-07-04",
+      confidence: 0.95,
+    })).toEqual({
+      amount: "88.00",
+      currency: "EUR",
+      label: "Rechnungsbetrag",
+      kind: "total",
+      value_date: "2026-07-04",
+      confidence: 0.95,
     });
   });
 });
