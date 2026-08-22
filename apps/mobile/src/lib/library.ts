@@ -105,6 +105,17 @@ export function getLibrarySortOrder(sort: LibrarySort): {
   }
 }
 
+/**
+ * Escapes user text for PostgREST's `or()` filter syntax. The result is
+ * deliberately plain text, never a piece of the filter expression.
+ */
+export function toLibrarySearchPattern(query: string): string {
+  return `%${query
+    .trim()
+    .replace(/[%_]/g, "\\$&")
+    .replace(/[,.()]/g, " ")}%`;
+}
+
 export function getLibraryPageRange(
   page: number,
   pageSize = libraryPageSize,

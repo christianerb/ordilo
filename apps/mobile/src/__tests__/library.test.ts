@@ -3,6 +3,7 @@ import {
   formatDocumentDate,
   getLibraryPageRange,
   getLibrarySortOrder,
+  toLibrarySearchPattern,
   getDocumentStatusGroup,
   getDocumentStatusLabel,
   getDocumentTitle,
@@ -82,6 +83,10 @@ describe("document library helpers", () => {
       column: "title",
       ascending: true,
     });
+  });
+
+  it("turns search text into a single safe PostgREST pattern", () => {
+    expect(toLibrarySearchPattern("  Kita, 100%_  ")).toBe("%Kita  100\\%\\_%");
   });
 
   it("creates inclusive ranges and does not repeat boundary documents", () => {

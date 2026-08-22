@@ -41,6 +41,7 @@ import {
   getDocumentTypeLabel,
   getLibraryPageRange,
   getLibrarySortOrder,
+  toLibrarySearchPattern,
   libraryPageSize,
   librarySortOptions,
   mergeLibraryDocuments,
@@ -100,10 +101,26 @@ export default function AblageScreen() {
         const order = getLibrarySortOrder(sort);
         // The explicit family predicate narrows the library to the resolved
         // family; RLS remains the authority for this anon-key client.
-        const { data, error: queryError } = await getSupabase()
+        let query = getSupabase()
           .from("documents")
           .select(libraryDocumentSelect)
-          .eq("family_id", family.id)
+          .eq("family_id", family.id);
+        if (filters.status === "needs_review") query = query.eq("status", "analyzed");
+        if (filters.status === "confirmed") query = query.eq("status", "confirmed");
+        if (filters.status === "failed") query = query.eq("status", "failed");
+        if (filters.status === "processing") {
+          query = query.in("status", ["uploaded", "ocr_processing", "ocr_done", "analyzing"]);
+        }
+        if (filters.documentType !== "all") {
+          query = query.eq("document_type", filters.documentType);
+        }
+        if (filters.query.trim()) {
+          const pattern = toLibrarySearchPattern(filters.query);
+          query = query.or(
+            `title.ilike.${pattern},original_filename.ilike.${pattern},summary.ilike.${pattern},ocr_text.ilike.${pattern}`,
+          );
+        }
+        const { data, error: queryError } = await query
           .order(order.column, { ascending: order.ascending })
           .range(range.from, range.to);
         if (queryError) throw queryError;
@@ -121,7 +138,7 @@ export default function AblageScreen() {
         setLoadingMore(false);
       }
     },
-    [family, sort],
+    [family, filters, sort],
   );
 
   useFocusEffect(useCallback(() => {

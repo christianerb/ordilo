@@ -218,7 +218,14 @@ export default function DocumentReviewScreen() {
   }
 
   if (!("summary" in document)) {
-    return <UnavailableState document={document} onBack={() => router.replace("/(tabs)")} />;
+    return (
+      <UnavailableState
+        deleting={deleting}
+        document={document}
+        onBack={() => router.replace("/(tabs)")}
+        onDelete={requestDelete}
+      />
+    );
   }
 
   const isReadOnly = document.status === "confirmed";
@@ -412,7 +419,17 @@ function ReviewHeader({ title, onBack }: { title: string; onBack: () => void }) 
   );
 }
 
-function UnavailableState({ document, onBack }: { document: Exclude<DocumentReview, ReviewAnalysis>; onBack: () => void }) {
+function UnavailableState({
+  deleting,
+  document,
+  onBack,
+  onDelete,
+}: {
+  deleting: boolean;
+  document: Exclude<DocumentReview, ReviewAnalysis>;
+  onBack: () => void;
+  onDelete: () => void;
+}) {
   const failed = document.status === "failed";
   const processing = ["uploaded", "ocr_processing", "ocr_done", "analyzing"].includes(document.status);
   return (
@@ -426,6 +443,28 @@ function UnavailableState({ document, onBack }: { document: Exclude<DocumentRevi
           : "Ordilo bereitet das Dokument gerade vor. Schau in einem Moment noch einmal vorbei."}
       >
         <OrdiloButton title="Zur Übersicht" size="lg" onPress={onBack} />
+        {failed ? (
+          <Pressable
+            accessibilityLabel="Fehlgeschlagenes Dokument löschen"
+            accessibilityRole="button"
+            disabled={deleting}
+            onPress={onDelete}
+            style={({ pressed }) => [
+              styles.deleteDocument,
+              pressed && styles.pressed,
+              deleting && styles.disabled,
+            ]}
+          >
+            {deleting ? (
+              <ActivityIndicator color={colors.destructive} size="small" />
+            ) : (
+              <Trash2 color={colors.destructive} size={18} />
+            )}
+            <Text style={styles.deleteDocumentText}>
+              {deleting ? "Dokument wird gelöscht …" : "Dokument löschen"}
+            </Text>
+          </Pressable>
+        ) : null}
       </EmptyState>
     </Screen>
   );
@@ -521,6 +560,7 @@ function SecretReveal({ documentId }: { documentId: string }) {
   const clearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clipboardClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedSecretRef = useRef<string | null>(null);
 
   const clearSecret = useCallback(() => {
     setSecret(null);
@@ -537,6 +577,14 @@ function SecretReveal({ documentId }: { documentId: string }) {
     if (clearTimer.current) clearTimeout(clearTimer.current);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     if (clipboardClearTimer.current) clearTimeout(clipboardClearTimer.current);
+    const copiedSecret = copiedSecretRef.current;
+    if (copiedSecret) {
+      void Clipboard.getStringAsync()
+        .then((clipboard) =>
+          clipboard === copiedSecret ? Clipboard.setStringAsync("") : undefined,
+        )
+        .catch(() => undefined);
+    }
   }, []);
 
   const reveal = async () => {
@@ -557,6 +605,7 @@ function SecretReveal({ documentId }: { documentId: string }) {
     if (secret === null) return;
     const success = await Clipboard.setStringAsync(secret);
     if (!success) return;
+    copiedSecretRef.current = secret;
     setCopied(true);
     armSecretExpiry();
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
@@ -565,6 +614,9 @@ function SecretReveal({ documentId }: { documentId: string }) {
     clipboardClearTimer.current = setTimeout(() => {
       void Clipboard.getStringAsync()
         .then((clipboard) => clipboard === secret ? Clipboard.setStringAsync("") : undefined)
+        .finally(() => {
+          copiedSecretRef.current = null;
+        })
         .catch(() => undefined);
     }, 30_000);
   };
