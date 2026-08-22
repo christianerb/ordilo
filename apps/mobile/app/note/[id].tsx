@@ -16,7 +16,7 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -271,6 +271,18 @@ function SecretSection({ documentId }: { documentId: string }) {
   const [secret, setSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [visible, setVisible] = useState(false);
+  const clipboardExpiry = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const copiedSecret = useRef<string | null>(null);
+
+  useEffect(() => () => {
+    if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
+    const copied = copiedSecret.current;
+    if (copied) {
+      void Clipboard.getStringAsync()
+        .then((value) => value === copied ? Clipboard.setStringAsync("") : undefined)
+        .catch(() => undefined);
+    }
+  }, []);
 
   const reveal = async () => {
     setLoading(true);
@@ -289,6 +301,21 @@ function SecretSection({ documentId }: { documentId: string }) {
     }
   };
 
+  const copy = async () => {
+    if (!secret) return;
+    await Clipboard.setStringAsync(secret);
+    copiedSecret.current = secret;
+    if (clipboardExpiry.current) clearTimeout(clipboardExpiry.current);
+    clipboardExpiry.current = setTimeout(() => {
+      void Clipboard.getStringAsync()
+        .then((value) => value === secret ? Clipboard.setStringAsync("") : undefined)
+        .catch(() => undefined)
+        .finally(() => {
+          copiedSecret.current = null;
+        });
+    }, 30_000);
+  };
+
   return (
     <Card style={styles.card}>
       <View style={styles.secretHeader}>
@@ -301,7 +328,7 @@ function SecretSection({ documentId }: { documentId: string }) {
           <View style={styles.secretActions}>
             <OrdiloButton
               icon={<Copy color={colors.graphite} size={16} />}
-              onPress={() => void Clipboard.setStringAsync(secret)}
+              onPress={() => void copy()}
               title="Kopieren"
               variant="outline"
             />

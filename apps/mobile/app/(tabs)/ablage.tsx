@@ -15,6 +15,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -90,13 +91,19 @@ export default function AblageScreen() {
     status: "all",
     documentType: "all",
   });
+  const requestGeneration = useRef(0);
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
+      const requestId = requestGeneration.current + 1;
+      requestGeneration.current = requestId;
+      const isCurrentRequest = () => requestGeneration.current === requestId;
       if (!family) {
-        setDocuments([]);
-        setHasMore(false);
-        setLoading(false);
+        if (isCurrentRequest()) {
+          setDocuments([]);
+          setHasMore(false);
+          setLoading(false);
+        }
         return;
       }
       if (refresh) setRefreshing(true);
@@ -135,17 +142,23 @@ export default function AblageScreen() {
           .range(range.from, range.to);
         if (queryError) throw queryError;
         const next = (data ?? []) as LibraryDocument[];
-        setDocuments((current) => append ? mergeLibraryDocuments(current, next) : next);
-        setHasMore(next.length === libraryPageSize);
-        setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        if (isCurrentRequest()) {
+          setDocuments((current) => append ? mergeLibraryDocuments(current, next) : next);
+          setHasMore(next.length === libraryPageSize);
+          setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        }
       } catch {
-        setError(
-          "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
-        );
+        if (isCurrentRequest()) {
+          setError(
+            "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
+          );
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        if (isCurrentRequest()) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
     [family, filters, sort, view],
@@ -210,11 +223,15 @@ export default function AblageScreen() {
 
   const switchView = useCallback((nextView: "documents" | "notes") => {
     if (nextView === view) return;
+    // Invalidate the previous source query before replacing the visible
+    // list. A slow Documents response must never populate the Notes view.
+    requestGeneration.current += 1;
     setDocuments([]);
     setError(null);
     setHasMore(false);
     setLoading(true);
     setNextPage(1);
+    setFilters({ query: "", status: "all", documentType: "all" });
     setView(nextView);
   }, [view]);
 
