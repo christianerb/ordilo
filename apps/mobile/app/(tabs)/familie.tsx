@@ -5,6 +5,7 @@ import { Share, StyleSheet, Text, View } from "react-native";
 
 import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
+import { canCreateFamilyInvite } from "@/src/lib/family";
 import { useFamily } from "@/src/lib/family-context";
 import { createFamilyInvite } from "@/src/lib/invites";
 import { useSession } from "@/src/lib/session";
@@ -31,7 +32,7 @@ export default function FamilieScreen() {
   const [copied, setCopied] = useState(false);
 
   const handleInvite = useCallback(async () => {
-    if (creating || !family) return;
+    if (creating || !family || !canCreateFamilyInvite(family)) return;
     setCreating(true);
     setInviteError(null);
 
@@ -70,7 +71,7 @@ export default function FamilieScreen() {
     <Screen>
       <ScreenHeader title="Familie" subtitle="Mitglieder und Einstellungen" />
 
-      {family ? (
+      {canCreateFamilyInvite(family) ? (
         <Card style={styles.inviteCard}>
           <View style={styles.inviteHeader}>
             <View style={styles.inviteHeaderText}>

@@ -47,6 +47,13 @@ export function needsWelcomeIntro(family: ResolvedFamily | null): boolean {
   return !family.introSeenAt;
 }
 
+/** Only the person who created the family can issue an invitation. */
+export function canCreateFamilyInvite(
+  family: Pick<ResolvedFamily, "isOwner"> | null,
+): boolean {
+  return family?.isOwner === true;
+}
+
 /**
  * Resolve the signed-in user's family deterministically.
  *
