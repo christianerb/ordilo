@@ -1,7 +1,8 @@
 import * as Clipboard from "expo-clipboard";
-import { Check, Copy, UserPlus, Users } from "lucide-react-native";
+import { useFocusEffect } from "expo-router";
+import { AlertCircle, Check, Copy, UserPlus, Users } from "lucide-react-native";
 import { useCallback, useState } from "react";
-import { Share, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Share, StyleSheet, Text, View } from "react-native";
 
 import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
@@ -9,6 +10,10 @@ import { canCreateFamilyInvite } from "@/src/lib/family";
 import { useFamily } from "@/src/lib/family-context";
 import { createFamilyInvite } from "@/src/lib/invites";
 import { useSession } from "@/src/lib/session";
+import {
+  fetchFamilyMembers,
+  type FamilyMemberOption,
+} from "@/src/lib/tasks";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -30,6 +35,34 @@ export default function FamilieScreen() {
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [members, setMembers] = useState<FamilyMemberOption[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [membersError, setMembersError] = useState<string | null>(null);
+
+  const loadMembers = useCallback(async () => {
+    if (!family) {
+      setMembers([]);
+      setLoadingMembers(false);
+      return;
+    }
+    setLoadingMembers(true);
+    setMembersError(null);
+    try {
+      setMembers(await fetchFamilyMembers(family.id));
+    } catch {
+      setMembersError(
+        "Deine Familie konnte nicht geladen werden. Bitte versuch es nochmal.",
+      );
+    } finally {
+      setLoadingMembers(false);
+    }
+  }, [family]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadMembers();
+    }, [loadMembers]),
+  );
 
   const handleInvite = useCallback(async () => {
     if (creating || !family || !canCreateFamilyInvite(family)) return;
@@ -70,6 +103,64 @@ export default function FamilieScreen() {
   return (
     <Screen>
       <ScreenHeader title="Familie" subtitle="Mitglieder und Einstellungen" />
+
+      {loadingMembers ? (
+        <Card style={styles.membersLoading}>
+          <ActivityIndicator
+            accessibilityLabel="Familienmitglieder werden geladen"
+            color={colors.harborBlue}
+          />
+        </Card>
+      ) : membersError ? (
+        <EmptyState
+          icon={AlertCircle}
+          heading="Familie nicht erreichbar"
+          description={membersError}
+        >
+          <OrdiloButton onPress={() => void loadMembers()} size="lg" title="Erneut versuchen" />
+        </EmptyState>
+      ) : members.length > 0 ? (
+        <Card style={styles.membersCard}>
+          <View style={styles.membersHeader}>
+            <Text style={[typography.display, styles.membersTitle]}>
+              Deine Familie
+            </Text>
+            <Text style={[typography.timestamp, styles.membersCount]}>
+              {members.length}
+            </Text>
+          </View>
+          <View style={styles.membersList}>
+            {members.map((member) => (
+              <View key={member.id} style={styles.memberRow}>
+                <View
+                  style={[
+                    styles.memberAvatar,
+                    { backgroundColor: member.avatar_color ?? colors.sandLight },
+                  ]}
+                >
+                  <Text style={styles.memberInitial}>
+                    {member.name.trim().charAt(0).toUpperCase() || "?"}
+                  </Text>
+                </View>
+                <View style={styles.memberText}>
+                  <Text style={[typography.title, styles.memberName]}>
+                    {member.name}
+                  </Text>
+                  <Text style={[typography.timestamp, styles.memberRole]}>
+                    {member.role || "Familienmitglied"}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </Card>
+      ) : (
+        <EmptyState
+          icon={Users}
+          heading="Noch niemand dabei"
+          description="Lade deine Familie mit einem Link ein."
+        />
+      )}
 
       {canCreateFamilyInvite(family) ? (
         <Card style={styles.inviteCard}>
@@ -153,11 +244,6 @@ export default function FamilieScreen() {
           onPress={() => void signOut()}
         />
       </Card>
-      <EmptyState
-        icon={Users}
-        heading="Hier entsteht deine Familie"
-        description="Mitglieder und Zuständigkeiten folgen als Nächstes."
-      />
     </Screen>
   );
 }
@@ -199,6 +285,57 @@ const styles = StyleSheet.create({
     fontFamily: typography.timestamp.fontFamily,
     fontSize: typography.timestamp.fontSize,
     fontWeight: "500",
+  },
+  membersCard: { gap: spacing.sm },
+  membersLoading: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 92,
+  },
+  membersHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  membersTitle: {
+    color: colors.graphite,
+    flex: 1,
+  },
+  membersCount: {
+    color: colors.mistDark,
+  },
+  membersList: {
+    gap: spacing.sm,
+  },
+  memberRow: {
+    alignItems: "center",
+    borderTopColor: colors.mistLight,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 52,
+    paddingTop: spacing.sm,
+  },
+  memberAvatar: {
+    alignItems: "center",
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  memberInitial: {
+    color: colors.warmWhite,
+    ...typography.title,
+  },
+  memberText: {
+    flex: 1,
+    gap: 1,
+  },
+  memberName: {
+    color: colors.graphite,
+  },
+  memberRole: {
+    color: colors.mistDark,
   },
   accountCard: {
     alignItems: "center",
