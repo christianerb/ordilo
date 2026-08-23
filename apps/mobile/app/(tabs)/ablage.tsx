@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronDown,
+  Ellipsis,
   FileText,
   FolderOpen,
   NotebookPen,
@@ -82,6 +83,7 @@ export default function AblageScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [quickNavOpen, setQuickNavOpen] = useState(false);
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
   const [view, setView] = useState<"documents" | "notes">("documents");
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
@@ -261,46 +263,22 @@ export default function AblageScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <View style={styles.headerGrow}>
-            <ScreenHeader
-              subtitle={
-                hasActiveFilters && documents.length === 0
-                  ? "Keine Treffer für deine Suche oder Filter"
-                  : documentCountLabel
-              }
-              title="Ablage"
-            />
-          </View>
+          <ScreenHeader
+            subtitle={
+              hasActiveFilters && documents.length === 0
+                ? "Keine Treffer für deine Suche oder Filter"
+                : documentCountLabel
+            }
+            title="Ablage"
+          />
           <Pressable
-            accessibilityHint="Öffnet den Chat mit Ordilo"
-            accessibilityLabel="Ordilo fragen"
+            accessibilityHint="Öffnet Fragen, Kontakte und Sammlungen"
+            accessibilityLabel="Weitere Bereiche"
             accessibilityRole="button"
-            onPress={() => router.push("/suche")}
-            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
+            onPress={() => setQuickNavOpen(true)}
+            style={({ pressed }) => [styles.headerMenu, pressed && styles.pressed]}
           >
-            <Sparkles color={colors.harborBlue} size={16} strokeWidth={1.8} />
-            <Text style={styles.contactsLinkText}>Fragen</Text>
-          </Pressable>
-          <Pressable
-            accessibilityHint="Öffnet das Familien-Adressbuch"
-            accessibilityLabel="Kontakte"
-            accessibilityRole="button"
-            onPress={() => router.push("/contacts")}
-            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
-          >
-            <Users color={colors.harborBlue} size={16} strokeWidth={1.8} />
-            <Text style={styles.contactsLinkText}>Kontakte</Text>
-          </Pressable>
-          {/* Entry to Sammlungen (Agent C) — same compact link pattern as Kontakte. */}
-          <Pressable
-            accessibilityHint="Öffnet die Sammlungen"
-            accessibilityLabel="Sammlungen"
-            accessibilityRole="button"
-            onPress={() => router.push("/sammlungen")}
-            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
-          >
-            <FolderOpen color={colors.harborBlue} size={16} strokeWidth={1.8} />
-            <Text style={styles.contactsLinkText}>Sammlungen</Text>
+            <Ellipsis color={colors.harborBlue} size={22} strokeWidth={2} />
           </Pressable>
         </View>
 
@@ -517,6 +495,14 @@ export default function AblageScreen() {
         selected={sort}
         visible={sortPickerOpen}
       />
+      <QuickNavigationSheet
+        onClose={() => setQuickNavOpen(false)}
+        onNavigate={(route) => {
+          setQuickNavOpen(false);
+          router.push(route);
+        }}
+        visible={quickNavOpen}
+      />
       <NoteFormSheet
         onClose={() => setCreateNoteOpen(false)}
         onSubmit={createNewNote}
@@ -550,6 +536,83 @@ function SegmentButton({
     >
       <Icon color={selected ? colors.warmWhite : colors.mistDark} size={17} />
       <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function QuickNavigationSheet({
+  onClose,
+  onNavigate,
+  visible,
+}: {
+  onClose: () => void;
+  onNavigate: (route: "/suche" | "/contacts" | "/sammlungen") => void;
+  visible: boolean;
+}) {
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      transparent
+      visible={visible}
+    >
+      <Pressable onPress={onClose} style={styles.modalOverlay}>
+        <Pressable
+          accessibilityViewIsModal
+          onPress={(event) => event.stopPropagation()}
+          style={styles.quickNavSheet}
+        >
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Mehr in Ordilo</Text>
+          <QuickNavigationOption
+            description="Stell Ordilo eine Frage zu deiner Ablage."
+            icon={Sparkles}
+            label="Ordilo fragen"
+            onPress={() => onNavigate("/suche")}
+          />
+          <QuickNavigationOption
+            description="Adressen und wichtige Personen."
+            icon={Users}
+            label="Kontakte"
+            onPress={() => onNavigate("/contacts")}
+          />
+          <QuickNavigationOption
+            description="Dokumente nach Themen zusammenhalten."
+            icon={FolderOpen}
+            label="Sammlungen"
+            onPress={() => onNavigate("/sammlungen")}
+          />
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function QuickNavigationOption({
+  description,
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  description: string;
+  icon: typeof Users;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.quickNavOption, pressed && styles.pressed]}
+    >
+      <View style={styles.quickNavIcon}>
+        <Icon color={colors.harborBlue} size={19} strokeWidth={1.8} />
+      </View>
+      <View style={styles.quickNavCopy}>
+        <Text style={styles.quickNavLabel}>{label}</Text>
+        <Text style={styles.quickNavDescription}>{description}</Text>
+      </View>
     </Pressable>
   );
 }
@@ -832,7 +895,7 @@ function DocumentTypePicker({
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={visible}
     >
@@ -904,7 +967,7 @@ function SortPicker({
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={visible}
     >
@@ -935,28 +998,25 @@ const styles = StyleSheet.create({
   centeredContent: { alignItems: "center", minHeight: 240, justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
   headerRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  headerGrow: { flex: 1 },
-  contactsLink: {
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  headerMenu: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
     borderColor: colors.mistLight,
     borderRadius: radii.sm,
     borderWidth: 1,
-    flexDirection: "row",
-    gap: 6,
-    marginTop: spacing.md,
     minHeight: 44,
-    paddingHorizontal: 12,
+    justifyContent: "center",
+    width: 44,
   },
-  contactsLinkText: { color: colors.harborBlue, ...typography.label },
   segmented: {
-    backgroundColor: colors.sandLight,
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
     borderRadius: radii.sm,
+    borderWidth: 1,
     flexDirection: "row",
     padding: spacing.xs,
   },
@@ -1105,6 +1165,33 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
   },
+  quickNavSheet: {
+    backgroundColor: colors.warmWhite,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  quickNavOption: {
+    alignItems: "center",
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 72,
+    paddingVertical: spacing.sm,
+  },
+  quickNavIcon: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.sm,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  quickNavCopy: { flex: 1, gap: 2 },
+  quickNavLabel: { color: colors.graphite, ...typography.title },
+  quickNavDescription: { color: colors.mistDark, ...typography.timestamp },
   sheetHandle: {
     alignSelf: "center",
     backgroundColor: colors.mistLight,

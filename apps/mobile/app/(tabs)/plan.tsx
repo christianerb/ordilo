@@ -450,9 +450,10 @@ export default function PlanScreen() {
                   ) : null}
                 </Pressable>
                 <View style={styles.sectionBody}>
-                  {shown.map((task) => (
+                  {shown.map((task, index) => (
                     <TaskRow
                       key={task.id}
+                      last={index === shown.length - 1}
                       member={task.assigned_to ? memberById.get(task.assigned_to) : undefined}
                       onAssign={() => setAssignTask(task)}
                       onPress={() => openEdit(task)}
@@ -607,65 +608,67 @@ function CalendarView({
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.calendarContent}
     >
-      <View style={styles.monthHeader}>
-        <Pressable
-          accessibilityLabel="Vorheriger Monat"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => {
-            const previous = shiftMonth(activeMonth, -1);
-            onChangeMonth(previous);
-            onSelectDate(previous);
-          }}
-          style={styles.monthButton}
-        >
-          <ChevronLeft color={colors.harborBlue} size={20} />
-        </Pressable>
-        <Text style={styles.monthTitle}>{monthTitle}</Text>
-        <Pressable
-          accessibilityLabel="Nächster Monat"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => {
-            const next = shiftMonth(activeMonth, 1);
-            onChangeMonth(next);
-            onSelectDate(next);
-          }}
-          style={styles.monthButton}
-        >
-          <ChevronRight color={colors.harborBlue} size={20} />
-        </Pressable>
-      </View>
-      <View style={styles.weekdayRow}>
-        {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
-          <Text key={day} style={styles.weekdayLabel}>{day}</Text>
-        ))}
-      </View>
-      <View style={styles.monthGrid}>
-        {days.map((day) => {
-          const inMonth = day.getMonth() === activeMonth.getMonth();
-          const selected = toCalendarDate(day) === toCalendarDate(selectedDate);
-          const hasEvents = eventsForDay(allEvents, day).length > 0;
-          return (
-            <Pressable
-              accessibilityLabel={`${day.getDate()}. ${monthTitle}`}
-              accessibilityRole="button"
-              accessibilityState={{ selected }}
-              key={toCalendarDate(day)}
-              onPress={() => onSelectDate(day)}
-              style={[
-                styles.dayButton,
-                !inMonth && styles.dayButtonOutside,
-                selected && styles.dayButtonSelected,
-              ]}
-            >
-              <Text style={[styles.dayLabel, !inMonth && styles.dayLabelOutside, selected && styles.dayLabelSelected]}>
-                {day.getDate()}
-              </Text>
-              {hasEvents ? <View style={[styles.eventDot, selected && styles.eventDotSelected]} /> : null}
-            </Pressable>
-          );
-        })}
+      <View style={styles.calendarSurface}>
+        <View style={styles.monthHeader}>
+          <Pressable
+            accessibilityLabel="Vorheriger Monat"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              const previous = shiftMonth(activeMonth, -1);
+              onChangeMonth(previous);
+              onSelectDate(previous);
+            }}
+            style={styles.monthButton}
+          >
+            <ChevronLeft color={colors.harborBlue} size={20} />
+          </Pressable>
+          <Text style={styles.monthTitle}>{monthTitle}</Text>
+          <Pressable
+            accessibilityLabel="Nächster Monat"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              const next = shiftMonth(activeMonth, 1);
+              onChangeMonth(next);
+              onSelectDate(next);
+            }}
+            style={styles.monthButton}
+          >
+            <ChevronRight color={colors.harborBlue} size={20} />
+          </Pressable>
+        </View>
+        <View style={styles.weekdayRow}>
+          {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
+            <Text key={day} style={styles.weekdayLabel}>{day}</Text>
+          ))}
+        </View>
+        <View style={styles.monthGrid}>
+          {days.map((day) => {
+            const inMonth = day.getMonth() === activeMonth.getMonth();
+            const selected = toCalendarDate(day) === toCalendarDate(selectedDate);
+            const hasEvents = eventsForDay(allEvents, day).length > 0;
+            return (
+              <Pressable
+                accessibilityLabel={`${day.getDate()}. ${monthTitle}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                key={toCalendarDate(day)}
+                onPress={() => onSelectDate(day)}
+                style={[
+                  styles.dayButton,
+                  !inMonth && styles.dayButtonOutside,
+                  selected && styles.dayButtonSelected,
+                ]}
+              >
+                <Text style={[styles.dayLabel, !inMonth && styles.dayLabelOutside, selected && styles.dayLabelSelected]}>
+                  {day.getDate()}
+                </Text>
+                {hasEvents ? <View style={[styles.eventDot, selected && styles.eventDotSelected]} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
       </View>
 
       <View style={styles.dayEventsHeader}>
@@ -704,6 +707,7 @@ function CalendarView({
  * the row that is late, never as a red section.
  */
 function TaskRow({
+  last,
   member,
   onAssign,
   onPress,
@@ -711,6 +715,7 @@ function TaskRow({
   task,
   todayStr,
 }: {
+  last: boolean;
   member: FamilyMemberOption | undefined;
   onAssign: () => void;
   onPress: () => void;
@@ -723,7 +728,7 @@ function TaskRow({
   const dueLabel = overdue ?? formatTaskDueLabel(task.due_date, todayStr);
 
   return (
-    <View style={styles.taskRow}>
+    <View style={[styles.taskRow, last && styles.taskRowLast]}>
       <Pressable
         accessibilityLabel={done ? `${task.title} wieder öffnen` : `${task.title} erledigen`}
         accessibilityRole="checkbox"
@@ -803,7 +808,7 @@ function AssignSheet({
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={task !== null}
     >
@@ -911,8 +916,10 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   viewTabs: {
-    backgroundColor: colors.sandLight,
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
     borderRadius: radii.sm,
+    borderWidth: 1,
     flexDirection: "row",
     marginBottom: spacing.md,
     padding: spacing.xs,
@@ -937,7 +944,15 @@ const styles = StyleSheet.create({
     color: colors.warmWhite,
   },
   calendarContent: {
+    gap: spacing.lg,
     paddingBottom: spacing["2xl"],
+  },
+  calendarSurface: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.sm,
   },
   monthHeader: {
     alignItems: "center",
@@ -970,7 +985,6 @@ const styles = StyleSheet.create({
   monthGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    marginBottom: spacing.lg,
   },
   dayButton: {
     alignItems: "center",
@@ -1077,7 +1091,11 @@ const styles = StyleSheet.create({
     ...typography.timestamp,
   },
   sectionBody: {
-    gap: spacing.sm,
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    overflow: "hidden",
   },
   moreButton: {
     alignSelf: "flex-start",
@@ -1094,13 +1112,14 @@ const styles = StyleSheet.create({
   },
   taskRow: {
     alignItems: "center",
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: 1,
     flexDirection: "row",
     gap: 10,
     padding: 12,
+  },
+  taskRowLast: {
+    borderBottomWidth: 0,
   },
   checkbox: {
     alignItems: "center",
