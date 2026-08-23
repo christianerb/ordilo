@@ -24,8 +24,7 @@ import {
 } from "react-native";
 
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
-import { EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
-import { OrdiloMark } from "@/src/components/ordilo-mark";
+import { EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import {
   calendarDays,
   eventsForDay,
@@ -545,27 +544,20 @@ export default function PlanScreen() {
 /** Screen header: title, calm subtitle, and the one primary action. */
 function PlanHeader({ onCreate }: { onCreate: () => void }) {
   return (
-    <View style={styles.header}>
-      <View accessible={false} style={[styles.headerDot, styles.headerDotBlue]} />
-      <View accessible={false} style={[styles.headerDot, styles.headerDotApricot]} />
-      <View style={styles.headerText}>
-        <Text style={[typography.display, styles.headerTitle]}>Plan</Text>
-        <Text style={[typography.timestamp, styles.headerSubtitle]}>
-          Gemeinsam den Alltag im Blick
-        </Text>
-      </View>
-      <View accessible={false} style={styles.headerMark}>
-        <OrdiloMark size={42} />
-      </View>
-      <Pressable
-        accessibilityLabel="Neue Aufgabe anlegen"
-        accessibilityRole="button"
-        onPress={onCreate}
-        style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
-      >
-        <Plus color={colors.warmWhite} size={22} strokeWidth={2.2} />
-      </Pressable>
-    </View>
+    <ScreenHeader
+      subtitle="Gemeinsam den Alltag im Blick"
+      title="Plan"
+      trailing={(
+        <Pressable
+          accessibilityLabel="Neue Aufgabe anlegen"
+          accessibilityRole="button"
+          onPress={onCreate}
+          style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
+        >
+          <Plus color={colors.warmWhite} size={22} strokeWidth={2.2} />
+        </Pressable>
+      )}
+    />
   );
 }
 
@@ -907,55 +899,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-  },
-  header: {
-    alignItems: "center",
-    backgroundColor: colors.washSage,
-    borderRadius: radii.md,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: spacing.md,
-    minHeight: 90,
-    overflow: "hidden",
-    paddingHorizontal: spacing.md,
-    position: "relative",
-  },
-  headerText: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  headerTitle: {
-    color: colors.graphite,
-  },
-  headerSubtitle: {
-    color: colors.harborBlueDarker,
-  },
-  headerMark: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
-    height: 52,
-    justifyContent: "center",
-    marginRight: spacing.sm,
-    width: 52,
-  },
-  headerDot: {
-    borderRadius: radii.pill,
-    position: "absolute",
-  },
-  headerDotBlue: {
-    backgroundColor: colors.washBlue,
-    height: 48,
-    right: 58,
-    top: -22,
-    width: 48,
-  },
-  headerDotApricot: {
-    backgroundColor: colors.washApricot,
-    bottom: -16,
-    height: 38,
-    left: 30,
-    width: 38,
   },
   addButton: {
     alignItems: "center",

@@ -34,9 +34,8 @@ import {
   View,
 } from "react-native";
 
-import { EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
-import { OrdiloMark } from "@/src/components/ordilo-mark";
 import {
   documentTypeLabels,
   type DocumentType,
@@ -265,26 +264,14 @@ export default function AblageScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerRow}>
-          <View style={styles.headerCopy}>
-            <Text style={styles.headerTitle}>Ablage</Text>
-            <Text style={styles.headerSubtitle}>
-              {hasActiveFilters && documents.length === 0
-                ? "Keine Treffer für deine Suche oder Filter"
-                : documentCountLabel}
-            </Text>
-          </View>
-          <View style={styles.headerActions}>
-            <View
-              accessibilityLabel={documentCountLabel}
-              accessibilityRole="text"
-              style={styles.recordCount}
-            >
-              <BookOpen color={colors.harborBlue} size={16} strokeWidth={1.8} />
-              <Text style={styles.recordCountLabel}>
-                {documents.length}{hasMore ? "+" : ""}
-              </Text>
-            </View>
+        <ScreenHeader
+          subtitle={
+            hasActiveFilters && documents.length === 0
+              ? "Keine Treffer für deine Suche oder Filter"
+              : documentCountLabel
+          }
+          title="Ablage"
+          trailing={(
             <Pressable
               accessibilityHint="Öffnet Fragen, Kontakte und Sammlungen"
               accessibilityLabel="Weitere Bereiche"
@@ -294,22 +281,8 @@ export default function AblageScreen() {
             >
               <Ellipsis color={colors.harborBlue} size={22} strokeWidth={2} />
             </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.archiveWelcome}>
-          <View accessible={false} style={[styles.welcomeDot, styles.welcomeDotBlue]} />
-          <View accessible={false} style={[styles.welcomeDot, styles.welcomeDotApricot]} />
-          <View style={styles.archiveWelcomeCopy}>
-            <Text style={styles.archiveWelcomeTitle}>Euer Familienarchiv</Text>
-            <Text style={styles.archiveWelcomeText}>
-              Alles Wichtige ist an einem Ort und bleibt für euch auffindbar.
-            </Text>
-          </View>
-          <View accessible={false} style={styles.archiveMark}>
-            <OrdiloMark size={52} />
-          </View>
-        </View>
+          )}
+        />
 
         <View style={styles.segmented}>
           <SegmentButton
@@ -1026,68 +999,6 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   centeredContent: { alignItems: "center", minHeight: 240, justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  headerRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingBottom: spacing.sm,
-    paddingTop: spacing.md,
-  },
-  headerCopy: { flex: 1, gap: spacing.xs },
-  headerTitle: { color: colors.graphite, ...typography.display },
-  headerSubtitle: { color: colors.mistDark, ...typography.timestamp },
-  headerActions: { alignItems: "center", flexDirection: "row", gap: spacing.xs },
-  recordCount: {
-    alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: radii.pill,
-    flexDirection: "row",
-    gap: 5,
-    height: 36,
-    justifyContent: "center",
-    minWidth: 44,
-    paddingHorizontal: 10,
-  },
-  recordCountLabel: { color: colors.harborBlue, ...typography.label },
-  archiveWelcome: {
-    alignItems: "center",
-    backgroundColor: colors.washSage,
-    borderRadius: radii.md,
-    flexDirection: "row",
-    minHeight: 102,
-    overflow: "hidden",
-    paddingHorizontal: spacing.md,
-    position: "relative",
-  },
-  archiveWelcomeCopy: { flex: 1, gap: spacing.xs, paddingRight: spacing.sm },
-  archiveWelcomeTitle: { color: colors.harborBlueDarker, ...typography.headline },
-  archiveWelcomeText: { color: colors.harborBlueDarker, ...typography.timestamp },
-  archiveMark: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
-    height: 64,
-    justifyContent: "center",
-    width: 64,
-  },
-  welcomeDot: {
-    borderRadius: radii.pill,
-    position: "absolute",
-  },
-  welcomeDotBlue: {
-    backgroundColor: colors.washBlue,
-    height: 54,
-    right: 44,
-    top: -29,
-    width: 54,
-  },
-  welcomeDotApricot: {
-    backgroundColor: colors.washApricot,
-    bottom: -20,
-    height: 40,
-    right: 0,
-    width: 40,
-  },
   headerMenu: {
     alignItems: "center",
     backgroundColor: colors.sand,

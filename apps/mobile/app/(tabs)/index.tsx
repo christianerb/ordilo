@@ -31,7 +31,7 @@ import {
 } from "react-native";
 
 import { PressableScale } from "@/src/components/motion";
-import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
 import {
   acceptInboundSuggestion,
@@ -309,7 +309,10 @@ export default function HeuteScreen() {
 
   return (
     <Screen>
-      <View style={styles.topBar}>
+      <ScreenHeader
+        subtitle="Was für euch gerade zählt"
+        title="Heute"
+        trailing={(
         <PressableScale
           accessibilityLabel="Einstellungen öffnen"
           contentStyle={styles.settingsButton}
@@ -317,7 +320,8 @@ export default function HeuteScreen() {
         >
           <Settings color={colors.mistDark} size={20} strokeWidth={1.75} />
         </PressableScale>
-      </View>
+        )}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -884,9 +888,6 @@ function getDocumentStatusLabel(status: string): string {
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
-  topBar: {
-    alignItems: "flex-end",
-  },
   settingsButton: {
     alignItems: "center",
     height: 44,
