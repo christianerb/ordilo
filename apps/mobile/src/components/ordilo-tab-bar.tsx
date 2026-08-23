@@ -5,9 +5,11 @@ import {
   CalendarDays,
   House,
   ScanLine,
+  Sparkles,
   Users,
 } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -22,9 +24,9 @@ const tabConfig = {
 } as const;
 
 /**
- * Ordilo's persistent mobile dock mirrors the desktop/mobile composer:
- * asking Ordilo is a first-class path from every family moment, while the
- * five bottom destinations remain familiar, thumb-reachable navigation.
+ * A floating, thumb-reachable family dock. Ordilo is the central action
+ * anchor, not another destination: tapping the large mark opens the two
+ * meaningful family actions, asking Ordilo or capturing a document.
  */
 export function OrdiloTabBar({
   navigation,
@@ -32,148 +34,178 @@ export function OrdiloTabBar({
 }: BottomTabBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const [actionsOpen, setActionsOpen] = useState(false);
 
   return (
-    <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
-      <View style={styles.dockRow}>
-        <Pressable
-          accessibilityHint="Öffnet den Ordilo-Chat"
-          accessibilityLabel="Frage Ordilo"
-          accessibilityRole="button"
-          onPress={() => {
-            haptics.tap();
-            router.push("/suche");
-          }}
-          style={({ pressed }) => [styles.askBar, pressed && styles.pressed]}
-        >
-          <View accessible={false} style={styles.mark}>
-            <OrdiloMark size={25} />
-          </View>
-          <Text numberOfLines={1} style={styles.askLabel}>
-            Frage Ordilo
-          </Text>
-        </Pressable>
+    <>
+      <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+        <View style={styles.dockBar}>
+          {state.routes.map((route, index) => {
+            if (route.name === "scan-action") {
+              return (
+                <View key={route.key} style={styles.ordiloSlot}>
+                  <Pressable
+                    accessibilityHint="Öffnet Ordilo-Aktionen"
+                    accessibilityLabel="Ordilo"
+                    accessibilityRole="button"
+                    hitSlop={6}
+                    onPress={() => {
+                      haptics.tap();
+                      setActionsOpen(true);
+                    }}
+                    style={({ pressed }) => [
+                      styles.ordiloButton,
+                      pressed && styles.ordiloButtonPressed,
+                    ]}
+                  >
+                    <OrdiloMark size={54} />
+                  </Pressable>
+                </View>
+              );
+            }
 
-        {state.routes.map((route, index) => {
-          if (route.name === "scan-action") {
+            const config = tabConfig[route.name as keyof typeof tabConfig];
+            if (!config) return null;
+            const focused = state.index === index;
+            const Icon = config.icon;
             return (
               <Pressable
-                accessibilityHint="Öffnet den Dokument-Scanner"
-                accessibilityLabel="Dokument scannen"
+                accessibilityLabel={config.label}
                 accessibilityRole="button"
+                accessibilityState={{ selected: focused }}
                 hitSlop={4}
                 key={route.key}
                 onPress={() => {
-                  haptics.tap();
-                  router.push("/scan");
+                  const event = navigation.emit({
+                    canPreventDefault: true,
+                    target: route.key,
+                    type: "tabPress",
+                  });
+                  if (!focused && !event.defaultPrevented) {
+                    navigation.navigate(route.name);
+                  }
                 }}
-                style={({ pressed }) => [
-                  styles.scanButton,
-                  pressed && styles.scanButtonPressed,
-                ]}
+                onLongPress={() =>
+                  navigation.emit({ target: route.key, type: "tabLongPress" })
+                }
+                style={styles.tab}
               >
-                <ScanLine color={colors.warmWhite} size={22} strokeWidth={2.2} />
+                <Icon
+                  color={focused ? colors.warmApricot : "rgba(255,255,255,0.55)"}
+                  size={21}
+                  strokeWidth={focused ? 2.4 : 1.9}
+                />
+                {focused ? <View style={styles.activeDot} /> : null}
               </Pressable>
             );
-          }
-
-          const config = tabConfig[route.name as keyof typeof tabConfig];
-          if (!config) return null;
-          const focused = state.index === index;
-          const Icon = config.icon;
-          return (
-            <Pressable
-              accessibilityLabel={config.label}
-              accessibilityRole="button"
-              accessibilityState={{ selected: focused }}
-              hitSlop={4}
-              key={route.key}
-              onPress={() => {
-                const event = navigation.emit({
-                  canPreventDefault: true,
-                  target: route.key,
-                  type: "tabPress",
-                });
-                if (!focused && !event.defaultPrevented) {
-                  navigation.navigate(route.name);
-                }
-              }}
-              onLongPress={() =>
-                navigation.emit({ target: route.key, type: "tabLongPress" })
-              }
-              style={styles.tab}
-            >
-              <Icon
-                color={focused ? colors.warmApricot : "rgba(255,255,255,0.55)"}
-                size={21}
-                strokeWidth={focused ? 2.4 : 1.9}
-              />
-              {focused ? <View style={styles.activeDot} /> : null}
-            </Pressable>
-          );
-        })}
+          })}
+        </View>
       </View>
-    </View>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setActionsOpen(false)}
+        presentationStyle="overFullScreen"
+        transparent
+        visible={actionsOpen}
+      >
+        <Pressable onPress={() => setActionsOpen(false)} style={styles.overlay}>
+          <Pressable
+            accessibilityViewIsModal
+            onPress={(event) => event.stopPropagation()}
+            style={styles.actionSheet}
+          >
+            <View style={styles.sheetHandle} />
+            <View style={styles.actionSheetHeading}>
+              <OrdiloMark size={38} />
+              <View style={styles.actionSheetCopy}>
+                <Text style={styles.actionSheetTitle}>Was darf ich für euch tun?</Text>
+                <Text style={styles.actionSheetText}>Ordilo hilft beim Finden und Festhalten.</Text>
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setActionsOpen(false);
+                router.push("/suche");
+              }}
+              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+            >
+              <View style={styles.actionIcon}>
+                <Sparkles color={colors.harborBlue} size={20} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text style={styles.actionTitle}>Frage Ordilo</Text>
+                <Text style={styles.actionText}>Antworten aus euren Dokumenten finden.</Text>
+              </View>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => {
+                setActionsOpen(false);
+                router.push("/scan");
+              }}
+              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+            >
+              <View style={[styles.actionIcon, styles.scanActionIcon]}>
+                <ScanLine color={colors.harborBlue} size={20} />
+              </View>
+              <View style={styles.actionCopy}>
+                <Text style={styles.actionTitle}>Dokument scannen</Text>
+                <Text style={styles.actionText}>Brief abfotografieren und ablegen.</Text>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   dock: {
+    backgroundColor: "transparent",
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  dockBar: {
+    alignItems: "center",
     backgroundColor: colors.harborBlueDarker,
-    borderTopColor: "rgba(255,255,255,0.12)",
-    borderTopWidth: 1,
-    paddingHorizontal: spacing.sm,
-    paddingTop: 6,
-  },
-  dockRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
-    minHeight: 52,
-  },
-  askBar: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
+    borderColor: "rgba(255,255,255,0.12)",
     borderRadius: radii.pill,
-    flex: 1,
+    borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
-    height: 44,
-    minWidth: 88,
-    paddingHorizontal: 6,
-  },
-  mark: {
-    alignItems: "center",
-    backgroundColor: colors.washSageSoft,
-    borderRadius: radii.pill,
-    height: 30,
-    justifyContent: "center",
-    width: 30,
-  },
-  askLabel: {
-    color: colors.mistDark,
-    flex: 1,
-    ...typography.label,
+    height: 60,
+    justifyContent: "space-around",
+    paddingHorizontal: spacing.xs,
   },
   tab: {
     alignItems: "center",
-    height: 48,
+    flex: 1,
+    height: 60,
     justifyContent: "center",
     position: "relative",
-    width: 36,
   },
-  scanButton: {
+  ordiloSlot: {
     alignItems: "center",
-    backgroundColor: colors.harborBlue,
-    borderColor: "rgba(255,255,255,0.25)",
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 44,
+    flex: 1.15,
+    height: 60,
     justifyContent: "center",
-    width: 44,
   },
-  scanButtonPressed: {
-    backgroundColor: colors.harborBlueDark,
+  ordiloButton: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    borderWidth: 5,
+    height: 72,
+    justifyContent: "center",
+    marginTop: -28,
+    width: 72,
+  },
+  ordiloButtonPressed: {
+    backgroundColor: colors.sand,
+    transform: [{ scale: 0.96 }],
   },
   activeDot: {
     backgroundColor: colors.warmApricot,
@@ -183,5 +215,56 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 4,
   },
+  overlay: {
+    backgroundColor: "rgba(38, 36, 33, 0.28)",
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  actionSheet: {
+    backgroundColor: colors.warmWhite,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  sheetHandle: {
+    alignSelf: "center",
+    backgroundColor: colors.mistLight,
+    borderRadius: radii.pill,
+    height: 4,
+    marginBottom: spacing.md,
+    marginTop: spacing.sm,
+    width: 40,
+  },
+  actionSheetHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  actionSheetCopy: { flex: 1, gap: 2 },
+  actionSheetTitle: { color: colors.graphite, ...typography.display },
+  actionSheetText: { color: colors.mistDark, ...typography.timestamp },
+  actionRow: {
+    alignItems: "center",
+    borderTopColor: colors.mistLight,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 72,
+    paddingVertical: spacing.sm,
+  },
+  actionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.sm,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  scanActionIcon: { backgroundColor: colors.washBlue },
+  actionCopy: { flex: 1, gap: 2 },
+  actionTitle: { color: colors.graphite, ...typography.title },
+  actionText: { color: colors.mistDark, ...typography.timestamp },
   pressed: { opacity: 0.82 },
 });
