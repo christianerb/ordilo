@@ -40,6 +40,10 @@ export function OrdiloTabBar({
     <>
       <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
         <View style={styles.dockBar}>
+          <View accessible={false} pointerEvents="none" style={styles.glassHighlights}>
+            <View style={styles.sageGlow} />
+            <View style={styles.whiteSheen} />
+          </View>
           {state.routes.map((route, index) => {
             if (route.name === "scan-action") {
               return (
@@ -88,10 +92,10 @@ export function OrdiloTabBar({
                 onLongPress={() =>
                   navigation.emit({ target: route.key, type: "tabLongPress" })
                 }
-                style={styles.tab}
+                style={[styles.tab, focused && styles.tabActive]}
               >
                 <Icon
-                  color={focused ? colors.warmApricot : "rgba(255,255,255,0.55)"}
+                  color={focused ? colors.harborBlueDarker : "rgba(48,84,96,0.58)"}
                   size={21}
                   strokeWidth={focused ? 2.4 : 1.9}
                 />
@@ -170,37 +174,52 @@ const styles = StyleSheet.create({
   },
   dockBar: {
     alignItems: "center",
-    backgroundColor: colors.harborBlueDarker,
-    borderColor: "rgba(255,255,255,0.12)",
+    backgroundColor: "rgba(221,235,229,0.92)",
+    borderColor: "rgba(255,255,255,0.96)",
     borderRadius: radii.pill,
     borderWidth: 1,
+    elevation: 8,
     flexDirection: "row",
-    height: 60,
+    height: 64,
     justifyContent: "space-around",
     paddingHorizontal: spacing.xs,
+    shadowColor: colors.harborBlueDarker,
+    shadowOffset: { height: 5, width: 0 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
   },
   tab: {
     alignItems: "center",
     flex: 1,
-    height: 60,
+    height: 48,
     justifyContent: "center",
+    marginVertical: spacing.sm,
     position: "relative",
+  },
+  tabActive: {
+    backgroundColor: "rgba(253,252,250,0.72)",
+    borderRadius: radii.pill,
   },
   ordiloSlot: {
     alignItems: "center",
     flex: 1.15,
-    height: 60,
+    height: 64,
     justifyContent: "center",
   },
   ordiloButton: {
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.washSageSoft,
+    backgroundColor: "rgba(253,252,250,0.96)",
+    borderColor: "rgba(255,255,255,0.98)",
     borderRadius: radii.pill,
     borderWidth: 5,
+    elevation: 8,
     height: 72,
     justifyContent: "center",
-    marginTop: -28,
+    marginTop: -24,
+    shadowColor: colors.harborBlueDarker,
+    shadowOffset: { height: 4, width: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
     width: 72,
   },
   ordiloButtonPressed: {
@@ -214,6 +233,33 @@ const styles = StyleSheet.create({
     height: 4,
     position: "absolute",
     width: 4,
+  },
+  glassHighlights: {
+    borderRadius: radii.pill,
+    bottom: 0,
+    left: 0,
+    overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  sageGlow: {
+    backgroundColor: "rgba(48,84,96,0.09)",
+    borderRadius: radii.pill,
+    height: 72,
+    left: -18,
+    position: "absolute",
+    top: -35,
+    width: 150,
+  },
+  whiteSheen: {
+    backgroundColor: "rgba(255,255,255,0.78)",
+    borderRadius: radii.pill,
+    height: 2,
+    left: 28,
+    position: "absolute",
+    right: 28,
+    top: 5,
   },
   overlay: {
     backgroundColor: "rgba(38, 36, 33, 0.28)",
