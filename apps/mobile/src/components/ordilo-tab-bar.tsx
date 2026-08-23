@@ -11,15 +11,16 @@ import {
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
 
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { haptics } from "@/src/lib/haptics";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const tabConfig = {
-  index: { icon: House, label: "Heute" },
-  ablage: { icon: BookOpen, label: "Ablage" },
-  plan: { icon: CalendarDays, label: "Plan" },
+  index: { icon: House, label: "Start" },
+  ablage: { icon: BookOpen, label: "Dokumente" },
+  plan: { icon: CalendarDays, label: "Termine" },
   familie: { icon: Users, label: "Familie" },
 } as const;
 
@@ -40,9 +41,21 @@ export function OrdiloTabBar({
     <>
       <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
         <View style={styles.dockBar}>
-          <View accessible={false} pointerEvents="none" style={styles.glassHighlights}>
-            <View style={styles.sageGlow} />
-            <View style={styles.whiteSheen} />
+          <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
+            <View style={styles.centerGlow} />
+            <Svg
+              height="100%"
+              preserveAspectRatio="none"
+              viewBox="0 0 360 100"
+              width="100%"
+            >
+              <Path
+                d="M34 16 H119 C143 16 145 51 180 56 C215 51 217 16 241 16 H326 C338 16 344 24 344 36 V78 C344 90 336 96 324 96 H36 C24 96 16 90 16 78 V36 C16 24 22 16 34 16 Z"
+                fill="rgba(253,252,250,0.96)"
+                stroke="rgba(255,255,255,0.98)"
+                strokeWidth={2}
+              />
+            </Svg>
           </View>
           {state.routes.map((route, index) => {
             if (route.name === "scan-action") {
@@ -64,6 +77,7 @@ export function OrdiloTabBar({
                   >
                     <OrdiloMark size={54} />
                   </Pressable>
+                  <Text style={styles.ordiloLabel}>Frage Ordilo</Text>
                 </View>
               );
             }
@@ -92,14 +106,16 @@ export function OrdiloTabBar({
                 onLongPress={() =>
                   navigation.emit({ target: route.key, type: "tabLongPress" })
                 }
-                style={[styles.tab, focused && styles.tabActive]}
+                style={styles.tab}
               >
                 <Icon
                   color={focused ? colors.harborBlueDarker : "rgba(48,84,96,0.58)"}
-                  size={21}
+                  size={24}
                   strokeWidth={focused ? 2.4 : 1.9}
                 />
-                {focused ? <View style={styles.activeDot} /> : null}
+                <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+                  {config.label}
+                </Text>
               </Pressable>
             );
           })}
@@ -170,52 +186,44 @@ const styles = StyleSheet.create({
   dock: {
     backgroundColor: "transparent",
     paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
+    paddingTop: 2,
   },
   dockBar: {
     alignItems: "center",
-    backgroundColor: "rgba(221,235,229,0.92)",
-    borderColor: "rgba(255,255,255,0.96)",
-    borderRadius: radii.pill,
-    borderWidth: 1,
+    backgroundColor: "transparent",
     elevation: 8,
     flexDirection: "row",
-    height: 64,
+    height: 100,
     justifyContent: "space-around",
-    paddingHorizontal: spacing.xs,
     shadowColor: colors.harborBlueDarker,
     shadowOffset: { height: 5, width: 0 },
-    shadowOpacity: 0.16,
+    shadowOpacity: 0.13,
     shadowRadius: 14,
   },
   tab: {
     alignItems: "center",
     flex: 1,
-    height: 48,
+    gap: 6,
+    height: 100,
     justifyContent: "center",
-    marginVertical: spacing.sm,
+    paddingTop: 22,
     position: "relative",
-  },
-  tabActive: {
-    backgroundColor: "rgba(253,252,250,0.72)",
-    borderRadius: radii.pill,
   },
   ordiloSlot: {
     alignItems: "center",
     flex: 1.15,
-    height: 64,
-    justifyContent: "center",
+    height: 100,
+    justifyContent: "flex-start",
   },
   ordiloButton: {
     alignItems: "center",
-    backgroundColor: "rgba(253,252,250,0.96)",
+    backgroundColor: colors.washSage,
     borderColor: "rgba(255,255,255,0.98)",
     borderRadius: radii.pill,
     borderWidth: 5,
     elevation: 8,
     height: 72,
     justifyContent: "center",
-    marginTop: -24,
     shadowColor: colors.harborBlueDarker,
     shadowOffset: { height: 4, width: 0 },
     shadowOpacity: 0.18,
@@ -226,40 +234,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.sand,
     transform: [{ scale: 0.96 }],
   },
-  activeDot: {
-    backgroundColor: colors.warmApricot,
-    borderRadius: radii.pill,
-    bottom: 3,
-    height: 4,
-    position: "absolute",
-    width: 4,
+  ordiloLabel: {
+    color: colors.harborBlueDarker,
+    marginTop: 1,
+    textAlign: "center",
+    ...typography.label,
   },
-  glassHighlights: {
-    borderRadius: radii.pill,
+  tabLabel: {
+    color: colors.mistDark,
+    textAlign: "center",
+    ...typography.label,
+  },
+  tabLabelActive: {
+    color: colors.harborBlueDarker,
+    fontFamily: typography.display.fontFamily,
+  },
+  waveSurface: {
     bottom: 0,
     left: 0,
-    overflow: "hidden",
     position: "absolute",
     right: 0,
     top: 0,
   },
-  sageGlow: {
-    backgroundColor: "rgba(48,84,96,0.09)",
+  centerGlow: {
+    alignSelf: "center",
+    backgroundColor: "rgba(221,235,229,0.68)",
     borderRadius: radii.pill,
-    height: 72,
-    left: -18,
+    height: 78,
     position: "absolute",
-    top: -35,
-    width: 150,
-  },
-  whiteSheen: {
-    backgroundColor: "rgba(255,255,255,0.78)",
-    borderRadius: radii.pill,
-    height: 2,
-    left: 28,
-    position: "absolute",
-    right: 28,
-    top: 5,
+    top: 0,
+    width: 136,
   },
   overlay: {
     backgroundColor: "rgba(38, 36, 33, 0.28)",
