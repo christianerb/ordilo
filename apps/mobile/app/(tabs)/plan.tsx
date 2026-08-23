@@ -25,6 +25,7 @@ import {
 
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
 import { EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { OrdiloMark } from "@/src/components/ordilo-mark";
 import {
   calendarDays,
   eventsForDay,
@@ -372,13 +373,21 @@ export default function PlanScreen() {
         <PlanViewTab
           icon={Check}
           label="Aufgaben"
-          onPress={() => setView("tasks")}
+          onPress={() => {
+            if (view === "tasks") return;
+            void Haptics.selectionAsync();
+            setView("tasks");
+          }}
           selected={view === "tasks"}
         />
         <PlanViewTab
           icon={CalendarDays}
           label="Termine"
-          onPress={() => setView("calendar")}
+          onPress={() => {
+            if (view === "calendar") return;
+            void Haptics.selectionAsync();
+            setView("calendar");
+          }}
           selected={view === "calendar"}
         />
       </View>
@@ -439,6 +448,13 @@ export default function PlanScreen() {
                   }
                   style={styles.sectionHeader}
                 >
+                  <View
+                    style={[
+                      styles.sectionMarker,
+                      section.id === "now" && styles.sectionMarkerNow,
+                      section.id === "done" && styles.sectionMarkerDone,
+                    ]}
+                  />
                   <Text style={styles.sectionTitle}>{section.label}</Text>
                   <Text style={styles.sectionCount}>{sectionTasks.length}</Text>
                   {section.collapsible ? (
@@ -530,11 +546,16 @@ export default function PlanScreen() {
 function PlanHeader({ onCreate }: { onCreate: () => void }) {
   return (
     <View style={styles.header}>
+      <View accessible={false} style={[styles.headerDot, styles.headerDotBlue]} />
+      <View accessible={false} style={[styles.headerDot, styles.headerDotApricot]} />
       <View style={styles.headerText}>
         <Text style={[typography.display, styles.headerTitle]}>Plan</Text>
         <Text style={[typography.timestamp, styles.headerSubtitle]}>
-          Aufgaben und Termine der Familie
+          Gemeinsam den Alltag im Blick
         </Text>
+      </View>
+      <View accessible={false} style={styles.headerMark}>
+        <OrdiloMark size={42} />
       </View>
       <Pressable
         accessibilityLabel="Neue Aufgabe anlegen"
@@ -889,10 +910,15 @@ const styles = StyleSheet.create({
   },
   header: {
     alignItems: "center",
+    backgroundColor: colors.washSage,
+    borderRadius: radii.md,
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingBottom: spacing.lg,
-    paddingTop: spacing.md,
+    marginTop: spacing.md,
+    minHeight: 90,
+    overflow: "hidden",
+    paddingHorizontal: spacing.md,
+    position: "relative",
   },
   headerText: {
     flex: 1,
@@ -902,7 +928,34 @@ const styles = StyleSheet.create({
     color: colors.graphite,
   },
   headerSubtitle: {
-    color: colors.mistDark,
+    color: colors.harborBlueDarker,
+  },
+  headerMark: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 52,
+    justifyContent: "center",
+    marginRight: spacing.sm,
+    width: 52,
+  },
+  headerDot: {
+    borderRadius: radii.pill,
+    position: "absolute",
+  },
+  headerDotBlue: {
+    backgroundColor: colors.washBlue,
+    height: 48,
+    right: 58,
+    top: -22,
+    width: 48,
+  },
+  headerDotApricot: {
+    backgroundColor: colors.washApricot,
+    bottom: -16,
+    height: 38,
+    left: 30,
+    width: 38,
   },
   addButton: {
     alignItems: "center",
@@ -1035,7 +1088,13 @@ const styles = StyleSheet.create({
     ...typography.headline,
   },
   dayEventsCount: {
-    color: colors.mistDark,
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.pill,
+    color: colors.harborBlue,
+    minWidth: 28,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    textAlign: "center",
     ...typography.timestamp,
   },
   calendarEmpty: {
@@ -1082,8 +1141,20 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 44,
   },
+  sectionMarker: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
+  },
+  sectionMarkerNow: {
+    backgroundColor: colors.warmApricot,
+  },
+  sectionMarkerDone: {
+    backgroundColor: colors.mist,
+  },
   sectionTitle: {
-    color: colors.harborBlue,
+    color: colors.graphite,
     ...typography.headline,
   },
   sectionCount: {

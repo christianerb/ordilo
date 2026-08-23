@@ -27,6 +27,11 @@ export function Screen({
 }) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, style]}>
+      <View accessible={false} pointerEvents="none" style={styles.ambientLayer}>
+        <View style={styles.ambientSage} />
+        <View style={styles.ambientBlue} />
+        <View style={styles.ambientApricot} />
+      </View>
       {children}
     </SafeAreaView>
   );
@@ -139,6 +144,44 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.warmWhite,
     paddingHorizontal: spacing.md,
+    position: "relative",
+  },
+  ambientLayer: {
+    bottom: 0,
+    left: 0,
+    overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  ambientSage: {
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.xl,
+    height: 168,
+    position: "absolute",
+    right: -78,
+    top: -72,
+    transform: [{ rotate: "12deg" }],
+    width: 184,
+  },
+  ambientBlue: {
+    backgroundColor: colors.washBlue,
+    borderRadius: radii.pill,
+    height: 124,
+    left: -82,
+    position: "absolute",
+    top: "42%",
+    width: 124,
+  },
+  ambientApricot: {
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.xl,
+    bottom: -92,
+    height: 156,
+    position: "absolute",
+    right: 42,
+    transform: [{ rotate: "-8deg" }],
+    width: 188,
   },
   header: {
     paddingTop: spacing.md,
