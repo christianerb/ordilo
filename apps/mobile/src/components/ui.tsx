@@ -260,7 +260,7 @@ const styles = StyleSheet.create({
   },
   buttonDefault: {
     borderRadius: radii.sm,
-    height: 36,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
   },
   buttonLg: {

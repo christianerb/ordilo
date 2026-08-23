@@ -84,6 +84,7 @@ export default function AblageScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
+  const [filterPickerOpen, setFilterPickerOpen] = useState(false);
   const [quickNavOpen, setQuickNavOpen] = useState(false);
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
   const [view, setView] = useState<"documents" | "notes">("documents");
@@ -347,40 +348,25 @@ export default function AblageScreen() {
               />
             </View>
 
-            <View style={styles.filterRow}>
-              <ScrollView
-                contentContainerStyle={styles.chips}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-              >
-                {libraryStatusFilters.map((filter) => (
-                  <FilterChip
-                    key={filter.value}
-                    label={filter.label}
-                    onPress={() =>
-                      setFilters((current) => ({
-                        ...current,
-                        status: filter.value,
-                      }))
-                    }
-                    selected={filters.status === filter.value}
-                  />
-                ))}
-              </ScrollView>
+            <View style={styles.libraryControls}>
               <Pressable
-                accessibilityHint="Wählt die Art der Dokumente aus"
-                accessibilityLabel={`Dokumentart: ${selectedTypeLabel}`}
+                accessibilityHint="Öffnet Status und Dokumentart"
+                accessibilityLabel={
+                  activeFilterCount
+                    ? `${activeFilterCount} Filter aktiv`
+                    : "Dokumente filtern"
+                }
                 accessibilityRole="button"
-                onPress={() => setTypePickerOpen(true)}
+                onPress={() => setFilterPickerOpen(true)}
                 style={({ pressed }) => [
-                  styles.typeButton,
-                  filters.documentType !== "all" && styles.typeButtonSelected,
+                  styles.filterButton,
+                  activeFilterCount > 0 && styles.filterButtonSelected,
                   pressed && styles.pressed,
                 ]}
               >
                 <SlidersHorizontal
                   color={
-                    filters.documentType !== "all"
+                    activeFilterCount > 0
                       ? colors.warmWhite
                       : colors.harborBlue
                   }
@@ -389,34 +375,25 @@ export default function AblageScreen() {
                 <Text
                   numberOfLines={1}
                   style={[
-                    styles.typeButtonText,
-                    filters.documentType !== "all" && styles.typeButtonTextSelected,
+                    styles.filterButtonText,
+                    activeFilterCount > 0 && styles.filterButtonTextSelected,
                   ]}
                 >
-                  {selectedTypeLabel}
+                  {activeFilterCount ? `${activeFilterCount} Filter` : "Filtern"}
                 </Text>
-                <ChevronDown
-                  color={
-                    filters.documentType !== "all"
-                      ? colors.warmWhite
-                      : colors.harborBlue
-                  }
-                  size={16}
-                />
+              </Pressable>
+              <Pressable
+                accessibilityHint="Wählt die Reihenfolge der Dokumente aus"
+                accessibilityLabel={`Sortierung: ${sortedLabel}`}
+                accessibilityRole="button"
+                onPress={() => setSortPickerOpen(true)}
+                style={({ pressed }) => [styles.sortButton, pressed && styles.pressed]}
+              >
+                <ArrowDownAZ color={colors.mistDark} size={16} />
+                <Text style={styles.sortButtonText}>{sortedLabel}</Text>
+                <ChevronDown color={colors.mistDark} size={16} />
               </Pressable>
             </View>
-
-            <Pressable
-              accessibilityHint="Wählt die Reihenfolge der Dokumente aus"
-              accessibilityLabel={`Sortierung: ${sortedLabel}`}
-              accessibilityRole="button"
-              onPress={() => setSortPickerOpen(true)}
-              style={({ pressed }) => [styles.sortButton, pressed && styles.pressed]}
-            >
-              <ArrowDownAZ color={colors.mistDark} size={16} />
-              <Text style={styles.sortButtonText}>{sortedLabel}</Text>
-              <ChevronDown color={colors.mistDark} size={16} />
-            </Pressable>
 
             {error ? (
               <View accessibilityRole="alert" style={styles.inlineError}>
@@ -490,6 +467,26 @@ export default function AblageScreen() {
         }}
         selected={filters.documentType}
         visible={typePickerOpen}
+      />
+      <LibraryFilterSheet
+        filters={filters}
+        onClose={() => setFilterPickerOpen(false)}
+        onOpenTypePicker={() => {
+          setFilterPickerOpen(false);
+          setTypePickerOpen(true);
+        }}
+        onSelectStatus={(status) =>
+          setFilters((current) => ({ ...current, status }))
+        }
+        onReset={() =>
+          setFilters((current) => ({
+            ...current,
+            documentType: "all",
+            status: "all",
+          }))
+        }
+        selectedTypeLabel={selectedTypeLabel}
+        visible={filterPickerOpen}
       />
       <SortPicker
         onClose={() => setSortPickerOpen(false)}
@@ -930,6 +927,72 @@ function DocumentTypePicker({
   );
 }
 
+function LibraryFilterSheet({
+  filters,
+  onClose,
+  onOpenTypePicker,
+  onReset,
+  onSelectStatus,
+  selectedTypeLabel,
+  visible,
+}: {
+  filters: LibraryFilters;
+  onClose: () => void;
+  onOpenTypePicker: () => void;
+  onReset: () => void;
+  onSelectStatus: (status: LibraryFilters["status"]) => void;
+  selectedTypeLabel: string;
+  visible: boolean;
+}) {
+  return (
+    <Modal
+      animationType="slide"
+      onRequestClose={onClose}
+      presentationStyle="overFullScreen"
+      transparent
+      visible={visible}
+    >
+      <Pressable onPress={onClose} style={styles.modalOverlay}>
+        <Pressable
+          accessibilityViewIsModal
+          onPress={(event) => event.stopPropagation()}
+          style={styles.typeSheet}
+        >
+          <View style={styles.sheetHandle} />
+          <View style={styles.filterSheetHeader}>
+            <Text style={styles.sheetTitle}>Dokumente filtern</Text>
+            {(filters.status !== "all" || filters.documentType !== "all") ? (
+              <Pressable accessibilityRole="button" onPress={onReset}>
+                <Text style={styles.resetFilters}>Zurücksetzen</Text>
+              </Pressable>
+            ) : null}
+          </View>
+          <Text style={styles.filterGroupLabel}>Status</Text>
+          <View style={styles.filterChoices}>
+            {libraryStatusFilters.map((filter) => (
+              <FilterChip
+                key={filter.value}
+                label={filter.label}
+                onPress={() => onSelectStatus(filter.value)}
+                selected={filters.status === filter.value}
+              />
+            ))}
+          </View>
+          <Text style={styles.filterGroupLabel}>Dokumentart</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={onOpenTypePicker}
+            style={styles.filterTypeRow}
+          >
+            <Text style={styles.filterTypeValue}>{selectedTypeLabel}</Text>
+            <ChevronDown color={colors.harborBlue} size={18} />
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
 function TypeOption({
   label,
   onPress,
@@ -1041,7 +1104,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   searchInput: { color: colors.graphite, flex: 1, ...typography.body },
-  filterRow: { flexDirection: "row", gap: spacing.sm },
+  libraryControls: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
   chips: { gap: spacing.xs, paddingRight: spacing.xs },
   chip: {
     alignItems: "center",
@@ -1056,7 +1123,7 @@ const styles = StyleSheet.create({
   chipSelected: { backgroundColor: colors.harborBlue, borderColor: colors.harborBlue },
   chipText: { color: colors.mistDark, ...typography.label },
   chipTextSelected: { color: colors.warmWhite },
-  typeButton: {
+  filterButton: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.harborBlue,
@@ -1064,20 +1131,23 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 3,
-    height: 36,
-    maxWidth: 128,
+    height: 44,
     paddingHorizontal: 10,
   },
-  typeButtonSelected: { backgroundColor: colors.harborBlue },
-  typeButtonText: { color: colors.harborBlue, ...typography.label },
-  typeButtonTextSelected: { color: colors.warmWhite },
+  filterButtonSelected: { backgroundColor: colors.harborBlue },
+  filterButtonText: { color: colors.harborBlue, ...typography.title },
+  filterButtonTextSelected: { color: colors.warmWhite },
   sortButton: {
     alignItems: "center",
-    alignSelf: "flex-start",
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
     flexDirection: "row",
+    flex: 1,
     gap: spacing.xs,
-    minHeight: 44,
-    paddingHorizontal: spacing.xs,
+    height: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.sm,
   },
   sortButtonText: { color: colors.mistDark, ...typography.label },
   inlineError: {
@@ -1199,6 +1269,35 @@ const styles = StyleSheet.create({
     width: 40,
   },
   sheetTitle: { color: colors.graphite, marginBottom: spacing.sm, ...typography.display },
+  filterSheetHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  filterGroupLabel: {
+    color: colors.mistDark,
+    marginBottom: spacing.sm,
+    marginTop: spacing.md,
+    ...typography.label,
+  },
+  filterChoices: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.xs,
+  },
+  resetFilters: { color: colors.harborBlue, ...typography.label },
+  filterTypeRow: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 52,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.md,
+  },
+  filterTypeValue: { color: colors.graphite, ...typography.body },
   typeOption: {
     alignItems: "center",
     borderBottomColor: colors.mistLight,

@@ -414,7 +414,7 @@ function SecretEditor({
   };
 
   return (
-    <Modal animationType="slide" onRequestClose={saving ? undefined : onClose} presentationStyle="pageSheet" transparent visible>
+    <Modal animationType="slide" onRequestClose={saving ? undefined : onClose} presentationStyle="overFullScreen" transparent visible>
       <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
           <View style={styles.handle} />
@@ -498,7 +498,7 @@ function NoteMetadataEditor({
   };
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" transparent visible>
+    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
       <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
           <View style={styles.handle} />

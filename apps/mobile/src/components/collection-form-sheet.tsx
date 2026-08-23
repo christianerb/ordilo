@@ -96,7 +96,7 @@ export function CollectionFormSheet({
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={visible}
     >

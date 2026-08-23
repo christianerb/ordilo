@@ -327,7 +327,7 @@ export function ContactFormSheet({
     <Modal
       animationType="slide"
       onRequestClose={onClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={visible}
     >

@@ -164,7 +164,7 @@ export function TaskFormSheet({
     <Modal
       animationType="slide"
       onRequestClose={requestClose}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={visible}
     >

@@ -2,7 +2,14 @@ import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
 import { AlertCircle, Check, Copy, UserPlus, Users } from "lucide-react-native";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Share, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  ScrollView,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
@@ -102,153 +109,159 @@ export default function FamilieScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="Familie" subtitle="Mitglieder und Einstellungen" />
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <ScreenHeader title="Familie" subtitle="Mitglieder und Einstellungen" />
 
-      {loadingMembers ? (
-        <Card style={styles.membersLoading}>
-          <ActivityIndicator
-            accessibilityLabel="Familienmitglieder werden geladen"
-            color={colors.harborBlue}
-          />
-        </Card>
-      ) : membersError ? (
-        <EmptyState
-          icon={AlertCircle}
-          heading="Familie nicht erreichbar"
-          description={membersError}
-        >
-          <OrdiloButton onPress={() => void loadMembers()} size="lg" title="Erneut versuchen" />
-        </EmptyState>
-      ) : members.length > 0 ? (
-        <Card style={styles.membersCard}>
-          <View style={styles.membersHeader}>
-            <Text style={[typography.display, styles.membersTitle]}>
-              Deine Familie
-            </Text>
-            <Text style={[typography.timestamp, styles.membersCount]}>
-              {members.length}
-            </Text>
-          </View>
-          <View style={styles.membersList}>
-            {members.map((member) => (
-              <View key={member.id} style={styles.memberRow}>
-                <View
-                  style={[
-                    styles.memberAvatar,
-                    { backgroundColor: member.avatar_color ?? colors.sandLight },
-                  ]}
-                >
-                  <Text style={styles.memberInitial}>
-                    {member.name.trim().charAt(0).toUpperCase() || "?"}
-                  </Text>
-                </View>
-                <View style={styles.memberText}>
-                  <Text style={[typography.title, styles.memberName]}>
-                    {member.name}
-                  </Text>
-                  <Text style={[typography.timestamp, styles.memberRole]}>
-                    {member.role || "Familienmitglied"}
-                  </Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        </Card>
-      ) : (
-        <EmptyState
-          icon={Users}
-          heading="Noch niemand dabei"
-          description="Lade deine Familie mit einem Link ein."
-        />
-      )}
-
-      {canCreateFamilyInvite(family) ? (
-        <Card style={styles.inviteCard}>
-          <View style={styles.inviteHeader}>
-            <View style={styles.inviteHeaderText}>
-              <Text style={[typography.display, styles.inviteTitle]}>
-                Familie einladen
+        {loadingMembers ? (
+          <Card style={styles.membersLoading}>
+            <ActivityIndicator
+              accessibilityLabel="Familienmitglieder werden geladen"
+              color={colors.harborBlue}
+            />
+          </Card>
+        ) : membersError ? (
+          <EmptyState
+            icon={AlertCircle}
+            heading="Familie nicht erreichbar"
+            description={membersError}
+          >
+            <OrdiloButton onPress={() => void loadMembers()} size="lg" title="Erneut versuchen" />
+          </EmptyState>
+        ) : members.length > 0 ? (
+          <Card style={styles.membersCard}>
+            <View style={styles.membersHeader}>
+              <Text style={[typography.display, styles.membersTitle]}>
+                Deine Familie
               </Text>
-              <Text style={[typography.timestamp, styles.inviteDescription]}>
-                Teile den Link — er ist 14 Tage gültig und kann von mehreren
-                Personen genutzt werden.
+              <Text style={[typography.timestamp, styles.membersCount]}>
+                {members.length}
               </Text>
             </View>
-            {!inviteUrl && (
-              <OrdiloButton
-                disabled={creating}
-                icon={<UserPlus color={colors.warmWhite} size={16} />}
-                onPress={() => void handleInvite()}
-                title={creating ? "Wird erstellt …" : "Einladen"}
-              />
-            )}
-          </View>
+            <View style={styles.membersList}>
+              {members.map((member) => (
+                <View key={member.id} style={styles.memberRow}>
+                  <View
+                    style={[
+                      styles.memberAvatar,
+                      { backgroundColor: member.avatar_color ?? colors.sandLight },
+                    ]}
+                  >
+                    <Text style={styles.memberInitial}>
+                      {member.name.trim().charAt(0).toUpperCase() || "?"}
+                    </Text>
+                  </View>
+                  <View style={styles.memberText}>
+                    <Text style={[typography.title, styles.memberName]}>
+                      {member.name}
+                    </Text>
+                    <Text style={[typography.timestamp, styles.memberRole]}>
+                      {member.role || "Familienmitglied"}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </Card>
+        ) : (
+          <EmptyState
+            icon={Users}
+            heading="Noch niemand dabei"
+            description="Lade deine Familie mit einem Link ein."
+          />
+        )}
 
-          {inviteUrl ? (
-            <View style={styles.linkPanel}>
-              <View style={styles.linkRow}>
-                <Text
-                  numberOfLines={1}
-                  selectable
-                  style={[typography.label, styles.linkText]}
-                >
-                  {inviteUrl}
+        {canCreateFamilyInvite(family) ? (
+          <Card style={styles.inviteCard}>
+            <View style={styles.inviteHeader}>
+              <View style={styles.inviteHeaderText}>
+                <Text style={[typography.display, styles.inviteTitle]}>
+                  Familie einladen
                 </Text>
+                <Text style={[typography.timestamp, styles.inviteDescription]}>
+                  Teile den Link — er ist 14 Tage gültig und kann von mehreren
+                  Personen genutzt werden.
+                </Text>
+              </View>
+              {!inviteUrl && (
                 <OrdiloButton
-                  icon={
-                    copied ? (
-                      <Check color={colors.graphite} size={16} />
-                    ) : (
-                      <Copy color={colors.graphite} size={16} />
-                    )
-                  }
-                  onPress={() => void handleCopy()}
-                  title={copied ? "Kopiert" : "Kopieren"}
-                  variant="outline"
+                  disabled={creating}
+                  icon={<UserPlus color={colors.warmWhite} size={16} />}
+                  onPress={() => void handleInvite()}
+                  title={creating ? "Wird erstellt …" : "Einladen"}
+                />
+              )}
+            </View>
+
+            {inviteUrl ? (
+              <View style={styles.linkPanel}>
+                <View style={styles.linkRow}>
+                  <Text
+                    numberOfLines={1}
+                    selectable
+                    style={[typography.label, styles.linkText]}
+                  >
+                    {inviteUrl}
+                  </Text>
+                  <OrdiloButton
+                    icon={
+                      copied ? (
+                        <Check color={colors.graphite} size={16} />
+                      ) : (
+                        <Copy color={colors.graphite} size={16} />
+                      )
+                    }
+                    onPress={() => void handleCopy()}
+                    title={copied ? "Kopiert" : "Kopieren"}
+                    variant="outline"
+                  />
+                </View>
+                <OrdiloButton
+                  icon={<UserPlus color={colors.harborBlue} size={16} />}
+                  onPress={() => {
+                    void Share.share({
+                      title: "Ordilo — Familieneinladung",
+                      message: `Komm in unseren Ordilo-Familienordner:\n${inviteUrl}`,
+                    }).catch(() => {});
+                  }}
+                  title="Erneut teilen"
+                  variant="ghost"
                 />
               </View>
-              <OrdiloButton
-                icon={<UserPlus color={colors.harborBlue} size={16} />}
-                onPress={() => {
-                  void Share.share({
-                    title: "Ordilo — Familieneinladung",
-                    message: `Komm in unseren Ordilo-Familienordner:\n${inviteUrl}`,
-                  }).catch(() => {});
-                }}
-                title="Erneut teilen"
-                variant="ghost"
-              />
-            </View>
-          ) : null}
+            ) : null}
 
-          {inviteError ? (
-            <Text accessibilityRole="alert" style={styles.inviteError}>
-              {inviteError}
+            {inviteError ? (
+              <Text accessibilityRole="alert" style={styles.inviteError}>
+                {inviteError}
+              </Text>
+            ) : null}
+          </Card>
+        ) : null}
+
+        <Card style={styles.accountCard}>
+          <View style={styles.accountText}>
+            <Text style={[typography.label, styles.accountLabel]}>
+              Angemeldet als
             </Text>
-          ) : null}
+            <Text style={[typography.title, styles.accountEmail]}>
+              {session?.user.email ?? "Unbekannt"}
+            </Text>
+          </View>
+          <OrdiloButton
+            title="Abmelden"
+            variant="outline"
+            onPress={() => void signOut()}
+          />
         </Card>
-      ) : null}
-
-      <Card style={styles.accountCard}>
-        <View style={styles.accountText}>
-          <Text style={[typography.label, styles.accountLabel]}>
-            Angemeldet als
-          </Text>
-          <Text style={[typography.title, styles.accountEmail]}>
-            {session?.user.email ?? "Unbekannt"}
-          </Text>
-        </View>
-        <OrdiloButton
-          title="Abmelden"
-          variant="outline"
-          onPress={() => void signOut()}
-        />
-      </Card>
+      </ScrollView>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
   inviteCard: { gap: spacing.sm },
   inviteHeader: {
     alignItems: "flex-start",

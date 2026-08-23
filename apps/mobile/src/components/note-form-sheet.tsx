@@ -198,7 +198,7 @@ export function NoteFormSheet({
     <Modal
       animationType="slide"
       onRequestClose={close}
-      presentationStyle="pageSheet"
+      presentationStyle="overFullScreen"
       transparent
       visible={visible}
     >
@@ -400,7 +400,7 @@ function NoteTypePicker({
   visible: boolean;
 }) {
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" transparent visible={visible}>
+    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible={visible}>
       <Pressable onPress={onClose} style={styles.overlay}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.typeSheet}>
           <View style={styles.handle} />

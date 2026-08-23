@@ -22,6 +22,7 @@ import {
 import {
   AppState,
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -762,6 +763,21 @@ function InboundDiscoveryCard({
   onRetention: (discovery: HeuteInboundDiscovery, keep: boolean) => Promise<void>;
 }) {
   const hasSuggestions = discovery.suggestions.length > 0;
+  const confirmDeleteEmail = useCallback(() => {
+    Alert.alert(
+      "E-Mail löschen?",
+      "Die E-Mail wird von Ordilo gelöscht. Aufgaben und Termine, die du übernommen hast, bleiben erhalten.",
+      [
+        { style: "cancel", text: "Behalten" },
+        {
+          onPress: () => void onRetention(discovery, false),
+          style: "destructive",
+          text: "E-Mail löschen",
+        },
+      ],
+    );
+  }, [discovery, onRetention]);
+
   return (
     <Card style={styles.inboundCard}>
       <View style={styles.inboundHeader}>
@@ -847,14 +863,14 @@ function InboundDiscoveryCard({
           <View style={styles.inboundActions}>
             <OrdiloButton
               disabled={busyRetention}
-              onPress={() => void onRetention(discovery, false)}
-              title={busyRetention ? "Einen Moment…" : "Bitte löschen"}
+              onPress={() => void onRetention(discovery, true)}
+              title={busyRetention ? "Einen Moment…" : "Behalten"}
             />
             <OrdiloButton
               disabled={busyRetention}
-              onPress={() => void onRetention(discovery, true)}
-              title="Behalten"
-              variant="outline"
+              onPress={confirmDeleteEmail}
+              title="E-Mail löschen"
+              variant="destructive"
             />
           </View>
         </View>
