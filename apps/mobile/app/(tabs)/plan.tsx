@@ -918,6 +918,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     marginBottom: spacing.md,
+    marginTop: spacing.md,
     padding: spacing.xs,
   },
   viewTab: {
