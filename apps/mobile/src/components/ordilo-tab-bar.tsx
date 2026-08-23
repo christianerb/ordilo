@@ -5,7 +5,6 @@ import {
   CalendarDays,
   House,
   ScanLine,
-  Sparkles,
   Users,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
@@ -36,47 +35,45 @@ export function OrdiloTabBar({
 
   return (
     <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
-      <Pressable
-        accessibilityHint="Öffnet den Ordilo-Chat"
-        accessibilityLabel="Frage Ordilo"
-        accessibilityRole="button"
-        onPress={() => {
-          haptics.tap();
-          router.push("/suche");
-        }}
-        style={({ pressed }) => [styles.askBar, pressed && styles.pressed]}
-      >
-        <View accessible={false} style={styles.mark}>
-          <OrdiloMark size={27} />
-        </View>
-        <Text numberOfLines={1} style={styles.askLabel}>
-          Frage Ordilo …
-        </Text>
-        <Sparkles color={colors.harborBlue} size={19} strokeWidth={1.9} />
-      </Pressable>
+      <View style={styles.dockRow}>
+        <Pressable
+          accessibilityHint="Öffnet den Ordilo-Chat"
+          accessibilityLabel="Frage Ordilo"
+          accessibilityRole="button"
+          onPress={() => {
+            haptics.tap();
+            router.push("/suche");
+          }}
+          style={({ pressed }) => [styles.askBar, pressed && styles.pressed]}
+        >
+          <View accessible={false} style={styles.mark}>
+            <OrdiloMark size={25} />
+          </View>
+          <Text numberOfLines={1} style={styles.askLabel}>
+            Frage Ordilo
+          </Text>
+        </Pressable>
 
-      <View style={styles.tabRow}>
         {state.routes.map((route, index) => {
           if (route.name === "scan-action") {
             return (
-              <View key={route.key} style={styles.scanSlot}>
-                <Pressable
-                  accessibilityHint="Öffnet den Dokument-Scanner"
-                  accessibilityLabel="Dokument scannen"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    haptics.tap();
-                    router.push("/scan");
-                  }}
-                  style={({ pressed }) => [
-                    styles.scanButton,
-                    pressed && styles.scanButtonPressed,
-                  ]}
-                >
-                  <ScanLine color={colors.warmWhite} size={24} strokeWidth={2.2} />
-                </Pressable>
-                <Text style={styles.scanLabel}>Scannen</Text>
-              </View>
+              <Pressable
+                accessibilityHint="Öffnet den Dokument-Scanner"
+                accessibilityLabel="Dokument scannen"
+                accessibilityRole="button"
+                hitSlop={4}
+                key={route.key}
+                onPress={() => {
+                  haptics.tap();
+                  router.push("/scan");
+                }}
+                style={({ pressed }) => [
+                  styles.scanButton,
+                  pressed && styles.scanButtonPressed,
+                ]}
+              >
+                <ScanLine color={colors.warmWhite} size={22} strokeWidth={2.2} />
+              </Pressable>
             );
           }
 
@@ -89,6 +86,7 @@ export function OrdiloTabBar({
               accessibilityLabel={config.label}
               accessibilityRole="button"
               accessibilityState={{ selected: focused }}
+              hitSlop={4}
               key={route.key}
               onPress={() => {
                 const event = navigation.emit({
@@ -107,12 +105,10 @@ export function OrdiloTabBar({
             >
               <Icon
                 color={focused ? colors.warmApricot : "rgba(255,255,255,0.55)"}
-                size={20}
+                size={21}
                 strokeWidth={focused ? 2.4 : 1.9}
               />
-              <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
-                {config.label}
-              </Text>
+              {focused ? <View style={styles.activeDot} /> : null}
             </Pressable>
           );
         })}
@@ -127,56 +123,44 @@ const styles = StyleSheet.create({
     borderTopColor: "rgba(255,255,255,0.12)",
     borderTopWidth: 1,
     paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
+    paddingTop: 6,
+  },
+  dockRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    minHeight: 52,
   },
   askBar: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
     borderRadius: radii.pill,
-    borderWidth: 1,
+    flex: 1,
     flexDirection: "row",
-    gap: spacing.sm,
-    height: 48,
-    paddingHorizontal: spacing.sm,
+    gap: 6,
+    height: 44,
+    minWidth: 88,
+    paddingHorizontal: 6,
   },
   mark: {
     alignItems: "center",
     backgroundColor: colors.washSageSoft,
     borderRadius: radii.pill,
-    height: 32,
+    height: 30,
     justifyContent: "center",
-    width: 32,
+    width: 30,
   },
   askLabel: {
     color: colors.mistDark,
     flex: 1,
-    ...typography.body,
-  },
-  tabRow: {
-    alignItems: "flex-end",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 58,
+    ...typography.label,
   },
   tab: {
     alignItems: "center",
-    flex: 1,
-    gap: 2,
+    height: 48,
     justifyContent: "center",
-    minHeight: 52,
-  },
-  tabLabel: {
-    color: "rgba(255,255,255,0.55)",
-    ...typography.label,
-  },
-  tabLabelActive: {
-    color: colors.warmApricot,
-  },
-  scanSlot: {
-    alignItems: "center",
-    flex: 1,
-    minHeight: 58,
+    position: "relative",
+    width: 36,
   },
   scanButton: {
     alignItems: "center",
@@ -184,18 +168,20 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.25)",
     borderRadius: radii.pill,
     borderWidth: 1,
-    height: 52,
+    height: 44,
     justifyContent: "center",
-    marginTop: -14,
-    width: 52,
+    width: 44,
   },
   scanButtonPressed: {
     backgroundColor: colors.harborBlueDark,
   },
-  scanLabel: {
-    color: "rgba(255,255,255,0.72)",
-    marginTop: 1,
-    ...typography.label,
+  activeDot: {
+    backgroundColor: colors.warmApricot,
+    borderRadius: radii.pill,
+    bottom: 3,
+    height: 4,
+    position: "absolute",
+    width: 4,
   },
   pressed: { opacity: 0.82 },
 });
