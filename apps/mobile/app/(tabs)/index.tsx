@@ -22,6 +22,7 @@ import {
 import {
   AppState,
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -31,7 +32,7 @@ import {
 } from "react-native";
 
 import { PressableScale } from "@/src/components/motion";
-import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
 import {
   acceptInboundSuggestion,
@@ -309,7 +310,10 @@ export default function HeuteScreen() {
 
   return (
     <Screen>
-      <View style={styles.topBar}>
+      <ScreenHeader
+        subtitle="Was für euch gerade zählt"
+        title="Heute"
+        trailing={(
         <PressableScale
           accessibilityLabel="Einstellungen öffnen"
           contentStyle={styles.settingsButton}
@@ -317,7 +321,8 @@ export default function HeuteScreen() {
         >
           <Settings color={colors.mistDark} size={20} strokeWidth={1.75} />
         </PressableScale>
-      </View>
+        )}
+      />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
@@ -758,6 +763,21 @@ function InboundDiscoveryCard({
   onRetention: (discovery: HeuteInboundDiscovery, keep: boolean) => Promise<void>;
 }) {
   const hasSuggestions = discovery.suggestions.length > 0;
+  const confirmDeleteEmail = useCallback(() => {
+    Alert.alert(
+      "E-Mail löschen?",
+      "Die E-Mail wird von Ordilo gelöscht. Aufgaben und Termine, die du übernommen hast, bleiben erhalten.",
+      [
+        { style: "cancel", text: "Behalten" },
+        {
+          onPress: () => void onRetention(discovery, false),
+          style: "destructive",
+          text: "E-Mail löschen",
+        },
+      ],
+    );
+  }, [discovery, onRetention]);
+
   return (
     <Card style={styles.inboundCard}>
       <View style={styles.inboundHeader}>
@@ -843,14 +863,14 @@ function InboundDiscoveryCard({
           <View style={styles.inboundActions}>
             <OrdiloButton
               disabled={busyRetention}
-              onPress={() => void onRetention(discovery, false)}
-              title={busyRetention ? "Einen Moment…" : "Bitte löschen"}
+              onPress={() => void onRetention(discovery, true)}
+              title={busyRetention ? "Einen Moment…" : "Behalten"}
             />
             <OrdiloButton
               disabled={busyRetention}
-              onPress={() => void onRetention(discovery, true)}
-              title="Behalten"
-              variant="outline"
+              onPress={confirmDeleteEmail}
+              title="E-Mail löschen"
+              variant="destructive"
             />
           </View>
         </View>
@@ -884,9 +904,6 @@ function getDocumentStatusLabel(status: string): string {
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
-  topBar: {
-    alignItems: "flex-end",
-  },
   settingsButton: {
     alignItems: "center",
     height: 44,

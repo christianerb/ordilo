@@ -220,6 +220,8 @@ function RootLayoutNav() {
         <Stack.Screen name="willkommen" />
         <Stack.Screen name="scan" options={{ presentation: "modal" }} />
         <Stack.Screen name="document/[id]" />
+        <Stack.Screen name="sammlungen/index" />
+        <Stack.Screen name="sammlungen/[id]" />
         <Stack.Screen name="einstellungen" />
       </Stack>
     </ThemeProvider>

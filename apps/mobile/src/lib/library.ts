@@ -10,6 +10,7 @@ export type LibraryDocument = {
   summary: string | null;
   ocr_text: string | null;
   created_at: string;
+  source: string | null;
 };
 
 export type LibraryStatusFilter =
@@ -65,7 +66,7 @@ export function refreshLibraryDocuments(): void {
 }
 
 export const libraryDocumentSelect =
-  "id, title, original_filename, mime_type, document_type, status, summary, ocr_text, created_at";
+  "id, title, original_filename, mime_type, document_type, status, summary, ocr_text, created_at, source";
 
 const documentTypes = new Set<DocumentType>([
   "invoice",

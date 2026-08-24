@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -27,6 +28,11 @@ export function Screen({
 }) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, style]}>
+      <View accessible={false} pointerEvents="none" style={styles.ambientLayer}>
+        <View style={styles.ambientSage} />
+        <View style={styles.ambientBlue} />
+        <View style={styles.ambientApricot} />
+      </View>
       {children}
     </SafeAreaView>
   );
@@ -35,18 +41,28 @@ export function Screen({
 export function ScreenHeader({
   title,
   subtitle,
+  trailing,
 }: {
   title: string;
   subtitle?: string;
+  trailing?: ReactNode;
 }) {
   return (
     <View style={styles.header}>
-      <Text style={[typography.display, styles.headerTitle]}>{title}</Text>
-      {subtitle ? (
-        <Text style={[typography.timestamp, styles.headerSubtitle]}>
-          {subtitle}
-        </Text>
-      ) : null}
+      <View accessible={false} style={[styles.headerDot, styles.headerDotBlue]} />
+      <View accessible={false} style={[styles.headerDot, styles.headerDotApricot]} />
+      <View style={styles.headerCopy}>
+        <Text style={[typography.display, styles.headerTitle]}>{title}</Text>
+        {subtitle ? (
+          <Text style={[typography.timestamp, styles.headerSubtitle]}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      <View accessible={false} style={styles.headerMark}>
+        <OrdiloMark size={42} />
+      </View>
+      {trailing ? <View style={styles.headerTrailing}>{trailing}</View> : null}
     </View>
   );
 }
@@ -139,17 +155,95 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.warmWhite,
     paddingHorizontal: spacing.md,
+    position: "relative",
+  },
+  ambientLayer: {
+    bottom: 0,
+    left: 0,
+    overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 0,
+  },
+  ambientSage: {
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.xl,
+    height: 168,
+    position: "absolute",
+    right: -78,
+    top: -72,
+    transform: [{ rotate: "12deg" }],
+    width: 184,
+  },
+  ambientBlue: {
+    backgroundColor: colors.washBlue,
+    borderRadius: radii.pill,
+    height: 124,
+    left: -82,
+    position: "absolute",
+    top: "42%",
+    width: 124,
+  },
+  ambientApricot: {
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.xl,
+    bottom: -92,
+    height: 156,
+    position: "absolute",
+    right: 42,
+    transform: [{ rotate: "-8deg" }],
+    width: 188,
   },
   header: {
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    alignItems: "center",
+    backgroundColor: colors.washSage,
+    borderRadius: radii.md,
+    flexDirection: "row",
+    marginTop: spacing.md,
+    minHeight: 90,
+    overflow: "hidden",
+    paddingHorizontal: spacing.md,
+    position: "relative",
+  },
+  headerCopy: {
+    flex: 1,
     gap: spacing.xs,
   },
   headerTitle: {
-    color: colors.graphite,
+    color: colors.harborBlueDarker,
   },
   headerSubtitle: {
-    color: colors.mistDark,
+    color: colors.harborBlueDarker,
+  },
+  headerMark: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 52,
+    justifyContent: "center",
+    marginLeft: spacing.sm,
+    width: 52,
+  },
+  headerTrailing: {
+    marginLeft: spacing.xs,
+  },
+  headerDot: {
+    borderRadius: radii.pill,
+    position: "absolute",
+  },
+  headerDotBlue: {
+    backgroundColor: colors.washBlue,
+    height: 48,
+    right: 56,
+    top: -21,
+    width: 48,
+  },
+  headerDotApricot: {
+    backgroundColor: colors.washApricot,
+    bottom: -17,
+    height: 38,
+    left: 28,
+    width: 38,
   },
   card: {
     backgroundColor: colors.sand,
@@ -166,7 +260,7 @@ const styles = StyleSheet.create({
   },
   buttonDefault: {
     borderRadius: radii.sm,
-    height: 36,
+    minHeight: 44,
     paddingHorizontal: spacing.md,
   },
   buttonLg: {

@@ -6,6 +6,7 @@ import {
   documentTypeLabels,
   isImageFile,
   isSafeOriginalFileUrl,
+  loadDocumentReview,
   parseCredentialFields,
   parseStoredContact,
   reconstructStoredDate,
@@ -16,13 +17,14 @@ import {
 
 const mockApiFetch = jest.fn();
 const mockApiJson = jest.fn();
+const mockFrom = jest.fn();
 
 jest.mock("../lib/api", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
   apiJson: (...args: unknown[]) => mockApiJson(...args),
 }));
 jest.mock("../lib/supabase", () => ({
-  getSupabase: jest.fn(),
+  getSupabase: () => ({ from: mockFrom }),
 }));
 
 const analysis: ReviewAnalysis = {
@@ -45,10 +47,31 @@ const analysis: ReviewAnalysis = {
   original_filename: "strom.pdf",
   mime_type: "application/pdf",
   page_count: 2,
+  ocr_text: null,
   credential_text: null,
 };
 
+function queryResult(result: { data: unknown; error: unknown }) {
+  const query = {
+    select: jest.fn(),
+    eq: jest.fn(),
+    maybeSingle: jest.fn(),
+    then: (
+      resolve: (value: { data: unknown; error: unknown }) => unknown,
+      reject?: (reason: unknown) => unknown,
+    ) => Promise.resolve(result).then(resolve, reject),
+  };
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  query.maybeSingle.mockResolvedValue(result);
+  return query;
+}
+
 describe("document review", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("uses German labels for the document type", () => {
     expect(documentTypeLabels.invoice).toBe("Rechnung");
     expect(documentTypeLabels.credentials).toBe("Zugangsdaten");
@@ -137,6 +160,35 @@ describe("document review", () => {
     expect(parseCredentialFields("Zettel am Router")).toEqual({
       url: null,
       username: null,
+    });
+  });
+
+  it("exposes the RLS-scoped OCR text separately from credential metadata", async () => {
+    const document = {
+      status: "confirmed",
+      title: "Abholzeit",
+      summary: "",
+      document_type: "note",
+      category: null,
+      tags: [],
+      created_at: "2026-07-04T12:00:00.000Z",
+      confirmed_at: "2026-07-04T12:00:00.000Z",
+      original_filename: null,
+      mime_type: null,
+      page_count: 1,
+      ocr_text: "Bitte Lina am Mittwoch um 15 Uhr abholen.",
+    };
+    mockFrom.mockImplementation((table: string) =>
+      queryResult(table === "documents"
+        ? { data: document, error: null }
+        : { data: [], error: null }),
+    );
+
+    const loaded = await loadDocumentReview("note-1");
+
+    expect(loaded).toMatchObject({
+      ocr_text: "Bitte Lina am Mittwoch um 15 Uhr abholen.",
+      credential_text: "Bitte Lina am Mittwoch um 15 Uhr abholen.",
     });
   });
 

@@ -35,6 +35,8 @@ export type ReviewAnalysis = {
   original_filename: string | null;
   mime_type: string | null;
   page_count: number | null;
+  /** Original user-entered note text, exposed through the RLS document query. */
+  ocr_text: string | null;
   credential_text: string | null;
   document_type: DocumentType;
   title: string;
@@ -74,6 +76,7 @@ export type ConfirmDocumentPayload = Omit<
   | "original_filename"
   | "mime_type"
   | "page_count"
+  | "ocr_text"
   | "credential_text"
 > & {
   deletedTaskIndices: number[];
@@ -221,6 +224,7 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     original_filename: row.original_filename,
     mime_type: row.mime_type,
     page_count: row.page_count,
+    ocr_text: row.ocr_text,
     credential_text: row.ocr_text,
     document_type: type,
     title: row.title ?? "Dokument",

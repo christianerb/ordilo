@@ -26,7 +26,7 @@ import {
 } from "react-native";
 
 import { FadeInView, PressableScale } from "@/src/components/motion";
-import { OrdiloButton, Screen } from "@/src/components/ui";
+import { OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { deleteFamilyAccount } from "@/src/lib/account";
 import { getApiUrl } from "@/src/lib/api";
 import { useAppLock } from "@/src/lib/app-lock";
@@ -132,7 +132,10 @@ export default function EinstellungenScreen() {
 
   return (
     <Screen>
-      <View style={styles.topBar}>
+      <ScreenHeader
+        subtitle="Schutz und Konto auf diesem Gerät"
+        title="Einstellungen"
+        trailing={(
         <PressableScale
           accessibilityLabel="Zurück"
           contentStyle={styles.backButton}
@@ -140,11 +143,8 @@ export default function EinstellungenScreen() {
         >
           <ChevronLeft color={colors.graphite} size={22} strokeWidth={2} />
         </PressableScale>
-        <Text style={[typography.display, styles.topBarTitle]}>
-          Einstellungen
-        </Text>
-        <View style={styles.backButton} />
-      </View>
+        )}
+      />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -467,20 +467,11 @@ function SettingsLinkRow({
 }
 
 const styles = StyleSheet.create({
-  topBar: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: spacing.sm,
-  },
   backButton: {
     alignItems: "center",
     height: 44,
     justifyContent: "center",
     width: 44,
-  },
-  topBarTitle: {
-    color: colors.graphite,
   },
   scrollContent: {
     gap: spacing.lg,
