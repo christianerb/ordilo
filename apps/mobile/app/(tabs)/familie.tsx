@@ -90,7 +90,7 @@ export default function FamilieScreen() {
   }, []);
 
   const handleInvite = useCallback(async () => {
-    if (creating || !family) return;
+    if (creating || !family?.isOwner) return;
     setCreating(true);
     setInviteError(null);
 
@@ -203,7 +203,7 @@ export default function FamilieScreen() {
           </View>
         ) : null}
 
-        {family ? (
+        {family?.isOwner ? (
           <View style={styles.inviteArea}>
             <Pressable
               accessibilityLabel="Person zur Familie einladen"

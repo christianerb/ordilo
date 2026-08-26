@@ -167,6 +167,17 @@ describe("document review", () => {
         value_date: "2026-09-02",
         confidence: 0.7,
       },
+      {
+        entity_type: "contact",
+        entity_value: JSON.stringify({
+          name: "Kontakt ohne Kanal",
+          organization: "",
+          role: "",
+          phone: "",
+          email: "",
+        }),
+        confidence: 0.6,
+      },
     ]);
 
     expect(result.contacts).toEqual([{

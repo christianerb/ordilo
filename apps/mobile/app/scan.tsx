@@ -16,7 +16,7 @@ import {
   Upload,
   X,
 } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -51,6 +51,12 @@ type QueueItem = ScannedDocument & {
   processingStep?: ScanProcessingStep;
   state: UploadState;
 };
+
+function isPersistedQueueItem(
+  item: QueueItem,
+): item is QueueItem & { state: Exclude<UploadState, "done"> } {
+  return item.state !== "done";
+}
 
 function createDocumentId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -115,37 +121,60 @@ export default function ScanModal() {
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const queueRef = useRef<QueueItem[]>([]);
+
+  const updateQueue = useCallback(
+    async (transform: (current: QueueItem[]) => QueueItem[]) => {
+      const next = transform(queueRef.current);
+      queueRef.current = next;
+      setQueue(next);
+      await persistScanQueue(next.filter(isPersistedQueueItem));
+      return next;
+    },
+    [],
+  );
+
+  const markQueueFailed = useCallback(
+    async (
+      itemId: string,
+      patch: Pick<QueueItem, "documentId" | "processingStep" | "error">,
+    ) => {
+      try {
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === itemId
+              ? { ...candidate, ...patch, state: "failed" }
+              : candidate,
+          ),
+        );
+      } catch {
+        // The in-memory retry state is already updated. A later checkpoint
+        // can recover if storage was temporarily unavailable.
+      }
+    },
+    [updateQueue],
+  );
 
   useEffect(() => {
-    void loadPersistedScanQueue().then((stored) => {
-      setQueue(
-        stored.map((item) =>
+    void (async () => {
+      const stored = await loadPersistedScanQueue();
+      const recovered: QueueItem[] = stored.map((item): QueueItem =>
           item.state === "uploading" || item.state === "processing"
             ? {
                 ...item,
-                state: "failed",
+                state: "failed" as const,
                 error: item.documentId
                   ? "Die Verarbeitung wurde unterbrochen. Du kannst sie fortsetzen."
                   : "Der Upload wurde unterbrochen. Du kannst ihn fortsetzen.",
               }
             : item,
-        ),
       );
+      queueRef.current = recovered;
+      setQueue(recovered);
+      await persistScanQueue(recovered.filter(isPersistedQueueItem));
       setQueueHydrated(true);
-    });
+    })().catch(() => setQueueHydrated(true));
   }, []);
-
-  useEffect(() => {
-    if (!queueHydrated) return;
-    void persistScanQueue(
-      queue
-        .flatMap((item) =>
-          item.state === "done"
-            ? []
-            : [{ ...item, state: item.state }],
-        ),
-    );
-  }, [queue, queueHydrated]);
 
   const addToQueue = useCallback(async (document: ScannedDocument): Promise<boolean> => {
     const validationError = validateScannedDocument(document);
@@ -156,7 +185,10 @@ export default function ScanModal() {
     }
     try {
       const staged = await stageScannedDocument(document);
-      setQueue((current) => [...current, { ...staged, state: "queued" }]);
+      await updateQueue((current) => [
+        ...current,
+        { ...staged, state: "queued" },
+      ]);
       setError(null);
       return true;
     } catch {
@@ -164,7 +196,7 @@ export default function ScanModal() {
       void fail();
       return false;
     }
-  }, []);
+  }, [updateQueue]);
 
   const runSystemScanner = useCallback(async () => {
     if (scannerBusy) return;
@@ -197,25 +229,40 @@ export default function ScanModal() {
   const uploadOne = useCallback(
     async (item: QueueItem) => {
       if (!family) return;
-      setQueue((current) =>
-        current.map((candidate) =>
-          candidate.id === item.id
-            ? { ...candidate, state: "uploading", error: undefined }
-            : candidate,
-        ),
-      );
       let uploadedDocumentId: string | undefined;
       let processingStep: ScanProcessingStep | undefined;
       try {
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
+              ? { ...candidate, state: "uploading", error: undefined }
+              : candidate,
+          ),
+        );
         const result = await uploadScannedDocument(item, family.id);
         uploadedDocumentId = result.document_id;
+        // The document ID must reach durable storage before OCR starts.
+        // After a process interruption, retry can then resume this server
+        // document instead of uploading a duplicate.
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
+              ? {
+                  ...candidate,
+                  documentId: result.document_id,
+                  processingStep: "ocr",
+                  state: "processing",
+                }
+              : candidate,
+          ),
+        );
         if (!result.server_pipeline) {
           await continueScannedDocumentPipeline(
             result.document_id,
             "ocr",
-            (step) => {
+            async (step) => {
               processingStep = step;
-              setQueue((current) =>
+              await updateQueue((current) =>
                 current.map((candidate) =>
                   candidate.id === item.id
                     ? {
@@ -230,7 +277,7 @@ export default function ScanModal() {
             },
           );
         }
-        setQueue((current) =>
+        await updateQueue((current) =>
           current.map((candidate) =>
             candidate.id === item.id
               ? {
@@ -242,31 +289,22 @@ export default function ScanModal() {
               : candidate,
           ),
         );
-        void removeStagedScannedDocument(item.uri);
+        await removeStagedScannedDocument(item.uri);
         void success();
       } catch {
-        setQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? {
-                  ...candidate,
-                  documentId: uploadedDocumentId ?? candidate.documentId,
-                  processingStep,
-                  state: "failed",
-                  error:
-                    uploadedDocumentId
-                      ? processingStep === "analysis"
-                        ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
-                        : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
-                      : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.",
-                }
-              : candidate,
-          ),
-        );
+        await markQueueFailed(item.id, {
+          documentId: uploadedDocumentId ?? item.documentId,
+          processingStep,
+          error: uploadedDocumentId
+            ? processingStep === "analysis"
+              ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
+              : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
+            : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.",
+        });
         void fail();
       }
     },
-    [family],
+    [family, markQueueFailed, updateQueue],
   );
 
   const retryProcessing = useCallback(
@@ -275,21 +313,21 @@ export default function ScanModal() {
         await uploadOne(item);
         return;
       }
-      setQueue((current) =>
-        current.map((candidate) =>
-          candidate.id === item.id
-            ? { ...candidate, state: "processing", error: undefined }
-            : candidate,
-        ),
-      );
       let processingStep = item.processingStep ?? "ocr";
       try {
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
+              ? { ...candidate, state: "processing", error: undefined }
+              : candidate,
+          ),
+        );
         await continueScannedDocumentPipeline(
           item.documentId,
           processingStep,
-          (step) => {
+          async (step) => {
             processingStep = step;
-            setQueue((current) =>
+            await updateQueue((current) =>
               current.map((candidate) =>
                 candidate.id === item.id
                   ? { ...candidate, processingStep: step, state: "processing" }
@@ -298,7 +336,7 @@ export default function ScanModal() {
             );
           },
         );
-        setQueue((current) =>
+        await updateQueue((current) =>
           current.map((candidate) =>
             candidate.id === item.id
               ? { ...candidate, processingStep: undefined, state: "done" }
@@ -308,25 +346,18 @@ export default function ScanModal() {
         await removeStagedScannedDocument(item.uri);
         void success();
       } catch {
-        setQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? {
-                  ...candidate,
-                  processingStep,
-                  state: "failed",
-                  error:
-                    processingStep === "analysis"
-                      ? "Die Analyse hat nicht geklappt. Bitte erneut versuchen."
-                      : "Die Texterkennung hat nicht geklappt. Bitte erneut versuchen.",
-                }
-              : candidate,
-          ),
-        );
+        await markQueueFailed(item.id, {
+          documentId: item.documentId,
+          processingStep,
+          error:
+            processingStep === "analysis"
+              ? "Die Analyse hat nicht geklappt. Bitte erneut versuchen."
+              : "Die Texterkennung hat nicht geklappt. Bitte erneut versuchen.",
+        });
         void fail();
       }
     },
-    [uploadOne],
+    [markQueueFailed, updateQueue, uploadOne],
   );
 
   const uploadQueued = useCallback(async () => {

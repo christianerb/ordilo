@@ -72,4 +72,18 @@ describe("native calendar", () => {
     expect(upcoming.map((item) => item.id)).toEqual(["recurring", "future"]);
     expect(upcoming[0].starts_on).toBe("2026-08-17");
   });
+
+  it("keeps the true start of an in-progress multi-day recurrence", () => {
+    const [ongoing] = upcomingPlannerEvents(
+      [{
+        ...event,
+        starts_on: "2026-08-03",
+        ends_on: "2026-08-05",
+      }],
+      "2026-08-11",
+    );
+
+    expect(ongoing.starts_on).toBe("2026-08-10");
+    expect(ongoing.ends_on).toBe("2026-08-12");
+  });
 });

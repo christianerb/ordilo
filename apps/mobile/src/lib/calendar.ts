@@ -194,10 +194,35 @@ function nextEventOccurrence(
   event: PlannerEvent,
   today: string,
 ): string | null {
-  let candidate = event.starts_on > today ? event.starts_on : today;
+  const occurrenceStart = (date: string): string | null => {
+    if (!eventOccursOn(event, date)) return null;
+    const durationDays = Math.max(
+      0,
+      Math.round(
+        (new Date(`${event.ends_on}T12:00:00`).getTime() -
+          new Date(`${event.starts_on}T12:00:00`).getTime()) /
+          86_400_000,
+      ),
+    );
+    let start = date;
+    for (let offset = 0; offset < durationDays; offset += 1) {
+      const previous = shiftIsoDate(start, -1);
+      if (previous < event.starts_on || !eventOccursOn(event, previous)) break;
+      start = previous;
+    }
+    return start;
+  };
+
+  const currentOccurrence = occurrenceStart(today);
+  if (currentOccurrence) return currentOccurrence;
+
+  let candidate = event.starts_on > today
+    ? event.starts_on
+    : shiftIsoDate(today, 1);
   const searchLimit = event.recurrence_until ?? shiftIsoDate(today, 740);
   while (candidate <= searchLimit) {
-    if (eventOccursOn(event, candidate)) return candidate;
+    const start = occurrenceStart(candidate);
+    if (start) return start;
     candidate = shiftIsoDate(candidate, 1);
   }
   return null;

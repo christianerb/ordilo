@@ -137,13 +137,16 @@ export function reconstructStoredEntities(rawEntities: unknown[]) {
 
   const contacts = ofType("contact").flatMap((entity) => {
     const details = jsonRecord(entity.entity_value);
-    if (!details || !text(details.name).trim()) return [];
+    const name = details ? text(details.name).trim() : "";
+    const phone = details ? text(details.phone).trim() : "";
+    const email = details ? text(details.email).trim() : "";
+    if (!details || !name || (!phone && !email)) return [];
     return [{
-      name: text(details.name),
+      name,
       organization: text(details.organization),
       role: text(details.role),
-      phone: text(details.phone),
-      email: text(details.email),
+      phone,
+      email,
       confidence: confidence(entity.confidence),
     }];
   });
