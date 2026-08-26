@@ -196,6 +196,7 @@ export function ScreenHeader({
   action,
   title,
   subtitle,
+  trailing,
 }: {
   action?: {
     accessibilityLabel: string;
@@ -204,6 +205,7 @@ export function ScreenHeader({
   };
   title: string;
   subtitle?: string;
+  trailing?: ReactNode;
 }) {
   const ActionIcon = action?.icon;
   return (
@@ -216,7 +218,7 @@ export function ScreenHeader({
           </Text>
         ) : null}
       </View>
-      {action && ActionIcon ? (
+      {trailing ?? (action && ActionIcon ? (
         <SpringPressable
           accessibilityLabel={action.accessibilityLabel}
           onPress={action.onPress}
@@ -224,7 +226,7 @@ export function ScreenHeader({
         >
           <ActionIcon color={colors.warmWhite} size={20} strokeWidth={2.2} />
         </SpringPressable>
-      ) : null}
+      ) : null)}
     </View>
   );
 }
@@ -249,7 +251,7 @@ export function OrdiloButton({
 }: {
   title: string;
   onPress: () => void;
-  variant?: "primary" | "outline" | "ghost";
+  variant?: "primary" | "outline" | "ghost" | "destructive";
   size?: "default" | "lg";
   disabled?: boolean;
   icon?: ReactNode;
@@ -266,6 +268,7 @@ export function OrdiloButton({
         variant === "primary" && styles.buttonPrimary,
         variant === "outline" && styles.buttonOutline,
         variant === "ghost" && styles.buttonGhost,
+        variant === "destructive" && styles.buttonDestructive,
       ]}
     >
       {icon}
@@ -276,6 +279,7 @@ export function OrdiloButton({
           variant === "primary" && styles.buttonTextPrimary,
           variant === "outline" && styles.buttonTextOutline,
           variant === "ghost" && styles.buttonTextGhost,
+          variant === "destructive" && styles.buttonTextDestructive,
         ]}
       >
         {title}
@@ -383,6 +387,9 @@ const styles = StyleSheet.create({
   buttonPrimary: {
     backgroundColor: colors.harborBlue,
   },
+  buttonDestructive: {
+    backgroundColor: colors.destructive,
+  },
   buttonOutline: {
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
@@ -396,6 +403,10 @@ const styles = StyleSheet.create({
     fontSize: typography.body.fontSize,
   },
   buttonTextPrimary: {
+    color: colors.warmWhite,
+    fontFamily: typography.title.fontFamily,
+  },
+  buttonTextDestructive: {
     color: colors.warmWhite,
     fontFamily: typography.title.fontFamily,
   },

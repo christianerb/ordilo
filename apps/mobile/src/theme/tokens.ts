@@ -21,6 +21,10 @@ export const colors = {
   warmApricot: "#E46018",
   warmApricotLight: "#F0B4A0",
   blueSoft: "#E4F0FC",
+  washSage: "#DDEBE5",
+  washSageSoft: "#E6F0EC",
+  washBlue: "#E5EEF1",
+  washApricot: "#F8E7D4",
   destructive: "#C0392B",
   destructiveBackground: "#F9E8E5",
 } as const;
