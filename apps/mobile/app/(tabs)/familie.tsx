@@ -1,78 +1,96 @@
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
-import { AlertCircle, Check, Copy, UserPlus, Users } from "lucide-react-native";
-import { useCallback, useState } from "react";
+import {
+  Check,
+  Copy,
+  Heart,
+  Plus,
+  UserPlus,
+  Users,
+} from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Pressable,
+  RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
-import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import { OrdiloMark } from "@/src/components/ordilo-mark";
+import { OrdiloFormSheet } from "@/src/components/sheet";
+import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
-import { canCreateFamilyInvite } from "@/src/lib/family";
 import { useFamily } from "@/src/lib/family-context";
 import { createFamilyInvite } from "@/src/lib/invites";
+import { listMembers, updateMember, type MemberRow } from "@/src/lib/onboarding-actions";
+import { AVATAR_COLORS } from "@/src/lib/onboarding";
 import { useSession } from "@/src/lib/session";
-import {
-  fetchFamilyMembers,
-  type FamilyMemberOption,
-} from "@/src/lib/tasks";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
-/**
- * Familie — members, invitations and settings.
- *
- * Invite creation mirrors the web's InviteAction exactly: one tap creates
- * the link and opens the system share sheet; the link panel stays visible
- * afterwards so a cancelled share can still be copied. Only the family
- * owner can create invites — enforced by RLS, like the web.
- *
- * Links point at the web app (EXPO_PUBLIC_API_URL) so recipients can open
- * them on any device; on a phone with the app installed the invite screen
- * takes over. Full member management follows in the Familie milestone.
- */
+const memberWashes = [
+  "#E8D2AC",
+  "#DDEBE5",
+  "#F0D7D3",
+  "#DDE6EA",
+  "#E6D9EB",
+  "#F4E5C9",
+] as const;
+
 export default function FamilieScreen() {
   const { session, signOut } = useSession();
   const { family } = useFamily();
+  const [members, setMembers] = useState<MemberRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [memberError, setMemberError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [members, setMembers] = useState<FamilyMemberOption[]>([]);
-  const [loadingMembers, setLoadingMembers] = useState(true);
-  const [membersError, setMembersError] = useState<string | null>(null);
+  const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
+  const loadSeqRef = useRef(0);
+  const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadMembers = useCallback(async () => {
+  const loadMembers = useCallback(async ({
+    refresh = false,
+    silent = false,
+  }: {
+    refresh?: boolean;
+    silent?: boolean;
+  } = {}) => {
+    const sequence = ++loadSeqRef.current;
     if (!family) {
       setMembers([]);
-      setLoadingMembers(false);
+      setLoading(false);
       return;
     }
-    setLoadingMembers(true);
-    setMembersError(null);
-    try {
-      setMembers(await fetchFamilyMembers(family.id));
-    } catch {
-      setMembersError(
-        "Deine Familie konnte nicht geladen werden. Bitte versuch es nochmal.",
-      );
-    } finally {
-      setLoadingMembers(false);
-    }
+    if (refresh) setRefreshing(true);
+    else if (!silent) setLoading(true);
+    setMemberError(null);
+    const result = await listMembers(family.id);
+    if (sequence !== loadSeqRef.current) return;
+    if (result.success) setMembers(result.data);
+    else setMemberError(result.error);
+    setLoading(false);
+    setRefreshing(false);
   }, [family]);
 
-  useFocusEffect(
-    useCallback(() => {
-      void loadMembers();
-    }, [loadMembers]),
-  );
+  useFocusEffect(useCallback(() => {
+    void loadMembers({ silent: true });
+  }, [loadMembers]));
+
+  useEffect(() => () => {
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+  }, []);
 
   const handleInvite = useCallback(async () => {
-    if (creating || !family || !canCreateFamilyInvite(family)) return;
+    if (creating || !family?.isOwner) return;
     setCreating(true);
     setInviteError(null);
 
@@ -86,16 +104,13 @@ export default function FamilieScreen() {
 
     const url = `${getApiUrl()}/invite/${result.token}`;
     setInviteUrl(url);
-
-    // Straight from "create" to the system share sheet — same as the web
-    // on mobile. Cancelling keeps the link panel below visible.
     try {
       await Share.share({
         title: "Ordilo — Familieneinladung",
         message: `Komm in unseren Ordilo-Familienordner:\n${url}`,
       });
     } catch {
-      // Share sheet dismissed — nothing to do.
+      // Dismissing the native share sheet keeps the invite ready to copy.
     }
   }, [creating, family]);
 
@@ -104,120 +119,127 @@ export default function FamilieScreen() {
     const ok = await Clipboard.setStringAsync(inviteUrl);
     if (!ok) return;
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = setTimeout(() => setCopied(false), 2_000);
   }, [inviteUrl]);
 
+  const saveMember = useCallback(async (
+    member: MemberRow,
+    values: { name: string; avatarColor: string },
+  ) => {
+    if (!family) return { success: false, error: "Deine Familie konnte nicht geladen werden." };
+    const result = await updateMember(family.id, member.id, {
+      name: values.name,
+      avatar_color: values.avatarColor,
+      birthdate: member.birthdate ?? "",
+    });
+    if (result.success) {
+      setMembers((current) =>
+        current.map((candidate) => candidate.id === member.id ? result.data : candidate),
+      );
+    }
+    return result.success
+      ? { success: true }
+      : { success: false, error: result.error };
+  }, [family]);
+
+  const memberSummary = members.length === 0
+    ? "Noch keine Personen"
+    : members.length === 1
+      ? "1 wichtiger Mensch"
+      : `Deine ${members.length} Lieblingsmenschen`;
+
   return (
-    <Screen>
+    <Screen style={styles.screen}>
       <ScrollView
         contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            colors={[colors.harborBlue]}
+            onRefresh={() => void loadMembers({ refresh: true })}
+            refreshing={refreshing}
+            tintColor={colors.harborBlue}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
-        <ScreenHeader title="Familie" subtitle="Mitglieder und Einstellungen" />
+        <FamilyHeader />
 
-        {loadingMembers ? (
-          <Card style={styles.membersLoading}>
-            <ActivityIndicator
-              accessibilityLabel="Familienmitglieder werden geladen"
-              color={colors.harborBlue}
-            />
-          </Card>
-        ) : membersError ? (
+        <View style={styles.summary}>
+          <View style={styles.summaryIcon}>
+            <Users color={colors.harborBlue} size={24} strokeWidth={1.7} />
+          </View>
+          <View style={styles.summaryCopy}>
+            <Text style={styles.summaryTitle}>{memberSummary}</Text>
+            <Text style={styles.summaryText}>
+              {members.length === 0
+                ? "Füge die erste Person für eure Dokumente hinzu."
+                : "Schön, dass ihr zusammen seid."}
+            </Text>
+          </View>
+          <Heart color={colors.warmApricot} size={23} strokeWidth={1.7} />
+        </View>
+
+        {loading ? (
+          <ListSkeleton rows={4} />
+        ) : memberError ? (
           <EmptyState
-            icon={AlertCircle}
+            description={memberError}
             heading="Familie nicht erreichbar"
-            description={membersError}
+            icon={Users}
           >
-            <OrdiloButton onPress={() => void loadMembers()} size="lg" title="Erneut versuchen" />
+            <OrdiloButton onPress={() => void loadMembers()} title="Erneut versuchen" />
           </EmptyState>
         ) : members.length > 0 ? (
-          <Card style={styles.membersCard}>
-            <View style={styles.membersHeader}>
-              <Text style={[typography.display, styles.membersTitle]}>
-                Deine Familie
-              </Text>
-              <Text style={[typography.timestamp, styles.membersCount]}>
-                {members.length}
-              </Text>
-            </View>
-            <View style={styles.membersList}>
-              {members.map((member) => (
-                <View key={member.id} style={styles.memberRow}>
-                  <View
-                    style={[
-                      styles.memberAvatar,
-                      { backgroundColor: member.avatar_color ?? colors.sandLight },
-                    ]}
-                  >
-                    <Text style={styles.memberInitial}>
-                      {member.name.trim().charAt(0).toUpperCase() || "?"}
-                    </Text>
-                  </View>
-                  <View style={styles.memberText}>
-                    <Text style={[typography.title, styles.memberName]}>
-                      {member.name}
-                    </Text>
-                    <Text style={[typography.timestamp, styles.memberRole]}>
-                      {member.role || "Familienmitglied"}
-                    </Text>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </Card>
-        ) : (
-          <EmptyState
-            icon={Users}
-            heading="Noch niemand dabei"
-            description="Lade deine Familie mit einem Link ein."
-          />
-        )}
+          <View style={styles.memberGrid}>
+            {members.map((member, index) => (
+              <MemberCard
+                key={member.id}
+                member={member}
+                onPress={() => setEditingMember(member)}
+                wash={memberWashes[index % memberWashes.length]}
+              />
+            ))}
+          </View>
+        ) : null}
 
-        {canCreateFamilyInvite(family) ? (
-          <Card style={styles.inviteCard}>
-            <View style={styles.inviteHeader}>
-              <View style={styles.inviteHeaderText}>
-                <Text style={[typography.display, styles.inviteTitle]}>
-                  Familie einladen
-                </Text>
-                <Text style={[typography.timestamp, styles.inviteDescription]}>
-                  Teile den Link — er ist 14 Tage gültig und kann von mehreren
-                  Personen genutzt werden.
-                </Text>
+        {family?.isOwner ? (
+          <View style={styles.inviteArea}>
+            <Pressable
+              accessibilityLabel="Person zur Familie einladen"
+              accessibilityRole="button"
+              disabled={creating}
+              onPress={() => void handleInvite()}
+              style={({ pressed }) => [
+                styles.addMember,
+                pressed && styles.pressed,
+                creating && styles.disabled,
+              ]}
+            >
+              <View style={styles.addIcon}>
+                {creating ? (
+                  <ActivityIndicator color={colors.harborBlue} size="small" />
+                ) : (
+                  <Plus color={colors.harborBlue} size={20} strokeWidth={2.2} />
+                )}
               </View>
-              {!inviteUrl && (
-                <OrdiloButton
-                  disabled={creating}
-                  icon={<UserPlus color={colors.warmWhite} size={16} />}
-                  onPress={() => void handleInvite()}
-                  title={creating ? "Wird erstellt …" : "Einladen"}
-                />
-              )}
-            </View>
+              <View style={styles.addCopy}>
+                <Text style={styles.addTitle}>
+                  {creating ? "Einladung wird erstellt …" : "Person einladen"}
+                </Text>
+                <Text style={styles.addText}>Familienmitglied, Kind oder andere Person</Text>
+              </View>
+            </Pressable>
 
             {inviteUrl ? (
-              <View style={styles.linkPanel}>
-                <View style={styles.linkRow}>
-                  <Text
-                    numberOfLines={1}
-                    selectable
-                    style={[typography.label, styles.linkText]}
-                  >
-                    {inviteUrl}
-                  </Text>
-                  <OrdiloButton
-                    icon={
-                      copied ? (
-                        <Check color={colors.graphite} size={16} />
-                      ) : (
-                        <Copy color={colors.graphite} size={16} />
-                      )
-                    }
-                    onPress={() => void handleCopy()}
-                    title={copied ? "Kopiert" : "Kopieren"}
-                    variant="outline"
-                  />
-                </View>
+              <Card style={styles.linkPanel}>
+                <Text numberOfLines={1} selectable style={styles.linkText}>{inviteUrl}</Text>
+                <OrdiloButton
+                  icon={copied ? <Check color={colors.graphite} size={16} /> : <Copy color={colors.graphite} size={16} />}
+                  onPress={() => void handleCopy()}
+                  title={copied ? "Kopiert" : "Kopieren"}
+                  variant="outline"
+                />
                 <OrdiloButton
                   icon={<UserPlus color={colors.harborBlue} size={16} />}
                   onPress={() => {
@@ -226,143 +248,351 @@ export default function FamilieScreen() {
                       message: `Komm in unseren Ordilo-Familienordner:\n${inviteUrl}`,
                     }).catch(() => {});
                   }}
-                  title="Erneut teilen"
+                  title="Teilen"
                   variant="ghost"
                 />
-              </View>
+              </Card>
             ) : null}
 
-            {inviteError ? (
-              <Text accessibilityRole="alert" style={styles.inviteError}>
-                {inviteError}
-              </Text>
-            ) : null}
-          </Card>
+            {inviteError ? <Text accessibilityRole="alert" style={styles.inviteError}>{inviteError}</Text> : null}
+          </View>
         ) : null}
 
         <Card style={styles.accountCard}>
-          <View style={styles.accountText}>
-            <Text style={[typography.label, styles.accountLabel]}>
-              Angemeldet als
-            </Text>
-            <Text style={[typography.title, styles.accountEmail]}>
-              {session?.user.email ?? "Unbekannt"}
-            </Text>
+          <View style={styles.accountCopy}>
+            <Text style={styles.accountLabel}>Angemeldet als</Text>
+            <Text numberOfLines={1} style={styles.accountEmail}>{session?.user.email ?? "Unbekannt"}</Text>
           </View>
-          <OrdiloButton
-            title="Abmelden"
-            variant="outline"
-            onPress={() => void signOut()}
-          />
+          <OrdiloButton onPress={() => void signOut()} title="Abmelden" variant="outline" />
         </Card>
       </ScrollView>
+      <MemberEditSheet
+        member={editingMember}
+        onClose={() => setEditingMember(null)}
+        onSubmit={saveMember}
+        visible={Boolean(editingMember)}
+      />
     </Screen>
   );
 }
 
+function FamilyHeader() {
+  return (
+    <View style={styles.header}>
+      <View accessible={false} style={styles.headerWashOne} />
+      <View accessible={false} style={styles.headerWashTwo} />
+      <View accessible={false} style={styles.headerDotOne} />
+      <View accessible={false} style={styles.headerDotTwo} />
+      <View style={styles.headerCopy}>
+        <Text style={styles.headerTitle}>Familie</Text>
+        <Text style={styles.headerSubtitle}>Mitglieder und Einladungen</Text>
+      </View>
+      <View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={styles.headerMark}
+      >
+        <OrdiloMark size={48} />
+      </View>
+    </View>
+  );
+}
+
+function MemberCard({
+  member,
+  onPress,
+  wash,
+}: {
+  member: MemberRow;
+  onPress: () => void;
+  wash: string;
+}) {
+  const initial = member.name.trim().charAt(0).toUpperCase() || "?";
+  return (
+    <Pressable
+      accessibilityLabel={`${member.name} bearbeiten`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.memberCard,
+        { backgroundColor: wash },
+        pressed && styles.pressed,
+      ]}
+    >
+      <View style={styles.memberTop}>
+        <View style={[styles.memberAvatar, { backgroundColor: member.avatar_color ?? colors.harborBlue }]}>
+          <Text style={styles.memberInitial}>{initial}</Text>
+        </View>
+      </View>
+      <Text numberOfLines={1} style={styles.memberName}>{member.name}</Text>
+      <Text numberOfLines={1} style={styles.memberRole}>{member.role || "Familienmitglied"}</Text>
+    </Pressable>
+  );
+}
+
+function MemberEditSheet({
+  member,
+  onClose,
+  onSubmit,
+  visible,
+}: {
+  member: MemberRow | null;
+  onClose: () => void;
+  onSubmit: (
+    member: MemberRow,
+    values: { name: string; avatarColor: string },
+  ) => Promise<{ success: boolean; error?: string }>;
+  visible: boolean;
+}) {
+  const [name, setName] = useState("");
+  const [avatarColor, setAvatarColor] = useState<string>(AVATAR_COLORS[0]);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [wasVisible, setWasVisible] = useState(false);
+
+  if (visible !== wasVisible) {
+    setWasVisible(visible);
+    if (visible && member) {
+      setName(member.name);
+      setAvatarColor(member.avatar_color ?? AVATAR_COLORS[0]);
+      setError(null);
+      setSubmitting(false);
+    }
+  }
+
+  const submit = useCallback(async () => {
+    if (!member) return;
+    setSubmitting(true);
+    setError(null);
+    const result = await onSubmit(member, { name, avatarColor });
+    setSubmitting(false);
+    if (result.success) onClose();
+    else setError(result.error ?? "Speichern hat nicht geklappt.");
+  }, [avatarColor, member, name, onClose, onSubmit]);
+
+  const requestClose = useCallback(() => {
+    if (submitting) return;
+    const isDirty =
+      name !== (member?.name ?? "") ||
+      avatarColor !== (member?.avatar_color ?? AVATAR_COLORS[0]);
+    if (!isDirty) {
+      onClose();
+      return;
+    }
+    Alert.alert(
+      "Änderungen verwerfen?",
+      "Deine Eingaben gehen verloren.",
+      [
+        { style: "cancel", text: "Weiter bearbeiten" },
+        { onPress: onClose, style: "destructive", text: "Verwerfen" },
+      ],
+    );
+  }, [avatarColor, member, name, onClose, submitting]);
+
+  return (
+    <OrdiloFormSheet
+      closeAccessibilityLabel="Bearbeiten schließen"
+      onClose={requestClose}
+      style={styles.memberSheet}
+      title="Person bearbeiten"
+      visible={visible}
+    >
+      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={styles.sheetLabel}>Name</Text>
+            <TextInput
+              accessibilityLabel="Name der Person"
+              autoCapitalize="words"
+              maxLength={100}
+              onChangeText={setName}
+              style={styles.sheetInput}
+              value={name}
+            />
+
+            <Text style={styles.sheetLabel}>Rolle</Text>
+            <Text style={styles.memberRoleRead}>
+              {member?.role || "Familienmitglied"}
+            </Text>
+
+            <Text style={styles.sheetLabel}>Farbe</Text>
+            <View style={styles.avatarColors}>
+              {AVATAR_COLORS.map((color) => {
+                const selected = avatarColor === color;
+                return (
+                  <Pressable
+                    accessibilityLabel="Avatarfarbe auswählen"
+                    accessibilityRole="button"
+                    accessibilityState={{ selected }}
+                    key={color}
+                    onPress={() => setAvatarColor(color)}
+                    style={[styles.avatarColor, { backgroundColor: color }, selected && styles.avatarColorSelected]}
+                  >
+                    {selected ? <Check color={colors.warmWhite} size={18} strokeWidth={2.4} /> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {error ? <Text accessibilityRole="alert" style={styles.sheetError}>{error}</Text> : null}
+            <View style={styles.sheetSubmit}>
+              <OrdiloButton
+                disabled={submitting}
+                icon={submitting ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+                onPress={() => void submit()}
+                size="lg"
+                title={submitting ? "Wird gespeichert …" : "Speichern"}
+              />
+            </View>
+      </ScrollView>
+    </OrdiloFormSheet>
+  );
+}
+
 const styles = StyleSheet.create({
-  content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  inviteCard: { gap: spacing.sm },
-  inviteHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
+  screen: { paddingHorizontal: 0 },
+  content: { gap: spacing.md, paddingBottom: spacing["2xl"], paddingHorizontal: spacing.md },
+  header: {
+    backgroundColor: colors.sand,
+    borderRadius: radii.md,
+    height: 132,
+    justifyContent: "flex-end",
+    marginHorizontal: -spacing.md,
+    overflow: "hidden",
+    padding: spacing.md,
   },
-  inviteHeaderText: { flex: 1, gap: spacing.xs },
-  inviteTitle: { color: colors.graphite },
-  inviteDescription: { color: colors.mistDark },
-  linkPanel: {
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
+  headerWashOne: {
+    backgroundColor: "#DDEBE5",
+    borderRadius: radii.xl,
+    height: 130,
+    left: -62,
+    opacity: 0.65,
+    position: "absolute",
+    top: -42,
+    transform: [{ rotate: "-12deg" }],
+    width: 220,
   },
-  linkRow: {
+  headerWashTwo: {
+    backgroundColor: "#F0B4A0",
+    borderRadius: radii.pill,
+    height: 46,
+    opacity: 0.38,
+    position: "absolute",
+    right: 126,
+    top: 18,
+    width: 46,
+  },
+  headerDotOne: { backgroundColor: colors.harborBlue, borderRadius: radii.pill, height: 8, opacity: 0.18, position: "absolute", right: 102, top: 70, width: 8 },
+  headerDotTwo: { backgroundColor: colors.warmApricot, borderRadius: radii.pill, height: 8, opacity: 0.36, position: "absolute", right: 62, top: 77, width: 8 },
+  headerCopy: { gap: spacing.xs, zIndex: 1 },
+  headerTitle: { color: colors.graphite, ...typography.display },
+  headerSubtitle: { color: colors.mistDark, ...typography.timestamp },
+  headerMark: {
     alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  linkText: {
     backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    elevation: 2,
+    height: 60,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.md,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    top: 40,
+    width: 60,
+  },
+  summary: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
     borderColor: colors.mistLight,
     borderRadius: radii.sm,
     borderWidth: 1,
-    color: colors.graphite,
-    flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  inviteError: {
-    color: colors.destructive,
-    fontFamily: typography.timestamp.fontFamily,
-    fontSize: typography.timestamp.fontSize,
-    fontWeight: "500",
-  },
-  membersCard: { gap: spacing.sm },
-  membersLoading: {
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
     minHeight: 92,
+    padding: spacing.md,
   },
-  membersHeader: {
+  summaryIcon: { alignItems: "center", backgroundColor: "#DDEBE5", borderRadius: radii.pill, height: 52, justifyContent: "center", width: 52 },
+  summaryCopy: { flex: 1, gap: 2 },
+  summaryTitle: { color: colors.graphite, ...typography.title },
+  summaryText: { color: colors.mistDark, ...typography.timestamp },
+  memberGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  memberCard: {
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    minHeight: 138,
+    padding: spacing.md,
+    width: "48.7%",
+  },
+  memberTop: { alignItems: "flex-start", flex: 1 },
+  memberAvatar: { alignItems: "center", borderRadius: radii.pill, height: 40, justifyContent: "center", width: 40 },
+  memberInitial: { color: colors.warmWhite, ...typography.title },
+  memberName: { color: colors.graphite, ...typography.title },
+  memberRole: { color: colors.mistDark, marginTop: 2, ...typography.label },
+  inviteArea: { gap: spacing.sm },
+  addMember: {
     alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: "#9DCBC0",
+    borderRadius: radii.sm,
+    borderStyle: "dashed",
+    borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
+    minHeight: 72,
+    paddingHorizontal: spacing.md,
   },
-  membersTitle: {
-    color: colors.graphite,
-    flex: 1,
+  addIcon: { alignItems: "center", backgroundColor: "#DDEBE5", borderRadius: radii.pill, height: 40, justifyContent: "center", width: 40 },
+  addCopy: { flex: 1, gap: 2 },
+  addTitle: { color: colors.graphite, ...typography.title },
+  addText: { color: colors.mistDark, ...typography.label },
+  linkPanel: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  linkText: { color: colors.mistDark, flex: 1, minWidth: 160, ...typography.label },
+  inviteError: { color: colors.destructive, ...typography.timestamp },
+  accountCard: { alignItems: "center", flexDirection: "row", gap: spacing.sm, justifyContent: "space-between" },
+  accountCopy: { flex: 1, gap: 2, minWidth: 0 },
+  accountLabel: { color: colors.mistDark, ...typography.label },
+  accountEmail: { color: colors.graphite, ...typography.timestamp },
+  memberSheet: {
+    maxHeight: "82%",
   },
-  membersCount: {
+  sheetLabel: {
     color: colors.mistDark,
+    marginBottom: spacing.xs,
+    marginTop: spacing.sm,
+    ...typography.label,
   },
-  membersList: {
-    gap: spacing.sm,
+  sheetInput: {
+    borderColor: colors.mistLight,
+    borderRadius: radii.base,
+    borderWidth: 1,
+    color: colors.graphite,
+    height: 44,
+    paddingHorizontal: spacing.sm,
+    ...typography.body,
   },
-  memberRow: {
+  memberRoleRead: {
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.base,
+    color: colors.mistDark,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+    ...typography.timestamp,
+  },
+  avatarColors: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  avatarColor: {
     alignItems: "center",
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 52,
-    paddingTop: spacing.sm,
-  },
-  memberAvatar: {
-    alignItems: "center",
+    borderColor: "transparent",
     borderRadius: radii.pill,
+    borderWidth: 2,
     height: 36,
     justifyContent: "center",
     width: 36,
   },
-  memberInitial: {
-    color: colors.warmWhite,
-    ...typography.title,
-  },
-  memberText: {
-    flex: 1,
-    gap: 1,
-  },
-  memberName: {
-    color: colors.graphite,
-  },
-  memberRole: {
-    color: colors.mistDark,
-  },
-  accountCard: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  accountText: {
-    flexShrink: 1,
-    gap: spacing.xs,
-  },
-  accountLabel: {
-    color: colors.mistDark,
-  },
-  accountEmail: {
-    color: colors.graphite,
-  },
+  avatarColorSelected: { borderColor: colors.graphite },
+  sheetError: { color: colors.destructive, marginTop: spacing.md, ...typography.timestamp },
+  sheetSubmit: { marginTop: spacing.lg },
+  pressed: { opacity: 0.76 },
+  disabled: { opacity: 0.56 },
 });

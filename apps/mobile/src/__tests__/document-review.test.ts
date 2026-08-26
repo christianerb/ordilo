@@ -6,25 +6,21 @@ import {
   documentTypeLabels,
   isImageFile,
   isSafeOriginalFileUrl,
-  loadDocumentReview,
   parseCredentialFields,
-  parseStoredContact,
-  reconstructStoredDate,
-  reconstructStoredAmount,
+  reconstructStoredEntities,
   revealDocumentSecret,
   type ReviewAnalysis,
 } from "../lib/document-review";
 
 const mockApiFetch = jest.fn();
 const mockApiJson = jest.fn();
-const mockFrom = jest.fn();
 
 jest.mock("../lib/api", () => ({
   apiFetch: (...args: unknown[]) => mockApiFetch(...args),
   apiJson: (...args: unknown[]) => mockApiJson(...args),
 }));
 jest.mock("../lib/supabase", () => ({
-  getSupabase: () => ({ from: mockFrom }),
+  getSupabase: jest.fn(),
 }));
 
 const analysis: ReviewAnalysis = {
@@ -47,31 +43,10 @@ const analysis: ReviewAnalysis = {
   original_filename: "strom.pdf",
   mime_type: "application/pdf",
   page_count: 2,
-  ocr_text: null,
   credential_text: null,
 };
 
-function queryResult(result: { data: unknown; error: unknown }) {
-  const query = {
-    select: jest.fn(),
-    eq: jest.fn(),
-    maybeSingle: jest.fn(),
-    then: (
-      resolve: (value: { data: unknown; error: unknown }) => unknown,
-      reject?: (reason: unknown) => unknown,
-    ) => Promise.resolve(result).then(resolve, reject),
-  };
-  query.select.mockReturnValue(query);
-  query.eq.mockReturnValue(query);
-  query.maybeSingle.mockResolvedValue(result);
-  return query;
-}
-
 describe("document review", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   it("uses German labels for the document type", () => {
     expect(documentTypeLabels.invoice).toBe("Rechnung");
     expect(documentTypeLabels.credentials).toBe("Zugangsdaten");
@@ -163,76 +138,69 @@ describe("document review", () => {
     });
   });
 
-  it("exposes the RLS-scoped OCR text separately from credential metadata", async () => {
-    const document = {
-      status: "confirmed",
-      title: "Abholzeit",
-      summary: "",
-      document_type: "note",
-      category: null,
-      tags: [],
-      created_at: "2026-07-04T12:00:00.000Z",
-      confirmed_at: "2026-07-04T12:00:00.000Z",
-      original_filename: null,
-      mime_type: null,
-      page_count: 1,
-      ocr_text: "Bitte Lina am Mittwoch um 15 Uhr abholen.",
-    };
-    mockFrom.mockImplementation((table: string) =>
-      queryResult(table === "documents"
-        ? { data: document, error: null }
-        : { data: [], error: null }),
-    );
+  it("reconstructs contacts, dates, and typed amounts from stored entity rows", () => {
+    const result = reconstructStoredEntities([
+      {
+        entity_type: "contact",
+        entity_value: JSON.stringify({
+          name: "Anna Beispiel",
+          organization: "Schule",
+          role: "Sekretariat",
+          phone: "0123",
+          email: "anna@example.de",
+        }),
+        confidence: 0.9,
+      },
+      {
+        entity_type: "date",
+        entity_value: "2026-09-01",
+        label: "Elternabend",
+        confidence: 0.8,
+      },
+      {
+        entity_type: "amount",
+        entity_value: "17 EUR",
+        normalized_value: "17",
+        currency: "EUR",
+        label: "Offen",
+        amount_kind: "outstanding",
+        value_date: "2026-09-02",
+        confidence: 0.7,
+      },
+      {
+        entity_type: "contact",
+        entity_value: JSON.stringify({
+          name: "Kontakt ohne Kanal",
+          organization: "",
+          role: "",
+          phone: "",
+          email: "",
+        }),
+        confidence: 0.6,
+      },
+    ]);
 
-    const loaded = await loadDocumentReview("note-1");
-
-    expect(loaded).toMatchObject({
-      ocr_text: "Bitte Lina am Mittwoch um 15 Uhr abholen.",
-      credential_text: "Bitte Lina am Mittwoch um 15 Uhr abholen.",
-    });
-  });
-
-  it("reconstructs stored contacts, dates, and typed amounts for confirmation", () => {
-    expect(parseStoredContact(JSON.stringify({
-      name: "Praxis Dr. Koch",
-      organization: "Kinderarzt",
-      role: "Rezeption",
-      phone: "089 123456",
-      email: "",
-    }), 0.9)).toEqual({
-      name: "Praxis Dr. Koch",
-      organization: "Kinderarzt",
-      role: "Rezeption",
-      phone: "089 123456",
-      email: "",
+    expect(result.contacts).toEqual([{
+      name: "Anna Beispiel",
+      organization: "Schule",
+      role: "Sekretariat",
+      phone: "0123",
+      email: "anna@example.de",
       confidence: 0.9,
-    });
-    expect(parseStoredContact("{kaputt", 0.8)).toBeNull();
-    expect(reconstructStoredDate({
-      entity_value: "2026-08-28",
-      label: "Zahlungsfrist",
-      confidence: 0.85,
-    })).toEqual({
-      date: "2026-08-28",
+    }]);
+    expect(result.dates).toEqual([{
+      date: "2026-09-01",
       type: "date",
-      label: "Zahlungsfrist",
-      confidence: 0.85,
-    });
-    expect(reconstructStoredAmount({
-      entity_value: "88 EUR",
-      normalized_value: "88.00",
+      label: "Elternabend",
+      confidence: 0.8,
+    }]);
+    expect(result.amounts).toEqual([{
+      amount: "17",
       currency: "EUR",
-      label: "Rechnungsbetrag",
-      amount_kind: "total",
-      value_date: "2026-07-04",
-      confidence: 0.95,
-    })).toEqual({
-      amount: "88.00",
-      currency: "EUR",
-      label: "Rechnungsbetrag",
-      kind: "total",
-      value_date: "2026-07-04",
-      confidence: 0.95,
-    });
+      label: "Offen",
+      kind: "outstanding",
+      value_date: "2026-09-02",
+      confidence: 0.7,
+    }]);
   });
 });

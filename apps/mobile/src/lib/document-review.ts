@@ -35,8 +35,7 @@ export type ReviewAnalysis = {
   original_filename: string | null;
   mime_type: string | null;
   page_count: number | null;
-  /** Original user-entered note text, exposed through the RLS document query. */
-  ocr_text: string | null;
+  ocr_text?: string | null;
   credential_text: string | null;
   document_type: DocumentType;
   title: string;
@@ -115,66 +114,89 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const confidence = (value: unknown) => typeof value === "number" ? value : 0;
 
-function documentType(value: string | null): DocumentType {
-  return documentTypes.has(value as DocumentType) ? value as DocumentType : "other";
-}
-
-type Contact = ReviewAnalysis["contacts"][number];
-type Amount = ReviewAnalysis["amounts"][number];
-type ReviewDate = ReviewAnalysis["dates"][number];
-
-/**
- * Contacts are stored as JSON in `entity_value`, matching the web review
- * reconstruction. Invalid legacy rows stay out of the confirm payload.
- */
-export function parseStoredContact(
-  entityValue: unknown,
-  entityConfidence: unknown,
-): Contact | null {
-  if (typeof entityValue !== "string") return null;
+function jsonRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") return null;
   try {
-    const details = asRecord(JSON.parse(entityValue));
-    const contact = {
-      name: text(details.name),
-      organization: text(details.organization),
-      role: text(details.role),
-      phone: text(details.phone),
-      email: text(details.email),
-      confidence: confidence(entityConfidence),
-    };
-    return contact.name && (contact.phone.trim() || contact.email.trim())
-      ? contact
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
       : null;
   } catch {
     return null;
   }
 }
 
-/** Rebuild typed amount columns, with a display-value fallback for old rows. */
-export function reconstructStoredAmount(entity: Record<string, unknown>): Amount {
-  const displayValue = text(entity.entity_value);
-  const parts = displayValue.split(" ");
-  const fallbackCurrency = parts.length > 1 ? parts.at(-1) ?? "EUR" : "EUR";
-  const fallbackAmount = parts.slice(0, -1).join(" ") || displayValue;
-  const kind = text(entity.amount_kind);
+/**
+ * Rebuilds typed review entities from the columns written by buildEntityRows.
+ * Legacy amount rows fall back to their display value.
+ */
+export function reconstructStoredEntities(rawEntities: unknown[]) {
+  const items = rawEntities.map(asRecord);
+  const ofType = (entityType: string) =>
+    items.filter((entity) => entity.entity_type === entityType);
+
+  const contacts = ofType("contact").flatMap((entity) => {
+    const details = jsonRecord(entity.entity_value);
+    const name = details ? text(details.name).trim() : "";
+    const phone = details ? text(details.phone).trim() : "";
+    const email = details ? text(details.email).trim() : "";
+    if (!details || !name || (!phone && !email)) return [];
+    return [{
+      name,
+      organization: text(details.organization),
+      role: text(details.role),
+      phone,
+      email,
+      confidence: confidence(entity.confidence),
+    }];
+  });
+
+  const amounts = ofType("amount").map((entity) => {
+    const displayParts = text(entity.entity_value).trim().split(/\s+/);
+    const fallbackCurrency =
+      displayParts.length > 1 ? displayParts.at(-1) ?? "EUR" : "EUR";
+    const fallbackAmount =
+      displayParts.length > 1
+        ? displayParts.slice(0, -1).join(" ")
+        : text(entity.entity_value);
+    const storedKind = text(entity.amount_kind);
+    return {
+      amount: text(entity.normalized_value).trim() || fallbackAmount,
+      currency: text(entity.currency).trim() || fallbackCurrency,
+      label: text(entity.label),
+      kind: amountKinds.has(storedKind as ReviewAnalysis["amounts"][number]["kind"])
+        ? storedKind as ReviewAnalysis["amounts"][number]["kind"]
+        : "other" as const,
+      value_date: text(entity.value_date) || null,
+      confidence: confidence(entity.confidence),
+    };
+  });
+
   return {
-    amount: text(entity.normalized_value).trim() || fallbackAmount,
-    currency: text(entity.currency) || fallbackCurrency,
-    label: text(entity.label),
-    kind: amountKinds.has(kind as Amount["kind"]) ? kind as Amount["kind"] : "other",
-    value_date: text(entity.value_date) || null,
-    confidence: confidence(entity.confidence),
+    items,
+    familyMembers: ofType("person").map((entity) => ({
+      person_id: text(entity.linked_object_id) || null,
+      name: text(entity.entity_value),
+      confidence: confidence(entity.confidence),
+    })),
+    organizations: ofType("organization").map((entity) => ({
+      name: text(entity.entity_value),
+      type: text(entity.normalized_value) || "organization",
+      confidence: confidence(entity.confidence),
+    })),
+    contacts,
+    dates: ofType("date").map((entity) => ({
+      date: text(entity.entity_value),
+      type: "date",
+      label: text(entity.label),
+      confidence: confidence(entity.confidence),
+    })),
+    amounts,
   };
 }
 
-/** Dates use the entity label column to preserve their stored meaning. */
-export function reconstructStoredDate(entity: Record<string, unknown>): ReviewDate {
-  return {
-    date: text(entity.entity_value),
-    type: "date",
-    label: text(entity.label),
-    confidence: confidence(entity.confidence),
-  };
+function documentType(value: string | null): DocumentType {
+  return documentTypes.has(value as DocumentType) ? value as DocumentType : "other";
 }
 
 /**
@@ -213,7 +235,8 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     };
   }
 
-  const items = (entities ?? []).map(asRecord);
+  const reconstructed = reconstructStoredEntities(entities ?? []);
+  const { items } = reconstructed;
   const ofType = (entityType: string) => items.filter((entity) => entity.entity_type === entityType);
   const category = ofType("category")[0];
 
@@ -229,16 +252,11 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     document_type: type,
     title: row.title ?? "Dokument",
     summary: row.summary ?? "",
-    family_members: ofType("person").map((entity) => ({ person_id: text(entity.linked_object_id) || null, name: text(entity.entity_value), confidence: confidence(entity.confidence) })),
-    organizations: ofType("organization").map((entity) => {
-      const details = asRecord(entity.metadata);
-      return { name: text(entity.entity_value), type: text(details.type), confidence: confidence(entity.confidence) };
-    }),
-    contacts: ofType("contact")
-      .map((entity) => parseStoredContact(entity.entity_value, entity.confidence))
-      .filter((contact): contact is Contact => contact !== null),
-    dates: ofType("date").map(reconstructStoredDate),
-    amounts: ofType("amount").map(reconstructStoredAmount),
+    family_members: reconstructed.familyMembers,
+    organizations: reconstructed.organizations,
+    contacts: reconstructed.contacts,
+    dates: reconstructed.dates,
+    amounts: reconstructed.amounts,
     tasks: (tasks ?? []).map((task) => {
       const entry = asRecord(task);
       return { title: text(entry.title), due_date: text(entry.due_date) || null, confidence: confidence(entry.confidence) };

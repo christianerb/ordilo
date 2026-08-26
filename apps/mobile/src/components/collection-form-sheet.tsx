@@ -2,7 +2,6 @@ import { Check } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { OrdiloFormSheet } from "./sheet";
 import { OrdiloButton } from "./ui";
 import { CollectionIcon } from "./collection-icon";
 import {
@@ -93,25 +93,15 @@ export function CollectionFormSheet({
   }, [color, icon, name, onClose, onSubmit]);
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      transparent
+    <OrdiloFormSheet
+      onClose={onClose}
+      title={title}
       visible={visible}
     >
-      <Pressable onPress={onClose} style={styles.overlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.sheet}
-        >
-          <View style={styles.handle} />
-          <Text style={styles.title}>{title}</Text>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
             <Text style={styles.fieldLabel}>Name</Text>
             <TextInput
               accessibilityLabel="Name der Sammlung"
@@ -204,41 +194,12 @@ export function CollectionFormSheet({
                 title={submitting ? "Wird gespeichert …" : submitLabel}
               />
             </View>
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      </ScrollView>
+    </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: colors.warmWhite,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    maxHeight: "88%",
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-  },
-  handle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-    width: 40,
-  },
-  title: {
-    color: colors.graphite,
-    marginBottom: spacing.md,
-    ...typography.display,
-  },
   fieldLabel: {
     color: colors.mistDark,
     marginBottom: spacing.xs,

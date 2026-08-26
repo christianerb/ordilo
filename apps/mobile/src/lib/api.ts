@@ -68,18 +68,10 @@ export async function apiFetch(
   }
 
   if (!response.ok) {
-    // Prefer the route's own German message (e.g. the family-name mismatch
-    // from DELETE /api/me) over the generic one when the body carries it.
-    let message = "Das hat nicht geklappt. Bitte versuch's nochmal.";
-    try {
-      const body = (await response.clone().json()) as { error?: unknown };
-      if (typeof body.error === "string" && body.error.length > 0) {
-        message = body.error;
-      }
-    } catch {
-      // Non-JSON error body — keep the generic message.
-    }
-    throw new ApiError(message, response.status);
+    throw new ApiError(
+      "Das hat nicht geklappt. Bitte versuch's nochmal.",
+      response.status,
+    );
   }
   return response;
 }

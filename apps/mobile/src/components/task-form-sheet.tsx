@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
+import { CalendarDays, Check, Pencil } from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,7 +10,9 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { OrdiloFormSheet } from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
   formatTaskDayHint,
@@ -59,6 +61,7 @@ export function TaskFormSheet({
   onSubmit: TaskFormSubmit;
   visible: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -161,85 +164,97 @@ export function TaskFormSheet({
   }, [onDismiss]);
 
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={requestClose}
-      presentationStyle="overFullScreen"
-      transparent
+    <OrdiloFormSheet
+      closeAccessibilityLabel="Aufgabe schließen"
+      onClose={requestClose}
+      style={styles.formSheet}
+      title={isEdit ? "Aufgabe bearbeiten" : "Neue Aufgabe"}
       visible={visible}
     >
-      <Pressable onPress={requestClose} style={styles.overlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.sheet}
-        >
-          <View style={styles.handle} />
-          <Text style={styles.title}>
-            {isEdit ? "Aufgabe bearbeiten" : "Neue Aufgabe"}
-          </Text>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
+      <ScrollView
+        contentContainerStyle={styles.formContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        style={styles.formBody}
+      >
             <Text style={styles.fieldLabel}>Titel</Text>
-            <TextInput
-              accessibilityLabel="Titel der Aufgabe"
-              autoCapitalize="sentences"
-              maxLength={200}
-              onChangeText={(value) => {
-                setTitle(value);
-                setError(null);
-              }}
-              placeholder="Zum Beispiel: Rechnung bezahlen"
-              placeholderTextColor={colors.mistDark}
-              returnKeyType="done"
-              style={styles.input}
-              value={title}
-            />
+            <View style={styles.inputShell}>
+              <Check color={colors.harborBlue} size={18} strokeWidth={2} />
+              <TextInput
+                accessibilityLabel="Titel der Aufgabe"
+                autoCapitalize="sentences"
+                maxLength={200}
+                onChangeText={(value) => {
+                  setTitle(value);
+                  setError(null);
+                }}
+                placeholder="Zum Beispiel: Rechnung bezahlen"
+                placeholderTextColor={colors.mistDark}
+                returnKeyType="done"
+                style={styles.input}
+                value={title}
+              />
+            </View>
 
-            <Text style={styles.fieldLabel}>Notiz</Text>
-            <TextInput
-              accessibilityLabel="Notiz zur Aufgabe"
-              autoCapitalize="sentences"
-              maxLength={2000}
-              multiline
-              onChangeText={setDescription}
-              placeholder="Optional — was gehört dazu?"
-              placeholderTextColor={colors.mistDark}
-              style={[styles.input, styles.noteInput]}
-              value={description}
-            />
+            <Text style={styles.fieldLabel}>Notiz (optional)</Text>
+            <View style={[styles.inputShell, styles.noteShell]}>
+              <Pencil color={colors.harborBlue} size={18} strokeWidth={1.8} />
+              <TextInput
+                accessibilityLabel="Notiz zur Aufgabe"
+                autoCapitalize="sentences"
+                maxLength={2000}
+                multiline
+                onChangeText={setDescription}
+                placeholder="Was gehört dazu?"
+                placeholderTextColor={colors.mistDark}
+                style={[styles.input, styles.noteInput]}
+                textAlignVertical="top"
+                value={description}
+              />
+            </View>
 
             <Text style={styles.fieldLabel}>Wann?</Text>
-            <View style={styles.chipRow}>
-              {TASK_SCHEDULE_PRESETS.map((preset) => {
-                const date = resolveSchedulePreset(preset, todayStr);
-                const selected =
-                  preset === "none" ? dueDate === "" : date !== null && dueDate === date;
-                const hint = formatTaskDayHint(date);
-                return (
-                  <Pressable
-                    accessibilityHint={hint ?? undefined}
-                    accessibilityLabel={TASK_SCHEDULE_PRESET_LABELS[preset]}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected }}
-                    key={preset}
-                    onPress={() => setDueDate(selected ? "" : (date ?? ""))}
-                    style={[styles.chip, selected && styles.chipSelected]}
-                  >
-                    <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                      {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                    </Text>
-                    {hint ? (
-                      <Text style={[styles.chipHint, selected && styles.chipLabelSelected]}>
-                        {hint}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
+            <View style={styles.dateSummary}>
+              <CalendarDays color={colors.graphite} size={18} strokeWidth={1.8} />
+              <Text style={styles.dateSummaryText}>
+                {dueDate ? formatTaskDayHint(dueDate) : "Kein Termin"}
+              </Text>
             </View>
+            <ScrollView
+              horizontal
+              keyboardShouldPersistTaps="handled"
+              showsHorizontalScrollIndicator={false}
+              style={styles.presetScroller}
+            >
+              <View style={styles.chipRow}>
+                {TASK_SCHEDULE_PRESETS.map((preset) => {
+                  const date = resolveSchedulePreset(preset, todayStr);
+                  const selected =
+                    preset === "none" ? dueDate === "" : date !== null && dueDate === date;
+                  const hint = formatTaskDayHint(date);
+                  return (
+                    <Pressable
+                      accessibilityHint={hint ?? undefined}
+                      accessibilityLabel={TASK_SCHEDULE_PRESET_LABELS[preset]}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      key={preset}
+                      onPress={() => setDueDate(selected ? "" : (date ?? ""))}
+                      style={[styles.chip, selected && styles.chipSelected]}
+                    >
+                      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
+                        {TASK_SCHEDULE_PRESET_LABELS[preset]}
+                      </Text>
+                      {hint ? (
+                        <Text style={[styles.chipHint, selected && styles.chipHintSelected]}>
+                          {hint}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </ScrollView>
 
             <Text style={styles.fieldLabel}>Wer?</Text>
             <ScrollView
@@ -289,77 +304,53 @@ export function TaskFormSheet({
                 })}
               </View>
             </ScrollView>
-
-            {error ? (
-              <View accessibilityRole="alert" style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.submit}>
-              <OrdiloButton
-                disabled={submitting}
-                icon={
-                  submitting ? (
-                    <ActivityIndicator color={colors.warmWhite} size="small" />
-                  ) : undefined
-                }
-                onPress={() => void submit()}
-                size="lg"
-                title={
-                  submitting
-                    ? "Wird gespeichert …"
-                    : isEdit
-                      ? "Speichern"
-                      : "Aufgabe anlegen"
-                }
-              />
-            </View>
-
-            {isEdit && onDismiss ? (
-              <Pressable
-                accessibilityLabel="Aufgabe verwerfen"
-                accessibilityRole="button"
-                onPress={confirmDismiss}
-                style={styles.dismissButton}
-              >
-                <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
-              </Pressable>
-            ) : null}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      </ScrollView>
+      <View style={[styles.footer, { paddingBottom: Math.max(spacing.md, insets.bottom) }]}>
+        {error ? (
+          <View accessibilityRole="alert" style={styles.errorBox}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        ) : null}
+        <OrdiloButton
+          disabled={submitting}
+          icon={
+            submitting ? (
+              <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : undefined
+          }
+          onPress={() => void submit()}
+          size="lg"
+          title={
+            submitting
+              ? "Wird gespeichert …"
+              : isEdit
+                ? "Speichern"
+                : "Aufgabe anlegen"
+          }
+        />
+        {isEdit && onDismiss ? (
+          <Pressable
+            accessibilityLabel="Aufgabe verwerfen"
+            accessibilityRole="button"
+            onPress={confirmDismiss}
+            style={styles.dismissButton}
+          >
+            <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
+  formSheet: { height: "88%" },
+  formBody: {
     flex: 1,
-    justifyContent: "flex-end",
   },
-  sheet: {
-    backgroundColor: colors.warmWhite,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    maxHeight: "88%",
-    paddingBottom: spacing.lg,
+  formContent: {
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
-  },
-  handle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-    width: 40,
-  },
-  title: {
-    color: colors.graphite,
-    marginBottom: spacing.md,
-    ...typography.display,
   },
   fieldLabel: {
     color: colors.mistDark,
@@ -368,35 +359,67 @@ const styles = StyleSheet.create({
     ...typography.label,
   },
   input: {
+    color: colors.graphite,
+    flex: 1,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 0,
+    ...typography.body,
+  },
+  inputShell: {
+    alignItems: "center",
     borderColor: colors.mistLight,
     borderRadius: radii.base,
     borderWidth: 1,
-    color: colors.graphite,
+    flexDirection: "row",
+    gap: spacing.xs,
     minHeight: 44,
-    paddingHorizontal: 12,
-    paddingVertical: spacing.sm,
-    ...typography.body,
+    paddingLeft: spacing.sm,
+  },
+  noteShell: {
+    alignItems: "flex-start",
+    minHeight: 84,
+    paddingTop: spacing.sm,
   },
   noteInput: {
-    minHeight: 72,
-    textAlignVertical: "top",
+    minHeight: 68,
+    paddingTop: 0,
+  },
+  dateSummary: {
+    alignItems: "center",
+    borderColor: colors.mistLight,
+    borderRadius: radii.base,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  dateSummaryText: {
+    color: colors.graphite,
+    ...typography.timestamp,
+  },
+  presetScroller: {
+    marginTop: spacing.sm,
   },
   chipRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     gap: spacing.sm,
   },
   chip: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.pill,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: spacing.sm,
+    justifyContent: "center",
+    minHeight: 52,
+    minWidth: 78,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
   chipSelected: {
-    backgroundColor: "rgba(48, 84, 96, 0.08)",
+    backgroundColor: colors.harborBlue,
     borderColor: colors.harborBlue,
   },
   chipLabel: {
@@ -406,11 +429,14 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   chipLabelSelected: {
-    color: colors.harborBlue,
+    color: colors.warmWhite,
   },
   chipHint: {
     color: colors.mistDark,
     ...typography.label,
+  },
+  chipHintSelected: {
+    color: colors.warmWhite,
   },
   memberRow: {
     flexDirection: "row",
@@ -466,15 +492,20 @@ const styles = StyleSheet.create({
     borderColor: colors.destructive,
     borderRadius: radii.sm,
     borderWidth: 1,
-    marginTop: spacing.md,
+    marginBottom: spacing.sm,
     padding: spacing.sm,
   },
   errorText: {
     color: colors.destructive,
     ...typography.timestamp,
   },
-  submit: {
-    marginTop: spacing.lg,
+  footer: {
+    backgroundColor: colors.warmWhite,
+    borderTopColor: colors.mistLight,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
   },
   dismissButton: {
     alignItems: "center",

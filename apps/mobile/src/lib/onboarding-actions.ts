@@ -189,6 +189,45 @@ export async function addMember(
 }
 
 /**
+ * Update the member fields exposed by the native Familie screen. The
+ * relation model is intentionally not edited here: a role can have a
+ * counterpart relationship, and replacing it from this compact editor would
+ * erase family context the form cannot represent.
+ */
+export async function updateMember(
+  familyId: string,
+  memberId: string,
+  input: {
+    name: string;
+    birthdate?: string;
+    avatar_color?: string;
+  },
+): Promise<ActionResult<MemberRow>> {
+  const validation = validateMember(input);
+  if (!validation.success) {
+    return { success: false, error: validation.error };
+  }
+
+  const supabase = getSupabase();
+  const { data: member, error: updateError } = await supabase
+    .from("family_members")
+    .update({
+      name: validation.data.name,
+      birthdate: validation.data.birthdate,
+      avatar_color: validation.data.avatar_color,
+    })
+    .eq("id", memberId)
+    .eq("family_id", familyId)
+    .select("*")
+    .single();
+  if (updateError || !member) {
+    return { success: false, error: FRIENDLY_ERROR };
+  }
+
+  return { success: true, data: member as MemberRow };
+}
+
+/**
  * Store a plain role ("Mutter", no counterpart) through the same atomic
  * RPC the web uses, so the Familie editor reads the same shape. The RPC
  * derives the family from the member row.

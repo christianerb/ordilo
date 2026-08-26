@@ -83,12 +83,14 @@ describe("native scan helpers", () => {
       size: MAX_SCAN_FILE_SIZE + 1,
     } as never);
 
-    await expect(stageScannedDocument({
-      id: "large-scan",
-      uri: "file:///picked.pdf",
-      name: "rechnung.pdf",
-      mimeType: "application/pdf",
-    })).rejects.toThrow("Die Datei ist zu groß. Maximum: 4 MB.");
+    await expect(
+      stageScannedDocument({
+        id: "large-scan",
+        uri: "file:///picked.pdf",
+        name: "rechnung.pdf",
+        mimeType: "application/pdf",
+      }),
+    ).rejects.toThrow("Die Datei ist zu groß. Maximum: 4 MB.");
 
     expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
       "file:///documents/ordilo-scan/large-scan-rechnung.pdf",
@@ -180,18 +182,21 @@ describe("native scan helpers", () => {
     const firstWrite = new Promise<void>((resolve) => {
       releaseFirst = resolve;
     });
-    jest.mocked(FileSystem.writeAsStringAsync)
+    jest
+      .mocked(FileSystem.writeAsStringAsync)
       .mockReturnValueOnce(firstWrite)
       .mockResolvedValueOnce(undefined);
 
     const first = persistScanQueue([]);
-    const second = persistScanQueue([{
-      id: "scan-1",
-      uri: "file:///documents/scan-1.pdf",
-      name: "scan-1.pdf",
-      mimeType: "application/pdf",
-      state: "queued",
-    }]);
+    const second = persistScanQueue([
+      {
+        id: "scan-1",
+        uri: "file:///documents/scan-1.pdf",
+        name: "scan-1.pdf",
+        mimeType: "application/pdf",
+        state: "queued",
+      },
+    ]);
 
     await Promise.resolve();
     await Promise.resolve();

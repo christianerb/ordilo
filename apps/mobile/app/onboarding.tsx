@@ -18,11 +18,10 @@ import {
   View,
 } from "react-native";
 
-import { FadeInView } from "@/src/components/motion";
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
-import { haptics } from "@/src/lib/haptics";
 import { isOnboardingComplete } from "@/src/lib/family";
 import {
   addMember,
@@ -33,6 +32,7 @@ import {
 } from "@/src/lib/onboarding-actions";
 import { ROLE_CHIPS } from "@/src/lib/onboarding";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { success } from "@/src/lib/feedback";
 
 /**
  * The onboarding flow — a native 1:1 port of the web flow
@@ -113,7 +113,6 @@ export default function OnboardingScreen() {
     setServerError(null);
 
     if (!familyNameInput.trim()) {
-      haptics.warning();
       setValidationError("Bitte gib einen Familiennamen ein");
       return;
     }
@@ -122,7 +121,6 @@ export default function OnboardingScreen() {
     try {
       const result = await createFamily(familyNameInput);
       if (!result.success) {
-        haptics.error();
         setServerError(result.error);
         return;
       }
@@ -145,7 +143,6 @@ export default function OnboardingScreen() {
       setFamilyNameInput("");
       setStepChoice("add-member");
     } catch {
-      haptics.error();
       setServerError(NETWORK_ERROR);
     } finally {
       setIsSubmitting(false);
@@ -161,12 +158,10 @@ export default function OnboardingScreen() {
     setServerError(null);
 
     if (!memberName.trim()) {
-      haptics.warning();
       setValidationError("Bitte einen Namen eingeben");
       return;
     }
     if (!familyId) {
-      haptics.error();
       setServerError(NETWORK_ERROR);
       return;
     }
@@ -178,17 +173,14 @@ export default function OnboardingScreen() {
         role: memberRole || undefined,
       });
       if (!result.success) {
-        haptics.error();
         setServerError(result.error);
         return;
       }
 
-      haptics.success();
       setMembers((prev) => [...prev, result.data]);
       setMemberName("");
       setMemberRole("");
     } catch {
-      haptics.error();
       setServerError(NETWORK_ERROR);
     } finally {
       setIsSubmitting(false);
@@ -203,7 +195,6 @@ export default function OnboardingScreen() {
     async (startsFirstScan: boolean) => {
       setServerError(null);
       if (!familyId) {
-        haptics.error();
         setServerError(NETWORK_ERROR);
         return;
       }
@@ -212,11 +203,10 @@ export default function OnboardingScreen() {
       try {
         const result = await completeOnboarding(familyId, startsFirstScan);
         if (!result.success) {
-          haptics.error();
           setServerError(result.error);
           return;
         }
-        haptics.success();
+        void success();
         // Refresh the family state so the app gate sees the completion
         // marker, then land in the app (scan opens on top when chosen).
         await refresh();
@@ -225,7 +215,6 @@ export default function OnboardingScreen() {
           router.push("/scan");
         }
       } catch {
-        haptics.error();
         setServerError(NETWORK_ERROR);
       } finally {
         setIsSubmitting(false);
@@ -257,7 +246,7 @@ export default function OnboardingScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {step === "family-name" && (
-            <FadeInView index={0} key="family-name" style={styles.stepBody}>
+            <View style={styles.stepBody}>
               <OnboardingProgress currentStep={1} />
               <MascotBubble>
                 Hallo! Ich bin Ordilo und kümmere mich um eure
@@ -327,11 +316,11 @@ export default function OnboardingScreen() {
                   title={isSubmitting ? "Wird gespeichert…" : "Weiter"}
                 />
               </View>
-            </FadeInView>
+            </View>
           )}
 
           {step === "add-member" && (
-            <FadeInView index={0} key="add-member" style={styles.stepBody}>
+            <View style={styles.stepBody}>
               <OnboardingProgress currentStep={2} />
               <MascotBubble>
                 {familyName ? `Schön, ${familyName}!` : "Schön!"} Wer gehört
@@ -396,10 +385,7 @@ export default function OnboardingScreen() {
                         accessibilityState={{ selected }}
                         disabled={isSubmitting}
                         key={role}
-                        onPress={() => {
-                          haptics.selection();
-                          setMemberRole(selected ? "" : role);
-                        }}
+                        onPress={() => setMemberRole(selected ? "" : role)}
                         style={[
                           styles.chip,
                           selected && styles.chipSelected,
@@ -444,13 +430,13 @@ export default function OnboardingScreen() {
                   }
                 />
               </View>
-            </FadeInView>
+            </View>
           )}
 
           {step === "ready" && (
-            <FadeInView index={0} key="ready" style={styles.stepBody}>
+            <View style={styles.stepBody}>
               <View style={styles.readyHeader}>
-                <OrdiloMark size={72} />
+                <OrdiloCharacter size={88} />
                 <Text style={[typography.display, styles.readyTitle]}>
                   {familyName
                     ? `${familyName} ist startklar!`
@@ -480,7 +466,7 @@ export default function OnboardingScreen() {
                 title="Erstmal umschauen"
                 variant="ghost"
               />
-            </FadeInView>
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>

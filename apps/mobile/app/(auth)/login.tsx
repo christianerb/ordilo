@@ -4,6 +4,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,9 +13,7 @@ import {
 } from "react-native";
 import { Mail, ShieldCheck } from "lucide-react-native";
 
-import { FadeInView, PressableScale } from "@/src/components/motion";
 import { OrdiloButton, Screen } from "@/src/components/ui";
-import { haptics } from "@/src/lib/haptics";
 import { recordOnboardingStartedIfFirstTime } from "@/src/lib/analytics";
 import { getSupabase } from "@/src/lib/supabase";
 import { validateLoginEmail } from "@/src/lib/validation";
@@ -126,7 +125,6 @@ export default function LoginScreen() {
   async function handleSendCode() {
     const result = validateLoginEmail(email);
     if (!result.success) {
-      haptics.warning();
       setValidationError(result.error);
       setFormState("idle");
       return;
@@ -138,14 +136,12 @@ export default function LoginScreen() {
 
     const ok = await sendLoginCode(result.data.email);
     if (!ok) {
-      haptics.error();
       // Friendly German error — never surface raw Supabase errors.
       setErrorMessage("Das hat nicht geklappt. Bitte versuch's nochmal.");
       setFormState("error");
       return;
     }
 
-    haptics.success();
     setEmail(result.data.email);
     void savePendingLogin(result.data.email);
     setFormState("sent");
@@ -161,11 +157,9 @@ export default function LoginScreen() {
     try {
       const ok = await sendLoginCode(email);
       if (!ok) {
-        haptics.error();
         setErrorMessage("Der Code konnte nicht gesendet werden. Bitte versuch's nochmal.");
         return;
       }
-      haptics.success();
       setCode("");
       setErrorMessage(null);
       void savePendingLogin(email);
@@ -178,7 +172,6 @@ export default function LoginScreen() {
   async function handleVerify() {
     const token = code.trim();
     if (!/^\d{6}$/.test(token)) {
-      haptics.warning();
       setErrorMessage("Bitte gib den 6-stelligen Code ein.");
       return;
     }
@@ -194,13 +187,10 @@ export default function LoginScreen() {
     });
 
     if (error) {
-      haptics.error();
       setErrorMessage("Der Code ist nicht gültig oder abgelaufen. Bitte hol dir einen neuen.");
       setFormState("sent");
       return;
     }
-
-    haptics.success();
 
     // Activation funnel: the web login form records onboarding_started
     // for first-time users — same here, otherwise mobile signups would
@@ -234,15 +224,15 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
         >
-          <FadeInView index={0} style={styles.wordmarkBlock}>
+          <View style={styles.wordmarkBlock}>
             <Text style={styles.wordmark}>Ordilo</Text>
             <Text style={[typography.body, styles.claim]}>
               Die wichtigen Dinge deiner Familie. An einem Ort.
             </Text>
-          </FadeInView>
+          </View>
 
           {codeSent ? (
-            <FadeInView index={1} key="code-step" style={styles.form}>
+            <View style={styles.form}>
               <View style={styles.sentHeader}>
                 <View style={styles.sentIconCircle}>
                   <Mail color={colors.harborBlue} size={28} strokeWidth={1.75} />
@@ -290,12 +280,8 @@ export default function LoginScreen() {
                   Nichts angekommen? Schau auch im Spam-Ordner nach.
                 </Text>
                 <View style={styles.sentActions}>
-                  <PressableScale
-                    accessibilityLabel={
-                      resendCooldown > 0
-                        ? `Nochmal senden (${resendCooldown}s)`
-                        : "Nochmal senden"
-                    }
+                  <Pressable
+                    accessibilityRole="button"
                     disabled={resendCooldown > 0}
                     onPress={() => void handleResend()}
                   >
@@ -310,20 +296,20 @@ export default function LoginScreen() {
                         ? `Nochmal senden (${resendCooldown}s)`
                         : "Nochmal senden"}
                     </Text>
-                  </PressableScale>
-                  <PressableScale
-                    accessibilityLabel="Adresse ändern"
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="button"
                     onPress={handleChangeEmail}
                   >
                     <Text style={[typography.timestamp, styles.link]}>
                       Adresse ändern
                     </Text>
-                  </PressableScale>
+                  </Pressable>
                 </View>
               </View>
-            </FadeInView>
+            </View>
           ) : (
-            <FadeInView index={1} key="email-step" style={styles.form}>
+            <View style={styles.form}>
               <View style={styles.introBlock}>
                 <Text style={[typography.display, styles.heading]}>
                   Schön, dass du da bist
@@ -398,7 +384,7 @@ export default function LoginScreen() {
                   noch nicht, legen wir es einfach an.
                 </Text>
               </View>
-            </FadeInView>
+            </View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>

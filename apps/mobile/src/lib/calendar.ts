@@ -148,6 +148,86 @@ export function eventsForDay(
     });
 }
 
+/** Keeps the Plan screen focused on appointments that can still occur. */
+export function upcomingPlannerEvents(
+  events: PlannerEvent[],
+  today: string,
+): PlannerEvent[] {
+  const upcoming = events.flatMap((event) => {
+    if (event.recurrence === "none") {
+      return event.ends_on >= today ? [event] : [];
+    }
+
+    const nextDate = nextEventOccurrence(event, today);
+    if (!nextDate) return [];
+    const durationDays = Math.max(
+      0,
+      Math.round(
+        (new Date(`${event.ends_on}T12:00:00`).getTime() -
+          new Date(`${event.starts_on}T12:00:00`).getTime()) /
+          86_400_000,
+      ),
+    );
+    return [{
+      ...event,
+      starts_on: nextDate,
+      ends_on: shiftIsoDate(nextDate, durationDays),
+    }];
+  });
+
+  return upcoming
+    .sort(
+      (a, b) =>
+        a.starts_on.localeCompare(b.starts_on) ||
+        (a.starts_time ?? "").localeCompare(b.starts_time ?? "") ||
+        a.id.localeCompare(b.id),
+    );
+}
+
+function shiftIsoDate(value: string, days: number): string {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return toCalendarDate(date);
+}
+
+function nextEventOccurrence(
+  event: PlannerEvent,
+  today: string,
+): string | null {
+  const occurrenceStart = (date: string): string | null => {
+    if (!eventOccursOn(event, date)) return null;
+    const durationDays = Math.max(
+      0,
+      Math.round(
+        (new Date(`${event.ends_on}T12:00:00`).getTime() -
+          new Date(`${event.starts_on}T12:00:00`).getTime()) /
+          86_400_000,
+      ),
+    );
+    let start = date;
+    for (let offset = 0; offset < durationDays; offset += 1) {
+      const previous = shiftIsoDate(start, -1);
+      if (previous < event.starts_on || !eventOccursOn(event, previous)) break;
+      start = previous;
+    }
+    return start;
+  };
+
+  const currentOccurrence = occurrenceStart(today);
+  if (currentOccurrence) return currentOccurrence;
+
+  let candidate = event.starts_on > today
+    ? event.starts_on
+    : shiftIsoDate(today, 1);
+  const searchLimit = event.recurrence_until ?? shiftIsoDate(today, 740);
+  while (candidate <= searchLimit) {
+    const start = occurrenceStart(candidate);
+    if (start) return start;
+    candidate = shiftIsoDate(candidate, 1);
+  }
+  return null;
+}
+
 export function formatEventWhen(event: PlannerEvent): string {
   if (event.all_day) return "Ganztägig";
   const start = event.starts_time?.slice(0, 5);

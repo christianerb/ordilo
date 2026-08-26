@@ -19,11 +19,10 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 
-import { FadeInView, PressableScale } from "@/src/components/motion";
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
-import { haptics } from "@/src/lib/haptics";
 import { getSupabase } from "@/src/lib/supabase";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -85,7 +84,6 @@ export default function WelcomeScreen() {
   const goTo = useCallback(
     (next: number) => {
       if (leaving) return;
-      haptics.selection();
       setStep(Math.min(Math.max(next, 0), CARD_COUNT));
     },
     [leaving],
@@ -122,9 +120,9 @@ export default function WelcomeScreen() {
       >
         <View style={styles.body} {...panResponder.panHandlers}>
           {!isCard ? (
-            <FadeInView index={0} key="arrival" style={styles.arrival}>
+            <View style={styles.arrival}>
               <View style={styles.arrivalMark}>
-                <OrdiloMark size={88} />
+                <OrdiloCharacter size={96} />
               </View>
               <Text style={styles.arrivalTitle}>Willkommen in der Familie</Text>
               <Text style={[typography.body, styles.arrivalText]}>
@@ -140,10 +138,8 @@ export default function WelcomeScreen() {
                   size="lg"
                   title="Kurz zeigen, wie's funktioniert"
                 />
-                <PressableScale
-                  accessibilityLabel={
-                    leaving ? "Einen Moment…" : "Direkt loslegen"
-                  }
+                <Pressable
+                  accessibilityRole="button"
                   disabled={leaving}
                   onPress={() => void leave()}
                   style={styles.textButton}
@@ -151,20 +147,19 @@ export default function WelcomeScreen() {
                   <Text style={[typography.timestamp, styles.textButtonLabel]}>
                     {leaving ? "Einen Moment…" : "Direkt loslegen"}
                   </Text>
-                </PressableScale>
+                </Pressable>
               </View>
-            </FadeInView>
+            </View>
           ) : (
-            <FadeInView index={0} key="cards" style={styles.cards}>
+            <View style={styles.cards}>
               <Text style={[typography.label, styles.cardsKicker]}>
                 So funktioniert Ordilo
               </Text>
 
-              <FadeInView key={`card-${step}`}>
-                <View
-                  accessibilityLabel={`Karte ${step} von ${CARD_COUNT}`}
-                  style={styles.cardFrame}
-                >
+              <View
+                accessibilityLabel={`Karte ${step} von ${CARD_COUNT}`}
+                style={styles.cardFrame}
+              >
                 {step === 1 && (
                   <>
                     <DocumentRow
@@ -219,10 +214,9 @@ export default function WelcomeScreen() {
                     </View>
                   </View>
                 )}
-                </View>
-              </FadeInView>
+              </View>
 
-              <FadeInView key={`text-${step}`} style={styles.cardText}>
+              <View style={styles.cardText}>
                 <Text style={styles.cardTitle}>
                   {step === 1 && "Alles an einem Ort"}
                   {step === 2 && "Abfotografieren reicht"}
@@ -236,7 +230,7 @@ export default function WelcomeScreen() {
                   {step === 3 &&
                     "Frag in normalen Worten — Ordilo antwortet aus euren Dokumenten."}
                 </Text>
-              </FadeInView>
+              </View>
 
               <View
                 accessibilityLabel="Karten wählen"
@@ -279,8 +273,8 @@ export default function WelcomeScreen() {
                   }
                 />
                 {!isLastCard && (
-                  <PressableScale
-                    accessibilityLabel="Überspringen"
+                  <Pressable
+                    accessibilityRole="button"
                     disabled={leaving}
                     onPress={() => void leave()}
                     style={styles.textButton}
@@ -290,10 +284,10 @@ export default function WelcomeScreen() {
                     >
                       Überspringen
                     </Text>
-                  </PressableScale>
+                  </Pressable>
                 )}
               </View>
-            </FadeInView>
+            </View>
           )}
         </View>
       </ScrollView>

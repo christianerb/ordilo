@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react-native";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -8,9 +8,20 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { OrdiloMark } from "@/src/components/ordilo-mark";
+import { tap } from "@/src/lib/feedback";
+import { pressScale, springs } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -18,6 +29,154 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  * warm-white pages, sand cards, harbor-blue primary actions, and empty
  * states that teach (circle + icon + heading + description + CTA).
  */
+
+/**
+ * DESIGN.md Card Rest elevation, expressed for native: iOS gets the
+ * ambient warm shadow, Android gets the closest elevation step. Spread
+ * onto card styles — never stack on nested cards.
+ */
+export const cardRestShadow: ViewStyle = {
+  elevation: 2,
+  shadowColor: "rgba(36, 36, 36, 1)",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.06,
+  shadowRadius: 8,
+};
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/**
+ * A Pressable with physical press feedback: the surface springs to 0.97
+ * while the finger rests on it and settles back on release. Uses the
+ * shared `tap()` haptic unless `haptic` is false. Under reduce-motion
+ * the scale is skipped and the press is instant.
+ */
+export function SpringPressable({
+  children,
+  onPress,
+  style,
+  haptic = true,
+  disabled = false,
+  accessibilityHint,
+  accessibilityLabel,
+  accessibilityRole = "button",
+}: {
+  children: ReactNode;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+  haptic?: boolean;
+  disabled?: boolean;
+  accessibilityHint?: string;
+  accessibilityLabel?: string;
+  accessibilityRole?: "button" | "link";
+}) {
+  const scale = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole={accessibilityRole}
+      disabled={disabled}
+      onPress={() => {
+        if (haptic) tap();
+        onPress();
+      }}
+      onPressIn={() => {
+        // Shared values are designed for mutation from handlers — the
+        // compiler lint cannot see through Reanimated's pattern.
+        // eslint-disable-next-line react-hooks/immutability
+        scale.value = reduceMotion
+          ? 1
+          : withSpring(pressScale, springs.press);
+      }}
+      onPressOut={() => {
+        // eslint-disable-next-line react-hooks/immutability
+        scale.value = reduceMotion ? 1 : withSpring(1, springs.press);
+      }}
+      style={[animatedStyle, style, disabled && styles.pressableDisabled]}
+    >
+      {children}
+    </AnimatedPressable>
+  );
+}
+
+/**
+ * Loading placeholder: a warm sand block with a calm opacity pulse.
+ * The pulse is the only loading motion in the app — it says "content is
+ * on its way" without the generic spinner look. Static under
+ * reduce-motion.
+ */
+export function Skeleton({
+  width,
+  height,
+  radius = radii.base,
+  style,
+}: {
+  width?: number | `${number}%`;
+  height: number;
+  radius?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const opacity = useSharedValue(0.55);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (reduceMotion) {
+      opacity.value = 1;
+      return;
+    }
+    opacity.value = withRepeat(
+      withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true,
+    );
+    return () => cancelAnimation(opacity);
+  }, [opacity, reduceMotion]);
+
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+
+  return (
+    <Animated.View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        { backgroundColor: colors.sandLight, borderRadius: radius, height, width },
+        pulseStyle,
+        style,
+      ]}
+    />
+  );
+}
+
+/** A skeleton in the shape of a standard list card (icon + two lines). */
+export function CardSkeleton() {
+  return (
+    <View style={[styles.card, styles.skeletonCard]}>
+      <Skeleton height={40} radius={radii.sm} width={40} />
+      <View style={styles.skeletonLines}>
+        <Skeleton height={14} width="70%" />
+        <Skeleton height={12} width="45%" />
+      </View>
+    </View>
+  );
+}
+
+/** A column of card skeletons for full-list loading states. */
+export function ListSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <View style={styles.skeletonList}>
+      {Array.from({ length: rows }, (_, index) => (
+        <CardSkeleton key={index} />
+      ))}
+    </View>
+  );
+}
 
 export function Screen({
   children,
@@ -28,29 +187,29 @@ export function Screen({
 }) {
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={[styles.screen, style]}>
-      <View accessible={false} pointerEvents="none" style={styles.ambientLayer}>
-        <View style={styles.ambientSage} />
-        <View style={styles.ambientBlue} />
-        <View style={styles.ambientApricot} />
-      </View>
       {children}
     </SafeAreaView>
   );
 }
 
 export function ScreenHeader({
+  action,
   title,
   subtitle,
   trailing,
 }: {
+  action?: {
+    accessibilityLabel: string;
+    icon: LucideIcon;
+    onPress: () => void;
+  };
   title: string;
   subtitle?: string;
   trailing?: ReactNode;
 }) {
+  const ActionIcon = action?.icon;
   return (
     <View style={styles.header}>
-      <View accessible={false} style={[styles.headerDot, styles.headerDotBlue]} />
-      <View accessible={false} style={[styles.headerDot, styles.headerDotApricot]} />
       <View style={styles.headerCopy}>
         <Text style={[typography.display, styles.headerTitle]}>{title}</Text>
         {subtitle ? (
@@ -59,10 +218,15 @@ export function ScreenHeader({
           </Text>
         ) : null}
       </View>
-      <View accessible={false} style={styles.headerMark}>
-        <OrdiloMark size={42} />
-      </View>
-      {trailing ? <View style={styles.headerTrailing}>{trailing}</View> : null}
+      {trailing ?? (action && ActionIcon ? (
+        <SpringPressable
+          accessibilityLabel={action.accessibilityLabel}
+          onPress={action.onPress}
+          style={styles.headerAction}
+        >
+          <ActionIcon color={colors.warmWhite} size={20} strokeWidth={2.2} />
+        </SpringPressable>
+      ) : null)}
     </View>
   );
 }
@@ -93,19 +257,18 @@ export function OrdiloButton({
   icon?: ReactNode;
 }) {
   return (
-    <Pressable
+    <SpringPressable
       accessibilityRole="button"
       disabled={disabled}
+      haptic={false}
       onPress={onPress}
-      style={({ pressed }) => [
+      style={[
         styles.button,
         size === "lg" ? styles.buttonLg : styles.buttonDefault,
         variant === "primary" && styles.buttonPrimary,
         variant === "outline" && styles.buttonOutline,
         variant === "ghost" && styles.buttonGhost,
         variant === "destructive" && styles.buttonDestructive,
-        pressed && styles.buttonPressed,
-        disabled && styles.buttonDisabled,
       ]}
     >
       {icon}
@@ -116,12 +279,12 @@ export function OrdiloButton({
           variant === "primary" && styles.buttonTextPrimary,
           variant === "outline" && styles.buttonTextOutline,
           variant === "ghost" && styles.buttonTextGhost,
-          variant === "destructive" && styles.buttonTextPrimary,
+          variant === "destructive" && styles.buttonTextDestructive,
         ]}
       >
         {title}
       </Text>
-    </Pressable>
+    </SpringPressable>
   );
 }
 
@@ -155,95 +318,32 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.warmWhite,
     paddingHorizontal: spacing.md,
-    position: "relative",
-  },
-  ambientLayer: {
-    bottom: 0,
-    left: 0,
-    overflow: "hidden",
-    position: "absolute",
-    right: 0,
-    top: 0,
-  },
-  ambientSage: {
-    backgroundColor: colors.washSageSoft,
-    borderRadius: radii.xl,
-    height: 168,
-    position: "absolute",
-    right: -78,
-    top: -72,
-    transform: [{ rotate: "12deg" }],
-    width: 184,
-  },
-  ambientBlue: {
-    backgroundColor: colors.washBlue,
-    borderRadius: radii.pill,
-    height: 124,
-    left: -82,
-    position: "absolute",
-    top: "42%",
-    width: 124,
-  },
-  ambientApricot: {
-    backgroundColor: colors.washApricot,
-    borderRadius: radii.xl,
-    bottom: -92,
-    height: 156,
-    position: "absolute",
-    right: 42,
-    transform: [{ rotate: "-8deg" }],
-    width: 188,
   },
   header: {
     alignItems: "center",
-    backgroundColor: colors.washSage,
-    borderRadius: radii.md,
     flexDirection: "row",
-    marginTop: spacing.md,
-    minHeight: 90,
-    overflow: "hidden",
-    paddingHorizontal: spacing.md,
-    position: "relative",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
   headerCopy: {
     flex: 1,
     gap: spacing.xs,
   },
   headerTitle: {
-    color: colors.harborBlueDarker,
+    color: colors.graphite,
   },
   headerSubtitle: {
-    color: colors.harborBlueDarker,
+    color: colors.mistDark,
   },
-  headerMark: {
+  headerAction: {
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
+    backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 52,
+    height: 44,
     justifyContent: "center",
-    marginLeft: spacing.sm,
-    width: 52,
-  },
-  headerTrailing: {
-    marginLeft: spacing.xs,
-  },
-  headerDot: {
-    borderRadius: radii.pill,
-    position: "absolute",
-  },
-  headerDotBlue: {
-    backgroundColor: colors.washBlue,
-    height: 48,
-    right: 56,
-    top: -21,
-    width: 48,
-  },
-  headerDotApricot: {
-    backgroundColor: colors.washApricot,
-    bottom: -17,
-    height: 38,
-    left: 28,
-    width: 38,
+    width: 44,
   },
   card: {
     backgroundColor: colors.sand,
@@ -251,6 +351,22 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     borderWidth: 1,
     padding: 12,
+    ...cardRestShadow,
+  },
+  pressableDisabled: {
+    opacity: 0.5,
+  },
+  skeletonCard: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 10,
+  },
+  skeletonLines: {
+    flex: 1,
+    gap: 6,
+  },
+  skeletonList: {
+    gap: spacing.sm,
   },
   button: {
     alignItems: "center",
@@ -260,7 +376,7 @@ const styles = StyleSheet.create({
   },
   buttonDefault: {
     borderRadius: radii.sm,
-    minHeight: 44,
+    height: 36,
     paddingHorizontal: spacing.md,
   },
   buttonLg: {
@@ -271,6 +387,9 @@ const styles = StyleSheet.create({
   buttonPrimary: {
     backgroundColor: colors.harborBlue,
   },
+  buttonDestructive: {
+    backgroundColor: colors.destructive,
+  },
   buttonOutline: {
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
@@ -279,20 +398,15 @@ const styles = StyleSheet.create({
   buttonGhost: {
     backgroundColor: "transparent",
   },
-  buttonDestructive: {
-    backgroundColor: colors.destructive,
-  },
-  buttonPressed: {
-    opacity: 0.85,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
   buttonText: {
     fontFamily: typography.body.fontFamily,
     fontSize: typography.body.fontSize,
   },
   buttonTextPrimary: {
+    color: colors.warmWhite,
+    fontFamily: typography.title.fontFamily,
+  },
+  buttonTextDestructive: {
     color: colors.warmWhite,
     fontFamily: typography.title.fontFamily,
   },

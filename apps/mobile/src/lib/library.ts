@@ -9,8 +9,8 @@ export type LibraryDocument = {
   status: string;
   summary: string | null;
   ocr_text: string | null;
-  created_at: string;
   source: string | null;
+  created_at: string;
 };
 
 export type LibraryStatusFilter =
@@ -66,7 +66,11 @@ export function refreshLibraryDocuments(): void {
 }
 
 export const libraryDocumentSelect =
-  "id, title, original_filename, mime_type, document_type, status, summary, ocr_text, created_at, source";
+  "id, title, original_filename, mime_type, document_type, status, summary, ocr_text, source, created_at";
+
+export function isManualNote(document: LibraryDocument): boolean {
+  return document.source === "manual";
+}
 
 const documentTypes = new Set<DocumentType>([
   "invoice",
@@ -111,11 +115,10 @@ export function getLibrarySortOrder(sort: LibrarySort): {
  * deliberately plain text, never a piece of the filter expression.
  */
 export function toLibrarySearchPattern(query: string): string {
-  const escaped = query
+  return `%${query
     .trim()
-    .replace(/[\\"]/g, "\\$&")
     .replace(/[%_]/g, "\\$&")
-  return `"%${escaped}%"`;
+    .replace(/[,.()]/g, " ")}%`;
 }
 
 export function getLibraryPageRange(

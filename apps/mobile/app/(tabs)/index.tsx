@@ -1,5 +1,4 @@
 import { useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   CalendarDays,
   Check,
@@ -20,19 +19,28 @@ import {
   type ReactNode,
 } from "react";
 import {
-  AppState,
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 
-import { PressableScale } from "@/src/components/motion";
-import { Card, EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import { AmbientFields } from "@/src/components/ambient-fields";
+import {
+  Card,
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+} from "@/src/components/ui";
+import { fail, success } from "@/src/lib/feedback";
+import { contentEntering } from "@/src/theme/motion";
 import { useFamily } from "@/src/lib/family-context";
 import {
   acceptInboundSuggestion,
@@ -225,9 +233,9 @@ export default function HeuteScreen() {
       if (!result.success) {
         setTasks(previousTasks);
         setError(result.error);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       } else if (nextStatus === "done") {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       }
       setMutatingTaskId(null);
     },
@@ -243,7 +251,7 @@ export default function HeuteScreen() {
         : await dismissInboundSuggestion(suggestion.id);
       if (!result.success) {
         setError(result.error);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
         setMutatingSuggestionId(null);
         return;
       }
@@ -257,7 +265,7 @@ export default function HeuteScreen() {
       );
       await load(true);
       if (accept) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       }
       setMutatingSuggestionId(null);
     },
@@ -284,47 +292,58 @@ export default function HeuteScreen() {
 
   if (loading) {
     return (
-      <Screen style={styles.center}>
-        <ActivityIndicator color={colors.harborBlue} />
+      <Screen>
+        <ScreenHeader
+          action={{
+            accessibilityLabel: "Einstellungen öffnen",
+            icon: Settings,
+            onPress: () => router.push("/einstellungen"),
+          }}
+          subtitle="Dein Überblick für heute"
+          title="Heute"
+        />
+        <View style={styles.loadingList}>
+          <ListSkeleton rows={5} />
+        </View>
       </Screen>
     );
   }
 
   if (error && !data) {
     return (
-      <Screen style={styles.center}>
-        <EmptyState
-          icon={Clock3}
-          heading="Heute konnte nicht geladen werden"
-          description={error}
-        >
-          <OrdiloButton
-            onPress={() => void load()}
-            size="lg"
-            title="Erneut versuchen"
-          />
-        </EmptyState>
+      <Screen>
+        <ScreenHeader
+          action={{
+            accessibilityLabel: "Einstellungen öffnen",
+            icon: Settings,
+            onPress: () => router.push("/einstellungen"),
+          }}
+          subtitle="Dein Überblick für heute"
+          title="Heute"
+        />
+        <View style={styles.center}>
+          <EmptyState
+            icon={Clock3}
+            heading="Heute konnte nicht geladen werden"
+            description={error}
+          >
+            <OrdiloButton
+              onPress={() => void load()}
+              size="lg"
+              title="Erneut versuchen"
+            />
+          </EmptyState>
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen>
-      <ScreenHeader
-        subtitle="Was für euch gerade zählt"
-        title="Heute"
-        trailing={(
-        <PressableScale
-          accessibilityLabel="Einstellungen öffnen"
-          contentStyle={styles.settingsButton}
-          onPress={() => router.push("/einstellungen")}
-        >
-          <Settings color={colors.mistDark} size={20} strokeWidth={1.75} />
-        </PressableScale>
-        )}
-      />
-      <ScrollView
+      <AmbientFields style={styles.ambientBehind} variant="top" />
+      <Animated.ScrollView
         contentContainerStyle={styles.scrollContent}
+        entering={contentEntering()}
         refreshControl={
           <RefreshControl
             colors={[colors.harborBlue]}
@@ -340,6 +359,7 @@ export default function HeuteScreen() {
           heroTask={heroTask}
           memberNames={data?.members ?? []}
           onCompleteTask={toggleTask}
+          onOpenSettings={() => router.push("/einstellungen")}
           referenceDate={referenceDate}
           taskBusy={mutatingTaskId === heroTask?.id}
         />
@@ -507,7 +527,7 @@ export default function HeuteScreen() {
           </>
         )}
 
-      </ScrollView>
+      </Animated.ScrollView>
     </Screen>
   );
 }
@@ -517,6 +537,7 @@ function HeuteHero({
   heroTask,
   memberNames,
   onCompleteTask,
+  onOpenSettings,
   referenceDate,
   taskBusy,
 }: {
@@ -524,6 +545,7 @@ function HeuteHero({
   heroTask: HeuteTask | null;
   memberNames: HeuteData["members"];
   onCompleteTask: (task: HeuteTask) => Promise<void>;
+  onOpenSettings: () => void;
   referenceDate: Date;
   taskBusy: boolean;
 }) {
@@ -554,7 +576,21 @@ function HeuteHero({
             {familyName}
           </Text>
         </View>
-        <AvatarStack members={memberNames} />
+        <View style={styles.heroActions}>
+          <AvatarStack members={memberNames} />
+          <Pressable
+            accessibilityLabel="Einstellungen öffnen"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onOpenSettings}
+            style={({ pressed }) => [
+              styles.heroSettings,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Settings color={colors.mistDark} size={19} strokeWidth={1.8} />
+          </Pressable>
+        </View>
       </View>
 
       {heroTask ? (
@@ -777,7 +813,6 @@ function InboundDiscoveryCard({
       ],
     );
   }, [discovery, onRetention]);
-
   return (
     <Card style={styles.inboundCard}>
       <View style={styles.inboundHeader}>
@@ -863,14 +898,14 @@ function InboundDiscoveryCard({
           <View style={styles.inboundActions}>
             <OrdiloButton
               disabled={busyRetention}
-              onPress={() => void onRetention(discovery, true)}
-              title={busyRetention ? "Einen Moment…" : "Behalten"}
-            />
-            <OrdiloButton
-              disabled={busyRetention}
               onPress={confirmDeleteEmail}
               title="E-Mail löschen"
               variant="destructive"
+            />
+            <OrdiloButton
+              disabled={busyRetention}
+              onPress={() => void onRetention(discovery, true)}
+              title={busyRetention ? "Einen Moment…" : "Behalten"}
             />
           </View>
         </View>
@@ -903,12 +938,13 @@ function getDocumentStatusLabel(status: string): string {
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: "center", justifyContent: "center" },
-  settingsButton: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 44,
+  center: { alignItems: "center", flex: 1, justifyContent: "center" },
+  loadingList: {
+    paddingTop: spacing.md,
+  },
+  // The fields sit behind the padded content and bleed to the edges.
+  ambientBehind: {
+    marginHorizontal: -spacing.md,
   },
   scrollContent: {
     gap: spacing.lg,
@@ -929,6 +965,21 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  heroActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  heroSettings: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
   heroGreeting: { gap: spacing.xs },
   heroDate: {

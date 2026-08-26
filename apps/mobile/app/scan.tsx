@@ -1,7 +1,6 @@
 import { launchScanner } from "@dariyd/react-native-document-scanner";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import {
   manipulateAsync,
@@ -10,7 +9,6 @@ import {
 import * as Print from "expo-print";
 import { useRouter } from "expo-router";
 import {
-  AlertCircle,
   Check,
   FilePlus2,
   Images,
@@ -30,7 +28,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card, OrdiloButton } from "@/src/components/ui";
-import { ApiError } from "@/src/lib/api";
 import { useFamily } from "@/src/lib/family-context";
 import {
   continueScannedDocumentPipeline,
@@ -38,15 +35,14 @@ import {
   loadPersistedScanQueue,
   persistScanQueue,
   removeStagedScannedDocument,
-  ScanValidationError,
   stageScannedDocument,
   type ScannedDocument,
-  type PersistedScanQueueItem,
   type ScanProcessingStep,
   uploadScannedDocument,
   validateScannedDocument,
 } from "@/src/lib/scan";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { success, fail } from "@/src/lib/feedback";
 
 type UploadState = "queued" | "uploading" | "processing" | "failed" | "done";
 type QueueItem = ScannedDocument & {
@@ -56,17 +52,14 @@ type QueueItem = ScannedDocument & {
   state: UploadState;
 };
 
-function isPersistedQueueItem(item: QueueItem): item is PersistedScanQueueItem {
+function isPersistedQueueItem(
+  item: QueueItem,
+): item is QueueItem & { state: Exclude<UploadState, "done"> } {
   return item.state !== "done";
 }
 
 function createDocumentId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-function uploadFailureMessage(error: unknown): string {
-  if (error instanceof ApiError) return error.message;
-  return "Der Upload hat nicht geklappt. Prüfe deine Verbindung und versuch es erneut.";
 }
 
 async function prepareImage(uri: string, name: string): Promise<ScannedDocument> {
@@ -130,36 +123,37 @@ export default function ScanModal() {
   const [error, setError] = useState<string | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
 
-  const updateQueue = useCallback(async (
-    transform: (current: QueueItem[]) => QueueItem[],
-  ) => {
-    const next = transform(queueRef.current);
-    queueRef.current = next;
-    setQueue(next);
-    await persistScanQueue(
-      next.filter(isPersistedQueueItem),
-    );
-    return next;
-  }, []);
+  const updateQueue = useCallback(
+    async (transform: (current: QueueItem[]) => QueueItem[]) => {
+      const next = transform(queueRef.current);
+      queueRef.current = next;
+      setQueue(next);
+      await persistScanQueue(next.filter(isPersistedQueueItem));
+      return next;
+    },
+    [],
+  );
 
-  const markQueueFailed = useCallback(async (
-    itemId: string,
-    patch: Pick<QueueItem, "documentId" | "processingStep" | "error">,
-  ) => {
-    try {
-      await updateQueue((current) =>
-        current.map((candidate) =>
-          candidate.id === itemId
-            ? { ...candidate, ...patch, state: "failed" }
-            : candidate,
-        ),
-      );
-    } catch {
-      // updateQueue applies the failed state before writing the manifest.
-      // When storage itself is unavailable, keep that retryable in-memory
-      // state without starting more network work.
-    }
-  }, [updateQueue]);
+  const markQueueFailed = useCallback(
+    async (
+      itemId: string,
+      patch: Pick<QueueItem, "documentId" | "processingStep" | "error">,
+    ) => {
+      try {
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === itemId
+              ? { ...candidate, ...patch, state: "failed" }
+              : candidate,
+          ),
+        );
+      } catch {
+        // The in-memory retry state is already updated. A later checkpoint
+        // can recover if storage was temporarily unavailable.
+      }
+    },
+    [updateQueue],
+  );
 
   useEffect(() => {
     void (async () => {
@@ -186,21 +180,20 @@ export default function ScanModal() {
     const validationError = validateScannedDocument(document);
     if (validationError) {
       setError(validationError);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
       return false;
     }
     try {
       const staged = await stageScannedDocument(document);
-      await updateQueue((current) => [...current, { ...staged, state: "queued" }]);
+      await updateQueue((current) => [
+        ...current,
+        { ...staged, state: "queued" },
+      ]);
       setError(null);
       return true;
-    } catch (error) {
-      setError(
-        error instanceof ScanValidationError
-          ? error.message
-          : "Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.",
-      );
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } catch {
+      setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
+      void fail();
       return false;
     }
   }, [updateQueue]);
@@ -221,13 +214,13 @@ export default function ScanModal() {
         ),
       );
       if (await addToQueue(await combinePages(pages))) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       }
     } catch {
       setError(
         "Der Dokumentenscanner konnte nicht geöffnet werden. Bitte prüfe den Kamerazugriff oder wähle ein Foto aus.",
       );
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
     } finally {
       setScannerBusy(false);
     }
@@ -248,6 +241,9 @@ export default function ScanModal() {
         );
         const result = await uploadScannedDocument(item, family.id);
         uploadedDocumentId = result.document_id;
+        // The document ID must reach durable storage before OCR starts.
+        // After a process interruption, retry can then resume this server
+        // document instead of uploading a duplicate.
         await updateQueue((current) =>
           current.map((candidate) =>
             candidate.id === item.id
@@ -294,19 +290,18 @@ export default function ScanModal() {
           ),
         );
         await removeStagedScannedDocument(item.uri);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch (error) {
+        void success();
+      } catch {
         await markQueueFailed(item.id, {
           documentId: uploadedDocumentId ?? item.documentId,
           processingStep,
-          error:
-            uploadedDocumentId
-              ? processingStep === "analysis"
-                ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
-                : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
-              : uploadFailureMessage(error),
+          error: uploadedDocumentId
+            ? processingStep === "analysis"
+              ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
+              : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
+            : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.",
         });
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       }
     },
     [family, markQueueFailed, updateQueue],
@@ -349,7 +344,7 @@ export default function ScanModal() {
           ),
         );
         await removeStagedScannedDocument(item.uri);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       } catch {
         await markQueueFailed(item.id, {
           documentId: item.documentId,
@@ -359,7 +354,7 @@ export default function ScanModal() {
               ? "Die Analyse hat nicht geklappt. Bitte erneut versuchen."
               : "Die Texterkennung hat nicht geklappt. Bitte erneut versuchen.",
         });
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       }
     },
     [markQueueFailed, updateQueue, uploadOne],
@@ -391,7 +386,7 @@ export default function ScanModal() {
       for (const image of images) await addToQueue(image);
     } catch {
       setError("Das Foto konnte nicht vorbereitet werden. Bitte versuch es nochmal.");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
     }
   }, [addToQueue]);
 
@@ -417,20 +412,6 @@ export default function ScanModal() {
   const isProcessing = queue.some(
     (item) => item.state === "uploading" || item.state === "processing",
   );
-  const failedCount = queue.filter((item) => item.state === "failed").length;
-  const queuedCount = queue.filter((item) => item.state === "queued").length;
-  const doneCount = queue.filter((item) => item.state === "done").length;
-  const queueHeading = failedCount
-    ? failedCount === 1
-      ? "Ein Upload braucht Hilfe"
-      : `${failedCount} Uploads brauchen Hilfe`
-    : queuedCount === 1
-      ? "Ein Dokument bereit"
-      : queuedCount > 1
-        ? `${queuedCount} Dokumente bereit`
-        : doneCount === 1
-          ? "Dokument hochgeladen"
-          : `${doneCount} Dokumente hochgeladen`;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
@@ -510,43 +491,22 @@ export default function ScanModal() {
           <Card style={styles.queueCard}>
             <View style={styles.rowHeader}>
               <Text style={[typography.title, styles.rowTitle]}>
-                {queueHeading}
+                Bereit zum Hochladen
               </Text>
               {actionableCount > 0 ? (
                 <OrdiloButton
                   disabled={!family || isProcessing}
                   icon={<Upload color={colors.warmWhite} size={16} />}
                   onPress={() => void uploadQueued()}
-                  title={
-                    failedCount
-                      ? actionableCount === 1
-                        ? "Erneut hochladen"
-                        : `${actionableCount} erneut versuchen`
-                      : actionableCount === 1
-                        ? "Hochladen"
-                        : `${actionableCount} hochladen`
-                  }
+                  title={actionableCount === 1 ? "Weiter" : `${actionableCount} verarbeiten`}
                 />
               ) : null}
             </View>
             {queue.map((item) => (
-              <View
-                key={item.id}
-                style={[
-                  styles.queueRow,
-                  item.state === "failed" && styles.queueRowFailed,
-                ]}
-              >
-                <View
-                  style={[
-                    styles.queueIcon,
-                    item.state === "failed" && styles.queueIconFailed,
-                  ]}
-                >
+              <View key={item.id} style={styles.queueRow}>
+                <View style={styles.queueIcon}>
                   {item.state === "uploading" || item.state === "processing" ? (
                     <ActivityIndicator color={colors.harborBlue} size="small" />
-                  ) : item.state === "failed" ? (
-                    <AlertCircle color={colors.destructive} size={18} />
                   ) : (
                     <Upload color={colors.harborBlue} size={17} />
                   )}
@@ -571,6 +531,13 @@ export default function ScanModal() {
                 </View>
                 {item.state === "done" ? (
                   <Check color={colors.harborBlue} size={20} />
+                ) : null}
+                {item.state === "failed" ? (
+                  <OrdiloButton
+                    onPress={() => void retryProcessing(item)}
+                    title="Erneut"
+                    variant="outline"
+                  />
                 ) : null}
               </View>
             ))}
@@ -606,7 +573,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing.xl,
-    paddingTop: spacing.lg,
+    paddingTop: spacing.xl,
   },
   captureStage: {
     alignItems: "center",
@@ -614,23 +581,22 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: 12,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: 28,
+    gap: spacing.sm,
+    padding: spacing.xl,
   },
   captureIcon: {
     alignItems: "center",
     backgroundColor: colors.sandLight,
     borderRadius: 32,
-    height: 56,
+    height: 64,
     justifyContent: "center",
-    marginBottom: spacing.xs,
-    width: 56,
+    marginBottom: spacing.sm,
+    width: 64,
   },
   captureTitle: { color: colors.graphite },
   captureText: {
     color: colors.mistDark,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
     maxWidth: 280,
     textAlign: "center",
   },
@@ -662,15 +628,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   rowTitle: { color: colors.graphite, flexShrink: 1 },
-  queueRow: {
-    alignItems: "center",
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-  },
-  queueRowFailed: { borderTopColor: "rgba(192, 57, 43, 0.25)" },
+  queueRow: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   queueIcon: {
     alignItems: "center",
     backgroundColor: colors.sandLight,
@@ -679,7 +637,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 36,
   },
-  queueIconFailed: { backgroundColor: colors.destructiveBackground },
   queueDetails: { flex: 1, gap: 2 },
-  queueStatus: { color: colors.mistDark, flexShrink: 1 },
+  queueStatus: { color: colors.mistDark },
 });

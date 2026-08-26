@@ -1,7 +1,7 @@
 import { ApiError, apiFetch } from "./api";
 import { getSupabase } from "./supabase";
-import * as FileSystem from "expo-file-system/legacy";
 import { File } from "expo-file-system";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_FILE_SIZE,
@@ -112,7 +112,11 @@ export async function stageScannedDocument(
   const uri = `${SCAN_QUEUE_DIRECTORY}${document.id}-${safeName}`;
   await FileSystem.copyAsync({ from: document.uri, to: uri });
   const info = await FileSystem.getInfoAsync(uri);
-  const staged = { ...document, uri, size: info.exists ? info.size : document.size };
+  const staged = {
+    ...document,
+    uri,
+    size: info.exists ? info.size : document.size,
+  };
   const validationError = validateScannedDocument(staged);
   if (validationError) {
     await removeStagedScannedDocument(uri);
@@ -148,8 +152,6 @@ export async function loadPersistedScanQueue(): Promise<PersistedScanQueueItem[]
 export function persistScanQueue(
   queue: PersistedScanQueueItem[],
 ): Promise<void> {
-  // React state can advance faster than the filesystem. Chain every manifest
-  // write so a late I/O completion never restores an older queue snapshot.
   const checkpoint = pendingQueueCheckpoint.then(async () => {
     await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
       intermediates: true,
@@ -159,8 +161,6 @@ export function persistScanQueue(
       JSON.stringify(queue),
     );
   });
-  // A failed checkpoint reaches its explicit caller while later updates can
-  // still recover and write the newest queue state.
   pendingQueueCheckpoint = checkpoint.catch(() => undefined);
   return checkpoint;
 }
@@ -209,12 +209,7 @@ export function validateScannedDocument(
   return result.success ? null : result.error.issues[0]?.message;
 }
 
-/**
- * Expo's File implements Blob, which lets the native fetch runtime stream the
- * staged file as a real multipart part. The older `{ uri, name, type }`
- * descriptor is not reliably serialized by the current React Native fetch
- * stack and arrived as an empty request on device.
- */
+/** Streams the staged native file as a real multipart Blob. */
 export async function uploadScannedDocument(
   document: ScannedDocument,
   familyId: string,

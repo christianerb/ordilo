@@ -1,5 +1,4 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   AlertCircle,
   ArrowLeft,
@@ -8,7 +7,6 @@ import {
 } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -16,10 +14,18 @@ import {
   Text,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { CollectionFormSheet } from "@/src/components/collection-form-sheet";
 import { CollectionIcon } from "@/src/components/collection-icon";
-import { EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import {
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+} from "@/src/components/ui";
+import { listItemEntering } from "@/src/theme/motion";
 import {
   countDocumentsPerCollection,
   createCollection,
@@ -30,6 +36,7 @@ import {
 } from "@/src/lib/collections";
 import { useFamily } from "@/src/lib/family-context";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { success } from "@/src/lib/feedback";
 
 /**
  * Sammlungen — the family's persistent document folders. Native list with
@@ -93,12 +100,8 @@ export default function SammlungenScreen() {
     return (
       <Screen>
         <BackBar onBack={() => router.back()} />
-        <View style={styles.centerFill}>
-          <ActivityIndicator
-            accessibilityLabel="Sammlungen werden geladen"
-            color={colors.harborBlue}
-          />
-        </View>
+        <ScreenHeader subtitle="Sammlungen werden geladen" title="Sammlungen" />
+        <ListSkeleton rows={4} />
       </Screen>
     );
   }
@@ -153,13 +156,14 @@ export default function SammlungenScreen() {
 
         {collections.length > 0 ? (
           <View style={styles.list}>
-            {collections.map((collection) => (
-              <CollectionRow
-                collection={collection}
-                count={counts.get(collection.id) ?? 0}
-                key={collection.id}
-                onPress={() => router.push(`/sammlungen/${collection.id}`)}
-              />
+            {collections.map((collection, index) => (
+              <Animated.View entering={listItemEntering(index)} key={collection.id}>
+                <CollectionRow
+                  collection={collection}
+                  count={counts.get(collection.id) ?? 0}
+                  onPress={() => router.push(`/sammlungen/${collection.id}`)}
+                />
+              </Animated.View>
             ))}
           </View>
         ) : (
@@ -194,7 +198,7 @@ export default function SammlungenScreen() {
           }
           const result = await createCollection(family.id, values);
           if (!result.success) return { success: false, error: result.error };
-          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          await success();
           await load();
           return { success: true };
         }}

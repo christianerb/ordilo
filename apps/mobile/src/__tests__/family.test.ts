@@ -1,5 +1,4 @@
 import {
-  canCreateFamilyInvite,
   isOnboardingComplete,
   needsWelcomeIntro,
   resolveUserFamily,
@@ -191,13 +190,5 @@ describe("needsWelcomeIntro", () => {
   it("is never true for owners", () => {
     expect(needsWelcomeIntro({ ...base, isOwner: true })).toBe(false);
     expect(needsWelcomeIntro(null)).toBe(false);
-  });
-});
-
-describe("canCreateFamilyInvite", () => {
-  it("allows invitation creation only for the family owner", () => {
-    expect(canCreateFamilyInvite({ isOwner: true })).toBe(true);
-    expect(canCreateFamilyInvite({ isOwner: false })).toBe(false);
-    expect(canCreateFamilyInvite(null)).toBe(false);
   });
 });

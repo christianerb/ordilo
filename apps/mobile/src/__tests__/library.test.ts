@@ -7,6 +7,7 @@ import {
   getDocumentStatusGroup,
   getDocumentStatusLabel,
   getDocumentTitle,
+  isManualNote,
   mergeLibraryDocuments,
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
@@ -23,8 +24,8 @@ const invoice: LibraryDocument = {
   status: "confirmed",
   summary: "Rechnung für den Strom.",
   ocr_text: "Stadtwerke Juli",
+  source: "upload",
   created_at: "2026-07-04T12:00:00.000Z",
-  source: "scan",
 };
 
 const review: LibraryDocument = {
@@ -46,6 +47,11 @@ describe("document library helpers", () => {
     expect(getDocumentStatusLabel("confirmed")).toBe("Gespeichert");
   });
 
+  it("identifies manual notes for their dedicated detail route", () => {
+    expect(isManualNote(invoice)).toBe(false);
+    expect(isManualNote({ ...invoice, source: "manual" })).toBe(true);
+  });
+
   it("combines German search, status, and type filters", () => {
     expect(
       filterLibraryDocuments([invoice, review], {
@@ -64,12 +70,15 @@ describe("document library helpers", () => {
     ).toEqual([invoice]);
 
     expect(
-      filterLibraryDocuments([invoice], {
-        query: "rechnung.pdf",
-        status: "all",
-        documentType: "all",
-      }),
-    ).toEqual([invoice]);
+      filterLibraryDocuments(
+        [{ ...invoice, title: "Monatliche Abrechnung" }],
+        {
+          query: "rechnung.pdf",
+          status: "all",
+          documentType: "all",
+        },
+      ),
+    ).toHaveLength(1);
   });
 
   it("formats recent and older German dates without time-of-day noise", () => {
@@ -95,12 +104,7 @@ describe("document library helpers", () => {
   });
 
   it("turns search text into a single safe PostgREST pattern", () => {
-    expect(toLibrarySearchPattern("  Kita, 100%_  ")).toBe(
-      '"%Kita, 100\\%\\_%"',
-    );
-    expect(toLibrarySearchPattern("rechnung.pdf (final)")).toBe(
-      '"%rechnung.pdf (final)%"',
-    );
+    expect(toLibrarySearchPattern("  Kita, 100%_  ")).toBe("%Kita  100\\%\\_%");
   });
 
   it("creates inclusive ranges and does not repeat boundary documents", () => {
