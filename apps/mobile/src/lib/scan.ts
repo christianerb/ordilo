@@ -1,5 +1,6 @@
 import { ApiError, apiFetch } from "./api";
 import { getSupabase } from "./supabase";
+import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
@@ -39,10 +40,13 @@ export type PersistedScanQueueItem = ScannedDocument & {
   state: ScanQueueState;
 };
 
+export class ScanValidationError extends Error {}
+
 const SCAN_QUEUE_DIRECTORY = `${FileSystem.documentDirectory}ordilo-scan/`;
 const SCAN_QUEUE_MANIFEST = `${SCAN_QUEUE_DIRECTORY}queue.json`;
 const PIPELINE_POLL_INTERVAL_MS = 1_000;
 const PIPELINE_POLL_ATTEMPTS = 75;
+let pendingQueueCheckpoint: Promise<void> = Promise.resolve();
 
 async function delay(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
@@ -108,7 +112,17 @@ export async function stageScannedDocument(
   const uri = `${SCAN_QUEUE_DIRECTORY}${document.id}-${safeName}`;
   await FileSystem.copyAsync({ from: document.uri, to: uri });
   const info = await FileSystem.getInfoAsync(uri);
-  return { ...document, uri, size: info.exists ? info.size : document.size };
+  const staged = {
+    ...document,
+    uri,
+    size: info.exists ? info.size : document.size,
+  };
+  const validationError = validateScannedDocument(staged);
+  if (validationError) {
+    await removeStagedScannedDocument(uri);
+    throw new ScanValidationError(validationError);
+  }
+  return staged;
 }
 
 export async function removeStagedScannedDocument(uri: string): Promise<void> {
@@ -135,16 +149,20 @@ export async function loadPersistedScanQueue(): Promise<PersistedScanQueueItem[]
   }
 }
 
-export async function persistScanQueue(
+export function persistScanQueue(
   queue: PersistedScanQueueItem[],
 ): Promise<void> {
-  await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
-    intermediates: true,
+  const checkpoint = pendingQueueCheckpoint.then(async () => {
+    await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
+      intermediates: true,
+    });
+    await FileSystem.writeAsStringAsync(
+      SCAN_QUEUE_MANIFEST,
+      JSON.stringify(queue),
+    );
   });
-  await FileSystem.writeAsStringAsync(
-    SCAN_QUEUE_MANIFEST,
-    JSON.stringify(queue),
-  );
+  pendingQueueCheckpoint = checkpoint.catch(() => undefined);
+  return checkpoint;
 }
 
 const scannedDocumentSchema = z.object({
@@ -191,24 +209,14 @@ export function validateScannedDocument(
   return result.success ? null : result.error.issues[0]?.message;
 }
 
-/**
- * Sends the same multipart payload as the web scanner. React Native accepts
- * a `{ uri, name, type }` descriptor in FormData; casting to Blob keeps the
- * DOM-oriented TypeScript definition out of the native call site.
- */
+/** Streams the staged native file as a real multipart Blob. */
 export async function uploadScannedDocument(
   document: ScannedDocument,
   familyId: string,
 ): Promise<ScanUploadResponse> {
   const formData = new FormData();
-  formData.append(
-    "file",
-    {
-      uri: document.uri,
-      name: document.name,
-      type: document.mimeType,
-    } as unknown as Blob,
-  );
+  const file = new File(document.uri);
+  formData.append("file", file, document.name);
   formData.append("family_id", familyId);
 
   const response = await apiFetch("/api/documents/upload", {
@@ -227,12 +235,12 @@ export async function uploadScannedDocument(
 export async function continueScannedDocumentPipeline(
   documentId: string,
   startAt: ScanProcessingStep = "ocr",
-  onStep?: (step: ScanProcessingStep) => void,
+  onStep?: (step: ScanProcessingStep) => void | Promise<void>,
 ): Promise<void> {
   if (startAt === "ocr") {
-    onStep?.("ocr");
+    await onStep?.("ocr");
     await postPipelineStep(`/api/documents/${documentId}/ocr`);
   }
-  onStep?.("analysis");
+  await onStep?.("analysis");
   await postPipelineStep(`/api/documents/${documentId}/analyze`);
 }

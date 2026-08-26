@@ -148,6 +148,25 @@ export function eventsForDay(
     });
 }
 
+/** Keeps the Plan screen focused on appointments that can still occur. */
+export function upcomingPlannerEvents(
+  events: PlannerEvent[],
+  today: string,
+): PlannerEvent[] {
+  return events
+    .filter((event) =>
+      event.recurrence === "none"
+        ? event.ends_on >= today
+        : !event.recurrence_until || event.recurrence_until >= today,
+    )
+    .sort(
+      (a, b) =>
+        a.starts_on.localeCompare(b.starts_on) ||
+        (a.starts_time ?? "").localeCompare(b.starts_time ?? "") ||
+        a.id.localeCompare(b.id),
+    );
+}
+
 export function formatEventWhen(event: PlannerEvent): string {
   if (event.all_day) return "Ganztägig";
   const start = event.starts_time?.slice(0, 5);

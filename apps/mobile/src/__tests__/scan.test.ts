@@ -1,8 +1,12 @@
 import { ApiError, apiFetch } from "../lib/api";
+import * as FileSystem from "expo-file-system/legacy";
 import {
   continueScannedDocumentPipeline,
   getScanMimeType,
   MAX_SCAN_FILE_SIZE,
+  persistScanQueue,
+  stageScannedDocument,
+  uploadScannedDocument,
   validateScannedDocument,
 } from "../lib/scan";
 
@@ -24,6 +28,26 @@ jest.mock("../lib/supabase", () => ({
     query.select.mockReturnValue(query);
     query.eq.mockReturnValue(query);
     return { from: jest.fn(() => query) };
+  },
+}));
+
+jest.mock("expo-file-system/legacy", () => ({
+  documentDirectory: "file:///documents/",
+  getInfoAsync: jest.fn(),
+  copyAsync: jest.fn().mockResolvedValue(undefined),
+  deleteAsync: jest.fn().mockResolvedValue(undefined),
+  makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
+  writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("expo-file-system", () => ({
+  File: class MockNativeFile extends Blob {
+    uri: string;
+
+    constructor(uri: string) {
+      super(["scan"], { type: "image/jpeg" });
+      this.uri = uri;
+    }
   },
 }));
 
@@ -53,6 +77,27 @@ describe("native scan helpers", () => {
     ).toBe("Die Datei ist zu groß. Maximum: 4 MB.");
   });
 
+  it("removes a staged file when its actual size exceeds the upload limit", async () => {
+    jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({
+      exists: true,
+      size: MAX_SCAN_FILE_SIZE + 1,
+    } as never);
+
+    await expect(
+      stageScannedDocument({
+        id: "large-scan",
+        uri: "file:///picked.pdf",
+        name: "rechnung.pdf",
+        mimeType: "application/pdf",
+      }),
+    ).rejects.toThrow("Die Datei ist zu groß. Maximum: 4 MB.");
+
+    expect(FileSystem.deleteAsync).toHaveBeenCalledWith(
+      "file:///documents/ordilo-scan/large-scan-rechnung.pdf",
+      { idempotent: true },
+    );
+  });
+
   it("continues from OCR through analysis when no server pipeline runs", async () => {
     mockApiFetch.mockResolvedValue({} as Response);
     const steps: string[] = [];
@@ -66,6 +111,29 @@ describe("native scan helpers", () => {
       ["/api/documents/document-1/analyze", { method: "POST" }],
     ]);
     expect(steps).toEqual(["ocr", "analysis"]);
+  });
+
+  it("sends the staged file as a real multipart Blob", async () => {
+    mockApiFetch.mockResolvedValue({
+      json: async () => ({
+        document_id: "document-1",
+        server_pipeline: true,
+        status: "uploaded",
+      }),
+    } as Response);
+
+    await uploadScannedDocument(
+      {
+        id: "scan-1",
+        uri: "file:///documents/ordilo-scan/scan-1.jpg",
+        name: "scan-1.jpg",
+        mimeType: "image/jpeg",
+      },
+      "family-1",
+    );
+
+    const [, options] = mockApiFetch.mock.calls[0];
+    expect(options?.body).toBeInstanceOf(FormData);
   });
 
   it("resumes an analysis retry without repeating OCR", async () => {
@@ -107,5 +175,39 @@ describe("native scan helpers", () => {
     ).rejects.toThrow("Offline");
 
     expect(steps).toEqual(["ocr", "analysis"]);
+  });
+
+  it("serializes queue checkpoints so a later snapshot cannot be overwritten", async () => {
+    let releaseFirst: (() => void) | undefined;
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    jest
+      .mocked(FileSystem.writeAsStringAsync)
+      .mockReturnValueOnce(firstWrite)
+      .mockResolvedValueOnce(undefined);
+
+    const first = persistScanQueue([]);
+    const second = persistScanQueue([
+      {
+        id: "scan-1",
+        uri: "file:///documents/scan-1.pdf",
+        name: "scan-1.pdf",
+        mimeType: "application/pdf",
+        state: "queued",
+      },
+    ]);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalledTimes(1);
+    releaseFirst?.();
+    await Promise.all([first, second]);
+
+    expect(FileSystem.writeAsStringAsync).toHaveBeenCalledTimes(2);
+    expect(FileSystem.writeAsStringAsync).toHaveBeenLastCalledWith(
+      "file:///documents/ordilo-scan/queue.json",
+      expect.stringContaining('"id":"scan-1"'),
+    );
   });
 });

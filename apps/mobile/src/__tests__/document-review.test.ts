@@ -7,6 +7,7 @@ import {
   isImageFile,
   isSafeOriginalFileUrl,
   parseCredentialFields,
+  reconstructStoredEntities,
   revealDocumentSecret,
   type ReviewAnalysis,
 } from "../lib/document-review";
@@ -135,5 +136,60 @@ describe("document review", () => {
       url: null,
       username: null,
     });
+  });
+
+  it("reconstructs contacts, dates, and typed amounts from stored entity rows", () => {
+    const result = reconstructStoredEntities([
+      {
+        entity_type: "contact",
+        entity_value: JSON.stringify({
+          name: "Anna Beispiel",
+          organization: "Schule",
+          role: "Sekretariat",
+          phone: "0123",
+          email: "anna@example.de",
+        }),
+        confidence: 0.9,
+      },
+      {
+        entity_type: "date",
+        entity_value: "2026-09-01",
+        label: "Elternabend",
+        confidence: 0.8,
+      },
+      {
+        entity_type: "amount",
+        entity_value: "17 EUR",
+        normalized_value: "17",
+        currency: "EUR",
+        label: "Offen",
+        amount_kind: "outstanding",
+        value_date: "2026-09-02",
+        confidence: 0.7,
+      },
+    ]);
+
+    expect(result.contacts).toEqual([{
+      name: "Anna Beispiel",
+      organization: "Schule",
+      role: "Sekretariat",
+      phone: "0123",
+      email: "anna@example.de",
+      confidence: 0.9,
+    }]);
+    expect(result.dates).toEqual([{
+      date: "2026-09-01",
+      type: "date",
+      label: "Elternabend",
+      confidence: 0.8,
+    }]);
+    expect(result.amounts).toEqual([{
+      amount: "17",
+      currency: "EUR",
+      label: "Offen",
+      kind: "outstanding",
+      value_date: "2026-09-02",
+      confidence: 0.7,
+    }]);
   });
 });

@@ -39,6 +39,13 @@ import {
   Screen,
   ScreenHeader,
 } from "@/src/components/ui";
+import {
+  fetchPlannerEvents,
+  formatEventPeople,
+  formatEventWhen,
+  upcomingPlannerEvents,
+  type PlannerEvent,
+} from "@/src/lib/calendar";
 import { useFamily } from "@/src/lib/family-context";
 import { fail, select, success, tap } from "@/src/lib/feedback";
 import {
@@ -105,6 +112,7 @@ interface UndoState {
 export default function PlanScreen() {
   const { family } = useFamily();
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
+  const [events, setEvents] = useState<PlannerEvent[]>([]);
   const [members, setMembers] = useState<FamilyMemberOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -152,6 +160,7 @@ export default function PlanScreen() {
     async ({ refresh = false, silent = false } = {}) => {
       if (!family) {
         setTasks([]);
+        setEvents([]);
         setMembers([]);
         setLoading(false);
         return;
@@ -160,11 +169,13 @@ export default function PlanScreen() {
       else if (!silent) setLoading(true);
       setError(null);
       try {
-        const [taskRows, memberRows] = await Promise.all([
+        const [taskRows, eventRows, memberRows] = await Promise.all([
           fetchPlannerTasks(family.id),
+          fetchPlannerEvents(family.id),
           fetchFamilyMembers(family.id),
         ]);
         setTasks(taskRows);
+        setEvents(eventRows);
         setMembers(memberRows);
         setTodayStr(todayLocalDate());
       } catch {
@@ -189,6 +200,10 @@ export default function PlanScreen() {
   const visibleTasks = useMemo(
     () => tasks.filter((task) => task.status !== "dismissed"),
     [tasks],
+  );
+  const visibleEvents = useMemo(
+    () => upcomingPlannerEvents(events, todayStr),
+    [events, todayStr],
   );
 
   const grouped = useMemo(() => {
@@ -411,7 +426,7 @@ export default function PlanScreen() {
   return (
     <Screen>
       <PlanHeader onCreate={openCreate} />
-      {visibleTasks.length === 0 ? (
+      {visibleTasks.length === 0 && visibleEvents.length === 0 ? (
         <EmptyState
           description="Lege die erste Aufgabe an — Fristen aus deinen Dokumenten erscheinen hier ebenfalls."
           heading="Noch nichts geplant"
@@ -432,6 +447,23 @@ export default function PlanScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
+          {visibleEvents.length > 0 ? (
+            <View style={styles.section}>
+              <View accessibilityRole="header" style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Termine</Text>
+                <Text style={styles.sectionCount}>{visibleEvents.length}</Text>
+              </View>
+              <View style={styles.sectionBody}>
+                {visibleEvents.map((event) => (
+                  <PlannerEventRow
+                    event={event}
+                    key={event.id}
+                    members={members}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
           {TASK_SECTIONS.map((section) => {
             const sectionTasks = grouped[section.id];
             if (sectionTasks.length === 0) return null;
@@ -577,6 +609,45 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
       subtitle="Aufgaben und Termine der Familie"
       title="Plan"
     />
+  );
+}
+
+function PlannerEventRow({
+  event,
+  members,
+}: {
+  event: PlannerEvent;
+  members: FamilyMemberOption[];
+}) {
+  const date = new Date(`${event.starts_on}T12:00:00`);
+  const dateLabel = Number.isNaN(date.getTime())
+    ? event.starts_on
+    : date.toLocaleDateString("de-DE", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+  const people = formatEventPeople(event, members);
+
+  return (
+    <View style={styles.eventRow}>
+      <View style={styles.eventIcon}>
+        <CalendarDays color={colors.harborBlue} size={18} strokeWidth={2} />
+      </View>
+      <View style={styles.taskBody}>
+        <Text numberOfLines={2} style={styles.taskTitle}>
+          {event.title}
+        </Text>
+        <Text style={styles.taskDue}>
+          {dateLabel} · {formatEventWhen(event)}
+        </Text>
+        {people ? (
+          <Text numberOfLines={1} style={styles.taskNote}>
+            {people}
+          </Text>
+        ) : null}
+      </View>
+    </View>
   );
 }
 
@@ -941,6 +1012,24 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: 10,
     padding: 12,
+  },
+  eventRow: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 10,
+    padding: 12,
+  },
+  eventIcon: {
+    alignItems: "center",
+    backgroundColor: colors.blueSoft,
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
   },
   checkbox: {
     alignItems: "center",

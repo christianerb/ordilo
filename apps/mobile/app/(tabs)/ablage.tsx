@@ -53,6 +53,7 @@ import {
   getDocumentStatusLabel,
   getDocumentTitle,
   getDocumentTypeLabel,
+  isManualNote,
   getLibraryPageRange,
   getLibrarySortOrder,
   toLibrarySearchPattern,
@@ -388,7 +389,13 @@ export default function AblageScreen() {
                       document={document}
                       index={index}
                       key={document.id}
-                      onPress={() => router.push(`/document/${document.id}`)}
+                      onPress={() =>
+                        router.push(
+                          isManualNote(document)
+                            ? `/note/${document.id}`
+                            : `/document/${document.id}`,
+                        )
+                      }
                     />
                   ))}
                 </View>

@@ -9,6 +9,7 @@ export type LibraryDocument = {
   status: string;
   summary: string | null;
   ocr_text: string | null;
+  source: string | null;
   created_at: string;
 };
 
@@ -65,7 +66,11 @@ export function refreshLibraryDocuments(): void {
 }
 
 export const libraryDocumentSelect =
-  "id, title, original_filename, mime_type, document_type, status, summary, ocr_text, created_at";
+  "id, title, original_filename, mime_type, document_type, status, summary, ocr_text, source, created_at";
+
+export function isManualNote(document: LibraryDocument): boolean {
+  return document.source === "manual";
+}
 
 const documentTypes = new Set<DocumentType>([
   "invoice",

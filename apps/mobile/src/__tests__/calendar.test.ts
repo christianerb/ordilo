@@ -4,6 +4,7 @@ import {
   eventsForDay,
   formatEventPeople,
   toCalendarDate,
+  upcomingPlannerEvents,
   type PlannerEvent,
 } from "../lib/calendar";
 
@@ -51,5 +52,18 @@ describe("native calendar", () => {
       { id: "member-1", name: "Lina", role: null, avatar_color: null },
       { id: "member-2", name: "Karina", role: null, avatar_color: null },
     ])).toBe("Für Lina · Karina kümmert sich");
+  });
+
+  it("keeps upcoming and recurring appointments in the Plan list", () => {
+    expect(
+      upcomingPlannerEvents(
+        [
+          { ...event, id: "past", recurrence: "none", ends_on: "2026-08-01" },
+          { ...event, id: "future", recurrence: "none", starts_on: "2026-08-20", ends_on: "2026-08-20" },
+          { ...event, id: "recurring", recurrence_until: null },
+        ],
+        "2026-08-10",
+      ).map((item) => item.id),
+    ).toEqual(["recurring", "future"]);
   });
 });

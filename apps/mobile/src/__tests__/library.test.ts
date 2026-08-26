@@ -7,6 +7,7 @@ import {
   getDocumentStatusGroup,
   getDocumentStatusLabel,
   getDocumentTitle,
+  isManualNote,
   mergeLibraryDocuments,
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
@@ -23,6 +24,7 @@ const invoice: LibraryDocument = {
   status: "confirmed",
   summary: "Rechnung für den Strom.",
   ocr_text: "Stadtwerke Juli",
+  source: "upload",
   created_at: "2026-07-04T12:00:00.000Z",
 };
 
@@ -43,6 +45,11 @@ describe("document library helpers", () => {
     expect(getDocumentStatusGroup("analyzed")).toBe("needs_review");
     expect(getDocumentStatusGroup("ocr_processing")).toBe("processing");
     expect(getDocumentStatusLabel("confirmed")).toBe("Gespeichert");
+  });
+
+  it("identifies manual notes for their dedicated detail route", () => {
+    expect(isManualNote(invoice)).toBe(false);
+    expect(isManualNote({ ...invoice, source: "manual" })).toBe(true);
   });
 
   it("combines German search, status, and type filters", () => {

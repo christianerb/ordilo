@@ -114,6 +114,84 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const confidence = (value: unknown) => typeof value === "number" ? value : 0;
 
+function jsonRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Rebuilds typed review entities from the columns written by buildEntityRows.
+ * Legacy amount rows fall back to their display value.
+ */
+export function reconstructStoredEntities(rawEntities: unknown[]) {
+  const items = rawEntities.map(asRecord);
+  const ofType = (entityType: string) =>
+    items.filter((entity) => entity.entity_type === entityType);
+
+  const contacts = ofType("contact").flatMap((entity) => {
+    const details = jsonRecord(entity.entity_value);
+    if (!details || !text(details.name).trim()) return [];
+    return [{
+      name: text(details.name),
+      organization: text(details.organization),
+      role: text(details.role),
+      phone: text(details.phone),
+      email: text(details.email),
+      confidence: confidence(entity.confidence),
+    }];
+  });
+
+  const amounts = ofType("amount").map((entity) => {
+    const displayParts = text(entity.entity_value).trim().split(/\s+/);
+    const fallbackCurrency =
+      displayParts.length > 1 ? displayParts.at(-1) ?? "EUR" : "EUR";
+    const fallbackAmount =
+      displayParts.length > 1
+        ? displayParts.slice(0, -1).join(" ")
+        : text(entity.entity_value);
+    const storedKind = text(entity.amount_kind);
+    return {
+      amount: text(entity.normalized_value).trim() || fallbackAmount,
+      currency: text(entity.currency).trim() || fallbackCurrency,
+      label: text(entity.label),
+      kind: amountKinds.has(storedKind as ReviewAnalysis["amounts"][number]["kind"])
+        ? storedKind as ReviewAnalysis["amounts"][number]["kind"]
+        : "other" as const,
+      value_date: text(entity.value_date) || null,
+      confidence: confidence(entity.confidence),
+    };
+  });
+
+  return {
+    items,
+    familyMembers: ofType("person").map((entity) => ({
+      person_id: text(entity.linked_object_id) || null,
+      name: text(entity.entity_value),
+      confidence: confidence(entity.confidence),
+    })),
+    organizations: ofType("organization").map((entity) => ({
+      name: text(entity.entity_value),
+      type: text(entity.normalized_value) || "organization",
+      confidence: confidence(entity.confidence),
+    })),
+    contacts,
+    dates: ofType("date").map((entity) => ({
+      date: text(entity.entity_value),
+      type: "date",
+      label: text(entity.label),
+      confidence: confidence(entity.confidence),
+    })),
+    amounts,
+  };
+}
+
 function documentType(value: string | null): DocumentType {
   return documentTypes.has(value as DocumentType) ? value as DocumentType : "other";
 }
@@ -154,7 +232,8 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     };
   }
 
-  const items = (entities ?? []).map(asRecord);
+  const reconstructed = reconstructStoredEntities(entities ?? []);
+  const { items } = reconstructed;
   const ofType = (entityType: string) => items.filter((entity) => entity.entity_type === entityType);
   const category = ofType("category")[0];
 
@@ -170,31 +249,11 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     document_type: type,
     title: row.title ?? "Dokument",
     summary: row.summary ?? "",
-    family_members: ofType("person").map((entity) => ({ person_id: text(entity.linked_object_id) || null, name: text(entity.entity_value), confidence: confidence(entity.confidence) })),
-    organizations: ofType("organization").map((entity) => {
-      const details = asRecord(entity.metadata);
-      return { name: text(entity.entity_value), type: text(details.type), confidence: confidence(entity.confidence) };
-    }),
-    contacts: ofType("contact").map((entity) => {
-      const details = asRecord(entity.metadata);
-      return { name: text(entity.entity_value), organization: text(details.organization), role: text(details.role), phone: text(details.phone), email: text(details.email), confidence: confidence(entity.confidence) };
-    }),
-    dates: ofType("date").map((entity) => {
-      const details = asRecord(entity.metadata);
-      return { date: text(entity.entity_value), type: text(details.type), label: text(details.label), confidence: confidence(entity.confidence) };
-    }),
-    amounts: ofType("amount").map((entity) => {
-      const details = asRecord(entity.metadata);
-      const kind = text(details.kind);
-      return {
-        amount: text(entity.entity_value),
-        currency: text(details.currency),
-        label: text(details.label),
-        kind: amountKinds.has(kind as ReviewAnalysis["amounts"][number]["kind"]) ? kind as ReviewAnalysis["amounts"][number]["kind"] : "other",
-        value_date: text(details.value_date) || null,
-        confidence: confidence(entity.confidence),
-      };
-    }),
+    family_members: reconstructed.familyMembers,
+    organizations: reconstructed.organizations,
+    contacts: reconstructed.contacts,
+    dates: reconstructed.dates,
+    amounts: reconstructed.amounts,
     tasks: (tasks ?? []).map((task) => {
       const entry = asRecord(task);
       return { title: text(entry.title), due_date: text(entry.due_date) || null, confidence: confidence(entry.confidence) };
