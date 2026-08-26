@@ -411,7 +411,7 @@ export default function SucheScreen() {
         // The recorder may not have started or iOS may have stopped it already.
       } finally {
         removeVoiceRecording(recorder.uri);
-        void setAudioModeAsync({ allowsRecording: false });
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
         if (resetUi) resetVoiceUi();
         if (feedback) {
           void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -486,7 +486,7 @@ export default function SucheScreen() {
       } finally {
         transcriptionAbortController.current = null;
         removeVoiceRecording(uri ?? recorder.uri);
-        void setAudioModeAsync({ allowsRecording: false });
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
         resetVoiceUi();
       }
     },
@@ -533,11 +533,11 @@ export default function SucheScreen() {
         "Aufnahme läuft. Nach oben ziehen zum Sperren.",
       );
     } catch {
+      await discardVoiceRecording({ feedback: false });
       setVoiceError("Die Aufnahme konnte nicht gestartet werden.");
-      resetVoiceUi();
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
-  }, [busy, recorder, resetVoiceUi]);
+  }, [busy, discardVoiceRecording, recorder, resetVoiceUi]);
 
   const moveVoice = useCallback((event: GestureResponderEvent) => {
     if (
