@@ -18,13 +18,14 @@ alter table public.voice_transcription_usage force row level security;
 
 -- No authenticated-client policies: exposing write access would let a
 -- modified mobile client reset its own counter. API routes use the
--- service-role-only RPCs below after checking family membership.
+-- service-role-only RPC below after checking family membership.
 
+drop function if exists public.reserve_voice_transcription(uuid, integer);
 create or replace function public.reserve_voice_transcription(
   p_family_id uuid,
   p_limit integer
 )
-returns table (allowed boolean, used integer, remaining integer, usage_date date)
+returns table (allowed boolean, used integer, remaining integer)
 language plpgsql
 security definer
 set search_path = public
@@ -45,37 +46,24 @@ begin
   returning transcription_count into v_used;
 
   if found then
-    return query select true, v_used, greatest(0, p_limit - v_used), current_date;
+    return query select true, v_used, greatest(0, p_limit - v_used);
     return;
   end if;
 
   select transcription_count into v_used
-  from public.voice_transcription_usage
-  where family_id = p_family_id
-    and usage_date = current_date;
+  from public.voice_transcription_usage as vtu
+  where vtu.family_id = p_family_id
+    and vtu.usage_date = current_date;
 
-  return query select false, coalesce(v_used, 0), 0, current_date;
+  return query select false, coalesce(v_used, 0), 0;
 end;
 $$;
 
-create or replace function public.release_voice_transcription(
-  p_family_id uuid,
-  p_usage_date date
-)
-returns void
-language sql
-security definer
-set search_path = public
-as $$
-  update public.voice_transcription_usage
-  set transcription_count = greatest(0, transcription_count - 1)
-  where family_id = p_family_id
-    and usage_date = p_usage_date;
-$$;
-
 revoke all on function public.reserve_voice_transcription(uuid, integer) from public;
-revoke all on function public.release_voice_transcription(uuid, date) from public;
 grant execute on function public.reserve_voice_transcription(uuid, integer)
   to service_role;
-grant execute on function public.release_voice_transcription(uuid, date)
-  to service_role;
+
+-- Reservations count provider attempts. Releasing rejected attempts would let
+-- a modified client make unlimited paid requests that OpenAI refuses.
+drop function if exists public.release_voice_transcription(uuid);
+drop function if exists public.release_voice_transcription(uuid, date);

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   DAILY_VOICE_TRANSCRIPTION_LIMIT,
-  releaseVoiceTranscription,
   reserveVoiceTranscription,
 } from "@/lib/ai/voice-rate-limit";
 
@@ -40,18 +39,6 @@ describe("voice transcription rate limit", () => {
     await expect(reserveVoiceTranscription(client, "family-1")).resolves.toMatchObject({
       allowed: false,
       remaining: 0,
-    });
-  });
-
-  it("releases a reservation when transcription cannot complete", async () => {
-    const { client, rpc } = createAdminClient();
-    rpc.mockResolvedValue({ error: null });
-
-    await releaseVoiceTranscription(client, "family-1", "2026-08-26");
-
-    expect(rpc).toHaveBeenCalledWith("release_voice_transcription", {
-      p_family_id: "family-1",
-      p_usage_date: "2026-08-26",
     });
   });
 });

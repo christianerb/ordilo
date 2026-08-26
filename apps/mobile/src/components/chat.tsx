@@ -612,48 +612,31 @@ function VoiceWaveform({ level }: { level: number }) {
 
 function VoiceRecordingPanel({
   durationMillis,
-  discardArmed,
   locked,
   level,
   onCancel,
   onFinish,
 }: {
   durationMillis: number;
-  discardArmed: boolean;
   locked: boolean;
   level: number;
   onCancel: () => void;
   onFinish: () => void;
 }) {
-  const status = discardArmed
-    ? "Loslassen zum Verwerfen"
-    : locked
-      ? "Aufnahme gesperrt"
-      : "Sprich jetzt";
-  const instruction = discardArmed
-    ? "Die Aufnahme wird nicht übernommen."
-    : locked
-      ? "Tippe auf Fertig, wenn du fertig bist."
-      : "Nach links ziehen zum Verwerfen. Nach oben ziehen zum Sperren.";
+  const status = locked ? "Aufnahme gesperrt" : "Sprich jetzt";
+  const instruction = locked
+    ? "Tippe auf Fertig, wenn du fertig bist."
+    : "Nach oben ziehen zum Sperren.";
 
   return (
     <View
       accessibilityLabel={`${status}, ${formatVoiceDuration(durationMillis)}`}
       accessibilityLiveRegion="polite"
-      style={[
-        styles.voicePanel,
-        discardArmed && styles.voicePanelDiscard,
-      ]}
+      style={styles.voicePanel}
     >
       <View style={styles.voicePanelHeader}>
         <View style={styles.voicePanelStatus}>
-          <View
-            accessibilityElementsHidden
-            style={[
-              styles.voiceRecordingDot,
-              discardArmed && styles.voiceRecordingDotDiscard,
-            ]}
-          />
+          <View accessibilityElementsHidden style={styles.voiceRecordingDot} />
           <Text style={styles.voicePanelTitle}>{status}</Text>
         </View>
         <Text style={styles.voiceDuration}>
@@ -707,7 +690,6 @@ export function ChatComposer({
   onVoiceFinish,
   value,
   voiceDurationMillis = 0,
-  voiceDiscardArmed = false,
   voiceLocked = false,
   voiceLevel = 0,
   voiceStatus = "idle",
@@ -723,7 +705,6 @@ export function ChatComposer({
   onVoiceFinish?: () => void;
   value: string;
   voiceDurationMillis?: number;
-  voiceDiscardArmed?: boolean;
   voiceLocked?: boolean;
   voiceLevel?: number;
   voiceStatus?: "idle" | "starting" | "recording" | "transcribing";
@@ -736,7 +717,6 @@ export function ChatComposer({
     <View style={styles.composerStack}>
       {recording ? (
         <VoiceRecordingPanel
-          discardArmed={voiceDiscardArmed}
           durationMillis={voiceDurationMillis}
           level={voiceLevel}
           locked={voiceLocked}
@@ -766,7 +746,7 @@ export function ChatComposer({
               recording
                 ? voiceLocked
                   ? "Aufnahme gesperrt. Tippe auf Fertig."
-                  : "Gedrückt halten. Nach links zum Verwerfen, nach oben zum Sperren."
+                  : "Gedrückt halten. Nach oben zum Sperren."
                 : "Gedrückt halten und sprechen"
             }
             accessibilityLabel={
@@ -783,7 +763,7 @@ export function ChatComposer({
             onPressIn={onVoicePressIn}
             onPressMove={onVoicePressMove}
             onPressOut={onVoicePressOut}
-            pressRetentionOffset={16}
+            pressRetentionOffset={{ bottom: 24, left: 24, right: 24, top: 96 }}
             style={({ pressed }) => [
               styles.voiceButton,
               recording && styles.voiceButtonRecording,
@@ -1043,10 +1023,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.md,
   },
-  voicePanelDiscard: {
-    backgroundColor: colors.sandWarm,
-    borderColor: colors.warmApricot,
-  },
   voicePanelHeader: {
     alignItems: "center",
     flexDirection: "row",
@@ -1063,7 +1039,6 @@ const styles = StyleSheet.create({
     height: 8,
     width: 8,
   },
-  voiceRecordingDotDiscard: { backgroundColor: colors.destructive },
   voicePanelTitle: { color: colors.graphite, ...typography.title },
   voiceDuration: { color: colors.mistDark, ...typography.timestamp },
   voiceInstruction: {

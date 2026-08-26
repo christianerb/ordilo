@@ -1,8 +1,5 @@
 import { requireUser } from "@/lib/auth/require-user";
-import {
-  releaseVoiceTranscription,
-  reserveVoiceTranscription,
-} from "@/lib/ai/voice-rate-limit";
+import { reserveVoiceTranscription } from "@/lib/ai/voice-rate-limit";
 import { getM4aDurationMillis } from "@/lib/audio-duration";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -104,11 +101,6 @@ export async function POST(request: Request): Promise<Response> {
       body,
     });
   } catch {
-    await releaseVoiceTranscription(
-      adminClient,
-      familyId,
-      rateLimit.usage_date,
-    ).catch(() => undefined);
     return Response.json(
       { error: "Die Spracheingabe hat nicht geklappt.", code: "TRANSCRIPTION_FAILED" },
       { status: 502 },
@@ -116,11 +108,6 @@ export async function POST(request: Request): Promise<Response> {
   }
   const result = (await response.json().catch(() => null)) as { text?: unknown } | null;
   if (!response.ok || typeof result?.text !== "string") {
-    await releaseVoiceTranscription(
-      adminClient,
-      familyId,
-      rateLimit.usage_date,
-    ).catch(() => undefined);
     return Response.json(
       { error: "Die Spracheingabe hat nicht geklappt.", code: "TRANSCRIPTION_FAILED" },
       { status: 502 },

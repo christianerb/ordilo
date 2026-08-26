@@ -73,6 +73,7 @@ function httpStatusOf(error: unknown): number {
 }
 
 const MAX_VOICE_RECORDING_MILLIS = 2 * 60 * 1_000;
+const VOICE_AUTO_STOP_MILLIS = MAX_VOICE_RECORDING_MILLIS - 1_000;
 
 type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
 
@@ -85,7 +86,6 @@ export default function SucheScreen() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
-  const [voiceDiscardArmed, setVoiceDiscardArmed] = useState(false);
   const [voiceLocked, setVoiceLocked] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
@@ -94,9 +94,7 @@ export default function SucheScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
-  const voiceStartX = useRef<number | null>(null);
   const voiceStartY = useRef<number | null>(null);
-  const discardVoice = useRef(false);
   const voiceIntent = useRef(false);
   const voiceLockedRef = useRef(false);
   const voiceStatusRef = useRef<VoiceStatus>("idle");
@@ -393,67 +391,66 @@ export default function SucheScreen() {
   );
 
   const resetVoiceUi = useCallback(() => {
+    voiceStatusRef.current = "idle";
     setVoiceStatus("idle");
-    setVoiceDiscardArmed(false);
     setVoiceLocked(false);
-    voiceStartX.current = null;
     voiceStartY.current = null;
-    discardVoice.current = false;
     voiceLockedRef.current = false;
     autoStoppingVoice.current = false;
   }, []);
 
-  const discardVoiceRecording = useCallback(async () => {
-    voiceIntent.current = false;
-    transcriptionAbortController.current?.abort();
-    transcriptionAbortController.current = null;
-    try {
-      await recorder.stop();
-    } catch {
-      // The recorder may already have been stopped by iOS on interruption.
-    } finally {
-      removeVoiceRecording(recorder.uri);
-      void setAudioModeAsync({ allowsRecording: false });
-      resetVoiceUi();
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      void AccessibilityInfo.announceForAccessibility("Aufnahme verworfen.");
-    }
-  }, [recorder, resetVoiceUi]);
+  const discardVoiceRecording = useCallback(
+    async (options: { feedback?: boolean; resetUi?: boolean } = {}) => {
+      const { feedback = true, resetUi = true } = options;
+      voiceIntent.current = false;
+      transcriptionAbortController.current?.abort();
+      transcriptionAbortController.current = null;
+      try {
+        await recorder.stop();
+      } catch {
+        // The recorder may not have started or iOS may have stopped it already.
+      } finally {
+        removeVoiceRecording(recorder.uri);
+        void setAudioModeAsync({ allowsRecording: false });
+        if (resetUi) resetVoiceUi();
+        if (feedback) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void AccessibilityInfo.announceForAccessibility("Aufnahme verworfen.");
+        }
+      }
+    },
+    [recorder, resetVoiceUi],
+  );
 
   const finishVoice = useCallback(
     async (force = false, reachedDurationLimit = false) => {
       if (voiceStatusRef.current === "starting") {
-        voiceIntent.current = false;
-        resetVoiceUi();
+        await discardVoiceRecording({ feedback: false });
         return;
       }
       if (voiceStatusRef.current !== "recording") return;
       if (voiceLockedRef.current && !force) return;
 
       voiceIntent.current = false;
+      voiceStatusRef.current = "transcribing";
+      setVoiceStatus("transcribing");
       if (reachedDurationLimit) {
         setVoiceError("Die Aufnahme ist nach zwei Minuten beendet worden.");
       }
-      const shouldDiscard = discardVoice.current;
       let uri: string | null = null;
       try {
+        const finalDurationMillis = Math.round(recorder.currentTime * 1_000);
         await recorder.stop();
         uri = recorder.uri;
-        if (shouldDiscard) {
-          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          void AccessibilityInfo.announceForAccessibility("Aufnahme verworfen.");
-          return;
-        }
         if (!uri || !family) {
           throw new VoiceInputError("Keine Aufnahme vorhanden.");
         }
-        if (recorderState.durationMillis < 500) {
+        if (finalDurationMillis < 500) {
           throw new VoiceInputError(
             "Die Aufnahme war zu kurz. Halte das Mikrofon etwas länger.",
           );
         }
 
-        setVoiceStatus("transcribing");
         void AccessibilityInfo.announceForAccessibility(
           "Aufnahme beendet. Sprache wird in Text umgewandelt.",
         );
@@ -496,7 +493,7 @@ export default function SucheScreen() {
     [
       family,
       recorder,
-      recorderState.durationMillis,
+      discardVoiceRecording,
       resetVoiceUi,
     ],
   );
@@ -504,13 +501,11 @@ export default function SucheScreen() {
   const startVoice = useCallback(async (event: GestureResponderEvent) => {
     if (busy || voiceStatusRef.current !== "idle") return;
     setVoiceError(null);
-    voiceStartX.current = event.nativeEvent.pageX;
     voiceStartY.current = event.nativeEvent.pageY;
-    discardVoice.current = false;
     voiceIntent.current = true;
     voiceLockedRef.current = false;
-    setVoiceDiscardArmed(false);
     setVoiceLocked(false);
+    voiceStatusRef.current = "starting";
     setVoiceStatus("starting");
     const permission = await AudioModule.requestRecordingPermissionsAsync();
     if (!voiceIntent.current) return;
@@ -535,7 +530,7 @@ export default function SucheScreen() {
       setVoiceStatus("recording");
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       void AccessibilityInfo.announceForAccessibility(
-        "Aufnahme läuft. Nach links ziehen zum Verwerfen oder nach oben zum Sperren.",
+        "Aufnahme läuft. Nach oben ziehen zum Sperren.",
       );
     } catch {
       setVoiceError("Die Aufnahme konnte nicht gestartet werden.");
@@ -547,22 +542,12 @@ export default function SucheScreen() {
   const moveVoice = useCallback((event: GestureResponderEvent) => {
     if (
       voiceStatusRef.current !== "recording" ||
-      voiceStartX.current === null ||
       voiceStartY.current === null ||
       voiceLockedRef.current
     ) {
       return;
     }
-    const armed = event.nativeEvent.pageX - voiceStartX.current < -56;
-    if (armed !== discardVoice.current) {
-      discardVoice.current = armed;
-      setVoiceDiscardArmed(armed);
-      void Haptics.selectionAsync();
-      void AccessibilityInfo.announceForAccessibility(
-        armed ? "Verwerfen aktiviert." : "Verwerfen aufgehoben.",
-      );
-    }
-    if (event.nativeEvent.pageY - voiceStartY.current < -72 && !armed) {
+    if (event.nativeEvent.pageY - voiceStartY.current < -72) {
       voiceLockedRef.current = true;
       setVoiceLocked(true);
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -575,7 +560,7 @@ export default function SucheScreen() {
   useEffect(() => {
     if (
       voiceStatus === "recording" &&
-      recorderState.durationMillis >= MAX_VOICE_RECORDING_MILLIS &&
+      recorderState.durationMillis >= VOICE_AUTO_STOP_MILLIS &&
       !autoStoppingVoice.current
     ) {
       autoStoppingVoice.current = true;
@@ -594,7 +579,9 @@ export default function SucheScreen() {
     });
     return () => {
       subscription.remove();
-      void discardVoiceRecording();
+      if (voiceStatusRef.current !== "idle") {
+        void discardVoiceRecording({ feedback: false, resetUi: false });
+      }
     };
   }, [discardVoiceRecording]);
 
@@ -758,13 +745,12 @@ export default function SucheScreen() {
             inputRef={inputRef}
             onChange={setInput}
             onSend={() => void send(input)}
-          onVoicePressIn={(event) => void startVoice(event)}
-          onVoicePressMove={moveVoice}
+            onVoicePressIn={(event) => void startVoice(event)}
+            onVoicePressMove={moveVoice}
             onVoicePressOut={() => void finishVoice()}
             onVoiceCancel={() => void discardVoiceRecording()}
             onVoiceFinish={() => void finishVoice(true)}
             value={input}
-            voiceDiscardArmed={voiceDiscardArmed}
             voiceDurationMillis={recorderState.durationMillis}
             voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
             voiceLocked={voiceLocked}

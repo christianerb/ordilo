@@ -13,7 +13,6 @@ interface VoiceQuotaRpcResult {
   allowed: boolean;
   used: number;
   remaining: number;
-  usage_date: string;
 }
 
 interface VoiceQuotaClient {
@@ -21,10 +20,6 @@ interface VoiceQuotaClient {
     functionName: "reserve_voice_transcription",
     params: { p_family_id: string; p_limit: number },
   ): Promise<{ data: VoiceQuotaRpcResult[] | null; error: { message: string } | null }>;
-  rpc(
-    functionName: "release_voice_transcription",
-    params: { p_family_id: string; p_usage_date: string },
-  ): Promise<{ error: { message: string } | null }>;
 }
 
 function voiceQuotaClient(client: AdminClient): VoiceQuotaClient {
@@ -50,16 +45,4 @@ export async function reserveVoiceTranscription(
     throw new Error(error?.message ?? "Voice quota reservation failed.");
   }
   return data[0];
-}
-
-export async function releaseVoiceTranscription(
-  client: AdminClient,
-  familyId: string,
-  usageDate: string,
-): Promise<void> {
-  const { error } = await voiceQuotaClient(client).rpc(
-    "release_voice_transcription",
-    { p_family_id: familyId, p_usage_date: usageDate },
-  );
-  if (error) throw new Error(error.message);
 }
