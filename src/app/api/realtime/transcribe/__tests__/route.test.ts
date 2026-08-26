@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
   membershipMaybeSingle: vi.fn(),
-  checkVoiceRateLimit: vi.fn(),
-  recordVoiceTranscription: vi.fn(),
+  reserveVoiceTranscription: vi.fn(),
+  releaseVoiceTranscription: vi.fn(),
+  adminClient: { rpc: vi.fn() },
 }));
 
 vi.mock("@/lib/auth/require-user", () => ({
@@ -23,10 +24,15 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+vi.mock("@/lib/supabase/admin", () => ({
+  createClient: () => mocks.adminClient,
+}));
+
 vi.mock("@/lib/ai/voice-rate-limit", () => ({
-  checkVoiceRateLimit: (...args: unknown[]) => mocks.checkVoiceRateLimit(...args),
-  recordVoiceTranscription: (...args: unknown[]) =>
-    mocks.recordVoiceTranscription(...args),
+  reserveVoiceTranscription: (...args: unknown[]) =>
+    mocks.reserveVoiceTranscription(...args),
+  releaseVoiceTranscription: (...args: unknown[]) =>
+    mocks.releaseVoiceTranscription(...args),
 }));
 
 import { POST } from "@/app/api/realtime/transcribe/route";
@@ -59,12 +65,12 @@ beforeEach(() => {
     json: null,
   });
   mocks.membershipMaybeSingle.mockResolvedValue({ data: { family_id: "family-1" } });
-  mocks.checkVoiceRateLimit.mockResolvedValue({
+  mocks.reserveVoiceTranscription.mockResolvedValue({
     allowed: true,
-    used: 0,
-    remaining: 50,
+    used: 1,
+    remaining: 49,
   });
-  mocks.recordVoiceTranscription.mockResolvedValue(undefined);
+  mocks.releaseVoiceTranscription.mockResolvedValue(undefined);
   fetchMock.mockResolvedValue(
     new Response(JSON.stringify({ text: "Wann ist der Elternabend?" }), {
       status: 200,
@@ -100,8 +106,8 @@ describe("POST /api/realtime/transcribe", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("enforces the separate voice allowance without charging chat usage", async () => {
-    mocks.checkVoiceRateLimit.mockResolvedValue({
+  it("enforces the separate voice allowance before calling OpenAI", async () => {
+    mocks.reserveVoiceTranscription.mockResolvedValue({
       allowed: false,
       used: 50,
       remaining: 0,
@@ -113,17 +119,17 @@ describe("POST /api/realtime/transcribe", () => {
     expect(response.status).toBe(429);
     expect(body.code).toBe("VOICE_RATE_LIMIT_EXCEEDED");
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(mocks.recordVoiceTranscription).not.toHaveBeenCalled();
   });
 
-  it("rejects an oversized recording before OpenAI", async () => {
+  it("rejects an oversized recording before reserving quota", async () => {
     const response = await POST(recordingRequest(8 * 1024 * 1024 + 1));
 
     expect(response.status).toBe(413);
     expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
   });
 
-  it("transcribes German audio and records only the voice allowance", async () => {
+  it("transcribes German audio after an atomic reservation", async () => {
     const response = await POST(recordingRequest());
 
     await expect(response.json()).resolves.toEqual({
@@ -133,18 +139,31 @@ describe("POST /api/realtime/transcribe", () => {
       "https://api.openai.com/v1/audio/transcriptions",
       expect.objectContaining({ method: "POST" }),
     );
-    expect(mocks.recordVoiceTranscription).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(mocks.reserveVoiceTranscription).toHaveBeenCalledWith(
+      mocks.adminClient,
       "family-1",
     );
+    expect(mocks.releaseVoiceTranscription).not.toHaveBeenCalled();
   });
 
-  it("does not record usage when OpenAI rejects the transcription", async () => {
+  it("releases the quota reservation when OpenAI rejects the transcription", async () => {
     fetchMock.mockResolvedValue(new Response("nope", { status: 502 }));
 
     const response = await POST(recordingRequest());
 
     expect(response.status).toBe(502);
-    expect(mocks.recordVoiceTranscription).not.toHaveBeenCalled();
+    expect(mocks.releaseVoiceTranscription).toHaveBeenCalledWith(
+      mocks.adminClient,
+      "family-1",
+    );
+  });
+
+  it("does not reserve quota when transcription is unavailable", async () => {
+    vi.stubEnv("OPENAI_API_KEY", "");
+
+    const response = await POST(recordingRequest());
+
+    expect(response.status).toBe(503);
+    expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
   });
 });

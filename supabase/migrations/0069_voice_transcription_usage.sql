@@ -16,21 +16,65 @@ create index if not exists voice_transcription_usage_family_date_idx
 alter table public.voice_transcription_usage enable row level security;
 alter table public.voice_transcription_usage force row level security;
 
-drop policy if exists "voice_transcription_usage_select"
-  on public.voice_transcription_usage;
-create policy "voice_transcription_usage_select"
-  on public.voice_transcription_usage
-  for select using (public.user_belongs_to_family(family_id));
+-- No authenticated-client policies: exposing write access would let a
+-- modified mobile client reset its own counter. API routes use the
+-- service-role-only RPCs below after checking family membership.
 
-drop policy if exists "voice_transcription_usage_insert"
-  on public.voice_transcription_usage;
-create policy "voice_transcription_usage_insert"
-  on public.voice_transcription_usage
-  for insert with check (public.user_belongs_to_family(family_id));
+create or replace function public.reserve_voice_transcription(
+  p_family_id uuid,
+  p_limit integer
+)
+returns table (allowed boolean, used integer, remaining integer)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_used integer;
+begin
+  insert into public.voice_transcription_usage (
+    family_id,
+    usage_date,
+    transcription_count
+  )
+  values (p_family_id, current_date, 1)
+  on conflict (family_id, usage_date) do update
+    set transcription_count =
+      public.voice_transcription_usage.transcription_count + 1
+    where public.voice_transcription_usage.transcription_count < p_limit
+  returning transcription_count into v_used;
 
-drop policy if exists "voice_transcription_usage_update"
-  on public.voice_transcription_usage;
-create policy "voice_transcription_usage_update"
-  on public.voice_transcription_usage
-  for update using (public.user_belongs_to_family(family_id))
-  with check (public.user_belongs_to_family(family_id));
+  if found then
+    return query select true, v_used, greatest(0, p_limit - v_used);
+    return;
+  end if;
+
+  select transcription_count into v_used
+  from public.voice_transcription_usage
+  where family_id = p_family_id
+    and usage_date = current_date;
+
+  return query select false, coalesce(v_used, 0), 0;
+end;
+$$;
+
+create or replace function public.release_voice_transcription(
+  p_family_id uuid
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.voice_transcription_usage
+  set transcription_count = greatest(0, transcription_count - 1)
+  where family_id = p_family_id
+    and usage_date = current_date;
+$$;
+
+revoke all on function public.reserve_voice_transcription(uuid, integer) from public;
+revoke all on function public.release_voice_transcription(uuid) from public;
+grant execute on function public.reserve_voice_transcription(uuid, integer)
+  to service_role;
+grant execute on function public.release_voice_transcription(uuid)
+  to service_role;

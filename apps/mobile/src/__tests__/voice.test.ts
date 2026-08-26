@@ -1,17 +1,25 @@
-/* eslint-disable import/first */
-
 const mockGetSession = jest.fn();
 const mockFetch = jest.fn();
 const mockDelete = jest.fn();
 let mockFileExists = true;
 
 jest.mock("expo-file-system", () => ({
-  File: jest.fn().mockImplementation(() => ({
+  File: class MockVoiceFile extends Blob {
+    readonly uri: string;
+
+    constructor(uri: string) {
+      super(["voice"], { type: "audio/m4a" });
+      this.uri = uri;
+    }
+
     get exists() {
       return mockFileExists;
-    },
-    delete: mockDelete,
-  })),
+    }
+
+    delete() {
+      mockDelete();
+    }
+  },
 }));
 
 jest.mock("../lib/supabase", () => ({
@@ -73,6 +81,16 @@ describe("voice recording client", () => {
     await expect(
       transcribeVoiceRecording({ familyId: "family-1", uri: "file:///cache/a.m4a" }),
     ).rejects.toThrow("Tageslimit für Spracheingaben erreicht.");
+  });
+
+  it("maps transport failures to a German message", async () => {
+    mockFetch.mockRejectedValue(new TypeError("Network request failed"));
+
+    await expect(
+      transcribeVoiceRecording({ familyId: "family-1", uri: "file:///cache/a.m4a" }),
+    ).rejects.toThrow(
+      "Keine Verbindung. Bitte prüfe dein Internet und versuch es nochmal.",
+    );
   });
 
   it("deletes cached audio when it exists and never throws during cleanup", () => {

@@ -1,61 +1,56 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  checkVoiceRateLimit,
   DAILY_VOICE_TRANSCRIPTION_LIMIT,
-  recordVoiceTranscription,
+  releaseVoiceTranscription,
+  reserveVoiceTranscription,
 } from "@/lib/ai/voice-rate-limit";
 
-function createClient(existing: { id: string; transcription_count: number } | null) {
-  const update = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
-  const insert = vi.fn().mockResolvedValue({ error: null });
-  const maybeSingle = vi.fn().mockResolvedValue({ data: existing });
-  const select = vi.fn(() => ({
-    eq: vi.fn(() => ({
-      eq: vi.fn(() => ({ maybeSingle })),
-      maybeSingle,
-    })),
-  }));
-  const from = vi.fn(() => ({ select, update, insert }));
-  return {
-    client: { from } as never,
-    insert,
-    update,
-  };
+function createAdminClient() {
+  const rpc = vi.fn();
+  return { client: { rpc } as never, rpc };
 }
 
 describe("voice transcription rate limit", () => {
-  it("allows a family below the dedicated voice limit", async () => {
-    const { client } = createClient({ id: "usage-1", transcription_count: 3 });
+  it("reserves one transcription through the atomic database RPC", async () => {
+    const { client, rpc } = createAdminClient();
+    rpc.mockResolvedValue({
+      data: [{ allowed: true, used: 3, remaining: 47 }],
+      error: null,
+    });
 
-    await expect(checkVoiceRateLimit(client, "family-1")).resolves.toMatchObject({
+    await expect(reserveVoiceTranscription(client, "family-1")).resolves.toEqual({
       allowed: true,
       used: 3,
-      remaining: DAILY_VOICE_TRANSCRIPTION_LIMIT - 3,
+      remaining: 47,
+    });
+    expect(rpc).toHaveBeenCalledWith("reserve_voice_transcription", {
+      p_family_id: "family-1",
+      p_limit: DAILY_VOICE_TRANSCRIPTION_LIMIT,
     });
   });
 
-  it("refuses a family at the dedicated voice limit", async () => {
-    const { client } = createClient({
-      id: "usage-1",
-      transcription_count: DAILY_VOICE_TRANSCRIPTION_LIMIT,
+  it("returns the atomic refusal without retrying a paid request", async () => {
+    const { client, rpc } = createAdminClient();
+    rpc.mockResolvedValue({
+      data: [{ allowed: false, used: DAILY_VOICE_TRANSCRIPTION_LIMIT, remaining: 0 }],
+      error: null,
     });
 
-    await expect(checkVoiceRateLimit(client, "family-1")).resolves.toMatchObject({
+    await expect(reserveVoiceTranscription(client, "family-1")).resolves.toMatchObject({
       allowed: false,
       remaining: 0,
     });
   });
 
-  it("increments existing usage without touching chat_usage", async () => {
-    const { client, update, insert } = createClient({
-      id: "usage-1",
-      transcription_count: 2,
+  it("releases a reservation when transcription cannot complete", async () => {
+    const { client, rpc } = createAdminClient();
+    rpc.mockResolvedValue({ error: null });
+
+    await releaseVoiceTranscription(client, "family-1");
+
+    expect(rpc).toHaveBeenCalledWith("release_voice_transcription", {
+      p_family_id: "family-1",
     });
-
-    await recordVoiceTranscription(client, "family-1");
-
-    expect(update).toHaveBeenCalledWith({ transcription_count: 3 });
-    expect(insert).not.toHaveBeenCalled();
   });
 });

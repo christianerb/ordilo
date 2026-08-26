@@ -1,8 +1,9 @@
 import { requireUser } from "@/lib/auth/require-user";
 import {
-  checkVoiceRateLimit,
-  recordVoiceTranscription,
+  releaseVoiceTranscription,
+  reserveVoiceTranscription,
 } from "@/lib/ai/voice-rate-limit";
+import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
@@ -40,7 +41,17 @@ export async function POST(request: Request): Promise<Response> {
       { status: 403 },
     );
   }
-  const rateLimit = await checkVoiceRateLimit(client, familyId);
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return Response.json(
+      { error: "Spracheingabe ist gerade nicht verfügbar.", code: "VOICE_UNAVAILABLE" },
+      { status: 503 },
+    );
+  }
+
+  const adminClient = createAdminClient();
+  const rateLimit = await reserveVoiceTranscription(adminClient, familyId);
   if (!rateLimit.allowed) {
     return Response.json(
       {
@@ -51,31 +62,32 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return Response.json(
-      { error: "Spracheingabe ist gerade nicht verfügbar.", code: "VOICE_UNAVAILABLE" },
-      { status: 503 },
-    );
-  }
-
   const body = new FormData();
   body.append("file", audio, audio.name || "ordilo-frage.m4a");
   body.append("model", "gpt-4o-mini-transcribe");
   body.append("language", "de");
 
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
-    body,
-  });
-  const result = (await response.json().catch(() => null)) as { text?: unknown } | null;
-  if (!response.ok || typeof result?.text !== "string") {
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body,
+    });
+  } catch {
+    await releaseVoiceTranscription(adminClient, familyId).catch(() => undefined);
     return Response.json(
       { error: "Die Spracheingabe hat nicht geklappt.", code: "TRANSCRIPTION_FAILED" },
       { status: 502 },
     );
   }
-  await recordVoiceTranscription(client, familyId);
+  const result = (await response.json().catch(() => null)) as { text?: unknown } | null;
+  if (!response.ok || typeof result?.text !== "string") {
+    await releaseVoiceTranscription(adminClient, familyId).catch(() => undefined);
+    return Response.json(
+      { error: "Die Spracheingabe hat nicht geklappt.", code: "TRANSCRIPTION_FAILED" },
+      { status: 502 },
+    );
+  }
   return Response.json({ text: result.text });
 }

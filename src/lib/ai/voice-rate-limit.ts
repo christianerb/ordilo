@@ -1,5 +1,5 @@
 /**
- * Separate per-family allowance for audio transcription.
+ * Server-only, atomic per-family allowance for audio transcription.
  *
  * A spoken question becomes a normal chat message only when the person
  * actually sends its editable transcript. Counting both requests against
@@ -7,81 +7,57 @@
  * ceiling so an authenticated client cannot submit unbounded audio.
  */
 
-type ServerClient = Awaited<
-  ReturnType<typeof import("@/lib/supabase/server").createClient>
->;
+type AdminClient = ReturnType<typeof import("@/lib/supabase/admin").createClient>;
 
-interface VoiceUsageRow {
-  id: string;
-  transcription_count: number;
-}
-
-interface VoiceUsageQuery {
-  select(columns: string): VoiceUsageQuery;
-  eq(column: string, value: string): VoiceUsageQuery;
-  maybeSingle(): Promise<{ data: VoiceUsageRow | null }>;
-  update(values: Pick<VoiceUsageRow, "transcription_count">): VoiceUsageQuery;
-  insert(values: {
-    family_id: string;
-    usage_date: string;
-    transcription_count: number;
-  }): PromiseLike<unknown>;
-}
-
-function voiceUsageQuery(client: ServerClient): VoiceUsageQuery {
-  // The generated Supabase database types are updated with the migration in
-  // this branch. Keep this narrow bridge until that generated file lands.
-  return client.from("voice_transcription_usage") as unknown as VoiceUsageQuery;
-}
-
-export const DAILY_VOICE_TRANSCRIPTION_LIMIT = 50;
-
-export interface VoiceRateLimitResult {
+interface VoiceQuotaRpcResult {
   allowed: boolean;
   used: number;
   remaining: number;
 }
 
-export async function checkVoiceRateLimit(
-  client: ServerClient,
-  familyId: string,
-): Promise<VoiceRateLimitResult> {
-  const usageDate = new Date().toISOString().split("T")[0];
-  const { data } = await voiceUsageQuery(client)
-    .select("transcription_count")
-    .eq("family_id", familyId)
-    .eq("usage_date", usageDate)
-    .maybeSingle();
-
-  const used = data?.transcription_count ?? 0;
-  return {
-    allowed: used < DAILY_VOICE_TRANSCRIPTION_LIMIT,
-    used,
-    remaining: Math.max(0, DAILY_VOICE_TRANSCRIPTION_LIMIT - used),
-  };
+interface VoiceQuotaClient {
+  rpc(
+    functionName: "reserve_voice_transcription",
+    params: { p_family_id: string; p_limit: number },
+  ): Promise<{ data: VoiceQuotaRpcResult[] | null; error: { message: string } | null }>;
+  rpc(
+    functionName: "release_voice_transcription",
+    params: { p_family_id: string },
+  ): Promise<{ error: { message: string } | null }>;
 }
 
-export async function recordVoiceTranscription(
-  client: ServerClient,
+function voiceQuotaClient(client: AdminClient): VoiceQuotaClient {
+  // The RPCs are introduced by this branch's migration and will be included
+  // in generated database types after it is applied.
+  return client as unknown as VoiceQuotaClient;
+}
+
+export const DAILY_VOICE_TRANSCRIPTION_LIMIT = 50;
+
+export async function reserveVoiceTranscription(
+  client: AdminClient,
+  familyId: string,
+): Promise<VoiceQuotaRpcResult> {
+  const { data, error } = await voiceQuotaClient(client).rpc(
+    "reserve_voice_transcription",
+    {
+      p_family_id: familyId,
+      p_limit: DAILY_VOICE_TRANSCRIPTION_LIMIT,
+    },
+  );
+  if (error || !data?.[0]) {
+    throw new Error(error?.message ?? "Voice quota reservation failed.");
+  }
+  return data[0];
+}
+
+export async function releaseVoiceTranscription(
+  client: AdminClient,
   familyId: string,
 ): Promise<void> {
-  const usageDate = new Date().toISOString().split("T")[0];
-  const { data: existing } = await voiceUsageQuery(client)
-    .select("id, transcription_count")
-    .eq("family_id", familyId)
-    .eq("usage_date", usageDate)
-    .maybeSingle();
-
-  if (existing) {
-    await voiceUsageQuery(client)
-      .update({ transcription_count: existing.transcription_count + 1 })
-      .eq("id", existing.id);
-    return;
-  }
-
-  await voiceUsageQuery(client).insert({
-    family_id: familyId,
-    usage_date: usageDate,
-    transcription_count: 1,
-  });
+  const { error } = await voiceQuotaClient(client).rpc(
+    "release_voice_transcription",
+    { p_family_id: familyId },
+  );
+  if (error) throw new Error(error.message);
 }

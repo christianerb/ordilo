@@ -53,6 +53,7 @@ import { useFamily } from "@/src/lib/family-context";
 import {
   removeVoiceRecording,
   transcribeVoiceRecording,
+  VoiceInputError,
 } from "@/src/lib/voice";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -444,10 +445,12 @@ export default function SucheScreen() {
           return;
         }
         if (!uri || !family) {
-          throw new Error("Keine Aufnahme vorhanden.");
+          throw new VoiceInputError("Keine Aufnahme vorhanden.");
         }
         if (recorderState.durationMillis < 500) {
-          throw new Error("Die Aufnahme war zu kurz. Halte das Mikrofon etwas länger.");
+          throw new VoiceInputError(
+            "Die Aufnahme war zu kurz. Halte das Mikrofon etwas länger.",
+          );
         }
 
         setVoiceStatus("transcribing");
@@ -475,7 +478,7 @@ export default function SucheScreen() {
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
         setVoiceError(
-          error instanceof Error && error.message
+          error instanceof VoiceInputError
             ? error.message
             : "Die Spracheingabe hat nicht geklappt.",
         );
