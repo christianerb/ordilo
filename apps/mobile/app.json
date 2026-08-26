@@ -16,7 +16,9 @@
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
-        "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst."
+        "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst.",
+        "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist für die Scanner-Bibliothek erforderlich.",
+        "NSMicrophoneUsageDescription": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -87,7 +89,13 @@
           "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

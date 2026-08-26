@@ -1,8 +1,17 @@
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { ArrowLeft, MessageCircleQuestion, Plus } from "lucide-react-native";
-import { useCallback, useRef, useState } from "react";
 import {
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
+import { ArrowLeft, MessageCircleQuestion, Plus } from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,7 +20,9 @@ import {
   Text,
   TextInput,
   View,
+  type GestureResponderEvent,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   ActionCardView,
@@ -39,6 +50,11 @@ import {
   type ChatMessage,
 } from "@/src/lib/chat";
 import { useFamily } from "@/src/lib/family-context";
+import {
+  removeVoiceRecording,
+  transcribeVoiceRecording,
+  VoiceInputError,
+} from "@/src/lib/voice";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -56,18 +72,43 @@ function httpStatusOf(error: unknown): number {
   return typeof status === "number" ? status : 0;
 }
 
+const MAX_VOICE_RECORDING_MILLIS = 2 * 60 * 1_000;
+const VOICE_AUTO_STOP_MILLIS = MAX_VOICE_RECORDING_MILLIS - 1_000;
+
+type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
+
 export default function SucheScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { family } = useFamily();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
+  const [voiceLocked, setVoiceLocked] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
 
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
+  const voiceStartY = useRef<number | null>(null);
+  const voiceIntent = useRef(false);
+  const voiceLockedRef = useRef(false);
+  const voiceStatusRef = useRef<VoiceStatus>("idle");
+  const transcriptionAbortController = useRef<AbortController | null>(null);
+  const autoStoppingVoice = useRef(false);
+  const recorder = useAudioRecorder({
+    ...RecordingPresets.HIGH_QUALITY,
+    isMeteringEnabled: true,
+  });
+  const recorderState = useAudioRecorderState(recorder);
+
+  useEffect(() => {
+    voiceStatusRef.current = voiceStatus;
+  }, [voiceStatus]);
 
   const nextId = useCallback((prefix: string) => {
     counter.current += 1;
@@ -349,6 +390,201 @@ export default function SucheScreen() {
     [router],
   );
 
+  const resetVoiceUi = useCallback(() => {
+    voiceStatusRef.current = "idle";
+    setVoiceStatus("idle");
+    setVoiceLocked(false);
+    voiceStartY.current = null;
+    voiceLockedRef.current = false;
+    autoStoppingVoice.current = false;
+  }, []);
+
+  const discardVoiceRecording = useCallback(
+    async (options: { feedback?: boolean; resetUi?: boolean } = {}) => {
+      const { feedback = true, resetUi = true } = options;
+      voiceIntent.current = false;
+      transcriptionAbortController.current?.abort();
+      transcriptionAbortController.current = null;
+      try {
+        await recorder.stop();
+      } catch {
+        // The recorder may not have started or iOS may have stopped it already.
+      } finally {
+        removeVoiceRecording(recorder.uri);
+        void setAudioModeAsync({ allowsRecording: false });
+        if (resetUi) resetVoiceUi();
+        if (feedback) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void AccessibilityInfo.announceForAccessibility("Aufnahme verworfen.");
+        }
+      }
+    },
+    [recorder, resetVoiceUi],
+  );
+
+  const finishVoice = useCallback(
+    async (force = false, reachedDurationLimit = false) => {
+      if (voiceStatusRef.current === "starting") {
+        await discardVoiceRecording({ feedback: false });
+        return;
+      }
+      if (voiceStatusRef.current !== "recording") return;
+      if (voiceLockedRef.current && !force) return;
+
+      voiceIntent.current = false;
+      voiceStatusRef.current = "transcribing";
+      setVoiceStatus("transcribing");
+      if (reachedDurationLimit) {
+        setVoiceError("Die Aufnahme ist nach zwei Minuten beendet worden.");
+      }
+      let uri: string | null = null;
+      try {
+        const finalDurationMillis = Math.round(recorder.currentTime * 1_000);
+        await recorder.stop();
+        uri = recorder.uri;
+        if (!uri || !family) {
+          throw new VoiceInputError("Keine Aufnahme vorhanden.");
+        }
+        if (finalDurationMillis < 500) {
+          throw new VoiceInputError(
+            "Die Aufnahme war zu kurz. Halte das Mikrofon etwas länger.",
+          );
+        }
+
+        void AccessibilityInfo.announceForAccessibility(
+          "Aufnahme beendet. Sprache wird in Text umgewandelt.",
+        );
+        const controller = new AbortController();
+        transcriptionAbortController.current = controller;
+        const transcript = await transcribeVoiceRecording({
+          familyId: family.id,
+          signal: controller.signal,
+          uri,
+        });
+        if (transcript) {
+          setInput((current) => (current ? `${current} ${transcript}` : transcript));
+          inputRef.current?.focus();
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void AccessibilityInfo.announceForAccessibility(
+            "Text eingefügt. Du kannst ihn jetzt prüfen und senden.",
+          );
+        } else {
+          setVoiceError("Ich konnte nichts hören. Bitte versuch es nochmal.");
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setVoiceError(
+          error instanceof VoiceInputError
+            ? error.message
+            : "Die Spracheingabe hat nicht geklappt.",
+        );
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void AccessibilityInfo.announceForAccessibility(
+          "Die Spracheingabe hat nicht geklappt.",
+        );
+      } finally {
+        transcriptionAbortController.current = null;
+        removeVoiceRecording(uri ?? recorder.uri);
+        void setAudioModeAsync({ allowsRecording: false });
+        resetVoiceUi();
+      }
+    },
+    [
+      family,
+      recorder,
+      discardVoiceRecording,
+      resetVoiceUi,
+    ],
+  );
+
+  const startVoice = useCallback(async (event: GestureResponderEvent) => {
+    if (busy || voiceStatusRef.current !== "idle") return;
+    setVoiceError(null);
+    voiceStartY.current = event.nativeEvent.pageY;
+    voiceIntent.current = true;
+    voiceLockedRef.current = false;
+    setVoiceLocked(false);
+    voiceStatusRef.current = "starting";
+    setVoiceStatus("starting");
+    const permission = await AudioModule.requestRecordingPermissionsAsync();
+    if (!voiceIntent.current) return;
+    if (!permission.granted) {
+      setVoiceError("Bitte erlaube Ordilo den Zugriff auf dein Mikrofon.");
+      resetVoiceUi();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void AccessibilityInfo.announceForAccessibility(
+        "Kein Zugriff auf das Mikrofon.",
+      );
+      return;
+    }
+    try {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (!voiceIntent.current) return;
+      await recorder.prepareToRecordAsync();
+      if (!voiceIntent.current) return;
+      recorder.record();
+      // Press-out can arrive before React commits the state update. Keep the
+      // imperative guard in sync with the native recorder immediately.
+      voiceStatusRef.current = "recording";
+      setVoiceStatus("recording");
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void AccessibilityInfo.announceForAccessibility(
+        "Aufnahme läuft. Nach oben ziehen zum Sperren.",
+      );
+    } catch {
+      setVoiceError("Die Aufnahme konnte nicht gestartet werden.");
+      resetVoiceUi();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [busy, recorder, resetVoiceUi]);
+
+  const moveVoice = useCallback((event: GestureResponderEvent) => {
+    if (
+      voiceStatusRef.current !== "recording" ||
+      voiceStartY.current === null ||
+      voiceLockedRef.current
+    ) {
+      return;
+    }
+    if (event.nativeEvent.pageY - voiceStartY.current < -72) {
+      voiceLockedRef.current = true;
+      setVoiceLocked(true);
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void AccessibilityInfo.announceForAccessibility(
+        "Aufnahme gesperrt. Tippe auf Fertig, wenn du fertig bist.",
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (
+      voiceStatus === "recording" &&
+      recorderState.durationMillis >= VOICE_AUTO_STOP_MILLIS &&
+      !autoStoppingVoice.current
+    ) {
+      autoStoppingVoice.current = true;
+      const timeout = setTimeout(() => {
+        void finishVoice(true, true);
+      }, 0);
+      return () => clearTimeout(timeout);
+    }
+  }, [finishVoice, recorderState.durationMillis, voiceStatus]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" && voiceStatusRef.current !== "idle") {
+        void discardVoiceRecording();
+      }
+    });
+    return () => {
+      subscription.remove();
+      if (voiceStatusRef.current !== "idle") {
+        void discardVoiceRecording({ feedback: false, resetUi: false });
+      }
+    };
+  }, [discardVoiceRecording]);
+
   return (
     <Screen style={styles.screen}>
       <View style={styles.topbar}>
@@ -384,7 +620,10 @@ export default function SucheScreen() {
         style={styles.flex}
       >
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: composerHeight + spacing.md },
+          ]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() =>
@@ -489,13 +728,35 @@ export default function SucheScreen() {
           )}
         </ScrollView>
 
-        <ChatComposer
-          busy={busy}
-          inputRef={inputRef}
-          onChange={setInput}
-          onSend={() => void send(input)}
-          value={input}
-        />
+        <View
+          onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
+          style={[
+            styles.composerSafeArea,
+            { paddingBottom: Math.max(insets.bottom, spacing.sm) },
+          ]}
+        >
+          {voiceError ? (
+            <Text accessibilityRole="alert" style={styles.voiceError}>
+              {voiceError}
+            </Text>
+          ) : null}
+          <ChatComposer
+            busy={busy}
+            inputRef={inputRef}
+            onChange={setInput}
+            onSend={() => void send(input)}
+            onVoicePressIn={(event) => void startVoice(event)}
+            onVoicePressMove={moveVoice}
+            onVoicePressOut={() => void finishVoice()}
+            onVoiceCancel={() => void discardVoiceRecording()}
+            onVoiceFinish={() => void finishVoice(true)}
+            value={input}
+            voiceDurationMillis={recorderState.durationMillis}
+            voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
+            voiceLocked={voiceLocked}
+            voiceStatus={voiceStatus}
+          />
+        </View>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -559,6 +820,11 @@ const styles = StyleSheet.create({
     ...typography.timestamp,
   },
   examples: { gap: spacing.sm, marginTop: spacing.sm, width: "100%" },
+  composerSafeArea: {
+    backgroundColor: colors.warmWhite,
+    gap: spacing.xs,
+  },
+  voiceError: { color: colors.destructive, ...typography.label },
   exampleChip: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,
