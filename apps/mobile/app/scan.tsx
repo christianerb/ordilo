@@ -1,7 +1,6 @@
 import { launchScanner } from "@dariyd/react-native-document-scanner";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import * as Haptics from "expo-haptics";
 import * as ImagePicker from "expo-image-picker";
 import {
   manipulateAsync,
@@ -43,6 +42,7 @@ import {
   validateScannedDocument,
 } from "@/src/lib/scan";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { success, fail } from "@/src/lib/feedback";
 
 type UploadState = "queued" | "uploading" | "processing" | "failed" | "done";
 type QueueItem = ScannedDocument & {
@@ -151,7 +151,7 @@ export default function ScanModal() {
     const validationError = validateScannedDocument(document);
     if (validationError) {
       setError(validationError);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
       return false;
     }
     try {
@@ -161,7 +161,7 @@ export default function ScanModal() {
       return true;
     } catch {
       setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
       return false;
     }
   }, []);
@@ -182,13 +182,13 @@ export default function ScanModal() {
         ),
       );
       if (await addToQueue(await combinePages(pages))) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       }
     } catch {
       setError(
         "Der Dokumentenscanner konnte nicht geöffnet werden. Bitte prüfe den Kamerazugriff oder wähle ein Foto aus.",
       );
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
     } finally {
       setScannerBusy(false);
     }
@@ -243,7 +243,7 @@ export default function ScanModal() {
           ),
         );
         void removeStagedScannedDocument(item.uri);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       } catch {
         setQueue((current) =>
           current.map((candidate) =>
@@ -263,7 +263,7 @@ export default function ScanModal() {
               : candidate,
           ),
         );
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       }
     },
     [family],
@@ -305,7 +305,7 @@ export default function ScanModal() {
               : candidate,
           ),
         );
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       } catch {
         setQueue((current) =>
           current.map((candidate) =>
@@ -322,7 +322,7 @@ export default function ScanModal() {
               : candidate,
           ),
         );
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       }
     },
     [uploadOne],
@@ -354,7 +354,7 @@ export default function ScanModal() {
       for (const image of images) await addToQueue(image);
     } catch {
       setError("Das Foto konnte nicht vorbereitet werden. Bitte versuch es nochmal.");
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void fail();
     }
   }, [addToQueue]);
 

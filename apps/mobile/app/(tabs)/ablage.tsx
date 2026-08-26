@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronDown,
+  Ellipsis,
   FileText,
   FolderOpen,
   Search,
@@ -20,7 +21,6 @@ import {
 } from "react";
 import {
   ActivityIndicator,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -29,8 +29,19 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 
-import { EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import { AmbientFields } from "@/src/components/ambient-fields";
+import { OrdiloSheet, useSheetPresentation } from "@/src/components/sheet";
+import {
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+  SpringPressable,
+} from "@/src/components/ui";
+import { listItemEntering } from "@/src/theme/motion";
 import {
   documentTypeLabels,
   type DocumentType,
@@ -77,6 +88,7 @@ export default function AblageScreen() {
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [sort, setSort] = useState<LibrarySort>("newest");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -193,8 +205,33 @@ export default function AblageScreen() {
 
   if (loading && documents.length === 0) {
     return (
-      <Screen style={styles.center}>
-        <ActivityIndicator accessibilityLabel="Dokumente werden geladen" color={colors.harborBlue} />
+      <Screen>
+        <ScreenHeader
+          action={{
+            accessibilityLabel: "Mehr in der Ablage",
+            icon: Ellipsis,
+            onPress: () => setToolsOpen(true),
+          }}
+          subtitle="Dokumente werden geladen"
+          title="Ablage"
+        />
+        <ListSkeleton rows={6} />
+        <LibraryToolsSheet
+          onClose={() => setToolsOpen(false)}
+          onOpenContacts={() => {
+            setToolsOpen(false);
+            router.push("/contacts");
+          }}
+          onOpenSearch={() => {
+            setToolsOpen(false);
+            router.push("/suche");
+          }}
+          onOpenCollections={() => {
+            setToolsOpen(false);
+            router.push("/sammlungen");
+          }}
+          visible={toolsOpen}
+        />
       </Screen>
     );
   }
@@ -219,6 +256,7 @@ export default function AblageScreen() {
 
   return (
     <Screen>
+      <AmbientFields style={styles.ambientBehind} />
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -232,45 +270,15 @@ export default function AblageScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerRow}>
-          <View style={styles.headerGrow}>
-            <ScreenHeader
-              subtitle={documentCountLabel}
-              title="Ablage"
-            />
-          </View>
-          <Pressable
-            accessibilityHint="Öffnet den Chat mit Ordilo"
-            accessibilityLabel="Ordilo fragen"
-            accessibilityRole="button"
-            onPress={() => router.push("/suche")}
-            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
-          >
-            <Sparkles color={colors.harborBlue} size={16} strokeWidth={1.8} />
-            <Text style={styles.contactsLinkText}>Fragen</Text>
-          </Pressable>
-          <Pressable
-            accessibilityHint="Öffnet das Familien-Adressbuch"
-            accessibilityLabel="Kontakte"
-            accessibilityRole="button"
-            onPress={() => router.push("/contacts")}
-            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
-          >
-            <Users color={colors.harborBlue} size={16} strokeWidth={1.8} />
-            <Text style={styles.contactsLinkText}>Kontakte</Text>
-          </Pressable>
-          {/* Entry to Sammlungen (Agent C) — same compact link pattern as Kontakte. */}
-          <Pressable
-            accessibilityHint="Öffnet die Sammlungen"
-            accessibilityLabel="Sammlungen"
-            accessibilityRole="button"
-            onPress={() => router.push("/sammlungen")}
-            style={({ pressed }) => [styles.contactsLink, pressed && styles.pressed]}
-          >
-            <FolderOpen color={colors.harborBlue} size={16} strokeWidth={1.8} />
-            <Text style={styles.contactsLinkText}>Sammlungen</Text>
-          </Pressable>
-        </View>
+        <ScreenHeader
+          action={{
+            accessibilityLabel: "Mehr in der Ablage",
+            icon: Ellipsis,
+            onPress: () => setToolsOpen(true),
+          }}
+          subtitle={documentCountLabel}
+          title="Ablage"
+        />
 
         {documents.length > 0 ? (
           <>
@@ -375,9 +383,10 @@ export default function AblageScreen() {
             {visibleDocuments.length > 0 ? (
               <>
                 <View style={styles.list}>
-                  {visibleDocuments.map((document) => (
+                  {visibleDocuments.map((document, index) => (
                     <DocumentRow
                       document={document}
+                      index={index}
                       key={document.id}
                       onPress={() => router.push(`/document/${document.id}`)}
                     />
@@ -434,6 +443,22 @@ export default function AblageScreen() {
         selected={sort}
         visible={sortPickerOpen}
       />
+      <LibraryToolsSheet
+        onClose={() => setToolsOpen(false)}
+        onOpenContacts={() => {
+          setToolsOpen(false);
+          router.push("/contacts");
+        }}
+        onOpenSearch={() => {
+          setToolsOpen(false);
+          router.push("/suche");
+        }}
+        onOpenCollections={() => {
+          setToolsOpen(false);
+          router.push("/sammlungen");
+        }}
+        visible={toolsOpen}
+      />
     </Screen>
   );
 }
@@ -465,11 +490,85 @@ function FilterChip({
   );
 }
 
+function LibraryToolsSheet({
+  onClose,
+  onOpenCollections,
+  onOpenContacts,
+  onOpenSearch,
+  visible,
+}: {
+  onClose: () => void;
+  onOpenCollections: () => void;
+  onOpenContacts: () => void;
+  onOpenSearch: () => void;
+  visible: boolean;
+}) {
+  const sheetRef = useSheetPresentation(visible);
+  return (
+    <OrdiloSheet
+      accessibilityLabel="Mehr in der Ablage"
+      onDismiss={onClose}
+      ref={sheetRef}
+    >
+      <Text style={styles.sheetTitle}>Mehr in der Ablage</Text>
+      <LibraryToolOption
+        description="Frag Ordilo zu euren Dokumenten."
+        icon={Sparkles}
+        label="Ordilo fragen"
+        onPress={onOpenSearch}
+      />
+      <LibraryToolOption
+        description="Adressen und wichtige Personen."
+        icon={Users}
+        label="Kontakte"
+        onPress={onOpenContacts}
+      />
+      <LibraryToolOption
+        description="Dokumente gemeinsam sortieren."
+        icon={FolderOpen}
+        label="Sammlungen"
+        onPress={onOpenCollections}
+      />
+    </OrdiloSheet>
+  );
+}
+
+function LibraryToolOption({
+  description,
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  description: string;
+  icon: typeof Sparkles;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.toolOption, pressed && styles.pressed]}
+    >
+      <View style={styles.toolIcon}>
+        <Icon color={colors.harborBlue} size={19} strokeWidth={1.8} />
+      </View>
+      <View style={styles.toolCopy}>
+        <Text style={styles.toolLabel}>{label}</Text>
+        <Text style={styles.toolDescription}>{description}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function DocumentRow({
   document,
+  index,
   onPress,
 }: {
   document: LibraryDocument;
+  index: number;
   onPress: () => void;
 }) {
   const typeLabel = getDocumentTypeLabel(document.document_type);
@@ -477,13 +576,14 @@ function DocumentRow({
   const failed = document.status === "failed";
 
   return (
-    <Pressable
-      accessibilityHint="Öffnet die Dokumentansicht"
-      accessibilityLabel={`${getDocumentTitle(document)}, ${getDocumentStatusLabel(document.status)}`}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
-    >
+    <Animated.View entering={listItemEntering(index)}>
+      <SpringPressable
+        accessibilityHint="Öffnet die Dokumentansicht"
+        accessibilityLabel={`${getDocumentTitle(document)}, ${getDocumentStatusLabel(document.status)}`}
+        haptic={false}
+        onPress={onPress}
+        style={styles.documentRow}
+      >
       <View style={styles.documentIcon}>
         <FileText color={colors.mistDark} size={20} strokeWidth={1.7} />
       </View>
@@ -523,7 +623,8 @@ function DocumentRow({
           {getDocumentStatusLabel(document.status)}
         </Text>
       </View>
-    </Pressable>
+      </SpringPressable>
+    </Animated.View>
   );
 }
 
@@ -571,40 +672,28 @@ function DocumentTypePicker({
   selected: DocumentType | "all";
   visible: boolean;
 }) {
+  const sheetRef = useSheetPresentation(visible);
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      transparent
-      visible={visible}
+    <OrdiloSheet
+      accessibilityLabel="Dokumentart auswählen"
+      onDismiss={onClose}
+      ref={sheetRef}
     >
-      <Pressable onPress={onClose} style={styles.modalOverlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.typeSheet}
-        >
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Dokumentart</Text>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            <TypeOption
-              label="Alle Arten"
-              onPress={() => onSelect("all")}
-              selected={selected === "all"}
-            />
-            {documentTypes.map(([value, label]) => (
-              <TypeOption
-                key={value}
-                label={label}
-                onPress={() => onSelect(value)}
-                selected={selected === value}
-              />
-            ))}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      <Text style={styles.sheetTitle}>Dokumentart</Text>
+      <TypeOption
+        label="Alle Arten"
+        onPress={() => onSelect("all")}
+        selected={selected === "all"}
+      />
+      {documentTypes.map(([value, label]) => (
+        <TypeOption
+          key={value}
+          label={label}
+          onPress={() => onSelect(value)}
+          selected={selected === value}
+        />
+      ))}
+    </OrdiloSheet>
   );
 }
 
@@ -643,59 +732,50 @@ function SortPicker({
   selected: LibrarySort;
   visible: boolean;
 }) {
+  const sheetRef = useSheetPresentation(visible);
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      transparent
-      visible={visible}
+    <OrdiloSheet
+      accessibilityLabel="Sortierung auswählen"
+      onDismiss={onClose}
+      ref={sheetRef}
     >
-      <Pressable onPress={onClose} style={styles.modalOverlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.typeSheet}
-        >
-          <View style={styles.sheetHandle} />
-          <Text style={styles.sheetTitle}>Sortieren</Text>
-          {librarySortOptions.map((option) => (
-            <TypeOption
-              key={option.value}
-              label={option.label}
-              onPress={() => onSelect(option.value)}
-              selected={selected === option.value}
-            />
-          ))}
-        </Pressable>
-      </Pressable>
-    </Modal>
+      <Text style={styles.sheetTitle}>Sortieren</Text>
+      {librarySortOptions.map((option) => (
+        <TypeOption
+          key={option.value}
+          label={option.label}
+          onPress={() => onSelect(option.value)}
+          selected={selected === option.value}
+        />
+      ))}
+    </OrdiloSheet>
   );
 }
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  headerRow: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-  },
-  headerGrow: { flex: 1 },
-  contactsLink: {
+  toolOption: {
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
+    borderColor: "transparent",
     borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 6,
-    marginTop: spacing.md,
-    minHeight: 44,
-    paddingHorizontal: 12,
+    gap: spacing.sm,
+    minHeight: 60,
+    paddingHorizontal: spacing.sm,
   },
-  contactsLinkText: { color: colors.harborBlue, ...typography.label },
+  toolIcon: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.sm,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  toolCopy: { flex: 1, gap: 1 },
+  toolLabel: { color: colors.graphite, ...typography.title },
+  toolDescription: { color: colors.mistDark, ...typography.timestamp },
   search: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
@@ -815,24 +895,7 @@ const styles = StyleSheet.create({
   filteredEmptyTitle: { color: colors.graphite, ...typography.title },
   filteredEmptyText: { color: colors.mistDark, textAlign: "center", ...typography.timestamp },
   pressed: { opacity: 0.76 },
-  modalOverlay: { backgroundColor: "rgba(38, 36, 33, 0.28)", flex: 1, justifyContent: "flex-end" },
-  typeSheet: {
-    backgroundColor: colors.warmWhite,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    maxHeight: "78%",
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-    width: 40,
-  },
+  ambientBehind: { marginHorizontal: -spacing.md },
   sheetTitle: { color: colors.graphite, marginBottom: spacing.sm, ...typography.display },
   typeOption: {
     alignItems: "center",

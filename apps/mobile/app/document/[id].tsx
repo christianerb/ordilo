@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { fail, select, success } from "@/src/lib/feedback";
 import * as Linking from "expo-linking";
 import {
   AlertCircle,
@@ -10,13 +11,14 @@ import {
   ChevronRight,
   CircleAlert,
   Copy,
+  Ellipsis,
   Eye,
   EyeOff,
   FileText,
-  Image as ImageIcon,
   KeyRound,
   ListChecks,
   Lock,
+  Pencil,
   Plus,
   Tag,
   Trash2,
@@ -37,14 +39,18 @@ import {
   View,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 
 import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { OrdiloMark } from "@/src/components/ordilo-mark";
 import {
   canReviewDocument,
   confirmDocumentReview,
@@ -62,12 +68,14 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
+import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 type Icon = typeof Tag;
 
 export default function DocumentReviewScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
   const [document, setDocument] = useState<DocumentReview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +85,8 @@ export default function DocumentReviewScreen() {
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [showDocumentDetails, setShowDocumentDetails] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -131,10 +141,10 @@ export default function DocumentReviewScreen() {
     setSaving(true);
     try {
       await confirmDocumentReview(id, document);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await success();
       router.replace("/(tabs)");
     } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      await fail();
       Alert.alert("Nicht gespeichert", "Bitte prüfe deine Verbindung und versuch es nochmal.");
     } finally {
       setSaving(false);
@@ -163,10 +173,10 @@ export default function DocumentReviewScreen() {
     removeLibraryDocumentOptimistically(id);
     try {
       await deleteDocument(id);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await success();
       router.back();
     } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      await fail();
       Alert.alert(
         "Dokument nicht gelöscht",
         "Bitte prüfe deine Verbindung und versuch es nochmal.",
@@ -189,7 +199,7 @@ export default function DocumentReviewScreen() {
       if (!supported) throw new Error("No viewer available.");
       await Linking.openURL(file.url);
     } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      await fail();
       Alert.alert(
         "Original nicht verfügbar",
         "Die Datei konnte nicht geöffnet werden. Bitte versuch es später nochmal.",
@@ -234,187 +244,241 @@ export default function DocumentReviewScreen() {
   return (
     <Screen style={styles.screen}>
       <ReviewHeader
-        title={isReadOnly ? "Dokument" : "Dokument prüfen"}
+        actionLabel="Weitere Optionen"
+        onAction={() => {
+          Alert.alert("Dokument", undefined, [
+            { text: "Abbrechen", style: "cancel" },
+            { text: "Dokument löschen", style: "destructive", onPress: requestDelete },
+          ]);
+        }}
         onBack={() => router.back()}
+        subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)} · ${document.suggested_category || documentTypeLabels[document.document_type]}`}
+        title={isReadOnly ? "Dokument" : "Dokument prüfen"}
       />
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[
+          styles.content,
+          { paddingBottom: !editing ? 76 + insets.bottom : spacing["2xl"] },
+        ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.intro}>
-          <View style={styles.fileIcon}><FileText color={colors.harborBlue} size={24} /></View>
-          <View style={styles.introCopy}>
-            <Text style={styles.type}>{documentTypeLabels[document.document_type]}</Text>
-            <Text style={styles.help}>
-              {isReadOnly
-                ? "Dieses Dokument ist sicher in eurem Familienbuch."
-                : "Ordilo hat das gefunden. Du kannst alles kurz prüfen."}
-            </Text>
-          </View>
-        </View>
-
-        <DocumentMetadata document={document} />
-
-        <Pressable
-          accessibilityHint="Öffnet das gespeicherte Original."
-          accessibilityLabel="Original ansehen"
-          accessibilityRole="button"
-          disabled={openingOriginal}
-          onPress={() => void viewOriginal()}
-          style={({ pressed }) => [styles.originalButton, pressed && styles.pressed, openingOriginal && styles.disabled]}
+        <Animated.View
+          entering={contentEntering()}
+          key={editing ? "document-editor" : "document-overview"}
+          style={[styles.contentState, !editing && styles.overviewContent]}
         >
-          {openingOriginal ? <ActivityIndicator color={colors.harborBlue} size="small" /> : <ImageIcon color={colors.harborBlue} size={19} />}
-          <Text style={styles.originalText}>{openingOriginal ? "Original wird geöffnet …" : "Original ansehen"}</Text>
-          <ChevronRight color={colors.mistDark} size={18} />
-        </Pressable>
-
-        {!isReadOnly && document.needs_user_review ? (
-          <View accessibilityRole="alert" style={styles.notice}>
-            <CircleAlert color={colors.warmApricot} size={18} />
-            <Text style={styles.noticeText}>Ein paar Angaben sind unsicher. Schau bitte kurz drauf.</Text>
-          </View>
-        ) : null}
-
-        <Card style={styles.card}>
-          <Text style={styles.sectionHeading}>Das Wichtigste</Text>
-          <FieldLabel text="Name" />
-          {editable ? (
-            <TextInput
-              accessibilityLabel="Name des Dokuments"
-              maxLength={200}
-              onChangeText={(title) => updateAnalysis((current) => ({ ...current, title }))}
-              style={styles.input}
-              value={document.title}
-            />
-          ) : <ReadValue value={document.title} />}
-          <FieldLabel text="Worum geht's?" />
-          {editable ? (
-            <TextInput
-              accessibilityLabel="Zusammenfassung"
-              multiline
-              onChangeText={(summary) => updateAnalysis((current) => ({ ...current, summary }))}
-              style={[styles.input, styles.summary]}
-              textAlignVertical="top"
-              value={document.summary}
-            />
-          ) : <ReadValue value={document.summary || "Keine Zusammenfassung."} />}
-        </Card>
-
-        <Section icon={Tag} title="Ablage">
-          {editable ? (
-            <>
-              <FieldLabel text="Kategorie" />
-              <TextInput
-                accessibilityLabel="Kategorie"
-                onChangeText={(suggested_category) => updateAnalysis((current) => ({ ...current, suggested_category }))}
-                style={styles.input}
-                value={document.suggested_category}
+        {!editing ? (
+          <>
+            <DocumentHero document={document} />
+            <ExtractionOverview document={document} />
+            <Card style={styles.detailCard}>
+              <DetailLink
+                accessibilityLabel={editable ? "Extrahierte Angaben prüfen" : "Extrahierte Angaben ansehen"}
+                description="Name, Termine und mehr"
+                onPress={() => setEditing(true)}
+                title={editable ? "Extrahierte Angaben prüfen" : "Extrahierte Angaben ansehen"}
               />
-              <FieldLabel text="Schlagwörter" />
-              <View style={styles.tags}>
-                {document.tags.map((tag, index) => (
-                  <Pressable
-                    accessibilityHint="Entfernt dieses Schlagwort"
-                    accessibilityLabel={`${tag} entfernen`}
-                    accessibilityRole="button"
-                    key={`${tag}-${index}`}
-                    onPress={() => updateAnalysis((current) => ({ ...current, tags: current.tags.filter((_, tagIndex) => tagIndex !== index) }))}
-                    style={styles.tag}
-                  >
-                    <Text style={styles.tagText}>{tag} ×</Text>
-                  </Pressable>
-                ))}
+              <DetailLink
+                accessibilityLabel="Dokumentdetails anzeigen"
+                description={document.original_filename ?? "Datei und Format"}
+                onPress={() => setShowDocumentDetails((current) => !current)}
+                separated
+                title="Dokumentdetails"
+              />
+            </Card>
+            {showDocumentDetails ? <DocumentMetadata document={document} /> : null}
+            <View style={styles.aiNotice}>
+              <View
+                accessible={false}
+                importantForAccessibility="no-hide-descendants"
+                style={styles.aiIcon}
+              >
+                <OrdiloMark size={28} />
               </View>
-              <View style={styles.addLine}>
-                <TextInput
-                  accessibilityLabel="Neues Schlagwort"
-                  onChangeText={setTagDraft}
-                  onSubmitEditing={() => addTag(document, tagDraft, setTagDraft, updateAnalysis)}
-                  placeholder="Schlagwort"
-                  placeholderTextColor={colors.mistDark}
-                  returnKeyType="done"
-                  style={[styles.input, styles.addInput]}
-                  value={tagDraft}
-                />
-                <SmallButton label="Hinzufügen" onPress={() => addTag(document, tagDraft, setTagDraft, updateAnalysis)} />
-              </View>
-            </>
-          ) : (
-            <View style={styles.tags}>
-              <ReadValue value={document.suggested_category} />
-              {document.tags.map((tag) => <View key={tag} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
+              <Text style={styles.aiNoticeText}>
+                Ordilo hat die wichtigsten Informationen für dich herausgesucht. Bitte prüfe, ob alles stimmt.
+              </Text>
             </View>
-          )}
-        </Section>
+          </>
+        ) : (
+          <>
+            <View style={styles.editIntro}>
+              <Text style={styles.editTitle}>Angaben prüfen</Text>
+              <Text style={styles.editHelp}>Ändere nur, was nicht stimmt. Danach kannst du das Dokument speichern.</Text>
+            </View>
 
-        <PeopleSection analysis={document} editable={editable} onChange={updateAnalysis} />
-        <DatesSection analysis={document} editable={editable} onChange={updateAnalysis} />
-        <TasksSection analysis={document} editable={editable} onChange={updateAnalysis} />
-        <AmountsSection analysis={document} editable={editable} onChange={updateAnalysis} />
-        <FactsSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <Card style={styles.card}>
+              <Text style={styles.sectionHeading}>Das Wichtigste</Text>
+              <FieldLabel text="Name" />
+              {editable ? (
+                <TextInput
+                  accessibilityLabel="Name des Dokuments"
+                  maxLength={200}
+                  onChangeText={(title) => updateAnalysis((current) => ({ ...current, title }))}
+                  style={styles.input}
+                  value={document.title}
+                />
+              ) : <ReadValue value={document.title} />}
+              <FieldLabel text="Worum geht's?" />
+              {editable ? (
+                <TextInput
+                  accessibilityLabel="Zusammenfassung"
+                  multiline
+                  onChangeText={(summary) => updateAnalysis((current) => ({ ...current, summary }))}
+                  style={[styles.input, styles.summary]}
+                  textAlignVertical="top"
+                  value={document.summary}
+                />
+              ) : <ReadValue value={document.summary || "Keine Zusammenfassung."} />}
+            </Card>
 
-        {isReadOnly && document.organizations.length > 0 ? (
-          <Section icon={FileText} title="Organisationen">
-            {document.organizations.map((organization, index) => (
-              <ReadValue key={`${organization.name}-${index}`} value={[organization.name, organization.type].filter(Boolean).join(" · ")} />
-            ))}
-          </Section>
-        ) : null}
+            <Section icon={Tag} title="Ablage">
+              {editable ? (
+                <>
+                  <FieldLabel text="Kategorie" />
+                  <TextInput
+                    accessibilityLabel="Kategorie"
+                    onChangeText={(suggested_category) => updateAnalysis((current) => ({ ...current, suggested_category }))}
+                    style={styles.input}
+                    value={document.suggested_category}
+                  />
+                  <FieldLabel text="Schlagwörter" />
+                  <View style={styles.tags}>
+                    {document.tags.map((tag, index) => (
+                      <Pressable
+                        accessibilityHint="Entfernt dieses Schlagwort"
+                        accessibilityLabel={`${tag} entfernen`}
+                        accessibilityRole="button"
+                        key={`${tag}-${index}`}
+                        onPress={() => updateAnalysis((current) => ({ ...current, tags: current.tags.filter((_, tagIndex) => tagIndex !== index) }))}
+                        style={styles.tag}
+                      >
+                        <Text style={styles.tagText}>{tag} ×</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <View style={styles.addLine}>
+                    <TextInput
+                      accessibilityLabel="Neues Schlagwort"
+                      onChangeText={setTagDraft}
+                      onSubmitEditing={() => addTag(document, tagDraft, setTagDraft, updateAnalysis)}
+                      placeholder="Schlagwort"
+                      placeholderTextColor={colors.mistDark}
+                      returnKeyType="done"
+                      style={[styles.input, styles.addInput]}
+                      value={tagDraft}
+                    />
+                    <SmallButton label="Hinzufügen" onPress={() => addTag(document, tagDraft, setTagDraft, updateAnalysis)} />
+                  </View>
+                </>
+              ) : (
+                <View style={styles.tags}>
+                  <ReadValue value={document.suggested_category} />
+                  {document.tags.map((tag) => <View key={tag} style={styles.tag}><Text style={styles.tagText}>{tag}</Text></View>)}
+                </View>
+              )}
+            </Section>
 
-        {isReadOnly && document.document_type === "credentials" ? (
-          <CredentialsSection
-            documentId={id}
-            credentialText={document.credential_text}
-          />
-        ) : null}
+            <PeopleSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <DatesSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <TasksSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <AmountsSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <FactsSection analysis={document} editable={editable} onChange={updateAnalysis} />
 
-        <View style={styles.actions}>
-          {isReadOnly ? (
-            <OrdiloButton title="Zur Übersicht" size="lg" onPress={() => router.replace("/(tabs)")} />
-          ) : (
-            <>
-              <OrdiloButton
-                disabled={saving || !document.title.trim()}
-                icon={saving ? <ActivityIndicator color={colors.warmWhite} /> : <Check color={colors.warmWhite} size={19} />}
-                onPress={() => void confirm()}
-                size="lg"
-                title={saving ? "Wird gespeichert …" : "Passt so"}
+            {isReadOnly && document.organizations.length > 0 ? (
+              <Section icon={FileText} title="Organisationen">
+                {document.organizations.map((organization, index) => (
+                  <ReadValue key={`${organization.name}-${index}`} value={[organization.name, organization.type].filter(Boolean).join(" · ")} />
+                ))}
+              </Section>
+            ) : null}
+
+            {isReadOnly && document.document_type === "credentials" ? (
+              <CredentialsSection
+                documentId={id}
+                credentialText={document.credential_text}
               />
-              <OrdiloButton title="Später prüfen" variant="ghost" onPress={() => router.replace("/(tabs)")} />
-            </>
-          )}
+            ) : null}
+
+            <View style={styles.actions}>
+              {isReadOnly ? (
+                <OrdiloButton title="Zur Übersicht" size="lg" onPress={() => router.replace("/(tabs)")} />
+              ) : (
+                <>
+                  <OrdiloButton
+                    disabled={saving || !document.title.trim()}
+                    icon={saving ? <ActivityIndicator color={colors.warmWhite} /> : <Check color={colors.warmWhite} size={19} />}
+                    onPress={() => void confirm()}
+                    size="lg"
+                    title={saving ? "Wird gespeichert …" : "Passt so"}
+                  />
+                  <OrdiloButton title="Zurück zur Übersicht" variant="ghost" onPress={() => setEditing(false)} />
+                </>
+              )}
+            </View>
+          </>
+        )}
+        </Animated.View>
+      </ScrollView>
+      {!editing ? (
+        <View style={[styles.bottomBar, { paddingBottom: Math.max(spacing.sm, insets.bottom) }]}>
           <Pressable
-            accessibilityLabel="Dokument löschen"
+            accessibilityHint="Öffnet das gespeicherte Original."
+            accessibilityLabel="Original ansehen"
             accessibilityRole="button"
-            disabled={deleting}
-            onPress={requestDelete}
-            style={({ pressed }) => [
-              styles.deleteDocument,
-              pressed && styles.pressed,
-              deleting && styles.disabled,
-            ]}
+            disabled={openingOriginal}
+            onPress={() => void viewOriginal()}
+            style={({ pressed }) => [styles.bottomAction, pressed && styles.pressed, openingOriginal && styles.disabled]}
           >
-            {deleting ? <ActivityIndicator color={colors.destructive} size="small" /> : <Trash2 color={colors.destructive} size={18} />}
-            <Text style={styles.deleteDocumentText}>
-              {deleting ? "Dokument wird gelöscht …" : "Dokument löschen"}
-            </Text>
+            {openingOriginal ? <ActivityIndicator color={colors.harborBlue} size="small" /> : <Eye color={colors.harborBlue} size={19} />}
+            <Text style={styles.bottomActionText}>{openingOriginal ? "Wird geöffnet …" : "Original ansehen"}</Text>
+          </Pressable>
+          <View style={styles.bottomDivider} />
+          <Pressable
+            accessibilityLabel="Dokument bearbeiten"
+            accessibilityRole="button"
+            onPress={() => setEditing(true)}
+            style={({ pressed }) => [styles.bottomAction, pressed && styles.pressed]}
+          >
+            <Pencil color={colors.harborBlue} size={19} />
+            <Text style={styles.bottomActionText}>{editable ? "Bearbeiten" : "Angaben ansehen"}</Text>
           </Pressable>
         </View>
-      </ScrollView>
+      ) : null}
 
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
   );
 }
 
-function ReviewHeader({ title, onBack }: { title: string; onBack: () => void }) {
+function ReviewHeader({
+  actionLabel,
+  onAction,
+  onBack,
+  subtitle,
+  title,
+}: {
+  actionLabel?: string;
+  onAction?: () => void;
+  onBack: () => void;
+  subtitle?: string;
+  title: string;
+}) {
   return (
     <View style={styles.topbar}>
       <Pressable accessibilityLabel="Zurück" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.back}>
         <ArrowLeft color={colors.graphite} size={22} />
       </Pressable>
-      <Text style={styles.topTitle}>{title}</Text>
+      <View style={styles.headerCopy}>
+        <Text style={styles.topTitle}>{title}</Text>
+        {subtitle ? <Text numberOfLines={1} style={styles.topSubtitle}>{subtitle}</Text> : null}
+      </View>
+      {onAction ? (
+        <Pressable accessibilityLabel={actionLabel} accessibilityRole="button" hitSlop={8} onPress={onAction} style={styles.headerAction}>
+          <Ellipsis color={colors.graphite} size={22} />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -467,6 +531,95 @@ function UnavailableState({
         ) : null}
       </EmptyState>
     </Screen>
+  );
+}
+
+function DocumentHero({ document }: { document: ReviewAnalysis }) {
+  return (
+    <Card style={styles.heroCard}>
+      <View style={styles.heroHeading}>
+        <View style={styles.heroFileIcon}><FileText color={colors.harborBlue} size={28} strokeWidth={1.7} /></View>
+        <View style={styles.heroCopy}>
+          <View style={styles.typeChip}><Text style={styles.typeChipText}>{documentTypeLabels[document.document_type]}</Text></View>
+          <Text style={styles.documentTitle}>{document.title}</Text>
+        </View>
+      </View>
+      {document.summary ? <Text numberOfLines={3} style={styles.documentSummary}>{document.summary}</Text> : null}
+    </Card>
+  );
+}
+
+function ExtractionOverview({ document }: { document: ReviewAnalysis }) {
+  const rows = [
+    ...document.dates.slice(0, 2).map((date) => ({
+      icon: CalendarDays,
+      label: date.label || "Termin",
+      value: formatExtractedDate(date.date),
+    })),
+    ...document.tasks.slice(0, 2).map((task) => ({
+      icon: ListChecks,
+      label: task.title || "Aufgabe",
+      value: task.due_date ? formatExtractedDate(task.due_date) : "Ohne Datum",
+    })),
+  ].slice(0, 3);
+
+  return (
+    <Card style={styles.overviewCard}>
+      <Text style={styles.overviewTitle}>Das Wichtigste auf einen Blick</Text>
+      {rows.length > 0 ? rows.map((row, index) => {
+        const IconComponent = row.icon;
+        return (
+          <View key={`${row.label}-${index}`} style={[styles.overviewRow, index > 0 && styles.overviewRowBorder]}>
+            <View style={styles.overviewIcon}><IconComponent color={colors.harborBlue} size={19} strokeWidth={1.8} /></View>
+            <View style={styles.overviewCopy}>
+              <Text numberOfLines={1} style={styles.overviewLabel}>{row.label}</Text>
+              <Text numberOfLines={1} style={styles.overviewValue}>{row.value}</Text>
+            </View>
+          </View>
+        );
+      }) : (
+        <Text style={styles.overviewEmpty}>Keine Termine oder Aufgaben erkannt.</Text>
+      )}
+      {document.needs_user_review ? (
+        <View accessibilityRole="alert" style={[styles.overviewRow, rows.length > 0 && styles.overviewRowBorder]}>
+          <View style={[styles.overviewIcon, styles.reviewIcon]}><CircleAlert color={colors.warmApricot} size={19} strokeWidth={1.8} /></View>
+          <View style={styles.overviewCopy}>
+            <Text style={styles.reviewLabel}>Noch auszufüllen</Text>
+            <Text numberOfLines={1} style={styles.overviewValue}>Ein paar Angaben sind unsicher</Text>
+          </View>
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+function DetailLink({
+  accessibilityLabel,
+  description,
+  onPress,
+  separated = false,
+  title,
+}: {
+  accessibilityLabel: string;
+  description: string;
+  onPress: () => void;
+  separated?: boolean;
+  title: string;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.detailLink, separated && styles.detailLinkSeparated, pressed && styles.pressed]}
+    >
+      <View style={styles.detailLinkIcon}><FileText color={colors.graphite} size={20} strokeWidth={1.7} /></View>
+      <View style={styles.detailLinkCopy}>
+        <Text style={styles.detailLinkTitle}>{title}</Text>
+        <Text numberOfLines={1} style={styles.detailLinkDescription}>{description}</Text>
+      </View>
+      <ChevronRight color={colors.graphite} size={20} strokeWidth={1.8} />
+    </Pressable>
   );
 }
 
@@ -661,9 +814,27 @@ function formatDetailDate(value: string): string {
   }).format(date);
 }
 
+function formatExtractedDate(value: string): string {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
 function SwipePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose: () => void }) {
-  const translateY = useSharedValue(0);
-  const opacity = useSharedValue(1);
+  // Enters rising from below with the same panel spring the dismiss
+  // gesture settles into, so opening and closing feel like one motion.
+  const reduceMotion = useReducedMotion();
+  const translateY = useSharedValue(reduceMotion ? 0 : 240);
+  const opacity = useSharedValue(reduceMotion ? 1 : 0);
+  useEffect(() => {
+    if (reduceMotion) return;
+    translateY.set(withSpring(0, { duration: 400, dampingRatio: 0.85 }));
+    opacity.set(withTiming(1, { duration: 220 }));
+  }, [reduceMotion, translateY, opacity]);
   const drag = Gesture.Pan()
     .activeOffsetY(12)
     .onUpdate((event) => {
@@ -853,7 +1024,7 @@ function removeAt<Key extends "family_members" | "dates" | "tasks" | "amounts" |
   index: number,
   onChange: SectionProps["onChange"],
 ) {
-  void Haptics.selectionAsync();
+  select();
   onChange((current) => ({ ...current, [key]: current[key].filter((_, itemIndex) => itemIndex !== index) }) as ReviewAnalysis);
 }
 
@@ -865,7 +1036,7 @@ function addTag(
 ) {
   const tag = tagDraft.trim();
   if (!tag || document.tags.some((existing) => existing.toLocaleLowerCase("de") === tag.toLocaleLowerCase("de"))) return;
-  void Haptics.selectionAsync();
+  select();
   onChange((current) => ({ ...current, tags: [...current.tags, tag] }));
   setTagDraft("");
 }
@@ -873,21 +1044,60 @@ function addTag(
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
   center: { alignItems: "center", justifyContent: "center" },
-  topbar: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 54, paddingHorizontal: spacing.md },
+  topbar: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", gap: spacing.xs, minHeight: 70, paddingHorizontal: spacing.sm },
   back: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
+  headerCopy: { flex: 1, gap: 2, minWidth: 0 },
   topTitle: { color: colors.graphite, ...typography.title },
-  content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing["2xl"] },
+  topSubtitle: { color: colors.mistDark, ...typography.timestamp },
+  headerAction: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
+  content: { gap: spacing.md, padding: spacing.md, paddingBottom: 104 },
+  contentState: { gap: spacing.md },
+  overviewContent: { gap: spacing.md },
   intro: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   introCopy: { flex: 1 },
   fileIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 48, justifyContent: "center", width: 48 },
   type: { color: colors.graphite, ...typography.title },
   help: { color: colors.mistDark, ...typography.timestamp, marginTop: 2 },
+  heroCard: { gap: spacing.md, padding: spacing.md },
+  heroHeading: { flexDirection: "row", gap: 12 },
+  heroFileIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 52, justifyContent: "center", width: 52 },
+  heroCopy: { flex: 1, gap: 3, minWidth: 0 },
+  typeChip: { alignSelf: "flex-start", backgroundColor: colors.sandLight, borderRadius: radii.base, paddingHorizontal: 6, paddingVertical: 3 },
+  typeChipText: { color: colors.harborBlue, ...typography.label },
+  documentTitle: { color: colors.graphite, ...typography.display },
+  documentSummary: { color: colors.graphite, ...typography.body },
+  overviewCard: { gap: 0, paddingVertical: spacing.sm },
+  overviewTitle: { color: colors.graphite, marginBottom: spacing.sm, paddingHorizontal: spacing.md, ...typography.title },
+  overviewRow: { alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 64, paddingHorizontal: spacing.md },
+  overviewRowBorder: { borderTopColor: colors.mistLight, borderTopWidth: 1 },
+  overviewIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 36, justifyContent: "center", width: 36 },
+  overviewCopy: { flex: 1, gap: 1, minWidth: 0 },
+  overviewLabel: { color: colors.graphite, ...typography.title },
+  overviewValue: { color: colors.graphite, ...typography.timestamp },
+  overviewEmpty: { color: colors.mistDark, paddingHorizontal: spacing.md, ...typography.timestamp },
+  reviewIcon: { backgroundColor: colors.sandWarm },
+  reviewLabel: { color: colors.warmApricot, ...typography.title },
+  detailCard: { gap: 0, paddingVertical: 0 },
+  detailLink: { alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 68, paddingHorizontal: spacing.md },
+  detailLinkSeparated: { borderTopColor: colors.mistLight, borderTopWidth: 1 },
+  detailLinkIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 36, justifyContent: "center", width: 36 },
+  detailLinkCopy: { flex: 1, gap: 1, minWidth: 0 },
+  detailLinkTitle: { color: colors.graphite, ...typography.title },
+  detailLinkDescription: { color: colors.mistDark, ...typography.timestamp },
+  aiNotice: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.md },
+  aiIcon: { alignItems: "center", backgroundColor: colors.warmWhite, borderRadius: radii.pill, height: 36, justifyContent: "center", width: 36 },
+  aiNoticeText: { color: colors.graphite, flex: 1, ...typography.timestamp },
+  editIntro: { gap: 2, paddingVertical: spacing.xs },
+  editTitle: { color: colors.graphite, ...typography.display },
+  editHelp: { color: colors.mistDark, ...typography.timestamp },
   metadataCard: { gap: 0 },
   metadataRow: { alignItems: "baseline", borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.md, minHeight: 38, paddingVertical: spacing.sm },
   metadataLabel: { color: colors.mistDark, minWidth: 92, ...typography.label },
   metadataValue: { color: colors.graphite, flex: 1, textAlign: "right", ...typography.timestamp },
-  originalButton: { alignItems: "center", backgroundColor: colors.sandLight, borderColor: colors.mistLight, borderRadius: radii.sm, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 48, paddingHorizontal: spacing.sm },
-  originalText: { color: colors.harborBlue, flex: 1, ...typography.title },
+  bottomBar: { alignItems: "center", backgroundColor: colors.warmWhite, borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", minHeight: 68, paddingBottom: spacing.sm, paddingHorizontal: spacing.sm, paddingTop: spacing.xs },
+  bottomAction: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm, height: 44, justifyContent: "center" },
+  bottomActionText: { color: colors.harborBlue, ...typography.title },
+  bottomDivider: { backgroundColor: colors.mistLight, height: 28, width: 1 },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.65 },
   notice: { alignItems: "center", backgroundColor: colors.sandWarm, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.sm },

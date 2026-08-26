@@ -1,4 +1,3 @@
-import * as Haptics from "expo-haptics";
 import { useFocusEffect } from "expo-router";
 import {
   AlertCircle,
@@ -7,12 +6,18 @@ import {
   ChevronDown,
   ChevronUp,
   Plus,
+  Undo2,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
   Alert,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,27 +25,51 @@ import {
   Text,
   View,
 } from "react-native";
+import ReanimatedSwipeable, {
+  type SwipeableMethods,
+} from "react-native-gesture-handler/ReanimatedSwipeable";
+import Animated from "react-native-reanimated";
 
+import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
-import { EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import {
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+} from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
+import { fail, select, success, tap } from "@/src/lib/feedback";
 import {
   createTask,
   fetchFamilyMembers,
   fetchPlannerTasks,
   formatOverdueLabel,
+  formatTaskDayHint,
   formatTaskDueLabel,
   getTaskSection,
   patchTask,
+  resolveSchedulePreset,
   sortTasksByCompletion,
   sortTasksByDate,
+  TASK_SCHEDULE_PRESET_LABELS,
+  TASK_SCHEDULE_PRESETS,
   TASK_SECTIONS,
   todayLocalDate,
   FRIENDLY_ERROR,
   type FamilyMemberOption,
   type PlannerTask,
+  type TaskSchedulePreset,
   type TaskSectionId,
 } from "@/src/lib/tasks";
+import {
+  contentEntering,
+  contentExiting,
+  listItemEntering,
+  listItemExiting,
+  listLayout,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const UNDO_BANNER_MS = 6000;
@@ -51,7 +80,7 @@ const UNDO_BANNER_MS = 6000;
  * the database does not have — and the user hears about it.
  */
 function notifyUndoFailed() {
-  void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  void fail();
   Alert.alert(
     "Rückgängig machen hat nicht geklappt",
     "Deine letzte Änderung bleibt bestehen. Ziehe zum Aktualisieren nach unten.",
@@ -85,8 +114,20 @@ export default function PlanScreen() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<PlannerTask | null>(null);
   const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
+  const [rescheduleTask, setRescheduleTask] = useState<PlannerTask | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const undoSeqRef = useRef(0);
+  const assignSheetRef = useRef<OrdiloSheetHandle>(null);
+  const rescheduleSheetRef = useRef<OrdiloSheetHandle>(null);
+
+  // The sheets are imperative (drag-to-dismiss lives in the sheet); the
+  // state only carries WHICH task they serve. Dismissal clears it again.
+  useEffect(() => {
+    if (assignTask) assignSheetRef.current?.present();
+  }, [assignTask]);
+  useEffect(() => {
+    if (rescheduleTask) rescheduleSheetRef.current?.present();
+  }, [rescheduleTask]);
 
   const memberById = useMemo(() => {
     const map = new Map<string, FamilyMemberOption>();
@@ -187,12 +228,12 @@ export default function PlanScreen() {
       });
       if (!ok) {
         replaceTask({ ...task, ...previous });
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
         Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
         return;
       }
       if (markingDone) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
         showUndo("Erledigt", async () => {
           replaceTask({ ...task, ...previous });
           const undoOk = await patchTask(task.id, {
@@ -219,11 +260,11 @@ export default function PlanScreen() {
       const ok = await patchTask(task.id, { assigned_to: memberId });
       if (!ok) {
         replaceTask({ ...task, assigned_to: previousAssignee });
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
         Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
         return;
       }
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      tap();
       const name = memberId ? (memberById.get(memberId)?.name ?? "jemandem") : null;
       showUndo(name ? `Jetzt bei ${name}` : "Niemandem zugeordnet", async () => {
         replaceTask({ ...task, assigned_to: previousAssignee });
@@ -237,6 +278,38 @@ export default function PlanScreen() {
     [memberById, replaceTask, showUndo],
   );
 
+  /**
+   * The "Wann?" answer: one tap on a preset resolves to a concrete due
+   * date (every preset says which day it means), applied optimistically
+   * with the same undo contract as completing.
+   */
+  const reschedule = useCallback(
+    async (task: PlannerTask, preset: TaskSchedulePreset) => {
+      const newDue = resolveSchedulePreset(preset, todayStr);
+      if (newDue === task.due_date) return;
+      const previousDue = task.due_date;
+      const rescheduledTask: PlannerTask = { ...task, due_date: newDue };
+      replaceTask(rescheduledTask);
+      const ok = await patchTask(task.id, { due_date: newDue });
+      if (!ok) {
+        replaceTask(task);
+        void fail();
+        Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
+        return;
+      }
+      void success();
+      showUndo(`Verschoben: ${TASK_SCHEDULE_PRESET_LABELS[preset]}`, async () => {
+        replaceTask(task);
+        const undoOk = await patchTask(task.id, { due_date: previousDue });
+        if (!undoOk) {
+          replaceTask(rescheduledTask);
+          notifyUndoFailed();
+        }
+      });
+    },
+    [replaceTask, showUndo, todayStr],
+  );
+
   const dismiss = useCallback(
     async (task: PlannerTask) => {
       setFormOpen(false);
@@ -246,7 +319,7 @@ export default function PlanScreen() {
       const ok = await patchTask(task.id, { status: "dismissed" });
       if (!ok) {
         replaceTask(task);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
         Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
         return;
       }
@@ -287,13 +360,13 @@ export default function PlanScreen() {
           replaceTask(previous);
           return { success: false, error: "Speichern hat nicht geklappt." };
         }
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
         return { success: true };
       }
       const result = await createTask(family.id, values);
       if (!result.success) return { success: false, error: result.error };
       setTasks((prev) => [result.task, ...prev]);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      void success();
       return { success: true };
     },
     [editingTask, family, replaceTask],
@@ -313,12 +386,7 @@ export default function PlanScreen() {
     return (
       <Screen>
         <PlanHeader onCreate={openCreate} />
-        <View style={styles.centerFill}>
-          <ActivityIndicator
-            accessibilityLabel="Aufgaben werden geladen"
-            color={colors.harborBlue}
-          />
-        </View>
+        <ListSkeleton rows={4} />
       </Screen>
     );
   }
@@ -401,12 +469,14 @@ export default function PlanScreen() {
                   ) : null}
                 </Pressable>
                 <View style={styles.sectionBody}>
-                  {shown.map((task) => (
-                    <TaskRow
+                  {shown.map((task, index) => (
+                    <SwipeableTaskRow
+                      index={index}
                       key={task.id}
                       member={task.assigned_to ? memberById.get(task.assigned_to) : undefined}
                       onAssign={() => setAssignTask(task)}
                       onPress={() => openEdit(task)}
+                      onReschedule={() => setRescheduleTask(task)}
                       onToggle={() => void toggleDone(task)}
                       task={task}
                       todayStr={todayStr}
@@ -445,16 +515,34 @@ export default function PlanScreen() {
 
       <AssignSheet
         members={members}
-        onClose={() => setAssignTask(null)}
+        onDismiss={() => setAssignTask(null)}
         onSelect={(memberId) => {
-          if (assignTask) void assign(assignTask, memberId);
-          else setAssignTask(null);
+          const task = assignTask;
+          assignSheetRef.current?.dismiss();
+          if (task) void assign(task, memberId);
         }}
+        ref={assignSheetRef}
         task={assignTask}
       />
 
+      <RescheduleSheet
+        onDismiss={() => setRescheduleTask(null)}
+        onSelect={(preset) => {
+          const task = rescheduleTask;
+          rescheduleSheetRef.current?.dismiss();
+          if (task) void reschedule(task, preset);
+        }}
+        ref={rescheduleSheetRef}
+        task={rescheduleTask}
+        todayStr={todayStr}
+      />
+
       {undo ? (
-        <View style={styles.undoBanner}>
+        <Animated.View
+          entering={contentEntering()}
+          exiting={contentExiting()}
+          style={styles.undoBanner}
+        >
           <Text numberOfLines={1} style={styles.undoMessage}>
             {undo.message}
           </Text>
@@ -468,9 +556,10 @@ export default function PlanScreen() {
             }}
             style={styles.undoButton}
           >
+            <Undo2 color={colors.warmApricotLight} size={16} strokeWidth={2.2} />
             <Text style={styles.undoButtonLabel}>Rückgängig</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       ) : null}
     </Screen>
   );
@@ -479,22 +568,117 @@ export default function PlanScreen() {
 /** Screen header: title, calm subtitle, and the one primary action. */
 function PlanHeader({ onCreate }: { onCreate: () => void }) {
   return (
-    <View style={styles.header}>
-      <View style={styles.headerText}>
-        <Text style={[typography.display, styles.headerTitle]}>Plan</Text>
-        <Text style={[typography.timestamp, styles.headerSubtitle]}>
-          Aufgaben und Termine der Familie
-        </Text>
-      </View>
-      <Pressable
-        accessibilityLabel="Neue Aufgabe anlegen"
-        accessibilityRole="button"
-        onPress={onCreate}
-        style={({ pressed }) => [styles.addButton, pressed && styles.addButtonPressed]}
+    <ScreenHeader
+      action={{
+        accessibilityLabel: "Neue Aufgabe anlegen",
+        icon: Plus,
+        onPress: onCreate,
+      }}
+      subtitle="Aufgaben und Termine der Familie"
+      title="Plan"
+    />
+  );
+}
+
+/**
+ * A task row with the two named gestures from the web's planner
+ * contract: swipe right completes (Harbor Blue panel, "Erledigt" —
+ * "Wieder offen" on a finished row), swipe left opens the "Wann?"
+ * sheet (Apricot panel). Both are reversible via the undo banner, and
+ * both have tappable counterparts on the row itself (checkbox, edit
+ * form) — a gesture is an accelerator, never the only way. Panels
+ * appear from the first dragged pixel so the gesture teaches itself.
+ */
+function SwipeableTaskRow({
+  index,
+  member,
+  onAssign,
+  onPress,
+  onReschedule,
+  onToggle,
+  task,
+  todayStr,
+}: {
+  index: number;
+  member: FamilyMemberOption | undefined;
+  onAssign: () => void;
+  onPress: () => void;
+  onReschedule: () => void;
+  onToggle: () => void;
+  task: PlannerTask;
+  todayStr: string;
+}) {
+  const swipeableRef = useRef<SwipeableMethods>(null);
+  const done = task.status === "done";
+
+  const commitFromGesture = useCallback(
+    (direction: "left" | "right") => {
+      swipeableRef.current?.close();
+      if (direction === "right") onToggle();
+      else onReschedule();
+    },
+    [onReschedule, onToggle],
+  );
+
+  return (
+    <Animated.View
+      entering={listItemEntering(index)}
+      exiting={listItemExiting()}
+      layout={listLayout()}
+    >
+      <ReanimatedSwipeable
+        friction={2}
+        leftThreshold={40}
+        onSwipeableOpen={(direction) => commitFromGesture(direction)}
+        onSwipeableWillOpen={() => select()}
+        overshootLeft={false}
+        overshootRight={false}
+        ref={swipeableRef}
+        renderLeftActions={() => (
+          <Pressable
+            accessibilityLabel={done ? "Aufgabe wieder öffnen" : "Aufgabe erledigen"}
+            accessibilityRole="button"
+            onPress={() => commitFromGesture("right")}
+            style={[styles.swipePanel, styles.swipePanelLeading]}
+          >
+            {done ? (
+              <Undo2 color={colors.warmWhite} size={18} strokeWidth={2.2} />
+            ) : (
+              <Check color={colors.warmWhite} size={18} strokeWidth={2.4} />
+            )}
+            <Text style={styles.swipePanelLabel}>
+              {done ? "Wieder offen" : "Erledigt"}
+            </Text>
+          </Pressable>
+        )}
+        renderRightActions={
+          // Honest Panel Rule: no "Wann?" promise on a finished task.
+          done
+            ? undefined
+            : () => (
+                <Pressable
+                  accessibilityLabel="Aufgabe terminieren"
+                  accessibilityRole="button"
+                  onPress={() => commitFromGesture("left")}
+                  style={[styles.swipePanel, styles.swipePanelTrailing]}
+                >
+                  <CalendarDays color={colors.warmWhite} size={18} strokeWidth={2.2} />
+                  <Text style={styles.swipePanelLabel}>Wann?</Text>
+                </Pressable>
+              )
+        }
+        rightThreshold={40}
       >
-        <Plus color={colors.warmWhite} size={22} strokeWidth={2.2} />
-      </Pressable>
-    </View>
+        <TaskRow
+          member={member}
+          onAssign={onAssign}
+          onPress={onPress}
+          onToggle={onToggle}
+          task={task}
+          todayStr={todayStr}
+        />
+      </ReanimatedSwipeable>
+    </Animated.View>
   );
 }
 
@@ -586,130 +770,134 @@ function TaskRow({
 
 /**
  * The "Wer macht das?" picker: one decision, committed on tap — choosing
- * is the way out, so there is no close button (backdrop tap still
- * dismisses without a change).
+ * is the way out, so there is no close button (a drag or backdrop tap
+ * still dismisses without a change).
  */
-function AssignSheet({
-  members,
-  onClose,
-  onSelect,
-  task,
-}: {
-  members: FamilyMemberOption[];
-  onClose: () => void;
-  onSelect: (memberId: string | null) => void;
-  task: PlannerTask | null;
-}) {
+const AssignSheet = forwardRef<
+  OrdiloSheetHandle,
+  {
+    members: FamilyMemberOption[];
+    onDismiss: () => void;
+    onSelect: (memberId: string | null) => void;
+    task: PlannerTask | null;
+  }
+>(function AssignSheet({ members, onDismiss, onSelect, task }, ref) {
   return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      transparent
-      visible={task !== null}
+    <OrdiloSheet
+      accessibilityLabel="Wer macht das?"
+      onDismiss={onDismiss}
+      ref={ref}
     >
-      <Pressable onPress={onClose} style={styles.overlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.pickerSheet}
-        >
-          <View style={styles.handle} />
-          <Text style={styles.pickerTitle}>Wer macht das?</Text>
-          {/* Bounded + scrollable: a large family's member rows must stay
-              reachable instead of spilling past the sheet's edge. */}
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-            style={styles.pickerList}
-          >
-            {members.map((member) => {
-            const selected = task?.assigned_to === member.id;
-            return (
-              <Pressable
-                accessibilityLabel={`Aufgabe an ${member.name} geben`}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                key={member.id}
-                onPress={() => onSelect(member.id)}
-                style={[styles.pickerRow, selected && styles.pickerRowSelected]}
-              >
-                <View
-                  style={[
-                    styles.assigneeDot,
-                    styles.pickerDot,
-                    { backgroundColor: member.avatar_color ?? colors.sandLight },
-                  ]}
-                >
-                  <Text style={styles.assigneeInitial}>
-                    {member.name.trim().charAt(0).toUpperCase() || "?"}
-                  </Text>
-                </View>
-                <Text style={styles.pickerLabel}>{member.name}</Text>
-                {selected ? (
-                  <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
-                ) : null}
-              </Pressable>
-            );
-          })}
+      <Text style={styles.pickerTitle}>Wer macht das?</Text>
+      {members.map((member) => {
+        const selected = task?.assigned_to === member.id;
+        return (
           <Pressable
-            accessibilityLabel="Niemandem zuordnen"
+            accessibilityLabel={`Aufgabe an ${member.name} geben`}
             accessibilityRole="button"
-            accessibilityState={{ selected: task?.assigned_to == null }}
-            onPress={() => onSelect(null)}
-            style={[
-              styles.pickerRow,
-              task?.assigned_to == null && styles.pickerRowSelected,
-            ]}
+            accessibilityState={{ selected }}
+            key={member.id}
+            onPress={() => onSelect(member.id)}
+            style={[styles.pickerRow, selected && styles.pickerRowSelected]}
           >
-            <View style={[styles.assigneeDot, styles.pickerDot, styles.assigneeDotEmpty]}>
-              <Plus color={colors.mistDark} size={14} strokeWidth={2.2} />
+            <View
+              style={[
+                styles.assigneeDot,
+                styles.pickerDot,
+                { backgroundColor: member.avatar_color ?? colors.sandLight },
+              ]}
+            >
+              <Text style={styles.assigneeInitial}>
+                {member.name.trim().charAt(0).toUpperCase() || "?"}
+              </Text>
             </View>
-            <Text style={styles.pickerLabel}>Niemandem</Text>
-            {task?.assigned_to == null ? (
+            <Text style={styles.pickerLabel}>{member.name}</Text>
+            {selected ? (
               <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
             ) : null}
           </Pressable>
-          </ScrollView>
-        </Pressable>
+        );
+      })}
+      <Pressable
+        accessibilityLabel="Niemandem zuordnen"
+        accessibilityRole="button"
+        accessibilityState={{ selected: task?.assigned_to == null }}
+        onPress={() => onSelect(null)}
+        style={[
+          styles.pickerRow,
+          task?.assigned_to == null && styles.pickerRowSelected,
+        ]}
+      >
+        <View style={[styles.assigneeDot, styles.pickerDot, styles.assigneeDotEmpty]}>
+          <Plus color={colors.mistDark} size={14} strokeWidth={2.2} />
+        </View>
+        <Text style={styles.pickerLabel}>Niemandem</Text>
+        {task?.assigned_to == null ? (
+          <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
+        ) : null}
       </Pressable>
-    </Modal>
+    </OrdiloSheet>
   );
-}
+});
+
+/**
+ * The "Wann?" sheet: the one-tap answers to rescheduling. Every preset
+ * spells out the day it lands on ("Morgen · Sa, 23.08."), so nobody
+ * guesses — and choosing is the way out, no close button.
+ */
+const RescheduleSheet = forwardRef<
+  OrdiloSheetHandle,
+  {
+    onDismiss: () => void;
+    onSelect: (preset: TaskSchedulePreset) => void;
+    task: PlannerTask | null;
+    todayStr: string;
+  }
+>(function RescheduleSheet({ onDismiss, onSelect, task, todayStr }, ref) {
+  if (!task) {
+    // Keep the sheet mounted (imperative present/dismiss) but empty
+    // when it serves no task.
+    return <OrdiloSheet onDismiss={onDismiss} ref={ref} />;
+  }
+  return (
+    <OrdiloSheet
+      accessibilityLabel="Wann ist das dran?"
+      onDismiss={onDismiss}
+      ref={ref}
+    >
+      <Text style={styles.pickerTitle}>Wann ist das dran?</Text>
+      {TASK_SCHEDULE_PRESETS.map((preset) => {
+        const due = resolveSchedulePreset(preset, todayStr);
+        const selected = task.due_date === due;
+        const dayHint = formatTaskDayHint(due);
+        return (
+          <Pressable
+            accessibilityLabel={`${TASK_SCHEDULE_PRESET_LABELS[preset]}${dayHint ? `, ${dayHint}` : ""}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            key={preset}
+            onPress={() => onSelect(preset)}
+            style={[styles.pickerRow, selected && styles.pickerRowSelected]}
+          >
+            <Text style={styles.pickerLabel}>
+              {TASK_SCHEDULE_PRESET_LABELS[preset]}
+            </Text>
+            {dayHint ? <Text style={styles.pickerHint}>{dayHint}</Text> : null}
+            {selected ? (
+              <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
+            ) : null}
+          </Pressable>
+        );
+      })}
+    </OrdiloSheet>
+  );
+});
 
 const styles = StyleSheet.create({
   centerFill: {
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-  },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingBottom: spacing.lg,
-    paddingTop: spacing.md,
-  },
-  headerText: {
-    flex: 1,
-    gap: spacing.xs,
-  },
-  headerTitle: {
-    color: colors.graphite,
-  },
-  headerSubtitle: {
-    color: colors.mistDark,
-  },
-  addButton: {
-    alignItems: "center",
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.pill,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  addButtonPressed: {
-    opacity: 0.85,
   },
   section: {
     marginBottom: spacing.lg,
@@ -806,31 +994,32 @@ const styles = StyleSheet.create({
     color: colors.warmWhite,
     ...typography.title,
   },
-  overlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  pickerSheet: {
-    backgroundColor: colors.warmWhite,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    maxHeight: "70%",
-    paddingBottom: spacing.xl,
+  swipePanel: {
+    alignItems: "center",
+    borderRadius: radii.sm,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    marginBottom: 0,
     paddingHorizontal: spacing.md,
   },
-  pickerList: {
-    flexGrow: 0,
-    flexShrink: 1,
+  swipePanelLeading: {
+    backgroundColor: colors.harborBlue,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
   },
-  handle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-    width: 40,
+  swipePanelTrailing: {
+    backgroundColor: colors.warmApricot,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+  },
+  swipePanelLabel: {
+    color: colors.warmWhite,
+    ...typography.label,
+  },
+  pickerHint: {
+    color: colors.mistDark,
+    ...typography.timestamp,
   },
   pickerTitle: {
     color: colors.graphite,
@@ -881,7 +1070,10 @@ const styles = StyleSheet.create({
     ...typography.body,
   },
   undoButton: {
+    alignItems: "center",
     borderRadius: radii.sm,
+    flexDirection: "row",
+    gap: 6,
     minHeight: 36,
     justifyContent: "center",
     paddingHorizontal: 12,

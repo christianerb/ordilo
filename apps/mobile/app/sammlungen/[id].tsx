@@ -1,5 +1,4 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   AlertCircle,
   ArrowLeft,
@@ -20,9 +19,17 @@ import {
   View,
 } from "react-native";
 
+import Animated from "react-native-reanimated";
+
 import { CollectionFormSheet } from "@/src/components/collection-form-sheet";
 import { CollectionIcon } from "@/src/components/collection-icon";
-import { EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import {
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+} from "@/src/components/ui";
+import { listItemEntering } from "@/src/theme/motion";
 import {
   deleteCollection,
   fetchCollectionDocuments,
@@ -39,6 +46,7 @@ import {
   getDocumentTypeLabel,
 } from "@/src/lib/library";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { success } from "@/src/lib/feedback";
 
 /**
  * Collection detail ("Sammlung") — the documents linked to one folder.
@@ -107,7 +115,7 @@ export default function SammlungDetailScreen() {
         setDeleteError(result.error);
         return;
       }
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await success();
       setDeleteOpen(false);
       router.back();
     } catch {
@@ -131,12 +139,7 @@ export default function SammlungDetailScreen() {
             <ArrowLeft color={colors.graphite} size={22} strokeWidth={1.8} />
           </Pressable>
         </View>
-        <View style={styles.centerFill}>
-          <ActivityIndicator
-            accessibilityLabel="Sammlung wird geladen"
-            color={colors.harborBlue}
-          />
-        </View>
+        <ListSkeleton rows={5} />
       </Screen>
     );
   }
@@ -240,12 +243,13 @@ export default function SammlungDetailScreen() {
 
         {documents.length > 0 ? (
           <View style={styles.list}>
-            {documents.map((document) => (
-              <DocumentRow
-                document={document}
-                key={document.id}
-                onPress={() => router.push(`/document/${document.id}`)}
-              />
+            {documents.map((document, index) => (
+              <Animated.View entering={listItemEntering(index)} key={document.id}>
+                <DocumentRow
+                  document={document}
+                  onPress={() => router.push(`/document/${document.id}`)}
+                />
+              </Animated.View>
             ))}
           </View>
         ) : (

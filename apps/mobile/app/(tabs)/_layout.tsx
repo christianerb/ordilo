@@ -1,15 +1,59 @@
 import { Tabs, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   BookOpen,
   CalendarDays,
   House,
   ScanLine,
   Users,
+  type LucideIcon,
 } from "lucide-react-native";
-import { Pressable, StyleSheet, View } from "react-native";
+import { useEffect } from "react";
+import { StyleSheet, View, type ColorValue } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+} from "react-native-reanimated";
 
+import { tap } from "@/src/lib/feedback";
+import { SpringPressable } from "@/src/components/ui";
+import { springs } from "@/src/theme/motion";
 import { colors, fonts } from "@/src/theme/tokens";
+
+/**
+ * A tab icon that answers focus with a small spring — it grows a touch
+ * and gains stroke weight, so the active tab reads through motion, not
+ * just color. Instant under reduce-motion.
+ */
+function TabIcon({
+  focused,
+  color,
+  size,
+  Icon,
+}: {
+  focused: boolean;
+  color: ColorValue;
+  size: number;
+  Icon: LucideIcon;
+}) {
+  const scale = useSharedValue(1);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    scale.value = reduceMotion ? 1 : withSpring(focused ? 1.14 : 1, springs.press);
+  }, [focused, reduceMotion, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={animatedStyle}>
+      <Icon color={color} size={size} strokeWidth={focused ? 2.4 : 2} />
+    </Animated.View>
+  );
+}
 
 /**
  * Native tab shell: Heute, Ablage, Plan, Familie — plus the scan action
@@ -34,8 +78,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "Heute",
-          tabBarIcon: ({ color, size }) => (
-            <House color={color} size={size} strokeWidth={2} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <TabIcon Icon={House} color={color} focused={focused} size={size} />
           ),
         }}
       />
@@ -43,8 +87,8 @@ export default function TabLayout() {
         name="ablage"
         options={{
           title: "Ablage",
-          tabBarIcon: ({ color, size }) => (
-            <BookOpen color={color} size={size} strokeWidth={2} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <TabIcon Icon={BookOpen} color={color} focused={focused} size={size} />
           ),
         }}
       />
@@ -55,20 +99,16 @@ export default function TabLayout() {
           tabBarLabel: () => null,
           tabBarButton: () => (
             <View style={styles.scanButtonOuter}>
-              <Pressable
+              <SpringPressable
                 accessibilityLabel="Dokument scannen"
-                accessibilityRole="button"
                 onPress={() => {
-                  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  tap();
                   router.push("/scan");
                 }}
-                style={({ pressed }) => [
-                  styles.scanButton,
-                  pressed && styles.scanButtonPressed,
-                ]}
+                style={styles.scanButton}
               >
                 <ScanLine color={colors.warmWhite} size={24} strokeWidth={2.2} />
-              </Pressable>
+              </SpringPressable>
             </View>
           ),
         }}
@@ -81,8 +121,8 @@ export default function TabLayout() {
         name="plan"
         options={{
           title: "Plan",
-          tabBarIcon: ({ color, size }) => (
-            <CalendarDays color={color} size={size} strokeWidth={2} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <TabIcon Icon={CalendarDays} color={color} focused={focused} size={size} />
           ),
         }}
       />
@@ -90,8 +130,8 @@ export default function TabLayout() {
         name="familie"
         options={{
           title: "Familie",
-          tabBarIcon: ({ color, size }) => (
-            <Users color={color} size={size} strokeWidth={2} />
+          tabBarIcon: ({ color, focused, size }) => (
+            <TabIcon Icon={Users} color={color} focused={focused} size={size} />
           ),
         }}
       />
@@ -123,8 +163,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: -18,
     width: 56,
-  },
-  scanButtonPressed: {
-    backgroundColor: colors.harborBlueDark,
   },
 });

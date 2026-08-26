@@ -4,6 +4,7 @@ import {
   Figtree_600SemiBold,
   useFonts,
 } from "@expo-google-fonts/figtree";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import {
   DefaultTheme,
   Stack,
@@ -80,14 +81,16 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
-      <SafeAreaProvider>
-        <SessionProvider>
-          <FamilyProvider>
-            <StatusBar style="dark" />
-            <RootLayoutNav />
-          </FamilyProvider>
-        </SessionProvider>
-      </SafeAreaProvider>
+      <BottomSheetModalProvider>
+        <SafeAreaProvider>
+          <SessionProvider>
+            <FamilyProvider>
+              <StatusBar style="dark" />
+              <RootLayoutNav />
+            </FamilyProvider>
+          </SessionProvider>
+        </SafeAreaProvider>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }

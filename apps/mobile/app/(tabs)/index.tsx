@@ -1,5 +1,4 @@
 import { useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   CalendarDays,
   Check,
@@ -19,17 +18,27 @@ import {
   type ReactNode,
 } from "react";
 import {
-  AppState,
   ActivityIndicator,
+  AppState,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 
-import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { AmbientFields } from "@/src/components/ambient-fields";
+import {
+  Card,
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+} from "@/src/components/ui";
+import { fail, success } from "@/src/lib/feedback";
+import { contentEntering } from "@/src/theme/motion";
 import { useFamily } from "@/src/lib/family-context";
 import {
   acceptInboundSuggestion,
@@ -222,9 +231,9 @@ export default function HeuteScreen() {
       if (!result.success) {
         setTasks(previousTasks);
         setError(result.error);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       } else if (nextStatus === "done") {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       }
       setMutatingTaskId(null);
     },
@@ -240,7 +249,7 @@ export default function HeuteScreen() {
         : await dismissInboundSuggestion(suggestion.id);
       if (!result.success) {
         setError(result.error);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
         setMutatingSuggestionId(null);
         return;
       }
@@ -254,7 +263,7 @@ export default function HeuteScreen() {
       );
       await load(true);
       if (accept) {
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       }
       setMutatingSuggestionId(null);
     },
@@ -281,34 +290,42 @@ export default function HeuteScreen() {
 
   if (loading) {
     return (
-      <Screen style={styles.center}>
-        <ActivityIndicator color={colors.harborBlue} />
+      <Screen>
+        <ScreenHeader subtitle="Dein Überblick für heute" title="Heute" />
+        <View style={styles.loadingList}>
+          <ListSkeleton rows={5} />
+        </View>
       </Screen>
     );
   }
 
   if (error && !data) {
     return (
-      <Screen style={styles.center}>
-        <EmptyState
-          icon={Clock3}
-          heading="Heute konnte nicht geladen werden"
-          description={error}
-        >
-          <OrdiloButton
-            onPress={() => void load()}
-            size="lg"
-            title="Erneut versuchen"
-          />
-        </EmptyState>
+      <Screen>
+        <ScreenHeader subtitle="Dein Überblick für heute" title="Heute" />
+        <View style={styles.center}>
+          <EmptyState
+            icon={Clock3}
+            heading="Heute konnte nicht geladen werden"
+            description={error}
+          >
+            <OrdiloButton
+              onPress={() => void load()}
+              size="lg"
+              title="Erneut versuchen"
+            />
+          </EmptyState>
+        </View>
       </Screen>
     );
   }
 
   return (
     <Screen>
-      <ScrollView
+      <AmbientFields style={styles.ambientBehind} variant="top" />
+      <Animated.ScrollView
         contentContainerStyle={styles.scrollContent}
+        entering={contentEntering()}
         refreshControl={
           <RefreshControl
             colors={[colors.harborBlue]}
@@ -491,7 +508,7 @@ export default function HeuteScreen() {
           </>
         )}
 
-      </ScrollView>
+      </Animated.ScrollView>
     </Screen>
   );
 }
@@ -872,7 +889,14 @@ function getDocumentStatusLabel(status: string): string {
 }
 
 const styles = StyleSheet.create({
-  center: { alignItems: "center", justifyContent: "center" },
+  center: { alignItems: "center", flex: 1, justifyContent: "center" },
+  loadingList: {
+    paddingTop: spacing.md,
+  },
+  // The fields sit behind the padded content and bleed to the edges.
+  ambientBehind: {
+    marginHorizontal: -spacing.md,
+  },
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing["2xl"],

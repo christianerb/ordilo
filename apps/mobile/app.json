@@ -11,7 +11,9 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.ordilo.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen."
+        "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
+        "NSMicrophoneUsageDescription": "Ordilo braucht das Mikrofon, damit du per Sprache Fragen stellen und suchen kannst.",
+        "NSSpeechRecognitionUsageDescription": "Ordilo erkennt deine gesprochenen Fragen, damit du sie nicht tippen musst."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -29,7 +31,10 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -43,6 +48,13 @@
       ],
       "expo-secure-store",
       [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Ordilo braucht das Mikrofon, damit du per Sprache Fragen stellen und suchen kannst.",
+          "speechRecognitionPermission": "Ordilo erkennt deine gesprochenen Fragen, damit du sie nicht tippen musst."
+        }
+      ],
+      [
         "expo-image-picker",
         {
           "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
@@ -51,6 +63,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b0396312-ad25-4c2c-afc4-25de0dd14f42"
+      }
+    },
+    "owner": "chrtothaizzo"
   }
 }

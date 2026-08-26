@@ -1,5 +1,4 @@
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import {
   Building2,
@@ -40,6 +39,7 @@ import {
   type ContactInput,
 } from "@/src/lib/contacts";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { tap, success, fail } from "@/src/lib/feedback";
 
 /**
  * Shared contact UI for the native app (list, detail route, form sheet).
@@ -71,13 +71,13 @@ export function getWhatsAppHref(contact: Contact): string | null {
 
 /** Opens a tel:/mailto:/wa.me link with haptics and quiet failure. */
 export async function openContactHref(href: string): Promise<void> {
-  void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  tap();
   try {
     const supported = await Linking.canOpenURL(href);
     if (!supported) throw new Error("No handler");
     await Linking.openURL(href);
   } catch {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    await fail();
   }
 }
 
@@ -226,9 +226,9 @@ function ContactValueRow({
   );
 
   const copy = async () => {
-    const success = await Clipboard.setStringAsync(value);
-    if (!success) return;
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const copiedToClipboard = await Clipboard.setStringAsync(value);
+    if (!copiedToClipboard) return;
+    await success();
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 1_500);
@@ -315,10 +315,10 @@ export function ContactFormSheet({
     if (!result.success) {
       setSaving(false);
       setError(result.error);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      await fail();
       return;
     }
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    await success();
     setSaving(false);
     onSaved(result.contact);
   };

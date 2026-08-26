@@ -12,8 +12,7 @@ import {
   X,
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -22,9 +21,21 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 
 import { OrdiloButton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
+import { fail, select, success } from "@/src/lib/feedback";
+import { listItemEntering } from "@/src/theme/motion";
 import {
   CHAT_FEEDBACK_REASONS,
   getActionContent,
@@ -44,6 +55,44 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  * (app/suche.tsx) owns state, streaming and networking. All copy is
  * German and mirrors the web (src/app/(app)/suche).
  */
+
+/**
+ * Three warm dots pulsing in turn — the "Ordilo denkt nach" signal.
+ * Calmer than a spinner and on-brand. Static under reduce-motion.
+ */
+function ThinkingDot({ delay }: { delay: number }) {
+  const opacity = useSharedValue(0.3);
+  const reduceMotion = useReducedMotion();
+
+  useEffect(() => {
+    if (reduceMotion) {
+      opacity.value = 0.8;
+      return;
+    }
+    opacity.value = withDelay(
+      delay,
+      withRepeat(
+        withTiming(1, { duration: 480, easing: Easing.inOut(Easing.ease) }),
+        -1,
+        true,
+      ),
+    );
+    return () => cancelAnimation(opacity);
+  }, [delay, opacity, reduceMotion]);
+
+  const pulse = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return <Animated.View style={[styles.thinkingDot, pulse]} />;
+}
+
+function ThinkingDots() {
+  return (
+    <View accessibilityElementsHidden style={styles.thinkingDots}>
+      {[0, 1, 2].map((index) => (
+        <ThinkingDot delay={index * 180} key={index} />
+      ))}
+    </View>
+  );
+}
 
 /** One live status line while Ordilo works (ported from the web). */
 export function ChatStatusLine({
@@ -66,7 +115,7 @@ export function ChatStatusLine({
       accessibilityLiveRegion="polite"
       style={styles.statusLine}
     >
-      <ActivityIndicator color={colors.harborBlue} size="small" />
+      <ThinkingDots />
       <Text style={styles.statusText}>{label}</Text>
     </View>
   );
@@ -124,25 +173,29 @@ export function SourcesSection({
           : `Passende Dokumente (${sources.length})`}
       </Text>
       {visible.map((source, index) => (
-        <Pressable
-          accessibilityHint="Öffnet das Dokument"
-          accessibilityLabel={source.title || "Dokument"}
-          accessibilityRole="button"
+        <Animated.View
+          entering={listItemEntering(index, 60)}
           key={`${source.document_id}-${index}`}
-          onPress={() => onOpenDocument(source.document_id)}
-          style={({ pressed }) => [styles.sourceCard, pressed && styles.pressed]}
         >
-          <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
-          <View style={styles.sourceCopy}>
-            <Text numberOfLines={1} style={styles.sourceTitle}>
-              {source.title || "Dokument"}
-            </Text>
-            <Text numberOfLines={2} style={styles.sourceExcerpt}>
-              {source.excerpt}
-            </Text>
-          </View>
-          <ChevronRight color={colors.mistDark} size={16} />
-        </Pressable>
+          <Pressable
+            accessibilityHint="Öffnet das Dokument"
+            accessibilityLabel={source.title || "Dokument"}
+            accessibilityRole="button"
+            onPress={() => onOpenDocument(source.document_id)}
+            style={({ pressed }) => [styles.sourceCard, pressed && styles.pressed]}
+          >
+            <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
+            <View style={styles.sourceCopy}>
+              <Text numberOfLines={1} style={styles.sourceTitle}>
+                {source.title || "Dokument"}
+              </Text>
+              <Text numberOfLines={2} style={styles.sourceExcerpt}>
+                {source.excerpt}
+              </Text>
+            </View>
+            <ChevronRight color={colors.mistDark} size={16} />
+          </Pressable>
+        </Animated.View>
       ))}
       {rest.length > 0 ? (
         <Pressable
@@ -423,16 +476,16 @@ export function FeedbackRow({
       await onSend(feedback, reasons, comment);
       setThanks(true);
       setPanelOpen(false);
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await success();
     } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      await fail();
     } finally {
       setSending(false);
     }
   };
 
   const toggleReason = (reason: ChatFeedbackReason) => {
-    void Haptics.selectionAsync();
+    select();
     setReasons((current) =>
       current.includes(reason)
         ? current.filter((item) => item !== reason)
@@ -600,6 +653,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   statusText: { color: colors.mistDark, ...typography.timestamp },
+  thinkingDots: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    height: 16,
+  },
+  thinkingDot: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: 3,
+    height: 6,
+    width: 6,
+  },
   bubbleRow: { flexDirection: "row", paddingHorizontal: spacing.xs },
   bubbleRowUser: { justifyContent: "flex-end" },
   bubble: {
@@ -756,7 +821,8 @@ const styles = StyleSheet.create({
   },
   composer: {
     alignItems: "flex-end",
-    backgroundColor: colors.warmWhite,
+    // Transparent: the floating dock in suche.tsx supplies blur + tint.
+    backgroundColor: "transparent",
     borderColor: colors.mistLight,
     borderRadius: radii.lg,
     borderWidth: 1,

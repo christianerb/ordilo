@@ -1,5 +1,4 @@
 import { useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   ArrowRight,
   Camera,
@@ -19,6 +18,7 @@ import {
   View,
 } from "react-native";
 
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
@@ -32,6 +32,7 @@ import {
 } from "@/src/lib/onboarding-actions";
 import { ROLE_CHIPS } from "@/src/lib/onboarding";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { success } from "@/src/lib/feedback";
 
 /**
  * The onboarding flow — a native 1:1 port of the web flow
@@ -205,7 +206,7 @@ export default function OnboardingScreen() {
           setServerError(result.error);
           return;
         }
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
         // Refresh the family state so the app gate sees the completion
         // marker, then land in the app (scan opens on top when chosen).
         await refresh();
@@ -435,7 +436,7 @@ export default function OnboardingScreen() {
           {step === "ready" && (
             <View style={styles.stepBody}>
               <View style={styles.readyHeader}>
-                <OrdiloMark size={72} />
+                <OrdiloCharacter size={88} />
                 <Text style={[typography.display, styles.readyTitle]}>
                   {familyName
                     ? `${familyName} ist startklar!`

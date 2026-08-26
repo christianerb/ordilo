@@ -1,5 +1,4 @@
 import { useFocusEffect, useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
 import {
   AlertCircle,
   ArrowLeft,
@@ -12,7 +11,6 @@ import {
 } from "lucide-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   RefreshControl,
   SectionList,
@@ -32,7 +30,13 @@ import {
   getWhatsAppHref,
   openContactHref,
 } from "@/src/components/contacts";
-import { EmptyState, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import {
+  EmptyState,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+} from "@/src/components/ui";
 import {
   filterContacts,
   getContactReachLine,
@@ -45,6 +49,7 @@ import {
 } from "@/src/lib/contacts";
 import { useFamily } from "@/src/lib/family-context";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { select } from "@/src/lib/feedback";
 
 /**
  * Kontakte — the family address book as a native list.
@@ -115,11 +120,9 @@ export default function ContactsScreen() {
 
   if (loading && contacts.length === 0) {
     return (
-      <Screen style={styles.center}>
-        <ActivityIndicator
-          accessibilityLabel="Kontakte werden geladen"
-          color={colors.harborBlue}
-        />
+      <Screen>
+        <ListHeader title="Kontakte" onBack={() => router.back()} />
+        <ListSkeleton rows={5} />
       </Screen>
     );
   }
@@ -397,7 +400,7 @@ function SwipeableContactRow({
       <ReanimatedSwipeable
         ref={swipeableRef}
         friction={2}
-        onSwipeableWillOpen={() => void Haptics.selectionAsync()}
+        onSwipeableWillOpen={() => select()}
         overshootRight={false}
         renderRightActions={() => (
           <View style={styles.swipeActions}>

@@ -42,3 +42,4 @@ coverage/
 # committed). Scoped to the root so bundled app assets (e.g.
 # apps/mobile/assets/images/*.png) remain committable.
 /*.png
+.worktrees

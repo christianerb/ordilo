@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
-import * as Haptics from "expo-haptics";
-import { ArrowLeft, MessageCircleQuestion, Plus } from "lucide-react-native";
+import { BlurView } from "expo-blur";
+import { ArrowLeft, Plus } from "lucide-react-native";
 import { useCallback, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -12,6 +12,8 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   ActionCardView,
@@ -22,7 +24,10 @@ import {
   MessageBubble,
   SourcesSection,
 } from "@/src/components/chat";
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloButton, Screen } from "@/src/components/ui";
+import { fail, success, tap } from "@/src/lib/feedback";
+import { contentEntering, listItemEntering } from "@/src/theme/motion";
 import {
   applyChatEvent,
   buildChatHistory,
@@ -59,10 +64,13 @@ function httpStatusOf(error: unknown): number {
 export default function SucheScreen() {
   const router = useRouter();
   const { family } = useFamily();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  /** Measured dock height so the list clears the floating composer. */
+  const [dockHeight, setDockHeight] = useState(0);
 
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
@@ -119,7 +127,7 @@ export default function SucheScreen() {
     ) => {
       if (!family) return;
       lastQuestion.current = question;
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      tap();
       setBusy(true);
 
       try {
@@ -139,9 +147,7 @@ export default function SucheScreen() {
               applyChatEvent(message, event),
             );
             if (event.type === "done") {
-              void Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Success,
-              );
+              void success();
             }
           },
         );
@@ -159,7 +165,7 @@ export default function SucheScreen() {
           text: status === 429 ? CHAT_RATE_LIMIT_MESSAGE : CHAT_ERROR_MESSAGE,
           status: status === 429 ? "rate_limited" : "error",
         }));
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       } finally {
         setBusy(false);
       }
@@ -245,7 +251,7 @@ export default function SucheScreen() {
           state: "confirmed",
           undo,
         }));
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       } catch {
         updateAction(messageId, action.id, (current) => ({
           ...current,
@@ -253,7 +259,7 @@ export default function SucheScreen() {
           error: "Das hat nicht geklappt. Bitte versuch es nochmal.",
           errorOperation: "confirm",
         }));
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       }
     },
     [family, updateAction],
@@ -281,7 +287,7 @@ export default function SucheScreen() {
           ...current,
           state: "undone",
         }));
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void success();
       } catch {
         updateAction(messageId, action.id, (current) => ({
           ...current,
@@ -289,7 +295,7 @@ export default function SucheScreen() {
           error: "Rückgängig machen hat nicht geklappt.",
           errorOperation: "undo",
         }));
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void fail();
       }
     },
     [family, updateAction],
@@ -384,7 +390,10 @@ export default function SucheScreen() {
         style={styles.flex}
       >
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[
+            styles.content,
+            { paddingBottom: dockHeight + spacing.md },
+          ]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() =>
@@ -395,43 +404,44 @@ export default function SucheScreen() {
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <MessageCircleQuestion
-                  color={colors.mist}
-                  size={36}
-                  strokeWidth={1.5}
-                />
-              </View>
+              <OrdiloCharacter size={96} />
               <Text style={styles.emptyHeading}>Wie kann ich dir helfen?</Text>
               <Text style={styles.emptyText}>
                 Frag mich zu deinen Dokumenten, Terminen oder Aufgaben. Ich
                 kenne alles, was du gescannt hast.
               </Text>
               <View style={styles.examples}>
-                {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
-                  <Pressable
-                    accessibilityHint="Stellt diese Frage an Ordilo"
-                    accessibilityLabel={prompt}
-                    accessibilityRole="button"
-                    disabled={busy}
-                    key={prompt}
-                    onPress={() => void send(prompt)}
-                    style={({ pressed }) => [
-                      styles.exampleChip,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.exampleChipText}>{prompt}</Text>
-                  </Pressable>
+                {CHAT_EXAMPLE_PROMPTS.map((prompt, index) => (
+                  <Animated.View entering={listItemEntering(index, 70)} key={prompt}>
+                    <Pressable
+                      accessibilityHint="Stellt diese Frage an Ordilo"
+                      accessibilityLabel={prompt}
+                      accessibilityRole="button"
+                      disabled={busy}
+                      onPress={() => void send(prompt)}
+                      style={({ pressed }) => [
+                        styles.exampleChip,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.exampleChipText}>{prompt}</Text>
+                    </Pressable>
+                  </Animated.View>
                 ))}
               </View>
             </View>
           ) : (
             messages.map((message) =>
               message.role === "user" ? (
-                <MessageBubble key={message.id} message={message} />
+                <Animated.View entering={contentEntering()} key={message.id}>
+                  <MessageBubble message={message} />
+                </Animated.View>
               ) : (
-                <View key={message.id} style={styles.assistantBlock}>
+                <Animated.View
+                  entering={contentEntering()}
+                  key={message.id}
+                  style={styles.assistantBlock}
+                >
                   {message.status === "streaming" ? (
                     <ChatStatusLine
                       hasText={message.text.length > 0}
@@ -483,19 +493,31 @@ export default function SucheScreen() {
                       />
                     ) : null}
                   </MessageBubble>
-                </View>
+                </Animated.View>
               ),
             )
           )}
         </ScrollView>
 
-        <ChatComposer
-          busy={busy}
-          inputRef={inputRef}
-          onChange={setInput}
-          onSend={() => void send(input)}
-          value={input}
-        />
+        {/* Floating composer: the conversation scrolls under a frosted
+            dock — the iOS-native depth cue, kept warm with a paper tint. */}
+        <View
+          onLayout={(event) => setDockHeight(event.nativeEvent.layout.height)}
+          style={[
+            styles.composerDock,
+            { paddingBottom: Math.max(insets.bottom, spacing.sm) },
+          ]}
+        >
+          <BlurView intensity={60} style={StyleSheet.absoluteFill} tint="light" />
+          <View style={styles.composerTint} pointerEvents="none" />
+          <ChatComposer
+            busy={busy}
+            inputRef={inputRef}
+            onChange={setInput}
+            onSend={() => void send(input)}
+            value={input}
+          />
+        </View>
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -543,13 +565,23 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: spacing.lg,
   },
-  emptyIcon: {
-    alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: radii.pill,
-    height: 80,
-    justifyContent: "center",
-    width: 80,
+  composerDock: {
+    bottom: 0,
+    gap: spacing.sm,
+    left: 0,
+    overflow: "hidden",
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
+    position: "absolute",
+    right: 0,
+  },
+  composerTint: {
+    backgroundColor: "rgba(253, 252, 250, 0.72)",
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
   },
   emptyHeading: { color: colors.graphite, textAlign: "center", ...typography.display },
   emptyText: {

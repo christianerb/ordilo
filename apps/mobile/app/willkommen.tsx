@@ -19,6 +19,7 @@ import {
   type GestureResponderEvent,
 } from "react-native";
 
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
@@ -121,7 +122,7 @@ export default function WelcomeScreen() {
           {!isCard ? (
             <View style={styles.arrival}>
               <View style={styles.arrivalMark}>
-                <OrdiloMark size={88} />
+                <OrdiloCharacter size={96} />
               </View>
               <Text style={styles.arrivalTitle}>Willkommen in der Familie</Text>
               <Text style={[typography.body, styles.arrivalText]}>
