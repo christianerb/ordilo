@@ -1,6 +1,7 @@
 import { ApiError, apiFetch } from "./api";
 import { getSupabase } from "./supabase";
 import * as FileSystem from "expo-file-system/legacy";
+import { File } from "expo-file-system";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_FILE_SIZE,
@@ -209,23 +210,18 @@ export function validateScannedDocument(
 }
 
 /**
- * Sends the same multipart payload as the web scanner. React Native accepts
- * a `{ uri, name, type }` descriptor in FormData; casting to Blob keeps the
- * DOM-oriented TypeScript definition out of the native call site.
+ * Expo's File implements Blob, which lets the native fetch runtime stream the
+ * staged file as a real multipart part. The older `{ uri, name, type }`
+ * descriptor is not reliably serialized by the current React Native fetch
+ * stack and arrived as an empty request on device.
  */
 export async function uploadScannedDocument(
   document: ScannedDocument,
   familyId: string,
 ): Promise<ScanUploadResponse> {
   const formData = new FormData();
-  formData.append(
-    "file",
-    {
-      uri: document.uri,
-      name: document.name,
-      type: document.mimeType,
-    } as unknown as Blob,
-  );
+  const file = new File(document.uri);
+  formData.append("file", file, document.name);
   formData.append("family_id", familyId);
 
   const response = await apiFetch("/api/documents/upload", {

@@ -5,6 +5,7 @@ import {
   ChevronUp,
   Copy,
   FileText,
+  Mic,
   RotateCcw,
   Send,
   ThumbsDown,
@@ -13,15 +14,24 @@ import {
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  type GestureResponderEvent,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from "react-native";
+import Animated, {
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+  type SharedValue,
+} from "react-native-reanimated";
 
 import { OrdiloButton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
@@ -539,56 +549,282 @@ function CopyAnswerButton({ text }: { text: string }) {
   );
 }
 
-/** Bottom composer: one field, one big send target. */
+const VOICE_WAVE_SAMPLES = 11;
+
+function VoiceWaveBar({
+  sample,
+}: {
+  sample: SharedValue<number>;
+}) {
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scaleY: Math.max(0.16, sample.get()) }],
+  }));
+  return <Animated.View style={[styles.voiceBar, style]} />;
+}
+
+/**
+ * A short rolling audio history, rather than five copies of the current
+ * meter. Reanimated keeps each bar's settling motion off the JS thread.
+ */
+function VoiceWaveform({ level }: { level: number }) {
+  const reduceMotion = useReducedMotion();
+  const samples = [
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+  ];
+  const samplesRef = useRef(samples);
+
+  useEffect(() => {
+    const next = Math.max(0.16, Math.min(1, level));
+    const values = samplesRef.current.map((sample) => sample.get());
+    const duration = reduceMotion ? 0 : 120;
+    samplesRef.current.forEach((sample, index) => {
+      sample.set(
+        withTiming(
+          index === VOICE_WAVE_SAMPLES - 1 ? next : values[index + 1]!,
+          { duration, reduceMotion: ReduceMotion.System },
+        ),
+      );
+    });
+  }, [level, reduceMotion]);
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.voiceWave}
+    >
+      {samples.map((sample, index) => (
+        <VoiceWaveBar key={index} sample={sample} />
+      ))}
+    </View>
+  );
+}
+
+function VoiceRecordingPanel({
+  durationMillis,
+  discardArmed,
+  locked,
+  level,
+  onCancel,
+  onFinish,
+}: {
+  durationMillis: number;
+  discardArmed: boolean;
+  locked: boolean;
+  level: number;
+  onCancel: () => void;
+  onFinish: () => void;
+}) {
+  const status = discardArmed
+    ? "Loslassen zum Verwerfen"
+    : locked
+      ? "Aufnahme gesperrt"
+      : "Sprich jetzt";
+  const instruction = discardArmed
+    ? "Die Aufnahme wird nicht übernommen."
+    : locked
+      ? "Tippe auf Fertig, wenn du fertig bist."
+      : "Nach links ziehen zum Verwerfen. Nach oben ziehen zum Sperren.";
+
+  return (
+    <View
+      accessibilityLabel={`${status}, ${formatVoiceDuration(durationMillis)}`}
+      accessibilityLiveRegion="polite"
+      style={[
+        styles.voicePanel,
+        discardArmed && styles.voicePanelDiscard,
+      ]}
+    >
+      <View style={styles.voicePanelHeader}>
+        <View style={styles.voicePanelStatus}>
+          <View
+            accessibilityElementsHidden
+            style={[
+              styles.voiceRecordingDot,
+              discardArmed && styles.voiceRecordingDotDiscard,
+            ]}
+          />
+          <Text style={styles.voicePanelTitle}>{status}</Text>
+        </View>
+        <Text style={styles.voiceDuration}>
+          {formatVoiceDuration(durationMillis)}
+        </Text>
+      </View>
+      <VoiceWaveform level={level} />
+      <Text style={styles.voiceInstruction}>{instruction}</Text>
+      {locked ? (
+        <View style={styles.voicePanelActions}>
+          <Pressable
+            accessibilityLabel="Aufnahme verwerfen"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onCancel}
+            style={({ pressed }) => [
+              styles.voicePanelSecondaryAction,
+              pressed && styles.pressed,
+            ]}
+          >
+            <X color={colors.mistDark} size={18} strokeWidth={2} />
+            <Text style={styles.voicePanelSecondaryText}>Verwerfen</Text>
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Aufnahme beenden"
+            accessibilityRole="button"
+            onPress={onFinish}
+            style={({ pressed }) => [
+              styles.voicePanelPrimaryAction,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.voicePanelPrimaryText}>Fertig</Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/** Bottom composer with a dedicated, stable recording context above it. */
 export function ChatComposer({
   busy,
   inputRef,
   onChange,
   onSend,
+  onVoicePressIn,
+  onVoicePressMove,
+  onVoicePressOut,
+  onVoiceCancel,
+  onVoiceFinish,
   value,
+  voiceDurationMillis = 0,
+  voiceDiscardArmed = false,
+  voiceLocked = false,
+  voiceLevel = 0,
+  voiceStatus = "idle",
 }: {
   busy: boolean;
   inputRef: React.RefObject<TextInput | null>;
   onChange: (value: string) => void;
   onSend: () => void;
+  onVoicePressIn?: (event: GestureResponderEvent) => void;
+  onVoicePressMove?: (event: GestureResponderEvent) => void;
+  onVoicePressOut?: (event: GestureResponderEvent) => void;
+  onVoiceCancel?: () => void;
+  onVoiceFinish?: () => void;
   value: string;
+  voiceDurationMillis?: number;
+  voiceDiscardArmed?: boolean;
+  voiceLocked?: boolean;
+  voiceLevel?: number;
+  voiceStatus?: "idle" | "starting" | "recording" | "transcribing";
 }) {
   const canSend = value.trim().length > 0 && !busy;
+  const recording = voiceStatus === "recording";
+  const voiceWorking = voiceStatus === "starting" || voiceStatus === "transcribing";
+  const voiceEnabled = !busy && !voiceWorking;
   return (
-    <View style={styles.composer}>
-      <TextInput
-        accessibilityLabel="Frage an Ordilo"
-        autoCapitalize="sentences"
-        multiline
-        onChangeText={onChange}
-        onSubmitEditing={canSend ? onSend : undefined}
-        placeholder="Frage Ordilo …"
-        placeholderTextColor={colors.mistDark}
-        ref={inputRef}
-        returnKeyType="send"
-        style={styles.composerInput}
-        value={value}
-      />
-      <Pressable
-        accessibilityLabel="Frage senden"
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !canSend }}
-        disabled={!canSend}
-        onPress={onSend}
-        style={({ pressed }) => [
-          styles.composerSend,
-          !canSend && styles.composerSendDisabled,
-          pressed && styles.pressed,
-        ]}
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.warmWhite} size="small" />
-        ) : (
-          <Send color={colors.warmWhite} size={18} strokeWidth={2} />
-        )}
-      </Pressable>
+    <View style={styles.composerStack}>
+      {recording ? (
+        <VoiceRecordingPanel
+          discardArmed={voiceDiscardArmed}
+          durationMillis={voiceDurationMillis}
+          level={voiceLevel}
+          locked={voiceLocked}
+          onCancel={() => onVoiceCancel?.()}
+          onFinish={() => onVoiceFinish?.()}
+        />
+      ) : null}
+      <View style={styles.composer}>
+        <TextInput
+          accessibilityLabel="Frage an Ordilo"
+          accessibilityState={{ disabled: recording || voiceWorking }}
+          autoCapitalize="sentences"
+          editable={!recording && !voiceWorking}
+          multiline
+          onChangeText={onChange}
+          onSubmitEditing={canSend ? onSend : undefined}
+          placeholder="Frage Ordilo …"
+          placeholderTextColor={colors.mistDark}
+          ref={inputRef}
+          returnKeyType="send"
+          style={styles.composerInput}
+          value={value}
+        />
+        <View style={styles.composerActions}>
+          <Pressable
+            accessibilityHint={
+              recording
+                ? voiceLocked
+                  ? "Aufnahme gesperrt. Tippe auf Fertig."
+                  : "Gedrückt halten. Nach links zum Verwerfen, nach oben zum Sperren."
+                : "Gedrückt halten und sprechen"
+            }
+            accessibilityLabel={
+              voiceStatus === "transcribing"
+                ? "Sprache wird in Text umgewandelt"
+                : recording
+                  ? "Aufnahme läuft"
+                  : "Sprachfrage aufnehmen"
+            }
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !voiceEnabled }}
+            disabled={!voiceEnabled}
+            hitSlop={6}
+            onPressIn={onVoicePressIn}
+            onPressMove={onVoicePressMove}
+            onPressOut={onVoicePressOut}
+            pressRetentionOffset={16}
+            style={({ pressed }) => [
+              styles.voiceButton,
+              recording && styles.voiceButtonRecording,
+              pressed && styles.pressed,
+              !voiceEnabled && styles.composerSendDisabled,
+            ]}
+          >
+            {voiceWorking ? (
+              <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : (
+              <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
+            )}
+          </Pressable>
+          {canSend ? (
+            <Pressable
+              accessibilityLabel="Frage senden"
+              accessibilityRole="button"
+              disabled={recording}
+              onPress={onSend}
+              style={({ pressed }) => [
+                styles.composerSend,
+                recording && styles.composerSendDisabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color={colors.warmWhite} size="small" />
+              ) : (
+                <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+              )}
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
     </View>
   );
+}
+
+function formatVoiceDuration(durationMillis: number): string {
+  const seconds = Math.max(0, Math.floor(durationMillis / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -754,6 +990,7 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     ...typography.body,
   },
+  composerStack: { gap: spacing.sm },
   composer: {
     alignItems: "flex-end",
     backgroundColor: colors.warmWhite,
@@ -773,6 +1010,11 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     ...typography.body,
   },
+  composerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
   composerSend: {
     alignItems: "center",
     backgroundColor: colors.harborBlue,
@@ -782,5 +1024,88 @@ const styles = StyleSheet.create({
     width: 44,
   },
   composerSendDisabled: { opacity: 0.4 },
+  voiceButton: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  voiceButtonRecording: {
+    backgroundColor: colors.warmApricot,
+  },
+  voicePanel: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  voicePanelDiscard: {
+    backgroundColor: colors.sandWarm,
+    borderColor: colors.warmApricot,
+  },
+  voicePanelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  voicePanelStatus: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  voiceRecordingDot: {
+    backgroundColor: colors.warmApricot,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
+  },
+  voiceRecordingDotDiscard: { backgroundColor: colors.destructive },
+  voicePanelTitle: { color: colors.graphite, ...typography.title },
+  voiceDuration: { color: colors.mistDark, ...typography.timestamp },
+  voiceInstruction: {
+    color: colors.mistDark,
+    textAlign: "center",
+    ...typography.label,
+  },
+  voicePanelActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "flex-end",
+  },
+  voicePanelSecondaryAction: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  voicePanelSecondaryText: { color: colors.mistDark, ...typography.label },
+  voicePanelPrimaryAction: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.sm,
+    height: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+  },
+  voicePanelPrimaryText: { color: colors.warmWhite, ...typography.label },
+  voiceWave: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    height: 32,
+    justifyContent: "center",
+  },
+  voiceBar: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 24,
+    width: 3,
+  },
   pressed: { opacity: 0.76 },
 });

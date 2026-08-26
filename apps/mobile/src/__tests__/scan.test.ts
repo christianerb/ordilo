@@ -6,6 +6,7 @@ import {
   MAX_SCAN_FILE_SIZE,
   persistScanQueue,
   stageScannedDocument,
+  uploadScannedDocument,
   validateScannedDocument,
 } from "../lib/scan";
 
@@ -37,6 +38,17 @@ jest.mock("expo-file-system/legacy", () => ({
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("expo-file-system", () => ({
+  File: class MockNativeFile extends Blob {
+    uri: string;
+
+    constructor(uri: string) {
+      super(["scan"], { type: "image/jpeg" });
+      this.uri = uri;
+    }
+  },
 }));
 
 beforeEach(() => {
@@ -97,6 +109,29 @@ describe("native scan helpers", () => {
       ["/api/documents/document-1/analyze", { method: "POST" }],
     ]);
     expect(steps).toEqual(["ocr", "analysis"]);
+  });
+
+  it("sends the staged file as a real multipart Blob", async () => {
+    mockApiFetch.mockResolvedValue({
+      json: async () => ({
+        document_id: "document-1",
+        server_pipeline: true,
+        status: "uploaded",
+      }),
+    } as Response);
+
+    await uploadScannedDocument(
+      {
+        id: "scan-1",
+        uri: "file:///documents/ordilo-scan/scan-1.jpg",
+        name: "scan-1.jpg",
+        mimeType: "image/jpeg",
+      },
+      "family-1",
+    );
+
+    const [, options] = mockApiFetch.mock.calls[0];
+    expect(options?.body).toBeInstanceOf(FormData);
   });
 
   it("resumes an analysis retry without repeating OCR", async () => {
