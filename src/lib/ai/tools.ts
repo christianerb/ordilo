@@ -291,7 +291,8 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "Listet Dokumente der Familie VOLLSTAENDIG und deterministisch auf — " +
         "gefiltert nach Typ, Kategorie/Sammlung, Person oder Jahr, chronologisch sortiert. " +
         "Verwende dies fuer Aufzaehlungs-Fragen wie 'Zeig mir alle Rechnungen', " +
-        "'Welche Dokumente haben wir von 2026?' oder 'Alle Dokumente von Emma' — " +
+        "'Welche Dokumente haben wir von 2026?', 'Alle Dokumente von Emma' oder " +
+        "'Dokumente zu Emma' — " +
         "NICHT search_documents (das ist Aehnlichkeitssuche mit Top-10-Limit).",
       parameters: {
         type: "object",

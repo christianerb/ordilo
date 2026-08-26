@@ -20,7 +20,6 @@ import {
   Text,
   TextInput,
   View,
-  type GestureResponderEvent,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -86,7 +85,6 @@ export default function SucheScreen() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
-  const [voiceLocked, setVoiceLocked] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [composerHeight, setComposerHeight] = useState(0);
 
@@ -94,9 +92,7 @@ export default function SucheScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
-  const voiceStartY = useRef<number | null>(null);
   const voiceIntent = useRef(false);
-  const voiceLockedRef = useRef(false);
   const voiceStatusRef = useRef<VoiceStatus>("idle");
   const transcriptionAbortController = useRef<AbortController | null>(null);
   const autoStoppingVoice = useRef(false);
@@ -393,9 +389,6 @@ export default function SucheScreen() {
   const resetVoiceUi = useCallback(() => {
     voiceStatusRef.current = "idle";
     setVoiceStatus("idle");
-    setVoiceLocked(false);
-    voiceStartY.current = null;
-    voiceLockedRef.current = false;
     autoStoppingVoice.current = false;
   }, []);
 
@@ -423,14 +416,12 @@ export default function SucheScreen() {
   );
 
   const finishVoice = useCallback(
-    async (force = false, reachedDurationLimit = false) => {
+    async (reachedDurationLimit = false) => {
       if (voiceStatusRef.current === "starting") {
         await discardVoiceRecording({ feedback: false });
         return;
       }
       if (voiceStatusRef.current !== "recording") return;
-      if (voiceLockedRef.current && !force) return;
-
       voiceIntent.current = false;
       voiceStatusRef.current = "transcribing";
       setVoiceStatus("transcribing");
@@ -498,13 +489,10 @@ export default function SucheScreen() {
     ],
   );
 
-  const startVoice = useCallback(async (event: GestureResponderEvent) => {
+  const startVoice = useCallback(async () => {
     if (busy || voiceStatusRef.current !== "idle") return;
     setVoiceError(null);
-    voiceStartY.current = event.nativeEvent.pageY;
     voiceIntent.current = true;
-    voiceLockedRef.current = false;
-    setVoiceLocked(false);
     voiceStatusRef.current = "starting";
     setVoiceStatus("starting");
     const permission = await AudioModule.requestRecordingPermissionsAsync();
@@ -529,33 +517,13 @@ export default function SucheScreen() {
       voiceStatusRef.current = "recording";
       setVoiceStatus("recording");
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      void AccessibilityInfo.announceForAccessibility(
-        "Aufnahme läuft. Nach oben ziehen zum Sperren.",
-      );
+      void AccessibilityInfo.announceForAccessibility("Aufnahme läuft.");
     } catch {
       await discardVoiceRecording({ feedback: false });
       setVoiceError("Die Aufnahme konnte nicht gestartet werden.");
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [busy, discardVoiceRecording, recorder, resetVoiceUi]);
-
-  const moveVoice = useCallback((event: GestureResponderEvent) => {
-    if (
-      voiceStatusRef.current !== "recording" ||
-      voiceStartY.current === null ||
-      voiceLockedRef.current
-    ) {
-      return;
-    }
-    if (event.nativeEvent.pageY - voiceStartY.current < -72) {
-      voiceLockedRef.current = true;
-      setVoiceLocked(true);
-      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      void AccessibilityInfo.announceForAccessibility(
-        "Aufnahme gesperrt. Tippe auf Fertig, wenn du fertig bist.",
-      );
-    }
-  }, []);
 
   useEffect(() => {
     if (
@@ -565,7 +533,7 @@ export default function SucheScreen() {
     ) {
       autoStoppingVoice.current = true;
       const timeout = setTimeout(() => {
-        void finishVoice(true, true);
+        void finishVoice(true);
       }, 0);
       return () => clearTimeout(timeout);
     }
@@ -745,15 +713,12 @@ export default function SucheScreen() {
             inputRef={inputRef}
             onChange={setInput}
             onSend={() => void send(input)}
-            onVoicePressIn={(event) => void startVoice(event)}
-            onVoicePressMove={moveVoice}
-            onVoicePressOut={() => void finishVoice()}
+            onVoiceStart={() => void startVoice()}
             onVoiceCancel={() => void discardVoiceRecording()}
-            onVoiceFinish={() => void finishVoice(true)}
+            onVoiceFinish={() => void finishVoice()}
             value={input}
             voiceDurationMillis={recorderState.durationMillis}
             voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
-            voiceLocked={voiceLocked}
             voiceStatus={voiceStatus}
           />
         </View>

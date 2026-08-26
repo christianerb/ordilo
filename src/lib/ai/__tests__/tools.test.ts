@@ -887,6 +887,67 @@ describe("list_documents", () => {
     expect(parsed.total).toBe(0);
     expect(parsed.message).toContain("Keine passenden Dokumente");
   });
+
+  it("lists a named person's confirmed documents deterministically", async () => {
+    const makeBuilder = (result: { data: unknown; error: null }) => {
+      const chain: Record<string, unknown> = {};
+      for (const method of ["select", "eq", "ilike", "in", "order", "limit"]) {
+        chain[method] = vi.fn().mockReturnValue(chain);
+      }
+      chain.then = (resolve: (value: unknown) => void) =>
+        Promise.resolve(result).then(resolve);
+      return chain;
+    };
+    const documents = [
+      {
+        id: "doc-emma-1",
+        title: "Kita-Brief",
+        document_type: "letter",
+        category: "Kita",
+        created_at: "2026-08-01T10:00:00Z",
+        confirmed_at: "2026-08-02T10:00:00Z",
+      },
+    ];
+    const ctx: ToolContext = {
+      client: {
+        from: vi.fn((table: string) =>
+          makeBuilder(
+            table === "extracted_entities"
+              ? {
+                  data: [
+                    {
+                      document_id: "doc-emma-1",
+                      normalized_value: "emma",
+                    },
+                  ],
+                  error: null,
+                }
+              : { data: documents, error: null },
+          ),
+        ),
+      } as unknown as ToolContext["client"],
+      familyId: "fam-1",
+      sources: [],
+      speakerName: null,
+    };
+
+    const result = JSON.parse(
+      await executeTool("list_documents", { person_name: "Emma" }, ctx),
+    );
+
+    expect(result).toMatchObject({
+      total: 1,
+      results: [{ document_id: "doc-emma-1", titel: "Kita-Brief" }],
+    });
+    expect(ctx.sources).toEqual([
+      {
+        document_id: "doc-emma-1",
+        title: "Kita-Brief",
+        excerpt: "",
+        score: 1,
+      },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

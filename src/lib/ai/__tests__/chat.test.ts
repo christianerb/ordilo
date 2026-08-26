@@ -238,6 +238,66 @@ function makeToolContext(
   };
 }
 
+function makeNamedMemberDocumentContext(): ToolContext {
+  const documents = [
+    {
+      id: "doc-emma-1",
+      title: "Kita-Brief",
+      document_type: "letter",
+      category: "Kita",
+      created_at: "2026-08-01T10:00:00Z",
+      confirmed_at: "2026-08-02T10:00:00Z",
+    },
+    {
+      id: "doc-emma-2",
+      title: "Schulzeugnis",
+      document_type: "school",
+      category: "Schule",
+      created_at: "2026-07-01T10:00:00Z",
+      confirmed_at: "2026-07-02T10:00:00Z",
+    },
+  ];
+
+  const builder = (result: { data: unknown; error: null; count?: number }) => {
+    const chain: Record<string, unknown> = {};
+    for (const method of ["select", "eq", "order", "limit", "ilike", "in"]) {
+      chain[method] = vi.fn().mockReturnValue(chain);
+    }
+    chain.then = (resolve: (value: unknown) => void) =>
+      Promise.resolve(result).then(resolve);
+    return chain;
+  };
+
+  return {
+    client: {
+      from: (table: string) => {
+        if (table === "family_members") {
+          return builder({
+            data: [{ name: "Emma", role: "Kind" }],
+            error: null,
+          });
+        }
+        if (table === "extracted_entities") {
+          return builder({
+            data: documents.map((document) => ({
+              document_id: document.id,
+              normalized_value: "emma",
+            })),
+            error: null,
+          });
+        }
+        if (table === "tasks") {
+          return builder({ data: [], error: null });
+        }
+        return builder({ data: documents, error: null, count: documents.length });
+      },
+    } as unknown as ToolContext["client"],
+    familyId: "660e8400-e29b-41d4-a716-446655440001",
+    sources: [],
+    speakerName: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // filterByRelevanceThreshold
 // ---------------------------------------------------------------------------
@@ -558,6 +618,11 @@ describe("buildAgenticSystemPrompt", () => {
   it("instructs to call as few tools as possible per question", () => {
     expect(prompt).toContain("GENAU EINS pro Frage");
   });
+
+  it("names the deterministic listing tool for a family member's documents", () => {
+    expect(prompt).toContain("Dokumente zu Emma");
+    expect(prompt).toContain("person_name");
+  });
 });
 
 describe("buildAgenticSystemPrompt — current date context", () => {
@@ -583,6 +648,72 @@ describe("buildAgenticSystemPrompt — current date context", () => {
     expect(buildAgenticSystemPrompt()).toMatch(
       /Heute ist \w+, \d{2}\.\d{2}\.\d{4} \(\d{4}-\d{2}-\d{2}\), \d{2}:\d{2} Uhr/,
     );
+  });
+});
+
+describe("streamAgenticAnswer — named member document listings", () => {
+  beforeEach(() => {
+    setApiKey();
+    mockCreate.mockReset();
+  });
+
+  it("lists Emma's documents without relying on model tool selection", async () => {
+    const stream = await streamAgenticAnswer(
+      "Dokumente zu Emma",
+      [],
+      makeNamedMemberDocumentContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(lines).toEqual([
+      { type: "tool", tool: "list_documents", state: "start" },
+      { type: "tool", tool: "list_documents", state: "done" },
+      {
+        type: "text",
+        content:
+          "Ich habe 2 bestätigte Dokumente zu Emma gefunden: „Kita-Brief“ und „Schulzeugnis“.",
+      },
+      {
+        type: "sources",
+        sources: [
+          {
+            document_id: "doc-emma-1",
+            title: "Kita-Brief",
+            excerpt: "",
+            score: 1,
+          },
+          {
+            document_id: "doc-emma-2",
+            title: "Schulzeugnis",
+            excerpt: "",
+            score: 1,
+          },
+        ],
+      },
+      { type: "done" },
+    ]);
+  });
+
+  it("keeps member-specific content questions in the agent flow", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Im Kita-Brief steht, dass das Sommerfest am Freitag ist." },
+      ]),
+    );
+
+    const stream = await streamAgenticAnswer(
+      "Was steht in Emmas Dokumenten?",
+      [],
+      makeNamedMemberDocumentContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(lines).toContainEqual({
+      type: "text",
+      content: "Im Kita-Brief steht, dass das Sommerfest am Freitag ist.",
+    });
   });
 });
 

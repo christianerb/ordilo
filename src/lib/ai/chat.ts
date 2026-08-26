@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import type { SearchResult } from "@/lib/schemas/search";
+import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
 import {
   FORBIDDEN_HEDGING_PHRASES,
   containsHedgingLanguage,
@@ -382,6 +383,7 @@ Heute ist ${currentDate.long} (${currentDate.iso}), ${currentDate.time} Uhr (Zei
 Du hast folgende Werkzeuge zur Verfuegung:
 - graph_query: Durchsucht den Knowledge Graph nach verwandten Entitaeten. Bevorzugt fuer relationale Fragen wie "Was muss Emma tun?", "Welche Dokumente von der Kita haben Fristen?", "Zeig mir alles von Emmas Arzt". Gibt Dokumente + Aufgaben + Fristen in einer Antwort.
 - search_documents: Semantische Dokumentensuche. Verwende dies fuer Stichwortsuche wie "Stromrechnung", "Kita-Brief" oder wenn graph_query keine Treffer liefert.
+- list_documents: Listet Dokumente vollstaendig und in fester Reihenfolge auf. Verwende dies fuer "alle Dokumente von Emma", "Dokumente zu Emma", "alle Rechnungen" oder Listen nach Jahr, Kategorie, Typ oder Person.
 - list_tasks: Listet Aufgaben auf, gefiltert nach Status oder Frist
 - add_task: Legt eine neue Aufgabe/Erinnerung an
 - list_family_members: Listet Familienmitglieder auf
@@ -408,6 +410,7 @@ STRENGE REGELN:
 6. Bei allgemeinen Fragen (Begruessung, Dank, Smalltalk) antworte natuerlich und freundlich, ohne Tools aufzurufen.
 6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
 6b. Rufe so wenige Tools wie moeglich auf — in der Regel GENAU EINS pro Frage. Mehrere Tools nur, wenn die Frage klar verschiedene Informationsarten verlangt (z.B. Dokumenteninhalt UND Aufgabenstatus).
+6c. Bei einer Frage nach Dokumenten zu, von oder ueber genau einem bekannten Familienmitglied verwende list_documents mit dessen person_name. Verwende dafuer NICHT graph_query oder search_documents.
 7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, update_task, mark_task_done, add_family_member, create_collection, create_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe das Tool GENAU EINMAL mit confirmed=false auf. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen willst (z.B. "Soll ich die Aufgabe 'Kita-Ausflug' (faellig 12.9.) anlegen?", "Soll ich '<aufgabentitel>' als erledigt markieren?", "Soll ich '<name>' als neues Familienmitglied hinzufuegen?"). Die App zeigt dem Nutzer dazu eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karte (z.B. "Tippe oben auf Uebernehmen").
 7a. move_document_to_collection und add_document_tags brauchen eine document_id — hole diese immer zuerst ueber search_documents oder graph_query, bevor du eines der beiden Tools aufrufst. update_task braucht eine task_id — hole sie zuerst ueber list_tasks oder graph_query.
 7b. WICHTIG: Behaupte NIEMALS in Text, dass du etwas angelegt, geaendert oder erledigt hast. Die Ausfuehrung siehst du nicht — sie passiert in der Aktionskarte, ausserhalb dieses Gespraechs. Sag niemals "Ich lege das fuer dich an" oder "Erledigt" — frage stattdessen nach der Bestaetigung (siehe Regel 7) oder verweise auf die Karte.
@@ -531,13 +534,154 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
   };
 }
 
+type ListedDocument = {
+  document_id: string;
+  titel: string | null;
+};
+
+function namedMemberDocumentListIntent(
+  query: string,
+  members: Array<{ name: string; role: string | null }>,
+): string | null {
+  // This wording is a request for a deterministic listing, not a semantic
+  // search. Route it before the model gets a chance to select a fuzzy tool.
+  if (!/\b(?:dokument(?:e|en)?|unterlagen|papiere)\b/ui.test(query)) {
+    return null;
+  }
+  if (isTaskQuery(query)) return null;
+  const asksForAList =
+    /\b(?:alle|welche|zeig(?:e)?|liste|auflistung)\b/ui.test(query) ||
+    /\b(?:dokument(?:e|en)?|unterlagen|papiere)\s+(?:zu|von|für|fuer)\b/ui.test(
+      query,
+    );
+  if (!asksForAList) return null;
+
+  const mentioned = findMentionedPeople(query, members);
+  return mentioned.length === 1 ? mentioned[0]! : null;
+}
+
+function parseListedDocuments(raw: string): {
+  documents: ListedDocument[];
+  total: number;
+  truncated: boolean;
+  failed: boolean;
+} {
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") {
+      return { documents: [], total: 0, truncated: false, failed: true };
+    }
+    const value = parsed as {
+      error?: unknown;
+      results?: unknown;
+      total?: unknown;
+      truncated?: unknown;
+    };
+    if (typeof value.error === "string") {
+      return { documents: [], total: 0, truncated: false, failed: true };
+    }
+    const documents = Array.isArray(value.results)
+      ? value.results.filter(
+          (item): item is ListedDocument =>
+            Boolean(item) &&
+            typeof item === "object" &&
+            typeof (item as ListedDocument).document_id === "string" &&
+            (typeof (item as ListedDocument).titel === "string" ||
+              (item as ListedDocument).titel === null),
+        )
+      : [];
+
+    return {
+      documents,
+      total:
+        typeof value.total === "number" && value.total >= 0
+          ? value.total
+          : documents.length,
+      truncated: value.truncated === true,
+      failed: false,
+    };
+  } catch {
+    return { documents: [], total: 0, truncated: false, failed: true };
+  }
+}
+
+function joinDocumentTitles(documents: ListedDocument[]): string {
+  const titles = documents
+    .map((document) => document.titel?.trim() || "Ohne Titel")
+    .map((title) => `„${title}“`);
+
+  if (titles.length === 1) return titles[0]!;
+  if (titles.length === 2) return `${titles[0]} und ${titles[1]}`;
+  return `${titles.slice(0, -1).join(", ")} und ${titles.at(-1)}`;
+}
+
+function formatNamedMemberDocumentList(
+  personName: string,
+  listing: ReturnType<typeof parseListedDocuments>,
+): string {
+  if (listing.total === 0) {
+    return `Zu ${personName} habe ich noch kein bestätigtes Dokument gefunden. ${personName} ist als Familienmitglied vorhanden, in den bestätigten Dokumenten wird der Name aber noch nicht genannt.`;
+  }
+
+  const shownDocuments = listing.documents.slice(0, 10);
+  const count = listing.total;
+  const noun = count === 1 ? "Dokument" : "Dokumente";
+  const firstSentence =
+    count === 1
+      ? `Ich habe ein bestätigtes ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`
+      : `Ich habe ${count} bestätigte ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`;
+
+  return listing.truncated
+    ? `${firstSentence} Die vollständige Liste ist auf 50 Dokumente begrenzt.`
+    : firstSentence;
+}
+
+function streamNamedMemberDocumentList(
+  personName: string,
+  toolContext: ToolContext,
+): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+
+  return new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: unknown) =>
+        controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+
+      try {
+        send({ type: "tool", tool: "list_documents", state: "start" });
+        const rawListing = await executeTool(
+          "list_documents",
+          { person_name: personName },
+          toolContext,
+        );
+        const listing = parseListedDocuments(rawListing);
+        if (listing.failed) throw new Error("Document listing failed.");
+        send({ type: "tool", tool: "list_documents", state: "done" });
+        send({
+          type: "text",
+          content: formatNamedMemberDocumentList(personName, listing),
+        });
+        send({ type: "sources", sources: toolContext.sources });
+        send({ type: "done" });
+      } catch {
+        send({ type: "tool", tool: "list_documents", state: "error" });
+        send({
+          type: "error",
+          error: "Die Dokumente konnten gerade nicht geladen werden.",
+          code: "CHAT_FAILED",
+        });
+      } finally {
+        controller.close();
+      }
+    },
+  });
+}
+
 export async function streamAgenticAnswer(
   query: string,
   history: HistoryMessage[],
   toolContext: ToolContext,
 ): Promise<ReadableStream<Uint8Array>> {
-  const client = getOpenAIClient();
-
   // Truncate history to fit within the token budget (context-window
   // management). Keeps the most recent messages, dropping older ones.
   const truncatedHistory = truncateHistory(history);
@@ -546,6 +690,12 @@ export async function streamAgenticAnswer(
   // document count, speaker identity). This lets the model answer
   // proactively without always needing to call tools first.
   const familyContext = await loadFamilyContext(toolContext);
+  const namedMember = namedMemberDocumentListIntent(query, familyContext.members);
+  if (namedMember) {
+    return streamNamedMemberDocumentList(namedMember, toolContext);
+  }
+
+  const client = getOpenAIClient();
   const systemPrompt = buildAgenticSystemPrompt(familyContext);
 
   const input: OpenAI.Responses.ResponseInput = [
