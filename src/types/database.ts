@@ -1534,9 +1534,39 @@ export type Database = {
         };
         Relationships: [];
       };
+      // voice_transcription_usage ----------------------------------------
+      voice_transcription_usage: {
+        Row: {
+          id: string;
+          family_id: string;
+          usage_date: string;
+          transcription_count: number;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          usage_date?: string;
+          transcription_count?: number;
+        };
+        Update: {
+          id?: string;
+          family_id?: string;
+          usage_date?: string;
+          transcription_count?: number;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
+      reserve_voice_transcription: {
+        Args: { p_family_id: string; p_limit: number };
+        Returns: {
+          allowed: boolean;
+          used: number;
+          remaining: number;
+        }[];
+      };
       search_family_contacts: {
         Args: { p_family_id: string; p_query: string; p_limit?: number };
         Returns: {

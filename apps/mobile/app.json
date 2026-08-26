@@ -10,10 +10,15 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ordilo.app",
+      "associatedDomains": [
+        "applinks:ordilo.de",
+        "applinks:www.ordilo.de"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
-        "NSMicrophoneUsageDescription": "Ordilo braucht das Mikrofon, damit du per Sprache Fragen stellen und suchen kannst.",
-        "NSSpeechRecognitionUsageDescription": "Ordilo erkennt deine gesprochenen Fragen, damit du sie nicht tippen musst."
+        "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst.",
+        "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist für die Scanner-Bibliothek erforderlich.",
+        "NSMicrophoneUsageDescription": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
       },
       "config": {
         "usesNonExemptEncryption": false
@@ -25,6 +30,28 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION"
       ],
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "ordilo.de",
+              "pathPrefix": "/invite"
+            },
+            {
+              "scheme": "https",
+              "host": "www.ordilo.de",
+              "pathPrefix": "/invite"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#FDFCFA",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -33,11 +60,20 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
         "android.permission.RECORD_AUDIO"
       ]
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst."
+        }
+      ],
+      "expo-notifications",
       [
         "expo-splash-screen",
         {
@@ -48,16 +84,16 @@
       ],
       "expo-secure-store",
       [
-        "expo-speech-recognition",
-        {
-          "microphonePermission": "Ordilo braucht das Mikrofon, damit du per Sprache Fragen stellen und suchen kannst.",
-          "speechRecognitionPermission": "Ordilo erkennt deine gesprochenen Fragen, damit du sie nicht tippen musst."
-        }
-      ],
-      [
         "expo-image-picker",
         {
           "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
+        }
+      ],
+      "expo-web-browser",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
         }
       ]
     ],
@@ -67,9 +103,15 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "b0396312-ad25-4c2c-afc4-25de0dd14f42"
+        "projectId": "c3106304-9b79-4ddc-a508-fb50fdb1fe0c"
       }
     },
-    "owner": "chrtothaizzo"
+    "owner": "venturebotic",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c3106304-9b79-4ddc-a508-fb50fdb1fe0c"
+    }
   }
 }

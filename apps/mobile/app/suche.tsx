@@ -1,8 +1,17 @@
 import { useRouter } from "expo-router";
-import { BlurView } from "expo-blur";
-import { ArrowLeft, Plus } from "lucide-react-native";
-import { useCallback, useRef, useState } from "react";
+import * as Haptics from "expo-haptics";
 import {
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from "expo-audio";
+import { ArrowLeft, MessageCircleQuestion, Plus } from "lucide-react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  AccessibilityInfo,
+  AppState,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,7 +21,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -24,10 +32,7 @@ import {
   MessageBubble,
   SourcesSection,
 } from "@/src/components/chat";
-import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloButton, Screen } from "@/src/components/ui";
-import { fail, success, tap } from "@/src/lib/feedback";
-import { contentEntering, listItemEntering } from "@/src/theme/motion";
 import {
   applyChatEvent,
   buildChatHistory,
@@ -44,6 +49,11 @@ import {
   type ChatMessage,
 } from "@/src/lib/chat";
 import { useFamily } from "@/src/lib/family-context";
+import {
+  removeVoiceRecording,
+  transcribeVoiceRecording,
+  VoiceInputError,
+} from "@/src/lib/voice";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -61,21 +71,40 @@ function httpStatusOf(error: unknown): number {
   return typeof status === "number" ? status : 0;
 }
 
+const MAX_VOICE_RECORDING_MILLIS = 2 * 60 * 1_000;
+const VOICE_AUTO_STOP_MILLIS = MAX_VOICE_RECORDING_MILLIS - 1_000;
+
+type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
+
 export default function SucheScreen() {
   const router = useRouter();
-  const { family } = useFamily();
   const insets = useSafeAreaInsets();
+  const { family } = useFamily();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
-  /** Measured dock height so the list clears the floating composer. */
-  const [dockHeight, setDockHeight] = useState(0);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [composerHeight, setComposerHeight] = useState(0);
 
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
+  const voiceIntent = useRef(false);
+  const voiceStatusRef = useRef<VoiceStatus>("idle");
+  const transcriptionAbortController = useRef<AbortController | null>(null);
+  const autoStoppingVoice = useRef(false);
+  const recorder = useAudioRecorder({
+    ...RecordingPresets.HIGH_QUALITY,
+    isMeteringEnabled: true,
+  });
+  const recorderState = useAudioRecorderState(recorder);
+
+  useEffect(() => {
+    voiceStatusRef.current = voiceStatus;
+  }, [voiceStatus]);
 
   const nextId = useCallback((prefix: string) => {
     counter.current += 1;
@@ -127,7 +156,7 @@ export default function SucheScreen() {
     ) => {
       if (!family) return;
       lastQuestion.current = question;
-      tap();
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setBusy(true);
 
       try {
@@ -147,7 +176,9 @@ export default function SucheScreen() {
               applyChatEvent(message, event),
             );
             if (event.type === "done") {
-              void success();
+              void Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Success,
+              );
             }
           },
         );
@@ -165,7 +196,7 @@ export default function SucheScreen() {
           text: status === 429 ? CHAT_RATE_LIMIT_MESSAGE : CHAT_ERROR_MESSAGE,
           status: status === 429 ? "rate_limited" : "error",
         }));
-        void fail();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       } finally {
         setBusy(false);
       }
@@ -251,7 +282,7 @@ export default function SucheScreen() {
           state: "confirmed",
           undo,
         }));
-        void success();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
         updateAction(messageId, action.id, (current) => ({
           ...current,
@@ -259,7 +290,7 @@ export default function SucheScreen() {
           error: "Das hat nicht geklappt. Bitte versuch es nochmal.",
           errorOperation: "confirm",
         }));
-        void fail();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     },
     [family, updateAction],
@@ -287,7 +318,7 @@ export default function SucheScreen() {
           ...current,
           state: "undone",
         }));
-        void success();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch {
         updateAction(messageId, action.id, (current) => ({
           ...current,
@@ -295,7 +326,7 @@ export default function SucheScreen() {
           error: "Rückgängig machen hat nicht geklappt.",
           errorOperation: "undo",
         }));
-        void fail();
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     },
     [family, updateAction],
@@ -355,6 +386,173 @@ export default function SucheScreen() {
     [router],
   );
 
+  const resetVoiceUi = useCallback(() => {
+    voiceStatusRef.current = "idle";
+    setVoiceStatus("idle");
+    autoStoppingVoice.current = false;
+  }, []);
+
+  const discardVoiceRecording = useCallback(
+    async (options: { feedback?: boolean; resetUi?: boolean } = {}) => {
+      const { feedback = true, resetUi = true } = options;
+      voiceIntent.current = false;
+      transcriptionAbortController.current?.abort();
+      transcriptionAbortController.current = null;
+      try {
+        await recorder.stop();
+      } catch {
+        // The recorder may not have started or iOS may have stopped it already.
+      } finally {
+        removeVoiceRecording(recorder.uri);
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        if (resetUi) resetVoiceUi();
+        if (feedback) {
+          void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          void AccessibilityInfo.announceForAccessibility("Aufnahme verworfen.");
+        }
+      }
+    },
+    [recorder, resetVoiceUi],
+  );
+
+  const finishVoice = useCallback(
+    async (reachedDurationLimit = false) => {
+      if (voiceStatusRef.current === "starting") {
+        await discardVoiceRecording({ feedback: false });
+        return;
+      }
+      if (voiceStatusRef.current !== "recording") return;
+      voiceIntent.current = false;
+      voiceStatusRef.current = "transcribing";
+      setVoiceStatus("transcribing");
+      if (reachedDurationLimit) {
+        setVoiceError("Die Aufnahme ist nach zwei Minuten beendet worden.");
+      }
+      let uri: string | null = null;
+      try {
+        const finalDurationMillis = Math.round(recorder.currentTime * 1_000);
+        await recorder.stop();
+        uri = recorder.uri;
+        if (!uri || !family) {
+          throw new VoiceInputError("Keine Aufnahme vorhanden.");
+        }
+        if (finalDurationMillis < 500) {
+          throw new VoiceInputError(
+            "Die Aufnahme war zu kurz. Halte das Mikrofon etwas länger.",
+          );
+        }
+
+        void AccessibilityInfo.announceForAccessibility(
+          "Aufnahme beendet. Sprache wird in Text umgewandelt.",
+        );
+        const controller = new AbortController();
+        transcriptionAbortController.current = controller;
+        const transcript = await transcribeVoiceRecording({
+          familyId: family.id,
+          signal: controller.signal,
+          uri,
+        });
+        if (transcript) {
+          setInput((current) => (current ? `${current} ${transcript}` : transcript));
+          inputRef.current?.focus();
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          void AccessibilityInfo.announceForAccessibility(
+            "Text eingefügt. Du kannst ihn jetzt prüfen und senden.",
+          );
+        } else {
+          setVoiceError("Ich konnte nichts hören. Bitte versuch es nochmal.");
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
+        setVoiceError(
+          error instanceof VoiceInputError
+            ? error.message
+            : "Die Spracheingabe hat nicht geklappt.",
+        );
+        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        void AccessibilityInfo.announceForAccessibility(
+          "Die Spracheingabe hat nicht geklappt.",
+        );
+      } finally {
+        transcriptionAbortController.current = null;
+        removeVoiceRecording(uri ?? recorder.uri);
+        await setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+        resetVoiceUi();
+      }
+    },
+    [
+      family,
+      recorder,
+      discardVoiceRecording,
+      resetVoiceUi,
+    ],
+  );
+
+  const startVoice = useCallback(async () => {
+    if (busy || voiceStatusRef.current !== "idle") return;
+    setVoiceError(null);
+    voiceIntent.current = true;
+    voiceStatusRef.current = "starting";
+    setVoiceStatus("starting");
+    const permission = await AudioModule.requestRecordingPermissionsAsync();
+    if (!voiceIntent.current) return;
+    if (!permission.granted) {
+      setVoiceError("Bitte erlaube Ordilo den Zugriff auf dein Mikrofon.");
+      resetVoiceUi();
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void AccessibilityInfo.announceForAccessibility(
+        "Kein Zugriff auf das Mikrofon.",
+      );
+      return;
+    }
+    try {
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      if (!voiceIntent.current) return;
+      await recorder.prepareToRecordAsync();
+      if (!voiceIntent.current) return;
+      recorder.record();
+      // Press-out can arrive before React commits the state update. Keep the
+      // imperative guard in sync with the native recorder immediately.
+      voiceStatusRef.current = "recording";
+      setVoiceStatus("recording");
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      void AccessibilityInfo.announceForAccessibility("Aufnahme läuft.");
+    } catch {
+      await discardVoiceRecording({ feedback: false });
+      setVoiceError("Die Aufnahme konnte nicht gestartet werden.");
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [busy, discardVoiceRecording, recorder, resetVoiceUi]);
+
+  useEffect(() => {
+    if (
+      voiceStatus === "recording" &&
+      recorderState.durationMillis >= VOICE_AUTO_STOP_MILLIS &&
+      !autoStoppingVoice.current
+    ) {
+      autoStoppingVoice.current = true;
+      const timeout = setTimeout(() => {
+        void finishVoice(true);
+      }, 0);
+      return () => clearTimeout(timeout);
+    }
+  }, [finishVoice, recorderState.durationMillis, voiceStatus]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState !== "active" && voiceStatusRef.current !== "idle") {
+        void discardVoiceRecording();
+      }
+    });
+    return () => {
+      subscription.remove();
+      if (voiceStatusRef.current !== "idle") {
+        void discardVoiceRecording({ feedback: false, resetUi: false });
+      }
+    };
+  }, [discardVoiceRecording]);
+
   return (
     <Screen style={styles.screen}>
       <View style={styles.topbar}>
@@ -392,7 +590,7 @@ export default function SucheScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.content,
-            { paddingBottom: dockHeight + spacing.md },
+            { paddingBottom: composerHeight + spacing.md },
           ]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
@@ -404,44 +602,43 @@ export default function SucheScreen() {
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <OrdiloCharacter size={96} />
+              <View style={styles.emptyIcon}>
+                <MessageCircleQuestion
+                  color={colors.mist}
+                  size={36}
+                  strokeWidth={1.5}
+                />
+              </View>
               <Text style={styles.emptyHeading}>Wie kann ich dir helfen?</Text>
               <Text style={styles.emptyText}>
                 Frag mich zu deinen Dokumenten, Terminen oder Aufgaben. Ich
                 kenne alles, was du gescannt hast.
               </Text>
               <View style={styles.examples}>
-                {CHAT_EXAMPLE_PROMPTS.map((prompt, index) => (
-                  <Animated.View entering={listItemEntering(index, 70)} key={prompt}>
-                    <Pressable
-                      accessibilityHint="Stellt diese Frage an Ordilo"
-                      accessibilityLabel={prompt}
-                      accessibilityRole="button"
-                      disabled={busy}
-                      onPress={() => void send(prompt)}
-                      style={({ pressed }) => [
-                        styles.exampleChip,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text style={styles.exampleChipText}>{prompt}</Text>
-                    </Pressable>
-                  </Animated.View>
+                {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
+                  <Pressable
+                    accessibilityHint="Stellt diese Frage an Ordilo"
+                    accessibilityLabel={prompt}
+                    accessibilityRole="button"
+                    disabled={busy}
+                    key={prompt}
+                    onPress={() => void send(prompt)}
+                    style={({ pressed }) => [
+                      styles.exampleChip,
+                      pressed && styles.pressed,
+                    ]}
+                  >
+                    <Text style={styles.exampleChipText}>{prompt}</Text>
+                  </Pressable>
                 ))}
               </View>
             </View>
           ) : (
             messages.map((message) =>
               message.role === "user" ? (
-                <Animated.View entering={contentEntering()} key={message.id}>
-                  <MessageBubble message={message} />
-                </Animated.View>
+                <MessageBubble key={message.id} message={message} />
               ) : (
-                <Animated.View
-                  entering={contentEntering()}
-                  key={message.id}
-                  style={styles.assistantBlock}
-                >
+                <View key={message.id} style={styles.assistantBlock}>
                   {message.status === "streaming" ? (
                     <ChatStatusLine
                       hasText={message.text.length > 0}
@@ -493,29 +690,36 @@ export default function SucheScreen() {
                       />
                     ) : null}
                   </MessageBubble>
-                </Animated.View>
+                </View>
               ),
             )
           )}
         </ScrollView>
 
-        {/* Floating composer: the conversation scrolls under a frosted
-            dock — the iOS-native depth cue, kept warm with a paper tint. */}
         <View
-          onLayout={(event) => setDockHeight(event.nativeEvent.layout.height)}
+          onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
           style={[
-            styles.composerDock,
+            styles.composerSafeArea,
             { paddingBottom: Math.max(insets.bottom, spacing.sm) },
           ]}
         >
-          <BlurView intensity={60} style={StyleSheet.absoluteFill} tint="light" />
-          <View style={styles.composerTint} pointerEvents="none" />
+          {voiceError ? (
+            <Text accessibilityRole="alert" style={styles.voiceError}>
+              {voiceError}
+            </Text>
+          ) : null}
           <ChatComposer
             busy={busy}
             inputRef={inputRef}
             onChange={setInput}
             onSend={() => void send(input)}
+            onVoiceStart={() => void startVoice()}
+            onVoiceCancel={() => void discardVoiceRecording()}
+            onVoiceFinish={() => void finishVoice()}
             value={input}
+            voiceDurationMillis={recorderState.durationMillis}
+            voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
+            voiceStatus={voiceStatus}
           />
         </View>
       </KeyboardAvoidingView>
@@ -565,23 +769,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     padding: spacing.lg,
   },
-  composerDock: {
-    bottom: 0,
-    gap: spacing.sm,
-    left: 0,
-    overflow: "hidden",
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
-    position: "absolute",
-    right: 0,
-  },
-  composerTint: {
-    backgroundColor: "rgba(253, 252, 250, 0.72)",
-    bottom: 0,
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0,
+  emptyIcon: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.pill,
+    height: 80,
+    justifyContent: "center",
+    width: 80,
   },
   emptyHeading: { color: colors.graphite, textAlign: "center", ...typography.display },
   emptyText: {
@@ -591,6 +785,11 @@ const styles = StyleSheet.create({
     ...typography.timestamp,
   },
   examples: { gap: spacing.sm, marginTop: spacing.sm, width: "100%" },
+  composerSafeArea: {
+    backgroundColor: colors.warmWhite,
+    gap: spacing.xs,
+  },
+  voiceError: { color: colors.destructive, ...typography.label },
   exampleChip: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,

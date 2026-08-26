@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { createClient as createAdminClient } from "@/lib/supabase/admin";
+import { deleteFamilyAccountData } from "@/lib/account/delete-family-account";
 import {
   type ActionResult,
   FRIENDLY_ERROR,
@@ -378,117 +378,9 @@ export async function deleteFamilyAccount(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
-  // Resolve the family the user OWNS (created_by is unique, so at most one).
-  const { data: family, error: familyError } = await supabase
-    .from("families")
-    .select("id, name")
-    .eq("created_by", user.id)
-    .maybeSingle();
-
-  if (familyError) {
-    return { success: false, error: FRIENDLY_ERROR };
-  }
-  if (!family) {
-    // The user is an invited member. They may erase their own account, but
-    // must never delete the shared family's records.
-    const { data: sharedFamily, error: sharedFamilyError } = await getUserFamily(
-      supabase,
-    );
-    if (sharedFamilyError || !sharedFamily) {
-      return { success: false, error: FRIENDLY_ERROR };
-    }
-    if (confirmName.trim() !== sharedFamily.name) {
-      return {
-        success: false,
-        error: "Der Name stimmt nicht mit dem Familiennamen überein.",
-      };
-    }
-
-    const admin = createAdminClient();
-    const { error: membershipError } = await admin
-      .from("family_memberships")
-      .delete()
-      .eq("family_id", sharedFamily.id)
-      .eq("user_id", user.id);
-    if (membershipError) {
-      return { success: false, error: FRIENDLY_ERROR };
-    }
-
-    const { error: deleteUserError } = await admin.auth.admin.deleteUser(user.id);
-    if (deleteUserError) {
-      console.error(
-        "deleteFamilyAccount: failed to delete invited auth user",
-        deleteUserError,
-      );
-    }
-    return { success: true, data: null };
-  }
-
-  // Confirmation: the typed name must match the family name exactly.
-  if (confirmName.trim() !== family.name) {
-    return {
-      success: false,
-      error: "Der Name stimmt nicht mit dem Familiennamen überein.",
-    };
-  }
-
-  // Privileged work (storage + auth) needs the service-role client.
-  const admin = createAdminClient();
-
-  // Collect storage paths BEFORE deleting rows — the rows hold the locations.
-  const { data: docs } = await admin
-    .from("documents")
-    .select("file_url")
-    .eq("family_id", family.id);
-  const documentPaths = (docs ?? [])
-    .map((d) => d.file_url)
-    .filter((url): url is string => Boolean(url));
-
-  const { data: memberRows } = await admin
-    .from("family_members")
-    .select("photo_url")
-    .eq("family_id", family.id);
-  const avatarPaths = (memberRows ?? [])
-    .map((m) => m.photo_url)
-    .filter((url): url is string => Boolean(url));
-
-  // Delete the family row — cascades to all family-scoped data.
-  const { error: deleteError } = await admin
-    .from("families")
-    .delete()
-    .eq("id", family.id);
-
-  if (deleteError) {
-    return { success: false, error: FRIENDLY_ERROR };
-  }
-
-  // Best-effort storage cleanup — orphaned files are non-fatal (the data is
-  // already gone), so failures are swallowed.
-  if (documentPaths.length > 0) {
-    await admin.storage
-      .from("documents")
-      .remove(documentPaths)
-      .catch(() => {});
-  }
-  if (avatarPaths.length > 0) {
-    await admin.storage
-      .from("avatars")
-      .remove(avatarPaths)
-      .catch(() => {});
-  }
-
-  // Delete the auth user (full account deletion). The family's data is
-  // already erased — the DSGVO-relevant part — so a failure here only leaves
-  // an orphaned login (no family, no data) and is logged, not fatal.
-  const { error: deleteUserError } = await admin.auth.admin.deleteUser(user.id);
-  if (deleteUserError) {
-    console.error(
-      "deleteFamilyAccount: failed to delete auth user",
-      deleteUserError,
-    );
-  }
-
-  return { success: true, data: null };
+  // The deletion itself lives in the shared module, which the
+  // `DELETE /api/me` route (mobile) uses with the same semantics.
+  return deleteFamilyAccountData(user, confirmName);
 }
 
 // ---------------------------------------------------------------------------

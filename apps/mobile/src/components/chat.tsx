@@ -5,14 +5,17 @@ import {
   ChevronUp,
   Copy,
   FileText,
+  Mic,
   RotateCcw,
   Send,
+  Square,
   ThumbsDown,
   ThumbsUp,
   X,
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
-import { useEffect, useState } from "react";
+import * as Haptics from "expo-haptics";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -22,20 +25,16 @@ import {
   View,
 } from "react-native";
 import Animated, {
-  cancelAnimation,
-  Easing,
+  ReduceMotion,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
-  withRepeat,
   withTiming,
+  type SharedValue,
 } from "react-native-reanimated";
 
 import { OrdiloButton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
-import { fail, select, success } from "@/src/lib/feedback";
-import { listItemEntering } from "@/src/theme/motion";
 import {
   CHAT_FEEDBACK_REASONS,
   getActionContent,
@@ -55,44 +54,6 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  * (app/suche.tsx) owns state, streaming and networking. All copy is
  * German and mirrors the web (src/app/(app)/suche).
  */
-
-/**
- * Three warm dots pulsing in turn — the "Ordilo denkt nach" signal.
- * Calmer than a spinner and on-brand. Static under reduce-motion.
- */
-function ThinkingDot({ delay }: { delay: number }) {
-  const opacity = useSharedValue(0.3);
-  const reduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    if (reduceMotion) {
-      opacity.value = 0.8;
-      return;
-    }
-    opacity.value = withDelay(
-      delay,
-      withRepeat(
-        withTiming(1, { duration: 480, easing: Easing.inOut(Easing.ease) }),
-        -1,
-        true,
-      ),
-    );
-    return () => cancelAnimation(opacity);
-  }, [delay, opacity, reduceMotion]);
-
-  const pulse = useAnimatedStyle(() => ({ opacity: opacity.value }));
-  return <Animated.View style={[styles.thinkingDot, pulse]} />;
-}
-
-function ThinkingDots() {
-  return (
-    <View accessibilityElementsHidden style={styles.thinkingDots}>
-      {[0, 1, 2].map((index) => (
-        <ThinkingDot delay={index * 180} key={index} />
-      ))}
-    </View>
-  );
-}
 
 /** One live status line while Ordilo works (ported from the web). */
 export function ChatStatusLine({
@@ -115,7 +76,7 @@ export function ChatStatusLine({
       accessibilityLiveRegion="polite"
       style={styles.statusLine}
     >
-      <ThinkingDots />
+      <ActivityIndicator color={colors.harborBlue} size="small" />
       <Text style={styles.statusText}>{label}</Text>
     </View>
   );
@@ -173,29 +134,25 @@ export function SourcesSection({
           : `Passende Dokumente (${sources.length})`}
       </Text>
       {visible.map((source, index) => (
-        <Animated.View
-          entering={listItemEntering(index, 60)}
+        <Pressable
+          accessibilityHint="Öffnet das Dokument"
+          accessibilityLabel={source.title || "Dokument"}
+          accessibilityRole="button"
           key={`${source.document_id}-${index}`}
+          onPress={() => onOpenDocument(source.document_id)}
+          style={({ pressed }) => [styles.sourceCard, pressed && styles.pressed]}
         >
-          <Pressable
-            accessibilityHint="Öffnet das Dokument"
-            accessibilityLabel={source.title || "Dokument"}
-            accessibilityRole="button"
-            onPress={() => onOpenDocument(source.document_id)}
-            style={({ pressed }) => [styles.sourceCard, pressed && styles.pressed]}
-          >
-            <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
-            <View style={styles.sourceCopy}>
-              <Text numberOfLines={1} style={styles.sourceTitle}>
-                {source.title || "Dokument"}
-              </Text>
-              <Text numberOfLines={2} style={styles.sourceExcerpt}>
-                {source.excerpt}
-              </Text>
-            </View>
-            <ChevronRight color={colors.mistDark} size={16} />
-          </Pressable>
-        </Animated.View>
+          <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
+          <View style={styles.sourceCopy}>
+            <Text numberOfLines={1} style={styles.sourceTitle}>
+              {source.title || "Dokument"}
+            </Text>
+            <Text numberOfLines={2} style={styles.sourceExcerpt}>
+              {source.excerpt}
+            </Text>
+          </View>
+          <ChevronRight color={colors.mistDark} size={16} />
+        </Pressable>
       ))}
       {rest.length > 0 ? (
         <Pressable
@@ -476,16 +433,16 @@ export function FeedbackRow({
       await onSend(feedback, reasons, comment);
       setThanks(true);
       setPanelOpen(false);
-      await success();
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      await fail();
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setSending(false);
     }
   };
 
   const toggleReason = (reason: ChatFeedbackReason) => {
-    select();
+    void Haptics.selectionAsync();
     setReasons((current) =>
       current.includes(reason)
         ? current.filter((item) => item !== reason)
@@ -592,56 +549,243 @@ function CopyAnswerButton({ text }: { text: string }) {
   );
 }
 
-/** Bottom composer: one field, one big send target. */
+const VOICE_WAVE_SAMPLES = 11;
+
+function VoiceWaveBar({
+  sample,
+}: {
+  sample: SharedValue<number>;
+}) {
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scaleY: Math.max(0.16, sample.get()) }],
+  }));
+  return <Animated.View style={[styles.voiceBar, style]} />;
+}
+
+/**
+ * A short rolling audio history, rather than five copies of the current
+ * meter. Reanimated keeps each bar's settling motion off the JS thread.
+ */
+function VoiceWaveform({ level }: { level: number }) {
+  const reduceMotion = useReducedMotion();
+  const samples = [
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+    useSharedValue(0.16),
+  ];
+  const samplesRef = useRef(samples);
+
+  useEffect(() => {
+    const next = Math.max(0.16, Math.min(1, level));
+    const values = samplesRef.current.map((sample) => sample.get());
+    const duration = reduceMotion ? 0 : 120;
+    samplesRef.current.forEach((sample, index) => {
+      sample.set(
+        withTiming(
+          index === VOICE_WAVE_SAMPLES - 1 ? next : values[index + 1]!,
+          { duration, reduceMotion: ReduceMotion.System },
+        ),
+      );
+    });
+  }, [level, reduceMotion]);
+
+  return (
+    <View
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={styles.voiceWave}
+    >
+      {samples.map((sample, index) => (
+        <VoiceWaveBar key={index} sample={sample} />
+      ))}
+    </View>
+  );
+}
+
+function VoiceRecordingPanel({
+  durationMillis,
+  level,
+  onCancel,
+  onFinish,
+}: {
+  durationMillis: number;
+  level: number;
+  onCancel: () => void;
+  onFinish: () => void;
+}) {
+  return (
+    <View
+      accessibilityLabel={`Aufnahme läuft, ${formatVoiceDuration(durationMillis)}`}
+      accessibilityLiveRegion="polite"
+      style={styles.voicePanel}
+    >
+      <View style={styles.voicePanelHeader}>
+        <View style={styles.voicePanelStatus}>
+          <View accessibilityElementsHidden style={styles.voiceRecordingDot} />
+          <Text style={styles.voicePanelTitle}>Aufnahme läuft</Text>
+        </View>
+        <Text style={styles.voiceDuration}>
+          {formatVoiceDuration(durationMillis)}
+        </Text>
+      </View>
+      <VoiceWaveform level={level} />
+      <Text style={styles.voiceInstruction}>Tippe auf Fertig, wenn du fertig bist.</Text>
+      <View style={styles.voicePanelActions}>
+        <Pressable
+          accessibilityLabel="Aufnahme verwerfen"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onCancel}
+          style={({ pressed }) => [
+            styles.voicePanelSecondaryAction,
+            pressed && styles.pressed,
+          ]}
+        >
+          <X color={colors.mistDark} size={18} strokeWidth={2} />
+          <Text style={styles.voicePanelSecondaryText}>Verwerfen</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Aufnahme beenden"
+          accessibilityRole="button"
+          onPress={onFinish}
+          style={({ pressed }) => [
+            styles.voicePanelPrimaryAction,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.voicePanelPrimaryText}>Fertig</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/** Bottom composer with a dedicated, stable recording context above it. */
 export function ChatComposer({
   busy,
   inputRef,
   onChange,
   onSend,
+  onVoiceStart,
+  onVoiceCancel,
+  onVoiceFinish,
   value,
+  voiceDurationMillis = 0,
+  voiceLevel = 0,
+  voiceStatus = "idle",
 }: {
   busy: boolean;
   inputRef: React.RefObject<TextInput | null>;
   onChange: (value: string) => void;
   onSend: () => void;
+  onVoiceStart?: () => void;
+  onVoiceCancel?: () => void;
+  onVoiceFinish?: () => void;
   value: string;
+  voiceDurationMillis?: number;
+  voiceLevel?: number;
+  voiceStatus?: "idle" | "starting" | "recording" | "transcribing";
 }) {
   const canSend = value.trim().length > 0 && !busy;
+  const recording = voiceStatus === "recording";
+  const voiceWorking = voiceStatus === "starting" || voiceStatus === "transcribing";
+  const voiceEnabled = !busy && !voiceWorking;
   return (
-    <View style={styles.composer}>
-      <TextInput
-        accessibilityLabel="Frage an Ordilo"
-        autoCapitalize="sentences"
-        multiline
-        onChangeText={onChange}
-        onSubmitEditing={canSend ? onSend : undefined}
-        placeholder="Frage Ordilo …"
-        placeholderTextColor={colors.mistDark}
-        ref={inputRef}
-        returnKeyType="send"
-        style={styles.composerInput}
-        value={value}
-      />
-      <Pressable
-        accessibilityLabel="Frage senden"
-        accessibilityRole="button"
-        accessibilityState={{ disabled: !canSend }}
-        disabled={!canSend}
-        onPress={onSend}
-        style={({ pressed }) => [
-          styles.composerSend,
-          !canSend && styles.composerSendDisabled,
-          pressed && styles.pressed,
-        ]}
-      >
-        {busy ? (
-          <ActivityIndicator color={colors.warmWhite} size="small" />
-        ) : (
-          <Send color={colors.warmWhite} size={18} strokeWidth={2} />
-        )}
-      </Pressable>
+    <View style={styles.composerStack}>
+      {recording ? (
+        <VoiceRecordingPanel
+          durationMillis={voiceDurationMillis}
+          level={voiceLevel}
+          onCancel={() => onVoiceCancel?.()}
+          onFinish={() => onVoiceFinish?.()}
+        />
+      ) : null}
+      <View style={styles.composer}>
+        <TextInput
+          accessibilityLabel="Frage an Ordilo"
+          accessibilityState={{ disabled: recording || voiceWorking }}
+          autoCapitalize="sentences"
+          editable={!recording && !voiceWorking}
+          multiline
+          onChangeText={onChange}
+          onSubmitEditing={canSend ? onSend : undefined}
+          placeholder="Frage Ordilo …"
+          placeholderTextColor={colors.mistDark}
+          ref={inputRef}
+          returnKeyType="send"
+          style={styles.composerInput}
+          value={value}
+        />
+        <View style={styles.composerActions}>
+          <Pressable
+            accessibilityHint={
+              recording
+                ? "Beendet die Aufnahme"
+                : "Tippe, um eine Sprachfrage aufzunehmen"
+            }
+            accessibilityLabel={
+              voiceStatus === "transcribing"
+                ? "Sprache wird in Text umgewandelt"
+                : recording
+                  ? "Aufnahme beenden"
+                  : "Sprachfrage aufnehmen"
+            }
+            accessibilityRole="button"
+            accessibilityState={{ disabled: !voiceEnabled }}
+            disabled={!voiceEnabled}
+            hitSlop={4}
+            onPress={recording ? onVoiceFinish : onVoiceStart}
+            style={({ pressed }) => [
+              styles.voiceButton,
+              recording && styles.voiceButtonRecording,
+              pressed && styles.pressed,
+              !voiceEnabled && styles.composerSendDisabled,
+            ]}
+          >
+            {voiceWorking ? (
+              <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : recording ? (
+              <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
+            ) : (
+              <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
+            )}
+          </Pressable>
+          {canSend ? (
+            <Pressable
+              accessibilityLabel="Frage senden"
+              accessibilityRole="button"
+              disabled={recording}
+              onPress={onSend}
+              style={({ pressed }) => [
+                styles.composerSend,
+                recording && styles.composerSendDisabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator color={colors.warmWhite} size="small" />
+              ) : (
+                <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+              )}
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
     </View>
   );
+}
+
+function formatVoiceDuration(durationMillis: number): string {
+  const seconds = Math.max(0, Math.floor(durationMillis / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
@@ -653,18 +797,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   statusText: { color: colors.mistDark, ...typography.timestamp },
-  thinkingDots: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 4,
-    height: 16,
-  },
-  thinkingDot: {
-    backgroundColor: colors.harborBlue,
-    borderRadius: 3,
-    height: 6,
-    width: 6,
-  },
   bubbleRow: { flexDirection: "row", paddingHorizontal: spacing.xs },
   bubbleRowUser: { justifyContent: "flex-end" },
   bubble: {
@@ -819,34 +951,118 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     ...typography.body,
   },
+  composerStack: { gap: spacing.xs },
   composer: {
-    alignItems: "flex-end",
-    // Transparent: the floating dock in suche.tsx supplies blur + tint.
-    backgroundColor: "transparent",
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.lg,
+    borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm,
+    gap: spacing.xs,
+    padding: spacing.xs,
   },
   composerInput: {
     color: colors.graphite,
     flex: 1,
-    maxHeight: 120,
+    maxHeight: 96,
     minHeight: 40,
     paddingHorizontal: spacing.sm,
-    paddingTop: 10,
+    paddingVertical: 0,
+    textAlignVertical: "center",
     ...typography.body,
+  },
+  composerActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
   },
   composerSend: {
     alignItems: "center",
     backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 44,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
   composerSendDisabled: { opacity: 0.4 },
+  voiceButton: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  voiceButtonRecording: {
+    backgroundColor: colors.warmApricot,
+  },
+  voicePanel: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  voicePanelHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  voicePanelStatus: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  voiceRecordingDot: {
+    backgroundColor: colors.warmApricot,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
+  },
+  voicePanelTitle: { color: colors.graphite, ...typography.title },
+  voiceDuration: { color: colors.mistDark, ...typography.timestamp },
+  voiceInstruction: {
+    color: colors.mistDark,
+    textAlign: "center",
+    ...typography.label,
+  },
+  voicePanelActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "flex-end",
+  },
+  voicePanelSecondaryAction: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  voicePanelSecondaryText: { color: colors.mistDark, ...typography.label },
+  voicePanelPrimaryAction: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.sm,
+    height: 44,
+    justifyContent: "center",
+    paddingHorizontal: spacing.md,
+  },
+  voicePanelPrimaryText: { color: colors.warmWhite, ...typography.label },
+  voiceWave: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 4,
+    height: 32,
+    justifyContent: "center",
+  },
+  voiceBar: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 24,
+    width: 3,
+  },
   pressed: { opacity: 0.76 },
 });
