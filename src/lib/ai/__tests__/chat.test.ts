@@ -695,7 +695,11 @@ describe("streamAgenticAnswer — named member document listings", () => {
     ]);
   });
 
-  it("keeps member-specific content questions in the agent flow", async () => {
+  it.each([
+    "Was steht in Emmas Dokumenten?",
+    "Zeige mir, was in Emmas Dokumenten steht.",
+    "Welche Adresse steht in den Dokumenten zu Emma?",
+  ])("keeps the content question %s in the agent flow", async (question) => {
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([
         { content: "Im Kita-Brief steht, dass das Sommerfest am Freitag ist." },
@@ -703,7 +707,7 @@ describe("streamAgenticAnswer — named member document listings", () => {
     );
 
     const stream = await streamAgenticAnswer(
-      "Was steht in Emmas Dokumenten?",
+      question,
       [],
       makeNamedMemberDocumentContext(),
     );
@@ -714,6 +718,24 @@ describe("streamAgenticAnswer — named member document listings", () => {
       type: "text",
       content: "Im Kita-Brief steht, dass das Sommerfest am Freitag ist.",
     });
+  });
+
+  it.each([
+    "Dokumente zu Emma aus 2024",
+    "Welche Schul-Dokumente gibt es von Emma?",
+  ])("keeps the filtered request %s in the agent flow", async (question) => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([{ content: "Ich prüfe die passende Dokumentenliste." }]),
+    );
+
+    const stream = await streamAgenticAnswer(
+      question,
+      [],
+      makeNamedMemberDocumentContext(),
+    );
+    await readNdjsonStream(stream);
+
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });
 

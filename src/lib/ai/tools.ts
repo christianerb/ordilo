@@ -1280,8 +1280,10 @@ async function executeListDocuments(
     });
   }
 
-  // Surface the listed documents as tappable sources (best first).
-  for (const doc of docs.slice(0, 10)) {
+  // Surface every listed document as a tappable source. The mobile source
+  // section collapses long lists itself, so capping at ten here would make
+  // a result that claims to be complete impossible to open past item ten.
+  for (const doc of docs) {
     if (!ctx.sources.find((x) => x.document_id === doc.id)) {
       ctx.sources.push({
         document_id: doc.id,

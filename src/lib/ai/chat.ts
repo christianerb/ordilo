@@ -539,25 +539,65 @@ type ListedDocument = {
   titel: string | null;
 };
 
+const SIMPLE_MEMBER_DOCUMENT_LIST_TOKENS = new Set([
+  "alle",
+  "dokument",
+  "dokumente",
+  "dokumenten",
+  "unterlagen",
+  "papiere",
+  "zeig",
+  "zeige",
+  "mir",
+  "liste",
+  "auflistung",
+  "welche",
+  "zu",
+  "von",
+  "für",
+  "fuer",
+  "die",
+  "der",
+  "das",
+  "den",
+  "dem",
+  "hat",
+  "gibt",
+  "es",
+  "bitte",
+]);
+
 function namedMemberDocumentListIntent(
   query: string,
   members: Array<{ name: string; role: string | null }>,
 ): string | null {
-  // This wording is a request for a deterministic listing, not a semantic
-  // search. Route it before the model gets a chance to select a fuzzy tool.
+  // A short request such as "Dokumente zu Emma" is a deterministic listing,
+  // not a semantic search. Anything beyond that simple shape stays with the
+  // agent, which can preserve document-type, category, date and content
+  // constraints through the normal tool arguments.
   if (!/\b(?:dokument(?:e|en)?|unterlagen|papiere)\b/ui.test(query)) {
     return null;
   }
   if (isTaskQuery(query)) return null;
-  const asksForAList =
-    /\b(?:alle|welche|zeig(?:e)?|liste|auflistung)\b/ui.test(query) ||
-    /\b(?:dokument(?:e|en)?|unterlagen|papiere)\s+(?:zu|von|für|fuer)\b/ui.test(
-      query,
-    );
-  if (!asksForAList) return null;
 
   const mentioned = findMentionedPeople(query, members);
-  return mentioned.length === 1 ? mentioned[0]! : null;
+  if (mentioned.length !== 1) return null;
+
+  const memberName = mentioned[0]!;
+  const escapedName = memberName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const remainingTokens = query
+    .replace(
+      new RegExp(
+        `(?<![\\p{L}\\p{N}])${escapedName}(?:s|['’´])?(?![\\p{L}\\p{N}])`,
+        "iu",
+      ),
+      " ",
+    )
+    .toLocaleLowerCase("de")
+    .match(/[\p{L}\p{N}]+/gu)
+    ?.filter((token) => !SIMPLE_MEMBER_DOCUMENT_LIST_TOKENS.has(token));
+
+  return remainingTokens?.length === 0 ? memberName : null;
 }
 
 function parseListedDocuments(raw: string): {
@@ -631,9 +671,16 @@ function formatNamedMemberDocumentList(
       ? `Ich habe ein bestätigtes ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`
       : `Ich habe ${count} bestätigte ${noun} zu ${personName} gefunden: ${joinDocumentTitles(shownDocuments)}.`;
 
-  return listing.truncated
-    ? `${firstSentence} Die vollständige Liste ist auf 50 Dokumente begrenzt.`
-    : firstSentence;
+  const omitted = listing.documents.length - shownDocuments.length;
+  const visibilityHint =
+    omitted > 0
+      ? ` Die weiteren ${omitted} kannst du unten öffnen.`
+      : "";
+  const truncationHint = listing.truncated
+    ? " Die vollständige Liste ist auf 50 Dokumente begrenzt."
+    : "";
+
+  return `${firstSentence}${visibilityHint}${truncationHint}`;
 }
 
 function streamNamedMemberDocumentList(
