@@ -529,6 +529,9 @@ export default function SucheScreen() {
       await recorder.prepareToRecordAsync();
       if (!voiceIntent.current) return;
       recorder.record();
+      // Press-out can arrive before React commits the state update. Keep the
+      // imperative guard in sync with the native recorder immediately.
+      voiceStatusRef.current = "recording";
       setVoiceStatus("recording");
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       void AccessibilityInfo.announceForAccessibility(

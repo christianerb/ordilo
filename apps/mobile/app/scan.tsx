@@ -419,13 +419,18 @@ export default function ScanModal() {
   );
   const failedCount = queue.filter((item) => item.state === "failed").length;
   const queuedCount = queue.filter((item) => item.state === "queued").length;
+  const doneCount = queue.filter((item) => item.state === "done").length;
   const queueHeading = failedCount
     ? failedCount === 1
       ? "Ein Upload braucht Hilfe"
       : `${failedCount} Uploads brauchen Hilfe`
     : queuedCount === 1
       ? "Ein Dokument bereit"
-      : `${queuedCount} Dokumente bereit`;
+      : queuedCount > 1
+        ? `${queuedCount} Dokumente bereit`
+        : doneCount === 1
+          ? "Dokument hochgeladen"
+          : `${doneCount} Dokumente hochgeladen`;
 
   return (
     <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>

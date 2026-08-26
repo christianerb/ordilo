@@ -3,10 +3,17 @@ import {
   releaseVoiceTranscription,
   reserveVoiceTranscription,
 } from "@/lib/ai/voice-rate-limit";
+import { getM4aDurationMillis } from "@/lib/audio-duration";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
 const MAX_AUDIO_BYTES = 8 * 1024 * 1024;
+const MAX_AUDIO_DURATION_MILLIS = 2 * 60 * 1_000;
+const ACCEPTED_AUDIO_TYPES = new Set([
+  "audio/m4a",
+  "audio/x-m4a",
+  "audio/mp4",
+]);
 
 export async function POST(request: Request): Promise<Response> {
   const auth = await requireUser();
@@ -24,6 +31,28 @@ export async function POST(request: Request): Promise<Response> {
   if (audio.size === 0 || audio.size > MAX_AUDIO_BYTES) {
     return Response.json(
       { error: "Die Aufnahme ist zu groß.", code: "AUDIO_TOO_LARGE" },
+      { status: 413 },
+    );
+  }
+  if (!ACCEPTED_AUDIO_TYPES.has(audio.type)) {
+    return Response.json(
+      { error: "Bitte nimm die Frage erneut auf.", code: "INVALID_AUDIO_TYPE" },
+      { status: 400 },
+    );
+  }
+  const durationMillis = getM4aDurationMillis(await audio.arrayBuffer());
+  if (durationMillis === null) {
+    return Response.json(
+      { error: "Die Aufnahme konnte nicht gelesen werden.", code: "INVALID_AUDIO" },
+      { status: 400 },
+    );
+  }
+  if (durationMillis > MAX_AUDIO_DURATION_MILLIS) {
+    return Response.json(
+      {
+        error: "Die Aufnahme darf höchstens zwei Minuten lang sein.",
+        code: "AUDIO_TOO_LONG",
+      },
       { status: 413 },
     );
   }
@@ -75,7 +104,11 @@ export async function POST(request: Request): Promise<Response> {
       body,
     });
   } catch {
-    await releaseVoiceTranscription(adminClient, familyId).catch(() => undefined);
+    await releaseVoiceTranscription(
+      adminClient,
+      familyId,
+      rateLimit.usage_date,
+    ).catch(() => undefined);
     return Response.json(
       { error: "Die Spracheingabe hat nicht geklappt.", code: "TRANSCRIPTION_FAILED" },
       { status: 502 },
@@ -83,7 +116,11 @@ export async function POST(request: Request): Promise<Response> {
   }
   const result = (await response.json().catch(() => null)) as { text?: unknown } | null;
   if (!response.ok || typeof result?.text !== "string") {
-    await releaseVoiceTranscription(adminClient, familyId).catch(() => undefined);
+    await releaseVoiceTranscription(
+      adminClient,
+      familyId,
+      rateLimit.usage_date,
+    ).catch(() => undefined);
     return Response.json(
       { error: "Die Spracheingabe hat nicht geklappt.", code: "TRANSCRIPTION_FAILED" },
       { status: 502 },

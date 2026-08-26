@@ -1,3 +1,8 @@
+import {
+  removeVoiceRecording,
+  transcribeVoiceRecording,
+} from "../lib/voice";
+
 const mockGetSession = jest.fn();
 const mockFetch = jest.fn();
 const mockDelete = jest.fn();
@@ -25,11 +30,6 @@ jest.mock("expo-file-system", () => ({
 jest.mock("../lib/supabase", () => ({
   getSupabase: () => ({ auth: { getSession: mockGetSession } }),
 }));
-
-import {
-  removeVoiceRecording,
-  transcribeVoiceRecording,
-} from "../lib/voice";
 
 describe("voice recording client", () => {
   beforeEach(() => {

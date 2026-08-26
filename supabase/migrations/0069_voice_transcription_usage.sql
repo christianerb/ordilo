@@ -24,7 +24,7 @@ create or replace function public.reserve_voice_transcription(
   p_family_id uuid,
   p_limit integer
 )
-returns table (allowed boolean, used integer, remaining integer)
+returns table (allowed boolean, used integer, remaining integer, usage_date date)
 language plpgsql
 security definer
 set search_path = public
@@ -45,7 +45,7 @@ begin
   returning transcription_count into v_used;
 
   if found then
-    return query select true, v_used, greatest(0, p_limit - v_used);
+    return query select true, v_used, greatest(0, p_limit - v_used), current_date;
     return;
   end if;
 
@@ -54,12 +54,13 @@ begin
   where family_id = p_family_id
     and usage_date = current_date;
 
-  return query select false, coalesce(v_used, 0), 0;
+  return query select false, coalesce(v_used, 0), 0, current_date;
 end;
 $$;
 
 create or replace function public.release_voice_transcription(
-  p_family_id uuid
+  p_family_id uuid,
+  p_usage_date date
 )
 returns void
 language sql
@@ -69,12 +70,12 @@ as $$
   update public.voice_transcription_usage
   set transcription_count = greatest(0, transcription_count - 1)
   where family_id = p_family_id
-    and usage_date = current_date;
+    and usage_date = p_usage_date;
 $$;
 
 revoke all on function public.reserve_voice_transcription(uuid, integer) from public;
-revoke all on function public.release_voice_transcription(uuid) from public;
+revoke all on function public.release_voice_transcription(uuid, date) from public;
 grant execute on function public.reserve_voice_transcription(uuid, integer)
   to service_role;
-grant execute on function public.release_voice_transcription(uuid)
+grant execute on function public.release_voice_transcription(uuid, date)
   to service_role;

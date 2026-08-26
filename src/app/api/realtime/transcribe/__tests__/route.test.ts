@@ -36,10 +36,39 @@ vi.mock("@/lib/ai/voice-rate-limit", () => ({
 }));
 
 import { POST } from "@/app/api/realtime/transcribe/route";
+import { getM4aDurationMillis } from "@/lib/audio-duration";
 
 const fetchMock = vi.fn();
 
-function recordingRequest(size = 32): Request {
+function atom(type: string, payload: Uint8Array): Uint8Array {
+  const bytes = new Uint8Array(payload.length + 8);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, bytes.length);
+  for (let index = 0; index < 4; index += 1) {
+    bytes[4 + index] = type.charCodeAt(index);
+  }
+  bytes.set(payload, 8);
+  return bytes;
+}
+
+function m4aBytes(durationMillis = 1_000, minSize = 0): Uint8Array {
+  const movieHeader = new Uint8Array(20);
+  const view = new DataView(movieHeader.buffer);
+  // Full box version/flags (0), creation/modification (0), timescale, duration.
+  view.setUint32(12, 1_000);
+  view.setUint32(16, durationMillis);
+  const fileType = atom("ftyp", new Uint8Array());
+  const movie = atom("moov", atom("mvhd", movieHeader));
+  const bytes = new Uint8Array(Math.max(minSize, fileType.length + movie.length));
+  bytes.set(fileType, 0);
+  bytes.set(movie, fileType.length);
+  return bytes;
+}
+
+function recordingRequest(
+  size = 64,
+  durationMillis = 1_000,
+): Request {
   // Undici wraps multipart files in a different File realm. The route's
   // guard deliberately uses `instanceof File`, so this direct form-data
   // stand-in keeps the test in the same realm as the route.
@@ -47,7 +76,9 @@ function recordingRequest(size = 32): Request {
     ["family_id", "family-1"],
     [
       "audio",
-      new File([new Uint8Array(size)], "frage.m4a", { type: "audio/m4a" }),
+      new File([m4aBytes(durationMillis, size).buffer as ArrayBuffer], "frage.m4a", {
+        type: "audio/m4a",
+      }),
     ],
   ]);
   return {
@@ -69,6 +100,7 @@ beforeEach(() => {
     allowed: true,
     used: 1,
     remaining: 49,
+    usage_date: "2026-08-26",
   });
   mocks.releaseVoiceTranscription.mockResolvedValue(undefined);
   fetchMock.mockResolvedValue(
@@ -129,6 +161,15 @@ describe("POST /api/realtime/transcribe", () => {
     expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
   });
 
+  it("rejects an M4A recording longer than two minutes before reserving quota", async () => {
+    const response = await POST(recordingRequest(64, 120_001));
+    const body = await response.json();
+
+    expect(response.status).toBe(413);
+    expect(body.code).toBe("AUDIO_TOO_LONG");
+    expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
+  });
+
   it("transcribes German audio after an atomic reservation", async () => {
     const response = await POST(recordingRequest());
 
@@ -155,6 +196,7 @@ describe("POST /api/realtime/transcribe", () => {
     expect(mocks.releaseVoiceTranscription).toHaveBeenCalledWith(
       mocks.adminClient,
       "family-1",
+      "2026-08-26",
     );
   });
 
@@ -165,5 +207,15 @@ describe("POST /api/realtime/transcribe", () => {
 
     expect(response.status).toBe(503);
     expect(mocks.reserveVoiceTranscription).not.toHaveBeenCalled();
+  });
+});
+
+describe("getM4aDurationMillis", () => {
+  it("reads the version-zero ISO movie-header duration", () => {
+    expect(getM4aDurationMillis(m4aBytes(12_345).buffer as ArrayBuffer)).toBe(12_345);
+  });
+
+  it("rejects incomplete containers", () => {
+    expect(getM4aDurationMillis(new Uint8Array([0, 0, 0, 8]).buffer)).toBeNull();
   });
 });

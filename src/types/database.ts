@@ -1561,10 +1561,15 @@ export type Database = {
     Functions: {
       reserve_voice_transcription: {
         Args: { p_family_id: string; p_limit: number };
-        Returns: { allowed: boolean; used: number; remaining: number }[];
+        Returns: {
+          allowed: boolean;
+          used: number;
+          remaining: number;
+          usage_date: string;
+        }[];
       };
       release_voice_transcription: {
-        Args: { p_family_id: string };
+        Args: { p_family_id: string; p_usage_date: string };
         Returns: undefined;
       };
       search_family_contacts: {

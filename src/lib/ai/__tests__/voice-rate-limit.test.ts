@@ -47,10 +47,11 @@ describe("voice transcription rate limit", () => {
     const { client, rpc } = createAdminClient();
     rpc.mockResolvedValue({ error: null });
 
-    await releaseVoiceTranscription(client, "family-1");
+    await releaseVoiceTranscription(client, "family-1", "2026-08-26");
 
     expect(rpc).toHaveBeenCalledWith("release_voice_transcription", {
       p_family_id: "family-1",
+      p_usage_date: "2026-08-26",
     });
   });
 });
