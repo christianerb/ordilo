@@ -305,6 +305,7 @@ export default function ScanModal() {
               : candidate,
           ),
         );
+        await removeStagedScannedDocument(item.uri);
         void success();
       } catch {
         setQueue((current) =>

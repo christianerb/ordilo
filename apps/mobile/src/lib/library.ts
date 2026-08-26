@@ -178,6 +178,7 @@ export function getDocumentStatusLabel(status: string): string {
 export function getDocumentSearchText(document: LibraryDocument): string {
   return [
     getDocumentTitle(document),
+    document.original_filename,
     document.summary,
     document.ocr_text,
     getDocumentTypeLabel(document.document_type),

@@ -7,6 +7,7 @@ import {
   Ellipsis,
   FileText,
   FolderOpen,
+  NotebookPen,
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
@@ -17,6 +18,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -32,6 +34,7 @@ import {
 import Animated from "react-native-reanimated";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { NoteFormSheet } from "@/src/components/note-form-sheet";
 import { OrdiloSheet, useSheetPresentation } from "@/src/components/sheet";
 import {
   EmptyState,
@@ -47,6 +50,7 @@ import {
   type DocumentType,
 } from "@/src/lib/document-review";
 import { useFamily } from "@/src/lib/family-context";
+import { createNote, triggerNoteAnalysis } from "@/src/lib/notes";
 import {
   filterLibraryDocuments,
   formatDocumentDate,
@@ -90,6 +94,7 @@ export default function AblageScreen() {
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [createNoteOpen, setCreateNoteOpen] = useState(false);
   const [sort, setSort] = useState<LibrarySort>("newest");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -99,13 +104,19 @@ export default function AblageScreen() {
     status: "all",
     documentType: "all",
   });
+  const requestGeneration = useRef(0);
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
+      const requestId = requestGeneration.current + 1;
+      requestGeneration.current = requestId;
+      const isCurrentRequest = () => requestGeneration.current === requestId;
       if (!family) {
-        setDocuments([]);
-        setHasMore(false);
-        setLoading(false);
+        if (isCurrentRequest()) {
+          setDocuments([]);
+          setHasMore(false);
+          setLoading(false);
+        }
         return;
       }
       if (refresh) setRefreshing(true);
@@ -141,17 +152,25 @@ export default function AblageScreen() {
           .range(range.from, range.to);
         if (queryError) throw queryError;
         const next = (data ?? []) as LibraryDocument[];
-        setDocuments((current) => append ? mergeLibraryDocuments(current, next) : next);
-        setHasMore(next.length === libraryPageSize);
-        setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        if (isCurrentRequest()) {
+          setDocuments((current) =>
+            append ? mergeLibraryDocuments(current, next) : next,
+          );
+          setHasMore(next.length === libraryPageSize);
+          setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        }
       } catch {
-        setError(
-          "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
-        );
+        if (isCurrentRequest()) {
+          setError(
+            "Deine Dokumente konnten nicht geladen werden. Bitte versuch es nochmal.",
+          );
+        }
       } finally {
-        setLoading(false);
-        setRefreshing(false);
-        setLoadingMore(false);
+        if (isCurrentRequest()) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
       }
     },
     [family, filters, sort],
@@ -199,45 +218,31 @@ export default function AblageScreen() {
   );
   const activeFilterCount =
     Number(filters.status !== "all") + Number(filters.documentType !== "all");
+  const hasActiveFilters =
+    filters.query.trim() !== "" || activeFilterCount > 0;
   const selectedTypeLabel =
     filters.documentType === "all"
       ? "Art"
       : documentTypeLabels[filters.documentType];
 
-  if (loading && documents.length === 0) {
-    return (
-      <Screen>
-        <ScreenHeader
-          action={{
-            accessibilityLabel: "Mehr in der Ablage",
-            icon: Ellipsis,
-            onPress: () => setToolsOpen(true),
-          }}
-          subtitle="Dokumente werden geladen"
-          title="Ablage"
-        />
-        <ListSkeleton rows={6} />
-        <LibraryToolsSheet
-          onClose={() => setToolsOpen(false)}
-          onOpenContacts={() => {
-            setToolsOpen(false);
-            router.push("/contacts");
-          }}
-          onOpenSearch={() => {
-            setToolsOpen(false);
-            router.push("/suche");
-          }}
-          onOpenCollections={() => {
-            setToolsOpen(false);
-            router.push("/sammlungen");
-          }}
-          visible={toolsOpen}
-        />
-      </Screen>
-    );
-  }
+  const createNewNote = useCallback(
+    async (
+      draft: Omit<Parameters<typeof createNote>[0], "familyId">,
+    ) => {
+      if (!family) {
+        throw new Error("Deine Familie konnte nicht geladen werden.");
+      }
+      const result = await createNote({ ...draft, familyId: family.id });
+      if (!result.server_pipeline) {
+        void triggerNoteAnalysis(result.document_id).catch(() => undefined);
+      }
+      void loadDocuments({ refresh: true });
+      router.push(`/note/${result.document_id}`);
+    },
+    [family, loadDocuments, router],
+  );
 
-  if (error && documents.length === 0) {
+  if (error && documents.length === 0 && !hasActiveFilters) {
     return (
       <Screen style={styles.center}>
         <EmptyState
@@ -277,11 +282,19 @@ export default function AblageScreen() {
             icon: Ellipsis,
             onPress: () => setToolsOpen(true),
           }}
-          subtitle={documentCountLabel}
+          subtitle={
+            loading && documents.length === 0
+              ? "Dokumente werden geladen"
+              : hasActiveFilters && documents.length === 0
+              ? "Keine Treffer für deine Suche oder Filter"
+              : documentCountLabel
+          }
           title="Ablage"
         />
 
-        {documents.length > 0 ? (
+        {loading && documents.length === 0 && !hasActiveFilters ? (
+          <ListSkeleton rows={6} />
+        ) : documents.length > 0 || hasActiveFilters ? (
           <>
             <View style={styles.search}>
               <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
@@ -381,7 +394,13 @@ export default function AblageScreen() {
               </View>
             ) : null}
 
-            {visibleDocuments.length > 0 ? (
+            {loading && documents.length === 0 ? (
+              <ActivityIndicator
+                accessibilityLabel="Dokumente werden geladen"
+                color={colors.harborBlue}
+                style={styles.filteredLoading}
+              />
+            ) : visibleDocuments.length > 0 ? (
               <>
                 <View style={styles.list}>
                   {visibleDocuments.map((document, index) => (
@@ -452,6 +471,10 @@ export default function AblageScreen() {
       />
       <LibraryToolsSheet
         onClose={() => setToolsOpen(false)}
+        onCreateNote={() => {
+          setToolsOpen(false);
+          setCreateNoteOpen(true);
+        }}
         onOpenContacts={() => {
           setToolsOpen(false);
           router.push("/contacts");
@@ -465,6 +488,11 @@ export default function AblageScreen() {
           router.push("/sammlungen");
         }}
         visible={toolsOpen}
+      />
+      <NoteFormSheet
+        onClose={() => setCreateNoteOpen(false)}
+        onSubmit={createNewNote}
+        visible={createNoteOpen}
       />
     </Screen>
   );
@@ -499,12 +527,14 @@ function FilterChip({
 
 function LibraryToolsSheet({
   onClose,
+  onCreateNote,
   onOpenCollections,
   onOpenContacts,
   onOpenSearch,
   visible,
 }: {
   onClose: () => void;
+  onCreateNote: () => void;
   onOpenCollections: () => void;
   onOpenContacts: () => void;
   onOpenSearch: () => void;
@@ -517,6 +547,12 @@ function LibraryToolsSheet({
       onDismiss={onClose}
       ref={sheetRef}
     >
+      <LibraryToolOption
+        description="Familienwissen direkt festhalten"
+        icon={NotebookPen}
+        label="Notiz anlegen"
+        onPress={onCreateNote}
+      />
       <Text style={styles.sheetTitle}>Mehr in der Ablage</Text>
       <LibraryToolOption
         description="Frag Ordilo zu euren Dokumenten."
@@ -899,6 +935,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     padding: spacing.xl,
   },
+  filteredLoading: { marginTop: spacing.xl },
   filteredEmptyTitle: { color: colors.graphite, ...typography.title },
   filteredEmptyText: { color: colors.mistDark, textAlign: "center", ...typography.timestamp },
   pressed: { opacity: 0.76 },

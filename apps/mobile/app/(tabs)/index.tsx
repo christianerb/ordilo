@@ -8,6 +8,7 @@ import {
   ListChecks,
   MapPin,
   ScanLine,
+  Settings,
   Sparkles,
 } from "lucide-react-native";
 import {
@@ -19,6 +20,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   AppState,
   Pressable,
   RefreshControl,
@@ -291,7 +293,15 @@ export default function HeuteScreen() {
   if (loading) {
     return (
       <Screen>
-        <ScreenHeader subtitle="Dein Überblick für heute" title="Heute" />
+        <ScreenHeader
+          action={{
+            accessibilityLabel: "Einstellungen öffnen",
+            icon: Settings,
+            onPress: () => router.push("/einstellungen"),
+          }}
+          subtitle="Dein Überblick für heute"
+          title="Heute"
+        />
         <View style={styles.loadingList}>
           <ListSkeleton rows={5} />
         </View>
@@ -302,7 +312,15 @@ export default function HeuteScreen() {
   if (error && !data) {
     return (
       <Screen>
-        <ScreenHeader subtitle="Dein Überblick für heute" title="Heute" />
+        <ScreenHeader
+          action={{
+            accessibilityLabel: "Einstellungen öffnen",
+            icon: Settings,
+            onPress: () => router.push("/einstellungen"),
+          }}
+          subtitle="Dein Überblick für heute"
+          title="Heute"
+        />
         <View style={styles.center}>
           <EmptyState
             icon={Clock3}
@@ -341,6 +359,7 @@ export default function HeuteScreen() {
           heroTask={heroTask}
           memberNames={data?.members ?? []}
           onCompleteTask={toggleTask}
+          onOpenSettings={() => router.push("/einstellungen")}
           referenceDate={referenceDate}
           taskBusy={mutatingTaskId === heroTask?.id}
         />
@@ -518,6 +537,7 @@ function HeuteHero({
   heroTask,
   memberNames,
   onCompleteTask,
+  onOpenSettings,
   referenceDate,
   taskBusy,
 }: {
@@ -525,6 +545,7 @@ function HeuteHero({
   heroTask: HeuteTask | null;
   memberNames: HeuteData["members"];
   onCompleteTask: (task: HeuteTask) => Promise<void>;
+  onOpenSettings: () => void;
   referenceDate: Date;
   taskBusy: boolean;
 }) {
@@ -555,7 +576,21 @@ function HeuteHero({
             {familyName}
           </Text>
         </View>
-        <AvatarStack members={memberNames} />
+        <View style={styles.heroActions}>
+          <AvatarStack members={memberNames} />
+          <Pressable
+            accessibilityLabel="Einstellungen öffnen"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={onOpenSettings}
+            style={({ pressed }) => [
+              styles.heroSettings,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Settings color={colors.mistDark} size={19} strokeWidth={1.8} />
+          </Pressable>
+        </View>
       </View>
 
       {heroTask ? (
@@ -764,6 +799,20 @@ function InboundDiscoveryCard({
   onRetention: (discovery: HeuteInboundDiscovery, keep: boolean) => Promise<void>;
 }) {
   const hasSuggestions = discovery.suggestions.length > 0;
+  const confirmDeleteEmail = useCallback(() => {
+    Alert.alert(
+      "E-Mail löschen?",
+      "Die E-Mail wird von Ordilo gelöscht. Aufgaben und Termine, die du übernommen hast, bleiben erhalten.",
+      [
+        { style: "cancel", text: "Behalten" },
+        {
+          onPress: () => void onRetention(discovery, false),
+          style: "destructive",
+          text: "E-Mail löschen",
+        },
+      ],
+    );
+  }, [discovery, onRetention]);
   return (
     <Card style={styles.inboundCard}>
       <View style={styles.inboundHeader}>
@@ -849,14 +898,14 @@ function InboundDiscoveryCard({
           <View style={styles.inboundActions}>
             <OrdiloButton
               disabled={busyRetention}
-              onPress={() => void onRetention(discovery, false)}
-              title={busyRetention ? "Einen Moment…" : "Bitte löschen"}
+              onPress={confirmDeleteEmail}
+              title="E-Mail löschen"
+              variant="destructive"
             />
             <OrdiloButton
               disabled={busyRetention}
               onPress={() => void onRetention(discovery, true)}
-              title="Behalten"
-              variant="outline"
+              title={busyRetention ? "Einen Moment…" : "Behalten"}
             />
           </View>
         </View>
@@ -916,6 +965,21 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     flexDirection: "row",
     justifyContent: "space-between",
+  },
+  heroActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  heroSettings: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
   heroGreeting: { gap: spacing.xs },
   heroDate: {

@@ -55,15 +55,21 @@ describe("native calendar", () => {
   });
 
   it("keeps upcoming and recurring appointments in the Plan list", () => {
-    expect(
-      upcomingPlannerEvents(
-        [
-          { ...event, id: "past", recurrence: "none", ends_on: "2026-08-01" },
-          { ...event, id: "future", recurrence: "none", starts_on: "2026-08-20", ends_on: "2026-08-20" },
-          { ...event, id: "recurring", recurrence_until: null },
-        ],
-        "2026-08-10",
-      ).map((item) => item.id),
-    ).toEqual(["recurring", "future"]);
+    const upcoming = upcomingPlannerEvents(
+      [
+        { ...event, id: "past", recurrence: "none", ends_on: "2026-08-01" },
+        { ...event, id: "future", recurrence: "none", starts_on: "2026-08-20", ends_on: "2026-08-20" },
+        {
+          ...event,
+          id: "recurring",
+          recurrence_exceptions: ["2026-08-10"],
+          recurrence_until: null,
+        },
+      ],
+      "2026-08-10",
+    );
+
+    expect(upcoming.map((item) => item.id)).toEqual(["recurring", "future"]);
+    expect(upcoming[0].starts_on).toBe("2026-08-17");
   });
 });

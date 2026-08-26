@@ -68,6 +68,17 @@ describe("document library helpers", () => {
         documentType: "all",
       }),
     ).toEqual([invoice]);
+
+    expect(
+      filterLibraryDocuments(
+        [{ ...invoice, title: "Monatliche Abrechnung" }],
+        {
+          query: "rechnung.pdf",
+          status: "all",
+          documentType: "all",
+        },
+      ),
+    ).toHaveLength(1);
   });
 
   it("formats recent and older German dates without time-of-day noise", () => {

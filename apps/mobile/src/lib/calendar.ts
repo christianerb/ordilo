@@ -153,18 +153,54 @@ export function upcomingPlannerEvents(
   events: PlannerEvent[],
   today: string,
 ): PlannerEvent[] {
-  return events
-    .filter((event) =>
-      event.recurrence === "none"
-        ? event.ends_on >= today
-        : !event.recurrence_until || event.recurrence_until >= today,
-    )
+  const upcoming = events.flatMap((event) => {
+    if (event.recurrence === "none") {
+      return event.ends_on >= today ? [event] : [];
+    }
+
+    const nextDate = nextEventOccurrence(event, today);
+    if (!nextDate) return [];
+    const durationDays = Math.max(
+      0,
+      Math.round(
+        (new Date(`${event.ends_on}T12:00:00`).getTime() -
+          new Date(`${event.starts_on}T12:00:00`).getTime()) /
+          86_400_000,
+      ),
+    );
+    return [{
+      ...event,
+      starts_on: nextDate,
+      ends_on: shiftIsoDate(nextDate, durationDays),
+    }];
+  });
+
+  return upcoming
     .sort(
       (a, b) =>
         a.starts_on.localeCompare(b.starts_on) ||
         (a.starts_time ?? "").localeCompare(b.starts_time ?? "") ||
         a.id.localeCompare(b.id),
     );
+}
+
+function shiftIsoDate(value: string, days: number): string {
+  const date = new Date(`${value}T12:00:00`);
+  date.setDate(date.getDate() + days);
+  return toCalendarDate(date);
+}
+
+function nextEventOccurrence(
+  event: PlannerEvent,
+  today: string,
+): string | null {
+  let candidate = event.starts_on > today ? event.starts_on : today;
+  const searchLimit = event.recurrence_until ?? shiftIsoDate(today, 740);
+  while (candidate <= searchLimit) {
+    if (eventOccursOn(event, candidate)) return candidate;
+    candidate = shiftIsoDate(candidate, 1);
+  }
+  return null;
 }
 
 export function formatEventWhen(event: PlannerEvent): string {
