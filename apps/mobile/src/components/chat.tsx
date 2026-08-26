@@ -8,6 +8,7 @@ import {
   Mic,
   RotateCcw,
   Send,
+  Square,
   ThumbsDown,
   ThumbsUp,
   X,
@@ -17,7 +18,6 @@ import * as Haptics from "expo-haptics";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  type GestureResponderEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -612,67 +612,58 @@ function VoiceWaveform({ level }: { level: number }) {
 
 function VoiceRecordingPanel({
   durationMillis,
-  locked,
   level,
   onCancel,
   onFinish,
 }: {
   durationMillis: number;
-  locked: boolean;
   level: number;
   onCancel: () => void;
   onFinish: () => void;
 }) {
-  const status = locked ? "Aufnahme gesperrt" : "Sprich jetzt";
-  const instruction = locked
-    ? "Tippe auf Fertig, wenn du fertig bist."
-    : "Nach oben ziehen zum Sperren.";
-
   return (
     <View
-      accessibilityLabel={`${status}, ${formatVoiceDuration(durationMillis)}`}
+      accessibilityLabel={`Aufnahme läuft, ${formatVoiceDuration(durationMillis)}`}
       accessibilityLiveRegion="polite"
       style={styles.voicePanel}
     >
       <View style={styles.voicePanelHeader}>
         <View style={styles.voicePanelStatus}>
           <View accessibilityElementsHidden style={styles.voiceRecordingDot} />
-          <Text style={styles.voicePanelTitle}>{status}</Text>
+          <Text style={styles.voicePanelTitle}>Aufnahme läuft</Text>
         </View>
         <Text style={styles.voiceDuration}>
           {formatVoiceDuration(durationMillis)}
         </Text>
       </View>
       <VoiceWaveform level={level} />
-      <Text style={styles.voiceInstruction}>{instruction}</Text>
-      {locked ? (
-        <View style={styles.voicePanelActions}>
-          <Pressable
-            accessibilityLabel="Aufnahme verwerfen"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onCancel}
-            style={({ pressed }) => [
-              styles.voicePanelSecondaryAction,
-              pressed && styles.pressed,
-            ]}
-          >
-            <X color={colors.mistDark} size={18} strokeWidth={2} />
-            <Text style={styles.voicePanelSecondaryText}>Verwerfen</Text>
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Aufnahme beenden"
-            accessibilityRole="button"
-            onPress={onFinish}
-            style={({ pressed }) => [
-              styles.voicePanelPrimaryAction,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Text style={styles.voicePanelPrimaryText}>Fertig</Text>
-          </Pressable>
-        </View>
-      ) : null}
+      <Text style={styles.voiceInstruction}>Tippe auf Fertig, wenn du fertig bist.</Text>
+      <View style={styles.voicePanelActions}>
+        <Pressable
+          accessibilityLabel="Aufnahme verwerfen"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onCancel}
+          style={({ pressed }) => [
+            styles.voicePanelSecondaryAction,
+            pressed && styles.pressed,
+          ]}
+        >
+          <X color={colors.mistDark} size={18} strokeWidth={2} />
+          <Text style={styles.voicePanelSecondaryText}>Verwerfen</Text>
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Aufnahme beenden"
+          accessibilityRole="button"
+          onPress={onFinish}
+          style={({ pressed }) => [
+            styles.voicePanelPrimaryAction,
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={styles.voicePanelPrimaryText}>Fertig</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -683,14 +674,11 @@ export function ChatComposer({
   inputRef,
   onChange,
   onSend,
-  onVoicePressIn,
-  onVoicePressMove,
-  onVoicePressOut,
+  onVoiceStart,
   onVoiceCancel,
   onVoiceFinish,
   value,
   voiceDurationMillis = 0,
-  voiceLocked = false,
   voiceLevel = 0,
   voiceStatus = "idle",
 }: {
@@ -698,14 +686,11 @@ export function ChatComposer({
   inputRef: React.RefObject<TextInput | null>;
   onChange: (value: string) => void;
   onSend: () => void;
-  onVoicePressIn?: (event: GestureResponderEvent) => void;
-  onVoicePressMove?: (event: GestureResponderEvent) => void;
-  onVoicePressOut?: (event: GestureResponderEvent) => void;
+  onVoiceStart?: () => void;
   onVoiceCancel?: () => void;
   onVoiceFinish?: () => void;
   value: string;
   voiceDurationMillis?: number;
-  voiceLocked?: boolean;
   voiceLevel?: number;
   voiceStatus?: "idle" | "starting" | "recording" | "transcribing";
 }) {
@@ -719,7 +704,6 @@ export function ChatComposer({
         <VoiceRecordingPanel
           durationMillis={voiceDurationMillis}
           level={voiceLevel}
-          locked={voiceLocked}
           onCancel={() => onVoiceCancel?.()}
           onFinish={() => onVoiceFinish?.()}
         />
@@ -744,26 +728,21 @@ export function ChatComposer({
           <Pressable
             accessibilityHint={
               recording
-                ? voiceLocked
-                  ? "Aufnahme gesperrt. Tippe auf Fertig."
-                  : "Gedrückt halten. Nach oben zum Sperren."
-                : "Gedrückt halten und sprechen"
+                ? "Beendet die Aufnahme"
+                : "Tippe, um eine Sprachfrage aufzunehmen"
             }
             accessibilityLabel={
               voiceStatus === "transcribing"
                 ? "Sprache wird in Text umgewandelt"
                 : recording
-                  ? "Aufnahme läuft"
+                  ? "Aufnahme beenden"
                   : "Sprachfrage aufnehmen"
             }
             accessibilityRole="button"
             accessibilityState={{ disabled: !voiceEnabled }}
             disabled={!voiceEnabled}
-            hitSlop={6}
-            onPressIn={onVoicePressIn}
-            onPressMove={onVoicePressMove}
-            onPressOut={onVoicePressOut}
-            pressRetentionOffset={{ bottom: 24, left: 24, right: 24, top: 96 }}
+            hitSlop={4}
+            onPress={recording ? onVoiceFinish : onVoiceStart}
             style={({ pressed }) => [
               styles.voiceButton,
               recording && styles.voiceButtonRecording,
@@ -773,6 +752,8 @@ export function ChatComposer({
           >
             {voiceWorking ? (
               <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : recording ? (
+              <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
             ) : (
               <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
             )}
@@ -970,47 +951,48 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     ...typography.body,
   },
-  composerStack: { gap: spacing.sm },
+  composerStack: { gap: spacing.xs },
   composer: {
-    alignItems: "flex-end",
+    alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.lg,
+    borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm,
+    gap: spacing.xs,
+    padding: spacing.xs,
   },
   composerInput: {
     color: colors.graphite,
     flex: 1,
-    maxHeight: 120,
+    maxHeight: 96,
     minHeight: 40,
     paddingHorizontal: spacing.sm,
-    paddingTop: 10,
+    paddingVertical: 0,
+    textAlignVertical: "center",
     ...typography.body,
   },
   composerActions: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.xs,
+    gap: 2,
   },
   composerSend: {
     alignItems: "center",
     backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 44,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
   composerSendDisabled: { opacity: 0.4 },
   voiceButton: {
     alignItems: "center",
     backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 44,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
   voiceButtonRecording: {
     backgroundColor: colors.warmApricot,

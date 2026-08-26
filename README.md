@@ -108,6 +108,8 @@ Setup:
 3. Open in the iOS simulator (`i`) or scan the QR code with a development
    build on a real device. Native features (camera, secure storage) require
    a development build via `eas build --profile development`, not Expo Go.
+   The complete real-device loop and the chat/voice smoke checklist are in
+   [`apps/mobile/TESTING.md`](apps/mobile/TESTING.md).
 
 Login is the same passwordless email code as on the web; the session persists
 in the iOS Keychain / Android Keystore.

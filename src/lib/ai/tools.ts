@@ -291,7 +291,8 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "Listet Dokumente der Familie VOLLSTAENDIG und deterministisch auf — " +
         "gefiltert nach Typ, Kategorie/Sammlung, Person oder Jahr, chronologisch sortiert. " +
         "Verwende dies fuer Aufzaehlungs-Fragen wie 'Zeig mir alle Rechnungen', " +
-        "'Welche Dokumente haben wir von 2026?' oder 'Alle Dokumente von Emma' — " +
+        "'Welche Dokumente haben wir von 2026?', 'Alle Dokumente von Emma' oder " +
+        "'Dokumente zu Emma' — " +
         "NICHT search_documents (das ist Aehnlichkeitssuche mit Top-10-Limit).",
       parameters: {
         type: "object",
@@ -1279,8 +1280,10 @@ async function executeListDocuments(
     });
   }
 
-  // Surface the listed documents as tappable sources (best first).
-  for (const doc of docs.slice(0, 10)) {
+  // Surface every listed document as a tappable source. The mobile source
+  // section collapses long lists itself, so capping at ten here would make
+  // a result that claims to be complete impossible to open past item ten.
+  for (const doc of docs) {
     if (!ctx.sources.find((x) => x.document_id === doc.id)) {
       ctx.sources.push({
         document_id: doc.id,
