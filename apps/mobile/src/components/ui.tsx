@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import Animated, {
   cancelAnimation,
+  cubicBezier,
   Easing,
   useAnimatedStyle,
   useReducedMotion,
@@ -47,11 +48,12 @@ export const cardRestShadow: ViewStyle = {
 };
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const PRESS_EASE_OUT = cubicBezier(0.23, 1, 0.32, 1);
 const pressTransitionStyle: AnimatedStyle<ViewStyle> = {
   transform: [{ scale: 1 }],
   transitionDuration: pressDuration,
   transitionProperty: "transform",
-  transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+  transitionTimingFunction: PRESS_EASE_OUT,
 };
 const pressedTransitionStyle: AnimatedStyle<ViewStyle> = {
   transform: [{ scale: pressScale }],
