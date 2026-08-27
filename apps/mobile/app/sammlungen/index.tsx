@@ -98,7 +98,9 @@ export default function SammlungenScreen() {
       <Screen>
         <BackBar onBack={() => router.back()} />
         <ScreenHeader subtitle="Sammlungen werden geladen" title="Sammlungen" />
-        <ListSkeleton rows={4} />
+        <View style={styles.loadingList}>
+          <ListSkeleton rows={4} />
+        </View>
       </Screen>
     );
   }
@@ -271,6 +273,7 @@ function BackBar({ onBack }: { onBack: () => void }) {
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   centerFill: { alignItems: "center", flex: 1, justifyContent: "center" },
+  loadingList: { paddingTop: spacing.md },
   backBar: { alignItems: "flex-start", paddingTop: spacing.sm },
   backButton: {
     alignItems: "center",

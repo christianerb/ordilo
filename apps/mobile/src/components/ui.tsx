@@ -28,6 +28,8 @@ import {
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
+import { OrdiloMark } from "./ordilo-mark";
+
 /**
  * Shared UI primitives for the native app, following DESIGN.md:
  * warm-white pages, sand cards, harbor-blue primary actions, and empty
@@ -197,6 +199,11 @@ export function Screen({
   );
 }
 
+/**
+ * The one screen header for every tab: a sand story surface with ambient
+ * washes, the Ordilo mark on the right, and title plus calm subtitle at
+ * the bottom left. An optional primary action sits beside the mark.
+ */
 export function ScreenHeader({
   action,
   title,
@@ -215,23 +222,41 @@ export function ScreenHeader({
   const ActionIcon = action?.icon;
   return (
     <View style={styles.header}>
+      <View accessible={false} style={styles.headerWashOne} />
+      <View accessible={false} style={styles.headerWashTwo} />
+      <View accessible={false} style={styles.headerDotOne} />
+      <View accessible={false} style={styles.headerDotTwo} />
       <View style={styles.headerCopy}>
-        <Text style={[typography.display, styles.headerTitle]}>{title}</Text>
+        <Text numberOfLines={1} style={[typography.display, styles.headerTitle]}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[typography.timestamp, styles.headerSubtitle]}>
+          <Text
+            numberOfLines={1}
+            style={[typography.timestamp, styles.headerSubtitle]}
+          >
             {subtitle}
           </Text>
         ) : null}
       </View>
-      {trailing ?? (action && ActionIcon ? (
-        <SpringPressable
-          accessibilityLabel={action.accessibilityLabel}
-          onPress={action.onPress}
-          style={styles.headerAction}
-        >
-          <ActionIcon color={colors.warmWhite} size={20} strokeWidth={2.2} />
-        </SpringPressable>
-      ) : null)}
+      <View pointerEvents="box-none" style={styles.headerActionSlot}>
+        {trailing ?? (action && ActionIcon ? (
+          <SpringPressable
+            accessibilityLabel={action.accessibilityLabel}
+            onPress={action.onPress}
+            style={styles.headerAction}
+          >
+            <ActionIcon color={colors.warmWhite} size={20} strokeWidth={2.2} />
+          </SpringPressable>
+        ) : null)}
+      </View>
+      <View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={styles.headerMark}
+      >
+        <OrdiloMark size={48} />
+      </View>
     </View>
   );
 }
@@ -324,23 +349,57 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     paddingHorizontal: spacing.md,
   },
+  // The header bleeds to the screen edges; Screen supplies the padding
+  // it cancels here.
   header: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    backgroundColor: colors.sand,
+    borderRadius: radii.md,
+    height: 132,
+    justifyContent: "flex-end",
+    marginHorizontal: -spacing.md,
+    overflow: "hidden",
+    padding: spacing.md,
   },
+  headerWashOne: {
+    backgroundColor: "#DDEBE5",
+    borderRadius: radii.xl,
+    height: 130,
+    left: -62,
+    opacity: 0.65,
+    position: "absolute",
+    top: -42,
+    transform: [{ rotate: "-12deg" }],
+    width: 220,
+  },
+  headerWashTwo: {
+    backgroundColor: "#F0B4A0",
+    borderRadius: radii.pill,
+    height: 46,
+    opacity: 0.38,
+    position: "absolute",
+    right: 126,
+    top: 18,
+    width: 46,
+  },
+  headerDotOne: { backgroundColor: colors.harborBlue, borderRadius: radii.pill, height: 8, opacity: 0.18, position: "absolute", right: 102, top: 70, width: 8 },
+  headerDotTwo: { backgroundColor: colors.warmApricot, borderRadius: radii.pill, height: 8, opacity: 0.36, position: "absolute", right: 62, top: 77, width: 8 },
   headerCopy: {
-    flex: 1,
     gap: spacing.xs,
+    paddingRight: 96,
+    zIndex: 1,
   },
   headerTitle: {
     color: colors.graphite,
   },
   headerSubtitle: {
     color: colors.mistDark,
+  },
+  // The action sits left of the mark, vertically centered with it.
+  headerActionSlot: {
+    position: "absolute",
+    right: spacing.md + 70,
+    top: 48,
+    zIndex: 1,
   },
   headerAction: {
     alignItems: "center",
@@ -349,6 +408,22 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: "center",
     width: 44,
+  },
+  headerMark: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    elevation: 2,
+    height: 60,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.md,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    top: 40,
+    width: 60,
   },
   card: {
     backgroundColor: colors.sand,

@@ -22,9 +22,8 @@ import {
   View,
 } from "react-native";
 
-import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloFormSheet } from "@/src/components/sheet";
-import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
 import { useFamily } from "@/src/lib/family-context";
 import { createFamilyInvite } from "@/src/lib/invites";
@@ -163,7 +162,7 @@ export default function FamilieScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <FamilyHeader />
+        <ScreenHeader subtitle="Mitglieder und Einladungen" title="Familie" />
 
         <View style={styles.summary}>
           <View style={styles.summaryIcon}>
@@ -273,28 +272,6 @@ export default function FamilieScreen() {
         visible={Boolean(editingMember)}
       />
     </Screen>
-  );
-}
-
-function FamilyHeader() {
-  return (
-    <View style={styles.header}>
-      <View accessible={false} style={styles.headerWashOne} />
-      <View accessible={false} style={styles.headerWashTwo} />
-      <View accessible={false} style={styles.headerDotOne} />
-      <View accessible={false} style={styles.headerDotTwo} />
-      <View style={styles.headerCopy}>
-        <Text style={styles.headerTitle}>Familie</Text>
-        <Text style={styles.headerSubtitle}>Mitglieder und Einladungen</Text>
-      </View>
-      <View
-        accessible={false}
-        importantForAccessibility="no-hide-descendants"
-        style={styles.headerMark}
-      >
-        <OrdiloMark size={48} />
-      </View>
-    </View>
   );
 }
 
@@ -450,57 +427,6 @@ function MemberEditSheet({
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"], paddingHorizontal: spacing.md },
-  header: {
-    backgroundColor: colors.sand,
-    borderRadius: radii.md,
-    height: 132,
-    justifyContent: "flex-end",
-    marginHorizontal: -spacing.md,
-    overflow: "hidden",
-    padding: spacing.md,
-  },
-  headerWashOne: {
-    backgroundColor: "#DDEBE5",
-    borderRadius: radii.xl,
-    height: 130,
-    left: -62,
-    opacity: 0.65,
-    position: "absolute",
-    top: -42,
-    transform: [{ rotate: "-12deg" }],
-    width: 220,
-  },
-  headerWashTwo: {
-    backgroundColor: "#F0B4A0",
-    borderRadius: radii.pill,
-    height: 46,
-    opacity: 0.38,
-    position: "absolute",
-    right: 126,
-    top: 18,
-    width: 46,
-  },
-  headerDotOne: { backgroundColor: colors.harborBlue, borderRadius: radii.pill, height: 8, opacity: 0.18, position: "absolute", right: 102, top: 70, width: 8 },
-  headerDotTwo: { backgroundColor: colors.warmApricot, borderRadius: radii.pill, height: 8, opacity: 0.36, position: "absolute", right: 62, top: 77, width: 8 },
-  headerCopy: { gap: spacing.xs, zIndex: 1 },
-  headerTitle: { color: colors.graphite, ...typography.display },
-  headerSubtitle: { color: colors.mistDark, ...typography.timestamp },
-  headerMark: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
-    elevation: 2,
-    height: 60,
-    justifyContent: "center",
-    position: "absolute",
-    right: spacing.md,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    top: 40,
-    width: 60,
-  },
   summary: {
     alignItems: "center",
     backgroundColor: colors.sand,

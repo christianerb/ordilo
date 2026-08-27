@@ -470,7 +470,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing["2xl"],
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
   },
   section: {
     gap: spacing.sm,

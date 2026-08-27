@@ -160,6 +160,15 @@ export default function HeuteScreen() {
   }, [load]);
 
   const referenceDate = useMemo(() => new Date(clock), [clock]);
+  const dateLine = useMemo(
+    () =>
+      new Intl.DateTimeFormat("de-DE", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }).format(referenceDate),
+    [referenceDate],
+  );
   const datedTasks = useMemo(() => getDatedOpenTasks(tasks), [tasks]);
   const undatedOpenTasks = useMemo(
     () => getOpenTasksWithoutDueDate(tasks),
@@ -288,18 +297,22 @@ export default function HeuteScreen() {
     [mutatingRetentionId],
   );
 
+  const header = (
+    <ScreenHeader
+      action={{
+        accessibilityLabel: "Einstellungen öffnen",
+        icon: Settings,
+        onPress: () => router.push("/einstellungen"),
+      }}
+      subtitle={dateLine}
+      title={getHomeGreeting()}
+    />
+  );
+
   if (loading) {
     return (
       <Screen>
-        <ScreenHeader
-          action={{
-            accessibilityLabel: "Einstellungen öffnen",
-            icon: Settings,
-            onPress: () => router.push("/einstellungen"),
-          }}
-          subtitle="Dein Überblick für heute"
-          title="Heute"
-        />
+        {header}
         <View style={styles.loadingList}>
           <ListSkeleton rows={5} />
         </View>
@@ -310,15 +323,7 @@ export default function HeuteScreen() {
   if (error && !data) {
     return (
       <Screen>
-        <ScreenHeader
-          action={{
-            accessibilityLabel: "Einstellungen öffnen",
-            icon: Settings,
-            onPress: () => router.push("/einstellungen"),
-          }}
-          subtitle="Dein Überblick für heute"
-          title="Heute"
-        />
+        {header}
         <View style={styles.center}>
           <EmptyState
             icon={Clock3}
@@ -351,12 +356,11 @@ export default function HeuteScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
+        {header}
+
         <HeuteHero
-          familyName={family?.name ?? "eurer Familie"}
           heroTask={heroTask}
-          memberNames={data?.members ?? []}
           onCompleteTask={toggleTask}
-          onOpenSettings={() => router.push("/einstellungen")}
           referenceDate={referenceDate}
           taskBusy={mutatingTaskId === heroTask?.id}
         />
@@ -529,30 +533,20 @@ export default function HeuteScreen() {
   );
 }
 
+/** The day's priority card — the greeting and settings now live in the shared ScreenHeader. */
 function HeuteHero({
-  familyName,
   heroTask,
-  memberNames,
   onCompleteTask,
-  onOpenSettings,
   referenceDate,
   taskBusy,
 }: {
-  familyName: string;
   heroTask: HeuteTask | null;
-  memberNames: HeuteData["members"];
   onCompleteTask: (task: HeuteTask) => Promise<void>;
-  onOpenSettings: () => void;
   referenceDate: Date;
   taskBusy: boolean;
 }) {
   const due = heroTask ? formatDueLabel(heroTask.dueDate, referenceDate) : null;
   const isOverdue = due?.overdue ?? false;
-  const dateLine = new Intl.DateTimeFormat("de-DE", {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  }).format(referenceDate);
 
   return (
     <View
@@ -565,31 +559,6 @@ function HeuteHero({
           : styles.heroCalm,
       ]}
     >
-      <View style={styles.heroTop}>
-        <View style={styles.heroGreeting}>
-          <Text style={[typography.timestamp, styles.heroDate]}>{dateLine}</Text>
-          <Text style={styles.heroTitle}>{getHomeGreeting()}</Text>
-          <Text style={[typography.timestamp, styles.heroFamily]}>
-            {familyName}
-          </Text>
-        </View>
-        <View style={styles.heroActions}>
-          <AvatarStack members={memberNames} />
-          <Pressable
-            accessibilityLabel="Einstellungen öffnen"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={onOpenSettings}
-            style={({ pressed }) => [
-              styles.heroSettings,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Settings color={colors.mistDark} size={19} strokeWidth={1.8} />
-          </Pressable>
-        </View>
-      </View>
-
       {heroTask ? (
         <View style={styles.heroTaskRow}>
           <Pressable
@@ -643,33 +612,6 @@ function HeuteHero({
           </View>
         </View>
       )}
-    </View>
-  );
-}
-
-function AvatarStack({ members }: { members: HeuteData["members"] }) {
-  const visible = members.slice(0, 3);
-  return (
-    <View accessibilityLabel="Familienmitglieder" style={styles.avatars}>
-      {visible.map((member, index) => (
-        <View
-          key={member.id}
-          style={[
-            styles.avatar,
-            { backgroundColor: member.avatarColor ?? colors.harborBlue },
-            index > 0 && styles.avatarOverlap,
-          ]}
-        >
-          <Text style={styles.avatarText}>
-            {member.name.trim().charAt(0).toUpperCase() || "?"}
-          </Text>
-        </View>
-      ))}
-      {members.length > visible.length ? (
-        <View style={[styles.avatar, styles.avatarOverflow, styles.avatarOverlap]}>
-          <Text style={styles.avatarOverflowText}>+{members.length - visible.length}</Text>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -958,60 +900,6 @@ const styles = StyleSheet.create({
   heroCalm: { backgroundColor: "#E8F0EC" },
   heroTask: { backgroundColor: colors.blueSoft },
   heroOverdue: { backgroundColor: "#FAE8DE" },
-  heroTop: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  heroActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  heroSettings: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  heroGreeting: { gap: spacing.xs },
-  heroDate: {
-    color: colors.mistDark,
-    textTransform: "capitalize",
-  },
-  heroTitle: {
-    color: colors.graphite,
-    fontFamily: typography.display.fontFamily,
-    fontSize: 26,
-    fontWeight: "600",
-    letterSpacing: -0.5,
-  },
-  heroFamily: { color: colors.mistDark },
-  avatars: { flexDirection: "row", paddingLeft: spacing.sm },
-  avatar: {
-    alignItems: "center",
-    borderColor: colors.warmWhite,
-    borderRadius: 18,
-    borderWidth: 2,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  avatarOverlap: { marginLeft: -10 },
-  avatarText: {
-    color: colors.warmWhite,
-    fontFamily: typography.label.fontFamily,
-  },
-  avatarOverflow: { backgroundColor: colors.sandWarm },
-  avatarOverflowText: {
-    color: colors.graphite,
-    fontFamily: typography.label.fontFamily,
-    fontSize: 11,
-  },
   heroTaskRow: {
     alignItems: "flex-start",
     flexDirection: "row",
