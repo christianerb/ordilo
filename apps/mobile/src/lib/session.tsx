@@ -24,6 +24,19 @@ const SessionContext = createContext<SessionContextValue>({
   signOut: async () => {},
 });
 
+type SignOutAuth = Pick<ReturnType<typeof getSupabase>["auth"], "signOut">;
+
+export async function signOutSession(auth: SignOutAuth): Promise<void> {
+  try {
+    await auth.signOut();
+  } catch {
+    // Account deletion can remove the server-side auth user before this
+    // call. Clear the persisted native session even when remote revocation
+    // can no longer succeed.
+    await auth.signOut({ scope: "local" });
+  }
+}
+
 /**
  * Loads the persisted Supabase session once, keeps it in sync via
  * onAuthStateChange, and ties token refresh to the app being in the
@@ -77,7 +90,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       session,
       isLoading,
       signOut: async () => {
-        await getSupabase().auth.signOut();
+        await signOutSession(getSupabase().auth);
       },
     }),
     [session, isLoading],

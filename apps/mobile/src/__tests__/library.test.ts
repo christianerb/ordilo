@@ -104,7 +104,12 @@ describe("document library helpers", () => {
   });
 
   it("turns search text into a single safe PostgREST pattern", () => {
-    expect(toLibrarySearchPattern("  Kita, 100%_  ")).toBe("%Kita  100\\%\\_%");
+    expect(toLibrarySearchPattern("  Rechnung (Mai), 1.000  ")).toBe(
+      '"%Rechnung (Mai), 1.000%"',
+    );
+    expect(toLibrarySearchPattern('  Kita "Süd", 100%_  ')).toBe(
+      '"%Kita \\"Süd\\", 100\\%\\_%"',
+    );
   });
 
   it("creates inclusive ranges and does not repeat boundary documents", () => {
