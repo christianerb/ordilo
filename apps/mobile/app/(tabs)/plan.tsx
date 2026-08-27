@@ -4,6 +4,8 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Plus,
   Undo2,
@@ -40,9 +42,14 @@ import {
   ScreenHeader,
 } from "@/src/components/ui";
 import {
+  calendarDays,
+  eventsForDay,
   fetchPlannerEvents,
   formatEventPeople,
   formatEventWhen,
+  monthStart,
+  shiftMonth,
+  toCalendarDate,
   upcomingPlannerEvents,
   type PlannerEvent,
 } from "@/src/lib/calendar";
@@ -123,6 +130,9 @@ export default function PlanScreen() {
   const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
   const [rescheduleTask, setRescheduleTask] = useState<PlannerTask | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
+  const [view, setView] = useState<"tasks" | "calendar">("tasks");
+  const [selectedDate, setSelectedDate] = useState(() => new Date());
+  const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
   const undoSeqRef = useRef(0);
   const assignSheetRef = useRef<OrdiloSheetHandle>(null);
   const rescheduleSheetRef = useRef<OrdiloSheetHandle>(null);
@@ -203,6 +213,10 @@ export default function PlanScreen() {
   const visibleEvents = useMemo(
     () => upcomingPlannerEvents(events, todayStr),
     [events, todayStr],
+  );
+  const selectedEvents = useMemo(
+    () => eventsForDay(events, selectedDate),
+    [events, selectedDate],
   );
 
   const grouped = useMemo(() => {
@@ -425,7 +439,39 @@ export default function PlanScreen() {
   return (
     <Screen>
       <PlanHeader onCreate={openCreate} />
-      {visibleTasks.length === 0 && visibleEvents.length === 0 ? (
+      <View style={styles.viewTabs}>
+        <PlanViewTab
+          icon={Check}
+          label="Aufgaben"
+          onPress={() => {
+            if (view === "tasks") return;
+            select();
+            setView("tasks");
+          }}
+          selected={view === "tasks"}
+        />
+        <PlanViewTab
+          icon={CalendarDays}
+          label="Termine"
+          onPress={() => {
+            if (view === "calendar") return;
+            select();
+            setView("calendar");
+          }}
+          selected={view === "calendar"}
+        />
+      </View>
+      {view === "calendar" ? (
+        <CalendarView
+          activeMonth={activeMonth}
+          allEvents={events}
+          events={selectedEvents}
+          members={members}
+          onChangeMonth={setActiveMonth}
+          onSelectDate={setSelectedDate}
+          selectedDate={selectedDate}
+        />
+      ) : visibleTasks.length === 0 && visibleEvents.length === 0 ? (
         <EmptyState
           description="Lege die erste Aufgabe an — Fristen aus deinen Dokumenten erscheinen hier ebenfalls."
           heading="Noch nichts geplant"
@@ -607,6 +653,165 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
       subtitle="Aufgaben und Termine der Familie"
       title="Plan"
     />
+  );
+}
+
+/** One tab of the Aufgaben/Termine switcher — icon plus label, the active one filled in harbor blue. */
+function PlanViewTab({
+  icon: Icon,
+  label,
+  onPress,
+  selected,
+}: {
+  icon: typeof CalendarDays;
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={[styles.viewTab, selected && styles.viewTabSelected]}
+    >
+      <Icon color={selected ? colors.warmWhite : colors.mistDark} size={17} />
+      <Text style={[styles.viewTabLabel, selected && styles.viewTabLabelSelected]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Month calendar with day selection: the grid marks days that carry
+ * events (apricot dot), and below it the selected day's events read as
+ * a simple list. Paging months moves the selection along so the list
+ * always answers the visible month.
+ */
+function CalendarView({
+  activeMonth,
+  allEvents,
+  events,
+  members,
+  onChangeMonth,
+  onSelectDate,
+  selectedDate,
+}: {
+  activeMonth: Date;
+  allEvents: PlannerEvent[];
+  events: PlannerEvent[];
+  members: FamilyMemberOption[];
+  onChangeMonth: (date: Date) => void;
+  onSelectDate: (date: Date) => void;
+  selectedDate: Date;
+}) {
+  const days = useMemo(() => calendarDays(activeMonth), [activeMonth]);
+  const monthTitle = activeMonth.toLocaleDateString("de-DE", {
+    month: "long",
+    year: "numeric",
+  });
+  const selectedTitle = selectedDate.toLocaleDateString("de-DE", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+
+  return (
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={styles.calendarContent}
+    >
+      <View style={styles.calendarSurface}>
+        <View style={styles.monthHeader}>
+          <Pressable
+            accessibilityLabel="Vorheriger Monat"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              const previous = shiftMonth(activeMonth, -1);
+              onChangeMonth(previous);
+              onSelectDate(previous);
+            }}
+            style={styles.monthButton}
+          >
+            <ChevronLeft color={colors.harborBlue} size={20} />
+          </Pressable>
+          <Text style={styles.monthTitle}>{monthTitle}</Text>
+          <Pressable
+            accessibilityLabel="Nächster Monat"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              const next = shiftMonth(activeMonth, 1);
+              onChangeMonth(next);
+              onSelectDate(next);
+            }}
+            style={styles.monthButton}
+          >
+            <ChevronRight color={colors.harborBlue} size={20} />
+          </Pressable>
+        </View>
+        <View style={styles.weekdayRow}>
+          {["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((day) => (
+            <Text key={day} style={styles.weekdayLabel}>{day}</Text>
+          ))}
+        </View>
+        <View style={styles.monthGrid}>
+          {days.map((day) => {
+            const inMonth = day.getMonth() === activeMonth.getMonth();
+            const selected = toCalendarDate(day) === toCalendarDate(selectedDate);
+            const hasEvents = eventsForDay(allEvents, day).length > 0;
+            return (
+              <Pressable
+                accessibilityLabel={`${day.getDate()}. ${monthTitle}`}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                key={toCalendarDate(day)}
+                onPress={() => onSelectDate(day)}
+                style={[
+                  styles.dayButton,
+                  !inMonth && styles.dayButtonOutside,
+                  selected && styles.dayButtonSelected,
+                ]}
+              >
+                <Text style={[styles.dayLabel, !inMonth && styles.dayLabelOutside, selected && styles.dayLabelSelected]}>
+                  {day.getDate()}
+                </Text>
+                {hasEvents ? <View style={[styles.eventDot, selected && styles.eventDotSelected]} /> : null}
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      <View style={styles.dayEventsHeader}>
+        <Text style={styles.dayEventsTitle}>{selectedTitle}</Text>
+        <Text style={styles.dayEventsCount}>{events.length}</Text>
+      </View>
+      {events.length === 0 ? (
+        <Text style={styles.calendarEmpty}>Für diesen Tag ist noch kein Termin geplant.</Text>
+      ) : (
+        <View style={styles.eventList}>
+          {events.map((event) => {
+            const people = formatEventPeople(event, members);
+            return (
+              <View key={event.id} style={styles.eventRow}>
+                <View style={styles.eventTime}>
+                  <Text style={styles.eventTimeLabel}>{formatEventWhen(event)}</Text>
+                </View>
+                <View style={styles.eventBody}>
+                  <Text style={styles.eventTitle}>{event.title}</Text>
+                  {event.location ? <Text style={styles.eventMeta}>{event.location}</Text> : null}
+                  {people ? <Text style={styles.eventMeta}>{people}</Text> : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+    </ScrollView>
   );
 }
 
@@ -963,6 +1168,162 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
+  },
+  viewTabs: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    marginBottom: spacing.md,
+    marginTop: spacing.md,
+    padding: spacing.xs,
+  },
+  viewTab: {
+    alignItems: "center",
+    borderRadius: radii.base,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 40,
+    justifyContent: "center",
+  },
+  viewTabSelected: {
+    backgroundColor: colors.harborBlue,
+  },
+  viewTabLabel: {
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  viewTabLabelSelected: {
+    color: colors.warmWhite,
+  },
+  calendarContent: {
+    gap: spacing.lg,
+    paddingBottom: spacing["2xl"],
+  },
+  calendarSurface: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    padding: spacing.sm,
+  },
+  monthHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  monthButton: {
+    alignItems: "center",
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  monthTitle: {
+    color: colors.graphite,
+    textTransform: "capitalize",
+    ...typography.headline,
+  },
+  weekdayRow: {
+    flexDirection: "row",
+    marginBottom: spacing.xs,
+  },
+  weekdayLabel: {
+    color: colors.mistDark,
+    textAlign: "center",
+    width: "14.2857%",
+    ...typography.label,
+  },
+  monthGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+  },
+  dayButton: {
+    alignItems: "center",
+    height: 48,
+    justifyContent: "center",
+    position: "relative",
+    width: "14.2857%",
+  },
+  dayButtonOutside: {
+    opacity: 0.45,
+  },
+  dayButtonSelected: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+  },
+  dayLabel: {
+    color: colors.graphite,
+    ...typography.timestamp,
+  },
+  dayLabelOutside: {
+    color: colors.mistDark,
+  },
+  dayLabelSelected: {
+    color: colors.warmWhite,
+    ...typography.title,
+  },
+  eventDot: {
+    backgroundColor: colors.warmApricot,
+    borderRadius: radii.pill,
+    bottom: 5,
+    height: 4,
+    position: "absolute",
+    width: 4,
+  },
+  eventDotSelected: {
+    backgroundColor: colors.warmWhite,
+  },
+  dayEventsHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  dayEventsTitle: {
+    color: colors.harborBlue,
+    flex: 1,
+    textTransform: "capitalize",
+    ...typography.headline,
+  },
+  dayEventsCount: {
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.pill,
+    color: colors.harborBlue,
+    minWidth: 28,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    textAlign: "center",
+    ...typography.timestamp,
+  },
+  calendarEmpty: {
+    color: colors.mistDark,
+    ...typography.timestamp,
+  },
+  eventList: {
+    gap: spacing.sm,
+  },
+  eventTime: {
+    minWidth: 76,
+  },
+  eventTimeLabel: {
+    color: colors.harborBlue,
+    ...typography.label,
+  },
+  eventBody: {
+    flex: 1,
+    gap: 2,
+  },
+  eventTitle: {
+    color: colors.graphite,
+    ...typography.title,
+  },
+  eventMeta: {
+    color: colors.mistDark,
+    ...typography.timestamp,
   },
   section: {
     marginBottom: spacing.lg,

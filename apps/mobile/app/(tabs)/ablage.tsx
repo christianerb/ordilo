@@ -8,6 +8,7 @@ import {
   FileText,
   FolderOpen,
   NotebookPen,
+  Plus,
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
@@ -52,6 +53,7 @@ import { createNote, triggerNoteAnalysis } from "@/src/lib/notes";
 import {
   filterLibraryDocuments,
   formatDocumentDate,
+  getDocumentSearchText,
   getDocumentStatusLabel,
   getDocumentTitle,
   getDocumentTypeLabel,
@@ -69,6 +71,7 @@ import {
   type LibraryFilters,
   type LibrarySort,
 } from "@/src/lib/library";
+import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -93,6 +96,7 @@ export default function AblageScreen() {
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
+  const [view, setView] = useState<"documents" | "notes">("documents");
   const [sort, setSort] = useState<LibrarySort>("newest");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -130,6 +134,11 @@ export default function AblageScreen() {
           .from("documents")
           .select(libraryDocumentSelect)
           .eq("family_id", family.id);
+        // Notes are documents with source "manual"; the two views split
+        // on that predicate so each list only ever shows its own kind.
+        query = view === "notes"
+          ? query.eq("source", "manual")
+          : query.neq("source", "manual");
         if (filters.status === "needs_review") query = query.eq("status", "analyzed");
         if (filters.status === "confirmed") query = query.eq("status", "confirmed");
         if (filters.status === "failed") query = query.eq("status", "failed");
@@ -171,7 +180,7 @@ export default function AblageScreen() {
         }
       }
     },
-    [family, filters, sort],
+    [family, filters, sort, view],
   );
 
   useFocusEffect(useCallback(() => {
@@ -206,9 +215,13 @@ export default function AblageScreen() {
   );
 
   const documentCountLabel = useMemo(() => {
+    if (view === "notes") {
+      if (documents.length === 1) return "1 Notiz der Familie";
+      return `${documents.length}${hasMore ? "+" : ""} Notizen der Familie`;
+    }
     if (documents.length === 1) return "1 Dokument der Familie";
     return `${documents.length}${hasMore ? "+" : ""} Dokumente der Familie`;
-  }, [documents.length, hasMore]);
+  }, [documents.length, hasMore, view]);
 
   const visibleDocuments = useMemo(
     () => filterLibraryDocuments(documents, filters),
@@ -222,6 +235,21 @@ export default function AblageScreen() {
     filters.documentType === "all"
       ? "Art"
       : documentTypeLabels[filters.documentType];
+
+  const switchView = useCallback((nextView: "documents" | "notes") => {
+    if (nextView === view) return;
+    tap();
+    // Invalidate the previous source query before replacing the visible
+    // list. A slow Documents response must never populate the Notes view.
+    requestGeneration.current += 1;
+    setDocuments([]);
+    setError(null);
+    setHasMore(false);
+    setLoading(true);
+    setNextPage(1);
+    setFilters({ query: "", status: "all", documentType: "all" });
+    setView(nextView);
+  }, [view]);
 
   const createNewNote = useCallback(
     async (
@@ -282,7 +310,9 @@ export default function AblageScreen() {
           }}
           subtitle={
             loading && documents.length === 0
-              ? "Dokumente werden geladen"
+              ? view === "notes"
+                ? "Notizen werden geladen"
+                : "Dokumente werden geladen"
               : hasActiveFilters && documents.length === 0
               ? "Keine Treffer für deine Suche oder Filter"
               : documentCountLabel
@@ -290,7 +320,38 @@ export default function AblageScreen() {
           title="Ablage"
         />
 
-        {loading && documents.length === 0 && !hasActiveFilters ? (
+        <View style={styles.segmented}>
+          <SegmentButton
+            icon={FileText}
+            label="Dokumente"
+            onPress={() => switchView("documents")}
+            selected={view === "documents"}
+          />
+          <SegmentButton
+            icon={NotebookPen}
+            label="Notizen"
+            onPress={() => switchView("notes")}
+            selected={view === "notes"}
+          />
+        </View>
+
+        {view === "notes" ? (
+          <NotesView
+            error={error}
+            hasMore={hasMore}
+            loading={loading}
+            loadingMore={loadingMore}
+            notes={documents}
+            onCreate={() => setCreateNoteOpen(true)}
+            onLoadMore={loadMore}
+            onOpen={(documentId) => router.push(`/note/${documentId}`)}
+            onSearchChange={(query) =>
+              setFilters((current) => ({ ...current, query }))
+            }
+            onRetry={() => void loadDocuments()}
+            search={filters.query}
+          />
+        ) : loading && documents.length === 0 && !hasActiveFilters ? (
           <ListSkeleton rows={6} />
         ) : documents.length > 0 || hasActiveFilters ? (
           <>
@@ -492,6 +553,182 @@ export default function AblageScreen() {
         visible={createNoteOpen}
       />
     </Screen>
+  );
+}
+
+/** One half of the Dokumente/Notizen switcher — icon plus label, the active side filled in harbor blue. */
+function SegmentButton({
+  icon: Icon,
+  label,
+  onPress,
+  selected,
+}: {
+  icon: typeof FileText;
+  label: string;
+  onPress: () => void;
+  selected: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.segment,
+        selected && styles.segmentSelected,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Icon color={selected ? colors.warmWhite : colors.mistDark} size={17} />
+      <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/**
+ * The notes list: its own search, its own empty states, and a create
+ * call-to-action that is always one tap away. Notes live in the same
+ * documents table (source "manual") but read as their own thing here.
+ */
+function NotesView({
+  error,
+  hasMore,
+  loading,
+  loadingMore,
+  notes,
+  onCreate,
+  onLoadMore,
+  onOpen,
+  onRetry,
+  onSearchChange,
+  search,
+}: {
+  error: string | null;
+  hasMore: boolean;
+  loading: boolean;
+  loadingMore: boolean;
+  notes: LibraryDocument[];
+  onCreate: () => void;
+  onLoadMore: () => void;
+  onOpen: (documentId: string) => void;
+  onRetry: () => void;
+  onSearchChange: (query: string) => void;
+  search: string;
+}) {
+  const visibleNotes = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("de");
+    if (!query) return notes;
+    return notes.filter((note) => getDocumentSearchText(note).includes(query));
+  }, [notes, search]);
+
+  if (loading && notes.length === 0 && !search.trim()) {
+    return <ActivityIndicator accessibilityLabel="Notizen werden geladen" color={colors.harborBlue} style={styles.notesLoading} />;
+  }
+
+  if (error && notes.length === 0 && !search.trim()) {
+    return (
+      <EmptyState icon={AlertCircle} heading="Notizen nicht erreichbar" description={error}>
+        <OrdiloButton onPress={onRetry} size="lg" title="Erneut versuchen" />
+      </EmptyState>
+    );
+  }
+
+  if (notes.length === 0 && !search.trim()) {
+    return (
+      <EmptyState
+        icon={NotebookPen}
+        heading="Noch keine Notizen"
+        description="Halte Familienwissen fest, bevor es wieder jemand im Kopf behalten muss."
+      >
+        <OrdiloButton
+          icon={<Plus color={colors.warmWhite} size={19} />}
+          onPress={onCreate}
+          size="lg"
+          title="Notiz schreiben"
+        />
+      </EmptyState>
+    );
+  }
+
+  return (
+    <>
+      <OrdiloButton
+        icon={<Plus color={colors.warmWhite} size={17} />}
+        onPress={onCreate}
+        title="Notiz schreiben"
+      />
+      <View style={styles.search}>
+        <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
+        <TextInput
+          accessibilityLabel="Notizen durchsuchen"
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          onChangeText={onSearchChange}
+          placeholder="Notizen durchsuchen"
+          placeholderTextColor={colors.mistDark}
+          returnKeyType="search"
+          style={styles.searchInput}
+          value={search}
+        />
+      </View>
+      {error ? (
+        <View accessibilityRole="alert" style={styles.inlineError}>
+          <Text style={styles.inlineErrorText}>{error}</Text>
+          <Pressable onPress={onRetry}><Text style={styles.dismiss}>Erneut versuchen</Text></Pressable>
+        </View>
+      ) : null}
+      {visibleNotes.length === 0 ? (
+        <View style={styles.filteredEmpty}>
+          <Search color={colors.mist} size={28} strokeWidth={1.5} />
+          <Text style={styles.filteredEmptyTitle}>Keine Notiz gefunden</Text>
+          <Text style={styles.filteredEmptyText}>Versuch es mit einem anderen Wort.</Text>
+        </View>
+      ) : (
+        <View style={styles.list}>
+          {visibleNotes.map((note) => (
+            <NoteRow key={note.id} note={note} onPress={() => onOpen(note.id)} />
+          ))}
+        </View>
+      )}
+      {hasMore ? (
+        <OrdiloButton
+          disabled={loadingMore}
+          icon={loadingMore ? <ActivityIndicator color={colors.harborBlue} size="small" /> : undefined}
+          onPress={onLoadMore}
+          title={loadingMore ? "Weitere Notizen werden geladen …" : "Weitere Notizen laden"}
+          variant="outline"
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** One note row: title, a one-line preview, and the creation date. */
+function NoteRow({
+  note,
+  onPress,
+}: {
+  note: LibraryDocument;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityHint="Öffnet die Notiz"
+      accessibilityLabel={getDocumentTitle(note)}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
+    >
+      <View style={styles.documentIcon}><NotebookPen color={colors.mistDark} size={20} strokeWidth={1.7} /></View>
+      <View style={styles.documentCopy}>
+        <Text numberOfLines={1} style={styles.documentTitle}>{getDocumentTitle(note)}</Text>
+        <Text numberOfLines={1} style={styles.documentSummary}>
+          {note.summary?.trim() || note.ocr_text?.trim() || "Notiz öffnen, um den Inhalt zu lesen"}
+        </Text>
+      </View>
+      <Text style={styles.noteDate}>{formatDocumentDate(note.created_at)}</Text>
+    </Pressable>
   );
 }
 
@@ -791,6 +1028,28 @@ function SortPicker({
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
+  segmented: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    padding: spacing.xs,
+  },
+  segment: {
+    alignItems: "center",
+    borderRadius: radii.base,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 40,
+    justifyContent: "center",
+  },
+  segmentSelected: { backgroundColor: colors.harborBlue },
+  segmentText: { color: colors.mistDark, ...typography.label },
+  segmentTextSelected: { color: colors.warmWhite },
+  noteDate: { color: colors.mistDark, ...typography.label },
+  notesLoading: { marginTop: spacing["2xl"] },
   toolOption: {
     alignItems: "center",
     borderColor: "transparent",
