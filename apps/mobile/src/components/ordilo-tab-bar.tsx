@@ -8,15 +8,14 @@ import {
   Sparkles,
   Users,
 } from "lucide-react-native";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useReducedMotion } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 
 import { OrdiloMark } from "@/src/components/ordilo-mark";
+import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
 import { haptics } from "@/src/lib/haptics";
-import { modalAnimationType } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const tabConfig = {
@@ -35,10 +34,9 @@ export function OrdiloTabBar({
   navigation,
   state,
 }: BottomTabBarProps) {
-  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsSheetRef = useRef<OrdiloSheetHandle>(null);
 
   return (
     <>
@@ -71,7 +69,7 @@ export function OrdiloTabBar({
                     hitSlop={6}
                     onPress={() => {
                       haptics.tap();
-                      setActionsOpen(true);
+                      actionsSheetRef.current?.present();
                     }}
                     style={({ pressed }) => [
                       styles.ordiloButton,
@@ -125,62 +123,47 @@ export function OrdiloTabBar({
         </View>
       </View>
 
-      <Modal
-        animationType={modalAnimationType(reduceMotion)}
-        onRequestClose={() => setActionsOpen(false)}
-        presentationStyle="overFullScreen"
-        transparent
-        visible={actionsOpen}
-      >
-        <Pressable onPress={() => setActionsOpen(false)} style={styles.overlay}>
-          <Pressable
-            accessibilityViewIsModal
-            onPress={(event) => event.stopPropagation()}
-            style={styles.actionSheet}
-          >
-            <View style={styles.sheetHandle} />
-            <View style={styles.actionSheetHeading}>
-              <OrdiloMark size={38} />
-              <View style={styles.actionSheetCopy}>
-                <Text style={styles.actionSheetTitle}>Was darf ich für euch tun?</Text>
-                <Text style={styles.actionSheetText}>Ordilo hilft beim Finden und Festhalten.</Text>
-              </View>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setActionsOpen(false);
-                router.push("/suche");
-              }}
-              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-            >
-              <View style={styles.actionIcon}>
-                <Sparkles color={colors.harborBlue} size={20} />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Frage Ordilo</Text>
-                <Text style={styles.actionText}>Antworten aus euren Dokumenten finden.</Text>
-              </View>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setActionsOpen(false);
-                router.push("/scan");
-              }}
-              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-            >
-              <View style={[styles.actionIcon, styles.scanActionIcon]}>
-                <ScanLine color={colors.harborBlue} size={20} />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Dokument scannen</Text>
-                <Text style={styles.actionText}>Brief abfotografieren und ablegen.</Text>
-              </View>
-            </Pressable>
-          </Pressable>
+      <OrdiloSheet accessibilityLabel="Ordilo-Aktionen" ref={actionsSheetRef}>
+        <View style={styles.actionSheetHeading}>
+          <OrdiloMark size={38} />
+          <View style={styles.actionSheetCopy}>
+            <Text style={styles.actionSheetTitle}>Was darf ich für euch tun?</Text>
+            <Text style={styles.actionSheetText}>Ordilo hilft beim Finden und Festhalten.</Text>
+          </View>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            actionsSheetRef.current?.dismiss();
+            router.push("/suche");
+          }}
+          style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+        >
+          <View style={styles.actionIcon}>
+            <Sparkles color={colors.harborBlue} size={20} />
+          </View>
+          <View style={styles.actionCopy}>
+            <Text style={styles.actionTitle}>Frage Ordilo</Text>
+            <Text style={styles.actionText}>Antworten aus euren Dokumenten finden.</Text>
+          </View>
         </Pressable>
-      </Modal>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            actionsSheetRef.current?.dismiss();
+            router.push("/scan");
+          }}
+          style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+        >
+          <View style={[styles.actionIcon, styles.scanActionIcon]}>
+            <ScanLine color={colors.harborBlue} size={20} />
+          </View>
+          <View style={styles.actionCopy}>
+            <Text style={styles.actionTitle}>Dokument scannen</Text>
+            <Text style={styles.actionText}>Brief abfotografieren und ablegen.</Text>
+          </View>
+        </Pressable>
+      </OrdiloSheet>
     </>
   );
 }
@@ -267,27 +250,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 0,
     width: 136,
-  },
-  overlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  actionSheet: {
-    backgroundColor: colors.warmWhite,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-    width: 40,
   },
   actionSheetHeading: {
     alignItems: "center",
