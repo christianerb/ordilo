@@ -15,6 +15,16 @@ describe("native motion wiring", () => {
     expect(settings).toContain("SpringPressable");
   });
 
+  it("uses Reanimated's native CSS easing object for press transitions", () => {
+    const ui = source("src/components/ui.tsx");
+
+    expect(ui).toContain("cubicBezier(0.23, 1, 0.32, 1)");
+    expect(ui).toContain("transitionTimingFunction: PRESS_EASE_OUT");
+    expect(ui).not.toMatch(
+      /transitionTimingFunction:\s*["']cubic-bezier\(/,
+    );
+  });
+
   it("keys onboarding and login form steps inside stationary scroll views", () => {
     const onboarding = source("app/onboarding.tsx");
     const login = source("app/(auth)/login.tsx");
