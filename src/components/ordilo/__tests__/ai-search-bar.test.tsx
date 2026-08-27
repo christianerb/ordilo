@@ -229,7 +229,30 @@ describe("AISearchBar", () => {
     mockVoiceStatus = "connecting";
     render(<AISearchBar onSubmit={vi.fn()} />);
 
-    expect(screen.getByTestId("voice-level-meter").children).toHaveLength(24);
+    const meter = screen.getByTestId("voice-level-meter");
+    expect(meter.children).toHaveLength(24);
+    expect((meter.firstElementChild as HTMLElement).style.transform).toBe(
+      "scaleY(0.2)",
+    );
+    expect((meter.firstElementChild as HTMLElement).style.height).toBe("");
+  });
+
+  it("renders a static recording indicator under Reduced Motion", () => {
+    mockVoiceStatus = "connecting";
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    render(<AISearchBar onSubmit={vi.fn()} />);
+
+    const meter = screen.getByTestId("voice-level-meter");
+    expect(meter).toHaveAttribute("data-static", "true");
+    expect(meter.children).toHaveLength(3);
+    expect((meter.firstElementChild as HTMLElement).style.transform).toBe("");
   });
 
   it("falls back to Realtime when native speech recognition fails", () => {

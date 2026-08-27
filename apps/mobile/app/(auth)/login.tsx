@@ -11,12 +11,18 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 import { Mail, ShieldCheck } from "lucide-react-native";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { recordOnboardingStartedIfFirstTime } from "@/src/lib/analytics";
 import { getSupabase } from "@/src/lib/supabase";
 import { validateLoginEmail } from "@/src/lib/validation";
+import {
+  stepEntering,
+  stepExiting,
+  type StepDirection,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
@@ -57,12 +63,17 @@ async function clearPendingLogin(): Promise<void> {
  * survives the app being closed while the user fetches the mail.
  */
 export default function LoginScreen() {
+  const reduceMotion = useReducedMotion();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [pendingLoginChecked, setPendingLoginChecked] = useState(false);
+  const [animateFormChange, setAnimateFormChange] = useState(false);
+  const [formDirection, setFormDirection] =
+    useState<StepDirection>("forward");
   const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resendInFlightRef = useRef(false);
 
@@ -103,6 +114,8 @@ export default function LoginScreen() {
         if (remaining > 0) startCooldown(remaining);
       } catch {
         await clearPendingLogin();
+      } finally {
+        setPendingLoginChecked(true);
       }
     })();
 
@@ -144,6 +157,8 @@ export default function LoginScreen() {
 
     setEmail(result.data.email);
     void savePendingLogin(result.data.email);
+    setFormDirection("forward");
+    setAnimateFormChange(true);
     setFormState("sent");
     startCooldown();
   }
@@ -206,6 +221,8 @@ export default function LoginScreen() {
   }
 
   function handleChangeEmail() {
+    setFormDirection("backward");
+    setAnimateFormChange(true);
     setFormState("idle");
     setCode("");
     setErrorMessage(null);
@@ -231,161 +248,180 @@ export default function LoginScreen() {
             </Text>
           </View>
 
-          {codeSent ? (
-            <View style={styles.form}>
-              <View style={styles.sentHeader}>
-                <View style={styles.sentIconCircle}>
-                  <Mail color={colors.harborBlue} size={28} strokeWidth={1.75} />
-                </View>
-                <Text style={[typography.display, styles.heading]}>
-                  Fast geschafft!
-                </Text>
-                <Text style={[typography.body, styles.bodyText]}>
-                  Wir haben einen 6-stelligen Code an{" "}
-                  <Text style={styles.emailHighlight}>{email}</Text> geschickt.
-                  Gib ihn hier ein, dann bist du drin.
-                </Text>
-              </View>
-
-              <Text style={[typography.label, styles.inputLabel]}>
-                Dein 6-stelliger Code
-              </Text>
-              <TextInput
-                accessibilityLabel="Anmelde-Code"
-                autoComplete="sms-otp"
-                autoFocus
-                keyboardType="number-pad"
-                maxLength={6}
-                onChangeText={setCode}
-                style={styles.codeInput}
-                textContentType="oneTimeCode"
-                value={code}
-              />
-
-              {errorMessage ? (
-                <Text accessibilityRole="alert" style={styles.errorText}>
-                  {errorMessage}
-                </Text>
-              ) : null}
-
-              <OrdiloButton
-                title={formState === "verifying" ? "Wird geprüft…" : "Anmelden"}
-                size="lg"
-                disabled={formState === "verifying"}
-                onPress={() => void handleVerify()}
-              />
-
-              <View style={styles.sentFooter}>
-                <Text style={[typography.timestamp, styles.footerText]}>
-                  Nichts angekommen? Schau auch im Spam-Ordner nach.
-                </Text>
-                <View style={styles.sentActions}>
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={resendCooldown > 0}
-                    onPress={() => void handleResend()}
-                  >
-                    <Text
-                      style={[
-                        typography.timestamp,
-                        styles.link,
-                        resendCooldown > 0 && styles.linkDisabled,
-                      ]}
-                    >
-                      {resendCooldown > 0
-                        ? `Nochmal senden (${resendCooldown}s)`
-                        : "Nochmal senden"}
+          {pendingLoginChecked ? (
+            <Animated.View
+              entering={
+                animateFormChange
+                  ? stepEntering(formDirection, reduceMotion)
+                  : undefined
+              }
+              exiting={stepExiting()}
+              key={codeSent ? "code" : "email"}
+              style={styles.form}
+            >
+              {codeSent ? (
+                <>
+                  <View style={styles.sentHeader}>
+                    <View style={styles.sentIconCircle}>
+                      <Mail
+                        color={colors.harborBlue}
+                        size={28}
+                        strokeWidth={1.75}
+                      />
+                    </View>
+                    <Text style={[typography.display, styles.heading]}>
+                      Fast geschafft!
                     </Text>
-                  </Pressable>
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={handleChangeEmail}
-                  >
-                    <Text style={[typography.timestamp, styles.link]}>
-                      Adresse ändern
+                    <Text style={[typography.body, styles.bodyText]}>
+                      Wir haben einen 6-stelligen Code an{" "}
+                      <Text style={styles.emailHighlight}>{email}</Text>{" "}
+                      geschickt. Gib ihn hier ein, dann bist du drin.
                     </Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          ) : (
-            <View style={styles.form}>
-              <View style={styles.introBlock}>
-                <Text style={[typography.display, styles.heading]}>
-                  Schön, dass du da bist
-                </Text>
-                <Text style={[typography.body, styles.bodyText]}>
-                  Melde dich mit deiner E-Mail-Adresse an. Ein Passwort
-                  brauchst du nicht.
-                </Text>
-              </View>
+                  </View>
 
-              <View>
-                <Text style={[typography.label, styles.inputLabel]}>
-                  E-Mail-Adresse
-                </Text>
-                <TextInput
-                  accessibilityLabel="E-Mail-Adresse"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  autoCorrect={false}
-                  autoFocus
-                  keyboardType="email-address"
-                  onChangeText={(value) => {
-                    setEmail(value);
-                    if (validationError) setValidationError(null);
-                    if (formState === "error") {
-                      setFormState("idle");
-                      setErrorMessage(null);
-                    }
-                  }}
-                  onSubmitEditing={() => void handleSendCode()}
-                  placeholder="du@beispiel.de"
-                  placeholderTextColor={colors.mistDark}
-                  returnKeyType="send"
-                  style={[
-                    styles.input,
-                    validationError ? styles.inputError : null,
-                  ]}
-                  value={email}
-                />
-                {validationError ? (
-                  <Text accessibilityRole="alert" style={styles.errorText}>
-                    {validationError}
+                  <Text style={[typography.label, styles.inputLabel]}>
+                    Dein 6-stelliger Code
                   </Text>
-                ) : null}
-              </View>
+                  <TextInput
+                    accessibilityLabel="Anmelde-Code"
+                    autoComplete="sms-otp"
+                    autoFocus
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    onChangeText={setCode}
+                    style={styles.codeInput}
+                    textContentType="oneTimeCode"
+                    value={code}
+                  />
 
-              {errorMessage && formState === "error" ? (
-                <Text accessibilityRole="alert" style={styles.errorText}>
-                  {errorMessage}
-                </Text>
-              ) : null}
+                  {errorMessage ? (
+                    <Text accessibilityRole="alert" style={styles.errorText}>
+                      {errorMessage}
+                    </Text>
+                  ) : null}
 
-              <OrdiloButton
-                title={
-                  formState === "submitting"
-                    ? "Wird verschickt…"
-                    : "Loslegen — ohne Passwort"
-                }
-                size="lg"
-                disabled={formState === "submitting"}
-                onPress={() => void handleSendCode()}
-              />
+                  <OrdiloButton
+                    disabled={formState === "verifying"}
+                    onPress={() => void handleVerify()}
+                    size="lg"
+                    title={
+                      formState === "verifying" ? "Wird geprüft…" : "Anmelden"
+                    }
+                  />
 
-              <View style={styles.privacyNote}>
-                <ShieldCheck
-                  color={colors.harborBlue}
-                  size={18}
-                  strokeWidth={1.75}
-                />
-                <Text style={[typography.label, styles.privacyText]}>
-                  Anmelden und Registrieren sind dasselbe. Gibt es dein Konto
-                  noch nicht, legen wir es einfach an.
-                </Text>
-              </View>
-            </View>
-          )}
+                  <View style={styles.sentFooter}>
+                    <Text style={[typography.timestamp, styles.footerText]}>
+                      Nichts angekommen? Schau auch im Spam-Ordner nach.
+                    </Text>
+                    <View style={styles.sentActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        disabled={resendCooldown > 0}
+                        onPress={() => void handleResend()}
+                      >
+                        <Text
+                          style={[
+                            typography.timestamp,
+                            styles.link,
+                            resendCooldown > 0 && styles.linkDisabled,
+                          ]}
+                        >
+                          {resendCooldown > 0
+                            ? `Nochmal senden (${resendCooldown}s)`
+                            : "Nochmal senden"}
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={handleChangeEmail}
+                      >
+                        <Text style={[typography.timestamp, styles.link]}>
+                          Adresse ändern
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <>
+                  <View style={styles.introBlock}>
+                    <Text style={[typography.display, styles.heading]}>
+                      Schön, dass du da bist
+                    </Text>
+                    <Text style={[typography.body, styles.bodyText]}>
+                      Melde dich mit deiner E-Mail-Adresse an. Ein Passwort
+                      brauchst du nicht.
+                    </Text>
+                  </View>
+
+                  <View>
+                    <Text style={[typography.label, styles.inputLabel]}>
+                      E-Mail-Adresse
+                    </Text>
+                    <TextInput
+                      accessibilityLabel="E-Mail-Adresse"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      autoCorrect={false}
+                      autoFocus
+                      keyboardType="email-address"
+                      onChangeText={(value) => {
+                        setEmail(value);
+                        if (validationError) setValidationError(null);
+                        if (formState === "error") {
+                          setFormState("idle");
+                          setErrorMessage(null);
+                        }
+                      }}
+                      onSubmitEditing={() => void handleSendCode()}
+                      placeholder="du@beispiel.de"
+                      placeholderTextColor={colors.mistDark}
+                      returnKeyType="send"
+                      style={[
+                        styles.input,
+                        validationError ? styles.inputError : null,
+                      ]}
+                      value={email}
+                    />
+                    {validationError ? (
+                      <Text accessibilityRole="alert" style={styles.errorText}>
+                        {validationError}
+                      </Text>
+                    ) : null}
+                  </View>
+
+                  {errorMessage && formState === "error" ? (
+                    <Text accessibilityRole="alert" style={styles.errorText}>
+                      {errorMessage}
+                    </Text>
+                  ) : null}
+
+                  <OrdiloButton
+                    disabled={formState === "submitting"}
+                    onPress={() => void handleSendCode()}
+                    size="lg"
+                    title={
+                      formState === "submitting"
+                        ? "Wird verschickt…"
+                        : "Loslegen — ohne Passwort"
+                    }
+                  />
+
+                  <View style={styles.privacyNote}>
+                    <ShieldCheck
+                      color={colors.harborBlue}
+                      size={18}
+                      strokeWidth={1.75}
+                    />
+                    <Text style={[typography.label, styles.privacyText]}>
+                      Anmelden und Registrieren sind dasselbe. Gibt es dein
+                      Konto noch nicht, legen wir es einfach an.
+                    </Text>
+                  </View>
+                </>
+              )}
+            </Animated.View>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

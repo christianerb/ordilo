@@ -121,7 +121,7 @@ export function CollectionForm({
                 aria-label={opt.label}
                 aria-pressed={selected}
                 className={cn(
-                  "flex size-10 items-center justify-center rounded-ordilo-sm transition-all",
+                  "flex size-10 items-center justify-center rounded-ordilo-sm transition-[background-color,box-shadow] duration-150",
                   selected
                     ? "ring-2 ring-[var(--petrol)] ring-offset-2 ring-offset-background bg-[var(--petrol)]/10"
                     : "ring-1 ring-border hover:bg-accent",
@@ -154,7 +154,7 @@ export function CollectionForm({
                 aria-label={opt.label}
                 aria-pressed={selected}
                 className={cn(
-                  "size-9 rounded-full transition-all",
+                  "size-9 rounded-full transition-shadow duration-150",
                   selected
                     ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
                     : "ring-1 ring-border",

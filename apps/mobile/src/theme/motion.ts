@@ -6,74 +6,109 @@
  * (list changes, press feedback, panels) or a calm loading signal
  * (skeleton pulse).
  *
- * All presets honour the system reduce-motion setting via
- * ReduceMotion.System, so `useReducedMotion` checks are only needed
- * for hand-rolled loops (e.g. the thinking dots in the chat).
+ * Positional presets honour Reduce Motion; opacity-only transitions
+ * remain because they preserve state continuity without movement.
  */
 import {
+  Easing,
   FadeIn,
   FadeInDown,
+  FadeInLeft,
+  FadeInRight,
   FadeOut,
-  FadeOutUp,
   LinearTransition,
   ReduceMotion,
   type BaseAnimationBuilder,
 } from "react-native-reanimated";
 
-/** Durations in ms. State transitions live in the 150–250ms band. */
+/** Durations in ms. Frequent feedback stays under 150ms. */
 export const durations = {
   fast: 150,
   base: 220,
-  slow: 320,
 } as const;
 
-/**
- * Spring configs for `withSpring`.
- *
- * - `press`: tactile scale feedback (0.97) — quick with a hint of bounce.
- * - `panel`: sheet/panel travel — matches the document-detail gesture
- *   (duration 300, dampingRatio 0.8) so every moving surface feels the same.
- */
-export const springs = {
-  press: { damping: 15, stiffness: 420, mass: 0.5 },
-  panel: { duration: 300, dampingRatio: 0.8 },
-} as const;
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1);
 
-/** Press scale used by SpringPressable and interactive cards. */
+/** Canonical system setting for animation builders that accept it. */
+export const REDUCE_MOTION = ReduceMotion.System;
+
+/** Near-imperceptible feedback for controls used many times a day. */
 export const pressScale = 0.97;
+export const pressDuration = 120;
 
-/**
- * Stagger for grouped entrances (chat sources, list rows). Capped so a
- * long list never delays its tail by more than ~300ms.
- */
-export function staggerDelay(index: number, step = 40): number {
-  return Math.min(index, 8) * step;
-}
+export type StepDirection = "forward" | "backward";
 
-/** A row fading in and rising 8px — the default list entrance. */
-export function listItemEntering(index = 0, step = 40): BaseAnimationBuilder {
-  return FadeInDown.duration(durations.base)
-    .delay(staggerDelay(index, step))
-    .reduceMotion(ReduceMotion.System);
-}
-
-/** A row collapsing upward when it leaves (task completed, item deleted). */
-export function listItemExiting(): BaseAnimationBuilder {
-  return FadeOutUp.duration(durations.fast).reduceMotion(ReduceMotion.System);
+/** Native forms travel only when the system allows positional motion. */
+export function modalAnimationType(
+  reduceMotion: boolean,
+): "fade" | "slide" {
+  return reduceMotion ? "fade" : "slide";
 }
 
 /** Siblings glide into their new places when a row enters or leaves. */
 export function listLayout(): BaseAnimationBuilder {
-  return LinearTransition.duration(durations.base).reduceMotion(
-    ReduceMotion.System,
-  );
+  return LinearTransition.duration(durations.base)
+    .easing(EASE_IN_OUT)
+    .reduceMotion(REDUCE_MOTION);
 }
 
-/** Quiet cross-fades for swapped content (loading → data, tab states). */
+/** Quiet cross-fade for an occasional in-place content state change. */
 export function contentEntering(): BaseAnimationBuilder {
-  return FadeIn.duration(durations.base).reduceMotion(ReduceMotion.System);
+  return FadeIn.duration(durations.base)
+    .easing(EASE_OUT)
+    .reduceMotion(ReduceMotion.Never);
 }
 
-export function contentExiting(): BaseAnimationBuilder {
-  return FadeOut.duration(durations.fast).reduceMotion(ReduceMotion.System);
+/**
+ * Rare, meaningful multi-step flows use 12px of direction to explain
+ * progress. Reduce Motion keeps the state continuity but drops travel.
+ */
+export function stepEntering(
+  direction: StepDirection,
+  reduceMotion: boolean,
+): BaseAnimationBuilder {
+  if (reduceMotion) {
+    return FadeIn.duration(durations.fast)
+      .easing(EASE_OUT)
+      .reduceMotion(ReduceMotion.Never);
+  }
+
+  const entering = direction === "forward" ? FadeInRight : FadeInLeft;
+  return entering
+    .duration(durations.base)
+    .withInitialValues({
+      opacity: 0,
+      transform: [
+        { translateX: direction === "forward" ? 12 : -12 },
+      ],
+    })
+    .easing(EASE_OUT);
+}
+
+/** Step exits never travel, so outgoing and incoming content do not cross. */
+export function stepExiting(): BaseAnimationBuilder {
+  return FadeOut.duration(durations.fast)
+    .easing(EASE_OUT)
+    .reduceMotion(ReduceMotion.Never);
+}
+
+/** A transient feedback banner rises only 8px, then leaves more quickly. */
+export function feedbackEntering(
+  reduceMotion = false,
+): BaseAnimationBuilder {
+  if (reduceMotion) {
+    return FadeIn.duration(durations.fast)
+      .easing(EASE_OUT)
+      .reduceMotion(ReduceMotion.Never);
+  }
+  return FadeInDown.duration(durations.base)
+    .withInitialValues({ opacity: 0, transform: [{ translateY: 8 }] })
+    .easing(EASE_OUT);
+}
+
+export function feedbackExiting(): BaseAnimationBuilder {
+  return FadeOut.duration(durations.fast)
+    .easing(EASE_OUT)
+    .reduceMotion(ReduceMotion.Never);
 }

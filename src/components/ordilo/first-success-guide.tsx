@@ -4,7 +4,8 @@ import Link from "next/link";
 import { MessageCircle, ScanLine, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
 const FIRST_SUCCESS_GUIDE_STORAGE_KEY = "ordilo-first-success-guide-v1";
 
@@ -31,26 +32,63 @@ export function FirstSuccessGuide({
   familyId: string;
   onScan: () => void;
 }) {
-  const [visible, setVisible] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [phase, setPhase] = useState<"entering" | "visible" | "leaving">(
+    "entering",
+  );
+  const frameRef = useRef<number | null>(null);
+  const dismissTimerRef = useRef<number | null>(null);
+  const dismissingRef = useRef(false);
 
   useMountEffect(() => {
-    setVisible(!wasDismissed(familyId));
+    if (wasDismissed(familyId)) return;
+    setMounted(true);
+    frameRef.current = window.requestAnimationFrame(() => {
+      frameRef.current = null;
+      setPhase("visible");
+    });
+
+    return () => {
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+      }
+      if (dismissTimerRef.current !== null) {
+        window.clearTimeout(dismissTimerRef.current);
+      }
+    };
   });
 
   const dismiss = () => {
-    try {
-      window.localStorage.setItem(storageKey(familyId), "dismissed");
-    } catch {
-      // The hint remains a convenience when storage is unavailable.
+    if (dismissingRef.current) return;
+    dismissingRef.current = true;
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
     }
-    setVisible(false);
+    setPhase("leaving");
+    dismissTimerRef.current = window.setTimeout(() => {
+      dismissTimerRef.current = null;
+      try {
+        window.localStorage.setItem(storageKey(familyId), "dismissed");
+      } catch {
+        // The hint remains a convenience when storage is unavailable.
+      }
+      setMounted(false);
+    }, 150);
   };
 
-  if (!visible) return null;
+  if (!mounted) return null;
 
   return (
     <section
-      className="relative overflow-hidden rounded-ordilo-md border border-[var(--mist-light)] bg-[var(--wash-sage)] p-4 shadow-card"
+      className={cn(
+        "relative overflow-hidden rounded-ordilo-md border border-[var(--mist-light)] bg-[var(--wash-sage)] p-4 shadow-card transition-[opacity,transform] [transition-timing-function:var(--ease-out)] motion-reduce:transform-none motion-reduce:transition-opacity motion-reduce:duration-150",
+        phase === "leaving" ? "duration-150" : "duration-[220ms]",
+        phase === "entering" && "translate-y-2 scale-[0.98] opacity-0",
+        phase === "visible" && "translate-y-0 scale-100 opacity-100",
+        phase === "leaving" && "-translate-y-1 scale-100 opacity-0",
+      )}
+      data-state={phase}
       data-testid="first-success-guide"
       aria-labelledby="first-success-guide-title"
     >

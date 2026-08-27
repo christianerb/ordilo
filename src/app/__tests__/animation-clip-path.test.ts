@@ -23,9 +23,8 @@ const CSS = readFileSync(join(process.cwd(), "src", "app", "globals.css"), "utf-
  *
  * The `round` is what marks a container reveal: it crops the element to its
  * own rounded border box, which is only ever meant to last for the duration
- * of the reveal. A retained clip WITHOUT `round` can be perfectly deliberate
- * — `strike-through` draws a line that has to stay drawn — so those are not
- * flagged.
+ * of the reveal. A retained clip WITHOUT `round` can be perfectly deliberate,
+ * so those are not flagged.
  */
 function keyframesEndingOnRoundedClip(): string[] {
   const names: string[] = [];

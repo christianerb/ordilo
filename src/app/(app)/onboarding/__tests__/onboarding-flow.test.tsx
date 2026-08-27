@@ -34,7 +34,12 @@ describe("OnboardingFlow", () => {
     render(<OnboardingFlow initialState={initialState} />);
 
     expect(screen.getByText("Schritt 1 von 2")).toBeInTheDocument();
-    expect(screen.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "1");
+    const progress = screen.getByRole("progressbar");
+    expect(progress).toHaveAttribute("aria-valuenow", "1");
+    expect((progress.firstElementChild as HTMLElement).style.transform).toBe(
+      "scaleX(0.5)",
+    );
+    expect((progress.firstElementChild as HTMLElement).style.width).toBe("");
     expect(document.querySelector(".animate-onboarding-step")).not.toBeNull();
     expect(
       screen.getByText("Das kannst du auch später ergänzen."),

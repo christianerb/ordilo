@@ -14,7 +14,7 @@ import type { TaskCardData } from "@/components/ordilo/task-card";
 // ---------------------------------------------------------------------------
 
 /** Must match SLIDE_OFF_DURATION in swipeable-task-card.tsx. */
-const SLIDE_OFF_DURATION = 220;
+const SLIDE_OFF_DURATION = 200;
 /** Comfortably past SWIPE_THRESHOLD (72). */
 const PAST_THRESHOLD = 120;
 
@@ -61,9 +61,10 @@ function touchMove(el: Element, x: number, y: number) {
 }
 
 /** A complete horizontal swipe by `dx` pixels, in two steps. */
-function swipe(el: Element, dx: number) {
+function swipe(el: Element, dx: number, elapsedMs = 400) {
   touchStart(el);
   touchMove(el, 160 + Math.sign(dx) * 12, 100);
+  act(() => vi.advanceTimersByTime(elapsedMs));
   touchMove(el, 160 + dx, 100);
   fireEvent.touchEnd(el);
 }
@@ -98,6 +99,33 @@ describe("SwipeableTaskCard", () => {
       expect(props.onToggleDone).toHaveBeenCalledWith("done");
     });
 
+    it("does not lose a committed completion when another touch starts", () => {
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+
+      swipe(card, PAST_THRESHOLD);
+      touchStart(card);
+      touchMove(card, 120, 100);
+      fireEvent.touchEnd(card);
+
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+      expect(props.onToggleDone).toHaveBeenCalledTimes(1);
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
+    });
+
+    it("does not lose a committed completion when another touch is cancelled", () => {
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+
+      swipe(card, PAST_THRESHOLD);
+      touchStart(card);
+      fireEvent.touchCancel(card);
+
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+      expect(props.onToggleDone).toHaveBeenCalledTimes(1);
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
+    });
+
     it("names the action while the finger is still down", () => {
       renderCard();
       const card = screen.getByTestId("task-card");
@@ -120,6 +148,16 @@ describe("SwipeableTaskCard", () => {
 
       expect(props.onToggleDone).not.toHaveBeenCalled();
       expect(panel()).toBeNull();
+    });
+
+    it("commits a fast short flick", () => {
+      const props = renderCard();
+      const card = screen.getByTestId("task-card");
+
+      swipe(card, 40, 20);
+      act(() => vi.advanceTimersByTime(SLIDE_OFF_DURATION + 50));
+
+      expect(props.onToggleDone).toHaveBeenCalledWith("done");
     });
 
     it("never offers to complete a task that is already done", () => {
@@ -148,6 +186,11 @@ describe("SwipeableTaskCard", () => {
 
       swipe(screen.getByTestId("task-card"), PAST_THRESHOLD);
       expect(props.onToggleDone).toHaveBeenCalledWith("done");
+      const movingRow = screen
+        .getByTestId("swipeable-task-card")
+        .querySelector(":scope > div:last-child") as HTMLElement;
+      expect(movingRow.style.transition).toBe("none");
+      expect(movingRow.style.transform).toBe("translate3d(0px, 0, 0)");
     });
   });
 
@@ -183,6 +226,10 @@ describe("SwipeableTaskCard", () => {
 
       // A gesture that cannot deliver must not look like it could.
       expect(panel()).toBeNull();
+      const movingRow = screen
+        .getByTestId("swipeable-task-card")
+        .querySelector(":scope > div:last-child") as HTMLElement;
+      expect(movingRow.style.transform).toBe("translate3d(0px, 0, 0)");
       fireEvent.touchEnd(card);
       expect(props.onToggleDone).not.toHaveBeenCalled();
     });

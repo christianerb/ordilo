@@ -17,6 +17,7 @@ export function OrdiloDisclosure({
   defaultOpen = false,
   children,
   className,
+  contentClassName,
   testId,
 }: {
   title: string;
@@ -24,6 +25,7 @@ export function OrdiloDisclosure({
   defaultOpen?: boolean;
   children: ReactNode;
   className?: string;
+  contentClassName?: string;
   testId?: string;
 }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -48,7 +50,7 @@ export function OrdiloDisclosure({
         </span>
         <ChevronDown
           className={cn(
-            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200 [transition-timing-function:var(--ease-in-out)] motion-reduce:transition-none",
             open && "rotate-180",
           )}
           aria-hidden="true"
@@ -56,12 +58,25 @@ export function OrdiloDisclosure({
       </button>
       <div
         id={contentId}
+        aria-hidden={!open}
+        inert={!open}
+        data-disclosure-content=""
         className={cn(
-          "grid transition-[grid-template-rows] duration-200 ease-out",
-          open ? "grid-rows-[1fr] pb-3" : "grid-rows-[0fr]",
+          "grid transition-[grid-template-rows] duration-200 [transition-timing-function:var(--ease-in-out)] motion-reduce:transition-none",
+          open ? "grid-rows-[1fr]" : "grid-rows-[0fr]",
         )}
       >
-        <div className="min-h-0 overflow-hidden">{children}</div>
+        <div className="min-h-0 overflow-hidden">
+          <div
+            className={cn(
+              "pb-3 transition-opacity duration-150 [transition-timing-function:var(--ease-out)]",
+              open ? "opacity-100" : "opacity-0",
+              contentClassName,
+            )}
+          >
+            {children}
+          </div>
+        </div>
       </div>
     </section>
   );

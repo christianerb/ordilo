@@ -17,8 +17,8 @@ export function useMediaQuery(query: string): boolean {
     (onStoreChange: () => void) => {
       if (typeof window.matchMedia !== "function") return () => {};
       const media = window.matchMedia(query);
-      media.addEventListener("change", onStoreChange);
-      return () => media.removeEventListener("change", onStoreChange);
+      media.addEventListener?.("change", onStoreChange);
+      return () => media.removeEventListener?.("change", onStoreChange);
     },
     [query],
   );
@@ -38,4 +38,9 @@ export const DESKTOP_QUERY = "(min-width: 1024px)";
 /** True once the viewport is wide enough for side-anchored drawers. */
 export function useIsDesktop(): boolean {
   return useMediaQuery(DESKTOP_QUERY);
+}
+
+/** True when the user asks interfaces to avoid positional motion. */
+export function usePrefersReducedMotion(): boolean {
+  return useMediaQuery("(prefers-reduced-motion: reduce)");
 }

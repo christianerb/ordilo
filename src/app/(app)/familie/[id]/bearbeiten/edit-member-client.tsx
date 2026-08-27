@@ -218,7 +218,7 @@ export function EditMemberClient({
                   type="button"
                   onClick={() => setAvatarColor(avatarColor === color ? "" : color)}
                   className={cn(
-                    "size-7 rounded-full transition-all",
+                    "size-7 rounded-full transition-shadow duration-150",
                     avatarColor === color
                       ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
                       : "ring-1 ring-border",

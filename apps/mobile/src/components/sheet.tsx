@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useReducedMotion } from "react-native-reanimated";
 
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -117,9 +118,11 @@ export function OrdiloFormSheet({
   title: string;
   visible: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <Modal
-      animationType="slide"
+      animationType={reduceMotion ? "fade" : "slide"}
       onRequestClose={onClose}
       presentationStyle="overFullScreen"
       transparent

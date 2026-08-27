@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 
 import { OrdiloButton } from "@/src/components/ui";
 import {
@@ -33,6 +34,7 @@ import {
   type DocumentType,
 } from "@/src/lib/document-review";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { modalAnimationType } from "@/src/theme/motion";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
 
@@ -53,6 +55,7 @@ export function NoteFormSheet({
   onSubmit: (draft: NoteDraft) => Promise<void>;
   visible: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("note");
@@ -196,7 +199,7 @@ export function NoteFormSheet({
 
   return (
     <Modal
-      animationType="slide"
+      animationType={modalAnimationType(reduceMotion)}
       onRequestClose={close}
       presentationStyle="overFullScreen"
       transparent
@@ -399,8 +402,10 @@ function NoteTypePicker({
   selected: DocumentType;
   visible: boolean;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible={visible}>
+    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible={visible}>
       <Pressable onPress={onClose} style={styles.overlay}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.typeSheet}>
           <View style={styles.handle} />

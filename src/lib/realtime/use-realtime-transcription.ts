@@ -118,9 +118,11 @@ function extractResponseText(event: RealtimeServerEvent): string {
 export function useRealtimeTranscription({
   onTranscript,
   onError,
+  reducedMotion = false,
 }: {
   onTranscript: (text: string) => void;
   onError: (message: string) => void;
+  reducedMotion?: boolean;
 }): {
   status: VoiceStatus;
   /**
@@ -157,6 +159,8 @@ export function useRealtimeTranscription({
    * "invisibly" after the UI already went back to idle.
    */
   const generationRef = useRef(0);
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
 
   // Latest-callback refs (plain writes during render, same pattern as the
   // rest of the codebase) so peer-connection handlers never go stale.
@@ -200,6 +204,7 @@ export function useRealtimeTranscription({
    */
   const startLevelMeter = useCallback(
     (mic: MediaStream) => {
+      if (reducedMotionRef.current) return;
       const AudioContextCtor =
         window.AudioContext ??
         (window as unknown as { webkitAudioContext?: typeof AudioContext })
@@ -216,6 +221,10 @@ export function useRealtimeTranscription({
       const data = new Uint8Array(analyser.fftSize);
       const tick = (now: number) => {
         if (!analyserRef.current) return;
+        if (reducedMotionRef.current) {
+          stopLevelMeter();
+          return;
+        }
         analyserRef.current.getByteTimeDomainData(data);
         const snapshot = levelTrackerRef.current.sample(data, now);
         if (snapshot) {
@@ -226,7 +235,7 @@ export function useRealtimeTranscription({
       };
       levelFrameRef.current = requestAnimationFrame(tick);
     },
-    [notifyLevelListeners],
+    [notifyLevelListeners, stopLevelMeter],
   );
 
   const cleanup = useCallback(() => {

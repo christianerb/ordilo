@@ -26,6 +26,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OrdiloButton } from "./ui";
@@ -39,6 +40,7 @@ import {
   type ContactInput,
 } from "@/src/lib/contacts";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { modalAnimationType } from "@/src/theme/motion";
 import { tap, success, fail } from "@/src/lib/feedback";
 
 /**
@@ -275,6 +277,7 @@ export function ContactFormSheet({
   visible: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const [form, setForm] = useState<ContactInput>(EMPTY_CONTACT_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -325,7 +328,7 @@ export function ContactFormSheet({
 
   return (
     <Modal
-      animationType="slide"
+      animationType={modalAnimationType(reduceMotion)}
       onRequestClose={onClose}
       presentationStyle="pageSheet"
       transparent

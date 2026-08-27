@@ -701,7 +701,9 @@ describe("AppShell sidebar personality touches", () => {
       </AppShell>,
     );
     const aside = container.querySelector("aside");
-    expect(aside?.getAttribute("style")).toContain("gradient");
+    expect(aside?.firstElementChild?.getAttribute("style")).toContain(
+      "gradient",
+    );
   });
 
   it("shows the time-aware family scene only while the sidebar is expanded", () => {
@@ -762,8 +764,57 @@ describe("AppShell sidebar personality touches", () => {
       </AppShell>,
     );
     const activeLink = container.querySelector('aside a[aria-current="page"]');
-    const dot = activeLink?.querySelector(".animate-nav-dot");
+    const dot = activeLink?.querySelector(".bg-\\[var\\(--apricot\\)\\]");
     expect(dot?.className).toContain("bg-[var(--apricot)]");
+  });
+
+  it("keeps stable desktop shell geometry while collapsing visually", () => {
+    mockSupabaseData();
+    const { container } = render(
+      <AppShell>
+        <div>content</div>
+      </AppShell>,
+    );
+
+    const aside = container.querySelector("aside");
+    const content = screen.getByTestId("app-content-surface").parentElement;
+    expect(aside?.className).toContain("w-[224px]");
+    expect(content?.className).toContain("lg:pl-[224px]");
+
+    fireEvent.click(screen.getByLabelText("Seitenleiste einklappen"));
+
+    expect(aside?.className).toContain("w-[224px]");
+    expect(content?.className).toContain("lg:pl-[224px]");
+    expect(screen.getByTestId("desktop-bottom-bar").className).toContain(
+      "-translate-x-[104px]",
+    );
+  });
+
+  it("centers collapsed icons independently while keeping labels and the active dot mounted", () => {
+    mockUsePathname.mockReturnValue("/home");
+    mockSupabaseData();
+    render(
+      <AppShell>
+        <div>content</div>
+      </AppShell>,
+    );
+
+    const icon = screen.getByTestId("sidebar-nav-icon-Heute");
+    const activeDot = screen.getByTestId("sidebar-active-dot");
+    const activeLink = screen.getByRole("link", { name: "Heute" });
+    expect(icon.className).toContain("left-3");
+    expect(activeDot).toHaveClass("bg-[var(--apricot)]");
+
+    fireEvent.click(screen.getByLabelText("Seitenleiste einklappen"));
+
+    expect(screen.getByTestId("sidebar-nav-icon-Heute")).toBe(icon);
+    expect(icon.className).toContain("left-4");
+    expect(activeLink.className).toContain("w-[52px]");
+    expect(within(activeLink).getByText("Heute").className).toContain(
+      "opacity-0",
+    );
+    expect(screen.getByTestId("sidebar-active-dot")).toBe(activeDot);
+    expect(activeDot.className).toContain("opacity-100");
   });
 
 });

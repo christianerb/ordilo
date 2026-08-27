@@ -5,55 +5,11 @@ import {
   House,
   ScanLine,
   Users,
-  type LucideIcon,
 } from "lucide-react-native";
-import { useEffect } from "react";
-import { StyleSheet, View, type ColorValue } from "react-native";
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withSpring,
-} from "react-native-reanimated";
+import { StyleSheet, View } from "react-native";
 
-import { tap } from "@/src/lib/feedback";
 import { SpringPressable } from "@/src/components/ui";
-import { springs } from "@/src/theme/motion";
 import { colors, fonts } from "@/src/theme/tokens";
-
-/**
- * A tab icon that answers focus with a small spring — it grows a touch
- * and gains stroke weight, so the active tab reads through motion, not
- * just color. Instant under reduce-motion.
- */
-function TabIcon({
-  focused,
-  color,
-  size,
-  Icon,
-}: {
-  focused: boolean;
-  color: ColorValue;
-  size: number;
-  Icon: LucideIcon;
-}) {
-  const scale = useSharedValue(1);
-  const reduceMotion = useReducedMotion();
-
-  useEffect(() => {
-    scale.value = reduceMotion ? 1 : withSpring(focused ? 1.14 : 1, springs.press);
-  }, [focused, reduceMotion, scale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Animated.View style={animatedStyle}>
-      <Icon color={color} size={size} strokeWidth={focused ? 2.4 : 2} />
-    </Animated.View>
-  );
-}
 
 /**
  * Native tab shell: Heute, Ablage, Plan, Familie — plus the scan action
@@ -79,7 +35,7 @@ export default function TabLayout() {
         options={{
           title: "Heute",
           tabBarIcon: ({ color, focused, size }) => (
-            <TabIcon Icon={House} color={color} focused={focused} size={size} />
+            <House color={color} size={size} strokeWidth={focused ? 2.4 : 2} />
           ),
         }}
       />
@@ -88,7 +44,7 @@ export default function TabLayout() {
         options={{
           title: "Ablage",
           tabBarIcon: ({ color, focused, size }) => (
-            <TabIcon Icon={BookOpen} color={color} focused={focused} size={size} />
+            <BookOpen color={color} size={size} strokeWidth={focused ? 2.4 : 2} />
           ),
         }}
       />
@@ -102,7 +58,6 @@ export default function TabLayout() {
               <SpringPressable
                 accessibilityLabel="Dokument scannen"
                 onPress={() => {
-                  tap();
                   router.push("/scan");
                 }}
                 style={styles.scanButton}
@@ -122,7 +77,7 @@ export default function TabLayout() {
         options={{
           title: "Plan",
           tabBarIcon: ({ color, focused, size }) => (
-            <TabIcon Icon={CalendarDays} color={color} focused={focused} size={size} />
+            <CalendarDays color={color} size={size} strokeWidth={focused ? 2.4 : 2} />
           ),
         }}
       />
@@ -131,7 +86,7 @@ export default function TabLayout() {
         options={{
           title: "Familie",
           tabBarIcon: ({ color, focused, size }) => (
-            <TabIcon Icon={Users} color={color} focused={focused} size={size} />
+            <Users color={color} size={size} strokeWidth={focused ? 2.4 : 2} />
           ),
         }}
       />

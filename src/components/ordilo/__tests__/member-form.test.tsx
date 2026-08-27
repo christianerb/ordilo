@@ -255,6 +255,37 @@ describe("MemberForm", () => {
     expect(screen.getByTestId("member-photo-button")).toBeInTheDocument();
   });
 
+  it("opens optional fields initially when saved optional values exist", () => {
+    render(
+      <MemberForm
+        submitLabel="Speichern"
+        onSubmit={vi.fn()}
+        initialValues={{ birthdate: "01.02.2010" }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Weitere Angaben (optional)" }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("preserves optional values across repeated close and open", () => {
+    render(<MemberForm submitLabel="Hinzufügen" onSubmit={vi.fn()} />);
+    const trigger = screen.getByRole("button", {
+      name: "Weitere Angaben (optional)",
+    });
+
+    fireEvent.click(trigger);
+    fireEvent.change(screen.getByLabelText("Geburtsdatum"), {
+      target: { value: "01.02.2010" },
+    });
+    fireEvent.click(trigger);
+    fireEvent.click(trigger);
+
+    expect(screen.getByLabelText("Geburtsdatum")).toHaveValue("01.02.2010");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("opens a crop dialog after selecting a photo, then uploads the cropped result", async () => {
     const onPhotoChange = vi.fn();
     global.fetch = vi.fn().mockResolvedValue({

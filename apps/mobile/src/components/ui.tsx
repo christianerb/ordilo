@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react-native";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -15,13 +15,16 @@ import Animated, {
   useReducedMotion,
   useSharedValue,
   withRepeat,
-  withSpring,
   withTiming,
+  type AnimatedStyle,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { tap } from "@/src/lib/feedback";
-import { pressScale, springs } from "@/src/theme/motion";
+import {
+  pressDuration,
+  pressScale,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -44,12 +47,20 @@ export const cardRestShadow: ViewStyle = {
 };
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const pressTransitionStyle: AnimatedStyle<ViewStyle> = {
+  transform: [{ scale: 1 }],
+  transitionDuration: pressDuration,
+  transitionProperty: "transform",
+  transitionTimingFunction: "cubic-bezier(0.23, 1, 0.32, 1)",
+};
+const pressedTransitionStyle: AnimatedStyle<ViewStyle> = {
+  transform: [{ scale: pressScale }],
+};
 
 /**
- * A Pressable with physical press feedback: the surface springs to 0.97
- * while the finger rests on it and settles back on release. Uses the
- * shared `tap()` haptic unless `haptic` is false. Under reduce-motion
- * the scale is skipped and the press is instant.
+ * A Pressable with near-imperceptible physical feedback. Its two-state
+ * CSS transition is interruptible without a shared value, stays on the
+ * UI runtime, and is skipped under Reduce Motion.
  */
 export function SpringPressable({
   children,
@@ -70,12 +81,8 @@ export function SpringPressable({
   accessibilityLabel?: string;
   accessibilityRole?: "button" | "link";
 }) {
-  const scale = useSharedValue(1);
+  const [pressed, setPressed] = useState(false);
   const reduceMotion = useReducedMotion();
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
 
   return (
     <AnimatedPressable
@@ -83,23 +90,19 @@ export function SpringPressable({
       accessibilityLabel={accessibilityLabel}
       accessibilityRole={accessibilityRole}
       disabled={disabled}
-      onPress={() => {
-        if (haptic) tap();
-        onPress();
-      }}
+      onPress={onPress}
       onPressIn={() => {
-        // Shared values are designed for mutation from handlers — the
-        // compiler lint cannot see through Reanimated's pattern.
-        // eslint-disable-next-line react-hooks/immutability
-        scale.value = reduceMotion
-          ? 1
-          : withSpring(pressScale, springs.press);
+        setPressed(true);
+        if (haptic) tap();
       }}
-      onPressOut={() => {
-        // eslint-disable-next-line react-hooks/immutability
-        scale.value = reduceMotion ? 1 : withSpring(1, springs.press);
-      }}
-      style={[animatedStyle, style, disabled && styles.pressableDisabled]}
+      onPressOut={() => setPressed(false)}
+      pressRetentionOffset={16}
+      style={[
+        style,
+        pressTransitionStyle,
+        pressed && !reduceMotion && pressedTransitionStyle,
+        disabled && styles.pressableDisabled,
+      ]}
     >
       {children}
     </AnimatedPressable>
@@ -128,18 +131,18 @@ export function Skeleton({
 
   useEffect(() => {
     if (reduceMotion) {
-      opacity.value = 1;
+      opacity.set(1);
       return;
     }
-    opacity.value = withRepeat(
+    opacity.set(withRepeat(
       withTiming(1, { duration: 900, easing: Easing.inOut(Easing.ease) }),
       -1,
       true,
-    );
+    ));
     return () => cancelAnimation(opacity);
   }, [opacity, reduceMotion]);
 
-  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  const pulseStyle = useAnimatedStyle(() => ({ opacity: opacity.get() }));
 
   return (
     <Animated.View

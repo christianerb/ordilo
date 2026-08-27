@@ -141,7 +141,7 @@ export function Topbar({
                       {tab.children ? (
                         <ChevronDown className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
                       ) : active ? (
-                        <span className="size-1.5 rounded-full bg-[var(--apricot)] animate-nav-dot" aria-hidden="true" />
+                        <span className="size-1.5 rounded-full bg-[var(--apricot)]" aria-hidden="true" />
                       ) : (
                         <ChevronRight className="size-4 text-[var(--mist-dark)]" aria-hidden="true" />
                       )}
@@ -243,7 +243,7 @@ function NavIcon({
   return (
     <span
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm transition-transform",
+        "flex size-9 shrink-0 items-center justify-center rounded-ordilo-sm transition-transform motion-reduce:transform-none",
         active && "scale-[1.03]",
       )}
       style={colors[label] ?? colors.Heute}
@@ -404,10 +404,11 @@ export function DesktopBottomBar({
   return (
     <div
       data-testid="desktop-bottom-bar"
-      className="pointer-events-none fixed bottom-4 right-4 z-30 hidden transition-[left] duration-200 lg:block"
-      style={{
-        left: collapsed ? 92 : 196,
-      }}
+      data-collapsed={collapsed}
+      className={cn(
+        "sidebar-motion pointer-events-none fixed bottom-4 left-[196px] right-4 z-30 hidden lg:block",
+        collapsed && "-translate-x-[104px]",
+      )}
     >
       <div
         data-testid="desktop-floating-dock"

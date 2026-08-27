@@ -540,8 +540,8 @@ function OnboardingProgress({ currentStep }: { currentStep: 1 | 2 }) {
         className="h-1.5 overflow-hidden rounded-full bg-[var(--mist-light)]"
       >
         <div
-          className="h-full rounded-full bg-[var(--petrol)] transition-[width] duration-200 motion-reduce:transition-none"
-          style={{ width: `${percent}%` }}
+          className="h-full w-full origin-left rounded-full bg-[var(--petrol)] transition-transform duration-200 [transition-timing-function:var(--ease-in-out)] motion-reduce:transition-none"
+          style={{ transform: `scaleX(${percent / 100})` }}
         />
       </div>
     </div>

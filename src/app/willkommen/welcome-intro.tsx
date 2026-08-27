@@ -252,14 +252,15 @@ export function WelcomeIntro({ familyName }: { familyName: string | null }) {
               data-testid={`welcome-dot-${dot}`}
               className="flex h-9 min-w-9 items-center justify-center rounded-full focus-ring"
             >
-              <span
-                aria-hidden="true"
-                className={`h-1.5 rounded-full transition-all duration-200 ${
-                  dot === cardIndex
-                    ? "w-6 bg-[var(--petrol)]"
-                    : "w-1.5 bg-[var(--mist)]"
-                }`}
-              />
+              <span aria-hidden="true" className="h-1.5 w-6 overflow-hidden rounded-full">
+                <span
+                  className={`block h-full w-full origin-left rounded-full transition-[background-color,transform] duration-200 [transition-timing-function:var(--ease-in-out)] motion-reduce:transition-none ${
+                    dot === cardIndex
+                      ? "scale-x-100 bg-[var(--petrol)]"
+                      : "scale-x-25 bg-[var(--mist)]"
+                  }`}
+                />
+              </span>
             </button>
           ))}
         </div>

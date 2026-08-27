@@ -138,7 +138,7 @@ export function PersonPicker({
               aria-pressed={selected}
               data-testid={`${testIdPrefix}-chip-${member.id}`}
               className={cn(
-                "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-all focus-ring",
+                "inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full border py-1 pl-1.5 pr-3 text-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-150 focus-ring",
                 // Freshly created members get a one-time entrance.
                 !initialIds.has(member.id) && "animate-card-in",
                 selected
@@ -175,7 +175,7 @@ export function PersonPicker({
           aria-pressed={explicitNone}
           data-testid={`${testIdPrefix}-chip-none`}
           className={cn(
-            "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-ring",
+            "inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-150 focus-ring",
             explicitNone
               ? "border-[var(--mist-dark)] bg-[var(--mist-dark)] text-white"
               : "border-dashed border-border bg-transparent text-muted-foreground hover:border-foreground/40 hover:text-foreground",
@@ -204,7 +204,7 @@ export function PersonPicker({
               setCreateFailed(!ok);
             }}
             data-testid={`${testIdPrefix}-chip-create`}
-            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-all hover:bg-[var(--petrol)]/5 focus-ring disabled:opacity-60"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-dashed border-[var(--petrol)]/50 bg-transparent px-3 py-1 text-sm font-medium text-[var(--petrol)] transition-[background-color,box-shadow,opacity] duration-150 hover:bg-[var(--petrol)]/5 focus-ring disabled:opacity-60"
           >
             {creating ? (
               <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden="true" />
@@ -224,7 +224,7 @@ export function PersonPicker({
               setFormOpen(true);
             }}
             data-testid={`${testIdPrefix}-chip-new`}
-            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-3 py-1 text-sm font-medium text-muted-foreground transition-all hover:border-[var(--petrol)]/50 hover:text-[var(--petrol)] focus-ring"
+            className="inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-3 py-1 text-sm font-medium text-muted-foreground transition-[border-color,color,box-shadow] duration-150 hover:border-[var(--petrol)]/50 hover:text-[var(--petrol)] focus-ring"
           >
             <Plus className="size-3.5 shrink-0" aria-hidden="true" />
             Neue Person

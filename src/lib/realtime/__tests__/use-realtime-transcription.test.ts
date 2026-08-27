@@ -360,6 +360,51 @@ describe("useRealtimeTranscription", () => {
       true,
     );
   });
+
+  it("cancels analyser frames and closes its AudioContext once", async () => {
+    const cancelFrame = vi.fn();
+    const close = vi.fn(async () => {});
+    const analyser = {
+      fftSize: 0,
+      getByteTimeDomainData: vi.fn(),
+    };
+    const AudioContextMock = vi.fn(function AudioContextMock() {
+      return {
+        createAnalyser: () => analyser,
+        createMediaStreamSource: () => ({ connect: vi.fn() }),
+        close,
+      };
+    });
+    vi.stubGlobal("AudioContext", AudioContextMock);
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 42));
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    const { result } = setup();
+
+    await startSession(result);
+    act(() => result.current.cancel());
+    act(() => result.current.cancel());
+
+    expect(cancelFrame).toHaveBeenCalledWith(42);
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start decorative level sampling under Reduced Motion", async () => {
+    const AudioContextMock = vi.fn();
+    const onTranscript = vi.fn();
+    const onError = vi.fn();
+    vi.stubGlobal("AudioContext", AudioContextMock);
+    const { result } = renderHook(() =>
+      useRealtimeTranscription({
+        onTranscript,
+        onError,
+        reducedMotion: true,
+      }),
+    );
+
+    await startSession(result);
+
+    expect(AudioContextMock).not.toHaveBeenCalled();
+  });
 });
 
 /** A byte-domain buffer at a fixed offset from the 128 (silence) midpoint. */

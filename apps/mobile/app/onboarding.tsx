@@ -17,6 +17,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -31,6 +32,11 @@ import {
   type MemberRow,
 } from "@/src/lib/onboarding-actions";
 import { ROLE_CHIPS } from "@/src/lib/onboarding";
+import {
+  stepEntering,
+  stepExiting,
+  type StepDirection,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { success } from "@/src/lib/feedback";
 
@@ -55,11 +61,14 @@ const NETWORK_ERROR = "Das hat nicht geklappt. Bitte versuch's nochmal.";
 export default function OnboardingScreen() {
   const router = useRouter();
   const { family, isLoading: familyLoading, refresh } = useFamily();
+  const reduceMotion = useReducedMotion();
 
   // Overrides set by user actions; when absent, values derive from the
   // resolved family so a resumed run starts where it stopped (a family
   // without the completion marker continues on the quick-add step).
   const [stepChoice, setStepChoice] = useState<OnboardingStep | null>(null);
+  const [stepDirection, setStepDirection] =
+    useState<StepDirection>("forward");
   const [familyIdOverride, setFamilyIdOverride] = useState<string | null>(null);
   const [familyNameOverride, setFamilyNameOverride] = useState<string | null>(
     null,
@@ -141,6 +150,7 @@ export default function OnboardingScreen() {
       }
 
       setFamilyNameInput("");
+      setStepDirection("forward");
       setStepChoice("add-member");
     } catch {
       setServerError(NETWORK_ERROR);
@@ -246,7 +256,12 @@ export default function OnboardingScreen() {
           keyboardShouldPersistTaps="handled"
         >
           {step === "family-name" && (
-            <View style={styles.stepBody}>
+            <Animated.View
+              entering={stepEntering(stepDirection, reduceMotion)}
+              exiting={stepExiting()}
+              key="family-name"
+              style={styles.stepBody}
+            >
               <OnboardingProgress currentStep={1} />
               <MascotBubble>
                 Hallo! Ich bin Ordilo und kümmere mich um eure
@@ -316,11 +331,16 @@ export default function OnboardingScreen() {
                   title={isSubmitting ? "Wird gespeichert…" : "Weiter"}
                 />
               </View>
-            </View>
+            </Animated.View>
           )}
 
           {step === "add-member" && (
-            <View style={styles.stepBody}>
+            <Animated.View
+              entering={stepEntering(stepDirection, reduceMotion)}
+              exiting={stepExiting()}
+              key="add-member"
+              style={styles.stepBody}
+            >
               <OnboardingProgress currentStep={2} />
               <MascotBubble>
                 {familyName ? `Schön, ${familyName}!` : "Schön!"} Wer gehört
@@ -421,7 +441,10 @@ export default function OnboardingScreen() {
                 <OrdiloButton
                   disabled={isSubmitting}
                   icon={<Check color={colors.warmWhite} size={18} />}
-                  onPress={() => setStepChoice("ready")}
+                  onPress={() => {
+                    setStepDirection("forward");
+                    setStepChoice("ready");
+                  }}
                   size="lg"
                   title={
                     members.length > 0
@@ -430,11 +453,16 @@ export default function OnboardingScreen() {
                   }
                 />
               </View>
-            </View>
+            </Animated.View>
           )}
 
           {step === "ready" && (
-            <View style={styles.stepBody}>
+            <Animated.View
+              entering={stepEntering(stepDirection, reduceMotion)}
+              exiting={stepExiting()}
+              key="ready"
+              style={styles.stepBody}
+            >
               <View style={styles.readyHeader}>
                 <OrdiloCharacter size={88} />
                 <Text style={[typography.display, styles.readyTitle]}>
@@ -466,7 +494,7 @@ export default function OnboardingScreen() {
                 title="Erstmal umschauen"
                 variant="ghost"
               />
-            </View>
+            </Animated.View>
           )}
         </ScrollView>
       </KeyboardAvoidingView>
