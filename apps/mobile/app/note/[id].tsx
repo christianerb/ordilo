@@ -20,7 +20,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -28,8 +27,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
 
+import { AnimatedSheetModal } from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
 import {
@@ -53,7 +52,6 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
-import { modalAnimationType } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
@@ -394,7 +392,6 @@ function SecretEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -417,9 +414,7 @@ function SecretEditor({
   };
 
   return (
-    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={saving ? undefined : onClose} presentationStyle="overFullScreen" transparent visible>
-      <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
+    <AnimatedSheetModal dismissDisabled={saving} onClose={onClose} sheetStyle={styles.editorSheet} visible>
           <View style={styles.handle} />
           <Text style={styles.editorTitle}>Passwort ändern</Text>
           <Text style={styles.editorHint}>Leer lassen, um das gespeicherte Passwort zu entfernen.</Text>
@@ -457,9 +452,7 @@ function SecretEditor({
               title={saving ? "Wird gespeichert …" : "Speichern"}
             />
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    </AnimatedSheetModal>
   );
 }
 
@@ -474,7 +467,6 @@ function NoteMetadataEditor({
   onClose: () => void;
   onSaved: (changes: Pick<ReviewAnalysis, "title" | "summary" | "document_type">) => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const [title, setTitle] = useState(note.title);
   const [summary, setSummary] = useState(note.summary);
   const [documentType, setDocumentType] = useState(note.document_type);
@@ -502,9 +494,7 @@ function NoteMetadataEditor({
   };
 
   return (
-    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
-      <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
+    <AnimatedSheetModal dismissDisabled={saving} onClose={onClose} sheetStyle={styles.editorSheet} visible>
           <View style={styles.handle} />
           <Text style={styles.editorTitle}>Angaben bearbeiten</Text>
           <Text style={styles.editorHint}>Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert.</Text>
@@ -533,9 +523,7 @@ function NoteMetadataEditor({
             <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
             <OrdiloButton disabled={saving} icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={17} />} onPress={() => void save()} title={saving ? "Wird gespeichert …" : "Speichern"} />
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    </AnimatedSheetModal>
   );
 }
 
@@ -577,7 +565,6 @@ const styles = StyleSheet.create({
   secretActions: { flexDirection: "row", gap: spacing.sm },
   secretEditorField: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, margin: spacing.md, minHeight: 44, paddingHorizontal: 12 },
   secretEditorInput: { color: colors.graphite, flex: 1, minHeight: 44, ...typography.body },
-  overlay: { backgroundColor: "rgba(38, 36, 33, 0.28)", flex: 1, justifyContent: "flex-end" },
   editorSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "85%", paddingBottom: spacing.md },
   handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.md, marginTop: spacing.sm, width: 40 },
   editorTitle: { color: colors.graphite, paddingHorizontal: spacing.md, ...typography.display },

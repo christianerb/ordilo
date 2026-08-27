@@ -13,7 +13,6 @@ import { useCallback, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Image,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,8 +20,8 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
 
+import { AnimatedSheetModal } from "@/src/components/sheet";
 import { OrdiloButton } from "@/src/components/ui";
 import {
   buildCredentialsContent,
@@ -34,7 +33,6 @@ import {
   type DocumentType,
 } from "@/src/lib/document-review";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-import { modalAnimationType } from "@/src/theme/motion";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
 
@@ -55,7 +53,6 @@ export function NoteFormSheet({
   onSubmit: (draft: NoteDraft) => Promise<void>;
   visible: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("note");
@@ -198,21 +195,9 @@ export function NoteFormSheet({
   ]);
 
   return (
-    <Modal
-      animationType={modalAnimationType(reduceMotion)}
-      onRequestClose={close}
-      presentationStyle="overFullScreen"
-      transparent
-      visible={visible}
-    >
-      <Pressable onPress={close} style={styles.overlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.sheet}
-        >
-          <View style={styles.handle} />
-          <View style={styles.header}>
+    <AnimatedSheetModal onClose={close} sheetStyle={styles.sheet} visible={visible}>
+      <View style={styles.handle} />
+      <View style={styles.header}>
             <View>
               <Text style={styles.title}>Notiz schreiben</Text>
               <Text style={styles.subtitle}>Für alles, was ihr euch merken möchtet.</Text>
@@ -370,15 +355,13 @@ export function NoteFormSheet({
               title={saving ? "Wird gespeichert …" : "Speichern"}
             />
           </View>
-        </Pressable>
-      </Pressable>
       <NoteTypePicker
         onClose={() => setTypePickerVisible(false)}
         onSelect={chooseType}
         selected={documentType}
         visible={typePickerVisible}
       />
-    </Modal>
+    </AnimatedSheetModal>
   );
 }
 
@@ -402,36 +385,29 @@ function NoteTypePicker({
   selected: DocumentType;
   visible: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-
   return (
-    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible={visible}>
-      <Pressable onPress={onClose} style={styles.overlay}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.typeSheet}>
-          <View style={styles.handle} />
-          <Text style={styles.typeHeading}>Art wählen</Text>
-          <ScrollView>
-            {noteTypes.map(([type, label]) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: selected === type }}
-                key={type}
-                onPress={() => onSelect(type)}
-                style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
-              >
-                <Text style={[styles.typeOptionText, selected === type && styles.typeOptionTextSelected]}>{label}</Text>
-                {selected === type ? <CheckCircle2 color={colors.harborBlue} size={20} /> : null}
-              </Pressable>
-            ))}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <AnimatedSheetModal onClose={onClose} sheetStyle={styles.typeSheet} visible={visible}>
+      <View style={styles.handle} />
+      <Text style={styles.typeHeading}>Art wählen</Text>
+      <ScrollView>
+        {noteTypes.map(([type, label]) => (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: selected === type }}
+            key={type}
+            onPress={() => onSelect(type)}
+            style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
+          >
+            <Text style={[styles.typeOptionText, selected === type && styles.typeOptionTextSelected]}>{label}</Text>
+            {selected === type ? <CheckCircle2 color={colors.harborBlue} size={20} /> : null}
+          </Pressable>
+        ))}
+      </ScrollView>
+    </AnimatedSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { backgroundColor: "rgba(38, 36, 33, 0.28)", flex: 1, justifyContent: "flex-end" },
   sheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "90%", paddingBottom: spacing.md },
   typeSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "78%", paddingBottom: spacing.lg, paddingHorizontal: spacing.md },
   handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.sm, marginTop: spacing.sm, width: 40 },

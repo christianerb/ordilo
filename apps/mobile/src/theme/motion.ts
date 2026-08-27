@@ -30,6 +30,10 @@ export const durations = {
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1);
 
+/** Shared easings for places that drive shared values by hand. */
+export const easeOut = EASE_OUT;
+export const easeInOut = EASE_IN_OUT;
+
 /** Canonical system setting for animation builders that accept it. */
 export const REDUCE_MOTION = ReduceMotion.System;
 
@@ -38,13 +42,6 @@ export const pressScale = 0.97;
 export const pressDuration = 120;
 
 export type StepDirection = "forward" | "backward";
-
-/** Native forms travel only when the system allows positional motion. */
-export function modalAnimationType(
-  reduceMotion: boolean,
-): "fade" | "slide" {
-  return reduceMotion ? "fade" : "slide";
-}
 
 /** Siblings glide into their new places when a row enters or leaves. */
 export function listLayout(): BaseAnimationBuilder {

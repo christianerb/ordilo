@@ -16,9 +16,6 @@ import {
 } from "react";
 import {
   ActivityIndicator,
-  KeyboardAvoidingView,
-  Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,9 +23,9 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AnimatedSheetModal } from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
   buildWhatsAppHref,
@@ -40,7 +37,6 @@ import {
   type ContactInput,
 } from "@/src/lib/contacts";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-import { modalAnimationType } from "@/src/theme/motion";
 import { tap, success, fail } from "@/src/lib/feedback";
 
 /**
@@ -277,7 +273,6 @@ export function ContactFormSheet({
   visible: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const reduceMotion = useReducedMotion();
   const [form, setForm] = useState<ContactInput>(EMPTY_CONTACT_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -327,25 +322,15 @@ export function ContactFormSheet({
   };
 
   return (
-    <Modal
-      animationType={modalAnimationType(reduceMotion)}
-      onRequestClose={onClose}
-      presentationStyle="pageSheet"
-      transparent
+    <AnimatedSheetModal
+      keyboardAvoiding
+      onClose={onClose}
+      sheetStyle={[
+        styles.sheet,
+        { paddingBottom: Math.max(insets.bottom, spacing.lg) },
+      ]}
       visible={visible}
     >
-      <Pressable onPress={onClose} style={styles.modalOverlay}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-        >
-          <Pressable
-            accessibilityViewIsModal
-            onPress={(event) => event.stopPropagation()}
-            style={[
-              styles.sheet,
-              { paddingBottom: Math.max(insets.bottom, spacing.lg) },
-            ]}
-          >
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>
               {contact ? "Kontakt bearbeiten" : "Neuer Kontakt"}
@@ -406,10 +391,7 @@ export function ContactFormSheet({
                 title={saving ? "Wird gespeichert …" : "Kontakt speichern"}
               />
             </View>
-          </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
-    </Modal>
+    </AnimatedSheetModal>
   );
 }
 
@@ -506,11 +488,6 @@ const styles = StyleSheet.create({
     width: 44,
   },
   pressed: { opacity: 0.76 },
-  modalOverlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
   sheet: {
     backgroundColor: colors.warmWhite,
     borderTopLeftRadius: radii.xl,

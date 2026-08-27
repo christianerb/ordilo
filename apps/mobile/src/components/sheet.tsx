@@ -5,19 +5,29 @@ import {
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
 import { X } from "lucide-react-native";
-import { forwardRef, useEffect, useRef, type ReactNode } from "react";
+import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useReducedMotion } from "react-native-reanimated";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
 
+import { durations, easeInOut, easeOut } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -98,6 +108,127 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
 );
 
 /**
+ * Bottom-anchored modal with the motion split a raw Modal cannot do:
+ * the dimming overlay only fades while the sheet itself travels from
+ * below the screen — instead of the whole wall of grey sliding up.
+ * Dismissal animates out before unmounting, so both directions read as
+ * one calm motion. Under Reduce Motion the sheet keeps its place and
+ * only the fade remains.
+ */
+export function AnimatedSheetModal({
+  children,
+  dismissDisabled = false,
+  keyboardAvoiding = false,
+  onClose,
+  sheetStyle,
+  visible,
+}: {
+  children: ReactNode;
+  /** Blocks backdrop-tap and back-button dismissal (e.g. while saving). */
+  dismissDisabled?: boolean;
+  /** Lifts the sheet above the software keyboard (iOS padding behavior). */
+  keyboardAvoiding?: boolean;
+  onClose: () => void;
+  sheetStyle?: StyleProp<ViewStyle>;
+  visible: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  const { height: windowHeight } = useWindowDimensions();
+  const [mounted, setMounted] = useState(visible);
+  const overlayOpacity = useSharedValue(0);
+  const sheetOffset = useSharedValue(windowHeight);
+
+  // Mount synchronously on open (React's guarded render adjustment) so the
+  // entry animation has something to animate; exit unmounts via runOnJS.
+  if (visible && !mounted) {
+    setMounted(true);
+  }
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (visible) {
+      // Entry: the overlay fades in while the sheet slides up.
+      overlayOpacity.value = 0;
+      sheetOffset.value = reduceMotion ? 0 : windowHeight;
+      overlayOpacity.value = withTiming(1, {
+        duration: durations.base,
+        easing: easeOut,
+      });
+      sheetOffset.value = withTiming(0, {
+        duration: reduceMotion ? durations.fast : 250,
+        easing: easeOut,
+      });
+      return;
+    }
+    // Exit: reverse motion, then unmount — the overlay never travels.
+    overlayOpacity.value = withTiming(0, {
+      duration: durations.fast,
+      easing: easeInOut,
+    });
+    sheetOffset.value = withTiming(
+      reduceMotion ? 0 : windowHeight,
+      { duration: durations.fast, easing: easeInOut },
+      (finished) => {
+        "worklet";
+        if (finished) runOnJS(setMounted)(false);
+      },
+    );
+  }, [visible, mounted, reduceMotion, windowHeight, overlayOpacity, sheetOffset]);
+
+  const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.value }));
+  const sheetAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetOffset.value }],
+  }));
+
+  if (!mounted) return null;
+
+  return (
+    <Modal
+      animationType="none"
+      onRequestClose={dismissDisabled ? undefined : onClose}
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
+      transparent
+      visible
+    >
+      <View style={styles.modalRoot}>
+        <Animated.View style={[StyleSheet.absoluteFill, styles.modalOverlay, overlayStyle]}>
+          <Pressable
+            accessibilityLabel="Schließen"
+            accessibilityRole="button"
+            onPress={dismissDisabled ? undefined : onClose}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+        {keyboardAvoiding ? (
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            pointerEvents="box-none"
+            style={styles.modalSheetSlot}
+          >
+            <Animated.View
+              accessibilityViewIsModal
+              style={[styles.modalSheet, sheetStyle, sheetAnimatedStyle]}
+            >
+              {children}
+            </Animated.View>
+          </KeyboardAvoidingView>
+        ) : (
+          <View pointerEvents="box-none" style={styles.modalSheetSlot}>
+            <Animated.View
+              accessibilityViewIsModal
+              style={[styles.modalSheet, sheetStyle, sheetAnimatedStyle]}
+            >
+              {children}
+            </Animated.View>
+          </View>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
+/**
  * Declarative form-sheet shell for flows that need to intercept a close
  * request before dismissing, such as unsaved task or member edits. Picker
  * sheets keep using OrdiloSheet above, which delegates dragging and
@@ -118,39 +249,27 @@ export function OrdiloFormSheet({
   title: string;
   visible: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-
   return (
-    <Modal
-      animationType={reduceMotion ? "fade" : "slide"}
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      transparent
+    <AnimatedSheetModal
+      onClose={onClose}
+      sheetStyle={[styles.formSheetPadding, style]}
       visible={visible}
     >
-      <Pressable onPress={onClose} style={styles.formOverlay}>
+      <View style={styles.formHandle} />
+      <View style={styles.formHeader}>
+        <Text style={styles.formTitle}>{title}</Text>
         <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={[styles.formSheet, style]}
+          accessibilityLabel={closeAccessibilityLabel ?? `${title} schließen`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={onClose}
+          style={styles.formClose}
         >
-          <View style={styles.formHandle} />
-          <View style={styles.formHeader}>
-            <Text style={styles.formTitle}>{title}</Text>
-            <Pressable
-              accessibilityLabel={closeAccessibilityLabel ?? `${title} schließen`}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={onClose}
-              style={styles.formClose}
-            >
-              <X color={colors.graphite} size={19} strokeWidth={2} />
-            </Pressable>
-          </View>
-          {children}
+          <X color={colors.graphite} size={19} strokeWidth={2} />
         </Pressable>
-      </Pressable>
-    </Modal>
+      </View>
+      {children}
+    </AnimatedSheetModal>
   );
 }
 
@@ -171,16 +290,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.mistLight,
     width: 40,
   },
-  formOverlay: {
+  modalRoot: {
+    flex: 1,
+  },
+  modalOverlay: {
     backgroundColor: "rgba(38, 36, 33, 0.28)",
+  },
+  modalSheetSlot: {
     flex: 1,
     justifyContent: "flex-end",
   },
-  formSheet: {
+  modalSheet: {
     backgroundColor: colors.warmWhite,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
     maxHeight: "88%",
+  },
+  formSheetPadding: {
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
   },

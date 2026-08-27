@@ -52,14 +52,26 @@ describe("native motion wiring", () => {
     expect(preview.match(/reduceMotion: ReduceMotion\.Never/g)).toHaveLength(5);
   });
 
-  it("branches every custom form modal for Reduce Motion", () => {
+  it("routes every custom form modal through the motion-aware sheet primitives", () => {
+    // AnimatedSheetModal owns the Reduce Motion branch for raw modals: the
+    // overlay fades in place while only the sheet travels.
+    const sheet = source("src/components/sheet.tsx");
+    expect(sheet).toContain("useReducedMotion");
+    expect(sheet).toContain('animationType="none"');
+    expect(sheet).toContain("reduceMotion ? 0 : windowHeight");
+
     for (const path of [
       "src/components/contacts.tsx",
       "src/components/note-form-sheet.tsx",
       "app/note/[id].tsx",
-      "src/components/ordilo-tab-bar.tsx",
     ]) {
-      expect(source(path)).toContain("modalAnimationType(reduceMotion)");
+      expect(source(path)).toContain("AnimatedSheetModal");
+      expect(source(path)).not.toContain("modalAnimationType");
     }
+
+    // The tab bar action sheet delegates presentation to OrdiloSheet.
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      "OrdiloSheet",
+    );
   });
 });
