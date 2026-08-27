@@ -112,13 +112,17 @@ export function getLibrarySortOrder(sort: LibrarySort): {
 
 /**
  * Escapes user text for PostgREST's `or()` filter syntax. The result is
- * deliberately plain text, never a piece of the filter expression.
+ * quoted so punctuation remains part of the ILIKE pattern instead of
+ * being parsed as filter grammar.
  */
 export function toLibrarySearchPattern(query: string): string {
-  return `%${query
+  const escaped = query
     .trim()
-    .replace(/[%_]/g, "\\$&")
-    .replace(/[,.()]/g, " ")}%`;
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/[%_]/g, "\\$&");
+
+  return `"%${escaped}%"`;
 }
 
 export function getLibraryPageRange(

@@ -114,6 +114,11 @@ describe("WelcomeIntro", () => {
       "aria-current",
       "step",
     );
+    const activeFill = screen.getByTestId("welcome-dot-2").querySelector(
+      "span > span",
+    );
+    expect(activeFill?.className).toContain("scale-x-100");
+    expect(activeFill?.className).not.toMatch(/\bw-(?:1\.5|6)\b/);
 
     fireEvent.click(screen.getByTestId("welcome-dot-0"));
     expect(screen.getByText("Alles an einem Ort")).toBeInTheDocument();

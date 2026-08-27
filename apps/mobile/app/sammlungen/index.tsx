@@ -14,8 +14,6 @@ import {
   Text,
   View,
 } from "react-native";
-import Animated from "react-native-reanimated";
-
 import { CollectionFormSheet } from "@/src/components/collection-form-sheet";
 import { CollectionIcon } from "@/src/components/collection-icon";
 import {
@@ -25,7 +23,6 @@ import {
   Screen,
   ScreenHeader,
 } from "@/src/components/ui";
-import { listItemEntering } from "@/src/theme/motion";
 import {
   countDocumentsPerCollection,
   createCollection,
@@ -156,14 +153,13 @@ export default function SammlungenScreen() {
 
         {collections.length > 0 ? (
           <View style={styles.list}>
-            {collections.map((collection, index) => (
-              <Animated.View entering={listItemEntering(index)} key={collection.id}>
-                <CollectionRow
-                  collection={collection}
-                  count={counts.get(collection.id) ?? 0}
-                  onPress={() => router.push(`/sammlungen/${collection.id}`)}
-                />
-              </Animated.View>
+            {collections.map((collection) => (
+              <CollectionRow
+                collection={collection}
+                count={counts.get(collection.id) ?? 0}
+                key={collection.id}
+                onPress={() => router.push(`/sammlungen/${collection.id}`)}
+              />
             ))}
           </View>
         ) : (

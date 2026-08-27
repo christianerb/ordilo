@@ -142,6 +142,38 @@ describe("TaskCard", () => {
     expect(title.className).not.toContain("line-through");
   });
 
+  it("keeps the check mounted so rapid reversals can retarget", () => {
+    const { rerender } = render(
+      <TaskCard task={makeTask({ status: "open" })} />,
+    );
+    const check = screen.getByTestId("task-check-mark");
+    expect(check.getAttribute("class")).toContain("opacity-0");
+
+    rerender(<TaskCard task={makeTask({ status: "done" })} />);
+
+    expect(screen.getByTestId("task-check-mark")).toBe(check);
+    expect(check.getAttribute("class")).toContain("opacity-100");
+    expect(screen.getByTestId("task-card").className).toContain(
+      "transition-colors",
+    );
+    expect(screen.getByTestId("task-title").className).toContain(
+      "transition-colors",
+    );
+  });
+
+  it("retargets the mounted strike line from open to done", () => {
+    const { rerender } = render(
+      <TaskCard task={makeTask({ status: "open" })} />,
+    );
+    const strike = screen.getByTestId("task-strike-line");
+    expect(strike.className).toContain("scale-x-0");
+
+    rerender(<TaskCard task={makeTask({ status: "done" })} />);
+
+    expect(screen.getByTestId("task-strike-line")).toBe(strike);
+    expect(strike.className).toContain("scale-x-100");
+  });
+
   // ---------------------------------------------------------------------------
   // Dismiss action
   // ---------------------------------------------------------------------------

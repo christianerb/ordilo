@@ -124,9 +124,8 @@ export function TaskCard({
       data-status={task.status}
       role="group"
       className={cn(
-        "flex items-start gap-1.5",
+        "flex items-start gap-1.5 transition-colors duration-150",
         flat ? "py-2.5" : "rounded-ordilo-sm bg-card p-3 shadow-card card-lift",
-        isDone && "animate-task-done",
         className,
       )}
     >
@@ -147,19 +146,21 @@ export function TaskCard({
       >
         <span
           className={cn(
-            "flex size-6 items-center justify-center rounded-full border-2 transition-colors",
+            "flex size-6 items-center justify-center rounded-full border-2 transition-[background-color,border-color] duration-150",
             isDone
               ? "border-[var(--petrol)] bg-[var(--petrol)]"
               : "border-[var(--mist)] bg-transparent",
           )}
           aria-hidden="true"
         >
-          {isDone && (
-            <Check
-              className="size-3.5 animate-check-pop text-[var(--warm-white)]"
-              strokeWidth={3}
-            />
-          )}
+          <Check
+            className={cn(
+              "size-3.5 text-[var(--warm-white)] transition-[opacity,transform] duration-[160ms] [transition-timing-function:var(--ease-out)] motion-reduce:scale-100 motion-reduce:transition-opacity motion-reduce:duration-150",
+              isDone ? "scale-100 opacity-100" : "scale-[0.95] opacity-0",
+            )}
+            strokeWidth={3}
+            data-testid="task-check-mark"
+          />
         </span>
       </button>
 
@@ -349,15 +350,29 @@ function CardContent({
   return (
     <>
       {/* Title */}
-      <p
+      <span
         className={cn(
-          "line-clamp-2 text-sm font-medium leading-snug text-foreground",
-          isDone && "animate-strike text-muted-foreground line-through",
+          "relative block text-sm font-medium leading-snug",
         )}
-        data-testid="task-title"
       >
-        {task.title}
-      </p>
+        <span
+          className={cn(
+            "line-clamp-2 text-foreground transition-colors duration-150",
+            isDone && "text-muted-foreground line-through",
+          )}
+          data-testid="task-title"
+        >
+          {task.title}
+        </span>
+        <span
+          className={cn(
+            "pointer-events-none absolute inset-x-0 top-1/2 h-px origin-left bg-current transition-transform duration-[160ms] [transition-timing-function:var(--ease-out)] motion-reduce:transition-none",
+            isDone ? "scale-x-100" : "scale-x-0",
+          )}
+          aria-hidden="true"
+          data-testid="task-strike-line"
+        />
+      </span>
 
       {/* Note — the detail that makes the task doable */}
       {noteLine && (

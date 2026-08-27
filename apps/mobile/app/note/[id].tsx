@@ -20,7 +20,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -29,7 +28,9 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 
+import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
 import {
   buildNoteUpdatePayload,
@@ -52,6 +53,7 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
+import { modalAnimationType } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
@@ -392,6 +394,7 @@ function SecretEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -414,7 +417,7 @@ function SecretEditor({
   };
 
   return (
-    <Modal animationType="slide" onRequestClose={saving ? undefined : onClose} presentationStyle="overFullScreen" transparent visible>
+    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={saving ? undefined : onClose} presentationStyle="overFullScreen" transparent visible>
       <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
           <View style={styles.handle} />
@@ -471,6 +474,7 @@ function NoteMetadataEditor({
   onClose: () => void;
   onSaved: (changes: Pick<ReviewAnalysis, "title" | "summary" | "document_type">) => void;
 }) {
+  const reduceMotion = useReducedMotion();
   const [title, setTitle] = useState(note.title);
   const [summary, setSummary] = useState(note.summary);
   const [documentType, setDocumentType] = useState(note.document_type);
@@ -498,7 +502,7 @@ function NoteMetadataEditor({
   };
 
   return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
+    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
       <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
         <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
           <View style={styles.handle} />
@@ -536,16 +540,14 @@ function NoteMetadataEditor({
 }
 
 function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose: () => void }) {
-  return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="fullScreen" visible={Boolean(imageUrl)}>
-      <View style={styles.previewScreen}>
-        <Pressable accessibilityLabel="Bild schließen" accessibilityRole="button" onPress={onClose} style={styles.previewClose}>
-          <ArrowLeft color={colors.warmWhite} size={24} />
-        </Pressable>
-        {imageUrl ? <Image resizeMode="contain" source={{ uri: imageUrl }} style={styles.fullImage} /> : null}
-      </View>
-    </Modal>
-  );
+  return imageUrl ? (
+    <SwipeImagePreview
+      imageAccessibilityLabel="Angehängtes Bild"
+      imageUrl={imageUrl}
+      onClose={onClose}
+      title="Bild"
+    />
+  ) : null;
 }
 
 const styles = StyleSheet.create({
@@ -591,9 +593,6 @@ const styles = StyleSheet.create({
   typeChipTextSelected: { color: colors.warmWhite },
   error: { color: colors.destructive, ...typography.timestamp },
   editorFooter: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.md },
-  previewScreen: { alignItems: "center", backgroundColor: colors.graphite, flex: 1, justifyContent: "center" },
-  previewClose: { alignItems: "center", height: 52, justifyContent: "center", left: spacing.md, position: "absolute", top: 54, width: 52, zIndex: 1 },
-  fullImage: { height: "100%", width: "100%" },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.5 },
 });

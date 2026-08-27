@@ -19,6 +19,35 @@ describe("Ordilo interaction components", () => {
     fireEvent.click(trigger);
     expect(trigger).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText("Steuer-ID Hanna")).toBeDefined();
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Steuer-ID Hanna")).toBeDefined();
+  });
+
+  it("makes closed descendants inert without discarding entered values", () => {
+    render(
+      <OrdiloDisclosure title="Weitere Angaben" testId="details">
+        <label>
+          Spitzname
+          <input defaultValue="Hanni" />
+        </label>
+      </OrdiloDisclosure>,
+    );
+
+    const disclosure = screen.getByTestId("details");
+    const content = disclosure.querySelector(
+      "[data-disclosure-content]",
+    ) as HTMLElement;
+    const input = disclosure.querySelector("input") as HTMLInputElement;
+    expect(content).toHaveAttribute("inert");
+
+    fireEvent.click(screen.getByRole("button", { name: "Weitere Angaben" }));
+    expect(content).not.toHaveAttribute("inert");
+    fireEvent.change(input, { target: { value: "Hanna" } });
+    fireEvent.click(screen.getByRole("button", { name: "Weitere Angaben" }));
+
+    expect(content).toHaveAttribute("inert");
+    expect(input.value).toBe("Hanna");
   });
 
   it("distributes a pasted code across the remaining OTP fields", () => {

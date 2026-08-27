@@ -131,9 +131,9 @@ export function UploadProgressCard({
           <div key="uploading" className="animate-upload-phase">
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-[var(--mist-light)]">
               <div
-                className="h-full rounded-full transition-all duration-200"
+                className="h-full w-full origin-left rounded-full transition-transform duration-200 [transition-timing-function:var(--ease-in-out)] motion-reduce:transition-none"
                 style={{
-                  width: `${upload.progress}%`,
+                  transform: `scaleX(${upload.progress / 100})`,
                   backgroundColor: "var(--petrol)",
                 }}
                 data-testid="progress-bar"

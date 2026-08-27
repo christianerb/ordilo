@@ -28,7 +28,7 @@ import {
 import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from "react-native-gesture-handler/ReanimatedSwipeable";
-import Animated from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
@@ -71,10 +71,8 @@ import {
   type TaskSectionId,
 } from "@/src/lib/tasks";
 import {
-  contentEntering,
-  contentExiting,
-  listItemEntering,
-  listItemExiting,
+  feedbackEntering,
+  feedbackExiting,
   listLayout,
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
@@ -110,6 +108,7 @@ interface UndoState {
  * destructive action (Verwerfen) asks first.
  */
 export default function PlanScreen() {
+  const reduceMotion = useReducedMotion();
   const { family } = useFamily();
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
   const [events, setEvents] = useState<PlannerEvent[]>([]);
@@ -501,9 +500,8 @@ export default function PlanScreen() {
                   ) : null}
                 </Pressable>
                 <View style={styles.sectionBody}>
-                  {shown.map((task, index) => (
+                  {shown.map((task) => (
                     <SwipeableTaskRow
-                      index={index}
                       key={task.id}
                       member={task.assigned_to ? memberById.get(task.assigned_to) : undefined}
                       onAssign={() => setAssignTask(task)}
@@ -571,8 +569,8 @@ export default function PlanScreen() {
 
       {undo ? (
         <Animated.View
-          entering={contentEntering()}
-          exiting={contentExiting()}
+          entering={feedbackEntering(reduceMotion)}
+          exiting={feedbackExiting()}
           style={styles.undoBanner}
         >
           <Text numberOfLines={1} style={styles.undoMessage}>
@@ -661,7 +659,6 @@ function PlannerEventRow({
  * appear from the first dragged pixel so the gesture teaches itself.
  */
 function SwipeableTaskRow({
-  index,
   member,
   onAssign,
   onPress,
@@ -670,7 +667,6 @@ function SwipeableTaskRow({
   task,
   todayStr,
 }: {
-  index: number;
   member: FamilyMemberOption | undefined;
   onAssign: () => void;
   onPress: () => void;
@@ -693,8 +689,6 @@ function SwipeableTaskRow({
 
   return (
     <Animated.View
-      entering={listItemEntering(index)}
-      exiting={listItemExiting()}
       layout={listLayout()}
     >
       <ReanimatedSwipeable

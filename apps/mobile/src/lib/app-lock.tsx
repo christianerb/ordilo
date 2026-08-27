@@ -28,13 +28,13 @@ import {
   type BiometrySupport,
 } from "@/src/lib/biometrics";
 import { haptics } from "@/src/lib/haptics";
-import { REDUCE_MOTION } from "@/src/lib/motion";
 import {
   defaultAppSettings,
   loadAppSettings,
   saveAppSettings,
   type AppSettings,
 } from "@/src/lib/settings";
+import { REDUCE_MOTION } from "@/src/theme/motion";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 
 interface AppLockContextValue {

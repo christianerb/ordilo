@@ -49,14 +49,14 @@ function CollapsedSidebarTooltip({
   collapsed: boolean;
   children: ReactElement;
 }) {
-  if (!collapsed) return children;
-
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={10}>
-        {label}
-      </TooltipContent>
+      {collapsed && (
+        <TooltipContent side="right" sideOffset={10}>
+          {label}
+        </TooltipContent>
+      )}
     </Tooltip>
   );
 }
@@ -277,14 +277,21 @@ export function SidebarNav({
       aria-label="Hauptnavigation"
       data-collapsed={collapsed}
       className={cn(
-        "fixed left-0 top-0 z-50 hidden h-dvh flex-col overflow-hidden transition-[width] duration-200 lg:flex",
-        collapsed ? "w-[76px]" : "w-[224px]",
+        "fixed left-0 top-0 z-50 hidden h-dvh w-[224px] flex-col overflow-hidden lg:flex",
+        collapsed && "[clip-path:inset(0_148px_0_0)]",
       )}
-      style={DESKTOP_SHELL_SURFACE_STYLE}
     >
       <div
         className={cn(
-          "relative py-4",
+          "sidebar-motion pointer-events-none absolute inset-0",
+          collapsed && "-translate-x-[148px]",
+        )}
+        style={DESKTOP_SHELL_SURFACE_STYLE}
+        aria-hidden="true"
+      />
+      <div
+        className={cn(
+          "relative z-10 py-4",
           collapsed ? "flex flex-col items-center gap-2 px-3" : "px-3",
         )}
       >
@@ -322,10 +329,10 @@ export function SidebarNav({
 
       <div
         className={cn(
-          "overflow-hidden px-3 text-sm leading-tight transition-[max-height,opacity,padding-bottom] duration-200 ease-out",
+          "sidebar-motion relative z-10 h-12 shrink-0 px-3 text-sm leading-tight",
           collapsed || !greeting || !displayName
-            ? "max-h-0 pb-0 opacity-0"
-            : "max-h-12 pb-4 opacity-100",
+            ? "-translate-x-2 opacity-0"
+            : "translate-x-0 opacity-100",
         )}
       >
         <span className="text-muted-foreground">{greeting},</span>
@@ -333,7 +340,7 @@ export function SidebarNav({
         <span className="font-medium text-foreground">{displayName}</span>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-3">
+      <div className="relative z-10 min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-3">
         <ul className="space-y-px">
           {NAV_TABS.map((tab) => {
             const selected = isTabActive(tab, pathname);
@@ -345,32 +352,46 @@ export function SidebarNav({
                     href={tab.href}
                     aria-current={selected ? "page" : undefined}
                     className={cn(
-                      "group flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 transition-colors duration-150",
-                      collapsed ? "justify-center" : "justify-start",
+                      "group relative block min-h-10 rounded-ordilo-sm py-2 transition-colors duration-150",
+                      collapsed ? "w-[52px]" : "w-full",
                       selected
                         ? "bg-[color-mix(in_srgb,var(--petrol)_8%,var(--sand-light))] font-medium text-[var(--petrol)]"
                         : "text-muted-foreground hover:bg-[var(--sand-warm)] hover:text-foreground",
                     )}
                   >
-                    <Icon
-                      className="size-5 shrink-0 transition-colors"
-                      aria-hidden="true"
-                      strokeWidth={selected ? 2.1 : 1.75}
-                    />
                     <span
                       className={cn(
-                        "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
+                        "sidebar-motion absolute top-1/2 flex size-5 -translate-y-1/2 items-center justify-center",
+                        collapsed ? "left-4" : "left-3",
+                      )}
+                      data-testid={`sidebar-nav-icon-${tab.label}`}
+                    >
+                      <Icon
+                        className="size-5 transition-colors"
+                        aria-hidden="true"
+                        strokeWidth={selected ? 2.1 : 1.75}
+                      />
+                    </span>
+                    <span
+                      className={cn(
+                        "sidebar-motion block whitespace-nowrap pl-11 pr-6 text-sm font-normal",
                         collapsed
-                          ? "ml-0 max-w-0 opacity-0"
-                          : "ml-3 max-w-[7rem] opacity-100",
+                          ? "-translate-x-2 opacity-0"
+                          : "translate-x-0 opacity-100",
                       )}
                     >
                       {tab.label}
                     </span>
-                    {!collapsed && selected && (
+                    {selected && (
                       <span
-                        className="ml-auto size-1.5 rounded-full bg-[var(--apricot)] animate-nav-dot"
+                        className={cn(
+                          "sidebar-motion absolute size-1.5 rounded-full bg-[var(--apricot)]",
+                          collapsed
+                            ? "right-1.5 top-1.5 opacity-100"
+                            : "right-3 top-1/2 -translate-y-1/2 opacity-100",
+                        )}
                         aria-hidden="true"
+                        data-testid="sidebar-active-dot"
                       />
                     )}
                   </Link>
@@ -407,16 +428,26 @@ export function SidebarNav({
               <Link
                 href="/suche?history=1"
                 className={cn(
-                  "flex min-h-10 items-center rounded-ordilo-sm px-3 py-2 text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground",
-                  collapsed ? "justify-center" : "justify-start",
+                  "relative block min-h-10 rounded-ordilo-sm py-2 text-muted-foreground transition-colors hover:bg-[var(--sand-warm)] hover:text-foreground",
+                  collapsed ? "w-[52px]" : "w-full",
                 )}
                 data-testid="sidebar-chat-history-link"
               >
-                <History className="size-5 shrink-0" aria-hidden="true" strokeWidth={1.75} />
                 <span
                   className={cn(
-                    "overflow-hidden whitespace-nowrap text-sm font-normal transition-[max-width,opacity,margin-left] duration-200 ease-out",
-                    collapsed ? "ml-0 max-w-0 opacity-0" : "ml-3 max-w-[7rem] opacity-100",
+                    "sidebar-motion absolute top-1/2 flex size-5 -translate-y-1/2 items-center justify-center",
+                    collapsed ? "left-4" : "left-3",
+                  )}
+                  data-testid="sidebar-chat-history-icon"
+                >
+                  <History className="size-5" aria-hidden="true" strokeWidth={1.75} />
+                </span>
+                <span
+                  className={cn(
+                    "sidebar-motion block whitespace-nowrap pl-11 pr-3 text-sm font-normal",
+                    collapsed
+                      ? "-translate-x-2 opacity-0"
+                      : "translate-x-0 opacity-100",
                   )}
                 >
                   Chat-Verlauf
@@ -428,8 +459,10 @@ export function SidebarNav({
 
       </div>
 
-      <SidebarScenery timeOfDay={timeOfDay} collapsed={collapsed} />
-      <SidebarFooter profile={profile} collapsed={collapsed} />
+      <div className="relative z-10">
+        <SidebarScenery timeOfDay={timeOfDay} collapsed={collapsed} />
+        <SidebarFooter profile={profile} collapsed={collapsed} />
+      </div>
     </aside>
   );
 }

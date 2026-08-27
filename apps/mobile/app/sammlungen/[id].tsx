@@ -19,8 +19,6 @@ import {
   View,
 } from "react-native";
 
-import Animated from "react-native-reanimated";
-
 import { CollectionFormSheet } from "@/src/components/collection-form-sheet";
 import { CollectionIcon } from "@/src/components/collection-icon";
 import {
@@ -29,7 +27,6 @@ import {
   OrdiloButton,
   Screen,
 } from "@/src/components/ui";
-import { listItemEntering } from "@/src/theme/motion";
 import {
   deleteCollection,
   fetchCollectionDocuments,
@@ -243,13 +240,12 @@ export default function SammlungDetailScreen() {
 
         {documents.length > 0 ? (
           <View style={styles.list}>
-            {documents.map((document, index) => (
-              <Animated.View entering={listItemEntering(index)} key={document.id}>
-                <DocumentRow
-                  document={document}
-                  onPress={() => router.push(`/document/${document.id}`)}
-                />
-              </Animated.View>
+            {documents.map((document) => (
+              <DocumentRow
+                document={document}
+                key={document.id}
+                onPress={() => router.push(`/document/${document.id}`)}
+              />
             ))}
           </View>
         ) : (

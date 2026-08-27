@@ -58,13 +58,25 @@ const MAX_OFFSET = 132;
 /** Beyond the threshold the row resists — a detent you can feel. */
 const RESISTANCE = 0.4;
 const SLIDE_OFF_DISTANCE = 320;
-const SLIDE_OFF_DURATION = 220;
+const SETTLE_DURATION = 200;
+const SWIPE_SPEED_THRESHOLD = 0.11;
 /**
  * How long a swipe keeps swallowing clicks. Browsers may synthesise a
  * click after a touch sequence; without a window this long, a swipe that
  * ends over the row body would also open the detail sheet.
  */
 const CLICK_SUPPRESS_MS = 400;
+
+function currentTranslateX(element: HTMLElement): number {
+  const transform = window.getComputedStyle(element).transform;
+  if (!transform || transform === "none") return 0;
+  const matrix3d = transform.match(/^matrix3d\((.+)\)$/);
+  if (matrix3d) return Number(matrix3d[1].split(",")[12]) || 0;
+  const matrix = transform.match(/^matrix\((.+)\)$/);
+  if (matrix) return Number(matrix[1].split(",")[4]) || 0;
+  const translate = transform.match(/^translate3d\(([-\d.]+)px/);
+  return translate ? Number(translate[1]) || 0 : 0;
+}
 
 export interface SwipeableTaskCardProps {
   task: TaskCardData;
@@ -116,6 +128,12 @@ export function SwipeableTaskCard({
 }: SwipeableTaskCardProps) {
   const startX = useRef(0);
   const startY = useRef(0);
+  const startTime = useRef(0);
+  const latestRawDx = useRef(0);
+  const gestureBaseOffset = useRef(0);
+  const visualOffset = useRef(0);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   /** null = undecided, "x" = swiping, "y" = the page is scrolling. */
   const axis = useRef<null | "x" | "y">(null);
   const tracking = useRef(false);
@@ -125,9 +143,10 @@ export function SwipeableTaskCard({
   const suppressClick = useRef(false);
   const suppressTimer = useRef<number | null>(null);
   const commitTimer = useRef<number | null>(null);
+  /** A committed completion owns its timer and cannot be interrupted. */
+  const completionPending = useRef(false);
 
-  const [offset, setOffset] = useState(0);
-  const [phase, setPhase] = useState<"live" | "snap" | "slide-off">("snap");
+  const [swipeDirection, setSwipeDirection] = useState<0 | 1 | -1>(0);
   const [armed, setArmed] = useState(false);
 
   // The slide-off is helpful confirmation under normal motion, but people
@@ -178,25 +197,74 @@ export function SwipeableTaskCard({
     return direction * Math.min(MAX_OFFSET, eased);
   }, []);
 
+  const setVisualOffset = useCallback((offset: number) => {
+    visualOffset.current = offset;
+    if (rowRef.current) {
+      rowRef.current.style.transform = `translate3d(${offset}px, 0, 0)`;
+    }
+    if (panelRef.current) {
+      panelRef.current.style.opacity = String(
+        Math.min(1, Math.abs(offset) / 36),
+      );
+    }
+  }, []);
+
+  const clearCommitTimer = useCallback(() => {
+    if (commitTimer.current !== null) {
+      window.clearTimeout(commitTimer.current);
+      commitTimer.current = null;
+    }
+  }, []);
+
+  const settleToZero = useCallback(() => {
+    if (rowRef.current) {
+      rowRef.current.style.transition = reducedMotion.current
+        ? "none"
+        : `transform ${SETTLE_DURATION}ms var(--ease-out)`;
+    }
+    if (panelRef.current) panelRef.current.style.opacity = "0";
+    setVisualOffset(0);
+    clearCommitTimer();
+    if (reducedMotion.current) {
+      setSwipeDirection(0);
+      return;
+    }
+    commitTimer.current = window.setTimeout(() => {
+      commitTimer.current = null;
+      setSwipeDirection(0);
+    }, SETTLE_DURATION);
+  }, [clearCommitTimer, setVisualOffset]);
+
   const resetGesture = useCallback(() => {
     tracking.current = false;
     axis.current = null;
     armedDirection.current = 0;
+    latestRawDx.current = 0;
     setArmed(false);
-    setPhase("snap");
-    setOffset(0);
-  }, []);
+    settleToZero();
+  }, [settleToZero]);
 
   const handleTouchStart = useCallback((e: ReactTouchEvent) => {
+    if (completionPending.current) return;
+    clearCommitTimer();
     startX.current = e.touches[0].clientX;
     startY.current = e.touches[0].clientY;
+    startTime.current = performance.now();
+    latestRawDx.current = 0;
+    const currentOffset = rowRef.current
+      ? currentTranslateX(rowRef.current)
+      : visualOffset.current;
+    gestureBaseOffset.current = currentOffset;
     tracking.current = true;
     axis.current = null;
     armedDirection.current = 0;
     suppressClick.current = false;
     setArmed(false);
-    setPhase("live");
-  }, []);
+    if (rowRef.current) {
+      rowRef.current.style.transition = "none";
+      setVisualOffset(currentOffset);
+    }
+  }, [clearCommitTimer, setVisualOffset]);
 
   const handleTouchMove = useCallback(
     (e: ReactTouchEvent) => {
@@ -225,7 +293,25 @@ export function SwipeableTaskCard({
       if (axis.current !== "x") return;
 
       const direction = dx >= 0 ? 1 : -1;
-      setOffset(canSwipe(direction) ? resist(dx) : 0);
+      latestRawDx.current = dx;
+      if (!canSwipe(direction)) {
+        setSwipeDirection(0);
+        setVisualOffset(0);
+        return;
+      }
+
+      setSwipeDirection(direction);
+      const resistedOffset = resist(dx);
+      setVisualOffset(
+        reducedMotion.current
+          ? 0
+          : gestureBaseOffset.current + resistedOffset,
+      );
+      if (reducedMotion.current && panelRef.current) {
+        panelRef.current.style.opacity = String(
+          Math.min(1, Math.abs(resistedOffset) / 36),
+        );
+      }
 
       // A light tick the instant the swipe crosses the commit threshold,
       // like iOS's rubber-band tick when an action becomes armed. Fires
@@ -238,15 +324,25 @@ export function SwipeableTaskCard({
         if (crossed !== 0) vibrate(8);
       }
     },
-    [canSwipe, resetGesture, resist],
+    [canSwipe, resetGesture, resist, setVisualOffset],
   );
 
   const handleTouchEnd = useCallback(() => {
     if (!tracking.current) return;
     tracking.current = false;
-    const committed = armedDirection.current;
+    const rawDx = latestRawDx.current;
+    const direction: 1 | -1 = rawDx >= 0 ? 1 : -1;
+    const elapsedMs = Math.max(performance.now() - startTime.current, 1);
+    const speed = Math.abs(rawDx) / elapsedMs;
+    const committed =
+      rawDx !== 0 &&
+      canSwipe(direction) &&
+      (Math.abs(rawDx) > SWIPE_THRESHOLD || speed > SWIPE_SPEED_THRESHOLD)
+        ? direction
+        : 0;
     axis.current = null;
     armedDirection.current = 0;
+    latestRawDx.current = 0;
     setArmed(false);
 
     // Release the click suppression on a timer: the synthesised click, if
@@ -262,8 +358,7 @@ export function SwipeableTaskCard({
     }
 
     if (committed === 0) {
-      setPhase("snap");
-      setOffset(0);
+      settleToZero();
       return;
     }
 
@@ -272,8 +367,7 @@ export function SwipeableTaskCard({
     // Left = verschieben: the row stays in the list and a sheet asks when,
     // so it springs back rather than sliding away.
     if (committed === -1) {
-      setPhase("snap");
-      setOffset(0);
+      settleToZero();
       onSchedule?.();
       return;
     }
@@ -281,43 +375,46 @@ export function SwipeableTaskCard({
     // Right = erledigt: the row leaves the section it was in, so it slides
     // out and the callback lands once it is gone.
     if (reducedMotion.current) {
-      setPhase("snap");
-      setOffset(0);
+      if (rowRef.current) rowRef.current.style.transition = "none";
+      if (panelRef.current) panelRef.current.style.opacity = "0";
+      setVisualOffset(0);
+      setSwipeDirection(0);
       onToggleDone("done");
       return;
     }
-    setPhase("slide-off");
-    setOffset(SLIDE_OFF_DISTANCE);
-    if (commitTimer.current !== null) {
-      window.clearTimeout(commitTimer.current);
+    if (rowRef.current) {
+      rowRef.current.style.transition =
+        `transform ${SETTLE_DURATION}ms var(--ease-out)`;
     }
+    setVisualOffset(SLIDE_OFF_DISTANCE);
+    clearCommitTimer();
+    completionPending.current = true;
     commitTimer.current = window.setTimeout(() => {
       commitTimer.current = null;
+      completionPending.current = false;
       onToggleDone("done");
-    }, SLIDE_OFF_DURATION);
-  }, [onSchedule, onToggleDone]);
+    }, SETTLE_DURATION);
+  }, [
+    canSwipe,
+    clearCommitTimer,
+    onSchedule,
+    onToggleDone,
+    setVisualOffset,
+    settleToZero,
+  ]);
 
   const handleTouchCancel = useCallback(() => {
+    if (completionPending.current) return;
     resetGesture();
   }, [resetGesture]);
 
-  const direction = offset >= 0 ? 1 : -1;
-  const isDoneDirection = direction === 1;
-  // The panel is readable well before the threshold, so the gesture
-  // teaches itself on the first hesitant swipe.
-  const panelOpacity = Math.min(1, Math.abs(offset) / 36);
-  const transition =
-    reducedMotion.current || phase === "live"
-      ? "none"
-      : `transform ${
-          phase === "slide-off" ? SLIDE_OFF_DURATION : 300
-        }ms var(--ease-out-quart)`;
+  const isDoneDirection = swipeDirection === 1;
 
   return (
     <div
       className={cn(
         "relative select-none rounded-ordilo-sm",
-        offset !== 0 && "overflow-hidden",
+        swipeDirection !== 0 && "overflow-hidden",
       )}
       style={{ touchAction: "pan-y", WebkitTouchCallout: "none" }}
       onTouchStart={handleTouchStart}
@@ -333,25 +430,27 @@ export function SwipeableTaskCard({
       data-testid="swipeable-task-card"
     >
       {/* What the swipe will do, named — not a mystery icon. */}
-      {offset !== 0 && (
+      {swipeDirection !== 0 && (
         <div
+          ref={panelRef}
           className={cn(
-            "pointer-events-none absolute inset-0 flex items-center rounded-ordilo-sm px-4",
+            "pointer-events-none absolute inset-0 flex items-center rounded-ordilo-sm px-4 opacity-0",
             isDoneDirection ? "justify-start" : "justify-end",
           )}
           style={{
             backgroundColor: isDoneDirection
               ? "var(--petrol)"
               : "var(--apricot)",
-            opacity: panelOpacity,
           }}
           aria-hidden="true"
           data-testid="swipe-action-panel"
           data-action={isDoneDirection ? "done" : "schedule"}
         >
           <span
-            className="flex items-center gap-2 text-sm font-medium text-white transition-transform"
-            style={{ scale: armed ? "1.06" : "1" }}
+            className={cn(
+              "flex items-center gap-2 text-sm font-medium text-white transition-transform motion-reduce:transform-none",
+              armed && "scale-[1.06]",
+            )}
           >
             {isDoneDirection ? (
               <>
@@ -369,7 +468,8 @@ export function SwipeableTaskCard({
       )}
 
       <div
-        style={{ transform: `translateX(${offset}px)`, transition }}
+        ref={rowRef}
+        style={{ transform: "translate3d(0, 0, 0)", transition: "none" }}
         className={cn("relative", flat && (surfaceClassName ?? "bg-card"))}
       >
         <TaskCard

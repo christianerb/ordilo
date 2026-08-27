@@ -25,8 +25,12 @@ import {
   View,
 } from "react-native";
 
-import { FadeInView, PressableScale } from "@/src/components/motion";
-import { OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
+import {
+  OrdiloButton,
+  Screen,
+  ScreenHeader,
+  SpringPressable,
+} from "@/src/components/ui";
 import { deleteFamilyAccount } from "@/src/lib/account";
 import { getApiUrl } from "@/src/lib/api";
 import { useAppLock } from "@/src/lib/app-lock";
@@ -136,13 +140,13 @@ export default function EinstellungenScreen() {
         subtitle="Schutz und Konto auf diesem Gerät"
         title="Einstellungen"
         trailing={(
-        <PressableScale
-          accessibilityLabel="Zurück"
-          contentStyle={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <ChevronLeft color={colors.graphite} size={22} strokeWidth={2} />
-        </PressableScale>
+          <SpringPressable
+            accessibilityLabel="Zurück"
+            onPress={() => router.back()}
+            style={styles.backButton}
+          >
+            <ChevronLeft color={colors.graphite} size={22} strokeWidth={2} />
+          </SpringPressable>
         )}
       />
 
@@ -150,99 +154,89 @@ export default function EinstellungenScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <FadeInView index={0}>
-          <SettingsSection title="Sicherheit">
-            <SettingsToggleRow
-              description={
-                biometry.available
-                  ? `Ordilo öffnet sich erst nach dem Entsperren mit ${biometry.label}.`
-                  : "Auf diesem Gerät ist keine Biometrie eingerichtet."
-              }
-              disabled={!hydrated || !biometry.available}
-              icon={<ScanFace color={colors.harborBlue} size={20} strokeWidth={1.75} />}
-              onToggle={(value) => void setAppLockEnabled(value)}
-              title="App-Sperre"
-              value={settings.appLockEnabled}
-            />
-            <SettingsDivider />
-            <SettingsToggleRow
-              description="Im App-Wechsler zeigt Ordilo nur das Logo statt eurer Inhalte."
-              disabled={!hydrated}
-              icon={<EyeOff color={colors.harborBlue} size={20} strokeWidth={1.75} />}
-              onToggle={(value) => void setPrivacyShieldEnabled(value)}
-              title="Inhalte verbergen"
-              value={settings.privacyShieldEnabled}
-            />
-          </SettingsSection>
-        </FadeInView>
+        <SettingsSection title="Sicherheit">
+          <SettingsToggleRow
+            description={
+              biometry.available
+                ? `Ordilo öffnet sich erst nach dem Entsperren mit ${biometry.label}.`
+                : "Auf diesem Gerät ist keine Biometrie eingerichtet."
+            }
+            disabled={!hydrated || !biometry.available}
+            icon={<ScanFace color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onToggle={(value) => void setAppLockEnabled(value)}
+            title="App-Sperre"
+            value={settings.appLockEnabled}
+          />
+          <SettingsDivider />
+          <SettingsToggleRow
+            description="Im App-Wechsler zeigt Ordilo nur das Logo statt eurer Inhalte."
+            disabled={!hydrated}
+            icon={<EyeOff color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onToggle={(value) => void setPrivacyShieldEnabled(value)}
+            title="Inhalte verbergen"
+            value={settings.privacyShieldEnabled}
+          />
+        </SettingsSection>
 
-        <FadeInView index={1}>
-          <SettingsSection title="Mitteilungen">
-            <SettingsToggleRow
-              description={
-                pushState === "granted"
-                  ? "Ordilo darf dich benachrichtigen."
-                  : pushState === "blocked"
-                    ? "In den iPhone-Einstellungen blockiert."
-                    : "Zum Beispiel wenn jemand aus deiner Familie etwas teilt."
-              }
-              disabled={pushState === null}
-              icon={<Bell color={colors.harborBlue} size={20} strokeWidth={1.75} />}
-              onToggle={(value) => void handlePushToggle(value)}
-              title="Mitteilungen"
-              value={pushState === "granted"}
-            />
-          </SettingsSection>
-        </FadeInView>
+        <SettingsSection title="Mitteilungen">
+          <SettingsToggleRow
+            description={
+              pushState === "granted"
+                ? "Ordilo darf dich benachrichtigen."
+                : pushState === "blocked"
+                  ? "In den iPhone-Einstellungen blockiert."
+                  : "Zum Beispiel wenn jemand aus deiner Familie etwas teilt."
+            }
+            disabled={pushState === null}
+            icon={<Bell color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onToggle={(value) => void handlePushToggle(value)}
+            title="Mitteilungen"
+            value={pushState === "granted"}
+          />
+        </SettingsSection>
 
-        <FadeInView index={2}>
-          <SettingsSection title="Rechtliches">
-            <SettingsLinkRow
-              icon={<FileText color={colors.harborBlue} size={20} strokeWidth={1.75} />}
-              onPress={() => void openLegal("/datenschutz")}
-              title="Datenschutzerklärung"
-            />
-            <SettingsDivider />
-            <SettingsLinkRow
-              icon={<Scale color={colors.harborBlue} size={20} strokeWidth={1.75} />}
-              onPress={() => void openLegal("/impressum")}
-              title="Impressum"
-            />
-          </SettingsSection>
-        </FadeInView>
+        <SettingsSection title="Rechtliches">
+          <SettingsLinkRow
+            icon={<FileText color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={() => void openLegal("/datenschutz")}
+            title="Datenschutzerklärung"
+          />
+          <SettingsDivider />
+          <SettingsLinkRow
+            icon={<Scale color={colors.harborBlue} size={20} strokeWidth={1.75} />}
+            onPress={() => void openLegal("/impressum")}
+            title="Impressum"
+          />
+        </SettingsSection>
 
-        <FadeInView index={3}>
-          <SettingsSection title="Konto">
-            <View style={styles.accountRow}>
-              <View style={styles.rowIcon}>
-                <Mail color={colors.harborBlue} size={20} strokeWidth={1.75} />
-              </View>
-              <View style={styles.rowText}>
-                <Text style={[typography.title, styles.rowTitle]}>
-                  Angemeldet
-                </Text>
-                <Text style={[typography.timestamp, styles.rowDescription]}>
-                  {session?.user.email ?? "…"}
-                </Text>
-              </View>
+        <SettingsSection title="Konto">
+          <View style={styles.accountRow}>
+            <View style={styles.rowIcon}>
+              <Mail color={colors.harborBlue} size={20} strokeWidth={1.75} />
             </View>
-            <SettingsDivider />
-            <SettingsLinkRow
-              icon={<LogOut color={colors.mistDark} size={20} strokeWidth={1.75} />}
-              onPress={handleSignOut}
-              title="Abmelden"
-            />
-          </SettingsSection>
-        </FadeInView>
+            <View style={styles.rowText}>
+              <Text style={[typography.title, styles.rowTitle]}>
+                Angemeldet
+              </Text>
+              <Text style={[typography.timestamp, styles.rowDescription]}>
+                {session?.user.email ?? "…"}
+              </Text>
+            </View>
+          </View>
+          <SettingsDivider />
+          <SettingsLinkRow
+            icon={<LogOut color={colors.mistDark} size={20} strokeWidth={1.75} />}
+            onPress={handleSignOut}
+            title="Abmelden"
+          />
+        </SettingsSection>
 
         {family ? (
-          <FadeInView index={4}>
-            <DeleteZone
-              familyName={family.name}
-              isOwner={family.isOwner}
-              onDeleted={() => void signOut()}
-            />
-          </FadeInView>
+          <DeleteZone
+            familyName={family.name}
+            isOwner={family.isOwner}
+            onDeleted={() => void signOut()}
+          />
         ) : null}
 
         <Text style={[typography.label, styles.versionNote]}>
@@ -452,17 +446,17 @@ function SettingsLinkRow({
   title: string;
 }) {
   return (
-    <PressableScale
+    <SpringPressable
       accessibilityLabel={title}
-      contentStyle={styles.row}
       onPress={onPress}
+      style={styles.row}
     >
       <View style={styles.rowIcon}>{icon}</View>
       <View style={styles.rowText}>
         <Text style={[typography.title, styles.rowTitle]}>{title}</Text>
       </View>
       <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
-    </PressableScale>
+    </SpringPressable>
   );
 }
 

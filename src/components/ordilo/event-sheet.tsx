@@ -690,7 +690,7 @@ export function EventSheet({
                       aria-pressed={selected}
                       data-testid={`event-attendee-chip-${member.id}`}
                       className={cn(
-                        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-all focus-ring",
+                        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-3 py-1 text-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-150 focus-ring",
                         selected
                           ? "border-[var(--petrol)] bg-[var(--petrol)] text-white"
                           : "border-border bg-card text-foreground hover:border-[var(--petrol)] hover:bg-[var(--petrol)]/5",

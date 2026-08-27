@@ -42,24 +42,24 @@ export function OrdiloCharacter({
 
   useEffect(() => {
     if (!alive) {
-      breath.value = 1;
-      eye.value = 1;
+      breath.set(1);
+      eye.set(1);
       return;
     }
-    breath.value = withRepeat(
+    breath.set(withRepeat(
       withTiming(1.035, { duration: 2400, easing: Easing.inOut(Easing.ease) }),
       -1,
       true,
-    );
+    ));
     // Hold the eye open, blink shut for ~110ms, reopen, repeat.
-    eye.value = withRepeat(
+    eye.set(withRepeat(
       withSequence(
         withTiming(1, { duration: 3800 }),
         withTiming(0.08, { duration: 110 }),
         withTiming(1, { duration: 130 }),
       ),
       -1,
-    );
+    ));
     return () => {
       cancelAnimation(breath);
       cancelAnimation(eye);
@@ -67,10 +67,10 @@ export function OrdiloCharacter({
   }, [alive, breath, eye]);
 
   const breathStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: breath.value }],
+    transform: [{ scale: breath.get() }],
   }));
 
-  const eyeProps = useAnimatedProps(() => ({ opacity: eye.value }));
+  const eyeProps = useAnimatedProps(() => ({ opacity: eye.get() }));
 
   return (
     <Animated.View style={breathStyle}>

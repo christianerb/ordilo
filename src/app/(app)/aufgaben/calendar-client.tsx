@@ -655,7 +655,7 @@ export function CalendarClient({
                     aria-label={`Nur Termine von ${member.name}`}
                     data-testid={`calendar-filter-${member.id}`}
                     className={cn(
-                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 px-2.5 text-sm font-medium transition-all focus-ring",
+                      "inline-flex min-h-9 items-center gap-1.5 rounded-full border-2 px-2.5 text-sm font-medium transition-[background-color,border-color,color,box-shadow] duration-150 focus-ring",
                       selected ? "text-white shadow-sm" : "bg-card",
                     )}
                     style={
@@ -798,7 +798,7 @@ export function CalendarClient({
                             onClick={() => openEdit(event)}
                             aria-label={`„${event.title}“ bearbeiten`}
                             className={cn(
-                              "group flex min-h-12 w-full items-center gap-3 rounded-ordilo-sm border border-transparent bg-secondary/60 px-3 py-2 text-left transition-all hover:border-border hover:bg-card hover:shadow-card active:translate-y-px focus-ring",
+                              "group flex min-h-12 w-full items-center gap-3 rounded-ordilo-sm border border-transparent bg-secondary/60 px-3 py-2 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 hover:border-border hover:bg-card hover:shadow-card active:translate-y-px motion-reduce:transform-none focus-ring",
                               celebratedEventId === event.id && "animate-card-in",
                             )}
                             data-testid={`week-event-${event.id}`}
@@ -948,7 +948,7 @@ export function CalendarClient({
                   onClick={() => openEdit(event)}
                   aria-label={`„${event.title}“ bearbeiten`}
                   className={cn(
-                    "group flex w-full items-start gap-3 rounded-ordilo-sm border border-border bg-card px-3 py-3 text-left shadow-card transition-all hover:-translate-y-px hover:border-primary/30 hover:shadow-card-hover active:translate-y-0 focus-ring",
+                    "group flex w-full items-start gap-3 rounded-ordilo-sm border border-border bg-card px-3 py-3 text-left shadow-card transition-[background-color,border-color,box-shadow,transform] duration-150 hover:-translate-y-px hover:border-primary/30 hover:shadow-card-hover active:translate-y-0 motion-reduce:transform-none focus-ring",
                     celebratedEventId === event.id && "animate-card-in",
                   )}
                   data-testid={`calendar-event-${event.id}`}

@@ -11,10 +11,12 @@ import {
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useReducedMotion } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { haptics } from "@/src/lib/haptics";
+import { modalAnimationType } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const tabConfig = {
@@ -33,6 +35,7 @@ export function OrdiloTabBar({
   navigation,
   state,
 }: BottomTabBarProps) {
+  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [actionsOpen, setActionsOpen] = useState(false);
@@ -123,7 +126,7 @@ export function OrdiloTabBar({
       </View>
 
       <Modal
-        animationType="slide"
+        animationType={modalAnimationType(reduceMotion)}
         onRequestClose={() => setActionsOpen(false)}
         presentationStyle="overFullScreen"
         transparent

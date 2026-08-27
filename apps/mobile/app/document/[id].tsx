@@ -1,6 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
 import { fail, select, success } from "@/src/lib/feedback";
 import * as Linking from "expo-linking";
 import {
@@ -29,8 +28,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Image,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -38,17 +35,10 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated, {
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withSpring,
-  withTiming,
-} from "react-native-reanimated";
-import { scheduleOnRN } from "react-native-worklets";
+import Animated from "react-native-reanimated";
 
+import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import {
@@ -624,11 +614,7 @@ function DetailLink({
 }
 
 function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose: () => void }) {
-  return (
-    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="fullScreen" visible={Boolean(imageUrl)}>
-      <SwipePreview imageUrl={imageUrl} onClose={onClose} />
-    </Modal>
-  );
+  return imageUrl ? <SwipeImagePreview imageUrl={imageUrl} onClose={onClose} /> : null;
 }
 
 function DocumentMetadata({ document }: { document: DocumentReview }) {
@@ -822,55 +808,6 @@ function formatExtractedDate(value: string): string {
     month: "2-digit",
     year: "numeric",
   }).format(date);
-}
-
-function SwipePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose: () => void }) {
-  // Enters rising from below with the same panel spring the dismiss
-  // gesture settles into, so opening and closing feel like one motion.
-  const reduceMotion = useReducedMotion();
-  const translateY = useSharedValue(reduceMotion ? 0 : 240);
-  const opacity = useSharedValue(reduceMotion ? 1 : 0);
-  useEffect(() => {
-    if (reduceMotion) return;
-    translateY.set(withSpring(0, { duration: 400, dampingRatio: 0.85 }));
-    opacity.set(withTiming(1, { duration: 220 }));
-  }, [reduceMotion, translateY, opacity]);
-  const drag = Gesture.Pan()
-    .activeOffsetY(12)
-    .onUpdate((event) => {
-      const distance = Math.max(0, event.translationY);
-      translateY.set(distance);
-      opacity.set(Math.max(0.35, 1 - distance / 500));
-    })
-    .onEnd((event) => {
-      if (event.translationY > 120 || event.velocityY > 900) {
-        translateY.set(withSpring(700, { duration: 300, dampingRatio: 0.8, velocity: event.velocityY }));
-        opacity.set(withSpring(0, { duration: 220, dampingRatio: 1 }));
-        scheduleOnRN(Haptics.impactAsync, Haptics.ImpactFeedbackStyle.Light);
-        scheduleOnRN(onClose);
-      } else {
-        translateY.set(withSpring(0, { duration: 400, dampingRatio: 0.8, velocity: event.velocityY }));
-        opacity.set(withSpring(1, { duration: 220, dampingRatio: 1 }));
-      }
-    });
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: opacity.get(),
-    transform: [{ translateY: translateY.get() }],
-  }));
-
-  return (
-    <GestureDetector gesture={drag}>
-      <Animated.View style={[styles.preview, animatedStyle]}>
-        <View style={styles.previewHeader}>
-          <Text style={styles.previewTitle}>Original</Text>
-          <Pressable accessibilityLabel="Original schließen" accessibilityRole="button" onPress={onClose} style={styles.closeButton}>
-            <Text style={styles.closeText}>Fertig</Text>
-          </Pressable>
-        </View>
-        {imageUrl ? <Image accessibilityLabel="Originaldokument" resizeMode="contain" source={{ uri: imageUrl }} style={styles.previewImage} /> : null}
-      </Animated.View>
-    </GestureDetector>
-  );
 }
 
 function PeopleSection({ analysis, editable, onChange }: SectionProps) {
@@ -1140,10 +1077,4 @@ const styles = StyleSheet.create({
   secretValue: { backgroundColor: colors.warmWhite, borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, padding: spacing.sm, ...typography.body },
   secretHint: { color: colors.mistDark, ...typography.label },
   secretError: { color: colors.destructive, ...typography.label },
-  preview: { backgroundColor: colors.warmWhite, flex: 1 },
-  previewHeader: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 56, paddingHorizontal: spacing.md },
-  previewTitle: { color: colors.graphite, ...typography.title },
-  closeButton: { alignItems: "center", height: 44, justifyContent: "center", paddingHorizontal: spacing.sm },
-  closeText: { color: colors.harborBlue, ...typography.title },
-  previewImage: { flex: 1, height: undefined, width: "100%" },
 });

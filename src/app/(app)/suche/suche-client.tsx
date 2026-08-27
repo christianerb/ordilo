@@ -1080,7 +1080,7 @@ function ChatList({
                         // Visible and thumb-sized on touch; the old
                         // opacity-0 + group-hover had no touch equivalent, so
                         // deleting a chat was unreachable on a phone.
-                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-all hover:text-destructive focus-ring sm:size-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                        className="flex size-11 shrink-0 items-center justify-center rounded-ordilo-sm text-muted-foreground transition-[color,box-shadow,opacity] duration-150 hover:text-destructive focus-ring sm:size-7 sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
                         aria-label="Chat löschen"
                       >
                         <Trash2 className="size-4 sm:size-3" aria-hidden="true" />

@@ -24,12 +24,11 @@ import {
   AppState,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import Animated from "react-native-reanimated";
-
 import { AmbientFields } from "@/src/components/ambient-fields";
 import {
   Card,
@@ -40,7 +39,6 @@ import {
   ScreenHeader,
 } from "@/src/components/ui";
 import { fail, success } from "@/src/lib/feedback";
-import { contentEntering } from "@/src/theme/motion";
 import { useFamily } from "@/src/lib/family-context";
 import {
   acceptInboundSuggestion,
@@ -341,9 +339,8 @@ export default function HeuteScreen() {
   return (
     <Screen>
       <AmbientFields style={styles.ambientBehind} variant="top" />
-      <Animated.ScrollView
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
-        entering={contentEntering()}
         refreshControl={
           <RefreshControl
             colors={[colors.harborBlue]}
@@ -527,7 +524,7 @@ export default function HeuteScreen() {
           </>
         )}
 
-      </Animated.ScrollView>
+      </ScrollView>
     </Screen>
   );
 }

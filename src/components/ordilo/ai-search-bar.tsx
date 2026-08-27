@@ -16,6 +16,7 @@ import {
 } from "@/lib/realtime/use-realtime-transcription";
 import { cn } from "@/lib/utils";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
+import { usePrefersReducedMotion } from "@/lib/hooks/use-media-query";
 
 /**
  * Props for the AISearchBar component.
@@ -98,7 +99,7 @@ const NATIVE_LEVEL_HISTORY_LENGTH = 12;
  * only returns recognized text, so it needs its own local-only mic stream to
  * provide the same "I can hear you" feedback as the Realtime path.
  */
-function useNativeAudioMeter() {
+function useNativeAudioMeter(reducedMotion: boolean) {
   const [levels, setLevels] = useState<number[]>(
     () => new Array(NATIVE_LEVEL_HISTORY_LENGTH).fill(0),
   );
@@ -106,6 +107,8 @@ function useNativeAudioMeter() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const frameRef = useRef<number | null>(null);
   const generationRef = useRef(0);
+  const reducedMotionRef = useRef(reducedMotion);
+  reducedMotionRef.current = reducedMotion;
 
   const stop = useCallback(() => {
     generationRef.current += 1;
@@ -124,6 +127,7 @@ function useNativeAudioMeter() {
 
   const start = useCallback(async () => {
     stop();
+    if (reducedMotionRef.current) return;
     const generation = generationRef.current;
     const AudioContextCtor =
       window.AudioContext ??
@@ -153,6 +157,10 @@ function useNativeAudioMeter() {
       const data = new Uint8Array(analyser.fftSize);
       const tick = (now: number) => {
         if (generation !== generationRef.current) return;
+        if (reducedMotionRef.current) {
+          stop();
+          return;
+        }
         analyser.getByteTimeDomainData(data);
         const snapshot = tracker.sample(data, now);
         if (snapshot) setLevels(snapshot);
@@ -170,22 +178,36 @@ function useNativeAudioMeter() {
   return { levels, start, stop };
 }
 
-function VoiceLevelBars({ levels }: { levels: number[] }) {
+function VoiceLevelBars({
+  levels,
+  reducedMotion,
+}: {
+  levels: number[];
+  reducedMotion: boolean;
+}) {
   return (
     <div
       className="flex h-6 w-11 shrink-0 items-center justify-center gap-0.5"
       data-testid="voice-level-meter"
+      data-static={reducedMotion || undefined}
       aria-hidden="true"
     >
-      {levels.map((level, index) => (
-        <span
-          key={index}
-          className="w-0.5 rounded-full bg-[var(--petrol)] transition-transform duration-75"
-          style={{
-            height: `${Math.max(5, 6 + level * 18)}px`,
-          }}
-        />
-      ))}
+      {reducedMotion
+        ? [0, 1, 2].map((bar) => (
+            <span
+              key={bar}
+              className="h-3 w-0.5 rounded-full bg-[var(--petrol)]"
+            />
+          ))
+        : levels.map((level, index) => (
+            <span
+              key={index}
+              className="h-6 w-0.5 origin-center rounded-full bg-[var(--petrol)] transition-transform duration-75"
+              style={{
+                transform: `scaleY(${Math.max(0.2, level)})`,
+              }}
+            />
+          ))}
     </div>
   );
 }
@@ -193,12 +215,15 @@ function VoiceLevelBars({ levels }: { levels: number[] }) {
 function RealtimeVoiceLevelBars({
   subscribeLevels,
   getLevels,
+  reducedMotion,
 }: Pick<
   ReturnType<typeof useRealtimeTranscription>,
   "subscribeLevels" | "getLevels"
->) {
+> & {
+  reducedMotion: boolean;
+}) {
   const levels = useSyncExternalStore(subscribeLevels, getLevels, getLevels);
-  return <VoiceLevelBars levels={levels} />;
+  return <VoiceLevelBars levels={levels} reducedMotion={reducedMotion} />;
 }
 
 /** Resolve the SpeechRecognition constructor (Chrome/Safari prefix-aware). */
@@ -274,12 +299,13 @@ export function AISearchBar({
   const [multiline, setMultiline] = useState(false);
 
   const [voiceMode, setVoiceMode] = useState<VoiceMode>(null);
+  const reducedMotion = usePrefersReducedMotion();
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const {
     levels: nativeLevels,
     start: startNativeMeter,
     stop: stopNativeMeter,
-  } = useNativeAudioMeter();
+  } = useNativeAudioMeter(reducedMotion);
 
   useMountEffect(() => {
     const el = inputRef.current;
@@ -352,6 +378,7 @@ export function AISearchBar({
     stop,
     cancel,
   } = useRealtimeTranscription({
+    reducedMotion,
     onTranscript: (transcript) => {
       setVoiceMode(null);
       setValue(transcript);
@@ -509,11 +536,15 @@ export function AISearchBar({
 
         {listening &&
           (voiceMode === "native" ? (
-            <VoiceLevelBars levels={nativeLevels} />
+            <VoiceLevelBars
+              levels={nativeLevels}
+              reducedMotion={reducedMotion}
+            />
           ) : (
             <RealtimeVoiceLevelBars
               subscribeLevels={subscribeLevels}
               getLevels={getLevels}
+              reducedMotion={reducedMotion}
             />
           ))}
 
@@ -525,7 +556,7 @@ export function AISearchBar({
           aria-pressed={listening}
           data-testid="voice-search-button"
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-ring",
+            "flex size-11 shrink-0 items-center justify-center rounded-full transition-[background-color,color,box-shadow,opacity] duration-150 focus-ring",
             listening
               ? "bg-[var(--petrol)] text-white animate-pulse"
               : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -545,7 +576,7 @@ export function AISearchBar({
           disabled={isLoading || !currentValue.trim()}
           aria-label="Senden"
           className={cn(
-            "flex size-11 shrink-0 items-center justify-center rounded-full transition-all focus-ring",
+            "flex size-11 shrink-0 items-center justify-center rounded-full transition-[background-color,color,box-shadow,opacity] duration-150 focus-ring",
             isLoading || !currentValue.trim()
               ? "bg-muted text-muted-foreground cursor-not-allowed"
               : "bg-[var(--petrol)] text-white hover:bg-[var(--petrol-dark)]",

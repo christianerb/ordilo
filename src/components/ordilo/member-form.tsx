@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,6 +15,7 @@ import { DateInput } from "@/components/ordilo/date-input";
 import type { MemberRelation } from "@/lib/family/relations";
 import { cn } from "@/lib/utils";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
+import { OrdiloDisclosure } from "@/components/ordilo/ordilo-disclosure";
 
 /**
  * The form values for a member (add or edit).
@@ -103,10 +104,9 @@ export function MemberForm({
   const [relations, setRelations] = useState<MemberRelation[]>(
     initialValues?.relations ?? [],
   );
-  const [showOptional, setShowOptional] = useState(() => {
-    // Show optional fields by default when editing a member that has values.
-    return Boolean(initialValues?.birthdate || initialValues?.avatar_color);
-  });
+  const showOptionalInitially = Boolean(
+    initialValues?.birthdate || initialValues?.avatar_color,
+  );
 
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -176,78 +176,68 @@ export function MemberForm({
         </div>
       </div>
 
-      {/* Optional fields toggle */}
-      <button
-        type="button"
-        onClick={() => setShowOptional((s) => !s)}
-        className="flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+      <OrdiloDisclosure
+        title="Weitere Angaben (optional)"
+        defaultOpen={showOptionalInitially}
+        className="border-t-0"
+        contentClassName="space-y-4 rounded-ordilo-md bg-secondary/50 p-3"
+        testId="member-optional-fields"
       >
-        {showOptional ? (
-          <ChevronUp className="h-4 w-4" />
-        ) : (
-          <ChevronDown className="h-4 w-4" />
-        )}
-        Weitere Angaben (optional)
-      </button>
-
-      {showOptional && (
-        <div className="space-y-4 rounded-ordilo-md bg-secondary/50 p-3">
-          {/* Photo — only once the member exists */}
-          {memberId && (
-            <div className="space-y-2">
-              <Label>Foto</Label>
-              <MemberPhotoPicker
-                memberId={memberId}
-                memberName={name}
-                avatarColor={avatarColor}
-                photoUrl={photoUrl}
-                onPhotoChange={onPhotoChange}
-                disabled={isSubmitting}
-              />
-            </div>
-          )}
-
-          {/* Birthdate — a text field (TT.MM.JJJJ) with a calendar popover,
-              instead of the native date picker (inconsistent across
-              browsers/OS and, on some platforms, no visible calendar at all). */}
+        {/* Photo — only once the member exists */}
+        {memberId && (
           <div className="space-y-2">
-            <Label htmlFor="member-birthdate">Geburtsdatum</Label>
-            <DateInput
-              id="member-birthdate"
-              value={birthdate}
-              onChange={setBirthdate}
+            <Label>Foto</Label>
+            <MemberPhotoPicker
+              memberId={memberId}
+              memberName={name}
+              avatarColor={avatarColor}
+              photoUrl={photoUrl}
+              onPhotoChange={onPhotoChange}
               disabled={isSubmitting}
-              aria-label="Geburtsdatum"
             />
           </div>
+        )}
 
-          {/* Avatar color */}
-          <div className="space-y-2">
-            <Label>Farbe</Label>
-            <div className="flex flex-wrap gap-2">
-              {AVATAR_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  onClick={() =>
-                    setAvatarColor(avatarColor === color ? "" : color)
-                  }
-                  className={cn(
-                    "size-9 rounded-full transition-all",
-                    avatarColor === color
-                      ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
-                      : "ring-1 ring-border",
-                  )}
-                  style={{ backgroundColor: color }}
-                  aria-label={`Farbe ${color} auswählen`}
-                  aria-pressed={avatarColor === color}
-                  disabled={isSubmitting}
-                />
-              ))}
-            </div>
+        {/* Birthdate — a text field (TT.MM.JJJJ) with a calendar popover,
+            instead of the native date picker (inconsistent across
+            browsers/OS and, on some platforms, no visible calendar at all). */}
+        <div className="space-y-2">
+          <Label htmlFor="member-birthdate">Geburtsdatum</Label>
+          <DateInput
+            id="member-birthdate"
+            value={birthdate}
+            onChange={setBirthdate}
+            disabled={isSubmitting}
+            aria-label="Geburtsdatum"
+          />
+        </div>
+
+        {/* Avatar color */}
+        <div className="space-y-2">
+          <Label>Farbe</Label>
+          <div className="flex flex-wrap gap-2">
+            {AVATAR_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                onClick={() =>
+                  setAvatarColor(avatarColor === color ? "" : color)
+                }
+                className={cn(
+                  "size-9 rounded-full transition-shadow duration-150",
+                  avatarColor === color
+                    ? "ring-2 ring-foreground ring-offset-2 ring-offset-background"
+                    : "ring-1 ring-border",
+                )}
+                style={{ backgroundColor: color }}
+                aria-label={`Farbe ${color} auswählen`}
+                aria-pressed={avatarColor === color}
+                disabled={isSubmitting}
+              />
+            ))}
           </div>
         </div>
-      )}
+      </OrdiloDisclosure>
 
       {/* Server error */}
       {serverError && (

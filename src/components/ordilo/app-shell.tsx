@@ -199,8 +199,7 @@ function AppShellContent({
       <div
         className={cn(
           "relative z-10 flex h-dvh flex-col",
-          showNav && "transition-[padding] duration-200",
-          showNav && (collapsed ? "lg:pl-[76px]" : "lg:pl-[224px]"),
+          showNav && "lg:pl-[224px]",
         )}
       >
         <Topbar

@@ -31,7 +31,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import Animated from "react-native-reanimated";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
@@ -44,7 +43,6 @@ import {
   ScreenHeader,
   SpringPressable,
 } from "@/src/components/ui";
-import { listItemEntering } from "@/src/theme/motion";
 import {
   documentTypeLabels,
   type DocumentType,
@@ -403,10 +401,9 @@ export default function AblageScreen() {
             ) : visibleDocuments.length > 0 ? (
               <>
                 <View style={styles.list}>
-                  {visibleDocuments.map((document, index) => (
+                  {visibleDocuments.map((document) => (
                     <DocumentRow
                       document={document}
-                      index={index}
                       key={document.id}
                       onPress={() =>
                         router.push(
@@ -607,11 +604,9 @@ function LibraryToolOption({
 
 function DocumentRow({
   document,
-  index,
   onPress,
 }: {
   document: LibraryDocument;
-  index: number;
   onPress: () => void;
 }) {
   const typeLabel = getDocumentTypeLabel(document.document_type);
@@ -619,14 +614,13 @@ function DocumentRow({
   const failed = document.status === "failed";
 
   return (
-    <Animated.View entering={listItemEntering(index)}>
-      <SpringPressable
-        accessibilityHint="Öffnet die Dokumentansicht"
-        accessibilityLabel={`${getDocumentTitle(document)}, ${getDocumentStatusLabel(document.status)}`}
-        haptic={false}
-        onPress={onPress}
-        style={styles.documentRow}
-      >
+    <SpringPressable
+      accessibilityHint="Öffnet die Dokumentansicht"
+      accessibilityLabel={`${getDocumentTitle(document)}, ${getDocumentStatusLabel(document.status)}`}
+      haptic={false}
+      onPress={onPress}
+      style={styles.documentRow}
+    >
       <View style={styles.documentIcon}>
         <FileText color={colors.mistDark} size={20} strokeWidth={1.7} />
       </View>
@@ -666,8 +660,7 @@ function DocumentRow({
           {getDocumentStatusLabel(document.status)}
         </Text>
       </View>
-      </SpringPressable>
-    </Animated.View>
+    </SpringPressable>
   );
 }
 
