@@ -181,4 +181,14 @@ describe("native motion wiring", () => {
     expect(plan).toContain("styles.taskSectionIcon");
     expect(plan).toContain("<SwipeableTaskRow");
   });
+
+  it("welcomes an empty Ordilo chat with the illustrated journal hero", () => {
+    const search = source("app/suche.tsx");
+    const hero = source("src/components/ordilo-chat-hero.tsx");
+    expect(search).toContain("<OrdiloChatHero");
+    expect(search).toContain("Wie kann ich dir helfen?");
+    expect(search).toContain("CHAT_EXAMPLE_PROMPTS.map");
+    expect(hero).toContain("<Svg");
+    expect(hero).toContain("colors.washSage");
+  });
 });

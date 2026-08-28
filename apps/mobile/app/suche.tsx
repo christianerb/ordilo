@@ -7,7 +7,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { ArrowLeft, MessageCircleQuestion, Plus } from "lucide-react-native";
+import { ArrowLeft, Plus } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -32,6 +32,7 @@ import {
   MessageBubble,
   SourcesSection,
 } from "@/src/components/chat";
+import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import {
   applyChatEvent,
@@ -602,18 +603,14 @@ export default function SucheScreen() {
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <MessageCircleQuestion
-                  color={colors.mist}
-                  size={36}
-                  strokeWidth={1.5}
-                />
+              <OrdiloChatHero />
+              <View style={styles.welcomeCopy}>
+                <Text style={styles.emptyHeading}>Wie kann ich dir helfen?</Text>
+                <Text style={styles.emptyText}>
+                  Frag mich zu deinen Dokumenten, Terminen oder Aufgaben. Ich
+                  kenne alles, was du gescannt hast.
+                </Text>
               </View>
-              <Text style={styles.emptyHeading}>Wie kann ich dir helfen?</Text>
-              <Text style={styles.emptyText}>
-                Frag mich zu deinen Dokumenten, Terminen oder Aufgaben. Ich
-                kenne alles, was du gescannt hast.
-              </Text>
               <View style={styles.examples}>
                 {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
                   <Pressable
@@ -735,7 +732,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 0,
   },
   back: {
     alignItems: "center",
@@ -759,46 +756,59 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: spacing.md,
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 0,
   },
   assistantBlock: { gap: spacing.xs },
   empty: {
     alignItems: "center",
     flexGrow: 1,
-    gap: spacing.md,
-    justifyContent: "center",
-    padding: spacing.lg,
+    paddingBottom: spacing.lg,
   },
-  emptyIcon: {
+  welcomeCopy: {
     alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: radii.pill,
-    height: 80,
-    justifyContent: "center",
-    width: 80,
+    gap: spacing.sm,
+    marginTop: -spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
-  emptyHeading: { color: colors.graphite, textAlign: "center", ...typography.display },
+  emptyHeading: {
+    ...typography.display,
+    color: colors.harborBlueDarker,
+    fontSize: 20,
+    lineHeight: 26,
+    textAlign: "center",
+  },
   emptyText: {
     color: colors.mistDark,
-    maxWidth: 300,
+    maxWidth: 310,
     textAlign: "center",
     ...typography.timestamp,
   },
-  examples: { gap: spacing.sm, marginTop: spacing.sm, width: "100%" },
+  examples: {
+    gap: spacing.sm,
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.xs,
+    width: "100%",
+  },
   composerSafeArea: {
     backgroundColor: colors.warmWhite,
     gap: spacing.xs,
+    paddingTop: spacing.sm,
   },
   voiceError: { color: colors.destructive, ...typography.label },
   exampleChip: {
-    backgroundColor: colors.sand,
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
+    elevation: 1,
     minHeight: 52,
     justifyContent: "center",
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
   exampleChipText: { color: colors.graphite, ...typography.body },
   pressed: { opacity: 0.76 },
