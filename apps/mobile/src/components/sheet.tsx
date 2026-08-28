@@ -104,7 +104,7 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
           styles.background,
           detached && styles.detachedBackground,
         ]}
-        bottomInset={detached ? spacing.sm : 0}
+        bottomInset={detached ? spacing.md : 0}
         detached={detached}
         enableDynamicSizing
         handleIndicatorStyle={styles.handleIndicator}
