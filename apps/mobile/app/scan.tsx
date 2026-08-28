@@ -28,6 +28,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { Card, OrdiloButton } from "@/src/components/ui";
+import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
 import { useFamily } from "@/src/lib/family-context";
 import {
   continueScannedDocumentPipeline,
@@ -437,9 +438,7 @@ export default function ScanModal() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.captureStage}>
-          <View style={styles.captureIcon}>
-            <ScanLine color={colors.harborBlue} size={30} strokeWidth={1.6} />
-          </View>
+          <ScanHeroIllustration />
           <Text style={[typography.display, styles.captureTitle]}>
             Brief scannen
           </Text>
@@ -462,22 +461,42 @@ export default function ScanModal() {
         </View>
 
         <View style={styles.alternatives}>
-          <Text style={styles.alternativeLabel}>Oder auswählen</Text>
+          <View style={styles.alternativeHeading}>
+            <View style={styles.alternativeLine} />
+            <Text style={styles.alternativeLabel}>Oder auswählen</Text>
+            <View style={styles.alternativeLine} />
+          </View>
           <View style={styles.secondaryActions}>
-            <OrdiloButton
+            <Pressable
+              accessibilityLabel="Fotos auswählen"
+              accessibilityRole="button"
               disabled={!queueHydrated}
-              icon={<Images color={colors.graphite} size={17} />}
               onPress={() => void pickImages()}
-              title="Fotos"
-              variant="outline"
-            />
-            <OrdiloButton
+              style={({ pressed }) => [
+                styles.secondaryAction,
+                pressed && styles.secondaryActionPressed,
+              ]}
+            >
+              <View style={styles.secondaryActionIcon}>
+                <Images color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>
+              <Text style={styles.secondaryActionLabel}>Fotos</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel="Datei auswählen"
+              accessibilityRole="button"
               disabled={!queueHydrated}
-              icon={<FilePlus2 color={colors.graphite} size={17} />}
               onPress={() => void pickFile()}
-              title="Datei"
-              variant="outline"
-            />
+              style={({ pressed }) => [
+                styles.secondaryAction,
+                pressed && styles.secondaryActionPressed,
+              ]}
+            >
+              <View style={styles.secondaryActionIcon}>
+                <FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>
+              <Text style={styles.secondaryActionLabel}>Datei</Text>
+            </Pressable>
           </View>
         </View>
 
@@ -558,13 +577,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingTop: spacing.sm,
+    paddingTop: spacing.md,
   },
-  title: { color: colors.graphite },
+  title: {
+    color: colors.harborBlueDarker,
+    fontSize: 24,
+    lineHeight: 31,
+  },
   subtitle: { color: colors.mistDark, marginTop: spacing.xs },
   close: {
     alignItems: "center",
-    backgroundColor: colors.sand,
+    backgroundColor: colors.washApricot,
     borderRadius: 22,
     height: 44,
     justifyContent: "center",
@@ -572,35 +595,47 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     gap: spacing.lg,
-    paddingBottom: spacing.xl,
-    paddingTop: spacing.xl,
+    paddingBottom: spacing["2xl"],
+    paddingTop: spacing.lg,
   },
   captureStage: {
     alignItems: "center",
-    backgroundColor: colors.sand,
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.md,
+    borderRadius: radii.xl,
     borderWidth: 1,
     gap: spacing.sm,
-    padding: spacing.xl,
+    overflow: "hidden",
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
   },
-  captureIcon: {
-    alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: 32,
-    height: 64,
-    justifyContent: "center",
-    marginBottom: spacing.sm,
-    width: 64,
+  captureTitle: {
+    color: colors.harborBlueDarker,
+    fontSize: 22,
+    lineHeight: 29,
   },
-  captureTitle: { color: colors.graphite },
   captureText: {
     color: colors.mistDark,
-    marginBottom: spacing.sm,
-    maxWidth: 280,
+    marginBottom: spacing.md,
+    maxWidth: 300,
     textAlign: "center",
   },
-  alternatives: { gap: spacing.sm },
+  alternatives: { gap: spacing.md },
+  alternativeHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  alternativeLine: {
+    backgroundColor: colors.mistLight,
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
   alternativeLabel: {
     color: colors.mistDark,
     fontFamily: typography.timestamp.fontFamily,
@@ -610,7 +645,34 @@ const styles = StyleSheet.create({
   secondaryActions: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  secondaryAction: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "center",
+    minHeight: 64,
+    paddingHorizontal: spacing.md,
+  },
+  secondaryActionPressed: {
+    backgroundColor: colors.sandWarm,
+  },
+  secondaryActionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  secondaryActionLabel: {
+    color: colors.graphite,
+    ...typography.title,
   },
   error: {
     backgroundColor: colors.destructiveBackground,

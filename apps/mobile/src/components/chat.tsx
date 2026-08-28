@@ -33,6 +33,7 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 
+import { OrdiloMark } from "./ordilo-mark";
 import { OrdiloButton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
 import {
@@ -93,6 +94,15 @@ export function MessageBubble({
   const isUser = message.role === "user";
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
+      {!isUser ? (
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.bubbleAvatar}
+        >
+          <OrdiloMark size={30} />
+        </View>
+      ) : null}
       <View
         accessibilityLiveRegion={
           !isUser && message.status === "streaming" ? "polite" : "none"
@@ -105,10 +115,26 @@ export function MessageBubble({
             {message.status === "streaming" && !isUser ? " ▍" : ""}
           </Text>
         ) : null}
+        {message.text ? (
+          <Text style={[styles.bubbleTime, isUser && styles.bubbleTimeUser]}>
+            {formatMessageTime(message.createdAt)}
+            {isUser ? "  ✓" : ""}
+          </Text>
+        ) : null}
         {children}
       </View>
     </View>
   );
+}
+
+function formatMessageTime(createdAt?: string): string {
+  if (!createdAt) return "Jetzt";
+  const date = new Date(createdAt);
+  if (Number.isNaN(date.getTime())) return "Jetzt";
+  return date.toLocaleTimeString("de-DE", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** „Passende Dokumente" — top sources (score ≥ 0.5, max 4), rest toggled. */
@@ -797,23 +823,54 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xs,
   },
   statusText: { color: colors.mistDark, ...typography.timestamp },
-  bubbleRow: { flexDirection: "row", paddingHorizontal: spacing.xs },
-  bubbleRowUser: { justifyContent: "flex-end" },
-  bubble: {
-    borderRadius: radii.md,
+  bubbleRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
     gap: spacing.sm,
-    maxWidth: "88%",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingHorizontal: spacing.xs,
   },
-  bubbleUser: { backgroundColor: colors.harborBlue },
+  bubbleRowUser: { justifyContent: "flex-end" },
+  bubbleAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    marginTop: 2,
+    width: 40,
+  },
+  bubble: {
+    borderRadius: radii.sm,
+    gap: spacing.sm,
+    maxWidth: "82%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  bubbleUser: {
+    backgroundColor: colors.harborBlue,
+    borderBottomRightRadius: 4,
+  },
   bubbleAi: {
-    backgroundColor: colors.sand,
+    backgroundColor: colors.warmWhite,
+    borderBottomLeftRadius: 4,
     borderColor: colors.mistLight,
     borderWidth: 1,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
   },
   bubbleText: { color: colors.graphite, ...typography.body },
   bubbleTextUser: { color: colors.warmWhite },
+  bubbleTime: {
+    alignSelf: "flex-start",
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  bubbleTimeUser: {
+    alignSelf: "flex-end",
+    color: colors.warmWhite,
+  },
   sources: { gap: spacing.xs, marginTop: spacing.xs },
   sourcesHeading: { color: colors.mistDark, ...typography.label },
   sourceCard: {

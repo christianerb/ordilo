@@ -191,4 +191,20 @@ describe("native motion wiring", () => {
     expect(hero).toContain("<Svg");
     expect(hero).toContain("colors.washSage");
   });
+
+  it("uses the same warm journal language for scanning and conversations", () => {
+    const scan = source("app/scan.tsx");
+    const scanHero = source("src/components/scan-hero-illustration.tsx");
+    const search = source("app/suche.tsx");
+    const chat = source("src/components/chat.tsx");
+
+    expect(scan).toContain("<ScanHeroIllustration");
+    expect(scan).toContain("styles.alternativeHeading");
+    expect(scan).toContain("styles.secondaryActionIcon");
+    expect(scanHero).toContain("<Svg");
+    expect(search).toContain("styles.dayDivider");
+    expect(search).toContain("<OrdiloMark");
+    expect(chat).toContain("styles.bubbleAvatar");
+    expect(chat).toContain("formatMessageTime");
+  });
 });

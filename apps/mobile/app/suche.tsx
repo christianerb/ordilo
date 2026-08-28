@@ -7,7 +7,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { ArrowLeft, Plus } from "lucide-react-native";
+import { ArrowLeft, ChevronRight, Plus, Sparkles } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -33,6 +33,7 @@ import {
   SourcesSection,
 } from "@/src/components/chat";
 import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
+import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import {
   applyChatEvent,
@@ -136,6 +137,7 @@ export default function SucheScreen() {
   const createAssistantMessage = useCallback((): ChatMessage => {
     return {
       id: nextId("assistant"),
+      createdAt: new Date().toISOString(),
       dbId: null,
       role: "assistant",
       text: "",
@@ -212,6 +214,7 @@ export default function SucheScreen() {
 
       const userMessage: ChatMessage = {
         id: nextId("user"),
+        createdAt: new Date().toISOString(),
         dbId: null,
         role: "user",
         text: trimmed,
@@ -566,6 +569,13 @@ export default function SucheScreen() {
         >
           <ArrowLeft color={colors.graphite} size={22} />
         </Pressable>
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.topAvatar}
+        >
+          <OrdiloMark size={32} />
+        </View>
         <Text style={styles.topTitle}>Ordilo fragen</Text>
         <Pressable
           accessibilityHint="Verwirft den aktuellen Verlauf"
@@ -611,85 +621,99 @@ export default function SucheScreen() {
                   kenne alles, was du gescannt hast.
                 </Text>
               </View>
-              <View style={styles.examples}>
-                {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
-                  <Pressable
-                    accessibilityHint="Stellt diese Frage an Ordilo"
-                    accessibilityLabel={prompt}
-                    accessibilityRole="button"
-                    disabled={busy}
-                    key={prompt}
-                    onPress={() => void send(prompt)}
-                    style={({ pressed }) => [
-                      styles.exampleChip,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.exampleChipText}>{prompt}</Text>
-                  </Pressable>
-                ))}
+              <View style={styles.exampleSection}>
+                <View accessibilityRole="header" style={styles.exampleSectionHeader}>
+                  <View style={styles.exampleSectionIcon}>
+                    <Sparkles color={colors.harborBlue} size={19} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.exampleSectionTitle}>Beispiel-Fragen</Text>
+                </View>
+                <View style={styles.exampleSectionBody}>
+                  {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
+                    <Pressable
+                      accessibilityHint="Stellt diese Frage an Ordilo"
+                      accessibilityLabel={prompt}
+                      accessibilityRole="button"
+                      disabled={busy}
+                      key={prompt}
+                      onPress={() => void send(prompt)}
+                      style={({ pressed }) => [
+                        styles.exampleChip,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.exampleChipText}>{prompt}</Text>
+                      <ChevronRight color={colors.mistDark} size={18} strokeWidth={1.9} />
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             </View>
           ) : (
-            messages.map((message) =>
-              message.role === "user" ? (
-                <MessageBubble key={message.id} message={message} />
-              ) : (
-                <View key={message.id} style={styles.assistantBlock}>
-                  {message.status === "streaming" ? (
-                    <ChatStatusLine
-                      hasText={message.text.length > 0}
-                      toolCalls={message.toolCalls}
-                    />
-                  ) : null}
-                  <MessageBubble message={message}>
-                    {message.card && message.status === "done" ? (
-                      <AnswerCardView
-                        card={message.card}
-                        onOpenContact={openContact}
-                        onOpenDocument={openDocument}
+            <>
+              <View style={styles.dayDivider}>
+                <Text style={styles.dayDividerText}>Heute</Text>
+              </View>
+              {messages.map((message) =>
+                message.role === "user" ? (
+                  <MessageBubble key={message.id} message={message} />
+                ) : (
+                  <View key={message.id} style={styles.assistantBlock}>
+                    {message.status === "streaming" ? (
+                      <ChatStatusLine
+                        hasText={message.text.length > 0}
+                        toolCalls={message.toolCalls}
                       />
                     ) : null}
-                    {message.sources.length > 0 && message.status === "done" ? (
-                      <SourcesSection
-                        onOpenDocument={openDocument}
-                        sources={message.sources}
-                      />
-                    ) : null}
-                    {message.actions.map((action) => (
-                      <ActionCardView
-                        action={action}
-                        key={action.id}
-                        onAdjust={() => adjustAction(action)}
-                        onConfirm={() => void confirmAction(message.id, action)}
-                        onDismiss={() =>
-                          updateAction(message.id, action.id, (current) => ({
-                            ...current,
-                            state: "dismissed",
-                          }))
-                        }
-                        onUndo={() => void undoAction(message.id, action)}
-                      />
-                    ))}
-                    {message.status === "done" && message.dbId ? (
-                      <FeedbackRow
-                        message={message}
-                        onSend={(feedback, reasons, comment) =>
-                          sendFeedback(message, feedback, reasons, comment)
-                        }
-                      />
-                    ) : null}
-                    {message.status === "error" ? (
-                      <OrdiloButton
-                        onPress={() => retry(message.id)}
-                        title="Nochmal fragen"
-                        variant="outline"
-                      />
-                    ) : null}
-                  </MessageBubble>
-                </View>
-              ),
-            )
+                    <MessageBubble message={message}>
+                      {message.card && message.status === "done" ? (
+                        <AnswerCardView
+                          card={message.card}
+                          onOpenContact={openContact}
+                          onOpenDocument={openDocument}
+                        />
+                      ) : null}
+                      {message.sources.length > 0 && message.status === "done" ? (
+                        <SourcesSection
+                          onOpenDocument={openDocument}
+                          sources={message.sources}
+                        />
+                      ) : null}
+                      {message.actions.map((action) => (
+                        <ActionCardView
+                          action={action}
+                          key={action.id}
+                          onAdjust={() => adjustAction(action)}
+                          onConfirm={() => void confirmAction(message.id, action)}
+                          onDismiss={() =>
+                            updateAction(message.id, action.id, (current) => ({
+                              ...current,
+                              state: "dismissed",
+                            }))
+                          }
+                          onUndo={() => void undoAction(message.id, action)}
+                        />
+                      ))}
+                      {message.status === "done" && message.dbId ? (
+                        <FeedbackRow
+                          message={message}
+                          onSend={(feedback, reasons, comment) =>
+                            sendFeedback(message, feedback, reasons, comment)
+                          }
+                        />
+                      ) : null}
+                      {message.status === "error" ? (
+                        <OrdiloButton
+                          onPress={() => retry(message.id)}
+                          title="Nochmal fragen"
+                          variant="outline"
+                        />
+                      ) : null}
+                    </MessageBubble>
+                  </View>
+                ),
+              )}
+            </>
           )}
         </ScrollView>
 
@@ -729,9 +753,12 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   topbar: {
     alignItems: "center",
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     gap: spacing.sm,
-    paddingBottom: spacing.sm,
+    minHeight: 64,
+    paddingBottom: spacing.xs,
     paddingHorizontal: 0,
   },
   back: {
@@ -741,6 +768,14 @@ const styles = StyleSheet.create({
     width: 44,
   },
   topTitle: { color: colors.graphite, flex: 1, ...typography.display },
+  topAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
   newChat: {
     alignItems: "center",
     backgroundColor: colors.sand,
@@ -759,6 +794,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
   },
   assistantBlock: { gap: spacing.xs },
+  dayDivider: {
+    alignItems: "center",
+    paddingVertical: spacing.xs,
+  },
+  dayDividerText: {
+    backgroundColor: colors.sand,
+    borderRadius: radii.pill,
+    color: colors.mistDark,
+    overflow: "hidden",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    ...typography.label,
+  },
   empty: {
     alignItems: "center",
     flexGrow: 1,
@@ -768,7 +816,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
     marginTop: -spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
   },
   emptyHeading: {
     ...typography.display,
@@ -783,11 +831,38 @@ const styles = StyleSheet.create({
     textAlign: "center",
     ...typography.timestamp,
   },
-  examples: {
-    gap: spacing.sm,
+  exampleSection: {
+    backgroundColor: colors.washSageSoft,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
     marginTop: spacing.xl,
-    paddingHorizontal: spacing.xs,
+    overflow: "hidden",
     width: "100%",
+  },
+  exampleSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 64,
+    paddingHorizontal: spacing.md,
+  },
+  exampleSectionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  exampleSectionTitle: {
+    color: colors.harborBlue,
+    ...typography.display,
+  },
+  exampleSectionBody: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
   composerSafeArea: {
     backgroundColor: colors.warmWhite,
@@ -796,20 +871,17 @@ const styles = StyleSheet.create({
   },
   voiceError: { color: colors.destructive, ...typography.label },
   exampleChip: {
+    alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.md,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    elevation: 1,
-    minHeight: 52,
-    justifyContent: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 56,
     paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
+    paddingVertical: 14,
   },
-  exampleChipText: { color: colors.graphite, ...typography.body },
+  exampleChipText: { color: colors.graphite, flex: 1, ...typography.body },
   pressed: { opacity: 0.76 },
 });

@@ -120,6 +120,8 @@ export type ChatStreamEvent =
 export interface ChatMessage {
   /** Local id ("user-…"/"ai-…"); dbId arrives via message_saved. */
   id: string;
+  /** Local send time for the calm conversation metadata shown on-device. */
+  createdAt?: string;
   dbId: string | null;
   role: "user" | "assistant";
   text: string;
