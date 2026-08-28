@@ -9,7 +9,9 @@ import {
 } from "react-native";
 
 import {
+  OrdiloNestedSheet,
   OrdiloSheet,
+  OrdiloSheetHeader,
   useSheetPresentation,
 } from "@/src/components/sheet";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
@@ -66,28 +68,19 @@ export function OrdiloPickerOverlay({
   if (!visible) return null;
 
   return (
-    <View
-      accessibilityViewIsModal
-      importantForAccessibility="yes"
-      style={styles.overlay}
+    <OrdiloNestedSheet
+      contained
+      onClose={onClose}
+      visible={visible}
     >
-      <Pressable
-        accessibilityLabel="Auswahl schließen"
-        accessibilityRole="button"
-        onPress={onClose}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.overlayPanel}>
-        <View style={styles.overlayHandle} />
-        <ScrollView
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <PickerContent options={options} title={title} />
-        </ScrollView>
-      </View>
-    </View>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <PickerContent options={options} title={title} />
+      </ScrollView>
+    </OrdiloNestedSheet>
   );
 }
 
@@ -100,7 +93,7 @@ function PickerContent({
 }) {
   return (
     <>
-      <Text style={styles.title}>{title}</Text>
+      <OrdiloSheetHeader title={title} />
       <View style={styles.list}>
         {options.map((option, index) => (
           <Pressable
@@ -140,42 +133,10 @@ function PickerContent({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    bottom: 0,
-    elevation: 20,
-    justifyContent: "flex-end",
-    left: 0,
-    padding: spacing.md,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    zIndex: 20,
-  },
-  overlayPanel: {
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.xl,
-    maxHeight: "78%",
-    overflow: "hidden",
-  },
-  overlayHandle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginTop: spacing.sm,
-    width: 40,
-  },
   content: {
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-  },
-  title: {
-    color: colors.graphite,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
-    ...typography.display,
   },
   list: {
     backgroundColor: colors.warmWhite,

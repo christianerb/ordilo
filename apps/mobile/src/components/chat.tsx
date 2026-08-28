@@ -15,7 +15,7 @@ import {
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -38,6 +38,7 @@ import { OrdiloButton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
 import {
   CHAT_FEEDBACK_REASONS,
+  formatChatMessageTime,
   getActionContent,
   getSuggestedContactAction,
   getToolStepLabel,
@@ -92,6 +93,11 @@ export function MessageBubble({
   children?: React.ReactNode;
 }) {
   const isUser = message.role === "user";
+  const messageTime = useMemo(
+    () => formatChatMessageTime(message.createdAt),
+    [message.createdAt],
+  );
+
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
       {!isUser ? (
@@ -117,24 +123,13 @@ export function MessageBubble({
         ) : null}
         {message.text ? (
           <Text style={[styles.bubbleTime, isUser && styles.bubbleTimeUser]}>
-            {formatMessageTime(message.createdAt)}
-            {isUser ? "  ✓" : ""}
+            {messageTime}
           </Text>
         ) : null}
         {children}
       </View>
     </View>
   );
-}
-
-function formatMessageTime(createdAt?: string): string {
-  if (!createdAt) return "Jetzt";
-  const date = new Date(createdAt);
-  if (Number.isNaN(date.getTime())) return "Jetzt";
-  return date.toLocaleTimeString("de-DE", {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }
 
 /** „Passende Dokumente" — top sources (score ≥ 0.5, max 4), rest toggled. */

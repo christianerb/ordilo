@@ -121,7 +121,7 @@ export interface ChatMessage {
   /** Local id ("user-…"/"ai-…"); dbId arrives via message_saved. */
   id: string;
   /** Local send time for the calm conversation metadata shown on-device. */
-  createdAt?: string;
+  createdAt: string;
   dbId: string | null;
   role: "user" | "assistant";
   text: string;
@@ -131,6 +131,18 @@ export interface ChatMessage {
   toolCalls: ToolCallProgress[];
   status: "streaming" | "done" | "error" | "rate_limited";
   feedback: "positive" | "negative" | null;
+}
+
+const chatMessageTimeFormatter = new Intl.DateTimeFormat("de-DE", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export function formatChatMessageTime(createdAt: string): string {
+  const date = new Date(createdAt);
+  return Number.isNaN(date.getTime())
+    ? "Jetzt"
+    : chatMessageTimeFormatter.format(date);
 }
 
 // ---------------------------------------------------------------------------

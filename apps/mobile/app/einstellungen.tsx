@@ -31,6 +31,7 @@ import {
   ScreenHeader,
   SpringPressable,
 } from "@/src/components/ui";
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { deleteFamilyAccount } from "@/src/lib/account";
 import { getApiUrl } from "@/src/lib/api";
 import { useAppLock } from "@/src/lib/app-lock";
@@ -64,6 +65,7 @@ export default function EinstellungenScreen() {
   } = useAppLock();
 
   const [pushState, setPushState] = useState<PushPermissionState | null>(null);
+  const [signOutOpen, setSignOutOpen] = useState(false);
 
   // Re-read on focus: the user may have just come back from the iOS
   // system settings, where they changed the permission behind our back.
@@ -119,19 +121,15 @@ export default function EinstellungenScreen() {
   }
 
   function handleSignOut() {
-    Alert.alert("Abmelden?", "Du kannst dich jederzeit wieder anmelden.", [
-      { text: "Abbrechen", style: "cancel" },
-      {
-        text: "Abmelden",
-        style: "destructive",
-        onPress: () => {
-          // The push token belongs to this account — do not leave it
-          // behind for the next login on this device.
-          void clearStoredPushToken();
-          void signOut();
-        },
-      },
-    ]);
+    setSignOutOpen(true);
+  }
+
+  function confirmSignOut() {
+    setSignOutOpen(false);
+    // The push token belongs to this account — do not leave it
+    // behind for the next login on this device.
+    void clearStoredPushToken();
+    void signOut();
   }
 
   return (
@@ -243,6 +241,15 @@ export default function EinstellungenScreen() {
           Ordilo — die wichtigen Dinge deiner Familie. An einem Ort.
         </Text>
       </ScrollView>
+      <ConfirmDialog
+        cancelLabel="Abbrechen"
+        confirmLabel="Abmelden"
+        message="Du kannst dich jederzeit wieder anmelden."
+        onCancel={() => setSignOutOpen(false)}
+        onConfirm={confirmSignOut}
+        title="Abmelden?"
+        visible={signOutOpen}
+      />
     </Screen>
   );
 }

@@ -7,26 +7,31 @@ import {
   ChevronDown,
   ChevronRight,
   Heart,
-  Sprout,
   Trash2,
   UserRound,
 } from "lucide-react-native";
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
 import { ConfirmDialog } from "./confirm-dialog";
 import { OrdiloPickerOverlay } from "./picker-sheet";
-import { OrdiloFormSheet } from "./sheet";
-import { cardRestShadow } from "./ui";
+import {
+  OrdiloNestedSheet,
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSelect,
+  OrdiloFormSheet,
+  OrdiloSheetHeader,
+} from "./sheet";
+import { OrdiloButton } from "./ui";
 import {
   formatTaskDayHint,
   todayLocalDate,
@@ -81,6 +86,7 @@ export function TaskFormSheet({
   const [todayStr, setTodayStr] = useState(todayLocalDate());
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
   // Re-seed the draft every time the sheet opens so a stale edit never
   // leaks into the next task. Render-time adjustment instead of an
@@ -98,6 +104,7 @@ export function TaskFormSheet({
       setTodayStr(todayLocalDate());
       setDatePickerOpen(false);
       setPersonPickerOpen(false);
+      setDiscardDraftOpen(false);
     }
   }
 
@@ -133,14 +140,7 @@ export function TaskFormSheet({
       onClose();
       return;
     }
-    Alert.alert(
-      "Änderungen verwerfen?",
-      "Deine Eingaben gehen verloren.",
-      [
-        { style: "cancel", text: "Weiter bearbeiten" },
-        { onPress: onClose, style: "destructive", text: "Verwerfen" },
-      ],
-    );
+    setDiscardDraftOpen(true);
   }, [isDirty, onClose, submitting]);
 
   const submit = useCallback(async () => {
@@ -190,38 +190,12 @@ export function TaskFormSheet({
         dismissDisabled={submitting}
         keyboardAvoiding
         onClose={requestClose}
-        style={styles.formSheet}
         title={isEdit ? "Aufgabe bearbeiten" : "Aufgabe erstellen"}
-        titleAlign="center"
         visible={visible}
       >
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          pointerEvents="none"
-          style={styles.decoration}
-        >
-          <Sprout color={colors.harborBlue} size={72} strokeWidth={1.2} />
-        </View>
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          pointerEvents="none"
-          style={styles.noteDecoration}
-        >
-          <Sprout color={colors.harborBlue} size={54} strokeWidth={1.2} />
-        </View>
-
-        <ScrollView
-          contentContainerStyle={styles.formContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          style={styles.formBody}
-        >
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>Titel</Text>
-            <View style={styles.inputCard}>
-              <TextInput
+        <OrdiloFormBody>
+          <OrdiloFormField label="Titel">
+              <OrdiloFormInput
                 accessibilityLabel="Titel der Aufgabe"
                 autoCapitalize="sentences"
                 maxLength={200}
@@ -230,106 +204,52 @@ export function TaskFormSheet({
                   setError(null);
                 }}
                 placeholder="Zum Beispiel: Rechnung bezahlen"
-                placeholderTextColor={colors.mistDark}
                 returnKeyType="done"
-                style={styles.input}
                 value={title}
               />
-            </View>
-          </View>
+          </OrdiloFormField>
 
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>Notiz (optional)</Text>
-            <View style={[styles.inputCard, styles.noteCard]}>
-              <TextInput
+          <OrdiloFormField label="Notiz (optional)">
+              <OrdiloFormInput
                 accessibilityLabel="Notiz zur Aufgabe"
                 autoCapitalize="sentences"
                 maxLength={2000}
                 multiline
                 onChangeText={setDescription}
                 placeholder="Was gehört dazu?"
-                placeholderTextColor={colors.mistDark}
-                style={[styles.input, styles.noteInput]}
-                textAlignVertical="top"
                 value={description}
               />
-            </View>
-          </View>
+          </OrdiloFormField>
 
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>Wann?</Text>
-            <Pressable
+          <OrdiloFormField label="Wann?">
+            <OrdiloFormSelect
               accessibilityHint="Öffnet die Auswahl für das Datum"
               accessibilityLabel={`Datum: ${dueDate ? formatTaskDayHint(dueDate) : "Kein Termin"}`}
-              accessibilityRole="button"
-              onPress={() => setDatePickerOpen(true)}
-              style={({ pressed }) => [
-                styles.selectionCard,
-                pressed && styles.cardPressed,
-              ]}
-            >
-              <View style={styles.selectionIcon}>
+              leading={<View style={styles.selectionIcon}>
                 <CalendarDays color={colors.harborBlue} size={20} strokeWidth={1.8} />
-              </View>
-              <Text style={styles.selectionText}>
-                {dueDate ? formatTaskDayHint(dueDate) : "Datum wählen"}
-              </Text>
-              <ChevronRight color={colors.harborBlue} size={20} strokeWidth={2} />
-            </Pressable>
-          </View>
+              </View>}
+              onPress={() => setDatePickerOpen(true)}
+              trailing={<ChevronRight color={colors.harborBlue} size={20} strokeWidth={2} />}
+              value={dueDate ? formatTaskDayHint(dueDate) ?? "Datum wählen" : "Datum wählen"}
+            />
+          </OrdiloFormField>
 
-          <View style={styles.section}>
-            <Text style={styles.fieldLabel}>Wer?</Text>
-            <Pressable
+          <OrdiloFormField label="Wer?">
+            <OrdiloFormSelect
               accessibilityHint="Öffnet die Auswahl für die verantwortliche Person"
               accessibilityLabel={`Verantwortlich: ${assignedMember?.name ?? "Niemand"}`}
-              accessibilityRole="button"
-              onPress={() => setPersonPickerOpen(true)}
-              style={({ pressed }) => [
-                styles.selectionCard,
-                pressed && styles.cardPressed,
-              ]}
-            >
-              <View style={styles.selectionIcon}>
+              leading={<View style={styles.selectionIcon}>
                 <UserRound color={colors.harborBlue} size={20} strokeWidth={1.8} />
-              </View>
-              <Text style={styles.selectionText}>
-                {assignedMember?.name ?? "Verantwortliche Person wählen"}
-              </Text>
-              <ChevronDown color={colors.harborBlue} size={20} strokeWidth={2} />
-            </Pressable>
+              </View>}
+              onPress={() => setPersonPickerOpen(true)}
+              trailing={<ChevronDown color={colors.harborBlue} size={20} strokeWidth={2} />}
+              value={assignedMember?.name ?? "Verantwortliche Person wählen"}
+            />
+          </OrdiloFormField>
+        </OrdiloFormBody>
 
-          </View>
-        </ScrollView>
-
-        <View style={styles.footer}>
-          {error ? (
-            <View accessibilityRole="alert" style={styles.errorBox}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-          <Pressable
-            accessibilityLabel="Aufgabe speichern"
-            accessibilityRole="button"
-            disabled={submitting}
-            onPress={() => void submit()}
-            style={({ pressed }) => [
-              styles.saveButton,
-              pressed && styles.saveButtonPressed,
-              submitting && styles.buttonDisabled,
-            ]}
-          >
-            {submitting ? (
-              <ActivityIndicator color={colors.warmWhite} size="small" />
-            ) : (
-              <Heart color={colors.warmWhite} size={20} strokeWidth={1.9} />
-            )}
-            <Text style={styles.saveLabel}>
-              {submitting ? "Wird gespeichert …" : "Speichern"}
-            </Text>
-          </Pressable>
-
-          {isEdit && onDismiss ? (
+        <OrdiloFormFooter
+          after={isEdit && onDismiss ? (
             <Pressable
               accessibilityLabel="Aufgabe verwerfen"
               accessibilityRole="button"
@@ -342,9 +262,33 @@ export function TaskFormSheet({
               <Trash2 color={colors.destructive} size={19} strokeWidth={1.8} />
               <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
             </Pressable>
-          ) : null}
-        </View>
+          ) : undefined}
+          error={error}
+          primary={<OrdiloButton
+            disabled={submitting}
+            icon={submitting
+              ? <ActivityIndicator color={colors.warmWhite} size="small" />
+              : <Heart color={colors.warmWhite} size={20} strokeWidth={1.9} />}
+            onPress={() => void submit()}
+            size="lg"
+            title={submitting ? "Wird gespeichert …" : "Speichern"}
+          />}
+        />
         <ConfirmDialog
+          cancelLabel="Weiter bearbeiten"
+          contained
+          confirmLabel="Verwerfen"
+          message="Deine Eingaben gehen verloren."
+          onCancel={() => setDiscardDraftOpen(false)}
+          onConfirm={() => {
+            setDiscardDraftOpen(false);
+            onClose();
+          }}
+          title="Änderungen verwerfen?"
+          visible={discardDraftOpen}
+        />
+        <ConfirmDialog
+          contained
           confirmLabel="Verwerfen"
           message="Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen."
           onCancel={() => setDismissOpen(false)}
@@ -357,34 +301,26 @@ export function TaskFormSheet({
         />
 
       {datePickerOpen ? (
-        <View
-          accessibilityViewIsModal
-          importantForAccessibility="yes"
-          style={styles.dateOverlay}
+        <OrdiloNestedSheet
+          closeAccessibilityLabel="Datumswahl schließen"
+          contained
+          onClose={() => setDatePickerOpen(false)}
+          visible
         >
-          <Pressable
-            accessibilityLabel="Datumswahl schließen"
-            accessibilityRole="button"
-            onPress={() => setDatePickerOpen(false)}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={styles.datePanel}>
-            <View style={styles.dateHandle} />
-            <View style={styles.dateHeader}>
-              <Text style={styles.dateTitle}>Datum wählen</Text>
-              <Pressable
-                accessibilityLabel="Keinen Termin festlegen"
-                accessibilityRole="button"
-                onPress={() => {
-                  setDueDate("");
-                  setError(null);
-                  setDatePickerOpen(false);
-                }}
-                style={styles.noDateButton}
-              >
-                <Text style={styles.noDateLabel}>Kein Termin</Text>
-              </Pressable>
-            </View>
+          <View style={styles.dateContent}>
+            <OrdiloSheetHeader title="Datum wählen" />
+            <Pressable
+              accessibilityLabel="Keinen Termin festlegen"
+              accessibilityRole="button"
+              onPress={() => {
+                setDueDate("");
+                setError(null);
+                setDatePickerOpen(false);
+              }}
+              style={styles.noDateButton}
+            >
+              <Text style={styles.noDateLabel}>Kein Termin</Text>
+            </Pressable>
             <DateTimePicker
               accentColor={colors.harborBlue}
               display={Platform.OS === "ios" ? "inline" : "default"}
@@ -405,7 +341,7 @@ export function TaskFormSheet({
               </Pressable>
             ) : null}
           </View>
-        </View>
+        </OrdiloNestedSheet>
       ) : null}
 
       <OrdiloPickerOverlay
@@ -460,75 +396,13 @@ export function TaskFormSheet({
 }
 
 const styles = StyleSheet.create({
-  formSheet: {
-    height: "96%",
-    maxHeight: "96%",
-    overflow: "hidden",
-    paddingHorizontal: spacing.lg,
-  },
-  formBody: {
-    flex: 1,
-  },
-  formContent: {
-    paddingBottom: spacing.sm,
-    paddingTop: spacing.sm,
-  },
-  section: {
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  fieldLabel: {
-    color: colors.harborBlue,
-    ...typography.timestamp,
-  },
-  input: {
-    color: colors.graphite,
-    flex: 1,
-    minHeight: 62,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...typography.body,
-  },
-  inputCard: {
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    minHeight: 64,
-    ...cardRestShadow,
-  },
-  noteCard: {
-    minHeight: 132,
-  },
-  noteInput: {
-    minHeight: 130,
-    paddingTop: 14,
-    textAlignVertical: "top",
-  },
-  selectionCard: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 64,
-    padding: 12,
-    ...cardRestShadow,
-  },
   selectionIcon: {
     alignItems: "center",
     backgroundColor: colors.washSageSoft,
     borderRadius: radii.pill,
-    height: 40,
+    height: 36,
     justifyContent: "center",
-    width: 40,
-  },
-  selectionText: {
-    color: colors.graphite,
-    flex: 1,
-    ...typography.title,
+    width: 36,
   },
   cardPressed: {
     backgroundColor: colors.sandWarm,
@@ -537,47 +411,11 @@ const styles = StyleSheet.create({
     color: colors.warmWhite,
     ...typography.title,
   },
-  errorBox: {
-    backgroundColor: colors.destructiveBackground,
-    borderColor: colors.destructive,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-  },
-  errorText: {
-    color: colors.destructive,
-    ...typography.timestamp,
-  },
-  footer: {
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
-  },
-  saveButton: {
-    alignItems: "center",
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.pill,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "center",
-    minHeight: 56,
-    paddingHorizontal: spacing.lg,
-  },
-  saveButtonPressed: {
-    backgroundColor: colors.harborBlueDark,
-  },
-  buttonDisabled: {
-    opacity: 0.56,
-  },
-  saveLabel: {
-    color: colors.warmWhite,
-    ...typography.title,
-  },
   dismissButton: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.pill,
+    borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
@@ -589,60 +427,14 @@ const styles = StyleSheet.create({
     color: colors.destructive,
     ...typography.title,
   },
-  decoration: {
-    left: -20,
-    opacity: 0.16,
-    position: "absolute",
-    top: 24,
-    transform: [{ rotate: "-24deg" }],
-  },
-  noteDecoration: {
-    opacity: 0.16,
-    position: "absolute",
-    right: -14,
-    top: 330,
-    transform: [{ rotate: "32deg" }],
-  },
-  dateOverlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    bottom: 0,
-    elevation: 20,
-    justifyContent: "flex-end",
-    left: 0,
-    padding: spacing.md,
-    position: "absolute",
-    right: 0,
-    top: 0,
-    zIndex: 20,
-  },
-  datePanel: {
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.xl,
-    overflow: "hidden",
+  dateContent: {
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  dateHandle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.sm,
-    marginTop: spacing.sm,
-    width: 40,
-  },
-  dateHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-  },
-  dateTitle: {
-    color: colors.graphite,
-    ...typography.display,
+    paddingHorizontal: spacing.lg,
   },
   noDateButton: {
+    alignSelf: "flex-end",
     justifyContent: "center",
+    marginBottom: spacing.xs,
     minHeight: 44,
     paddingHorizontal: spacing.sm,
   },

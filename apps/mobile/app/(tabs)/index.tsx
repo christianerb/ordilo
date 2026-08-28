@@ -20,7 +20,6 @@ import {
 } from "react";
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   Pressable,
   RefreshControl,
@@ -30,6 +29,7 @@ import {
   View,
 } from "react-native";
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import {
   Card,
@@ -740,22 +740,13 @@ function InboundDiscoveryCard({
   onRetention: (discovery: HeuteInboundDiscovery, keep: boolean) => Promise<void>;
 }) {
   const hasSuggestions = discovery.suggestions.length > 0;
+  const [deleteEmailOpen, setDeleteEmailOpen] = useState(false);
   const confirmDeleteEmail = useCallback(() => {
-    Alert.alert(
-      "E-Mail löschen?",
-      "Die E-Mail wird von Ordilo gelöscht. Aufgaben und Termine, die du übernommen hast, bleiben erhalten.",
-      [
-        { style: "cancel", text: "Behalten" },
-        {
-          onPress: () => void onRetention(discovery, false),
-          style: "destructive",
-          text: "E-Mail löschen",
-        },
-      ],
-    );
-  }, [discovery, onRetention]);
+    setDeleteEmailOpen(true);
+  }, []);
   return (
-    <Card style={styles.inboundCard}>
+    <>
+      <Card style={styles.inboundCard}>
       <View style={styles.inboundHeader}>
         <View style={styles.inboundIcon}>
           <Inbox color={colors.harborBlue} size={20} />
@@ -851,7 +842,20 @@ function InboundDiscoveryCard({
           </View>
         </View>
       ) : null}
-    </Card>
+      </Card>
+      <ConfirmDialog
+        cancelLabel="Behalten"
+        confirmLabel="E-Mail löschen"
+        message="Die E-Mail wird von Ordilo gelöscht. Aufgaben und Termine, die du übernommen hast, bleiben erhalten."
+        onCancel={() => setDeleteEmailOpen(false)}
+        onConfirm={() => {
+          setDeleteEmailOpen(false);
+          void onRetention(discovery, false);
+        }}
+        title="E-Mail löschen?"
+        visible={deleteEmailOpen}
+      />
+    </>
   );
 }
 

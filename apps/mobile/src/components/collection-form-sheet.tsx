@@ -3,14 +3,18 @@ import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
-import { OrdiloFormSheet } from "./sheet";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSheet,
+} from "./sheet";
 import { OrdiloButton } from "./ui";
 import { CollectionIcon } from "./collection-icon";
 import {
@@ -52,7 +56,6 @@ export function CollectionFormSheet({
   const [color, setColor] = useState(initialValues?.color ?? "petrol");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [nameFocused, setNameFocused] = useState(false);
 
   // Re-seed the draft every time the sheet opens so a stale edit never
   // leaks into the next create (and vice versa). Render-time adjustment
@@ -66,7 +69,6 @@ export function CollectionFormSheet({
       setColor(initialValues?.color ?? "petrol");
       setError(null);
       setSubmitting(false);
-      setNameFocused(false);
     }
   }
 
@@ -100,30 +102,24 @@ export function CollectionFormSheet({
       title={title}
       visible={visible}
     >
-      <ScrollView
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-            <Text style={styles.fieldLabel}>Name</Text>
-            <TextInput
+      <OrdiloFormBody>
+          <OrdiloFormField label="Name">
+            <OrdiloFormInput
               accessibilityLabel="Name der Sammlung"
               autoCapitalize="sentences"
               autoCorrect={false}
               maxLength={50}
-              onBlur={() => setNameFocused(false)}
               onChangeText={(value) => {
                 setName(value);
                 setError(null);
               }}
-              onFocus={() => setNameFocused(true)}
               placeholder="Zum Beispiel: Rechnungen"
-              placeholderTextColor={colors.mistDark}
               returnKeyType="done"
-              style={[styles.input, nameFocused && styles.inputFocused]}
               value={name}
             />
+          </OrdiloFormField>
 
-            <Text style={styles.fieldLabel}>Icon</Text>
+          <OrdiloFormField label="Icon">
             <View style={styles.iconGrid}>
               {COLLECTION_ICON_OPTIONS.map((option) => {
                 const selected = icon === option.key;
@@ -152,8 +148,9 @@ export function CollectionFormSheet({
                 );
               })}
             </View>
+          </OrdiloFormField>
 
-            <Text style={styles.fieldLabel}>Farbe</Text>
+          <OrdiloFormField label="Farbe">
             <View style={styles.colorRow}>
               {COLLECTION_COLOR_OPTIONS.map((option) => {
                 const selected = color === option.key;
@@ -176,50 +173,27 @@ export function CollectionFormSheet({
                 );
               })}
             </View>
-
-            {error ? (
-              <View accessibilityRole="alert" style={styles.errorBox}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            ) : null}
-
-            <View style={styles.submit}>
-              <OrdiloButton
-                disabled={submitting}
-                icon={
-                  submitting ? (
-                    <ActivityIndicator color={colors.warmWhite} size="small" />
-                  ) : undefined
-                }
-                onPress={() => void submit()}
-                size="lg"
-                title={submitting ? "Wird gespeichert …" : submitLabel}
-              />
-            </View>
-      </ScrollView>
+          </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton
+          disabled={submitting}
+          icon={
+            submitting ? (
+              <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : undefined
+          }
+          onPress={() => void submit()}
+          size="lg"
+          title={submitting ? "Wird gespeichert …" : submitLabel}
+        />}
+      />
     </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  fieldLabel: {
-    color: colors.mistDark,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.label,
-  },
-  input: {
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    color: colors.graphite,
-    height: 44,
-    paddingHorizontal: 12,
-    ...typography.body,
-  },
-  inputFocused: {
-    borderColor: colors.harborBlue,
-  },
   iconGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -278,20 +252,5 @@ const styles = StyleSheet.create({
   colorLabel: {
     color: colors.mistDark,
     ...typography.label,
-  },
-  errorBox: {
-    backgroundColor: colors.destructiveBackground,
-    borderColor: colors.destructive,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    marginTop: spacing.md,
-    padding: spacing.sm,
-  },
-  errorText: {
-    color: colors.destructive,
-    ...typography.timestamp,
-  },
-  submit: {
-    marginTop: spacing.lg,
   },
 });

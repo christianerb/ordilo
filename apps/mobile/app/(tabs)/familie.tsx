@@ -11,19 +11,24 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
-import { OrdiloFormSheet } from "@/src/components/sheet";
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSheet,
+} from "@/src/components/sheet";
 import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
 import { useFamily } from "@/src/lib/family-context";
@@ -335,6 +340,7 @@ function MemberEditSheet({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [wasVisible, setWasVisible] = useState(false);
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
   if (visible !== wasVisible) {
     setWasVisible(visible);
@@ -343,6 +349,7 @@ function MemberEditSheet({
       setAvatarColor(member.avatar_color ?? AVATAR_COLORS[0]);
       setError(null);
       setSubmitting(false);
+      setDiscardDraftOpen(false);
     }
   }
 
@@ -365,14 +372,7 @@ function MemberEditSheet({
       onClose();
       return;
     }
-    Alert.alert(
-      "Änderungen verwerfen?",
-      "Deine Eingaben gehen verloren.",
-      [
-        { style: "cancel", text: "Weiter bearbeiten" },
-        { onPress: onClose, style: "destructive", text: "Verwerfen" },
-      ],
-    );
+    setDiscardDraftOpen(true);
   }, [avatarColor, member, name, onClose, submitting]);
 
   return (
@@ -381,27 +381,27 @@ function MemberEditSheet({
       dismissDisabled={submitting}
       keyboardAvoiding
       onClose={requestClose}
-      style={styles.memberSheet}
       title="Person bearbeiten"
       visible={visible}
     >
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text style={styles.sheetLabel}>Name</Text>
-            <TextInput
+      <OrdiloFormBody>
+          <OrdiloFormField label="Name">
+            <OrdiloFormInput
               accessibilityLabel="Name der Person"
               autoCapitalize="words"
               maxLength={100}
               onChangeText={setName}
-              style={styles.sheetInput}
               value={name}
             />
+          </OrdiloFormField>
 
-            <Text style={styles.sheetLabel}>Rolle</Text>
+          <OrdiloFormField label="Rolle">
             <Text style={styles.memberRoleRead}>
               {member?.role || "Familienmitglied"}
             </Text>
+          </OrdiloFormField>
 
-            <Text style={styles.sheetLabel}>Farbe</Text>
+          <OrdiloFormField label="Farbe">
             <View style={styles.avatarColors}>
               {AVATAR_COLORS.map((color) => {
                 const selected = avatarColor === color;
@@ -419,18 +419,31 @@ function MemberEditSheet({
                 );
               })}
             </View>
-
-            {error ? <Text accessibilityRole="alert" style={styles.sheetError}>{error}</Text> : null}
-            <View style={styles.sheetSubmit}>
-              <OrdiloButton
-                disabled={submitting}
-                icon={submitting ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
-                onPress={() => void submit()}
-                size="lg"
-                title={submitting ? "Wird gespeichert …" : "Speichern"}
-              />
-            </View>
-      </ScrollView>
+          </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton
+          disabled={submitting}
+          icon={submitting ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+          onPress={() => void submit()}
+          size="lg"
+          title={submitting ? "Wird gespeichert …" : "Speichern"}
+        />}
+      />
+      <ConfirmDialog
+        cancelLabel="Weiter bearbeiten"
+        contained
+        confirmLabel="Verwerfen"
+        message="Deine Eingaben gehen verloren."
+        onCancel={() => setDiscardDraftOpen(false)}
+        onConfirm={() => {
+          setDiscardDraftOpen(false);
+          onClose();
+        }}
+        title="Änderungen verwerfen?"
+        visible={discardDraftOpen}
+      />
     </OrdiloFormSheet>
   );
 }
@@ -491,24 +504,6 @@ const styles = StyleSheet.create({
   accountCopy: { flex: 1, gap: 2, minWidth: 0 },
   accountLabel: { color: colors.mistDark, ...typography.label },
   accountEmail: { color: colors.graphite, ...typography.timestamp },
-  memberSheet: {
-    maxHeight: "82%",
-  },
-  sheetLabel: {
-    color: colors.mistDark,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.label,
-  },
-  sheetInput: {
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    color: colors.graphite,
-    height: 44,
-    paddingHorizontal: spacing.sm,
-    ...typography.body,
-  },
   memberRoleRead: {
     backgroundColor: colors.sandLight,
     borderRadius: radii.base,
@@ -528,8 +523,6 @@ const styles = StyleSheet.create({
     width: 36,
   },
   avatarColorSelected: { borderColor: colors.graphite },
-  sheetError: { color: colors.destructive, marginTop: spacing.md, ...typography.timestamp },
-  sheetSubmit: { marginTop: spacing.lg },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.56 },
 });

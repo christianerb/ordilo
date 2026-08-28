@@ -3,6 +3,7 @@ import {
   buildChatHistory,
   buildMarkTaskDoneUndo,
   formatChatDate,
+  formatChatMessageTime,
   getActionContent,
   getSuggestedContactAction,
   getToolStepLabel,
@@ -14,6 +15,7 @@ import {
 
 const baseMessage: ChatMessage = {
   id: "ai-1",
+  createdAt: "2026-08-21T10:05:00",
   dbId: null,
   role: "assistant",
   text: "",
@@ -24,6 +26,16 @@ const baseMessage: ChatMessage = {
   status: "streaming",
   feedback: null,
 };
+
+describe("chat message time formatting", () => {
+  it("formats valid local timestamps once in the German short-time style", () => {
+    expect(formatChatMessageTime("2026-08-21T10:05:00")).toBe("10:05");
+  });
+
+  it("falls back to Jetzt for malformed timestamps", () => {
+    expect(formatChatMessageTime("not-a-date")).toBe("Jetzt");
+  });
+});
 
 describe("NDJSON chunk splitting", () => {
   it("splits complete lines and keeps the incomplete tail", () => {

@@ -69,9 +69,25 @@ describe("native motion wiring", () => {
       "app/(tabs)/familie.tsx",
       "app/note/[id].tsx",
     ]) {
-      expect(source(path)).toContain("OrdiloFormSheet");
-      expect(source(path)).not.toContain("AnimatedSheetModal");
+      const form = source(path);
+      expect(form).toContain("OrdiloFormSheet");
+      expect(form).toContain("OrdiloFormBody");
+      expect(form).toContain("OrdiloFormField");
+      expect(form).toContain("OrdiloFormFooter");
+      expect(form).toContain("OrdiloFormInput");
+      expect(form).not.toContain("AnimatedSheetModal");
     }
+    expect(sheet).toContain('maxHeight: "88%"');
+    expect(sheet).not.toContain('height: "88%"');
+    expect(sheet).toContain("formBody: { flexShrink: 1 }");
+    expect(sheet).toContain("paddingBottom: FLOATING_SHEET_INSET");
+    expect(sheet).toContain("paddingHorizontal: FLOATING_SHEET_INSET");
+    expect(sheet).toContain(
+      "borderBottomLeftRadius: FLOATING_SHEET_BOTTOM_RADIUS",
+    );
+    expect(sheet).toContain("formBodyContent");
+    expect(sheet).toContain("formControlFocused");
+    expect(sheet).toContain("formActions");
 
     // The tab bar action sheet delegates presentation to the shared choice sheet.
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
@@ -120,13 +136,13 @@ describe("native motion wiring", () => {
     expect(choiceSheet).toContain("minHeight: 86");
     expect(choiceSheet).toContain("paddingBottom: spacing.md");
     expect(source("src/components/sheet.tsx")).toContain(
-      "bottomInset={detached ? spacing.md : 0}",
+      "bottomInset={detached ? FLOATING_SHEET_INSET : 0}",
     );
     expect(source("src/components/sheet.tsx")).toContain(
-      "marginHorizontal: spacing.md",
+      "marginHorizontal: FLOATING_SHEET_INSET",
     );
     expect(source("src/components/sheet.tsx")).toContain(
-      "DETACHED_SHEET_BOTTOM_RADIUS = 40",
+      "FLOATING_SHEET_BOTTOM_RADIUS = 40",
     );
 
     for (const path of [
@@ -138,6 +154,32 @@ describe("native motion wiring", () => {
       expect(source(path)).not.toContain("CreatePlanItemSheet");
       expect(source(path)).not.toContain("CreateLibraryItemSheet");
     }
+  });
+
+  it("routes every mobile bottom sheet through the Dokumente plus styling", () => {
+    const sheet = source("src/components/sheet.tsx");
+    const choice = source("src/components/create-choice-sheet.tsx");
+    const picker = source("src/components/picker-sheet.tsx");
+    const confirm = source("src/components/confirm-dialog.tsx");
+    const task = source("src/components/task-form-sheet.tsx");
+    const scan = source("app/scan.tsx");
+    const layout = source("app/_layout.tsx");
+
+    expect(sheet).toContain("export function OrdiloSheetHeader");
+    expect(sheet).toContain("<Sprout");
+    expect(sheet).toContain("visible={mounted}");
+    expect(choice).toContain("<OrdiloSheetHeader");
+    expect(picker).toContain("<OrdiloSheetHeader");
+    expect(picker).toContain("<OrdiloNestedSheet");
+    expect(confirm).toContain("<OrdiloSheetHeader");
+    expect(confirm).toContain("<OrdiloNestedSheet");
+    expect(confirm).not.toContain("<Modal");
+    expect(task).toContain('<OrdiloSheetHeader title="Datum wählen"');
+    expect(task).not.toContain("dateOverlay");
+    expect(scan).toContain("<OrdiloFormSheet");
+    expect(scan).toContain("<OrdiloFormBody");
+    expect(scan).not.toContain("<SafeAreaView");
+    expect(layout).toContain('presentation: "transparentModal"');
   });
 
   it("uses one shared compact picker sheet", () => {
@@ -162,16 +204,16 @@ describe("native motion wiring", () => {
 
   it("uses the journal task form layout for create and edit", () => {
     const taskForm = source("src/components/task-form-sheet.tsx");
-    expect(taskForm).toContain('titleAlign="center"');
     expect(taskForm).toContain("Aufgabe erstellen");
     expect(taskForm).toContain("Aufgabe bearbeiten");
     expect(taskForm).toContain("<DateTimePicker");
     expect(taskForm).toContain('display={Platform.OS === "ios" ? "inline" : "default"}');
     expect(taskForm.match(/<OrdiloPickerOverlay/g)).toHaveLength(1);
     expect(taskForm).not.toContain("memberScroller");
-    expect(taskForm).toContain("styles.selectionCard");
+    expect(taskForm).toContain("<OrdiloFormSelect");
     expect(taskForm).not.toContain("memberCircleSelected");
-    expect(taskForm).toContain("styles.saveButton");
+    expect(taskForm).toContain("<OrdiloFormFooter");
+    expect(taskForm).not.toContain("styles.saveButton");
   });
 
   it("groups the mobile task overview into warm journal sections", () => {
@@ -205,6 +247,6 @@ describe("native motion wiring", () => {
     expect(search).toContain("styles.dayDivider");
     expect(search).toContain("<OrdiloMark");
     expect(chat).toContain("styles.bubbleAvatar");
-    expect(chat).toContain("formatMessageTime");
+    expect(chat).toContain("formatChatMessageTime");
   });
 });

@@ -1,12 +1,10 @@
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import {
@@ -17,7 +15,14 @@ import {
   Pencil,
 } from "lucide-react-native";
 
-import { OrdiloFormSheet } from "./sheet";
+import { ConfirmDialog } from "./confirm-dialog";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSheet,
+} from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
   formatEventDateInput,
@@ -53,6 +58,7 @@ export function EventFormSheet({
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
   const [wasVisible, setWasVisible] = useState(false);
   if (visible !== wasVisible) {
@@ -68,6 +74,7 @@ export function EventFormSheet({
       setAttendeeIds([]);
       setError(null);
       setSubmitting(false);
+      setDiscardDraftOpen(false);
     }
   }
 
@@ -85,10 +92,7 @@ export function EventFormSheet({
       onClose();
       return;
     }
-    Alert.alert("Änderungen verwerfen?", "Deine Eingaben gehen verloren.", [
-      { style: "cancel", text: "Weiter bearbeiten" },
-      { onPress: onClose, style: "destructive", text: "Verwerfen" },
-    ]);
+    setDiscardDraftOpen(true);
   }, [isDirty, onClose, submitting]);
 
   const toggleAttendee = useCallback((memberId: string) => {
@@ -150,53 +154,41 @@ export function EventFormSheet({
       dismissDisabled={submitting}
       keyboardAvoiding
       onClose={requestClose}
-      style={styles.formSheet}
       title="Neuer Termin"
       visible={visible}
     >
-      <ScrollView
-        contentContainerStyle={styles.formContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        style={styles.formBody}
-      >
-        <Text style={styles.fieldLabel}>Was ist geplant?</Text>
-        <View style={styles.inputShell}>
-          <CalendarDays color={colors.harborBlue} size={18} strokeWidth={1.8} />
-          <TextInput
+      <OrdiloFormBody>
+        <OrdiloFormField label="Was ist geplant?">
+          <OrdiloFormInput
             accessibilityLabel="Titel des Termins"
             autoCapitalize="sentences"
+            leading={<CalendarDays color={colors.harborBlue} size={18} strokeWidth={1.8} />}
             maxLength={160}
             onChangeText={(value) => {
               setTitle(value);
               setError(null);
             }}
             placeholder="Zum Beispiel: Elternabend"
-            placeholderTextColor={colors.mistDark}
             returnKeyType="next"
-            style={styles.input}
             value={title}
           />
-        </View>
+        </OrdiloFormField>
 
-        <Text style={styles.fieldLabel}>Datum</Text>
-        <View style={styles.inputShell}>
-          <CalendarDays color={colors.harborBlue} size={18} strokeWidth={1.8} />
-          <TextInput
+        <OrdiloFormField label="Datum">
+          <OrdiloFormInput
             accessibilityLabel="Datum des Termins"
             keyboardType="numbers-and-punctuation"
+            leading={<CalendarDays color={colors.harborBlue} size={18} strokeWidth={1.8} />}
             maxLength={10}
             onChangeText={(value) => {
               setDateInput(value);
               setError(null);
             }}
             placeholder="TT.MM.JJJJ"
-            placeholderTextColor={colors.mistDark}
             returnKeyType="done"
-            style={styles.input}
             value={dateInput}
           />
-        </View>
+        </OrdiloFormField>
 
         <Pressable
           accessibilityLabel="Ganztägiger Termin"
@@ -215,76 +207,58 @@ export function EventFormSheet({
 
         {!allDay ? (
           <View style={styles.timeRow}>
-            <View style={styles.timeField}>
-              <Text style={styles.fieldLabel}>Beginn</Text>
-              <View style={styles.inputShell}>
-                <Clock3 color={colors.harborBlue} size={18} strokeWidth={1.8} />
-                <TextInput
+            <OrdiloFormField label="Beginn" style={styles.timeField}>
+                <OrdiloFormInput
                   accessibilityLabel="Beginn des Termins"
                   keyboardType="numbers-and-punctuation"
+                  leading={<Clock3 color={colors.harborBlue} size={18} strokeWidth={1.8} />}
                   maxLength={5}
                   onChangeText={setStartsTime}
                   placeholder="09:00"
-                  placeholderTextColor={colors.mistDark}
-                  style={styles.input}
                   value={startsTime}
                 />
-              </View>
-            </View>
-            <View style={styles.timeField}>
-              <Text style={styles.fieldLabel}>Ende</Text>
-              <View style={styles.inputShell}>
-                <Clock3 color={colors.harborBlue} size={18} strokeWidth={1.8} />
-                <TextInput
+            </OrdiloFormField>
+            <OrdiloFormField label="Ende" style={styles.timeField}>
+                <OrdiloFormInput
                   accessibilityLabel="Ende des Termins"
                   keyboardType="numbers-and-punctuation"
+                  leading={<Clock3 color={colors.harborBlue} size={18} strokeWidth={1.8} />}
                   maxLength={5}
                   onChangeText={setEndsTime}
                   placeholder="10:00"
-                  placeholderTextColor={colors.mistDark}
-                  style={styles.input}
                   value={endsTime}
                 />
-              </View>
-            </View>
+            </OrdiloFormField>
           </View>
         ) : null}
 
-        <Text style={styles.fieldLabel}>Ort (optional)</Text>
-        <View style={styles.inputShell}>
-          <MapPin color={colors.harborBlue} size={18} strokeWidth={1.8} />
-          <TextInput
+        <OrdiloFormField label="Ort (optional)">
+          <OrdiloFormInput
             accessibilityLabel="Ort des Termins"
             autoCapitalize="sentences"
+            leading={<MapPin color={colors.harborBlue} size={18} strokeWidth={1.8} />}
             maxLength={300}
             onChangeText={setLocation}
             placeholder="Wo trefft ihr euch?"
-            placeholderTextColor={colors.mistDark}
-            style={styles.input}
             value={location}
           />
-        </View>
+        </OrdiloFormField>
 
-        <Text style={styles.fieldLabel}>Notiz (optional)</Text>
-        <View style={[styles.inputShell, styles.noteShell]}>
-          <Pencil color={colors.harborBlue} size={18} strokeWidth={1.8} />
-          <TextInput
+        <OrdiloFormField label="Notiz (optional)">
+          <OrdiloFormInput
             accessibilityLabel="Notiz zum Termin"
             autoCapitalize="sentences"
+            leading={<Pencil color={colors.harborBlue} size={18} strokeWidth={1.8} />}
             maxLength={2000}
             multiline
             onChangeText={setNote}
             placeholder="Was soll die Familie wissen?"
-            placeholderTextColor={colors.mistDark}
-            style={[styles.input, styles.noteInput]}
-            textAlignVertical="top"
             value={note}
           />
-        </View>
+        </OrdiloFormField>
 
         {members.length > 0 ? (
-          <>
-            <Text style={styles.fieldLabel}>Wer ist dabei?</Text>
+          <OrdiloFormField label="Wer ist dabei?">
             <ScrollView
               horizontal
               keyboardShouldPersistTaps="handled"
@@ -326,17 +300,13 @@ export function EventFormSheet({
                 })}
               </View>
             </ScrollView>
-          </>
+          </OrdiloFormField>
         ) : null}
-      </ScrollView>
+      </OrdiloFormBody>
 
-      <View style={styles.footer}>
-        {error ? (
-          <View accessibilityRole="alert" style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-        <OrdiloButton
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton
           disabled={submitting}
           icon={
             submitting ? (
@@ -346,42 +316,26 @@ export function EventFormSheet({
           onPress={() => void submit()}
           size="lg"
           title={submitting ? "Wird gespeichert …" : "Termin anlegen"}
-        />
-      </View>
+        />}
+      />
+      <ConfirmDialog
+        cancelLabel="Weiter bearbeiten"
+        contained
+        confirmLabel="Verwerfen"
+        message="Deine Eingaben gehen verloren."
+        onCancel={() => setDiscardDraftOpen(false)}
+        onConfirm={() => {
+          setDiscardDraftOpen(false);
+          onClose();
+        }}
+        title="Änderungen verwerfen?"
+        visible={discardDraftOpen}
+      />
     </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  formSheet: { height: "88%" },
-  formBody: { flex: 1 },
-  formContent: {
-    paddingBottom: spacing.md,
-  },
-  fieldLabel: {
-    color: colors.mistDark,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.label,
-  },
-  inputShell: {
-    alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingLeft: spacing.sm,
-  },
-  input: {
-    color: colors.graphite,
-    flex: 1,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
-    ...typography.body,
-  },
   checkRow: {
     alignItems: "center",
     flexDirection: "row",
@@ -404,12 +358,6 @@ const styles = StyleSheet.create({
   checkLabel: { color: colors.graphite, ...typography.body },
   timeRow: { flexDirection: "row", gap: spacing.sm },
   timeField: { flex: 1 },
-  noteShell: {
-    alignItems: "flex-start",
-    minHeight: 84,
-    paddingTop: spacing.sm,
-  },
-  noteInput: { minHeight: 68, paddingTop: 0 },
   memberRow: {
     flexDirection: "row",
     gap: spacing.sm,
@@ -441,19 +389,4 @@ const styles = StyleSheet.create({
     textAlign: "center",
     ...typography.label,
   },
-  footer: {
-    backgroundColor: colors.warmWhite,
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    paddingTop: spacing.sm,
-  },
-  errorBox: {
-    backgroundColor: colors.destructiveBackground,
-    borderColor: colors.destructive,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-  },
-  errorText: { color: colors.destructive, ...typography.timestamp },
 });

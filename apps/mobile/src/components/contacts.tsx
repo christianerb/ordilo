@@ -17,14 +17,18 @@ import {
 import {
   ActivityIndicator,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
-import { OrdiloFormSheet } from "./sheet";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSheet,
+} from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
   buildWhatsAppHref,
@@ -325,53 +329,60 @@ export function ContactFormSheet({
       dismissDisabled={saving}
       keyboardAvoiding
       onClose={onClose}
-      style={styles.sheet}
       subtitle="Telefonnummer oder E-Mail-Adresse reicht."
       title={contact ? "Kontakt bearbeiten" : "Neuer Kontakt"}
       visible={visible}
     >
-      <ScrollView
-        contentContainerStyle={styles.formBody}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-      >
-        <FormField
-          autoFocus
-          label="Name"
-          onChangeText={patch("name")}
-          value={form.name}
-        />
-        <FormField
-          label="Organisation"
-          onChangeText={patch("organization")}
-          value={form.organization ?? ""}
-        />
-        <FormField
-          label="Rolle"
-          onChangeText={patch("role")}
-          value={form.role ?? ""}
-        />
-        <FormField
-          keyboardType="phone-pad"
-          label="Telefon"
-          onChangeText={patch("phone")}
-          value={form.phone ?? ""}
-        />
-        <FormField
-          autoCapitalize="none"
-          keyboardType="email-address"
-          label="E-Mail"
-          onChangeText={patch("email")}
-          value={form.email}
-        />
-        {error ? (
-          <Text accessibilityRole="alert" style={styles.formError}>
-            {error}
-          </Text>
-        ) : null}
-      </ScrollView>
-      <View style={styles.sheetFooter}>
-        <OrdiloButton
+      <OrdiloFormBody>
+        <OrdiloFormField label="Name">
+          <OrdiloFormInput
+            accessibilityLabel="Name"
+            autoCapitalize="words"
+            autoFocus
+            autoCorrect={false}
+            onChangeText={patch("name")}
+            value={form.name}
+          />
+        </OrdiloFormField>
+        <OrdiloFormField label="Organisation">
+          <OrdiloFormInput
+            accessibilityLabel="Organisation"
+            autoCorrect={false}
+            onChangeText={patch("organization")}
+            value={form.organization ?? ""}
+          />
+        </OrdiloFormField>
+        <OrdiloFormField label="Rolle">
+          <OrdiloFormInput
+            accessibilityLabel="Rolle"
+            autoCorrect={false}
+            onChangeText={patch("role")}
+            value={form.role ?? ""}
+          />
+        </OrdiloFormField>
+        <OrdiloFormField label="Telefon">
+          <OrdiloFormInput
+            accessibilityLabel="Telefon"
+            autoCorrect={false}
+            keyboardType="phone-pad"
+            onChangeText={patch("phone")}
+            value={form.phone ?? ""}
+          />
+        </OrdiloFormField>
+        <OrdiloFormField label="E-Mail">
+          <OrdiloFormInput
+            accessibilityLabel="E-Mail"
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            onChangeText={patch("email")}
+            value={form.email}
+          />
+        </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton
           disabled={saving || !familyId}
           icon={
             saving ? (
@@ -381,41 +392,9 @@ export function ContactFormSheet({
           onPress={() => void save()}
           size="lg"
           title={saving ? "Wird gespeichert …" : "Kontakt speichern"}
-        />
-      </View>
-    </OrdiloFormSheet>
-  );
-}
-
-function FormField({
-  autoCapitalize = "sentences",
-  autoFocus = false,
-  keyboardType = "default",
-  label,
-  onChangeText,
-  value,
-}: {
-  autoCapitalize?: "none" | "sentences";
-  autoFocus?: boolean;
-  keyboardType?: "default" | "email-address" | "phone-pad";
-  label: string;
-  onChangeText: (value: string) => void;
-  value: string;
-}) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        accessibilityLabel={label}
-        autoCapitalize={autoCapitalize}
-        autoCorrect={false}
-        autoFocus={autoFocus}
-        keyboardType={keyboardType}
-        onChangeText={onChangeText}
-        style={styles.fieldInput}
-        value={value}
+        />}
       />
-    </View>
+    </OrdiloFormSheet>
   );
 }
 
@@ -480,22 +459,4 @@ const styles = StyleSheet.create({
     width: 44,
   },
   pressed: { opacity: 0.76 },
-  sheet: {
-    maxHeight: "88%",
-  },
-  sheetFooter: { paddingTop: spacing.sm },
-  formBody: { gap: spacing.sm, paddingTop: spacing.sm },
-  field: { gap: spacing.xs },
-  fieldLabel: { color: colors.mistDark, ...typography.label },
-  fieldInput: {
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    color: colors.graphite,
-    minHeight: 44,
-    paddingHorizontal: 12,
-    ...typography.body,
-  },
-  formError: { color: colors.destructive, ...typography.timestamp },
 });

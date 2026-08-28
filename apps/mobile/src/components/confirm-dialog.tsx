@@ -2,13 +2,16 @@ import { AlertCircle } from "lucide-react-native";
 import type { ReactNode } from "react";
 import {
   ActivityIndicator,
-  Modal,
-  Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
+import {
+  OrdiloFormFooter,
+  OrdiloNestedSheet,
+  OrdiloSheetHeader,
+} from "./sheet";
 import { OrdiloButton } from "./ui";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -22,6 +25,7 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 export function ConfirmDialog({
   cancelLabel = "Abbrechen",
   confirmLabel = "Löschen",
+  contained = false,
   error,
   loading = false,
   loadingLabel = "Einen Moment …",
@@ -33,6 +37,7 @@ export function ConfirmDialog({
 }: {
   cancelLabel?: string;
   confirmLabel?: string;
+  contained?: boolean;
   error?: string | null;
   loading?: boolean;
   loadingLabel?: string;
@@ -44,58 +49,41 @@ export function ConfirmDialog({
   visible: boolean;
 }) {
   return (
-    <Modal
-      animationType="fade"
-      onRequestClose={loading ? undefined : onCancel}
-      transparent
-      visible={visible}
+    <OrdiloNestedSheet
+      closeAccessibilityLabel="Bestätigung schließen"
+      contained={contained}
+      dismissDisabled={loading}
+      onClose={onCancel}
+      visible
     >
-      <Pressable
-        onPress={loading ? undefined : onCancel}
-        style={styles.overlay}
-      >
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.dialog}
-        >
+      <View style={styles.content}>
+        <OrdiloSheetHeader title={title} />
+        <View style={styles.message}>
           <View style={styles.iconCircle}>
             <AlertCircle color={colors.warmWhite} size={20} strokeWidth={2} />
           </View>
-          <Text style={styles.title}>{title}</Text>
           <Text style={styles.text}>{message}</Text>
-          {error ? (
-            <View accessibilityRole="alert" style={styles.error}>
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          ) : null}
-          <Pressable
-            accessibilityRole="button"
+        </View>
+        <OrdiloFormFooter
+          error={error}
+          primary={<OrdiloButton
             disabled={loading}
+            icon={loading ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
             onPress={onConfirm}
-            style={({ pressed }) => [
-              styles.confirmButton,
-              pressed && styles.pressed,
-              loading && styles.confirmButtonDisabled,
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color={colors.warmWhite} size="small" />
-            ) : null}
-            <Text style={styles.confirmButtonText}>
-              {loading ? loadingLabel : confirmLabel}
-            </Text>
-          </Pressable>
-          <OrdiloButton
+            size="lg"
+            title={loading ? loadingLabel : confirmLabel}
+            variant="destructive"
+          />}
+          secondary={<OrdiloButton
             disabled={loading}
             onPress={onCancel}
             size="lg"
             title={cancelLabel}
             variant="outline"
-          />
-        </Pressable>
-      </Pressable>
-    </Modal>
+          />}
+        />
+      </View>
+    </OrdiloNestedSheet>
   );
 }
 
@@ -105,21 +93,12 @@ export function ConfirmDialogEmphasis({ children }: { children: ReactNode }) {
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    alignItems: "center",
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "center",
-    padding: spacing.lg,
-  },
-  dialog: {
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.md,
+  content: {
     gap: spacing.md,
-    maxWidth: 420,
-    padding: spacing.lg,
-    width: "100%",
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
   },
+  message: { alignItems: "flex-start", flexDirection: "row", gap: spacing.sm },
   iconCircle: {
     alignItems: "center",
     backgroundColor: colors.destructive,
@@ -128,34 +107,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 40,
   },
-  title: { color: colors.graphite, ...typography.display },
-  text: { color: colors.mistDark, ...typography.body },
+  text: { color: colors.mistDark, flex: 1, ...typography.body },
   emphasis: {
     color: colors.graphite,
     fontFamily: typography.title.fontFamily,
   },
-  error: {
-    backgroundColor: colors.destructiveBackground,
-    borderColor: colors.destructive,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    padding: spacing.sm,
-  },
-  errorText: { color: colors.destructive, ...typography.timestamp },
-  confirmButton: {
-    alignItems: "center",
-    backgroundColor: colors.destructive,
-    borderRadius: radii.md,
-    flexDirection: "row",
-    gap: spacing.sm,
-    height: 48,
-    justifyContent: "center",
-  },
-  confirmButtonDisabled: { opacity: 0.6 },
-  confirmButtonText: {
-    color: colors.warmWhite,
-    fontFamily: typography.title.fontFamily,
-    fontSize: typography.body.fontSize,
-  },
-  pressed: { opacity: 0.76 },
 });

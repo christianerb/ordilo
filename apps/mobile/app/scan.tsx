@@ -14,20 +14,31 @@ import {
   Images,
   ScanLine,
   Upload,
-  X,
 } from "lucide-react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
-  Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
-import { Card, OrdiloButton } from "@/src/components/ui";
+import {
+  OrdiloFormBody,
+  OrdiloFormSheet,
+} from "@/src/components/sheet";
+import {
+  Card,
+  OrdiloButton,
+  SpringPressable,
+  cardRestShadow,
+} from "@/src/components/ui";
 import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
 import { useFamily } from "@/src/lib/family-context";
 import {
@@ -52,6 +63,32 @@ type QueueItem = ScannedDocument & {
   processingStep?: ScanProcessingStep;
   state: UploadState;
 };
+
+function ScanSecondaryAction({
+  accessibilityLabel,
+  disabled,
+  icon,
+  label,
+  onPress,
+}: {
+  accessibilityLabel: string;
+  disabled: boolean;
+  icon: ReactNode;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <SpringPressable
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled}
+      onPress={onPress}
+      style={styles.secondaryAction}
+    >
+      <View style={styles.secondaryActionIcon}>{icon}</View>
+      <Text style={styles.secondaryActionLabel}>{label}</Text>
+    </SpringPressable>
+  );
+}
 
 function isPersistedQueueItem(
   item: QueueItem,
@@ -118,6 +155,7 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
 export default function ScanModal() {
   const router = useRouter();
   const { family } = useFamily();
+  const [sheetVisible, setSheetVisible] = useState(true);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
@@ -413,30 +451,20 @@ export default function ScanModal() {
   const isProcessing = queue.some(
     (item) => item.state === "uploading" || item.state === "processing",
   );
+  const close = useCallback(() => setSheetVisible(false), []);
+  const finishClose = useCallback(() => router.back(), [router]);
 
   return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
-      <View style={styles.header}>
-        <View>
-          <Text style={[typography.display, styles.title]}>Dokument scannen</Text>
-          <Text style={[typography.timestamp, styles.subtitle]}>
-            Ordilo richtet das Dokument für dich aus.
-          </Text>
-        </View>
-        <Pressable
-          accessibilityLabel="Scanner schließen"
-          accessibilityRole="button"
-          onPress={() => router.back()}
-          style={styles.close}
-        >
-          <X color={colors.mistDark} size={20} />
-        </Pressable>
-      </View>
-
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+    <OrdiloFormSheet
+      closeAccessibilityLabel="Scanner schließen"
+      dismissDisabled={isProcessing}
+      onClose={close}
+      onDismiss={finishClose}
+      subtitle="Ordilo richtet das Dokument für dich aus."
+      title="Dokument scannen"
+      visible={sheetVisible}
+    >
+      <OrdiloFormBody contentContainerStyle={styles.scrollContent}>
         <View style={styles.captureStage}>
           <ScanHeroIllustration />
           <Text style={[typography.display, styles.captureTitle]}>
@@ -467,36 +495,20 @@ export default function ScanModal() {
             <View style={styles.alternativeLine} />
           </View>
           <View style={styles.secondaryActions}>
-            <Pressable
+            <ScanSecondaryAction
               accessibilityLabel="Fotos auswählen"
-              accessibilityRole="button"
               disabled={!queueHydrated}
+              icon={<Images color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+              label="Fotos"
               onPress={() => void pickImages()}
-              style={({ pressed }) => [
-                styles.secondaryAction,
-                pressed && styles.secondaryActionPressed,
-              ]}
-            >
-              <View style={styles.secondaryActionIcon}>
-                <Images color={colors.harborBlue} size={20} strokeWidth={1.8} />
-              </View>
-              <Text style={styles.secondaryActionLabel}>Fotos</Text>
-            </Pressable>
-            <Pressable
+            />
+            <ScanSecondaryAction
               accessibilityLabel="Datei auswählen"
-              accessibilityRole="button"
               disabled={!queueHydrated}
+              icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+              label="Datei"
               onPress={() => void pickFile()}
-              style={({ pressed }) => [
-                styles.secondaryAction,
-                pressed && styles.secondaryActionPressed,
-              ]}
-            >
-              <View style={styles.secondaryActionIcon}>
-                <FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />
-              </View>
-              <Text style={styles.secondaryActionLabel}>Datei</Text>
-            </Pressable>
+            />
           </View>
         </View>
 
@@ -562,43 +574,19 @@ export default function ScanModal() {
             ))}
           </Card>
         ) : null}
-      </ScrollView>
-    </SafeAreaView>
+      </OrdiloFormBody>
+    </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: colors.warmWhite,
-    flex: 1,
-    paddingHorizontal: spacing.md,
-  },
-  header: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: spacing.md,
-  },
-  title: {
-    color: colors.harborBlueDarker,
-    fontSize: 24,
-    lineHeight: 31,
-  },
-  subtitle: { color: colors.mistDark, marginTop: spacing.xs },
-  close: {
-    alignItems: "center",
-    backgroundColor: colors.washApricot,
-    borderRadius: 22,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
   scrollContent: {
     gap: spacing.lg,
-    paddingBottom: spacing["2xl"],
-    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
   },
   captureStage: {
+    ...cardRestShadow,
     alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
@@ -609,10 +597,6 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xl,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.sm,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
   },
   captureTitle: {
     color: colors.harborBlueDarker,
@@ -658,9 +642,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: 64,
     paddingHorizontal: spacing.md,
-  },
-  secondaryActionPressed: {
-    backgroundColor: colors.sandWarm,
   },
   secondaryActionIcon: {
     alignItems: "center",

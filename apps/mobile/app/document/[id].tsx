@@ -9,7 +9,6 @@ import {
   ChevronRight,
   CircleAlert,
   Copy,
-  Ellipsis,
   Eye,
   EyeOff,
   FileText,
@@ -252,18 +251,13 @@ export default function DocumentReviewScreen() {
         title={isReadOnly ? "Dokument" : "Dokument prüfen"}
         trailing={(
           <Pressable
-            accessibilityLabel="Weitere Optionen"
+            accessibilityLabel="Dokument löschen"
             accessibilityRole="button"
             hitSlop={8}
-            onPress={() => {
-              Alert.alert("Dokument", undefined, [
-                { text: "Abbrechen", style: "cancel" },
-                { text: "Dokument löschen", style: "destructive", onPress: requestDelete },
-              ]);
-            }}
+            onPress={requestDelete}
             style={styles.headerAction}
           >
-            <Ellipsis color={colors.graphite} size={22} />
+            <Trash2 color={colors.destructive} size={20} />
           </Pressable>
         )}
       />

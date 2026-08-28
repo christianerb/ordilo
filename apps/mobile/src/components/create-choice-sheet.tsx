@@ -1,8 +1,12 @@
-import { ChevronRight, Sprout, type LucideIcon } from "lucide-react-native";
+import { ChevronRight, type LucideIcon } from "lucide-react-native";
 import { forwardRef } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { OrdiloSheet, type OrdiloSheetHandle } from "./sheet";
+import {
+  OrdiloSheet,
+  OrdiloSheetHeader,
+  type OrdiloSheetHandle,
+} from "./sheet";
 import { cardRestShadow } from "./ui";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -42,21 +46,7 @@ export const CreateChoiceSheet = forwardRef<
       onDismiss={onDismiss}
       ref={ref}
     >
-      <View style={styles.header}>
-        <View style={styles.headerCopy}>
-          <Text style={styles.title}>{title}</Text>
-          <Text style={styles.subtitle}>{subtitle}</Text>
-        </View>
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          style={styles.decoration}
-        >
-          <View style={styles.decorationWash} />
-          <View style={styles.decorationDot} />
-          <Sprout color={colors.harborBlue} size={34} strokeWidth={1.35} />
-        </View>
-      </View>
+      <OrdiloSheetHeader subtitle={subtitle} title={title} />
 
       <View style={styles.options}>
         {items.map((item) => (
@@ -107,55 +97,6 @@ const styles = StyleSheet.create({
   sheetContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
-  },
-  header: {
-    minHeight: 112,
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.xs,
-    paddingTop: spacing.xs,
-  },
-  headerCopy: {
-    gap: spacing.xs,
-    paddingRight: 82,
-    zIndex: 1,
-  },
-  title: {
-    color: colors.harborBlueDarker,
-    ...typography.display,
-    fontSize: 21,
-    lineHeight: 27,
-  },
-  subtitle: {
-    color: colors.mistDark,
-    ...typography.timestamp,
-  },
-  decoration: {
-    alignItems: "center",
-    height: 72,
-    justifyContent: "center",
-    position: "absolute",
-    right: spacing.sm,
-    top: 0,
-    width: 72,
-  },
-  decorationWash: {
-    backgroundColor: colors.washApricot,
-    borderRadius: radii.pill,
-    height: 66,
-    opacity: 0.7,
-    position: "absolute",
-    right: -22,
-    top: 5,
-    width: 66,
-  },
-  decorationDot: {
-    backgroundColor: colors.warmApricotLight,
-    borderRadius: radii.pill,
-    bottom: 8,
-    height: 9,
-    left: 5,
-    position: "absolute",
-    width: 9,
   },
   options: {
     gap: spacing.md,

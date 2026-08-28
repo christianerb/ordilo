@@ -4,18 +4,29 @@ import {
   BottomSheetScrollView,
   type BottomSheetBackdropProps,
 } from "@gorhom/bottom-sheet";
-import { X } from "lucide-react-native";
-import { forwardRef, useEffect, useRef, useState, type ReactNode } from "react";
+import { Sprout, X } from "lucide-react-native";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
   useWindowDimensions,
   type StyleProp,
+  type TextInputProps,
+  type TextStyle,
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -30,7 +41,8 @@ import Animated, {
 import { durations, easeInOut, easeOut } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
-const DETACHED_SHEET_BOTTOM_RADIUS = 40;
+const FLOATING_SHEET_BOTTOM_RADIUS = 40;
+const FLOATING_SHEET_INSET = spacing.md;
 
 /**
  * The one sheet of the native app — the counterpart to the web's
@@ -73,6 +85,61 @@ export function useSheetPresentation(open: boolean) {
   return ref;
 }
 
+/** Shared visual header from the Dokumente "+" sheet. */
+export function OrdiloSheetHeader({
+  closeAccessibilityLabel,
+  closeDisabled = false,
+  onClose,
+  subtitle,
+  title,
+}: {
+  closeAccessibilityLabel?: string;
+  closeDisabled?: boolean;
+  onClose?: () => void;
+  subtitle?: string;
+  title: string;
+}) {
+  return (
+    <View style={styles.sheetHeader}>
+      <View
+        style={[
+          styles.sheetHeaderCopy,
+          onClose && styles.sheetHeaderCopyWithClose,
+        ]}
+      >
+        <Text style={styles.sheetHeaderTitle}>{title}</Text>
+        {subtitle ? (
+          <Text style={styles.sheetHeaderSubtitle}>{subtitle}</Text>
+        ) : null}
+      </View>
+      <View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={[
+          styles.sheetHeaderDecoration,
+          onClose && styles.sheetHeaderDecorationWithClose,
+        ]}
+      >
+        <View style={styles.sheetHeaderWash} />
+        <View style={styles.sheetHeaderDot} />
+        <Sprout color={colors.harborBlue} size={34} strokeWidth={1.35} />
+      </View>
+      {onClose ? (
+        <Pressable
+          accessibilityLabel={closeAccessibilityLabel ?? `${title} schließen`}
+          accessibilityRole="button"
+          disabled={closeDisabled}
+          hitSlop={8}
+          onPress={onClose}
+          style={styles.sheetHeaderClose}
+        >
+          <X color={colors.graphite} size={19} strokeWidth={2} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 function renderBackdrop(props: BottomSheetBackdropProps) {
   return (
     <BottomSheetBackdrop
@@ -106,7 +173,7 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
           styles.background,
           detached && styles.detachedBackground,
         ]}
-        bottomInset={detached ? spacing.md : 0}
+        bottomInset={detached ? FLOATING_SHEET_INSET : 0}
         detached={detached}
         enableDynamicSizing
         handleIndicatorStyle={styles.handleIndicator}
@@ -139,18 +206,22 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
  */
 export function AnimatedSheetModal({
   children,
+  closeAccessibilityLabel = "Schließen",
   dismissDisabled = false,
   keyboardAvoiding = false,
   onClose,
+  onDismiss,
   sheetStyle,
   visible,
 }: {
   children: ReactNode;
+  closeAccessibilityLabel?: string;
   /** Blocks backdrop-tap and back-button dismissal (e.g. while saving). */
   dismissDisabled?: boolean;
   /** Lifts the sheet above the software keyboard (iOS padding behavior). */
   keyboardAvoiding?: boolean;
   onClose: () => void;
+  onDismiss?: () => void;
   sheetStyle?: StyleProp<ViewStyle>;
   visible: boolean;
 }) {
@@ -159,6 +230,10 @@ export function AnimatedSheetModal({
   const [mounted, setMounted] = useState(visible);
   const overlayOpacity = useSharedValue(0);
   const sheetOffset = useSharedValue(windowHeight);
+  const finishDismiss = useCallback(() => {
+    setMounted(false);
+    onDismiss?.();
+  }, [onDismiss]);
 
   // Mount synchronously on open (React's guarded render adjustment) so the
   // entry animation has something to animate; exit unmounts via runOnJS.
@@ -192,10 +267,18 @@ export function AnimatedSheetModal({
       { duration: durations.fast, easing: easeInOut },
       (finished) => {
         "worklet";
-        if (finished) runOnJS(setMounted)(false);
+        if (finished) runOnJS(finishDismiss)();
       },
     );
-  }, [visible, mounted, reduceMotion, windowHeight, overlayOpacity, sheetOffset]);
+  }, [
+    visible,
+    mounted,
+    reduceMotion,
+    windowHeight,
+    overlayOpacity,
+    sheetOffset,
+    finishDismiss,
+  ]);
 
   const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.value }));
   const sheetAnimatedStyle = useAnimatedStyle(() => ({
@@ -211,14 +294,15 @@ export function AnimatedSheetModal({
       presentationStyle="overFullScreen"
       statusBarTranslucent
       transparent
-      visible
+      visible={mounted}
     >
       <View style={styles.modalRoot}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.modalOverlay, overlayStyle]}>
           <Pressable
-            accessibilityLabel="Schließen"
+            accessibilityLabel={closeAccessibilityLabel}
             accessibilityRole="button"
-            onPress={dismissDisabled ? undefined : onClose}
+            disabled={dismissDisabled}
+            onPress={onClose}
             style={StyleSheet.absoluteFill}
           />
         </Animated.View>
@@ -254,6 +338,63 @@ export function AnimatedSheetModal({
 }
 
 /**
+ * Floating sheet nested inside another sheet. It shares the exact exterior
+ * inset, corner geometry and handle instead of recreating a local panel.
+ */
+export function OrdiloNestedSheet({
+  children,
+  closeAccessibilityLabel = "Auswahl schließen",
+  contained = false,
+  dismissDisabled = false,
+  onClose,
+  visible,
+}: {
+  children: ReactNode;
+  closeAccessibilityLabel?: string;
+  /** Keep the overlay inside an already-floating parent sheet. */
+  contained?: boolean;
+  dismissDisabled?: boolean;
+  onClose: () => void;
+  visible: boolean;
+}) {
+  if (!visible) return null;
+
+  if (!contained) {
+    return (
+      <AnimatedSheetModal
+        closeAccessibilityLabel={closeAccessibilityLabel}
+        dismissDisabled={dismissDisabled}
+        onClose={onClose}
+        sheetStyle={styles.nestedPanel}
+        visible
+      >
+        {children}
+      </AnimatedSheetModal>
+    );
+  }
+
+  return (
+    <View
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+      style={styles.nestedOverlay}
+    >
+      <Pressable
+        accessibilityLabel={closeAccessibilityLabel}
+        accessibilityRole="button"
+        disabled={dismissDisabled}
+        onPress={onClose}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.nestedPanel}>
+        <View style={styles.floatingHandle} />
+        {children}
+      </View>
+    </View>
+  );
+}
+
+/**
  * Declarative form-sheet shell for flows that need to intercept a close
  * request before dismissing, such as unsaved task or member edits. Picker
  * sheets keep using OrdiloSheet above, which delegates dragging and
@@ -265,10 +406,9 @@ export function OrdiloFormSheet({
   dismissDisabled = false,
   keyboardAvoiding = false,
   onClose,
-  style,
+  onDismiss,
   subtitle,
   title,
-  titleAlign = "left",
   visible,
 }: {
   children: ReactNode;
@@ -276,10 +416,9 @@ export function OrdiloFormSheet({
   dismissDisabled?: boolean;
   keyboardAvoiding?: boolean;
   onClose: () => void;
-  style?: StyleProp<ViewStyle>;
+  onDismiss?: () => void;
   subtitle?: string;
   title: string;
-  titleAlign?: "left" | "center";
   visible: boolean;
 }) {
   const insets = useSafeAreaInsets();
@@ -289,44 +428,186 @@ export function OrdiloFormSheet({
       dismissDisabled={dismissDisabled}
       keyboardAvoiding={keyboardAvoiding}
       onClose={onClose}
+      onDismiss={onDismiss}
       sheetStyle={[
         styles.formSheetPadding,
         { paddingBottom: Math.max(spacing.lg, insets.bottom) },
-        style,
       ]}
       visible={visible}
     >
-      <View style={styles.formHandle} />
-      <View style={styles.formHeader}>
-        <View
-          style={[
-            styles.formHeading,
-            titleAlign === "center" && styles.formHeadingCentered,
-          ]}
-        >
-          <Text
-            style={[
-              styles.formTitle,
-              titleAlign === "center" && styles.formTitleCentered,
-            ]}
-          >
-            {title}
-          </Text>
-          {subtitle ? <Text style={styles.formSubtitle}>{subtitle}</Text> : null}
-        </View>
-        <Pressable
-          accessibilityLabel={closeAccessibilityLabel ?? `${title} schließen`}
-          accessibilityRole="button"
-          disabled={dismissDisabled}
-          hitSlop={8}
-          onPress={onClose}
-          style={styles.formClose}
-        >
-          <X color={colors.graphite} size={19} strokeWidth={2} />
-        </Pressable>
-      </View>
+      <View style={styles.floatingHandle} />
+      <OrdiloSheetHeader
+        closeAccessibilityLabel={closeAccessibilityLabel}
+        closeDisabled={dismissDisabled}
+        onClose={onClose}
+        subtitle={subtitle}
+        title={title}
+      />
       {children}
     </AnimatedSheetModal>
+  );
+}
+
+/** The single scrolling body rhythm for every create/edit form sheet. */
+export function OrdiloFormBody({
+  children,
+  contentContainerStyle,
+}: {
+  children: ReactNode;
+  contentContainerStyle?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <ScrollView
+      contentContainerStyle={[styles.formBodyContent, contentContainerStyle]}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      style={styles.formBody}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
+/** Shared label grouping so fields never invent their own vertical spacing. */
+export function OrdiloFormField({
+  children,
+  helper,
+  label,
+  style,
+}: {
+  children: ReactNode;
+  helper?: string;
+  label: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.formField, style]}>
+      <Text style={styles.formFieldLabel}>{label}</Text>
+      {children}
+      {helper ? <Text style={styles.formFieldHelper}>{helper}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * Standard form control with one border, one focus treatment and optional
+ * leading/trailing accessories. Multiline inputs use the same shell.
+ */
+export function OrdiloFormInput({
+  containerStyle,
+  leading,
+  multiline = false,
+  onBlur,
+  onFocus,
+  placeholderTextColor = colors.mistDark,
+  style,
+  trailing,
+  ...props
+}: TextInputProps & {
+  containerStyle?: StyleProp<ViewStyle>;
+  leading?: ReactNode;
+  trailing?: ReactNode;
+  style?: StyleProp<TextStyle>;
+}) {
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <View
+      style={[
+        styles.formControl,
+        multiline && styles.formControlMultiline,
+        focused && styles.formControlFocused,
+        containerStyle,
+      ]}
+    >
+      {leading}
+      <TextInput
+        {...props}
+        multiline={multiline}
+        onBlur={(event) => {
+          setFocused(false);
+          onBlur?.(event);
+        }}
+        onFocus={(event) => {
+          setFocused(true);
+          onFocus?.(event);
+        }}
+        placeholderTextColor={placeholderTextColor}
+        style={[
+          styles.formControlInput,
+          multiline && styles.formControlInputMultiline,
+          style,
+        ]}
+      />
+      {trailing}
+    </View>
+  );
+}
+
+/** Shared tappable control for picker-backed fields. */
+export function OrdiloFormSelect({
+  accessibilityHint,
+  accessibilityLabel,
+  disabled = false,
+  leading,
+  onPress,
+  trailing,
+  value,
+}: {
+  accessibilityHint?: string;
+  accessibilityLabel: string;
+  disabled?: boolean;
+  leading?: ReactNode;
+  onPress: () => void;
+  trailing?: ReactNode;
+  value: string;
+}) {
+  return (
+    <Pressable
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.formControl,
+        styles.formSelect,
+        pressed && styles.formControlPressed,
+        disabled && styles.formControlDisabled,
+      ]}
+    >
+      {leading}
+      <Text style={styles.formSelectValue}>{value}</Text>
+      {trailing}
+    </Pressable>
+  );
+}
+
+/** Pinned action area shared by all form sheets. */
+export function OrdiloFormFooter({
+  after,
+  error,
+  primary,
+  secondary,
+}: {
+  after?: ReactNode;
+  error?: string | null;
+  primary: ReactNode;
+  secondary?: ReactNode;
+}) {
+  return (
+    <View style={styles.formFooter}>
+      {error ? (
+        <View accessibilityRole="alert" style={styles.formError}>
+          <Text style={styles.formErrorText}>{error}</Text>
+        </View>
+      ) : null}
+      <View style={styles.formActions}>
+        {secondary ? <View style={styles.formAction}>{secondary}</View> : null}
+        <View style={styles.formAction}>{primary}</View>
+      </View>
+      {after}
+    </View>
   );
 }
 
@@ -337,11 +618,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radii.xl,
   },
   detachedBackground: {
-    borderBottomLeftRadius: DETACHED_SHEET_BOTTOM_RADIUS,
-    borderBottomRightRadius: DETACHED_SHEET_BOTTOM_RADIUS,
+    borderBottomLeftRadius: FLOATING_SHEET_BOTTOM_RADIUS,
+    borderBottomRightRadius: FLOATING_SHEET_BOTTOM_RADIUS,
   },
   detachedSheet: {
-    marginHorizontal: spacing.md,
+    marginHorizontal: FLOATING_SHEET_INSET,
   },
   content: {
     paddingHorizontal: spacing.md,
@@ -363,18 +644,23 @@ const styles = StyleSheet.create({
   modalSheetSlot: {
     flex: 1,
     justifyContent: "flex-end",
+    paddingBottom: FLOATING_SHEET_INSET,
+    paddingHorizontal: FLOATING_SHEET_INSET,
   },
   modalSheet: {
     backgroundColor: colors.warmWhite,
+    borderBottomLeftRadius: FLOATING_SHEET_BOTTOM_RADIUS,
+    borderBottomRightRadius: FLOATING_SHEET_BOTTOM_RADIUS,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
     maxHeight: "88%",
+    overflow: "hidden",
   },
   formSheetPadding: {
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
-  formHandle: {
+  floatingHandle: {
     alignSelf: "center",
     backgroundColor: colors.mistLight,
     borderRadius: radii.pill,
@@ -383,31 +669,156 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     width: 40,
   },
-  formHeader: {
-    alignItems: "flex-start",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    marginBottom: spacing.sm,
+  sheetHeader: {
+    minHeight: 112,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.xs,
   },
-  formHeading: { flex: 1, gap: 2 },
-  formHeadingCentered: {
+  sheetHeaderCopy: {
+    gap: spacing.xs,
+    paddingRight: 82,
+    zIndex: 1,
+  },
+  sheetHeaderCopyWithClose: { paddingRight: 128 },
+  sheetHeaderTitle: {
+    color: colors.harborBlueDarker,
+    ...typography.display,
+    fontSize: 21,
+    lineHeight: 27,
+  },
+  sheetHeaderSubtitle: { color: colors.mistDark, ...typography.timestamp },
+  sheetHeaderDecoration: {
     alignItems: "center",
-    marginLeft: 44,
+    height: 72,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.sm,
+    top: 0,
+    width: 72,
   },
-  formTitle: { color: colors.graphite, ...typography.display },
-  formTitleCentered: {
-    fontSize: 24,
-    lineHeight: 31,
-    textAlign: "center",
+  sheetHeaderDecorationWithClose: { right: 48 },
+  sheetHeaderWash: {
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.pill,
+    height: 66,
+    opacity: 0.7,
+    position: "absolute",
+    right: -22,
+    top: 5,
+    width: 66,
   },
-  formSubtitle: { color: colors.mistDark, ...typography.timestamp },
-  formClose: {
+  sheetHeaderDot: {
+    backgroundColor: colors.warmApricotLight,
+    borderRadius: radii.pill,
+    bottom: 8,
+    height: 9,
+    left: 5,
+    position: "absolute",
+    width: 9,
+  },
+  sheetHeaderClose: {
     alignItems: "center",
     backgroundColor: colors.sand,
     borderRadius: radii.pill,
     height: 36,
     justifyContent: "center",
+    position: "absolute",
+    right: 0,
+    top: 0,
     width: 36,
+    zIndex: 2,
   },
+  nestedOverlay: {
+    backgroundColor: "rgba(38, 36, 33, 0.28)",
+    bottom: 0,
+    elevation: 20,
+    justifyContent: "flex-end",
+    left: 0,
+    padding: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 20,
+  },
+  nestedPanel: {
+    backgroundColor: colors.warmWhite,
+    borderBottomLeftRadius: FLOATING_SHEET_BOTTOM_RADIUS,
+    borderBottomRightRadius: FLOATING_SHEET_BOTTOM_RADIUS,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    maxHeight: "88%",
+    overflow: "hidden",
+  },
+  formBody: { flexShrink: 1 },
+  formBodyContent: {
+    gap: spacing.md,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.md,
+  },
+  formField: { gap: spacing.xs },
+  formFieldLabel: { color: colors.mistDark, ...typography.label },
+  formFieldHelper: { color: colors.mistDark, ...typography.label },
+  formControl: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.base,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: 12,
+  },
+  formControlFocused: {
+    borderColor: colors.harborBlue,
+    outlineColor: "rgba(48, 84, 96, 0.5)",
+    outlineOffset: 1,
+    outlineStyle: "solid",
+    outlineWidth: 3,
+  },
+  formControlPressed: { backgroundColor: colors.sandWarm },
+  formControlDisabled: { opacity: 0.5 },
+  formControlMultiline: {
+    alignItems: "flex-start",
+    minHeight: 112,
+  },
+  formControlInput: {
+    color: colors.graphite,
+    flex: 1,
+    minHeight: 46,
+    paddingVertical: 0,
+    ...typography.body,
+  },
+  formControlInputMultiline: {
+    minHeight: 110,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  formSelect: { width: "100%" },
+  formSelectValue: {
+    color: colors.graphite,
+    flex: 1,
+    ...typography.body,
+  },
+  formFooter: {
+    backgroundColor: colors.warmWhite,
+    borderTopColor: colors.mistLight,
+    borderTopWidth: 1,
+    gap: spacing.sm,
+    paddingTop: spacing.md,
+  },
+  formActions: {
+    flexDirection: "row",
+    gap: spacing.sm,
+  },
+  formAction: { flex: 1 },
+  formError: {
+    backgroundColor: colors.destructiveBackground,
+    borderColor: colors.destructive,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    padding: spacing.sm,
+  },
+  formErrorText: { color: colors.destructive, ...typography.timestamp },
 });
