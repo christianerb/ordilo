@@ -5,6 +5,7 @@ import {
   formatChatDate,
   formatChatMessageTime,
   getActionContent,
+  getChatThinkingLabel,
   getSuggestedContactAction,
   getToolStepLabel,
   mergeConfirmationProposal,
@@ -34,6 +35,31 @@ describe("chat message time formatting", () => {
 
   it("falls back to Jetzt for malformed timestamps", () => {
     expect(formatChatMessageTime("not-a-date")).toBe("Jetzt");
+  });
+});
+
+describe("chat thinking status", () => {
+  it("describes the current tool and answer-writing phase", () => {
+    expect(getChatThinkingLabel([])).toBe("Ordilo denkt nach …");
+    expect(
+      getChatThinkingLabel([
+        { toolName: "search_documents", state: "start" },
+      ]),
+    ).toBe("Durchsucht deine Dokumente …");
+    expect(
+      getChatThinkingLabel([
+        { toolName: "search_documents", state: "done" },
+      ]),
+    ).toBe("Ordilo formuliert die Antwort …");
+  });
+
+  it("keeps a still-running parallel tool as the visible status", () => {
+    expect(
+      getChatThinkingLabel([
+        { toolName: "search_documents", state: "start" },
+        { toolName: "list_documents", state: "done" },
+      ]),
+    ).toBe("Durchsucht deine Dokumente …");
   });
 });
 

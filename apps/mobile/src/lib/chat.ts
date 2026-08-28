@@ -167,6 +167,20 @@ export function getToolStepLabel(toolName: string): string {
   return TOOL_STEP_LABELS[toolName] ?? "Arbeitet";
 }
 
+export function getChatThinkingLabel(
+  toolCalls: ToolCallProgress[],
+): string {
+  const active = [...toolCalls]
+    .reverse()
+    .find((call) => call.state === "start");
+  const latest = active ?? toolCalls[toolCalls.length - 1];
+
+  if (active) return `${getToolStepLabel(active.toolName)} …`;
+  if (latest?.state === "error") return "Da ist was schiefgegangen.";
+  if (latest?.state === "done") return "Ordilo formuliert die Antwort …";
+  return "Ordilo denkt nach …";
+}
+
 export const CHAT_FEEDBACK_REASONS = [
   { value: "falsche_antwort", label: "Falsche Antwort" },
   { value: "falsches_dokument", label: "Falsches Dokument" },

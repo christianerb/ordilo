@@ -54,7 +54,7 @@ export function ConfirmDialog({
       contained={contained}
       dismissDisabled={loading}
       onClose={onCancel}
-      visible
+      visible={visible}
     >
       <View style={styles.content}>
         <OrdiloSheetHeader title={title} />

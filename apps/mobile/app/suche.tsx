@@ -27,7 +27,7 @@ import {
   ActionCardView,
   AnswerCardView,
   ChatComposer,
-  ChatStatusLine,
+  ChatThinkingState,
   FeedbackRow,
   MessageBubble,
   SourcesSection,
@@ -659,57 +659,64 @@ export default function SucheScreen() {
                   <MessageBubble key={message.id} message={message} />
                 ) : (
                   <View key={message.id} style={styles.assistantBlock}>
-                    {message.status === "streaming" ? (
-                      <ChatStatusLine
-                        hasText={message.text.length > 0}
-                        toolCalls={message.toolCalls}
-                      />
-                    ) : null}
-                    <MessageBubble message={message}>
-                      {message.card && message.status === "done" ? (
-                        <AnswerCardView
-                          card={message.card}
-                          onOpenContact={openContact}
-                          onOpenDocument={openDocument}
-                        />
-                      ) : null}
-                      {message.sources.length > 0 && message.status === "done" ? (
-                        <SourcesSection
-                          onOpenDocument={openDocument}
-                          sources={message.sources}
-                        />
-                      ) : null}
-                      {message.actions.map((action) => (
-                        <ActionCardView
-                          action={action}
-                          key={action.id}
-                          onAdjust={() => adjustAction(action)}
-                          onConfirm={() => void confirmAction(message.id, action)}
-                          onDismiss={() =>
-                            updateAction(message.id, action.id, (current) => ({
-                              ...current,
-                              state: "dismissed",
-                            }))
-                          }
-                          onUndo={() => void undoAction(message.id, action)}
-                        />
-                      ))}
-                      {message.status === "done" && message.dbId ? (
-                        <FeedbackRow
-                          message={message}
-                          onSend={(feedback, reasons, comment) =>
-                            sendFeedback(message, feedback, reasons, comment)
-                          }
-                        />
-                      ) : null}
-                      {message.status === "error" ? (
-                        <OrdiloButton
-                          onPress={() => retry(message.id)}
-                          title="Nochmal fragen"
-                          variant="outline"
-                        />
-                      ) : null}
-                    </MessageBubble>
+                    {message.status === "streaming" &&
+                    !message.text &&
+                    message.actions.length === 0 ? (
+                      <ChatThinkingState toolCalls={message.toolCalls} />
+                    ) : (
+                      <MessageBubble message={message}>
+                        {message.card && message.status === "done" ? (
+                          <AnswerCardView
+                            card={message.card}
+                            onOpenContact={openContact}
+                            onOpenDocument={openDocument}
+                          />
+                        ) : null}
+                        {message.sources.length > 0 &&
+                        message.status === "done" ? (
+                          <SourcesSection
+                            onOpenDocument={openDocument}
+                            sources={message.sources}
+                          />
+                        ) : null}
+                        {message.actions.map((action) => (
+                          <ActionCardView
+                            action={action}
+                            key={action.id}
+                            onAdjust={() => adjustAction(action)}
+                            onConfirm={() =>
+                              void confirmAction(message.id, action)
+                            }
+                            onDismiss={() =>
+                              updateAction(
+                                message.id,
+                                action.id,
+                                (current) => ({
+                                  ...current,
+                                  state: "dismissed",
+                                }),
+                              )
+                            }
+                            onUndo={() => void undoAction(message.id, action)}
+                          />
+                        ))}
+                        {message.status === "done" && message.dbId ? (
+                          <FeedbackRow
+                            message={message}
+                            onSend={(feedback, reasons, comment) =>
+                              sendFeedback(message, feedback, reasons, comment)
+                            }
+                          />
+                        ) : null}
+                        {message.status === "error" ? (
+                          <OrdiloButton
+                            onPress={() => retry(message.id)}
+                            title="Nochmal fragen"
+                            variant="outline"
+                          />
+                        ) : null}
+                      </MessageBubble>
+                    )}
                   </View>
                 ),
               )}

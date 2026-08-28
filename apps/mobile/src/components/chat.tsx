@@ -34,14 +34,14 @@ import Animated, {
 } from "react-native-reanimated";
 
 import { OrdiloMark } from "./ordilo-mark";
-import { OrdiloButton } from "./ui";
+import { OrdiloButton, Skeleton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
 import {
   CHAT_FEEDBACK_REASONS,
   formatChatMessageTime,
   getActionContent,
+  getChatThinkingLabel,
   getSuggestedContactAction,
-  getToolStepLabel,
   type AnswerCard,
   type ChatAction,
   type ChatFeedbackReason,
@@ -57,29 +57,57 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  * German and mirrors the web (src/app/(app)/suche).
  */
 
-/** One live status line while Ordilo works (ported from the web). */
-export function ChatStatusLine({
+const THINKING_LINE_WIDTHS = ["92%", "52%", "78%", "47%", "30%"] as const;
+
+/** Calm placeholder shown until Ordilo starts streaming the real answer. */
+export function ChatThinkingState({
   toolCalls,
-  hasText,
 }: {
   toolCalls: ToolCallProgress[];
-  hasText: boolean;
 }) {
-  const active = [...toolCalls].reverse().find((call) => call.state === "start");
-  const latest = active ?? toolCalls[toolCalls.length - 1];
-
-  let label = "Ordilo denkt nach …";
-  if (hasText) label = "Schreibt die Antwort …";
-  else if (active) label = `${getToolStepLabel(active.toolName)} …`;
-  else if (latest?.state === "error") label = "Da ist was schiefgegangen.";
+  const label = getChatThinkingLabel(toolCalls);
 
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={styles.statusLine}
+      style={styles.thinking}
     >
-      <ActivityIndicator color={colors.harborBlue} size="small" />
-      <Text style={styles.statusText}>{label}</Text>
+      <View style={styles.thinkingStatusRow}>
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.thinkingAvatar}
+        >
+          <OrdiloMark size={30} />
+        </View>
+        <View style={styles.thinkingStatusPill}>
+          <ActivityIndicator color={colors.harborBlue} size="small" />
+          <Text style={styles.thinkingStatusText}>{label}</Text>
+        </View>
+      </View>
+
+      <View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={styles.thinkingCard}
+      >
+        <View style={styles.thinkingDotsChip}>
+          <View style={styles.thinkingDot} />
+          <View style={styles.thinkingDot} />
+          <View style={styles.thinkingDot} />
+        </View>
+        <View style={styles.thinkingLines}>
+          {THINKING_LINE_WIDTHS.map((width) => (
+            <Skeleton
+              height={10}
+              key={width}
+              radius={radii.pill}
+              style={styles.thinkingLine}
+              width={width}
+            />
+          ))}
+        </View>
+      </View>
     </View>
   );
 }
@@ -810,14 +838,71 @@ function formatVoiceDuration(durationMillis: number): string {
 }
 
 const styles = StyleSheet.create({
-  statusLine: {
+  thinking: {
+    gap: 12,
+    paddingHorizontal: spacing.xs,
+  },
+  thinkingStatusRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 28,
-    paddingHorizontal: spacing.xs,
   },
-  statusText: { color: colors.mistDark, ...typography.timestamp },
+  thinkingAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  thinkingStatusPill: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 40,
+    paddingHorizontal: 12,
+  },
+  thinkingStatusText: {
+    color: colors.mistDark,
+    flexShrink: 1,
+    ...typography.timestamp,
+  },
+  thinkingCard: {
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    gap: spacing.md,
+    marginLeft: 48,
+    padding: spacing.md,
+    width: "82%",
+  },
+  thinkingDotsChip: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.base,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 32,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  thinkingDot: {
+    backgroundColor: colors.warmApricotLight,
+    borderRadius: radii.pill,
+    height: 5,
+    width: 5,
+  },
+  thinkingLines: { gap: 12 },
+  thinkingLine: {
+    backgroundColor: colors.washSageSoft,
+  },
   bubbleRow: {
     alignItems: "flex-start",
     flexDirection: "row",

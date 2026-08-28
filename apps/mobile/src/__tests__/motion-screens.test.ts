@@ -173,6 +173,7 @@ describe("native motion wiring", () => {
     expect(picker).toContain("<OrdiloNestedSheet");
     expect(confirm).toContain("<OrdiloSheetHeader");
     expect(confirm).toContain("<OrdiloNestedSheet");
+    expect(confirm).toContain("visible={visible}");
     expect(confirm).not.toContain("<Modal");
     expect(task).toContain('<OrdiloSheetHeader title="Datum wählen"');
     expect(task).not.toContain("dateOverlay");
