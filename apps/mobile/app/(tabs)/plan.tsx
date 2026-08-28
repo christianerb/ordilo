@@ -1,7 +1,6 @@
 import { useFocusEffect } from "expo-router";
 import {
   AlertCircle,
-  CalendarPlus,
   CalendarDays,
   Check,
   ChevronDown,
@@ -9,7 +8,6 @@ import {
   ChevronRight,
   ChevronUp,
   Plus,
-  ListPlus,
   Undo2,
 } from "lucide-react-native";
 import {
@@ -35,6 +33,7 @@ import ReanimatedSwipeable, {
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, { useReducedMotion } from "react-native-reanimated";
 
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { EventFormSheet } from "@/src/components/event-form-sheet";
 import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
@@ -656,9 +655,26 @@ export default function PlanScreen() {
         visible={eventFormOpen}
       />
 
-      <CreatePlanItemSheet
-        onCreateEvent={() => chooseCreateType("event")}
-        onCreateTask={() => chooseCreateType("task")}
+      <CreateChoiceSheet
+        accessibilityLabel="Im Plan anlegen"
+        items={[
+          {
+            accessibilityLabel: "Neue Aufgabe",
+            description: "Etwas, das jemand erledigen soll",
+            icon: Check,
+            label: "Aufgabe",
+            onPress: () => chooseCreateType("task"),
+            tint: "sage",
+          },
+          {
+            accessibilityLabel: "Neuer Termin",
+            description: "Ein Zeitpunkt im Familienkalender",
+            icon: CalendarDays,
+            label: "Termin",
+            onPress: () => chooseCreateType("event"),
+            tint: "apricot",
+          },
+        ]}
         onDismiss={finishCreateChoice}
         ref={createSheetRef}
       />
@@ -729,70 +745,6 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
     />
   );
 }
-
-const CreatePlanItemSheet = forwardRef<
-  OrdiloSheetHandle,
-  {
-    onCreateEvent: () => void;
-    onCreateTask: () => void;
-    onDismiss: () => void;
-  }
->(function CreatePlanItemSheet(
-  { onCreateEvent, onCreateTask, onDismiss },
-  ref,
-) {
-  return (
-    <OrdiloSheet
-      accessibilityLabel="Im Plan anlegen"
-      onDismiss={onDismiss}
-      ref={ref}
-    >
-      <Text style={styles.createSheetTitle}>Was möchtest du anlegen?</Text>
-      <Pressable
-        accessibilityLabel="Neue Aufgabe"
-        accessibilityRole="button"
-        onPress={onCreateTask}
-        style={({ pressed }) => [
-          styles.createOption,
-          pressed && styles.createOptionPressed,
-        ]}
-      >
-        <View style={styles.createOptionIcon}>
-          <ListPlus color={colors.harborBlue} size={21} strokeWidth={1.9} />
-        </View>
-        <View style={styles.createOptionCopy}>
-          <Text style={styles.createOptionTitle}>Aufgabe</Text>
-          <Text style={styles.createOptionText}>
-            Etwas, das jemand erledigen soll
-          </Text>
-        </View>
-      </Pressable>
-      <Pressable
-        accessibilityLabel="Neuer Termin"
-        accessibilityRole="button"
-        onPress={onCreateEvent}
-        style={({ pressed }) => [
-          styles.createOption,
-          pressed && styles.createOptionPressed,
-        ]}
-      >
-        <View style={styles.createOptionIcon}>
-          <CalendarPlus
-            color={colors.harborBlue}
-            size={21}
-            strokeWidth={1.9}
-          />
-        </View>
-        <View style={styles.createOptionCopy}>
-          <Text style={styles.createOptionTitle}>Termin</Text>
-          <Text style={styles.createOptionText}>
-            Ein Zeitpunkt im Familienkalender
-          </Text>
-        </View>
-      </Pressable>
-    </OrdiloSheet>
-  );
-});
 
 /** One tab of the Aufgaben/Termine switcher — icon plus label, the active one filled in harbor blue. */
 /**
@@ -1286,34 +1238,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loadingList: { paddingTop: spacing.md },
-  createSheetTitle: {
-    color: colors.graphite,
-    marginBottom: spacing.sm,
-    ...typography.display,
-  },
-  createOption: {
-    alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-    minHeight: 68,
-    padding: spacing.sm,
-  },
-  createOptionPressed: { backgroundColor: colors.sandWarm },
-  createOptionIcon: {
-    alignItems: "center",
-    backgroundColor: colors.washSage,
-    borderRadius: radii.sm,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  createOptionCopy: { flex: 1, gap: 2 },
-  createOptionTitle: { color: colors.graphite, ...typography.title },
-  createOptionText: { color: colors.mistDark, ...typography.timestamp },
   // Only the spacing around the shared SegmentedControl is local.
   viewTabs: {
     marginBottom: spacing.md,

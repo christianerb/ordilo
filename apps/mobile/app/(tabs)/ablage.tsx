@@ -18,7 +18,6 @@ import {
 import {
   useCallback,
   useEffect,
-  forwardRef,
   useMemo,
   useRef,
   useState,
@@ -35,6 +34,7 @@ import {
 } from "react-native";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import {
   ContactAvatar,
   ContactFormSheet,
@@ -651,10 +651,34 @@ export default function AblageScreen() {
         selected={sort}
         visible={sortPickerOpen}
       />
-      <CreateLibraryItemSheet
-        onCreateContact={() => chooseCreateKind("contact")}
-        onCreateDocument={() => chooseCreateKind("document")}
-        onCreateNote={() => chooseCreateKind("note")}
+      <CreateChoiceSheet
+        accessibilityLabel="In der Ablage anlegen"
+        items={[
+          {
+            accessibilityLabel: "Neues Dokument",
+            description: "Scannen, fotografieren oder eine Datei wählen",
+            icon: FilePlus2,
+            label: "Dokument",
+            onPress: () => chooseCreateKind("document"),
+            tint: "sage",
+          },
+          {
+            accessibilityLabel: "Neue Notiz",
+            description: "Familienwissen direkt festhalten",
+            icon: NotebookPen,
+            label: "Notiz",
+            onPress: () => chooseCreateKind("note"),
+            tint: "apricot",
+          },
+          {
+            accessibilityLabel: "Neuer Kontakt",
+            description: "Adressen und wichtige Personen",
+            icon: UserPlus,
+            label: "Kontakt",
+            onPress: () => chooseCreateKind("contact"),
+            tint: "sand",
+          },
+        ]}
         onDismiss={finishCreateChoice}
         ref={createSheetRef}
       />
@@ -1016,75 +1040,6 @@ function FilterChip({
   );
 }
 
-const CreateLibraryItemSheet = forwardRef<OrdiloSheetHandle, {
-  onCreateContact: () => void;
-  onCreateDocument: () => void;
-  onCreateNote: () => void;
-  onDismiss: () => void;
-}>(function CreateLibraryItemSheet({
-  onCreateContact,
-  onCreateDocument,
-  onCreateNote,
-  onDismiss,
-}, ref) {
-  return (
-    <OrdiloSheet
-      accessibilityLabel="In der Ablage anlegen"
-      onDismiss={onDismiss}
-      ref={ref}
-    >
-      <Text style={styles.sheetTitle}>Was möchtest du anlegen?</Text>
-      <LibraryCreateOption
-        description="Scannen, fotografieren oder eine Datei wählen"
-        icon={FilePlus2}
-        label="Dokument"
-        onPress={onCreateDocument}
-      />
-      <LibraryCreateOption
-        description="Familienwissen direkt festhalten"
-        icon={NotebookPen}
-        label="Notiz"
-        onPress={onCreateNote}
-      />
-      <LibraryCreateOption
-        description="Adressen und wichtige Personen."
-        icon={UserPlus}
-        label="Kontakt"
-        onPress={onCreateContact}
-      />
-    </OrdiloSheet>
-  );
-});
-
-function LibraryCreateOption({
-  description,
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  description: string;
-  icon: typeof FilePlus2;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.toolOption, pressed && styles.pressed]}
-    >
-      <View style={styles.toolIcon}>
-        <Icon color={colors.harborBlue} size={19} strokeWidth={1.8} />
-      </View>
-      <View style={styles.toolCopy}>
-        <Text style={styles.toolLabel}>{label}</Text>
-        <Text style={styles.toolDescription}>{description}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
 function DocumentRow({
   document,
   onPress,
@@ -1276,27 +1231,6 @@ const styles = StyleSheet.create({
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
   noteDate: { color: colors.mistDark, ...typography.label },
   notesLoading: { marginTop: spacing["2xl"] },
-  toolOption: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 60,
-    paddingHorizontal: spacing.sm,
-  },
-  toolIcon: {
-    alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: radii.sm,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  toolCopy: { flex: 1, gap: 1 },
-  toolLabel: { color: colors.graphite, ...typography.title },
-  toolDescription: { color: colors.mistDark, ...typography.timestamp },
   contactSection: { gap: spacing.xs },
   contactSectionTitle: {
     color: colors.mistDark,

@@ -74,4 +74,17 @@ describe("native motion wiring", () => {
       "OrdiloSheet",
     );
   });
+
+  it("uses one shared create-choice sheet in Ablage and Plan", () => {
+    const choiceSheet = source("src/components/create-choice-sheet.tsx");
+    expect(choiceSheet).toContain("Was möchtest du anlegen?");
+    expect(choiceSheet).toContain("Wähle aus, was du jetzt festhalten möchtest.");
+    expect(choiceSheet).toContain("minHeight: 86");
+
+    for (const path of ["app/(tabs)/ablage.tsx", "app/(tabs)/plan.tsx"]) {
+      expect(source(path)).toContain("<CreateChoiceSheet");
+      expect(source(path)).not.toContain("CreatePlanItemSheet");
+      expect(source(path)).not.toContain("CreateLibraryItemSheet");
+    }
+  });
 });
