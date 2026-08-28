@@ -308,7 +308,9 @@ export default function AblageScreen() {
             accessibilityLabel: "Mehr in der Ablage",
             icon: Ellipsis,
             onPress: () => setToolsOpen(true),
+            tone: "quiet",
           }}
+          motif={BookOpen}
           subtitle={
             loading && documents.length === 0
               ? view === "notes"

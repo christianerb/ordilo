@@ -200,12 +200,13 @@ export function Screen({
 }
 
 /**
- * The one screen header for every tab: a sand story surface with ambient
- * washes, the Ordilo mark on the right, and title plus calm subtitle at
- * the bottom left. An optional primary action sits beside the mark.
+ * The one compact screen header for every tab: a bordered journal card
+ * with quiet landscape washes, one small motif, the Ordilo mark, and an
+ * optional action. Its outer measurements never vary between screens.
  */
 export function ScreenHeader({
   action,
+  motif,
   title,
   subtitle,
   trailing,
@@ -214,19 +215,41 @@ export function ScreenHeader({
     accessibilityLabel: string;
     icon: LucideIcon;
     onPress: () => void;
+    tone?: "primary" | "quiet";
   };
+  motif?: LucideIcon;
   title: string;
   subtitle?: string;
   trailing?: ReactNode;
 }) {
   const ActionIcon = action?.icon;
+  const MotifIcon = motif;
+  const hasAction = Boolean(action || trailing);
   return (
     <View style={styles.header}>
       <View accessible={false} style={styles.headerWashOne} />
       <View accessible={false} style={styles.headerWashTwo} />
       <View accessible={false} style={styles.headerDotOne} />
       <View accessible={false} style={styles.headerDotTwo} />
-      <View style={styles.headerCopy}>
+      {MotifIcon ? (
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.headerMotif}
+        >
+          <MotifIcon
+            color={colors.warmApricot}
+            size={19}
+            strokeWidth={1.7}
+          />
+        </View>
+      ) : null}
+      <View
+        style={[
+          styles.headerCopy,
+          hasAction ? styles.headerCopyWithAction : styles.headerCopyWithoutAction,
+        ]}
+      >
         <Text numberOfLines={1} style={[typography.display, styles.headerTitle]}>
           {title}
         </Text>
@@ -244,9 +267,22 @@ export function ScreenHeader({
           <SpringPressable
             accessibilityLabel={action.accessibilityLabel}
             onPress={action.onPress}
-            style={styles.headerAction}
+            style={[
+              styles.headerAction,
+              action.tone === "quiet"
+                ? styles.headerActionQuiet
+                : styles.headerActionPrimary,
+            ]}
           >
-            <ActionIcon color={colors.warmWhite} size={20} strokeWidth={2.2} />
+            <ActionIcon
+              color={
+                action.tone === "quiet"
+                  ? colors.harborBlue
+                  : colors.warmWhite
+              }
+              size={20}
+              strokeWidth={2.1}
+            />
           </SpringPressable>
         ) : null)}
       </View>
@@ -255,7 +291,7 @@ export function ScreenHeader({
         importantForAccessibility="no-hide-descendants"
         style={styles.headerMark}
       >
-        <OrdiloMark size={48} />
+        <OrdiloMark size={42} />
       </View>
     </View>
   );
@@ -442,81 +478,117 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     paddingHorizontal: spacing.md,
   },
-  // The header bleeds to the screen edges; Screen supplies the padding
-  // it cancels here.
   header: {
     backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
     borderRadius: radii.md,
-    height: 132,
+    borderWidth: 1,
+    height: 112,
     justifyContent: "flex-end",
-    marginHorizontal: -spacing.md,
+    marginTop: spacing.sm,
     overflow: "hidden",
-    padding: spacing.md,
+    padding: 14,
+    ...cardRestShadow,
   },
   headerWashOne: {
-    backgroundColor: "#DDEBE5",
-    borderRadius: radii.xl,
-    height: 130,
-    left: -62,
-    opacity: 0.65,
+    backgroundColor: colors.washSage,
+    borderRadius: radii.pill,
+    bottom: -65,
+    height: 94,
+    left: -34,
+    opacity: 0.88,
     position: "absolute",
-    top: -42,
-    transform: [{ rotate: "-12deg" }],
-    width: 220,
+    transform: [{ rotate: "7deg" }],
+    width: 235,
   },
   headerWashTwo: {
-    backgroundColor: "#F0B4A0",
+    backgroundColor: colors.washApricot,
     borderRadius: radii.pill,
-    height: 46,
-    opacity: 0.38,
+    bottom: -69,
+    height: 96,
+    opacity: 0.96,
     position: "absolute",
-    right: 126,
-    top: 18,
-    width: 46,
+    right: -26,
+    transform: [{ rotate: "-8deg" }],
+    width: 218,
   },
-  headerDotOne: { backgroundColor: colors.harborBlue, borderRadius: radii.pill, height: 8, opacity: 0.18, position: "absolute", right: 102, top: 70, width: 8 },
-  headerDotTwo: { backgroundColor: colors.warmApricot, borderRadius: radii.pill, height: 8, opacity: 0.36, position: "absolute", right: 62, top: 77, width: 8 },
-  headerCopy: {
-    gap: spacing.xs,
-    paddingRight: 96,
+  headerDotOne: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 6,
+    opacity: 0.16,
+    position: "absolute",
+    right: 130,
+    top: 17,
+    width: 6,
+  },
+  headerDotTwo: {
+    backgroundColor: colors.warmApricot,
+    borderRadius: radii.pill,
+    height: 7,
+    opacity: 0.32,
+    position: "absolute",
+    right: 117,
+    top: 10,
+    width: 7,
+  },
+  headerMotif: {
+    left: 14,
+    opacity: 0.72,
+    position: "absolute",
+    top: 12,
     zIndex: 1,
   },
+  headerCopy: {
+    gap: 2,
+    zIndex: 1,
+  },
+  headerCopyWithAction: { paddingRight: 116 },
+  headerCopyWithoutAction: { paddingRight: 62 },
   headerTitle: {
     color: colors.graphite,
   },
   headerSubtitle: {
     color: colors.mistDark,
   },
-  // The action sits left of the mark, vertically centered with it.
   headerActionSlot: {
     position: "absolute",
-    right: spacing.md + 70,
-    top: 48,
+    right: 76,
+    top: 20,
     zIndex: 1,
   },
   headerAction: {
     alignItems: "center",
-    backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
     height: 44,
     justifyContent: "center",
     width: 44,
   },
+  headerActionPrimary: {
+    backgroundColor: colors.harborBlue,
+  },
+  headerActionQuiet: {
+    backgroundColor: colors.washSage,
+    borderColor: colors.mistLight,
+    borderWidth: 1,
+  },
   headerMark: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
+    borderColor: colors.mistLight,
+    borderRadius: 18,
+    borderWidth: 1,
     elevation: 2,
-    height: 60,
+    height: 52,
     justifyContent: "center",
     position: "absolute",
-    right: spacing.md,
+    right: 14,
     shadowColor: colors.graphite,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 8,
-    top: 40,
-    width: 60,
+    top: 14,
+    width: 52,
   },
   segmented: {
     backgroundColor: colors.sand,

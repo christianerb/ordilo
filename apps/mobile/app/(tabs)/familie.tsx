@@ -162,7 +162,16 @@ export default function FamilieScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <ScreenHeader subtitle="Mitglieder und Einladungen" title="Familie" />
+        <ScreenHeader
+          action={family?.isOwner ? {
+            accessibilityLabel: "Person einladen",
+            icon: UserPlus,
+            onPress: () => void handleInvite(),
+          } : undefined}
+          motif={Heart}
+          subtitle="Mitglieder und Einladungen"
+          title="Familie"
+        />
 
         <View style={styles.summary}>
           <View style={styles.summaryIcon}>

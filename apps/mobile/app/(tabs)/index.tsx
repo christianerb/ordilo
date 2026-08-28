@@ -303,7 +303,9 @@ export default function HeuteScreen() {
         accessibilityLabel: "Einstellungen öffnen",
         icon: Settings,
         onPress: () => router.push("/einstellungen"),
+        tone: "quiet",
       }}
+      motif={Sparkles}
       subtitle={dateLine}
       title={getHomeGreeting()}
     />
@@ -888,7 +890,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing["2xl"],
-    paddingTop: spacing.md,
   },
   pressed: { opacity: 0.78 },
   disabled: { opacity: 0.6 },
