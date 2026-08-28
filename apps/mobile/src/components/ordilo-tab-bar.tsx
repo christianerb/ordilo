@@ -26,6 +26,9 @@ const tabConfig = {
   familie: { icon: Users, label: "Familie" },
 } as const;
 
+/** Scroll clearance for the absolute dock plus one calm spacing step. */
+export const MOBILE_DOCK_CONTENT_INSET = 136;
+
 /**
  * A floating, thumb-reachable family dock. Ordilo is the central action
  * anchor, not another destination: tapping the large mark opens the two
@@ -53,7 +56,18 @@ export function OrdiloTabBar({
 
   return (
     <>
-      <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.dock,
+          {
+            paddingBottom: Math.max(
+              insets.bottom - spacing.lg,
+              spacing.sm,
+            ),
+          },
+        ]}
+      >
         <View style={styles.dockBar}>
           <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
             <Svg
@@ -63,7 +77,7 @@ export function OrdiloTabBar({
               width="100%"
             >
               <Path
-                d="M44 24 H119 C143 24 145 0 180 0 C215 0 217 24 241 24 H316 C336 24 352 40 352 60 C352 80 336 96 316 96 H44 C24 96 8 80 8 60 C8 40 24 24 44 24 Z"
+                d="M48 18 H119 C143 18 145 0 180 0 C215 0 217 18 241 18 H312 C334 18 352 36 352 58 C352 80 334 98 312 98 H48 C26 98 8 80 8 58 C8 36 26 18 48 18 Z"
                 fill="rgba(253,252,250,0.98)"
                 stroke="rgba(255,255,255,0.98)"
                 strokeWidth={2}
@@ -170,8 +184,12 @@ export function OrdiloTabBar({
 const styles = StyleSheet.create({
   dock: {
     backgroundColor: "transparent",
+    bottom: 0,
+    left: 0,
     paddingHorizontal: 0,
     paddingTop: 2,
+    position: "absolute",
+    right: 0,
   },
   dockBar: {
     alignItems: "center",

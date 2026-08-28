@@ -22,6 +22,7 @@ import {
   View,
 } from "react-native";
 
+import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import { OrdiloFormSheet } from "@/src/components/sheet";
 import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
@@ -436,7 +437,7 @@ function MemberEditSheet({
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  content: { gap: spacing.md, paddingBottom: spacing["2xl"], paddingHorizontal: spacing.md },
+  content: { gap: spacing.md, paddingBottom: MOBILE_DOCK_CONTENT_INSET, paddingHorizontal: spacing.md },
   summary: {
     alignItems: "center",
     backgroundColor: colors.sand,

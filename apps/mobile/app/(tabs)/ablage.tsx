@@ -40,6 +40,7 @@ import {
   ContactFormSheet,
 } from "@/src/components/contacts";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
+import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
 import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import {
@@ -1196,7 +1197,7 @@ function SortPicker({
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
-  content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
+  content: { gap: spacing.md, paddingBottom: MOBILE_DOCK_CONTENT_INSET },
   noteDate: { color: colors.mistDark, ...typography.label },
   notesLoading: { marginTop: spacing["2xl"] },
   contactSection: { gap: spacing.xs },

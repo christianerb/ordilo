@@ -78,7 +78,7 @@ describe("native motion wiring", () => {
       "CreateChoiceSheet",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "C336 24 352 40 352 60 C352 80 336 96 316 96",
+      "C334 18 352 36 352 58 C352 80 334 98 312 98",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "centerGlow",
@@ -92,6 +92,23 @@ describe("native motion wiring", () => {
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       'route.name === "familie" && styles.familyTab',
     );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      "insets.bottom - spacing.lg",
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'position: "absolute"',
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      "MOBILE_DOCK_CONTENT_INSET = 136",
+    );
+    for (const path of [
+      "app/(tabs)/index.tsx",
+      "app/(tabs)/ablage.tsx",
+      "app/(tabs)/plan.tsx",
+      "app/(tabs)/familie.tsx",
+    ]) {
+      expect(source(path)).toContain("MOBILE_DOCK_CONTENT_INSET");
+    }
   });
 
   it("uses one shared create-choice sheet in Ablage and Plan", () => {

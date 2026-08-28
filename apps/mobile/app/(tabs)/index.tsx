@@ -30,6 +30,7 @@ import {
   View,
 } from "react-native";
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import {
   Card,
   EmptyState,
@@ -888,7 +889,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     gap: spacing.lg,
-    paddingBottom: spacing["2xl"],
+    paddingBottom: MOBILE_DOCK_CONTENT_INSET,
   },
   pressed: { opacity: 0.78 },
   disabled: { opacity: 0.6 },

@@ -34,6 +34,7 @@ import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { EventFormSheet } from "@/src/components/event-form-sheet";
+import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
 import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
@@ -1160,7 +1161,7 @@ const styles = StyleSheet.create({
   },
   calendarContent: {
     gap: spacing.md,
-    paddingBottom: spacing["2xl"],
+    paddingBottom: MOBILE_DOCK_CONTENT_INSET,
   },
   calendarSurface: {
     backgroundColor: colors.sand,
@@ -1316,7 +1317,7 @@ const styles = StyleSheet.create({
     ...typography.title,
   },
   listBottomSpacer: {
-    height: spacing["2xl"],
+    height: MOBILE_DOCK_CONTENT_INSET,
   },
   taskRow: {
     alignItems: "center",
