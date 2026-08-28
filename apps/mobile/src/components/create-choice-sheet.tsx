@@ -98,7 +98,7 @@ function CreateChoiceRow({ item }: { item: CreateChoiceItem }) {
 
 const styles = StyleSheet.create({
   sheetContent: {
-    paddingHorizontal: 20,
+    paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
   },
   header: {
@@ -152,7 +152,9 @@ const styles = StyleSheet.create({
   },
   options: {
     gap: spacing.md,
-    paddingBottom: spacing.sm,
+    // Keep this inside the measured child. BottomSheet's dynamic height
+    // does not reliably include ScrollView content-container padding.
+    paddingBottom: spacing.xl,
   },
   option: {
     alignItems: "center",
