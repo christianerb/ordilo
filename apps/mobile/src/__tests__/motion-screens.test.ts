@@ -78,16 +78,13 @@ describe("native motion wiring", () => {
       "CreateChoiceSheet",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "C328 24 344 40 344 60 C344 80 328 96 308 96",
+      "C336 24 352 40 352 60 C352 80 336 96 316 96",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "centerGlow",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       "paddingHorizontal: 0",
-    );
-    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "paddingHorizontal: spacing.sm",
     );
   });
 
