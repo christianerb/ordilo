@@ -25,10 +25,12 @@ import {
   View,
 } from "react-native";
 import Animated, {
-  ReduceMotion,
+  cancelAnimation,
+  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withRepeat,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
@@ -49,6 +51,12 @@ import {
   type ChatSource,
   type ToolCallProgress,
 } from "@/src/lib/chat";
+import {
+  contentEntering,
+  feedbackEntering,
+  feedbackExiting,
+  REDUCE_MOTION,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -58,6 +66,67 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  */
 
 const THINKING_LINE_WIDTHS = ["92%", "52%", "78%", "47%", "30%"] as const;
+const THINKING_DOTS = [0, 1, 2] as const;
+
+function ThinkingDot({
+  index,
+  progress,
+  reduceMotion,
+}: {
+  index: number;
+  progress: SharedValue<number>;
+  reduceMotion: boolean;
+}) {
+  const animatedStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.7 };
+    const phase = progress.get() * Math.PI * 2 - index * ((Math.PI * 2) / 3);
+    const emphasis = (Math.sin(phase - Math.PI / 2) + 1) / 2;
+    return {
+      opacity: 0.45 + emphasis * 0.55,
+      transform: [
+        { translateY: -2 * emphasis },
+        { scale: 0.9 + emphasis * 0.1 },
+      ],
+    };
+  }, [index, reduceMotion]);
+
+  return <Animated.View style={[styles.thinkingDot, animatedStyle]} />;
+}
+
+function ThinkingDots({ reduceMotion }: { reduceMotion: boolean }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      progress.set(0);
+      return;
+    }
+    progress.set(
+      withRepeat(
+        withTiming(1, {
+          duration: 1_200,
+          easing: Easing.linear,
+        }),
+        -1,
+        false,
+      ),
+    );
+    return () => cancelAnimation(progress);
+  }, [progress, reduceMotion]);
+
+  return (
+    <View style={styles.thinkingDotsChip}>
+      {THINKING_DOTS.map((index) => (
+        <ThinkingDot
+          index={index}
+          key={index}
+          progress={progress}
+          reduceMotion={reduceMotion}
+        />
+      ))}
+    </View>
+  );
+}
 
 /** Calm placeholder shown until Ordilo starts streaming the real answer. */
 export function ChatThinkingState({
@@ -66,13 +135,18 @@ export function ChatThinkingState({
   toolCalls: ToolCallProgress[];
 }) {
   const label = getChatThinkingLabel(toolCalls);
+  const reduceMotion = useReducedMotion();
 
   return (
     <View
       accessibilityLiveRegion="polite"
       style={styles.thinking}
     >
-      <View style={styles.thinkingStatusRow}>
+      <Animated.View
+        entering={feedbackEntering(reduceMotion)}
+        exiting={feedbackExiting()}
+        style={styles.thinkingStatusRow}
+      >
         <View
           accessible={false}
           importantForAccessibility="no-hide-descendants"
@@ -81,21 +155,31 @@ export function ChatThinkingState({
           <OrdiloMark size={30} />
         </View>
         <View style={styles.thinkingStatusPill}>
-          <ActivityIndicator color={colors.harborBlue} size="small" />
-          <Text style={styles.thinkingStatusText}>{label}</Text>
+          {reduceMotion ? (
+            <View style={styles.thinkingStaticIndicator} />
+          ) : (
+            <ActivityIndicator color={colors.harborBlue} size="small" />
+          )}
+          <Animated.Text
+            entering={contentEntering()}
+            key={label}
+            style={styles.thinkingStatusText}
+          >
+            {label}
+          </Animated.Text>
         </View>
-      </View>
+      </Animated.View>
 
-      <View
+      <Animated.View
         accessible={false}
+        entering={feedbackEntering(reduceMotion).delay(
+          reduceMotion ? 0 : 70,
+        )}
+        exiting={feedbackExiting()}
         importantForAccessibility="no-hide-descendants"
         style={styles.thinkingCard}
       >
-        <View style={styles.thinkingDotsChip}>
-          <View style={styles.thinkingDot} />
-          <View style={styles.thinkingDot} />
-          <View style={styles.thinkingDot} />
-        </View>
+        <ThinkingDots reduceMotion={reduceMotion} />
         <View style={styles.thinkingLines}>
           {THINKING_LINE_WIDTHS.map((width) => (
             <Skeleton
@@ -107,7 +191,7 @@ export function ChatThinkingState({
             />
           ))}
         </View>
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -598,53 +682,79 @@ function CopyAnswerButton({ text }: { text: string }) {
   );
 }
 
-const VOICE_WAVE_SAMPLES = 11;
+const VOICE_WAVE_SAMPLES = 31;
+const VOICE_WAVE_INTERVAL_MS = 85;
 
 function VoiceWaveBar({
-  sample,
+  index,
+  samples,
 }: {
-  sample: SharedValue<number>;
+  index: number;
+  samples: SharedValue<number[]>;
 }) {
   const style = useAnimatedStyle(() => ({
-    transform: [{ scaleY: Math.max(0.16, sample.get()) }],
-  }));
+    transform: [
+      {
+        scaleY: withTiming(
+          Math.max(0.12, samples.get()[index] ?? 0.12),
+          { duration: 70, reduceMotion: REDUCE_MOTION },
+        ),
+      },
+    ],
+  }), [index]);
   return <Animated.View style={[styles.voiceBar, style]} />;
 }
 
 /**
- * A short rolling audio history, rather than five copies of the current
- * meter. Reanimated keeps each bar's settling motion off the JS thread.
+ * Rolling audio history: a quiet cadence proves the recorder is live,
+ * while the real meter produces visibly taller peaks as someone speaks.
  */
 function VoiceWaveform({ level }: { level: number }) {
   const reduceMotion = useReducedMotion();
-  const samples = [
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-  ];
-  const samplesRef = useRef(samples);
+  const levelRef = useRef(level);
+  const tickRef = useRef(0);
+  const initialSamples = useMemo(
+    () => Array.from({ length: VOICE_WAVE_SAMPLES }, () => 0.12),
+    [],
+  );
+  const historyRef = useRef(initialSamples);
+  const samples = useSharedValue<number[]>(initialSamples);
 
   useEffect(() => {
-    const next = Math.max(0.16, Math.min(1, level));
-    const values = samplesRef.current.map((sample) => sample.get());
-    const duration = reduceMotion ? 0 : 120;
-    samplesRef.current.forEach((sample, index) => {
-      sample.set(
-        withTiming(
-          index === VOICE_WAVE_SAMPLES - 1 ? next : values[index + 1]!,
-          { duration, reduceMotion: ReduceMotion.System },
-        ),
+    levelRef.current = level;
+    if (reduceMotion) {
+      const signal = Math.max(0.12, Math.min(1, level));
+      historyRef.current = Array.from(
+        { length: VOICE_WAVE_SAMPLES },
+        (_, index) => (index % 3 === 1 ? signal : signal * 0.65),
       );
-    });
-  }, [level, reduceMotion]);
+      samples.set(historyRef.current);
+    }
+  }, [level, reduceMotion, samples]);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+
+    const interval = setInterval(() => {
+      tickRef.current += 1;
+      const tick = tickRef.current;
+      const signal = Math.max(
+        0,
+        Math.min(1, (levelRef.current - 0.06) / 0.94),
+      );
+      const cadence =
+        0.14 + 0.08 * ((Math.sin(tick * 0.9) + 1) / 2);
+      const texture =
+        (Math.sin(tick * 1.7) + Math.sin(tick * 0.63) + 2) / 4;
+      const voicePeak =
+        signal * (0.18 + 0.82 * Math.pow(texture, 1.8));
+      const next = Math.max(cadence, voicePeak);
+      historyRef.current = [...historyRef.current.slice(1), next];
+      samples.set(historyRef.current);
+    }, VOICE_WAVE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [reduceMotion, samples]);
 
   return (
     <View
@@ -652,8 +762,12 @@ function VoiceWaveform({ level }: { level: number }) {
       importantForAccessibility="no-hide-descendants"
       style={styles.voiceWave}
     >
-      {samples.map((sample, index) => (
-        <VoiceWaveBar key={index} sample={sample} />
+      {Array.from({ length: VOICE_WAVE_SAMPLES }, (_, index) => (
+        <VoiceWaveBar
+          index={index}
+          key={index}
+          samples={samples}
+        />
       ))}
     </View>
   );
@@ -670,50 +784,48 @@ function VoiceRecordingPanel({
   onCancel: () => void;
   onFinish: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <View
+    <Animated.View
       accessibilityLabel={`Aufnahme läuft, ${formatVoiceDuration(durationMillis)}`}
       accessibilityLiveRegion="polite"
-      style={styles.voicePanel}
+      entering={feedbackEntering(reduceMotion)}
+      exiting={feedbackExiting()}
+      style={styles.voiceRecorder}
     >
-      <View style={styles.voicePanelHeader}>
-        <View style={styles.voicePanelStatus}>
-          <View accessibilityElementsHidden style={styles.voiceRecordingDot} />
-          <Text style={styles.voicePanelTitle}>Aufnahme läuft</Text>
-        </View>
-        <Text style={styles.voiceDuration}>
-          {formatVoiceDuration(durationMillis)}
-        </Text>
-      </View>
+      <Pressable
+        accessibilityLabel="Aufnahme verwerfen"
+        accessibilityRole="button"
+        hitSlop={4}
+        onPress={onCancel}
+        style={({ pressed }) => [
+          styles.voiceRecorderCancel,
+          pressed && styles.pressed,
+        ]}
+      >
+        <X color={colors.mistDark} size={18} strokeWidth={2} />
+      </Pressable>
       <VoiceWaveform level={level} />
-      <Text style={styles.voiceInstruction}>Tippe auf Fertig, wenn du fertig bist.</Text>
-      <View style={styles.voicePanelActions}>
-        <Pressable
-          accessibilityLabel="Aufnahme verwerfen"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onCancel}
-          style={({ pressed }) => [
-            styles.voicePanelSecondaryAction,
-            pressed && styles.pressed,
-          ]}
-        >
-          <X color={colors.mistDark} size={18} strokeWidth={2} />
-          <Text style={styles.voicePanelSecondaryText}>Verwerfen</Text>
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Aufnahme beenden"
-          accessibilityRole="button"
-          onPress={onFinish}
-          style={({ pressed }) => [
-            styles.voicePanelPrimaryAction,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.voicePanelPrimaryText}>Fertig</Text>
-        </Pressable>
-      </View>
-    </View>
+      <Text style={styles.voiceDuration}>
+        {formatVoiceDuration(durationMillis)}
+      </Text>
+      <Pressable
+        accessibilityLabel="Aufnahme beenden"
+        accessibilityRole="button"
+        onPress={onFinish}
+        style={({ pressed }) => [
+          styles.voiceRecorderFinish,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Square
+          color={colors.warmWhite}
+          fill={colors.warmWhite}
+          size={14}
+        />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -756,78 +868,68 @@ export function ChatComposer({
           onCancel={() => onVoiceCancel?.()}
           onFinish={() => onVoiceFinish?.()}
         />
-      ) : null}
-      <View style={styles.composer}>
-        <TextInput
-          accessibilityLabel="Frage an Ordilo"
-          accessibilityState={{ disabled: recording || voiceWorking }}
-          autoCapitalize="sentences"
-          editable={!recording && !voiceWorking}
-          multiline
-          onChangeText={onChange}
-          onSubmitEditing={canSend ? onSend : undefined}
-          placeholder="Frage Ordilo …"
-          placeholderTextColor={colors.mistDark}
-          ref={inputRef}
-          returnKeyType="send"
-          style={styles.composerInput}
-          value={value}
-        />
-        <View style={styles.composerActions}>
-          <Pressable
-            accessibilityHint={
-              recording
-                ? "Beendet die Aufnahme"
-                : "Tippe, um eine Sprachfrage aufzunehmen"
-            }
-            accessibilityLabel={
-              voiceStatus === "transcribing"
-                ? "Sprache wird in Text umgewandelt"
-                : recording
-                  ? "Aufnahme beenden"
-                  : "Sprachfrage aufnehmen"
-            }
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !voiceEnabled }}
-            disabled={!voiceEnabled}
-            hitSlop={4}
-            onPress={recording ? onVoiceFinish : onVoiceStart}
-            style={({ pressed }) => [
-              styles.voiceButton,
-              recording && styles.voiceButtonRecording,
-              pressed && styles.pressed,
-              !voiceEnabled && styles.composerSendDisabled,
-            ]}
-          >
-            {voiceWorking ? (
-              <ActivityIndicator color={colors.warmWhite} size="small" />
-            ) : recording ? (
-              <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
-            ) : (
-              <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
-            )}
-          </Pressable>
-          {canSend ? (
+      ) : (
+        <View style={styles.composer}>
+          <TextInput
+            accessibilityLabel="Frage an Ordilo"
+            accessibilityState={{ disabled: voiceWorking }}
+            autoCapitalize="sentences"
+            editable={!voiceWorking}
+            multiline
+            onChangeText={onChange}
+            onSubmitEditing={canSend ? onSend : undefined}
+            placeholder="Frage Ordilo …"
+            placeholderTextColor={colors.mistDark}
+            ref={inputRef}
+            returnKeyType="send"
+            style={styles.composerInput}
+            value={value}
+          />
+          <View style={styles.composerActions}>
             <Pressable
-              accessibilityLabel="Frage senden"
+              accessibilityHint="Tippe, um eine Sprachfrage aufzunehmen"
+              accessibilityLabel={
+                voiceStatus === "transcribing"
+                  ? "Sprache wird in Text umgewandelt"
+                  : "Sprachfrage aufnehmen"
+              }
               accessibilityRole="button"
-              disabled={recording}
-              onPress={onSend}
+              accessibilityState={{ disabled: !voiceEnabled }}
+              disabled={!voiceEnabled}
+              hitSlop={4}
+              onPress={onVoiceStart}
               style={({ pressed }) => [
-                styles.composerSend,
-                recording && styles.composerSendDisabled,
+                styles.voiceButton,
                 pressed && styles.pressed,
+                !voiceEnabled && styles.composerSendDisabled,
               ]}
             >
-              {busy ? (
+              {voiceWorking ? (
                 <ActivityIndicator color={colors.warmWhite} size="small" />
               ) : (
-                <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+                <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
               )}
             </Pressable>
-          ) : null}
+            {canSend ? (
+              <Pressable
+                accessibilityLabel="Frage senden"
+                accessibilityRole="button"
+                onPress={onSend}
+                style={({ pressed }) => [
+                  styles.composerSend,
+                  pressed && styles.pressed,
+                ]}
+              >
+                {busy ? (
+                  <ActivityIndicator color={colors.warmWhite} size="small" />
+                ) : (
+                  <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+                )}
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -871,6 +973,12 @@ const styles = StyleSheet.create({
     color: colors.mistDark,
     flexShrink: 1,
     ...typography.timestamp,
+  },
+  thinkingStaticIndicator: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
   },
   thinkingCard: {
     backgroundColor: colors.warmWhite,
@@ -1136,75 +1244,59 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 40,
   },
-  voiceButtonRecording: {
-    backgroundColor: colors.warmApricot,
-  },
-  voicePanel: {
-    backgroundColor: colors.sand,
+  voiceRecorder: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  voicePanelHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  voicePanelStatus: {
-    alignItems: "center",
+    elevation: 2,
     flexDirection: "row",
     gap: spacing.xs,
+    minHeight: 50,
+    padding: spacing.xs,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
   },
-  voiceRecordingDot: {
+  voiceRecorderCancel: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  voiceRecorderFinish: {
+    alignItems: "center",
     backgroundColor: colors.warmApricot,
     borderRadius: radii.pill,
-    height: 8,
-    width: 8,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
-  voicePanelTitle: { color: colors.graphite, ...typography.title },
-  voiceDuration: { color: colors.mistDark, ...typography.timestamp },
-  voiceInstruction: {
+  voiceDuration: {
     color: colors.mistDark,
-    textAlign: "center",
+    minWidth: 34,
+    textAlign: "right",
     ...typography.label,
   },
-  voicePanelActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "flex-end",
-  },
-  voicePanelSecondaryAction: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  voicePanelSecondaryText: { color: colors.mistDark, ...typography.label },
-  voicePanelPrimaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.sm,
-    height: 44,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-  },
-  voicePanelPrimaryText: { color: colors.warmWhite, ...typography.label },
   voiceWave: {
     alignItems: "center",
+    flex: 1,
     flexDirection: "row",
-    gap: 4,
-    height: 32,
-    justifyContent: "center",
+    gap: 2,
+    height: 34,
+    justifyContent: "space-between",
+    minWidth: 0,
+    overflow: "hidden",
   },
   voiceBar: {
     backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 24,
-    width: 3,
+    height: 28,
+    width: 2,
   },
   pressed: { opacity: 0.76 },
 });

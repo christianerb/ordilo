@@ -21,6 +21,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -56,7 +57,10 @@ import {
   transcribeVoiceRecording,
   VoiceInputError,
 } from "@/src/lib/voice";
+import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+
+const CHAT_ANSWER_ENTERING = contentEntering();
 
 /**
  * „Ordilo fragen" — the chat with Ordilo. Streams the answer token by
@@ -664,58 +668,65 @@ export default function SucheScreen() {
                     message.actions.length === 0 ? (
                       <ChatThinkingState toolCalls={message.toolCalls} />
                     ) : (
-                      <MessageBubble message={message}>
-                        {message.card && message.status === "done" ? (
-                          <AnswerCardView
-                            card={message.card}
-                            onOpenContact={openContact}
-                            onOpenDocument={openDocument}
-                          />
-                        ) : null}
-                        {message.sources.length > 0 &&
-                        message.status === "done" ? (
-                          <SourcesSection
-                            onOpenDocument={openDocument}
-                            sources={message.sources}
-                          />
-                        ) : null}
-                        {message.actions.map((action) => (
-                          <ActionCardView
-                            action={action}
-                            key={action.id}
-                            onAdjust={() => adjustAction(action)}
-                            onConfirm={() =>
-                              void confirmAction(message.id, action)
-                            }
-                            onDismiss={() =>
-                              updateAction(
-                                message.id,
-                                action.id,
-                                (current) => ({
-                                  ...current,
-                                  state: "dismissed",
-                                }),
-                              )
-                            }
-                            onUndo={() => void undoAction(message.id, action)}
-                          />
-                        ))}
-                        {message.status === "done" && message.dbId ? (
-                          <FeedbackRow
-                            message={message}
-                            onSend={(feedback, reasons, comment) =>
-                              sendFeedback(message, feedback, reasons, comment)
-                            }
-                          />
-                        ) : null}
-                        {message.status === "error" ? (
-                          <OrdiloButton
-                            onPress={() => retry(message.id)}
-                            title="Nochmal fragen"
-                            variant="outline"
-                          />
-                        ) : null}
-                      </MessageBubble>
+                      <Animated.View entering={CHAT_ANSWER_ENTERING}>
+                        <MessageBubble message={message}>
+                          {message.card && message.status === "done" ? (
+                            <AnswerCardView
+                              card={message.card}
+                              onOpenContact={openContact}
+                              onOpenDocument={openDocument}
+                            />
+                          ) : null}
+                          {message.sources.length > 0 &&
+                          message.status === "done" ? (
+                            <SourcesSection
+                              onOpenDocument={openDocument}
+                              sources={message.sources}
+                            />
+                          ) : null}
+                          {message.actions.map((action) => (
+                            <ActionCardView
+                              action={action}
+                              key={action.id}
+                              onAdjust={() => adjustAction(action)}
+                              onConfirm={() =>
+                                void confirmAction(message.id, action)
+                              }
+                              onDismiss={() =>
+                                updateAction(
+                                  message.id,
+                                  action.id,
+                                  (current) => ({
+                                    ...current,
+                                    state: "dismissed",
+                                  }),
+                                )
+                              }
+                              onUndo={() => void undoAction(message.id, action)}
+                            />
+                          ))}
+                          {message.status === "done" && message.dbId ? (
+                            <FeedbackRow
+                              message={message}
+                              onSend={(feedback, reasons, comment) =>
+                                sendFeedback(
+                                  message,
+                                  feedback,
+                                  reasons,
+                                  comment,
+                                )
+                              }
+                            />
+                          ) : null}
+                          {message.status === "error" ? (
+                            <OrdiloButton
+                              onPress={() => retry(message.id)}
+                              title="Nochmal fragen"
+                              variant="outline"
+                            />
+                          ) : null}
+                        </MessageBubble>
+                      </Animated.View>
                     )}
                   </View>
                 ),

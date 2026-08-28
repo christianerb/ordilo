@@ -7,12 +7,54 @@ const mobileRoot = resolve(__dirname, "../..");
 const source = (path: string) =>
   readFileSync(resolve(mobileRoot, path), "utf8");
 
+function sourceSection(contents: string, start: string, end: string): string {
+  const startIndex = contents.indexOf(start);
+  const endIndex = contents.indexOf(end, startIndex);
+  if (startIndex === -1 || endIndex === -1) {
+    throw new Error(`Could not find source section: ${start} → ${end}`);
+  }
+  return contents.slice(startIndex, endIndex);
+}
+
 describe("native motion wiring", () => {
   it("renders settings without repeated mount entrances", () => {
     const settings = source("app/einstellungen.tsx");
     expect(settings).not.toContain("FadeInView");
     expect(settings).not.toContain("PressableScale");
     expect(settings).toContain("SpringPressable");
+  });
+
+  it("animates the chat thinking state without ignoring reduced motion", () => {
+    const chat = source("src/components/chat.tsx");
+    const thinking = sourceSection(
+      chat,
+      "function ThinkingDot",
+      "/** User bubble",
+    );
+
+    expect(thinking).toContain("feedbackEntering(reduceMotion)");
+    expect(thinking).toContain("feedbackExiting()");
+    expect(thinking).toContain("useReducedMotion()");
+    expect(thinking).toContain("cancelAnimation(progress)");
+    expect(thinking).toContain("reduceMotion ? 0 : 70");
+  });
+
+  it("keeps the voice recorder visibly alive and responsive to speech", () => {
+    const chat = source("src/components/chat.tsx");
+    const recorder = sourceSection(
+      chat,
+      "const VOICE_WAVE_SAMPLES",
+      "/** Bottom composer",
+    );
+
+    expect(recorder).toContain("VOICE_WAVE_SAMPLES = 31");
+    expect(recorder).toContain("levelRef.current");
+    expect(recorder).toContain("historyRef.current");
+    expect(recorder).toContain("const cadence =");
+    expect(recorder).toContain("const voicePeak =");
+    expect(recorder).toContain("clearInterval(interval)");
+    expect(recorder).toContain("if (reduceMotion) return");
+    expect(recorder).toContain("reduceMotion: REDUCE_MOTION");
   });
 
   it("uses Reanimated's native CSS easing object for press transitions", () => {
