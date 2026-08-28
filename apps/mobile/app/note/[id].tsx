@@ -28,7 +28,7 @@ import {
 } from "react-native";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
-import { AnimatedSheetModal } from "@/src/components/sheet";
+import { OrdiloFormSheet } from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import {
@@ -424,45 +424,50 @@ function SecretEditor({
   };
 
   return (
-    <AnimatedSheetModal dismissDisabled={saving} onClose={onClose} sheetStyle={styles.editorSheet} visible>
-          <View style={styles.handle} />
-          <Text style={styles.editorTitle}>Passwort ändern</Text>
-          <Text style={styles.editorHint}>Leer lassen, um das gespeicherte Passwort zu entfernen.</Text>
-          <View style={styles.secretEditorField}>
-            <TextInput
-              accessibilityLabel="Neues Passwort"
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={10_000}
-              onChangeText={setSecret}
-              placeholder="Passwort, PIN oder Code"
-              placeholderTextColor={colors.mistDark}
-              secureTextEntry={!showSecret}
-              style={styles.secretEditorInput}
-              value={secret}
-            />
-            <Pressable
-              accessibilityLabel={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => setShowSecret((current) => !current)}
-            >
-              {showSecret
-                ? <EyeOff color={colors.mistDark} size={19} />
-                : <Eye color={colors.mistDark} size={19} />}
-            </Pressable>
-          </View>
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <View style={styles.editorFooter}>
-            <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
-            <OrdiloButton
-              disabled={saving}
-              icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
-              onPress={() => void save()}
-              title={saving ? "Wird gespeichert …" : "Speichern"}
-            />
-          </View>
-    </AnimatedSheetModal>
+    <OrdiloFormSheet
+      dismissDisabled={saving}
+      keyboardAvoiding
+      onClose={onClose}
+      style={styles.editorSheet}
+      subtitle="Leer lassen, um das gespeicherte Passwort zu entfernen."
+      title="Passwort ändern"
+      visible
+    >
+      <View style={styles.secretEditorField}>
+        <TextInput
+          accessibilityLabel="Neues Passwort"
+          autoCapitalize="none"
+          autoCorrect={false}
+          maxLength={10_000}
+          onChangeText={setSecret}
+          placeholder="Passwort, PIN oder Code"
+          placeholderTextColor={colors.mistDark}
+          secureTextEntry={!showSecret}
+          style={styles.secretEditorInput}
+          value={secret}
+        />
+        <Pressable
+          accessibilityLabel={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => setShowSecret((current) => !current)}
+        >
+          {showSecret
+            ? <EyeOff color={colors.mistDark} size={19} />
+            : <Eye color={colors.mistDark} size={19} />}
+        </Pressable>
+      </View>
+      {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      <View style={styles.editorFooter}>
+        <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
+        <OrdiloButton
+          disabled={saving}
+          icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+          onPress={() => void save()}
+          title={saving ? "Wird gespeichert …" : "Speichern"}
+        />
+      </View>
+    </OrdiloFormSheet>
   );
 }
 
@@ -504,36 +509,41 @@ function NoteMetadataEditor({
   };
 
   return (
-    <AnimatedSheetModal dismissDisabled={saving} onClose={onClose} sheetStyle={styles.editorSheet} visible>
-          <View style={styles.handle} />
-          <Text style={styles.editorTitle}>Angaben bearbeiten</Text>
-          <Text style={styles.editorHint}>Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert.</Text>
-          <ScrollView contentContainerStyle={styles.editorForm} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Titel</Text>
-            <TextInput accessibilityLabel="Titel der Notiz" maxLength={200} onChangeText={setTitle} style={styles.input} value={title} />
-            <Text style={styles.label}>Art</Text>
-            <ScrollView contentContainerStyle={styles.typeChips} horizontal showsHorizontalScrollIndicator={false}>
-              {noteTypes.map(([type, label]) => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: documentType === type }}
-                  key={type}
-                  onPress={() => setDocumentType(type)}
-                  style={({ pressed }) => [styles.typeChip, documentType === type && styles.typeChipSelected, pressed && styles.pressed]}
-                >
-                  <Text style={[styles.typeChipText, documentType === type && styles.typeChipTextSelected]}>{label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Text style={styles.label}>Kurz gesagt</Text>
-            <TextInput accessibilityLabel="Kurz gesagt" maxLength={10_000} multiline onChangeText={setSummary} style={[styles.input, styles.summaryInput]} textAlignVertical="top" value={summary} />
-            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          </ScrollView>
-          <View style={styles.editorFooter}>
-            <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
-            <OrdiloButton disabled={saving} icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={17} />} onPress={() => void save()} title={saving ? "Wird gespeichert …" : "Speichern"} />
-          </View>
-    </AnimatedSheetModal>
+    <OrdiloFormSheet
+      dismissDisabled={saving}
+      keyboardAvoiding
+      onClose={onClose}
+      style={styles.editorSheet}
+      subtitle="Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert."
+      title="Angaben bearbeiten"
+      visible
+    >
+      <ScrollView contentContainerStyle={styles.editorForm} keyboardShouldPersistTaps="handled">
+        <Text style={styles.label}>Titel</Text>
+        <TextInput accessibilityLabel="Titel der Notiz" maxLength={200} onChangeText={setTitle} style={styles.input} value={title} />
+        <Text style={styles.label}>Art</Text>
+        <ScrollView contentContainerStyle={styles.typeChips} horizontal showsHorizontalScrollIndicator={false}>
+          {noteTypes.map(([type, label]) => (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: documentType === type }}
+              key={type}
+              onPress={() => setDocumentType(type)}
+              style={({ pressed }) => [styles.typeChip, documentType === type && styles.typeChipSelected, pressed && styles.pressed]}
+            >
+              <Text style={[styles.typeChipText, documentType === type && styles.typeChipTextSelected]}>{label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Text style={styles.label}>Kurz gesagt</Text>
+        <TextInput accessibilityLabel="Kurz gesagt" maxLength={10_000} multiline onChangeText={setSummary} style={[styles.input, styles.summaryInput]} textAlignVertical="top" value={summary} />
+        {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+      </ScrollView>
+      <View style={styles.editorFooter}>
+        <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
+        <OrdiloButton disabled={saving} icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={17} />} onPress={() => void save()} title={saving ? "Wird gespeichert …" : "Speichern"} />
+      </View>
+    </OrdiloFormSheet>
   );
 }
 
@@ -570,13 +580,10 @@ const styles = StyleSheet.create({
   secretHeader: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   secretValue: { backgroundColor: colors.sandLight, borderRadius: radii.base, color: colors.graphite, padding: 12, ...typography.body },
   secretActions: { flexDirection: "row", gap: spacing.sm },
-  secretEditorField: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, margin: spacing.md, minHeight: 44, paddingHorizontal: 12 },
+  secretEditorField: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, marginVertical: spacing.md, minHeight: 44, paddingHorizontal: 12 },
   secretEditorInput: { color: colors.graphite, flex: 1, minHeight: 44, ...typography.body },
-  editorSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "85%", paddingBottom: spacing.md },
-  handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.md, marginTop: spacing.sm, width: 40 },
-  editorTitle: { color: colors.graphite, paddingHorizontal: spacing.md, ...typography.display },
-  editorHint: { color: colors.mistDark, paddingHorizontal: spacing.md, paddingTop: spacing.xs, ...typography.timestamp },
-  editorForm: { gap: spacing.sm, padding: spacing.md },
+  editorSheet: { maxHeight: "85%" },
+  editorForm: { gap: spacing.sm, paddingVertical: spacing.md },
   label: { color: colors.graphite, ...typography.label },
   input: { borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 44, paddingHorizontal: 12, ...typography.body },
   summaryInput: { minHeight: 112, paddingTop: 10 },
@@ -586,7 +593,7 @@ const styles = StyleSheet.create({
   typeChipText: { color: colors.mistDark, ...typography.label },
   typeChipTextSelected: { color: colors.warmWhite },
   error: { color: colors.destructive, ...typography.timestamp },
-  editorFooter: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  editorFooter: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingTop: spacing.md },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.5 },
 });

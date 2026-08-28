@@ -1,7 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
 import {
   Camera,
-  CheckCircle2,
   Eye,
   EyeOff,
   FileText,
@@ -21,7 +20,8 @@ import {
   View,
 } from "react-native";
 
-import { AnimatedSheetModal } from "@/src/components/sheet";
+import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
+import { OrdiloFormSheet } from "@/src/components/sheet";
 import { OrdiloButton } from "@/src/components/ui";
 import {
   buildCredentialsContent,
@@ -195,29 +195,22 @@ export function NoteFormSheet({
   ]);
 
   return (
-    <AnimatedSheetModal onClose={close} sheetStyle={styles.sheet} visible={visible}>
-      <View style={styles.handle} />
-      <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Notiz schreiben</Text>
-              <Text style={styles.subtitle}>Für alles, was ihr euch merken möchtet.</Text>
-            </View>
-            <Pressable
-              accessibilityLabel="Notiz schließen"
-              accessibilityRole="button"
-              disabled={saving}
-              hitSlop={8}
-              onPress={close}
-              style={styles.close}
-            >
-              <X color={colors.mistDark} size={20} />
-            </Pressable>
-          </View>
-          <ScrollView
-            contentContainerStyle={styles.form}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
+    <>
+      <OrdiloFormSheet
+        closeAccessibilityLabel="Notiz schließen"
+        dismissDisabled={saving}
+        keyboardAvoiding
+        onClose={close}
+        style={styles.sheet}
+        subtitle="Für alles, was ihr euch merken möchtet."
+        title="Notiz schreiben"
+        visible={visible}
+      >
+        <ScrollView
+          contentContainerStyle={styles.form}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
             <Field label={isCredentials ? "Name" : "Titel"}>
               <TextInput
                 accessibilityLabel={isCredentials ? "Name der Zugangsdaten" : "Titel der Notiz"}
@@ -345,23 +338,24 @@ export function NoteFormSheet({
               </View>
             )}
             {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          </ScrollView>
-          <View style={styles.footer}>
-            <OrdiloButton disabled={saving} onPress={close} title="Abbrechen" variant="outline" />
-            <OrdiloButton
-              disabled={saving}
-              icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
-              onPress={() => void submit()}
-              title={saving ? "Wird gespeichert …" : "Speichern"}
-            />
-          </View>
+        </ScrollView>
+        <View style={styles.footer}>
+          <OrdiloButton disabled={saving} onPress={close} title="Abbrechen" variant="outline" />
+          <OrdiloButton
+            disabled={saving}
+            icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+            onPress={() => void submit()}
+            title={saving ? "Wird gespeichert …" : "Speichern"}
+          />
+        </View>
+      </OrdiloFormSheet>
       <NoteTypePicker
         onClose={() => setTypePickerVisible(false)}
         onSelect={chooseType}
         selected={documentType}
         visible={typePickerVisible}
       />
-    </AnimatedSheetModal>
+    </>
   );
 }
 
@@ -386,36 +380,24 @@ function NoteTypePicker({
   visible: boolean;
 }) {
   return (
-    <AnimatedSheetModal onClose={onClose} sheetStyle={styles.typeSheet} visible={visible}>
-      <View style={styles.handle} />
-      <Text style={styles.typeHeading}>Art wählen</Text>
-      <ScrollView>
-        {noteTypes.map(([type, label]) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: selected === type }}
-            key={type}
-            onPress={() => onSelect(type)}
-            style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
-          >
-            <Text style={[styles.typeOptionText, selected === type && styles.typeOptionTextSelected]}>{label}</Text>
-            {selected === type ? <CheckCircle2 color={colors.harborBlue} size={20} /> : null}
-          </Pressable>
-        ))}
-      </ScrollView>
-    </AnimatedSheetModal>
+    <OrdiloPickerSheet
+      accessibilityLabel="Art der Notiz auswählen"
+      onClose={onClose}
+      options={noteTypes.map(([type, label]) => ({
+        key: type,
+        label,
+        onPress: () => onSelect(type),
+        selected: selected === type,
+      }))}
+      title="Art wählen"
+      visible={visible}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  sheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "90%", paddingBottom: spacing.md },
-  typeSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "78%", paddingBottom: spacing.lg, paddingHorizontal: spacing.md },
-  handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.sm, marginTop: spacing.sm, width: 40 },
-  header: { alignItems: "flex-start", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingBottom: spacing.md, paddingHorizontal: spacing.md },
-  title: { color: colors.graphite, ...typography.display },
-  subtitle: { color: colors.mistDark, marginTop: spacing.xs, ...typography.timestamp },
-  close: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -8, marginTop: -8, width: 44 },
-  form: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.lg },
+  sheet: { maxHeight: "90%" },
+  form: { gap: spacing.md, paddingBottom: spacing.lg, paddingTop: spacing.md },
   field: { gap: spacing.xs },
   label: { color: colors.graphite, ...typography.label },
   input: { borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 44, paddingHorizontal: 12, ...typography.body },
@@ -430,10 +412,6 @@ const styles = StyleSheet.create({
   preview: { borderRadius: radii.base, height: 44, width: 44 },
   attachmentName: { color: colors.graphite, flex: 1, ...typography.timestamp },
   error: { color: colors.destructive, ...typography.timestamp },
-  footer: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.md },
-  typeHeading: { color: colors.graphite, marginBottom: spacing.sm, ...typography.display },
-  typeOption: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 52, paddingHorizontal: spacing.xs },
-  typeOptionText: { color: colors.graphite, ...typography.body },
-  typeOptionTextSelected: { color: colors.harborBlue, fontFamily: typography.title.fontFamily },
+  footer: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingTop: spacing.md },
   pressed: { opacity: 0.76 },
 });

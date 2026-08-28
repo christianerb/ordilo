@@ -10,7 +10,6 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ConfirmDialog } from "./confirm-dialog";
 import { OrdiloFormSheet } from "./sheet";
@@ -62,7 +61,6 @@ export function TaskFormSheet({
   onSubmit: TaskFormSubmit;
   visible: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -162,6 +160,8 @@ export function TaskFormSheet({
   return (
     <OrdiloFormSheet
       closeAccessibilityLabel="Aufgabe schließen"
+      dismissDisabled={submitting}
+      keyboardAvoiding
       onClose={requestClose}
       style={styles.formSheet}
       title={isEdit ? "Aufgabe bearbeiten" : "Neue Aufgabe"}
@@ -301,7 +301,7 @@ export function TaskFormSheet({
               </View>
             </ScrollView>
       </ScrollView>
-      <View style={[styles.footer, { paddingBottom: Math.max(spacing.md, insets.bottom) }]}>
+      <View style={styles.footer}>
         {error ? (
           <View accessibilityRole="alert" style={styles.errorBox}>
             <Text style={styles.errorText}>{error}</Text>
@@ -357,7 +357,6 @@ const styles = StyleSheet.create({
   },
   formContent: {
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
   },
   fieldLabel: {
     color: colors.mistDark,
@@ -511,7 +510,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.mistLight,
     borderTopWidth: 1,
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
   dismissButton: {

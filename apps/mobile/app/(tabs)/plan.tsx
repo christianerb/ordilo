@@ -11,7 +11,6 @@ import {
   Undo2,
 } from "lucide-react-native";
 import {
-  forwardRef,
   useCallback,
   useEffect,
   useMemo,
@@ -35,7 +34,8 @@ import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { EventFormSheet } from "@/src/components/event-form-sheet";
-import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
+import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
+import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
 import {
   EmptyState,
@@ -141,19 +141,8 @@ export default function PlanScreen() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
   const undoSeqRef = useRef(0);
-  const assignSheetRef = useRef<OrdiloSheetHandle>(null);
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingCreateRef = useRef<"task" | "event" | null>(null);
-  const rescheduleSheetRef = useRef<OrdiloSheetHandle>(null);
-
-  // The sheets are imperative (drag-to-dismiss lives in the sheet); the
-  // state only carries WHICH task they serve. Dismissal clears it again.
-  useEffect(() => {
-    if (assignTask) assignSheetRef.current?.present();
-  }, [assignTask]);
-  useEffect(() => {
-    if (rescheduleTask) rescheduleSheetRef.current?.present();
-  }, [rescheduleTask]);
 
   const memberById = useMemo(() => {
     const map = new Map<string, FamilyMemberOption>();
@@ -679,28 +668,79 @@ export default function PlanScreen() {
         ref={createSheetRef}
       />
 
-      <AssignSheet
-        members={members}
-        onDismiss={() => setAssignTask(null)}
-        onSelect={(memberId) => {
-          const task = assignTask;
-          assignSheetRef.current?.dismiss();
-          if (task) void assign(task, memberId);
-        }}
-        ref={assignSheetRef}
-        task={assignTask}
+      <OrdiloPickerSheet
+        accessibilityLabel="Wer macht das?"
+        onClose={() => setAssignTask(null)}
+        options={[
+          ...members.map((member) => ({
+            accessibilityLabel: `Aufgabe an ${member.name} geben`,
+            key: member.id,
+            label: member.name,
+            leading: (
+              <View
+                style={[
+                  styles.assigneeDot,
+                  styles.pickerAvatar,
+                  {
+                    backgroundColor:
+                      member.avatar_color ?? colors.sandLight,
+                  },
+                ]}
+              >
+                <Text style={styles.assigneeInitial}>
+                  {member.name.trim().charAt(0).toUpperCase() || "?"}
+                </Text>
+              </View>
+            ),
+            onPress: () => {
+              if (assignTask) void assign(assignTask, member.id);
+            },
+            selected: assignTask?.assigned_to === member.id,
+          })),
+          {
+            accessibilityLabel: "Niemandem zuordnen",
+            key: "unassigned",
+            label: "Niemandem",
+            leading: (
+              <View
+                style={[
+                  styles.assigneeDot,
+                  styles.pickerAvatar,
+                  styles.assigneeDotEmpty,
+                ]}
+              >
+                <Plus color={colors.mistDark} size={14} strokeWidth={2.2} />
+              </View>
+            ),
+            onPress: () => {
+              if (assignTask) void assign(assignTask, null);
+            },
+            selected: assignTask?.assigned_to == null,
+          },
+        ]}
+        title="Wer macht das?"
+        visible={assignTask !== null}
       />
 
-      <RescheduleSheet
-        onDismiss={() => setRescheduleTask(null)}
-        onSelect={(preset) => {
-          const task = rescheduleTask;
-          rescheduleSheetRef.current?.dismiss();
-          if (task) void reschedule(task, preset);
-        }}
-        ref={rescheduleSheetRef}
-        task={rescheduleTask}
-        todayStr={todayStr}
+      <OrdiloPickerSheet
+        accessibilityLabel="Wann ist das dran?"
+        onClose={() => setRescheduleTask(null)}
+        options={TASK_SCHEDULE_PRESETS.map((preset) => {
+          const due = resolveSchedulePreset(preset, todayStr);
+          const hint = formatTaskDayHint(due);
+          return {
+            accessibilityLabel: `${TASK_SCHEDULE_PRESET_LABELS[preset]}${hint ? `, ${hint}` : ""}`,
+            hint: hint ?? undefined,
+            key: preset,
+            label: TASK_SCHEDULE_PRESET_LABELS[preset],
+            onPress: () => {
+              if (rescheduleTask) void reschedule(rescheduleTask, preset);
+            },
+            selected: rescheduleTask?.due_date === due,
+          };
+        })}
+        title="Wann ist das dran?"
+        visible={rescheduleTask !== null}
       />
 
       {undo ? (
@@ -1106,131 +1146,6 @@ function TaskRow({
   );
 }
 
-/**
- * The "Wer macht das?" picker: one decision, committed on tap — choosing
- * is the way out, so there is no close button (a drag or backdrop tap
- * still dismisses without a change).
- */
-const AssignSheet = forwardRef<
-  OrdiloSheetHandle,
-  {
-    members: FamilyMemberOption[];
-    onDismiss: () => void;
-    onSelect: (memberId: string | null) => void;
-    task: PlannerTask | null;
-  }
->(function AssignSheet({ members, onDismiss, onSelect, task }, ref) {
-  return (
-    <OrdiloSheet
-      accessibilityLabel="Wer macht das?"
-      onDismiss={onDismiss}
-      ref={ref}
-    >
-      <Text style={styles.pickerTitle}>Wer macht das?</Text>
-      {members.map((member) => {
-        const selected = task?.assigned_to === member.id;
-        return (
-          <Pressable
-            accessibilityLabel={`Aufgabe an ${member.name} geben`}
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
-            key={member.id}
-            onPress={() => onSelect(member.id)}
-            style={[styles.pickerRow, selected && styles.pickerRowSelected]}
-          >
-            <View
-              style={[
-                styles.assigneeDot,
-                styles.pickerDot,
-                { backgroundColor: member.avatar_color ?? colors.sandLight },
-              ]}
-            >
-              <Text style={styles.assigneeInitial}>
-                {member.name.trim().charAt(0).toUpperCase() || "?"}
-              </Text>
-            </View>
-            <Text style={styles.pickerLabel}>{member.name}</Text>
-            {selected ? (
-              <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
-            ) : null}
-          </Pressable>
-        );
-      })}
-      <Pressable
-        accessibilityLabel="Niemandem zuordnen"
-        accessibilityRole="button"
-        accessibilityState={{ selected: task?.assigned_to == null }}
-        onPress={() => onSelect(null)}
-        style={[
-          styles.pickerRow,
-          task?.assigned_to == null && styles.pickerRowSelected,
-        ]}
-      >
-        <View style={[styles.assigneeDot, styles.pickerDot, styles.assigneeDotEmpty]}>
-          <Plus color={colors.mistDark} size={14} strokeWidth={2.2} />
-        </View>
-        <Text style={styles.pickerLabel}>Niemandem</Text>
-        {task?.assigned_to == null ? (
-          <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
-        ) : null}
-      </Pressable>
-    </OrdiloSheet>
-  );
-});
-
-/**
- * The "Wann?" sheet: the one-tap answers to rescheduling. Every preset
- * spells out the day it lands on ("Morgen · Sa, 23.08."), so nobody
- * guesses — and choosing is the way out, no close button.
- */
-const RescheduleSheet = forwardRef<
-  OrdiloSheetHandle,
-  {
-    onDismiss: () => void;
-    onSelect: (preset: TaskSchedulePreset) => void;
-    task: PlannerTask | null;
-    todayStr: string;
-  }
->(function RescheduleSheet({ onDismiss, onSelect, task, todayStr }, ref) {
-  if (!task) {
-    // Keep the sheet mounted (imperative present/dismiss) but empty
-    // when it serves no task.
-    return <OrdiloSheet onDismiss={onDismiss} ref={ref} />;
-  }
-  return (
-    <OrdiloSheet
-      accessibilityLabel="Wann ist das dran?"
-      onDismiss={onDismiss}
-      ref={ref}
-    >
-      <Text style={styles.pickerTitle}>Wann ist das dran?</Text>
-      {TASK_SCHEDULE_PRESETS.map((preset) => {
-        const due = resolveSchedulePreset(preset, todayStr);
-        const selected = task.due_date === due;
-        const dayHint = formatTaskDayHint(due);
-        return (
-          <Pressable
-            accessibilityLabel={`${TASK_SCHEDULE_PRESET_LABELS[preset]}${dayHint ? `, ${dayHint}` : ""}`}
-            accessibilityRole="button"
-            accessibilityState={{ selected }}
-            key={preset}
-            onPress={() => onSelect(preset)}
-            style={[styles.pickerRow, selected && styles.pickerRowSelected]}
-          >
-            <Text style={styles.pickerLabel}>
-              {TASK_SCHEDULE_PRESET_LABELS[preset]}
-            </Text>
-            {dayHint ? <Text style={styles.pickerHint}>{dayHint}</Text> : null}
-            {selected ? (
-              <Check color={colors.harborBlue} size={18} strokeWidth={2.4} />
-            ) : null}
-          </Pressable>
-        );
-      })}
-    </OrdiloSheet>
-  );
-});
-
 const styles = StyleSheet.create({
   centerFill: {
     alignItems: "center",
@@ -1506,37 +1421,9 @@ const styles = StyleSheet.create({
     color: colors.warmWhite,
     ...typography.label,
   },
-  pickerHint: {
-    color: colors.mistDark,
-    ...typography.timestamp,
-  },
-  pickerTitle: {
-    color: colors.graphite,
-    marginBottom: spacing.sm,
-    ...typography.display,
-  },
-  pickerRow: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 52,
-    paddingHorizontal: spacing.sm,
-  },
-  pickerRowSelected: {
-    backgroundColor: "rgba(48, 84, 96, 0.08)",
-    borderColor: colors.harborBlue,
-  },
-  pickerDot: {
+  pickerAvatar: {
     height: 36,
     width: 36,
-  },
-  pickerLabel: {
-    color: colors.graphite,
-    flex: 1,
-    ...typography.title,
   },
   undoBanner: {
     alignItems: "center",

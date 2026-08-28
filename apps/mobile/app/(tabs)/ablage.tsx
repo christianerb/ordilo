@@ -40,11 +40,8 @@ import {
   ContactFormSheet,
 } from "@/src/components/contacts";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
-import {
-  OrdiloSheet,
-  useSheetPresentation,
-  type OrdiloSheetHandle,
-} from "@/src/components/sheet";
+import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
+import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import {
   EmptyState,
   ListSkeleton,
@@ -1146,52 +1143,27 @@ function DocumentTypePicker({
   selected: DocumentType | "all";
   visible: boolean;
 }) {
-  const sheetRef = useSheetPresentation(visible);
   return (
-    <OrdiloSheet
+    <OrdiloPickerSheet
       accessibilityLabel="Dokumentart auswählen"
-      onDismiss={onClose}
-      ref={sheetRef}
-    >
-      <Text style={styles.sheetTitle}>Dokumentart</Text>
-      <TypeOption
-        label="Alle Arten"
-        onPress={() => onSelect("all")}
-        selected={selected === "all"}
-      />
-      {documentTypes.map(([value, label]) => (
-        <TypeOption
-          key={value}
-          label={label}
-          onPress={() => onSelect(value)}
-          selected={selected === value}
-        />
-      ))}
-    </OrdiloSheet>
-  );
-}
-
-function TypeOption({
-  label,
-  onPress,
-  selected,
-}: {
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
-    >
-      <Text style={[styles.typeOptionText, selected && styles.typeOptionTextSelected]}>
-        {label}
-      </Text>
-      {selected ? <CheckCircle2 color={colors.harborBlue} size={19} /> : null}
-    </Pressable>
+      onClose={onClose}
+      options={[
+        {
+          key: "all",
+          label: "Alle Arten",
+          onPress: () => onSelect("all"),
+          selected: selected === "all",
+        },
+        ...documentTypes.map(([value, label]) => ({
+          key: value,
+          label,
+          onPress: () => onSelect(value),
+          selected: selected === value,
+        })),
+      ]}
+      title="Dokumentart"
+      visible={visible}
+    />
   );
 }
 
@@ -1206,23 +1178,19 @@ function SortPicker({
   selected: LibrarySort;
   visible: boolean;
 }) {
-  const sheetRef = useSheetPresentation(visible);
   return (
-    <OrdiloSheet
+    <OrdiloPickerSheet
       accessibilityLabel="Sortierung auswählen"
-      onDismiss={onClose}
-      ref={sheetRef}
-    >
-      <Text style={styles.sheetTitle}>Sortieren</Text>
-      {librarySortOptions.map((option) => (
-        <TypeOption
-          key={option.value}
-          label={option.label}
-          onPress={() => onSelect(option.value)}
-          selected={selected === option.value}
-        />
-      ))}
-    </OrdiloSheet>
+      onClose={onClose}
+      options={librarySortOptions.map((option) => ({
+        key: option.value,
+        label: option.label,
+        onPress: () => onSelect(option.value),
+        selected: selected === option.value,
+      }))}
+      title="Sortieren"
+      visible={visible}
+    />
   );
 }
 
@@ -1371,16 +1339,4 @@ const styles = StyleSheet.create({
   filteredEmptyText: { color: colors.mistDark, textAlign: "center", ...typography.timestamp },
   pressed: { opacity: 0.76 },
   ambientBehind: { marginHorizontal: -spacing.md },
-  sheetTitle: { color: colors.graphite, marginBottom: spacing.sm, ...typography.display },
-  typeOption: {
-    alignItems: "center",
-    borderBottomColor: colors.mistLight,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 52,
-    paddingHorizontal: spacing.xs,
-  },
-  typeOptionText: { color: colors.graphite, ...typography.body },
-  typeOptionTextSelected: { color: colors.harborBlue, fontFamily: typography.title.fontFamily },
 });

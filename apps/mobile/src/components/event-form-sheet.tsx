@@ -16,7 +16,6 @@ import {
   MapPin,
   Pencil,
 } from "lucide-react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OrdiloFormSheet } from "./sheet";
 import { OrdiloButton } from "./ui";
@@ -44,7 +43,6 @@ export function EventFormSheet({
   ) => Promise<{ success: boolean; error?: string }>;
   visible: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
   const [dateInput, setDateInput] = useState(formatEventDateInput(defaultDate));
   const [allDay, setAllDay] = useState(true);
@@ -149,6 +147,8 @@ export function EventFormSheet({
   return (
     <OrdiloFormSheet
       closeAccessibilityLabel="Termin schließen"
+      dismissDisabled={submitting}
+      keyboardAvoiding
       onClose={requestClose}
       style={styles.formSheet}
       title="Neuer Termin"
@@ -330,12 +330,7 @@ export function EventFormSheet({
         ) : null}
       </ScrollView>
 
-      <View
-        style={[
-          styles.footer,
-          { paddingBottom: Math.max(spacing.md, insets.bottom) },
-        ]}
-      >
+      <View style={styles.footer}>
         {error ? (
           <View accessibilityRole="alert" style={styles.errorBox}>
             <Text style={styles.errorText}>{error}</Text>
@@ -362,7 +357,6 @@ const styles = StyleSheet.create({
   formBody: { flex: 1 },
   formContent: {
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
   },
   fieldLabel: {
     color: colors.mistDark,
@@ -451,7 +445,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     borderTopColor: colors.mistLight,
     borderTopWidth: 1,
-    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
   },
   errorBox: {

@@ -94,6 +94,8 @@ export function CollectionFormSheet({
 
   return (
     <OrdiloFormSheet
+      dismissDisabled={submitting}
+      keyboardAvoiding
       onClose={onClose}
       title={title}
       visible={visible}

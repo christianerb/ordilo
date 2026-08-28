@@ -259,30 +259,48 @@ export function AnimatedSheetModal({
 export function OrdiloFormSheet({
   children,
   closeAccessibilityLabel,
+  dismissDisabled = false,
+  keyboardAvoiding = false,
   onClose,
   style,
+  subtitle,
   title,
   visible,
 }: {
   children: ReactNode;
   closeAccessibilityLabel?: string;
+  dismissDisabled?: boolean;
+  keyboardAvoiding?: boolean;
   onClose: () => void;
   style?: StyleProp<ViewStyle>;
+  subtitle?: string;
   title: string;
   visible: boolean;
 }) {
+  const insets = useSafeAreaInsets();
+
   return (
     <AnimatedSheetModal
+      dismissDisabled={dismissDisabled}
+      keyboardAvoiding={keyboardAvoiding}
       onClose={onClose}
-      sheetStyle={[styles.formSheetPadding, style]}
+      sheetStyle={[
+        styles.formSheetPadding,
+        { paddingBottom: Math.max(spacing.lg, insets.bottom) },
+        style,
+      ]}
       visible={visible}
     >
       <View style={styles.formHandle} />
       <View style={styles.formHeader}>
-        <Text style={styles.formTitle}>{title}</Text>
+        <View style={styles.formHeading}>
+          <Text style={styles.formTitle}>{title}</Text>
+          {subtitle ? <Text style={styles.formSubtitle}>{subtitle}</Text> : null}
+        </View>
         <Pressable
           accessibilityLabel={closeAccessibilityLabel ?? `${title} schließen`}
           accessibilityRole="button"
+          disabled={dismissDisabled}
           hitSlop={8}
           onPress={onClose}
           style={styles.formClose}
@@ -349,13 +367,15 @@ const styles = StyleSheet.create({
     width: 40,
   },
   formHeader: {
-    alignItems: "center",
+    alignItems: "flex-start",
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between",
     marginBottom: spacing.sm,
   },
-  formTitle: { color: colors.graphite, flex: 1, ...typography.display },
+  formHeading: { flex: 1, gap: 2 },
+  formTitle: { color: colors.graphite, ...typography.display },
+  formSubtitle: { color: colors.mistDark, ...typography.timestamp },
   formClose: {
     alignItems: "center",
     backgroundColor: colors.sand,

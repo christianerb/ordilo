@@ -377,6 +377,8 @@ function MemberEditSheet({
   return (
     <OrdiloFormSheet
       closeAccessibilityLabel="Bearbeiten schließen"
+      dismissDisabled={submitting}
+      keyboardAvoiding
       onClose={requestClose}
       style={styles.memberSheet}
       title="Person bearbeiten"

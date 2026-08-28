@@ -61,12 +61,16 @@ describe("native motion wiring", () => {
     expect(sheet).toContain("reduceMotion ? 0 : windowHeight");
 
     for (const path of [
+      "src/components/collection-form-sheet.tsx",
       "src/components/contacts.tsx",
+      "src/components/event-form-sheet.tsx",
       "src/components/note-form-sheet.tsx",
+      "src/components/task-form-sheet.tsx",
+      "app/(tabs)/familie.tsx",
       "app/note/[id].tsx",
     ]) {
-      expect(source(path)).toContain("AnimatedSheetModal");
-      expect(source(path)).not.toContain("modalAnimationType");
+      expect(source(path)).toContain("OrdiloFormSheet");
+      expect(source(path)).not.toContain("AnimatedSheetModal");
     }
 
     // The tab bar action sheet delegates presentation to the shared choice sheet.
@@ -101,6 +105,21 @@ describe("native motion wiring", () => {
       expect(source(path)).toContain("<CreateChoiceSheet");
       expect(source(path)).not.toContain("CreatePlanItemSheet");
       expect(source(path)).not.toContain("CreateLibraryItemSheet");
+    }
+  });
+
+  it("uses one shared compact picker sheet", () => {
+    const pickerSheet = source("src/components/picker-sheet.tsx");
+    expect(pickerSheet).toContain("<OrdiloSheet");
+    expect(pickerSheet).toContain("detached");
+    expect(pickerSheet).toContain("borderRadius: radii.md");
+
+    for (const path of [
+      "app/(tabs)/ablage.tsx",
+      "app/(tabs)/plan.tsx",
+      "src/components/note-form-sheet.tsx",
+    ]) {
+      expect(source(path)).toContain("<OrdiloPickerSheet");
     }
   });
 });
