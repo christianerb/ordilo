@@ -85,6 +85,12 @@ describe("native motion wiring", () => {
     expect(source("src/components/sheet.tsx")).toContain(
       "bottomInset={detached ? spacing.md : 0}",
     );
+    expect(source("src/components/sheet.tsx")).toContain(
+      "marginHorizontal: spacing.md",
+    );
+    expect(source("src/components/sheet.tsx")).toContain(
+      "DETACHED_SHEET_BOTTOM_RADIUS = 40",
+    );
 
     for (const path of ["app/(tabs)/ablage.tsx", "app/(tabs)/plan.tsx"]) {
       expect(source(path)).toContain("<CreateChoiceSheet");

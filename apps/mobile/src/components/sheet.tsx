@@ -30,6 +30,8 @@ import Animated, {
 import { durations, easeInOut, easeOut } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
+const DETACHED_SHEET_BOTTOM_RADIUS = 40;
+
 /**
  * The one sheet of the native app — the counterpart to the web's
  * OrdiloDrawer. Bottom-anchored, warm white, 28px top radius (the
@@ -300,11 +302,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radii.xl,
   },
   detachedBackground: {
-    borderBottomLeftRadius: radii.xl,
-    borderBottomRightRadius: radii.xl,
+    borderBottomLeftRadius: DETACHED_SHEET_BOTTOM_RADIUS,
+    borderBottomRightRadius: DETACHED_SHEET_BOTTOM_RADIUS,
   },
   detachedSheet: {
-    marginHorizontal: spacing.sm,
+    marginHorizontal: spacing.md,
   },
   content: {
     paddingHorizontal: spacing.md,
