@@ -1,6 +1,7 @@
 import { useFocusEffect } from "expo-router";
 import {
   AlertCircle,
+  CalendarPlus,
   CalendarDays,
   Check,
   ChevronDown,
@@ -8,6 +9,7 @@ import {
   ChevronRight,
   ChevronUp,
   Plus,
+  ListPlus,
   Undo2,
 } from "lucide-react-native";
 import {
@@ -33,6 +35,7 @@ import ReanimatedSwipeable, {
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, { useReducedMotion } from "react-native-reanimated";
 
+import { EventFormSheet } from "@/src/components/event-form-sheet";
 import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
 import {
@@ -45,6 +48,7 @@ import {
 } from "@/src/components/ui";
 import {
   calendarDays,
+  createPlannerEvent,
   eventsForDay,
   fetchPlannerEvents,
   formatEventPeople,
@@ -53,6 +57,7 @@ import {
   shiftMonth,
   toCalendarDate,
   upcomingPlannerEvents,
+  type PlannerEventInput,
   type PlannerEvent,
 } from "@/src/lib/calendar";
 import { useFamily } from "@/src/lib/family-context";
@@ -128,6 +133,7 @@ export default function PlanScreen() {
   const [todayStr, setTodayStr] = useState(todayLocalDate());
   const [expanded, setExpanded] = useState<Partial<Record<TaskSectionId, boolean>>>({});
   const [formOpen, setFormOpen] = useState(false);
+  const [eventFormOpen, setEventFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<PlannerTask | null>(null);
   const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
   const [rescheduleTask, setRescheduleTask] = useState<PlannerTask | null>(null);
@@ -137,6 +143,8 @@ export default function PlanScreen() {
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
   const undoSeqRef = useRef(0);
   const assignSheetRef = useRef<OrdiloSheetHandle>(null);
+  const createSheetRef = useRef<OrdiloSheetHandle>(null);
+  const pendingCreateRef = useRef<"task" | "event" | null>(null);
   const rescheduleSheetRef = useRef<OrdiloSheetHandle>(null);
 
   // The sheets are imperative (drag-to-dismiss lives in the sheet); the
@@ -402,10 +410,46 @@ export default function PlanScreen() {
     [editingTask, family, replaceTask],
   );
 
-  const openCreate = useCallback(() => {
+  const openTaskCreate = useCallback(() => {
     setEditingTask(null);
     setFormOpen(true);
   }, []);
+
+  const openCreateMenu = useCallback(() => {
+    createSheetRef.current?.present();
+  }, []);
+
+  const chooseCreateType = useCallback((type: "task" | "event") => {
+    pendingCreateRef.current = type;
+    createSheetRef.current?.dismiss();
+  }, []);
+
+  const finishCreateChoice = useCallback(() => {
+    const type = pendingCreateRef.current;
+    pendingCreateRef.current = null;
+    if (type === "task") openTaskCreate();
+    if (type === "event") setEventFormOpen(true);
+  }, [openTaskCreate]);
+
+  const submitEvent = useCallback(
+    async (values: PlannerEventInput) => {
+      if (!family) {
+        return {
+          success: false,
+          error: "Deine Familie konnte nicht geladen werden.",
+        };
+      }
+      const result = await createPlannerEvent(family.id, values);
+      if (!result.success) return result;
+      setEvents((current) => [...current, result.event]);
+      setSelectedDate(new Date(`${values.date}T12:00:00`));
+      setActiveMonth(monthStart(new Date(`${values.date}T12:00:00`)));
+      setView("calendar");
+      void success();
+      return { success: true };
+    },
+    [family],
+  );
 
   const openEdit = useCallback((task: PlannerTask) => {
     setEditingTask(task);
@@ -415,7 +459,7 @@ export default function PlanScreen() {
   if (loading && tasks.length === 0) {
     return (
       <Screen>
-        <PlanHeader onCreate={openCreate} />
+        <PlanHeader onCreate={openCreateMenu} />
         <View style={styles.loadingList}>
           <ListSkeleton rows={4} />
         </View>
@@ -426,7 +470,7 @@ export default function PlanScreen() {
   if (error && tasks.length === 0) {
     return (
       <Screen>
-        <PlanHeader onCreate={openCreate} />
+        <PlanHeader onCreate={openCreateMenu} />
         <View style={styles.centerFill}>
           <EmptyState
             description={error}
@@ -472,7 +516,7 @@ export default function PlanScreen() {
           events={selectedEvents}
           header={
             <>
-              <PlanHeader onCreate={openCreate} />
+              <PlanHeader onCreate={openCreateMenu} />
               <SegmentedControl items={tabItems} />
             </>
           }
@@ -494,7 +538,7 @@ export default function PlanScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          <PlanHeader onCreate={openCreate} />
+          <PlanHeader onCreate={openCreateMenu} />
           <SegmentedControl items={tabItems} style={styles.viewTabs} />
           {visibleTasks.length === 0 && visibleEvents.length === 0 ? (
             <EmptyState
@@ -502,7 +546,7 @@ export default function PlanScreen() {
               heading="Noch nichts geplant"
               icon={CalendarDays}
             >
-              <OrdiloButton onPress={openCreate} size="lg" title="Neue Aufgabe" />
+              <OrdiloButton onPress={openTaskCreate} size="lg" title="Neue Aufgabe" />
             </EmptyState>
           ) : null}
           {visibleEvents.length > 0 ? (
@@ -602,6 +646,23 @@ export default function PlanScreen() {
         visible={formOpen}
       />
 
+      <EventFormSheet
+        defaultDate={toCalendarDate(
+          view === "calendar" ? selectedDate : new Date(),
+        )}
+        members={members}
+        onClose={() => setEventFormOpen(false)}
+        onSubmit={submitEvent}
+        visible={eventFormOpen}
+      />
+
+      <CreatePlanItemSheet
+        onCreateEvent={() => chooseCreateType("event")}
+        onCreateTask={() => chooseCreateType("task")}
+        onDismiss={finishCreateChoice}
+        ref={createSheetRef}
+      />
+
       <AssignSheet
         members={members}
         onDismiss={() => setAssignTask(null)}
@@ -659,7 +720,7 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
   return (
     <ScreenHeader
       action={{
-        accessibilityLabel: "Neue Aufgabe anlegen",
+        accessibilityLabel: "Aufgabe oder Termin anlegen",
         icon: Plus,
         onPress: onCreate,
       }}
@@ -668,6 +729,70 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
     />
   );
 }
+
+const CreatePlanItemSheet = forwardRef<
+  OrdiloSheetHandle,
+  {
+    onCreateEvent: () => void;
+    onCreateTask: () => void;
+    onDismiss: () => void;
+  }
+>(function CreatePlanItemSheet(
+  { onCreateEvent, onCreateTask, onDismiss },
+  ref,
+) {
+  return (
+    <OrdiloSheet
+      accessibilityLabel="Im Plan anlegen"
+      onDismiss={onDismiss}
+      ref={ref}
+    >
+      <Text style={styles.createSheetTitle}>Was möchtest du anlegen?</Text>
+      <Pressable
+        accessibilityLabel="Neue Aufgabe"
+        accessibilityRole="button"
+        onPress={onCreateTask}
+        style={({ pressed }) => [
+          styles.createOption,
+          pressed && styles.createOptionPressed,
+        ]}
+      >
+        <View style={styles.createOptionIcon}>
+          <ListPlus color={colors.harborBlue} size={21} strokeWidth={1.9} />
+        </View>
+        <View style={styles.createOptionCopy}>
+          <Text style={styles.createOptionTitle}>Aufgabe</Text>
+          <Text style={styles.createOptionText}>
+            Etwas, das jemand erledigen soll
+          </Text>
+        </View>
+      </Pressable>
+      <Pressable
+        accessibilityLabel="Neuer Termin"
+        accessibilityRole="button"
+        onPress={onCreateEvent}
+        style={({ pressed }) => [
+          styles.createOption,
+          pressed && styles.createOptionPressed,
+        ]}
+      >
+        <View style={styles.createOptionIcon}>
+          <CalendarPlus
+            color={colors.harborBlue}
+            size={21}
+            strokeWidth={1.9}
+          />
+        </View>
+        <View style={styles.createOptionCopy}>
+          <Text style={styles.createOptionTitle}>Termin</Text>
+          <Text style={styles.createOptionText}>
+            Ein Zeitpunkt im Familienkalender
+          </Text>
+        </View>
+      </Pressable>
+    </OrdiloSheet>
+  );
+});
 
 /** One tab of the Aufgaben/Termine switcher — icon plus label, the active one filled in harbor blue. */
 /**
@@ -1161,6 +1286,34 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loadingList: { paddingTop: spacing.md },
+  createSheetTitle: {
+    color: colors.graphite,
+    marginBottom: spacing.sm,
+    ...typography.display,
+  },
+  createOption: {
+    alignItems: "center",
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+    minHeight: 68,
+    padding: spacing.sm,
+  },
+  createOptionPressed: { backgroundColor: colors.sandWarm },
+  createOptionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.washSage,
+    borderRadius: radii.sm,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  createOptionCopy: { flex: 1, gap: 2 },
+  createOptionTitle: { color: colors.graphite, ...typography.title },
+  createOptionText: { color: colors.mistDark, ...typography.timestamp },
   // Only the spacing around the shared SegmentedControl is local.
   viewTabs: {
     marginBottom: spacing.md,

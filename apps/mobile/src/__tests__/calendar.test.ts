@@ -2,9 +2,12 @@ import {
   calendarDays,
   eventOccursOn,
   eventsForDay,
+  formatEventDateInput,
   formatEventPeople,
+  parseEventDateInput,
   toCalendarDate,
   upcomingPlannerEvents,
+  validatePlannerEventInput,
   type PlannerEvent,
 } from "../lib/calendar";
 
@@ -85,5 +88,31 @@ describe("native calendar", () => {
 
     expect(ongoing.starts_on).toBe("2026-08-10");
     expect(ongoing.ends_on).toBe("2026-08-12");
+  });
+
+  it("round-trips German event dates and rejects impossible days", () => {
+    expect(formatEventDateInput("2026-08-28")).toBe("28.08.2026");
+    expect(parseEventDateInput("28.8.2026")).toBe("2026-08-28");
+    expect(parseEventDateInput("31.02.2026")).toBeNull();
+  });
+
+  it("validates timed event ranges", () => {
+    const input = {
+      title: "Elternabend",
+      date: "2026-08-28",
+      allDay: false,
+      startsTime: "18:00",
+      endsTime: "17:00",
+      location: "",
+      note: "",
+      attendeeIds: [],
+    };
+    expect(validatePlannerEventInput(input)).toEqual({
+      success: false,
+      error: "Das Ende muss nach dem Beginn liegen.",
+    });
+    expect(
+      validatePlannerEventInput({ ...input, endsTime: "19:00" }).success,
+    ).toBe(true);
   });
 });

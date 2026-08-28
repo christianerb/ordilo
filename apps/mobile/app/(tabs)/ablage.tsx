@@ -18,6 +18,7 @@ import {
 import {
   useCallback,
   useEffect,
+  forwardRef,
   useMemo,
   useRef,
   useState,
@@ -35,7 +36,11 @@ import {
 
 import { AmbientFields } from "@/src/components/ambient-fields";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
-import { OrdiloSheet, useSheetPresentation } from "@/src/components/sheet";
+import {
+  OrdiloSheet,
+  useSheetPresentation,
+  type OrdiloSheetHandle,
+} from "@/src/components/sheet";
 import {
   EmptyState,
   ListSkeleton,
@@ -80,6 +85,7 @@ const documentTypes = Object.entries(documentTypeLabels) as [
   DocumentType,
   string,
 ][];
+type LibraryToolAction = "note" | "search" | "contacts" | "collections";
 
 /**
  * Ablage — the family's RLS-scoped document library. It deliberately keeps
@@ -95,7 +101,6 @@ export default function AblageScreen() {
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
   const [view, setView] = useState<"documents" | "notes">("documents");
   const [sort, setSort] = useState<LibrarySort>("newest");
@@ -108,6 +113,8 @@ export default function AblageScreen() {
     documentType: "all",
   });
   const requestGeneration = useRef(0);
+  const toolsSheetRef = useRef<OrdiloSheetHandle>(null);
+  const pendingToolActionRef = useRef<LibraryToolAction | null>(null);
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
@@ -204,6 +211,20 @@ export default function AblageScreen() {
     if (!hasMore || loadingMore) return;
     void loadDocuments({ append: true, page: nextPage });
   }, [hasMore, loadDocuments, loadingMore, nextPage]);
+
+  const chooseLibraryTool = useCallback((action: LibraryToolAction) => {
+    pendingToolActionRef.current = action;
+    toolsSheetRef.current?.dismiss();
+  }, []);
+
+  const finishLibraryTool = useCallback(() => {
+    const action = pendingToolActionRef.current;
+    pendingToolActionRef.current = null;
+    if (action === "note") setCreateNoteOpen(true);
+    if (action === "search") router.push("/suche");
+    if (action === "contacts") router.push("/contacts");
+    if (action === "collections") router.push("/sammlungen");
+  }, [router]);
 
   const chooseSort = useCallback((nextSort: LibrarySort) => {
     setSort(nextSort);
@@ -307,7 +328,7 @@ export default function AblageScreen() {
           action={{
             accessibilityLabel: "Mehr in der Ablage",
             icon: Ellipsis,
-            onPress: () => setToolsOpen(true),
+            onPress: () => toolsSheetRef.current?.present(),
             tone: "quiet",
           }}
           subtitle={
@@ -532,24 +553,12 @@ export default function AblageScreen() {
         visible={sortPickerOpen}
       />
       <LibraryToolsSheet
-        onClose={() => setToolsOpen(false)}
-        onCreateNote={() => {
-          setToolsOpen(false);
-          setCreateNoteOpen(true);
-        }}
-        onOpenContacts={() => {
-          setToolsOpen(false);
-          router.push("/contacts");
-        }}
-        onOpenSearch={() => {
-          setToolsOpen(false);
-          router.push("/suche");
-        }}
-        onOpenCollections={() => {
-          setToolsOpen(false);
-          router.push("/sammlungen");
-        }}
-        visible={toolsOpen}
+        onCreateNote={() => chooseLibraryTool("note")}
+        onDismiss={finishLibraryTool}
+        onOpenContacts={() => chooseLibraryTool("contacts")}
+        onOpenSearch={() => chooseLibraryTool("search")}
+        onOpenCollections={() => chooseLibraryTool("collections")}
+        ref={toolsSheetRef}
       />
       <NoteFormSheet
         onClose={() => setCreateNoteOpen(false)}
@@ -734,27 +743,24 @@ function FilterChip({
   );
 }
 
-function LibraryToolsSheet({
-  onClose,
-  onCreateNote,
-  onOpenCollections,
-  onOpenContacts,
-  onOpenSearch,
-  visible,
-}: {
-  onClose: () => void;
+const LibraryToolsSheet = forwardRef<OrdiloSheetHandle, {
   onCreateNote: () => void;
+  onDismiss: () => void;
   onOpenCollections: () => void;
   onOpenContacts: () => void;
   onOpenSearch: () => void;
-  visible: boolean;
-}) {
-  const sheetRef = useSheetPresentation(visible);
+}>(function LibraryToolsSheet({
+  onCreateNote,
+  onDismiss,
+  onOpenCollections,
+  onOpenContacts,
+  onOpenSearch,
+}, ref) {
   return (
     <OrdiloSheet
       accessibilityLabel="Mehr in der Ablage"
-      onDismiss={onClose}
-      ref={sheetRef}
+      onDismiss={onDismiss}
+      ref={ref}
     >
       <LibraryToolOption
         description="Familienwissen direkt festhalten"
@@ -783,7 +789,7 @@ function LibraryToolsSheet({
       />
     </OrdiloSheet>
   );
-}
+});
 
 function LibraryToolOption({
   description,

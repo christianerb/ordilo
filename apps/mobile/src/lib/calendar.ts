@@ -1,6 +1,7 @@
 import { fetchAllRows } from "./collections";
 import { getSupabase } from "./supabase";
 import type { FamilyMemberOption } from "./tasks";
+import { z } from "zod";
 
 export type CalendarRecurrence =
   | "none"
@@ -30,6 +31,8 @@ const eventSelect =
   "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_PATTERN = /^\d{2}:\d{2}$/;
+const GERMAN_DATE_PATTERN = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
 
 /** Local calendar date, never UTC, so a Sunday night stays Sunday on-device. */
 export function toCalendarDate(date: Date): string {
@@ -37,6 +40,25 @@ export function toCalendarDate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+/** Human-readable form value for an ISO calendar date. */
+export function formatEventDateInput(value: string): string {
+  if (!DATE_PATTERN.test(value)) return value;
+  const [year, month, day] = value.split("-");
+  return `${day}.${month}.${year}`;
+}
+
+/** Convert a German date field (DD.MM.YYYY) to a real ISO calendar date. */
+export function parseEventDateInput(value: string): string | null {
+  const match = GERMAN_DATE_PATTERN.exec(value.trim());
+  if (!match) return null;
+  const [, day, month, year] = match;
+  const iso = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  const parsed = new Date(`${iso}T12:00:00`);
+  return !Number.isNaN(parsed.getTime()) && toCalendarDate(parsed) === iso
+    ? iso
+    : null;
 }
 
 export function monthStart(date: Date): Date {
@@ -288,4 +310,125 @@ export async function fetchPlannerEvents(
     recurrence_exceptions: event.recurrence_exceptions ?? [],
     attendee_ids: attendeeIdsByEvent.get(event.id) ?? [],
   }));
+}
+
+const plannerEventInputSchema = z.object({
+  title: z.string().trim().min(1, "Bitte gib einen Titel ein.").max(160),
+  date: z.string().refine(
+    (value) => DATE_PATTERN.test(value) &&
+      toCalendarDate(new Date(`${value}T12:00:00`)) === value,
+    "Bitte gib ein gültiges Datum ein.",
+  ),
+  allDay: z.boolean(),
+  startsTime: z.string(),
+  endsTime: z.string(),
+  location: z.string().trim().max(300),
+  note: z.string().trim().max(2000),
+  attendeeIds: z.array(z.string()),
+});
+
+export interface PlannerEventInput {
+  title: string;
+  date: string;
+  allDay: boolean;
+  startsTime: string;
+  endsTime: string;
+  location: string;
+  note: string;
+  attendeeIds: string[];
+}
+
+export function validatePlannerEventInput(
+  input: PlannerEventInput,
+): { success: true; data: PlannerEventInput } | { success: false; error: string } {
+  const parsed = plannerEventInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      success: false,
+      error: parsed.error.issues[0]?.message ?? "Bitte prüfe deine Angaben.",
+    };
+  }
+  if (!parsed.data.allDay) {
+    if (
+      !TIME_PATTERN.test(parsed.data.startsTime) ||
+      !TIME_PATTERN.test(parsed.data.endsTime)
+    ) {
+      return {
+        success: false,
+        error: "Bitte gib Beginn und Ende als Uhrzeit ein.",
+      };
+    }
+    if (parsed.data.endsTime <= parsed.data.startsTime) {
+      return {
+        success: false,
+        error: "Das Ende muss nach dem Beginn liegen.",
+      };
+    }
+  }
+  return { success: true, data: parsed.data };
+}
+
+/** Create a one-off family appointment and roll back if attendees fail. */
+export async function createPlannerEvent(
+  familyId: string,
+  input: PlannerEventInput,
+): Promise<{ success: true; event: PlannerEvent } | { success: false; error: string }> {
+  const validation = validatePlannerEventInput(input);
+  if (!validation.success) return validation;
+
+  const value = validation.data;
+  const { data, error } = await getSupabase()
+    .from("calendar_events")
+    .insert({
+      family_id: familyId,
+      title: value.title,
+      note: value.note || null,
+      starts_on: value.date,
+      ends_on: value.date,
+      all_day: value.allDay,
+      starts_time: value.allDay ? null : value.startsTime,
+      ends_time: value.allDay ? null : value.endsTime,
+      recurrence: "none",
+      recurrence_until: null,
+      recurrence_exceptions: [],
+      location: value.location || null,
+      responsible_member_id: null,
+    })
+    .select(eventSelect)
+    .single();
+
+  if (error || !data) {
+    return {
+      success: false,
+      error: "Der Termin konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+    };
+  }
+
+  if (value.attendeeIds.length > 0) {
+    const { error: attendeeError } = await getSupabase()
+      .from("calendar_event_attendees")
+      .insert(
+        value.attendeeIds.map((memberId) => ({
+          event_id: data.id,
+          family_member_id: memberId,
+        })),
+      );
+    if (attendeeError) {
+      await getSupabase().from("calendar_events").delete().eq("id", data.id);
+      return {
+        success: false,
+        error: "Der Termin konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+      };
+    }
+  }
+
+  return {
+    success: true,
+    event: {
+      ...(data as Omit<PlannerEvent, "attendee_ids">),
+      recurrence: data.recurrence as CalendarRecurrence,
+      recurrence_exceptions: data.recurrence_exceptions ?? [],
+      attendee_ids: value.attendeeIds,
+    },
+  };
 }
