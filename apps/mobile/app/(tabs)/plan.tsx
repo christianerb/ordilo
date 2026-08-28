@@ -17,6 +17,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   Alert,
@@ -40,6 +41,7 @@ import {
   OrdiloButton,
   Screen,
   ScreenHeader,
+  SegmentedControl,
 } from "@/src/components/ui";
 import {
   calendarDays,
@@ -438,49 +440,47 @@ export default function PlanScreen() {
     );
   }
 
+  const tabItems = [
+    {
+      icon: Check,
+      label: "Aufgaben",
+      onPress: () => {
+        if (view === "tasks") return;
+        select();
+        setView("tasks");
+      },
+      selected: view === "tasks",
+    },
+    {
+      icon: CalendarDays,
+      label: "Termine",
+      onPress: () => {
+        if (view === "calendar") return;
+        select();
+        setView("calendar");
+      },
+      selected: view === "calendar",
+    },
+  ] as const;
+
   return (
     <Screen>
-      <PlanHeader onCreate={openCreate} />
-      <View style={styles.viewTabs}>
-        <PlanViewTab
-          icon={Check}
-          label="Aufgaben"
-          onPress={() => {
-            if (view === "tasks") return;
-            select();
-            setView("tasks");
-          }}
-          selected={view === "tasks"}
-        />
-        <PlanViewTab
-          icon={CalendarDays}
-          label="Termine"
-          onPress={() => {
-            if (view === "calendar") return;
-            select();
-            setView("calendar");
-          }}
-          selected={view === "calendar"}
-        />
-      </View>
       {view === "calendar" ? (
         <CalendarView
           activeMonth={activeMonth}
           allEvents={events}
           events={selectedEvents}
+          header={
+            <>
+              <PlanHeader onCreate={openCreate} />
+              <SegmentedControl items={tabItems} />
+            </>
+          }
           members={members}
           onChangeMonth={setActiveMonth}
           onSelectDate={setSelectedDate}
           selectedDate={selectedDate}
         />
-      ) : visibleTasks.length === 0 && visibleEvents.length === 0 ? (
-        <EmptyState
-          description="Lege die erste Aufgabe an — Fristen aus deinen Dokumenten erscheinen hier ebenfalls."
-          heading="Noch nichts geplant"
-          icon={CalendarDays}
-        >
-          <OrdiloButton onPress={openCreate} size="lg" title="Neue Aufgabe" />
-        </EmptyState>
       ) : (
         <ScrollView
           keyboardShouldPersistTaps="handled"
@@ -494,6 +494,17 @@ export default function PlanScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
+          <PlanHeader onCreate={openCreate} />
+          <SegmentedControl items={tabItems} style={styles.viewTabs} />
+          {visibleTasks.length === 0 && visibleEvents.length === 0 ? (
+            <EmptyState
+              description="Lege die erste Aufgabe an — Fristen aus deinen Dokumenten erscheinen hier ebenfalls."
+              heading="Noch nichts geplant"
+              icon={CalendarDays}
+            >
+              <OrdiloButton onPress={openCreate} size="lg" title="Neue Aufgabe" />
+            </EmptyState>
+          ) : null}
           {visibleEvents.length > 0 ? (
             <View style={styles.section}>
               <View accessibilityRole="header" style={styles.sectionHeader}>
@@ -659,32 +670,6 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
 }
 
 /** One tab of the Aufgaben/Termine switcher — icon plus label, the active one filled in harbor blue. */
-function PlanViewTab({
-  icon: Icon,
-  label,
-  onPress,
-  selected,
-}: {
-  icon: typeof CalendarDays;
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={[styles.viewTab, selected && styles.viewTabSelected]}
-    >
-      <Icon color={selected ? colors.warmWhite : colors.mistDark} size={17} />
-      <Text style={[styles.viewTabLabel, selected && styles.viewTabLabelSelected]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 /**
  * Month calendar with day selection: the grid marks days that carry
  * events (apricot dot), and below it the selected day's events read as
@@ -695,6 +680,7 @@ function CalendarView({
   activeMonth,
   allEvents,
   events,
+  header,
   members,
   onChangeMonth,
   onSelectDate,
@@ -703,6 +689,8 @@ function CalendarView({
   activeMonth: Date;
   allEvents: PlannerEvent[];
   events: PlannerEvent[];
+  /** Screen header and view tabs, scrolled away with the content. */
+  header?: ReactNode;
   members: FamilyMemberOption[];
   onChangeMonth: (date: Date) => void;
   onSelectDate: (date: Date) => void;
@@ -725,6 +713,7 @@ function CalendarView({
       showsVerticalScrollIndicator={false}
       contentContainerStyle={styles.calendarContent}
     >
+      {header}
       <View style={styles.calendarSurface}>
         <View style={styles.monthHeader}>
           <Pressable
@@ -1172,37 +1161,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loadingList: { paddingTop: spacing.md },
+  // Only the spacing around the shared SegmentedControl is local.
   viewTabs: {
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
     marginBottom: spacing.md,
     marginTop: spacing.md,
-    padding: spacing.xs,
-  },
-  viewTab: {
-    alignItems: "center",
-    borderRadius: radii.base,
-    flex: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    height: 40,
-    justifyContent: "center",
-  },
-  viewTabSelected: {
-    backgroundColor: colors.harborBlue,
-  },
-  viewTabLabel: {
-    color: colors.mistDark,
-    ...typography.label,
-  },
-  viewTabLabelSelected: {
-    color: colors.warmWhite,
   },
   calendarContent: {
-    gap: spacing.lg,
+    gap: spacing.md,
     paddingBottom: spacing["2xl"],
   },
   calendarSurface: {

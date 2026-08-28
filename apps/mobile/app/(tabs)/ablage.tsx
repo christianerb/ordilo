@@ -42,6 +42,7 @@ import {
   OrdiloButton,
   Screen,
   ScreenHeader,
+  SegmentedControl,
   SpringPressable,
 } from "@/src/components/ui";
 import {
@@ -320,20 +321,22 @@ export default function AblageScreen() {
           title="Ablage"
         />
 
-        <View style={styles.segmented}>
-          <SegmentButton
-            icon={FileText}
-            label="Dokumente"
-            onPress={() => switchView("documents")}
-            selected={view === "documents"}
-          />
-          <SegmentButton
-            icon={NotebookPen}
-            label="Notizen"
-            onPress={() => switchView("notes")}
-            selected={view === "notes"}
-          />
-        </View>
+        <SegmentedControl
+          items={[
+            {
+              icon: FileText,
+              label: "Dokumente",
+              onPress: () => switchView("documents"),
+              selected: view === "documents",
+            },
+            {
+              icon: NotebookPen,
+              label: "Notizen",
+              onPress: () => switchView("notes"),
+              selected: view === "notes",
+            },
+          ]}
+        />
 
         {view === "notes" ? (
           <NotesView
@@ -553,35 +556,6 @@ export default function AblageScreen() {
         visible={createNoteOpen}
       />
     </Screen>
-  );
-}
-
-/** One half of the Dokumente/Notizen switcher — icon plus label, the active side filled in harbor blue. */
-function SegmentButton({
-  icon: Icon,
-  label,
-  onPress,
-  selected,
-}: {
-  icon: typeof FileText;
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.segment,
-        selected && styles.segmentSelected,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Icon color={selected ? colors.warmWhite : colors.mistDark} size={17} />
-      <Text style={[styles.segmentText, selected && styles.segmentTextSelected]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -1028,26 +1002,6 @@ function SortPicker({
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  segmented: {
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    padding: spacing.xs,
-  },
-  segment: {
-    alignItems: "center",
-    borderRadius: radii.base,
-    flex: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    height: 40,
-    justifyContent: "center",
-  },
-  segmentSelected: { backgroundColor: colors.harborBlue },
-  segmentText: { color: colors.mistDark, ...typography.label },
-  segmentTextSelected: { color: colors.warmWhite },
   noteDate: { color: colors.mistDark, ...typography.label },
   notesLoading: { marginTop: spacing["2xl"] },
   toolOption: {

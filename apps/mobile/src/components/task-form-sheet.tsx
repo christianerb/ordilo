@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ConfirmDialog } from "./confirm-dialog";
 import { OrdiloFormSheet } from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
@@ -151,16 +152,11 @@ export function TaskFormSheet({
     }
   }, [assignedTo, description, dueDate, initialTask, isEdit, onClose, onSubmit, title, todayStr]);
 
+  const [dismissOpen, setDismissOpen] = useState(false);
+
   const confirmDismiss = useCallback(() => {
     if (!onDismiss) return;
-    Alert.alert(
-      "Aufgabe verwerfen?",
-      "Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen.",
-      [
-        { style: "cancel", text: "Abbrechen" },
-        { onPress: onDismiss, style: "destructive", text: "Verwerfen" },
-      ],
-    );
+    setDismissOpen(true);
   }, [onDismiss]);
 
   return (
@@ -339,6 +335,17 @@ export function TaskFormSheet({
           </Pressable>
         ) : null}
       </View>
+      <ConfirmDialog
+        confirmLabel="Verwerfen"
+        message="Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen."
+        onCancel={() => setDismissOpen(false)}
+        onConfirm={() => {
+          setDismissOpen(false);
+          onDismiss?.();
+        }}
+        title="Aufgabe verwerfen?"
+        visible={dismissOpen}
+      />
     </OrdiloFormSheet>
   );
 }

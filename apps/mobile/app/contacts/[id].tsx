@@ -1,8 +1,7 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AlertCircle, ArrowLeft, ChevronRight, Users } from "lucide-react-native";
+import { AlertCircle, ChevronRight, Users } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,7 +15,7 @@ import {
   ContactDetailsCard,
   ContactFormSheet,
 } from "@/src/components/contacts";
-import { EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import {
   getContactSubtitle,
   loadContact,
@@ -69,25 +68,11 @@ export default function ContactDetailScreen() {
 
   return (
     <Screen style={styles.screen}>
-      <View style={styles.topbar}>
-        <Pressable
-          accessibilityLabel="Zurück"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.back()}
-          style={styles.back}
-        >
-          <ArrowLeft color={colors.graphite} size={22} />
-        </Pressable>
-        <Text style={styles.topTitle}>Kontakt</Text>
-      </View>
+      <DetailTopBar onBack={() => router.back()} title="Kontakt" />
 
       {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator
-            accessibilityLabel="Kontakt wird geladen"
-            color={colors.harborBlue}
-          />
+        <View style={styles.content}>
+          <ListSkeleton rows={3} />
         </View>
       ) : !contact ? (
         <EmptyState
@@ -163,18 +148,6 @@ export default function ContactDetailScreen() {
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  topbar: {
-    alignItems: "center",
-    borderBottomColor: colors.mistLight,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 54,
-    paddingHorizontal: spacing.md,
-  },
-  back: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
-  topTitle: { color: colors.graphite, ...typography.title },
-  center: { alignItems: "center", flex: 1, justifyContent: "center" },
   content: {
     gap: spacing.md,
     padding: spacing.md,

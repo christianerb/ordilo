@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react-native";
+import { ChevronLeft, type LucideIcon } from "lucide-react-native";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Pressable,
@@ -261,6 +261,99 @@ export function ScreenHeader({
   );
 }
 
+/**
+ * The one view switcher (Dokumente/Notizen, Aufgaben/Termine): a sand
+ * track where the active segment fills in harbor blue.
+ */
+export function SegmentedControl({
+  items,
+  style,
+}: {
+  items: readonly {
+    icon: LucideIcon;
+    label: string;
+    onPress: () => void;
+    selected: boolean;
+  }[];
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.segmented, style]}>
+      {items.map((item) => {
+        const ItemIcon = item.icon;
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: item.selected }}
+            key={item.label}
+            onPress={item.onPress}
+            style={({ pressed }) => [
+              styles.segment,
+              item.selected && styles.segmentSelected,
+              pressed && styles.segmentPressed,
+            ]}
+          >
+            <ItemIcon
+              color={item.selected ? colors.warmWhite : colors.mistDark}
+              size={17}
+            />
+            <Text
+              style={[
+                styles.segmentText,
+                item.selected && styles.segmentTextSelected,
+              ]}
+            >
+              {item.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * The one top bar for detail and stack screens: back chevron on the
+ * left, optional title and subtitle beside it, optional actions on the
+ * right. List screens that show a ScreenHeader pass no title.
+ */
+export function DetailTopBar({
+  onBack,
+  title,
+  subtitle,
+  trailing,
+}: {
+  onBack: () => void;
+  title?: string;
+  subtitle?: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <View style={styles.detailTopBar}>
+      <SpringPressable
+        accessibilityLabel="Zurück"
+        onPress={onBack}
+        style={styles.detailBack}
+      >
+        <ChevronLeft color={colors.graphite} size={22} strokeWidth={2} />
+      </SpringPressable>
+      {title ? (
+        <View style={styles.detailTopCopy}>
+          <Text numberOfLines={1} style={styles.detailTopTitle}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text numberOfLines={1} style={styles.detailTopSubtitle}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {trailing}
+    </View>
+  );
+}
+
 export function Card({
   children,
   style,
@@ -425,6 +518,43 @@ const styles = StyleSheet.create({
     top: 40,
     width: 60,
   },
+  segmented: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    padding: spacing.xs,
+  },
+  segment: {
+    alignItems: "center",
+    borderRadius: radii.base,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 40,
+    justifyContent: "center",
+  },
+  segmentSelected: { backgroundColor: colors.harborBlue },
+  segmentPressed: { opacity: 0.76 },
+  segmentText: { color: colors.mistDark, ...typography.label },
+  segmentTextSelected: { color: colors.warmWhite },
+  detailTopBar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 60,
+    paddingHorizontal: spacing.sm,
+  },
+  detailBack: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  detailTopCopy: { flex: 1, gap: 2, minWidth: 0 },
+  detailTopTitle: { color: colors.graphite, ...typography.title },
+  detailTopSubtitle: { color: colors.mistDark, ...typography.timestamp },
   card: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,

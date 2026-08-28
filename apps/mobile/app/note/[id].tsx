@@ -4,7 +4,6 @@ import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import {
   AlertCircle,
-  ArrowLeft,
   Check,
   ChevronRight,
   Copy,
@@ -28,9 +27,10 @@ import {
   View,
 } from "react-native";
 
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { AnimatedSheetModal } from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import {
   buildNoteUpdatePayload,
   getNoteContent,
@@ -97,9 +97,13 @@ export default function NoteScreen() {
     void Promise.resolve().then(load);
   }, [load]);
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const deleteNote = useCallback(async () => {
     if (!id || deleting) return;
     setDeleting(true);
+    setDeleteError(null);
     removeLibraryDocumentOptimistically(id);
     try {
       await deleteDocument(id);
@@ -109,21 +113,15 @@ export default function NoteScreen() {
       refreshLibraryDocuments();
       setDeleting(false);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Notiz nicht gelöscht", "Bitte prüfe deine Verbindung und versuch es nochmal.");
+      setDeleteError("Die Notiz konnte nicht gelöscht werden. Bitte prüfe deine Verbindung und versuch es nochmal.");
     }
   }, [deleting, id, router]);
 
   const askToDelete = useCallback(() => {
     if (!note || deleting) return;
-    Alert.alert(
-      "Notiz löschen?",
-      `"${note.title?.trim() || "Diese Notiz"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`,
-      [
-        { text: "Abbrechen", style: "cancel" },
-        { text: "Löschen", style: "destructive", onPress: () => void deleteNote() },
-      ],
-    );
-  }, [deleteNote, deleting, note]);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }, [deleting, note]);
 
   const openOriginal = useCallback(async () => {
     if (!id || openingOriginal) return;
@@ -146,13 +144,20 @@ export default function NoteScreen() {
   }, [id, openingOriginal]);
 
   if (loading) {
-    return <Screen style={styles.center}><ActivityIndicator accessibilityLabel="Notiz wird geladen" color={colors.harborBlue} /></Screen>;
+    return (
+      <Screen style={styles.screen}>
+        <DetailTopBar onBack={() => router.back()} title="Notiz" />
+        <View style={styles.loadingContent}>
+          <ListSkeleton rows={4} />
+        </View>
+      </Screen>
+    );
   }
 
   if (!note || !("summary" in note)) {
     return (
       <Screen>
-        <NoteHeader onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} title="Notiz" />
         <EmptyState
           icon={AlertCircle}
           heading="Notiz nicht verfügbar"
@@ -170,9 +175,20 @@ export default function NoteScreen() {
 
   return (
     <Screen style={styles.screen}>
-      <NoteHeader
+      <DetailTopBar
         onBack={() => router.back()}
-        onEdit={editable ? () => setShowEditor(true) : undefined}
+        title="Notiz"
+        trailing={editable ? (
+          <Pressable
+            accessibilityLabel="Angaben bearbeiten"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => setShowEditor(true)}
+            style={styles.edit}
+          >
+            <Pencil color={colors.harborBlue} size={19} />
+          </Pressable>
+        ) : undefined}
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
@@ -247,24 +263,18 @@ export default function NoteScreen() {
           }}
         />
       ) : null}
+      <ConfirmDialog
+        error={deleteError}
+        loading={deleting}
+        loadingLabel="Wird gelöscht …"
+        message={`"${note.title?.trim() || "Diese Notiz"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => void deleteNote()}
+        title="Notiz löschen?"
+        visible={deleteOpen}
+      />
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
-  );
-}
-
-function NoteHeader({ onBack, onEdit }: { onBack: () => void; onEdit?: () => void }) {
-  return (
-    <View style={styles.topbar}>
-      <Pressable accessibilityLabel="Zurück" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.back}>
-        <ArrowLeft color={colors.graphite} size={22} />
-      </Pressable>
-      <Text style={styles.topTitle}>Notiz</Text>
-      {onEdit ? (
-        <Pressable accessibilityLabel="Angaben bearbeiten" accessibilityRole="button" hitSlop={8} onPress={onEdit} style={styles.edit}>
-          <Pencil color={colors.harborBlue} size={19} />
-        </Pressable>
-      ) : <View style={styles.edit} />}
-    </View>
   );
 }
 
@@ -540,10 +550,7 @@ function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; 
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  center: { alignItems: "center", justifyContent: "center" },
-  topbar: { alignItems: "center", flexDirection: "row", height: 60, justifyContent: "space-between", paddingHorizontal: spacing.md },
-  back: { alignItems: "center", height: 44, justifyContent: "center", marginLeft: -6, width: 44 },
-  topTitle: { color: colors.graphite, ...typography.title },
+  loadingContent: { paddingHorizontal: spacing.md },
   edit: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing["2xl"] },
   hero: { alignItems: "center", flexDirection: "row", gap: spacing.sm },

@@ -1,7 +1,6 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AlertCircle,
-  ArrowLeft,
   CheckCircle2,
   FileText,
   Pencil,
@@ -9,8 +8,6 @@ import {
 } from "lucide-react-native";
 import { useCallback, useState } from "react";
 import {
-  ActivityIndicator,
-  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,6 +19,11 @@ import {
 import { CollectionFormSheet } from "@/src/components/collection-form-sheet";
 import { CollectionIcon } from "@/src/components/collection-icon";
 import {
+  ConfirmDialog,
+  ConfirmDialogEmphasis,
+} from "@/src/components/confirm-dialog";
+import {
+  DetailTopBar,
   EmptyState,
   ListSkeleton,
   OrdiloButton,
@@ -125,17 +127,7 @@ export default function SammlungDetailScreen() {
   if (loading && !collection) {
     return (
       <Screen>
-        <View style={styles.topBar}>
-          <Pressable
-            accessibilityHint="Zurück zur Übersicht"
-            accessibilityLabel="Zurück"
-            accessibilityRole="button"
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-          >
-            <ArrowLeft color={colors.graphite} size={22} strokeWidth={1.8} />
-          </Pressable>
-        </View>
+        <DetailTopBar onBack={() => router.back()} title="Sammlung" />
         <ListSkeleton rows={5} />
       </Screen>
     );
@@ -182,40 +174,34 @@ export default function SammlungDetailScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.topBar}>
-          <Pressable
-            accessibilityHint="Zurück zur Übersicht"
-            accessibilityLabel="Zurück"
-            accessibilityRole="button"
-            onPress={() => router.back()}
-            style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-          >
-            <ArrowLeft color={colors.graphite} size={22} strokeWidth={1.8} />
-          </Pressable>
-          <View style={styles.topBarActions}>
-            <Pressable
-              accessibilityHint="Name, Icon oder Farbe ändern"
-              accessibilityLabel="Sammlung bearbeiten"
-              accessibilityRole="button"
-              onPress={() => setEditOpen(true)}
-              style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
-            >
-              <Pencil color={colors.mistDark} size={18} strokeWidth={1.8} />
-            </Pressable>
-            <Pressable
-              accessibilityHint="Löscht nur den Ordner, die Dokumente bleiben"
-              accessibilityLabel="Sammlung löschen"
-              accessibilityRole="button"
-              onPress={() => {
-                setDeleteError(null);
-                setDeleteOpen(true);
-              }}
-              style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
-            >
-              <Trash2 color={colors.destructive} size={18} strokeWidth={1.8} />
-            </Pressable>
-          </View>
-        </View>
+        <DetailTopBar
+          onBack={() => router.back()}
+          trailing={(
+            <View style={styles.topBarActions}>
+              <Pressable
+                accessibilityHint="Name, Icon oder Farbe ändern"
+                accessibilityLabel="Sammlung bearbeiten"
+                accessibilityRole="button"
+                onPress={() => setEditOpen(true)}
+                style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+              >
+                <Pencil color={colors.mistDark} size={18} strokeWidth={1.8} />
+              </Pressable>
+              <Pressable
+                accessibilityHint="Löscht nur den Ordner, die Dokumente bleiben"
+                accessibilityLabel="Sammlung löschen"
+                accessibilityRole="button"
+                onPress={() => {
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+                style={({ pressed }) => [styles.actionButton, pressed && styles.pressed]}
+              >
+                <Trash2 color={colors.destructive} size={18} strokeWidth={1.8} />
+              </Pressable>
+            </View>
+          )}
+        />
 
         <View style={styles.header}>
           <View style={[styles.headerIcon, { backgroundColor: color.bg }]}>
@@ -283,58 +269,21 @@ export default function SammlungDetailScreen() {
         visible={editOpen}
       />
 
-      <Modal
-        animationType="fade"
-        onRequestClose={() => setDeleteOpen(false)}
-        transparent
+      <ConfirmDialog
+        error={deleteError}
+        loading={deleting}
+        loadingLabel="Wird gelöscht …"
+        message={(
+          <>
+            Möchtest du <ConfirmDialogEmphasis>{collection.name}</ConfirmDialogEmphasis>{" "}
+            wirklich löschen? Keine Sorge, die Dokumente bleiben erhalten.
+          </>
+        )}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => void confirmDelete()}
+        title="Sammlung löschen"
         visible={deleteOpen}
-      >
-        <Pressable onPress={() => setDeleteOpen(false)} style={styles.dialogOverlay}>
-          <Pressable
-            accessibilityViewIsModal
-            onPress={(event) => event.stopPropagation()}
-            style={styles.dialog}
-          >
-            <View style={styles.dialogIconCircle}>
-              <AlertCircle color={colors.warmWhite} size={20} strokeWidth={2} />
-            </View>
-            <Text style={styles.dialogTitle}>Sammlung löschen</Text>
-            <Text style={styles.dialogText}>
-              Möchtest du <Text style={styles.dialogName}>{collection.name}</Text>{" "}
-              wirklich löschen? Keine Sorge, die Dokumente bleiben erhalten.
-            </Text>
-            {deleteError ? (
-              <View accessibilityRole="alert" style={styles.inlineError}>
-                <Text style={styles.inlineErrorText}>{deleteError}</Text>
-              </View>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              disabled={deleting}
-              onPress={() => void confirmDelete()}
-              style={({ pressed }) => [
-                styles.deleteButton,
-                pressed && styles.pressed,
-                deleting && styles.deleteButtonDisabled,
-              ]}
-            >
-              {deleting ? (
-                <ActivityIndicator color={colors.warmWhite} size="small" />
-              ) : null}
-              <Text style={styles.deleteButtonText}>
-                {deleting ? "Wird gelöscht …" : "Löschen"}
-              </Text>
-            </Pressable>
-            <OrdiloButton
-              disabled={deleting}
-              onPress={() => setDeleteOpen(false)}
-              size="lg"
-              title="Abbrechen"
-              variant="outline"
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      />
     </Screen>
   );
 }
@@ -401,19 +350,7 @@ const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   centerFill: { alignItems: "center", flex: 1, justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  topBar: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingTop: spacing.sm,
-  },
   topBarActions: { flexDirection: "row", gap: spacing.xs },
-  backButton: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
   actionButton: {
     alignItems: "center",
     backgroundColor: colors.sand,
@@ -529,47 +466,6 @@ const styles = StyleSheet.create({
     color: colors.mistDark,
     textAlign: "center",
     ...typography.timestamp,
-  },
-  dialogOverlay: {
-    alignItems: "center",
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "center",
-    padding: spacing.lg,
-  },
-  dialog: {
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.md,
-    gap: spacing.md,
-    maxWidth: 420,
-    padding: spacing.lg,
-    width: "100%",
-  },
-  dialogIconCircle: {
-    alignItems: "center",
-    backgroundColor: colors.destructive,
-    borderRadius: radii.pill,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  dialogTitle: { color: colors.graphite, ...typography.display },
-  dialogText: { color: colors.mistDark, ...typography.body },
-  dialogName: { color: colors.graphite, fontFamily: typography.title.fontFamily },
-  deleteButton: {
-    alignItems: "center",
-    backgroundColor: colors.destructive,
-    borderRadius: radii.md,
-    flexDirection: "row",
-    gap: spacing.sm,
-    height: 48,
-    justifyContent: "center",
-  },
-  deleteButtonDisabled: { opacity: 0.6 },
-  deleteButtonText: {
-    color: colors.warmWhite,
-    fontFamily: typography.title.fontFamily,
-    fontSize: typography.body.fontSize,
   },
   pressed: { opacity: 0.76 },
 });

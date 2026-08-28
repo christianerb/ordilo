@@ -4,7 +4,6 @@ import { fail, select, success } from "@/src/lib/feedback";
 import * as Linking from "expo-linking";
 import {
   AlertCircle,
-  ArrowLeft,
   CalendarDays,
   Check,
   ChevronRight,
@@ -38,8 +37,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
 import {
   canReviewDocument,
@@ -75,6 +75,8 @@ export default function DocumentReviewScreen() {
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [showDocumentDetails, setShowDocumentDetails] = useState(false);
 
@@ -143,23 +145,14 @@ export default function DocumentReviewScreen() {
 
   const requestDelete = () => {
     if (!document || !id || deleting) return;
-    Alert.alert(
-      "Dokument löschen?",
-      `"${document.title?.trim() || "Dieses Dokument"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`,
-      [
-        { text: "Abbrechen", style: "cancel" },
-        {
-          text: "Löschen",
-          style: "destructive",
-          onPress: () => void removeDocument(),
-        },
-      ],
-    );
+    setDeleteError(null);
+    setDeleteOpen(true);
   };
 
   const removeDocument = async () => {
     if (!id) return;
     setDeleting(true);
+    setDeleteError(null);
     removeLibraryDocumentOptimistically(id);
     try {
       await deleteDocument(id);
@@ -167,10 +160,7 @@ export default function DocumentReviewScreen() {
       router.back();
     } catch {
       await fail();
-      Alert.alert(
-        "Dokument nicht gelöscht",
-        "Bitte prüfe deine Verbindung und versuch es nochmal.",
-      );
+      setDeleteError("Das Dokument konnte nicht gelöscht werden. Bitte prüfe deine Verbindung und versuch es nochmal.");
       refreshLibraryDocuments();
       setDeleting(false);
     }
@@ -200,7 +190,14 @@ export default function DocumentReviewScreen() {
   };
 
   if (loading) {
-    return <Screen style={styles.center}><ActivityIndicator accessibilityLabel="Dokument wird geladen" color={colors.harborBlue} /></Screen>;
+    return (
+      <Screen style={styles.screen}>
+        <DetailTopBar onBack={() => router.back()} title="Dokument" />
+        <View style={styles.loadingContent}>
+          <ListSkeleton rows={4} />
+        </View>
+      </Screen>
+    );
   }
 
   if (!document) {
@@ -217,14 +214,30 @@ export default function DocumentReviewScreen() {
     );
   }
 
+  const deleteDialog = (
+    <ConfirmDialog
+      error={deleteError}
+      loading={deleting}
+      loadingLabel="Wird gelöscht …"
+      message={`"${document.title?.trim() || "Dieses Dokument"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
+      onCancel={() => setDeleteOpen(false)}
+      onConfirm={() => void removeDocument()}
+      title="Dokument löschen?"
+      visible={deleteOpen}
+    />
+  );
+
   if (!("summary" in document)) {
     return (
-      <UnavailableState
-        deleting={deleting}
-        document={document}
-        onBack={() => router.replace("/(tabs)")}
-        onDelete={requestDelete}
-      />
+      <>
+        <UnavailableState
+          deleting={deleting}
+          document={document}
+          onBack={() => router.replace("/(tabs)")}
+          onDelete={requestDelete}
+        />
+        {deleteDialog}
+      </>
     );
   }
 
@@ -233,17 +246,26 @@ export default function DocumentReviewScreen() {
 
   return (
     <Screen style={styles.screen}>
-      <ReviewHeader
-        actionLabel="Weitere Optionen"
-        onAction={() => {
-          Alert.alert("Dokument", undefined, [
-            { text: "Abbrechen", style: "cancel" },
-            { text: "Dokument löschen", style: "destructive", onPress: requestDelete },
-          ]);
-        }}
+      <DetailTopBar
         onBack={() => router.back()}
         subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)} · ${document.suggested_category || documentTypeLabels[document.document_type]}`}
         title={isReadOnly ? "Dokument" : "Dokument prüfen"}
+        trailing={(
+          <Pressable
+            accessibilityLabel="Weitere Optionen"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => {
+              Alert.alert("Dokument", undefined, [
+                { text: "Abbrechen", style: "cancel" },
+                { text: "Dokument löschen", style: "destructive", onPress: requestDelete },
+              ]);
+            }}
+            style={styles.headerAction}
+          >
+            <Ellipsis color={colors.graphite} size={22} />
+          </Pressable>
+        )}
       />
       <ScrollView
         contentContainerStyle={[
@@ -437,39 +459,10 @@ export default function DocumentReviewScreen() {
         </View>
       ) : null}
 
+      {deleteDialog}
+
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
-  );
-}
-
-function ReviewHeader({
-  actionLabel,
-  onAction,
-  onBack,
-  subtitle,
-  title,
-}: {
-  actionLabel?: string;
-  onAction?: () => void;
-  onBack: () => void;
-  subtitle?: string;
-  title: string;
-}) {
-  return (
-    <View style={styles.topbar}>
-      <Pressable accessibilityLabel="Zurück" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.back}>
-        <ArrowLeft color={colors.graphite} size={22} />
-      </Pressable>
-      <View style={styles.headerCopy}>
-        <Text style={styles.topTitle}>{title}</Text>
-        {subtitle ? <Text numberOfLines={1} style={styles.topSubtitle}>{subtitle}</Text> : null}
-      </View>
-      {onAction ? (
-        <Pressable accessibilityLabel={actionLabel} accessibilityRole="button" hitSlop={8} onPress={onAction} style={styles.headerAction}>
-          <Ellipsis color={colors.graphite} size={22} />
-        </Pressable>
-      ) : null}
-    </View>
   );
 }
 
@@ -488,7 +481,7 @@ function UnavailableState({
   const processing = ["uploaded", "ocr_processing", "ocr_done", "analyzing"].includes(document.status);
   return (
     <Screen>
-      <ReviewHeader title="Dokument" onBack={onBack} />
+      <DetailTopBar onBack={onBack} title="Dokument" />
       <EmptyState
         icon={failed ? AlertCircle : FileText}
         heading={failed ? "Das hat nicht geklappt" : processing ? "Dokument wird vorbereitet" : "Noch nicht bereit"}
@@ -980,12 +973,7 @@ function addTag(
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  center: { alignItems: "center", justifyContent: "center" },
-  topbar: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", gap: spacing.xs, minHeight: 70, paddingHorizontal: spacing.sm },
-  back: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
-  headerCopy: { flex: 1, gap: 2, minWidth: 0 },
-  topTitle: { color: colors.graphite, ...typography.title },
-  topSubtitle: { color: colors.mistDark, ...typography.timestamp },
+  loadingContent: { paddingHorizontal: spacing.md },
   headerAction: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: 104 },
   contentState: { gap: spacing.md },
