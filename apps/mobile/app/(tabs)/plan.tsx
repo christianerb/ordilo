@@ -414,7 +414,9 @@ export default function PlanScreen() {
     return (
       <Screen>
         <PlanHeader onCreate={openCreate} />
-        <ListSkeleton rows={4} />
+        <View style={styles.loadingList}>
+          <ListSkeleton rows={4} />
+        </View>
       </Screen>
     );
   }
@@ -1169,6 +1171,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
   },
+  loadingList: { paddingTop: spacing.md },
   viewTabs: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,
