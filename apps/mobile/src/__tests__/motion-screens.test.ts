@@ -69,9 +69,9 @@ describe("native motion wiring", () => {
       expect(source(path)).not.toContain("modalAnimationType");
     }
 
-    // The tab bar action sheet delegates presentation to OrdiloSheet.
+    // The tab bar action sheet delegates presentation to the shared choice sheet.
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "OrdiloSheet",
+      "CreateChoiceSheet",
     );
   });
 
@@ -93,7 +93,11 @@ describe("native motion wiring", () => {
       "DETACHED_SHEET_BOTTOM_RADIUS = 40",
     );
 
-    for (const path of ["app/(tabs)/ablage.tsx", "app/(tabs)/plan.tsx"]) {
+    for (const path of [
+      "app/(tabs)/ablage.tsx",
+      "app/(tabs)/plan.tsx",
+      "src/components/ordilo-tab-bar.tsx",
+    ]) {
       expect(source(path)).toContain("<CreateChoiceSheet");
       expect(source(path)).not.toContain("CreatePlanItemSheet");
       expect(source(path)).not.toContain("CreateLibraryItemSheet");

@@ -21,9 +21,17 @@ export const CreateChoiceSheet = forwardRef<
     accessibilityLabel: string;
     items: CreateChoiceItem[];
     onDismiss: () => void;
+    subtitle?: string;
+    title?: string;
   }
 >(function CreateChoiceSheet(
-  { accessibilityLabel, items, onDismiss },
+  {
+    accessibilityLabel,
+    items,
+    onDismiss,
+    subtitle = "Wähle aus, was du jetzt festhalten möchtest.",
+    title = "Was möchtest du anlegen?",
+  },
   ref,
 ) {
   return (
@@ -36,10 +44,8 @@ export const CreateChoiceSheet = forwardRef<
     >
       <View style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.title}>Was möchtest du anlegen?</Text>
-          <Text style={styles.subtitle}>
-            Wähle aus, was du jetzt festhalten möchtest.
-          </Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.subtitle}>{subtitle}</Text>
         </View>
         <View
           accessible={false}

@@ -13,8 +13,9 @@ import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
-import { OrdiloSheet, type OrdiloSheetHandle } from "@/src/components/sheet";
+import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import { haptics } from "@/src/lib/haptics";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -37,6 +38,18 @@ export function OrdiloTabBar({
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const actionsSheetRef = useRef<OrdiloSheetHandle>(null);
+  const pendingActionRef = useRef<"/scan" | "/suche" | null>(null);
+
+  function chooseAction(route: "/scan" | "/suche") {
+    pendingActionRef.current = route;
+    actionsSheetRef.current?.dismiss();
+  }
+
+  function finishActionChoice() {
+    const route = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (route) router.push(route);
+  }
 
   return (
     <>
@@ -123,47 +136,30 @@ export function OrdiloTabBar({
         </View>
       </View>
 
-      <OrdiloSheet accessibilityLabel="Ordilo-Aktionen" ref={actionsSheetRef}>
-        <View style={styles.actionSheetHeading}>
-          <OrdiloMark size={38} />
-          <View style={styles.actionSheetCopy}>
-            <Text style={styles.actionSheetTitle}>Was darf ich für euch tun?</Text>
-            <Text style={styles.actionSheetText}>Ordilo hilft beim Finden und Festhalten.</Text>
-          </View>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            actionsSheetRef.current?.dismiss();
-            router.push("/suche");
-          }}
-          style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-        >
-          <View style={styles.actionIcon}>
-            <Sparkles color={colors.harborBlue} size={20} />
-          </View>
-          <View style={styles.actionCopy}>
-            <Text style={styles.actionTitle}>Frage Ordilo</Text>
-            <Text style={styles.actionText}>Antworten aus euren Dokumenten finden.</Text>
-          </View>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => {
-            actionsSheetRef.current?.dismiss();
-            router.push("/scan");
-          }}
-          style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-        >
-          <View style={[styles.actionIcon, styles.scanActionIcon]}>
-            <ScanLine color={colors.harborBlue} size={20} />
-          </View>
-          <View style={styles.actionCopy}>
-            <Text style={styles.actionTitle}>Dokument scannen</Text>
-            <Text style={styles.actionText}>Brief abfotografieren und ablegen.</Text>
-          </View>
-        </Pressable>
-      </OrdiloSheet>
+      <CreateChoiceSheet
+        accessibilityLabel="Ordilo-Aktionen"
+        items={[
+          {
+            accessibilityLabel: "Ordilo fragen",
+            description: "Antworten aus euren Dokumenten finden",
+            icon: Sparkles,
+            label: "Frage Ordilo",
+            onPress: () => chooseAction("/suche"),
+          },
+          {
+            accessibilityLabel: "Dokument scannen",
+            description: "Brief abfotografieren und ablegen",
+            icon: ScanLine,
+            label: "Dokument scannen",
+            onPress: () => chooseAction("/scan"),
+            tint: "blue",
+          },
+        ]}
+        onDismiss={finishActionChoice}
+        ref={actionsSheetRef}
+        subtitle="Ordilo hilft beim Finden und Festhalten."
+        title="Was darf ich für euch tun?"
+      />
     </>
   );
 }
@@ -251,35 +247,4 @@ const styles = StyleSheet.create({
     top: 0,
     width: 136,
   },
-  actionSheetHeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  actionSheetCopy: { flex: 1, gap: 2 },
-  actionSheetTitle: { color: colors.graphite, ...typography.display },
-  actionSheetText: { color: colors.mistDark, ...typography.timestamp },
-  actionRow: {
-    alignItems: "center",
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 72,
-    paddingVertical: spacing.sm,
-  },
-  actionIcon: {
-    alignItems: "center",
-    backgroundColor: colors.washSageSoft,
-    borderRadius: radii.sm,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  scanActionIcon: { backgroundColor: colors.washBlue },
-  actionCopy: { flex: 1, gap: 2 },
-  actionTitle: { color: colors.graphite, ...typography.title },
-  actionText: { color: colors.mistDark, ...typography.timestamp },
-  pressed: { opacity: 0.82 },
 });
