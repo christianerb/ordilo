@@ -111,6 +111,26 @@ describe("chat stream event parsing", () => {
     });
   });
 
+  it("accepts a contact proposal from the shared chat API", () => {
+    expect(
+      parseChatStreamEvent({
+        type: "confirmation_request",
+        tool_name: "add_contact",
+        action_id: "contact-1",
+        action_args: { name: "Hein Blöd", phone: "+49 30 123456" },
+        needs_confirmation: true,
+        contact_name: "Hein Blöd",
+      }),
+    ).toMatchObject({
+      type: "confirmation",
+      action: {
+        id: "contact-1",
+        toolName: "add_contact",
+        state: "ready",
+      },
+    });
+  });
+
   it("rejects malformed or unknown events instead of crashing", () => {
     expect(parseChatStreamEvent(null)).toBeNull();
     expect(parseChatStreamEvent({ type: "text" })).toBeNull();
@@ -266,6 +286,32 @@ describe("action card content (ported from the web)", () => {
     expect(note.eyebrow).toBe("Zugangsdaten anlegen");
     expect(note.title).toBe("Neue Zugangsdaten");
     expect(note.details).toEqual([{ label: "URL", value: "https://stadtwerke.de" }]);
+  });
+
+  it("shows every supplied field in a contact proposal", () => {
+    expect(
+      getActionContent({
+        id: "a-contact",
+        toolName: "add_contact",
+        args: {
+          name: "Hein Blöd",
+          organization: "Praxis Nord",
+          role: "Hausarzt",
+          phone: "+49 30 123456",
+          email: "hein@example.de",
+        },
+        state: "ready",
+      }),
+    ).toEqual({
+      eyebrow: "Kontakt vorbereiten",
+      title: "Hein Blöd",
+      details: [
+        { label: "Organisation", value: "Praxis Nord" },
+        { label: "Rolle", value: "Hausarzt" },
+        { label: "Telefon", value: "+49 30 123456" },
+        { label: "E-Mail", value: "hein@example.de" },
+      ],
+    });
   });
 
   it("falls back to generic German titles", () => {

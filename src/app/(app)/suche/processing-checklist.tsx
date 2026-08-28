@@ -2,6 +2,7 @@
 
 import {
   CheckCircle2,
+  ContactRound,
   ListChecks,
   Search,
   Sparkles,
@@ -9,6 +10,7 @@ import {
   Network,
   type LucideIcon,
 } from "lucide-react";
+import { CHAT_TOOL_STEP_LABELS } from "@ordilo/chat-contract";
 import { cn } from "@/lib/utils";
 
 /**
@@ -33,28 +35,29 @@ export interface ToolCallProgress {
   state: ToolCallState;
 }
 
-const TOOL_STEPS: Record<string, { icon: LucideIcon; label: string }> = {
-  search_documents: { icon: Search, label: "Durchsucht deine Dokumente" },
-  list_documents: { icon: ListChecks, label: "Sieht die Dokumentenliste durch" },
-  list_tasks: { icon: ListChecks, label: "Prüft Aufgaben und Fristen" },
-  add_task: { icon: CheckCircle2, label: "Legt die Aufgabe an" },
-  update_task: { icon: CheckCircle2, label: "Aktualisiert die Aufgabe" },
-  create_collection: { icon: ListChecks, label: "Legt die Sammlung an" },
-  create_note: { icon: CheckCircle2, label: "Speichert die Notiz" },
-  list_family_members: { icon: Users, label: "Schaut, wer zur Familie gehört" },
-  graph_query: { icon: Network, label: "Verfolgt Zusammenhänge" },
-  mark_task_done: { icon: CheckCircle2, label: "Erledigt die Aufgabe" },
-  save_document_fact: { icon: CheckCircle2, label: "Speichert die Nummer" },
-  move_document_to_collection: {
-    icon: ListChecks,
-    label: "Sortiert das Dokument ein",
-  },
-  add_document_tags: { icon: ListChecks, label: "Ergänzt Schlagworte" },
-  add_family_member: { icon: Users, label: "Legt das Familienmitglied an" },
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  search_documents: Search,
+  list_documents: ListChecks,
+  list_tasks: ListChecks,
+  add_task: CheckCircle2,
+  add_contact: ContactRound,
+  update_task: CheckCircle2,
+  create_collection: ListChecks,
+  create_note: CheckCircle2,
+  list_family_members: Users,
+  graph_query: Network,
+  mark_task_done: CheckCircle2,
+  save_document_fact: CheckCircle2,
+  move_document_to_collection: ListChecks,
+  add_document_tags: ListChecks,
+  add_family_member: Users,
 };
 
 function stepFor(toolName: string) {
-  return TOOL_STEPS[toolName] ?? { icon: Search, label: "Arbeitet" };
+  return {
+    icon: TOOL_ICONS[toolName] ?? Search,
+    label: CHAT_TOOL_STEP_LABELS[toolName] ?? "Arbeitet",
+  };
 }
 
 export function ProcessingChecklist({

@@ -1,5 +1,14 @@
 import { z } from "zod";
+import {
+  CHAT_ACTION_TOOL_NAMES,
+  type ChatActionToolName,
+} from "@ordilo/chat-contract";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
+
+export {
+  CHAT_ACTION_TOOL_NAMES,
+  type ChatActionToolName,
+} from "@ordilo/chat-contract";
 
 /**
  * Zod schema and types for the POST /api/chat API route.
@@ -136,21 +145,6 @@ export type ChatErrorResponse = ApiErrorResponse;
  * in the chat. The model proposes one first; the client never runs it until
  * the family member deliberately chooses "Übernehmen".
  */
-export const CHAT_ACTION_TOOL_NAMES = [
-  "add_calendar_event",
-  "add_task",
-  "update_task",
-  "mark_task_done",
-  "add_family_member",
-  "create_collection",
-  "create_note",
-  "move_document_to_collection",
-  "add_document_tags",
-  "save_document_fact",
-] as const;
-
-export type ChatActionToolName = (typeof CHAT_ACTION_TOOL_NAMES)[number];
-
 export type ChatActionState =
   | "ready"
   | "confirming"

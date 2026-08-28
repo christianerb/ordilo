@@ -1025,7 +1025,7 @@ const styles = StyleSheet.create({
     maxHeight: 96,
     minHeight: 40,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
+    paddingVertical: spacing.sm,
     textAlignVertical: "center",
     ...typography.body,
   },

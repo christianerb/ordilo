@@ -249,6 +249,7 @@ export async function POST(request: Request): Promise<Response> {
     familyId,
     sources: [],
     speakerName,
+    userId: user.id,
   };
 
   // 11. Merge DB history with client history (client history takes

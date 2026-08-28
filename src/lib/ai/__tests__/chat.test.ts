@@ -623,6 +623,16 @@ describe("buildAgenticSystemPrompt", () => {
     expect(prompt).toContain("Dokumente zu Emma");
     expect(prompt).toContain("person_name");
   });
+
+  it("uses add_contact and asks for missing contact details", () => {
+    expect(prompt).toContain("verwende add_contact");
+    expect(prompt).toContain(
+      "einen Namen und mindestens Telefonnummer oder E-Mail-Adresse",
+    );
+    expect(prompt).toContain(
+      "behaupte niemals, Kontakte koennten nicht angelegt werden",
+    );
+  });
 });
 
 describe("buildAgenticSystemPrompt — current date context", () => {

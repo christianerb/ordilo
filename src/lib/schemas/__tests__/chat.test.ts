@@ -6,6 +6,7 @@ import {
   FORBIDDEN_HEDGING_PHRASES,
   containsHedgingLanguage,
   answerCitesSources,
+  chatActionConfirmationSchema,
   FAIL_CLOSED_HEDGING,
   FAIL_CLOSED_CITATION,
   MIN_CITATION_TITLE_LENGTH,
@@ -21,6 +22,17 @@ import {
 // ---------------------------------------------------------------------------
 
 const VALID_FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
+
+it("accepts add_contact as a confirmed chat action", () => {
+  expect(
+    chatActionConfirmationSchema.safeParse({
+      family_id: VALID_FAMILY_ID,
+      action_id: "contact-action-1",
+      tool_name: "add_contact",
+      args: { name: "Hein Blöd", phone: "+49 30 123456" },
+    }).success,
+  ).toBe(true);
+});
 
 // ---------------------------------------------------------------------------
 // chatRequestSchema
