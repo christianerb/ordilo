@@ -8,6 +8,7 @@ import {
   stageScannedDocument,
   uploadScannedDocument,
   validateScannedDocument,
+  waitForScannedDocumentAnalysis,
 } from "../lib/scan";
 
 jest.mock("../lib/api", () => ({
@@ -175,6 +176,74 @@ describe("native scan helpers", () => {
     ).rejects.toThrow("Offline");
 
     expect(steps).toEqual(["ocr", "analysis"]);
+  });
+
+  it("follows persisted server progress until analysis is ready", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { status: "uploaded" }, error: null })
+      .mockResolvedValueOnce({ data: { status: "ocr_done" }, error: null })
+      .mockResolvedValueOnce({ data: { status: "analyzed" }, error: null });
+    const statuses: string[] = [];
+
+    await expect(
+      waitForScannedDocumentAnalysis(
+        "document-1",
+        (status) => {
+          statuses.push(status);
+        },
+        0,
+      ),
+    ).resolves.toBe("analyzed");
+
+    expect(statuses).toEqual(["uploaded", "ocr_done", "analyzed"]);
+  });
+
+  it("reports persisted progress only when the status changes", async () => {
+    mockMaybeSingle
+      .mockResolvedValueOnce({ data: { status: "uploaded" }, error: null })
+      .mockResolvedValueOnce({ data: { status: "uploaded" }, error: null })
+      .mockResolvedValueOnce({ data: { status: "analyzed" }, error: null });
+    const statuses: string[] = [];
+
+    await waitForScannedDocumentAnalysis(
+      "document-1",
+      (status) => {
+        statuses.push(status);
+      },
+      0,
+    );
+
+    expect(statuses).toEqual(["uploaded", "analyzed"]);
+  });
+
+  it("cancels status polling when the scan screen is dismissed", async () => {
+    const controller = new AbortController();
+    mockMaybeSingle.mockResolvedValue({
+      data: { status: "uploaded" },
+      error: null,
+    });
+
+    await expect(
+      waitForScannedDocumentAnalysis(
+        "document-1",
+        () => controller.abort(),
+        1_000,
+        200,
+        controller.signal,
+      ),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(mockMaybeSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops following a document when its persisted pipeline fails", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: { status: "failed" },
+      error: null,
+    });
+
+    await expect(
+      waitForScannedDocumentAnalysis("document-1", undefined, 0),
+    ).rejects.toThrow("Das Dokument konnte nicht verarbeitet werden.");
   });
 
   it("serializes queue checkpoints so a later snapshot cannot be overwritten", async () => {

@@ -34,6 +34,19 @@ describe("native motion wiring", () => {
     expect(scan).toContain("ref={bodyRef}");
   });
 
+  it("guides a scan through real processing, review, and confirmation", () => {
+    const scan = source("app/scan.tsx");
+    const document = source("app/document/[id].tsx");
+
+    expect(scan).toContain("waitForScannedDocumentAnalysis");
+    expect(scan).toContain("getDocumentPipelineStepsCompleted");
+    expect(scan).toContain('params: { id: documentId, source: "scan" }');
+    expect(scan).toContain("Im Hintergrund weiterlaufen");
+    expect(document).toContain('source === "scan"');
+    expect(document).toContain("Alles sicher abgelegt");
+    expect(document).toContain("Nächstes scannen");
+  });
+
   it("animates the chat thinking state without ignoring reduced motion", () => {
     const chat = source("src/components/chat.tsx");
     const thinking = sourceSection(

@@ -6,6 +6,7 @@ import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
   MAX_DOCUMENT_FILE_SIZE,
   MAX_DOCUMENT_FILE_SIZE_LABEL,
+  type DocumentPipelineStatus,
 } from "@ordilo/document-contract";
 import { z } from "zod";
 
@@ -46,10 +47,22 @@ const SCAN_QUEUE_DIRECTORY = `${FileSystem.documentDirectory}ordilo-scan/`;
 const SCAN_QUEUE_MANIFEST = `${SCAN_QUEUE_DIRECTORY}queue.json`;
 const PIPELINE_POLL_INTERVAL_MS = 1_000;
 const PIPELINE_POLL_ATTEMPTS = 75;
+const ANALYSIS_POLL_ATTEMPTS = 200;
 let pendingQueueCheckpoint: Promise<void> = Promise.resolve();
 
-async function delay(ms: number): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, ms));
+async function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  await new Promise<void>((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 async function getDocumentStatus(documentId: string): Promise<string> {
@@ -64,24 +77,69 @@ async function getDocumentStatus(documentId: string): Promise<string> {
   return data.status;
 }
 
-async function waitForPipelineStatus(
+async function waitForDocumentStatus(
   documentId: string,
   expected: ReadonlySet<string>,
-): Promise<void> {
-  for (let attempt = 0; attempt < PIPELINE_POLL_ATTEMPTS; attempt++) {
-    const status = await getDocumentStatus(documentId);
-    if (expected.has(status)) return;
-    if (status === "failed") {
-      throw new Error("Die Verarbeitung des Dokuments ist fehlgeschlagen.");
+  options: {
+    attempts: number;
+    intervalMs: number;
+    failureMessage: string;
+    onStatus?: (status: DocumentPipelineStatus) => void | Promise<void>;
+    signal?: AbortSignal;
+    timeoutMessage: string;
+  },
+): Promise<DocumentPipelineStatus> {
+  let previousStatus: DocumentPipelineStatus | undefined;
+  for (let attempt = 0; attempt < options.attempts; attempt++) {
+    if (options.signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
     }
-    await delay(PIPELINE_POLL_INTERVAL_MS);
+    const status = await getDocumentStatus(documentId) as DocumentPipelineStatus;
+    if (status === "failed") {
+      throw new Error(options.failureMessage);
+    }
+    if (status !== previousStatus) {
+      await options.onStatus?.(status);
+      previousStatus = status;
+    }
+    if (expected.has(status)) return status;
+    await delay(options.intervalMs, options.signal);
   }
-  throw new Error("Die Verarbeitung dauert zu lange. Bitte später erneut versuchen.");
+  throw new Error(options.timeoutMessage);
 }
 
-async function postPipelineStep(path: string): Promise<void> {
+/**
+ * Follow persisted server progress until review data is ready. This keeps the
+ * UI honest when the upload route hands OCR and analysis to background jobs.
+ */
+export async function waitForScannedDocumentAnalysis(
+  documentId: string,
+  onStatus?: (status: DocumentPipelineStatus) => void | Promise<void>,
+  pollIntervalMs = PIPELINE_POLL_INTERVAL_MS,
+  maxAttempts = ANALYSIS_POLL_ATTEMPTS,
+  signal?: AbortSignal,
+): Promise<DocumentPipelineStatus> {
+  return waitForDocumentStatus(
+    documentId,
+    new Set(["analyzed", "confirmed"]),
+    {
+      attempts: maxAttempts,
+      intervalMs: pollIntervalMs,
+      failureMessage: "Das Dokument konnte nicht verarbeitet werden.",
+      onStatus,
+      signal,
+      timeoutMessage:
+        "Die Verarbeitung dauert länger als erwartet. Du findest das Dokument in deiner Ablage.",
+    },
+  );
+}
+
+async function postPipelineStep(path: string, signal?: AbortSignal): Promise<void> {
   try {
-    await apiFetch(path, { method: "POST" });
+    await apiFetch(path, {
+      method: "POST",
+      ...(signal ? { signal } : {}),
+    });
   } catch (error) {
     // A 409 means another server/client worker already claimed this state.
     // Treat it as a handoff instead of retrying the upload and creating a
@@ -89,12 +147,29 @@ async function postPipelineStep(path: string): Promise<void> {
     if (error instanceof ApiError && error.status === 409) {
       const documentId = path.split("/")[3];
       if (path.endsWith("/ocr")) {
-        await waitForPipelineStatus(
+        await waitForDocumentStatus(
           documentId,
           new Set(["ocr_done", "analyzing", "analyzed", "confirmed"]),
+          {
+            attempts: PIPELINE_POLL_ATTEMPTS,
+            failureMessage: "Die Verarbeitung des Dokuments ist fehlgeschlagen.",
+            intervalMs: PIPELINE_POLL_INTERVAL_MS,
+            signal,
+            timeoutMessage: "Die Verarbeitung dauert zu lange. Bitte später erneut versuchen.",
+          },
         );
       } else {
-        await waitForPipelineStatus(documentId, new Set(["analyzed", "confirmed"]));
+        await waitForDocumentStatus(
+          documentId,
+          new Set(["analyzed", "confirmed"]),
+          {
+            attempts: PIPELINE_POLL_ATTEMPTS,
+            failureMessage: "Die Verarbeitung des Dokuments ist fehlgeschlagen.",
+            intervalMs: PIPELINE_POLL_INTERVAL_MS,
+            signal,
+            timeoutMessage: "Die Verarbeitung dauert zu lange. Bitte später erneut versuchen.",
+          },
+        );
       }
       return;
     }
@@ -236,11 +311,12 @@ export async function continueScannedDocumentPipeline(
   documentId: string,
   startAt: ScanProcessingStep = "ocr",
   onStep?: (step: ScanProcessingStep) => void | Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
   if (startAt === "ocr") {
     await onStep?.("ocr");
-    await postPipelineStep(`/api/documents/${documentId}/ocr`);
+    await postPipelineStep(`/api/documents/${documentId}/ocr`, signal);
   }
   await onStep?.("analysis");
-  await postPipelineStep(`/api/documents/${documentId}/analyze`);
+  await postPipelineStep(`/api/documents/${documentId}/analyze`, signal);
 }

@@ -9,11 +9,18 @@ import {
 import * as Print from "expo-print";
 import { useRouter } from "expo-router";
 import {
+  DOCUMENT_PIPELINE_STEPS,
+  getDocumentPipelineStepsCompleted,
+  type DocumentPipelineStatus,
+} from "@ordilo/document-contract";
+import {
   Check,
   FilePlus2,
   Images,
   ScanLine,
   Upload,
+  X,
+  XCircle,
 } from "lucide-react-native";
 import {
   useCallback,
@@ -24,12 +31,16 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated from "react-native-reanimated";
 
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import {
   OrdiloFormBody,
   OrdiloFormSheet,
@@ -37,6 +48,7 @@ import {
 import {
   Card,
   OrdiloButton,
+  Screen,
   SpringPressable,
   cardRestShadow,
 } from "@/src/components/ui";
@@ -50,20 +62,31 @@ import {
   removeStagedScannedDocument,
   stageScannedDocument,
   type ScannedDocument,
+  type PersistedScanQueueItem,
+  type ScanQueueState,
   type ScanProcessingStep,
   uploadScannedDocument,
   validateScannedDocument,
+  waitForScannedDocumentAnalysis,
 } from "@/src/lib/scan";
+import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { success, fail } from "@/src/lib/feedback";
 
-type UploadState = "queued" | "uploading" | "processing" | "failed" | "done";
-type QueueItem = ScannedDocument & {
-  documentId?: string;
-  error?: string;
-  processingStep?: ScanProcessingStep;
+type UploadState = ScanQueueState | "done";
+type QueueItem = Omit<PersistedScanQueueItem, "state"> & {
   state: UploadState;
 };
+
+type ScanFlow =
+  | { phase: "capture" }
+  | {
+      phase: "processing";
+      itemId: string;
+      documentId?: string;
+      status: "uploading" | DocumentPipelineStatus;
+      error?: string;
+    };
 
 function ScanSecondaryAction({
   accessibilityLabel,
@@ -155,14 +178,19 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  */
 export default function ScanModal() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { family } = useFamily();
   const [sheetVisible, setSheetVisible] = useState(true);
+  const [flow, setFlow] = useState<ScanFlow>({ phase: "capture" });
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const bodyRef = useRef<ScrollView>(null);
+  const followFlowRef = useRef(true);
+  const processingAbortRef = useRef<AbortController | null>(null);
+  const processingPromiseRef = useRef<Promise<void> | null>(null);
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
@@ -217,6 +245,13 @@ export default function ScanModal() {
     })().catch(() => setQueueHydrated(true));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      followFlowRef.current = false;
+      processingAbortRef.current?.abort();
+    };
+  }, []);
+
   const addToQueue = useCallback(async (document: ScannedDocument): Promise<boolean> => {
     const validationError = validateScannedDocument(document);
     if (validationError) {
@@ -268,63 +303,131 @@ export default function ScanModal() {
     }
   }, [addToQueue, scannerBusy]);
 
-  const uploadOne = useCallback(
+  const processQueueItem = useCallback(
     async (item: QueueItem) => {
-      if (!family) return;
-      let uploadedDocumentId: string | undefined;
-      let processingStep: ScanProcessingStep | undefined;
-      try {
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? { ...candidate, state: "uploading", error: undefined }
-              : candidate,
-          ),
-        );
-        const result = await uploadScannedDocument(item, family.id);
-        uploadedDocumentId = result.document_id;
-        // The document ID must reach durable storage before OCR starts.
-        // After a process interruption, retry can then resume this server
-        // document instead of uploading a duplicate.
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? {
-                  ...candidate,
-                  documentId: result.document_id,
-                  processingStep: "ocr",
-                  state: "processing",
-                }
-              : candidate,
-          ),
-        );
-        if (!result.server_pipeline) {
-          await continueScannedDocumentPipeline(
-            result.document_id,
-            "ocr",
-            async (step) => {
-              processingStep = step;
-              await updateQueue((current) =>
-                current.map((candidate) =>
-                  candidate.id === item.id
-                    ? {
-                        ...candidate,
-                        documentId: result.document_id,
-                        processingStep: step,
-                        state: "processing",
-                      }
-                    : candidate,
-                ),
-              );
-            },
-          );
+      if (!family && !item.documentId) return;
+      processingAbortRef.current?.abort();
+      const controller = new AbortController();
+      processingAbortRef.current = controller;
+      let documentId = item.documentId;
+      let processingStep = item.processingStep;
+      let pipelineStatus: "uploading" | DocumentPipelineStatus =
+        processingStep === "analysis" ? "analyzing" : "ocr_processing";
+
+      const reportClientStep = async (step: ScanProcessingStep) => {
+        processingStep = step;
+        pipelineStatus = step === "ocr" ? "ocr_processing" : "analyzing";
+        if (followFlowRef.current) {
+          setFlow({
+            phase: "processing",
+            itemId: item.id,
+            documentId,
+            status: pipelineStatus,
+          });
         }
         await updateQueue((current) =>
           current.map((candidate) =>
             candidate.id === item.id
+              ? { ...candidate, documentId, processingStep: step, state: "processing" }
+              : candidate,
+          ),
+        );
+      };
+
+      try {
+        followFlowRef.current = true;
+        setFlow({
+          phase: "processing",
+          itemId: item.id,
+          documentId,
+          status: documentId ? pipelineStatus : "uploading",
+        });
+        if (!documentId) {
+          await updateQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? { ...candidate, state: "uploading", error: undefined }
+                : candidate,
+            ),
+          );
+          const result = await uploadScannedDocument(item, family!.id);
+          documentId = result.document_id;
+          processingStep = "ocr";
+          pipelineStatus = result.status;
+
+          if (followFlowRef.current) {
+            setFlow({
+              phase: "processing",
+              itemId: item.id,
+              documentId,
+              status: pipelineStatus,
+            });
+          }
+          // Persist the server ID before OCR so recovery never uploads a
+          // duplicate after interruption.
+          await updateQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? { ...candidate, documentId, processingStep, state: "processing" }
+                : candidate,
+            ),
+          );
+
+          if (!result.server_pipeline) {
+            await continueScannedDocumentPipeline(
+              documentId,
+              processingStep,
+              reportClientStep,
+              controller.signal,
+            );
+          }
+        } else {
+          await updateQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? { ...candidate, state: "processing", error: undefined }
+                : candidate,
+            ),
+          );
+          await continueScannedDocumentPipeline(
+            documentId,
+            processingStep ?? "ocr",
+            reportClientStep,
+            controller.signal,
+          );
+        }
+
+        await waitForScannedDocumentAnalysis(documentId, async (status) => {
+          pipelineStatus = status;
+          if (
+            (status === "ocr_done" || status === "analyzing") &&
+            processingStep !== "analysis"
+          ) {
+            processingStep = "analysis";
+            await updateQueue((current) =>
+              current.map((candidate) =>
+                candidate.id === item.id
+                  ? { ...candidate, processingStep }
+                  : candidate,
+              ),
+            );
+          }
+          if (followFlowRef.current) {
+            setFlow({
+              phase: "processing",
+              itemId: item.id,
+              documentId,
+              status,
+            });
+          }
+        }, undefined, undefined, controller.signal);
+
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
               ? {
                   ...candidate,
-                  documentId: result.document_id,
+                  documentId,
                   processingStep: undefined,
                   state: "done",
                 }
@@ -333,84 +436,66 @@ export default function ScanModal() {
         );
         await removeStagedScannedDocument(item.uri);
         void success();
-      } catch {
+        if (followFlowRef.current) {
+          router.replace({
+            pathname: "/document/[id]",
+            params: { id: documentId, source: "scan" },
+          });
+        }
+      } catch (caughtError) {
+        const interrupted =
+          caughtError instanceof Error && caughtError.name === "AbortError";
+        const errorMessage = caughtError instanceof Error
+          ? caughtError.message
+          : "Das Dokument konnte nicht verarbeitet werden.";
+        const itemError = interrupted
+          ? "Die Verarbeitung wurde unterbrochen. Du kannst sie fortsetzen."
+          : documentId
+          ? processingStep === "analysis"
+            ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
+            : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
+          : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.";
         await markQueueFailed(item.id, {
-          documentId: uploadedDocumentId ?? item.documentId,
+          documentId,
           processingStep,
-          error: uploadedDocumentId
-            ? processingStep === "analysis"
-              ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
-              : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
-            : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.",
+          error: itemError,
         });
-        void fail();
+        if (followFlowRef.current) {
+          setFlow({
+            phase: "processing",
+            itemId: item.id,
+            documentId,
+            status: pipelineStatus,
+            error: errorMessage || itemError,
+          });
+        }
+        if (!interrupted || followFlowRef.current) void fail();
+      } finally {
+        if (processingAbortRef.current === controller) {
+          processingAbortRef.current = null;
+        }
       }
     },
-    [family, markQueueFailed, updateQueue],
+    [family, markQueueFailed, router, updateQueue],
   );
 
-  const retryProcessing = useCallback(
-    async (item: QueueItem) => {
-      if (!item.documentId) {
-        await uploadOne(item);
-        return;
-      }
-      let processingStep = item.processingStep ?? "ocr";
-      try {
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? { ...candidate, state: "processing", error: undefined }
-              : candidate,
-          ),
-        );
-        await continueScannedDocumentPipeline(
-          item.documentId,
-          processingStep,
-          async (step) => {
-            processingStep = step;
-            await updateQueue((current) =>
-              current.map((candidate) =>
-                candidate.id === item.id
-                  ? { ...candidate, processingStep: step, state: "processing" }
-                  : candidate,
-              ),
-            );
-          },
-        );
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? { ...candidate, processingStep: undefined, state: "done" }
-              : candidate,
-          ),
-        );
-        await removeStagedScannedDocument(item.uri);
-        void success();
-      } catch {
-        await markQueueFailed(item.id, {
-          documentId: item.documentId,
-          processingStep,
-          error:
-            processingStep === "analysis"
-              ? "Die Analyse hat nicht geklappt. Bitte erneut versuchen."
-              : "Die Texterkennung hat nicht geklappt. Bitte erneut versuchen.",
-        });
-        void fail();
-      }
-    },
-    [markQueueFailed, updateQueue, uploadOne],
-  );
+  const startQueueItem = useCallback(async (item: QueueItem) => {
+    const processing = processQueueItem(item);
+    processingPromiseRef.current = processing;
+    await processing;
+    if (processingPromiseRef.current === processing) {
+      processingPromiseRef.current = null;
+    }
+  }, [processQueueItem]);
 
   const uploadQueued = useCallback(async () => {
-    for (const item of queue) {
-      if (item.state === "queued") {
-        await uploadOne(item);
-      } else if (item.state === "failed") {
-        await retryProcessing(item);
-      }
-    }
-  }, [queue, retryProcessing, uploadOne]);
+    const item = queue.find(
+      (candidate) =>
+        candidate.state === "queued" || candidate.state === "failed",
+    );
+    if (!item) return;
+    await startQueueItem(item);
+  }, [queue, startQueueItem]);
 
   const pickImages = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -456,6 +541,143 @@ export default function ScanModal() {
   );
   const close = useCallback(() => setSheetVisible(false), []);
   const finishClose = useCallback(() => router.back(), [router]);
+  const continueInBackground = useCallback(async () => {
+    followFlowRef.current = false;
+    processingAbortRef.current?.abort();
+    await processingPromiseRef.current;
+    router.back();
+  }, [router]);
+
+  if (flow.phase === "processing") {
+    const item = queue.find((candidate) => candidate.id === flow.itemId);
+    const completedSteps =
+      flow.status === "uploading"
+        ? 0
+        : getDocumentPipelineStepsCompleted(flow.status);
+    const failed = Boolean(flow.error);
+
+    return (
+      <Screen
+        style={[
+          styles.processingScreen,
+          {
+            paddingBottom: Math.max(insets.bottom, spacing.md),
+            paddingTop: insets.top,
+          },
+        ]}
+      >
+        <View style={styles.processingTopBar}>
+          <View>
+            <Text style={styles.processingEyebrow}>Dokument aufnehmen</Text>
+            <Text style={styles.processingTopTitle}>Ordilo ist dran</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Im Hintergrund weiterlaufen"
+            onPress={() => void continueInBackground()}
+            style={styles.closeButton}
+          >
+            <X color={colors.graphite} size={22} />
+          </Pressable>
+        </View>
+
+        <Animated.View
+          entering={contentEntering()}
+          key={failed ? "failed" : "processing"}
+          style={styles.processingContent}
+        >
+          <View style={styles.characterWrap}>
+            {failed ? (
+              <View style={styles.failedCharacter}>
+                <XCircle color={colors.destructive} size={40} />
+              </View>
+            ) : (
+              <OrdiloCharacter animated size={96} />
+            )}
+          </View>
+          <Text style={styles.processingHeading}>
+            {failed
+              ? "Das hat noch nicht geklappt"
+              : "Wir machen dein Dokument bereit"}
+          </Text>
+          <Text style={styles.processingCopy}>
+            {failed
+              ? flow.error
+              : "Du siehst hier, wie weit Ordilo ist. Danach prüfen wir alles gemeinsam."}
+          </Text>
+
+          {item ? (
+            <View style={styles.processingFile}>
+              <FilePlus2 color={colors.harborBlue} size={18} />
+              <Text numberOfLines={1} style={styles.processingFileName}>
+                {item.name}
+              </Text>
+            </View>
+          ) : null}
+
+          <View style={styles.stepCard}>
+            {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
+              const done = index < completedSteps;
+              const active = !failed && index === completedSteps;
+              const failedStep = failed && index === completedSteps;
+
+              return (
+                <View
+                  key={step.key}
+                  style={[
+                    styles.stepRow,
+                    index > 0 && styles.stepRowBorder,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.stepIcon,
+                      done && styles.stepIconDone,
+                      active && styles.stepIconActive,
+                      failedStep && styles.stepIconFailed,
+                    ]}
+                  >
+                    {done ? (
+                      <Check color={colors.warmWhite} size={16} strokeWidth={3} />
+                    ) : active ? (
+                      <ActivityIndicator color={colors.harborBlue} size="small" />
+                    ) : failedStep ? (
+                      <X color={colors.destructive} size={16} strokeWidth={2.5} />
+                    ) : (
+                      <View style={styles.stepDot} />
+                    )}
+                  </View>
+                  <Text
+                    style={[
+                      styles.stepLabel,
+                      (done || active) && styles.stepLabelCurrent,
+                    ]}
+                  >
+                    {step.label}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        <View style={styles.processingActions}>
+          {failed && item ? (
+            <OrdiloButton
+              onPress={() => void startQueueItem(item)}
+              size="lg"
+              title="Erneut versuchen"
+            />
+          ) : null}
+          <OrdiloButton
+            onPress={() => void continueInBackground()}
+            size="lg"
+            title={failed ? "Zur Ablage" : "Im Hintergrund weiterlaufen"}
+            variant={failed ? "ghost" : "outline"}
+          />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <OrdiloFormSheet
@@ -488,7 +710,7 @@ export default function ScanModal() {
                   disabled={!family || isProcessing}
                   icon={<Upload color={colors.warmWhite} size={16} />}
                   onPress={() => void uploadQueued()}
-                  title={actionableCount === 1 ? "Weiter" : `${actionableCount} verarbeiten`}
+                  title="Weiter"
                 />
               ) : null}
             </View>
@@ -524,7 +746,7 @@ export default function ScanModal() {
                 ) : null}
                 {item.state === "failed" ? (
                   <OrdiloButton
-                    onPress={() => void retryProcessing(item)}
+                    onPress={() => void startQueueItem(item)}
                     title="Erneut"
                     variant="outline"
                   />
@@ -586,6 +808,142 @@ export default function ScanModal() {
 }
 
 const styles = StyleSheet.create({
+  processingScreen: {
+    justifyContent: "space-between",
+  },
+  processingTopBar: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 64,
+  },
+  processingEyebrow: {
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  processingTopTitle: {
+    color: colors.graphite,
+    ...typography.display,
+  },
+  closeButton: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  processingContent: {
+    alignItems: "center",
+    alignSelf: "center",
+    gap: spacing.sm,
+    maxWidth: 420,
+    width: "100%",
+  },
+  characterWrap: {
+    alignItems: "center",
+    height: 112,
+    justifyContent: "center",
+  },
+  failedCharacter: {
+    alignItems: "center",
+    backgroundColor: colors.destructiveBackground,
+    borderRadius: radii.pill,
+    height: 80,
+    justifyContent: "center",
+    width: 80,
+  },
+  processingHeading: {
+    ...typography.display,
+    color: colors.harborBlueDarker,
+    fontSize: 23,
+    lineHeight: 30,
+    textAlign: "center",
+  },
+  processingCopy: {
+    color: colors.mistDark,
+    maxWidth: 340,
+    textAlign: "center",
+    ...typography.body,
+  },
+  processingFile: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    maxWidth: "100%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  processingFileName: {
+    color: colors.harborBlueDarker,
+    flexShrink: 1,
+    ...typography.timestamp,
+  },
+  stepCard: {
+    ...cardRestShadow,
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    width: "100%",
+  },
+  stepRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 64,
+  },
+  stepRowBorder: {
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  stepIcon: {
+    alignItems: "center",
+    backgroundColor: colors.sandLight,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  },
+  stepIconDone: {
+    backgroundColor: colors.harborBlue,
+    borderColor: colors.harborBlue,
+  },
+  stepIconActive: {
+    backgroundColor: colors.blueSoft,
+    borderColor: colors.harborBlue,
+  },
+  stepIconFailed: {
+    backgroundColor: colors.destructiveBackground,
+    borderColor: colors.destructive,
+  },
+  stepDot: {
+    backgroundColor: colors.mist,
+    borderRadius: radii.pill,
+    height: 6,
+    width: 6,
+  },
+  stepLabel: {
+    color: colors.mistDark,
+    flex: 1,
+    ...typography.body,
+  },
+  stepLabelCurrent: {
+    color: colors.graphite,
+    ...typography.title,
+  },
+  processingActions: {
+    gap: spacing.sm,
+  },
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing.md,

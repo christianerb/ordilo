@@ -37,6 +37,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -65,7 +66,10 @@ type Icon = typeof Tag;
 export default function DocumentReviewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, source } = useLocalSearchParams<{
+    id: string;
+    source?: string;
+  }>();
   const [document, setDocument] = useState<DocumentReview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,6 +82,7 @@ export default function DocumentReviewScreen() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [showDocumentDetails, setShowDocumentDetails] = useState(false);
+  const [scanConfirmed, setScanConfirmed] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) {
@@ -90,6 +95,9 @@ export default function DocumentReviewScreen() {
     try {
       const value = await loadDocumentReview(id);
       setDocument(value);
+      if (value && source === "scan" && canReviewDocument(value.status)) {
+        setEditing(true);
+      }
       if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
     } catch {
       setDocument(null);
@@ -97,7 +105,7 @@ export default function DocumentReviewScreen() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, source]);
 
   useEffect(() => {
     if (!id) {
@@ -110,6 +118,9 @@ export default function DocumentReviewScreen() {
     void loadDocumentReview(id)
       .then((value) => {
         setDocument(value);
+        if (value && source === "scan" && canReviewDocument(value.status)) {
+          setEditing(true);
+        }
         if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
       })
       .catch(() => {
@@ -117,7 +128,7 @@ export default function DocumentReviewScreen() {
         setError("Keine Verbindung. Bitte prüfe dein Internet und versuch es nochmal.");
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, source]);
 
   const updateAnalysis = (updater: (current: ReviewAnalysis) => ReviewAnalysis) => {
     setDocument((current) => current && "summary" in current ? updater(current) : current);
@@ -133,7 +144,11 @@ export default function DocumentReviewScreen() {
     try {
       await confirmDocumentReview(id, document);
       await success();
-      router.replace("/(tabs)");
+      if (source === "scan") {
+        setScanConfirmed(true);
+      } else {
+        router.replace("/(tabs)");
+      }
     } catch {
       await fail();
       Alert.alert("Nicht gespeichert", "Bitte prüfe deine Verbindung und versuch es nochmal.");
@@ -209,6 +224,56 @@ export default function DocumentReviewScreen() {
         >
           <OrdiloButton title="Erneut versuchen" size="lg" onPress={() => void load()} />
         </EmptyState>
+      </Screen>
+    );
+  }
+
+  if (scanConfirmed) {
+    return (
+      <Screen
+        style={[
+          styles.confirmedScreen,
+          {
+            paddingBottom: Math.max(insets.bottom, spacing.md),
+            paddingTop: insets.top,
+          },
+        ]}
+      >
+        <Animated.View
+          entering={contentEntering()}
+          style={styles.confirmedContent}
+        >
+          <View style={styles.confirmedCharacter}>
+            <OrdiloCharacter animated size={112} />
+            <View style={styles.confirmedCheck}>
+              <Check color={colors.warmWhite} size={20} strokeWidth={3} />
+            </View>
+          </View>
+          <Text style={styles.confirmedEyebrow}>Im Familienbuch</Text>
+          <Text style={styles.confirmedHeading}>Alles sicher abgelegt</Text>
+          <Text style={styles.confirmedCopy}>
+            Du hast das Dokument geprüft. Jetzt kann deine Familie es jederzeit wiederfinden.
+          </Text>
+          <Card style={styles.confirmedDocument}>
+            <FileText color={colors.harborBlue} size={22} />
+            <Text numberOfLines={2} style={styles.confirmedDocumentTitle}>
+              {document.title}
+            </Text>
+          </Card>
+        </Animated.View>
+        <View style={styles.confirmedActions}>
+          <OrdiloButton
+            onPress={() => router.replace("/scan")}
+            size="lg"
+            title="Nächstes scannen"
+          />
+          <OrdiloButton
+            onPress={() => router.replace("/(tabs)")}
+            size="lg"
+            title="Fertig"
+            variant="outline"
+          />
+        </View>
       </Screen>
     );
   }
@@ -967,6 +1032,57 @@ function addTag(
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
+  confirmedScreen: { justifyContent: "space-between" },
+  confirmedContent: {
+    alignItems: "center",
+    alignSelf: "center",
+    gap: spacing.sm,
+    maxWidth: 420,
+    width: "100%",
+  },
+  confirmedCharacter: {
+    alignItems: "center",
+    height: 144,
+    justifyContent: "center",
+    position: "relative",
+  },
+  confirmedCheck: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    borderWidth: 3,
+    bottom: 10,
+    height: 40,
+    justifyContent: "center",
+    position: "absolute",
+    right: 5,
+    width: 40,
+  },
+  confirmedEyebrow: { color: colors.harborBlue, ...typography.label },
+  confirmedHeading: {
+    ...typography.display,
+    color: colors.harborBlueDarker,
+    fontSize: 25,
+    lineHeight: 32,
+    textAlign: "center",
+  },
+  confirmedCopy: {
+    color: colors.mistDark,
+    maxWidth: 340,
+    textAlign: "center",
+    ...typography.body,
+  },
+  confirmedDocument: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+    maxWidth: 360,
+    width: "100%",
+  },
+  confirmedDocumentTitle: { color: colors.graphite, flex: 1, ...typography.title },
+  confirmedActions: { gap: spacing.sm },
   loadingContent: { paddingHorizontal: spacing.md },
   headerAction: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: 104 },
