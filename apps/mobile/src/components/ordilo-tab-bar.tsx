@@ -119,7 +119,11 @@ export function OrdiloTabBar({
                 onLongPress={() =>
                   navigation.emit({ target: route.key, type: "tabLongPress" })
                 }
-                style={styles.tab}
+                style={[
+                  styles.tab,
+                  route.name === "index" && styles.startTab,
+                  route.name === "familie" && styles.familyTab,
+                ]}
               >
                 <Icon
                   color={focused ? colors.harborBlueDarker : "rgba(48,84,96,0.58)"}
@@ -189,6 +193,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: spacing.lg,
     position: "relative",
+  },
+  startTab: {
+    left: spacing.xs,
+  },
+  familyTab: {
+    right: spacing.sm,
   },
   ordiloSlot: {
     alignItems: "center",

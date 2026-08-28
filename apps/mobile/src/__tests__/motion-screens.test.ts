@@ -86,6 +86,12 @@ describe("native motion wiring", () => {
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       "paddingHorizontal: 0",
     );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'route.name === "index" && styles.startTab',
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'route.name === "familie" && styles.familyTab',
+    );
   });
 
   it("uses one shared create-choice sheet in Ablage and Plan", () => {
