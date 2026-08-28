@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
   },
   options: {
     gap: spacing.md,
-    paddingBottom: spacing.sm,
+    paddingBottom: spacing.md,
   },
   option: {
     alignItems: "center",

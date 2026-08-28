@@ -82,6 +82,7 @@ describe("native motion wiring", () => {
     expect(choiceSheet).toContain("paddingHorizontal: spacing.lg");
     expect(choiceSheet).toContain("detached");
     expect(choiceSheet).toContain("minHeight: 86");
+    expect(choiceSheet).toContain("paddingBottom: spacing.md");
     expect(source("src/components/sheet.tsx")).toContain(
       "bottomInset={detached ? spacing.md : 0}",
     );
