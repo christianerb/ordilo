@@ -80,8 +80,8 @@ describe("native motion wiring", () => {
     expect(choiceSheet).toContain("Was möchtest du anlegen?");
     expect(choiceSheet).toContain("Wähle aus, was du jetzt festhalten möchtest.");
     expect(choiceSheet).toContain("paddingHorizontal: spacing.lg");
-    expect(choiceSheet).toContain("paddingBottom: spacing.xl");
-    expect(choiceSheet).toContain("minHeight: 96");
+    expect(choiceSheet).toContain("detached");
+    expect(choiceSheet).toContain("minHeight: 86");
 
     for (const path of ["app/(tabs)/ablage.tsx", "app/(tabs)/plan.tsx"]) {
       expect(source(path)).toContain("<CreateChoiceSheet");

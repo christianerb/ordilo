@@ -30,6 +30,7 @@ export const CreateChoiceSheet = forwardRef<
     <OrdiloSheet
       accessibilityLabel={accessibilityLabel}
       contentContainerStyle={styles.sheetContent}
+      detached
       onDismiss={onDismiss}
       ref={ref}
     >
@@ -152,9 +153,7 @@ const styles = StyleSheet.create({
   },
   options: {
     gap: spacing.md,
-    // Keep this inside the measured child. BottomSheet's dynamic height
-    // does not reliably include ScrollView content-container padding.
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.sm,
   },
   option: {
     alignItems: "center",
@@ -163,9 +162,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 14,
-    minHeight: 96,
-    padding: 14,
+    gap: 12,
+    minHeight: 86,
+    padding: 12,
     ...cardRestShadow,
   },
   optionPressed: {
@@ -177,9 +176,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(48, 84, 96, 0.12)",
     borderRadius: 16,
     borderWidth: 1,
-    height: 58,
+    height: 54,
     justifyContent: "center",
-    width: 58,
+    width: 54,
   },
   optionIconApricot: {
     backgroundColor: colors.washApricot,
@@ -210,8 +209,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.sandLight,
     borderRadius: radii.pill,
-    height: 40,
+    height: 38,
     justifyContent: "center",
-    width: 40,
+    width: 38,
   },
 });

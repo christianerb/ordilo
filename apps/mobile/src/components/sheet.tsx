@@ -46,6 +46,8 @@ interface OrdiloSheetProps {
   children?: ReactNode;
   /** Optional content spacing for composed sheet variants. */
   contentContainerStyle?: StyleProp<ViewStyle>;
+  /** Float the complete sheet inside the viewport instead of touching its edges. */
+  detached?: boolean;
   /** Called after the sheet has fully dismissed (swipe, backdrop, or close). */
   onDismiss?: () => void;
   /** Accessible name for the sheet region. */
@@ -86,6 +88,7 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
     {
       children,
       contentContainerStyle,
+      detached = false,
       onDismiss,
       accessibilityLabel,
     },
@@ -97,12 +100,18 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
       <BottomSheetModal
         accessibilityLabel={accessibilityLabel}
         backdropComponent={renderBackdrop}
-        backgroundStyle={styles.background}
+        backgroundStyle={[
+          styles.background,
+          detached && styles.detachedBackground,
+        ]}
+        bottomInset={detached ? spacing.sm : 0}
+        detached={detached}
         enableDynamicSizing
         handleIndicatorStyle={styles.handleIndicator}
         handleStyle={styles.handle}
         onDismiss={onDismiss}
         ref={ref}
+        style={detached ? styles.detachedSheet : undefined}
       >
         <BottomSheetScrollView
           contentContainerStyle={[
@@ -289,6 +298,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
+  },
+  detachedBackground: {
+    borderBottomLeftRadius: radii.xl,
+    borderBottomRightRadius: radii.xl,
+  },
+  detachedSheet: {
+    marginHorizontal: spacing.sm,
   },
   content: {
     paddingHorizontal: spacing.md,
