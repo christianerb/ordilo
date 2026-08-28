@@ -1,5 +1,13 @@
 import { useCallback, useState } from "react";
-import { CalendarDays, Check, Pencil } from "lucide-react-native";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Heart,
+  Sprout,
+  Trash2,
+  UserRound,
+} from "lucide-react-native";
 import {
   ActivityIndicator,
   Alert,
@@ -12,8 +20,9 @@ import {
 } from "react-native";
 
 import { ConfirmDialog } from "./confirm-dialog";
+import { OrdiloPickerModal } from "./picker-sheet";
 import { OrdiloFormSheet } from "./sheet";
-import { OrdiloButton } from "./ui";
+import { cardRestShadow } from "./ui";
 import {
   formatTaskDayHint,
   resolveSchedulePreset,
@@ -68,6 +77,8 @@ export function TaskFormSheet({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [todayStr, setTodayStr] = useState(todayLocalDate());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [personPickerOpen, setPersonPickerOpen] = useState(false);
 
   // Re-seed the draft every time the sheet opens so a stale edit never
   // leaks into the next task. Render-time adjustment instead of an
@@ -83,10 +94,13 @@ export function TaskFormSheet({
       setError(null);
       setSubmitting(false);
       setTodayStr(todayLocalDate());
+      setDatePickerOpen(false);
+      setPersonPickerOpen(false);
     }
   }
 
   const isEdit = Boolean(initialTask);
+  const assignedMember = members.find((member) => member.id === assignedTo);
 
   // Anything typed or changed since the sheet opened. A dirty form never
   // closes silently — backdrop tap and Android back both ask first, like
@@ -158,24 +172,43 @@ export function TaskFormSheet({
   }, [onDismiss]);
 
   return (
-    <OrdiloFormSheet
-      closeAccessibilityLabel="Aufgabe schließen"
-      dismissDisabled={submitting}
-      keyboardAvoiding
-      onClose={requestClose}
-      style={styles.formSheet}
-      title={isEdit ? "Aufgabe bearbeiten" : "Neue Aufgabe"}
-      visible={visible}
-    >
-      <ScrollView
-        contentContainerStyle={styles.formContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        style={styles.formBody}
+    <>
+      <OrdiloFormSheet
+        closeAccessibilityLabel="Aufgabe schließen"
+        dismissDisabled={submitting}
+        keyboardAvoiding
+        onClose={requestClose}
+        style={styles.formSheet}
+        title={isEdit ? "Aufgabe bearbeiten" : "Aufgabe erstellen"}
+        titleAlign="center"
+        visible={visible}
       >
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={styles.decoration}
+        >
+          <Sprout color={colors.harborBlue} size={72} strokeWidth={1.2} />
+        </View>
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          pointerEvents="none"
+          style={styles.noteDecoration}
+        >
+          <Sprout color={colors.harborBlue} size={54} strokeWidth={1.2} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.formContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          style={styles.formBody}
+        >
+          <View style={styles.section}>
             <Text style={styles.fieldLabel}>Titel</Text>
-            <View style={styles.inputShell}>
-              <Check color={colors.harborBlue} size={18} strokeWidth={2} />
+            <View style={styles.inputCard}>
               <TextInput
                 accessibilityLabel="Titel der Aufgabe"
                 autoCapitalize="sentences"
@@ -191,10 +224,11 @@ export function TaskFormSheet({
                 value={title}
               />
             </View>
+          </View>
 
+          <View style={styles.section}>
             <Text style={styles.fieldLabel}>Notiz (optional)</Text>
-            <View style={[styles.inputShell, styles.noteShell]}>
-              <Pencil color={colors.harborBlue} size={18} strokeWidth={1.8} />
+            <View style={[styles.inputCard, styles.noteCard]}>
               <TextInput
                 accessibilityLabel="Notiz zur Aufgabe"
                 autoCapitalize="sentences"
@@ -208,281 +242,329 @@ export function TaskFormSheet({
                 value={description}
               />
             </View>
-
-            <Text style={styles.fieldLabel}>Wann?</Text>
-            <View style={styles.dateSummary}>
-              <CalendarDays color={colors.graphite} size={18} strokeWidth={1.8} />
-              <Text style={styles.dateSummaryText}>
-                {dueDate ? formatTaskDayHint(dueDate) : "Kein Termin"}
-              </Text>
-            </View>
-            <ScrollView
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
-              style={styles.presetScroller}
-            >
-              <View style={styles.chipRow}>
-                {TASK_SCHEDULE_PRESETS.map((preset) => {
-                  const date = resolveSchedulePreset(preset, todayStr);
-                  const selected =
-                    preset === "none" ? dueDate === "" : date !== null && dueDate === date;
-                  const hint = formatTaskDayHint(date);
-                  return (
-                    <Pressable
-                      accessibilityHint={hint ?? undefined}
-                      accessibilityLabel={TASK_SCHEDULE_PRESET_LABELS[preset]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      key={preset}
-                      onPress={() => setDueDate(selected ? "" : (date ?? ""))}
-                      style={[styles.chip, selected && styles.chipSelected]}
-                    >
-                      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                        {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                      </Text>
-                      {hint ? (
-                        <Text style={[styles.chipHint, selected && styles.chipHintSelected]}>
-                          {hint}
-                        </Text>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-
-            <Text style={styles.fieldLabel}>Wer?</Text>
-            <ScrollView
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
-            >
-              <View style={styles.memberRow}>
-                <Pressable
-                  accessibilityLabel="Niemandem zuordnen"
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: assignedTo === "" }}
-                  onPress={() => setAssignedTo("")}
-                  style={[styles.memberChip, assignedTo === "" && styles.memberChipSelected]}
-                >
-                  <View style={styles.memberCircleEmpty}>
-                    <Text style={styles.memberCircleEmptyText}>–</Text>
-                  </View>
-                  <Text style={styles.memberName}>Niemandem</Text>
-                </Pressable>
-                {members.map((member) => {
-                  const selected = assignedTo === member.id;
-                  return (
-                    <Pressable
-                      accessibilityLabel={`Aufgabe an ${member.name} geben`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      key={member.id}
-                      onPress={() => setAssignedTo(selected ? "" : member.id)}
-                      style={[styles.memberChip, selected && styles.memberChipSelected]}
-                    >
-                      <View
-                        style={[
-                          styles.memberCircle,
-                          { backgroundColor: member.avatar_color ?? colors.sandLight },
-                        ]}
-                      >
-                        <Text style={styles.memberInitial}>
-                          {member.name.trim().charAt(0).toUpperCase() || "?"}
-                        </Text>
-                      </View>
-                      <Text numberOfLines={1} style={styles.memberName}>
-                        {member.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-      </ScrollView>
-      <View style={styles.footer}>
-        {error ? (
-          <View accessibilityRole="alert" style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
           </View>
-        ) : null}
-        <OrdiloButton
-          disabled={submitting}
-          icon={
-            submitting ? (
-              <ActivityIndicator color={colors.warmWhite} size="small" />
-            ) : undefined
-          }
-          onPress={() => void submit()}
-          size="lg"
-          title={
-            submitting
-              ? "Wird gespeichert …"
-              : isEdit
-                ? "Speichern"
-                : "Aufgabe anlegen"
-          }
-        />
-        {isEdit && onDismiss ? (
+
+          <View style={styles.section}>
+            <Text style={styles.fieldLabel}>Wann?</Text>
+            <Pressable
+              accessibilityHint="Öffnet die Auswahl für das Datum"
+              accessibilityLabel={`Datum: ${dueDate ? formatTaskDayHint(dueDate) : "Kein Termin"}`}
+              accessibilityRole="button"
+              onPress={() => setDatePickerOpen(true)}
+              style={({ pressed }) => [
+                styles.selectionCard,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <View style={styles.selectionIcon}>
+                <CalendarDays color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>
+              <Text style={styles.selectionText}>
+                {dueDate ? formatTaskDayHint(dueDate) : "Datum wählen"}
+              </Text>
+              <ChevronRight color={colors.harborBlue} size={20} strokeWidth={2} />
+            </Pressable>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.fieldLabel}>Wer?</Text>
+            <Pressable
+              accessibilityHint="Öffnet die Auswahl für die verantwortliche Person"
+              accessibilityLabel={`Verantwortlich: ${assignedMember?.name ?? "Niemand"}`}
+              accessibilityRole="button"
+              onPress={() => setPersonPickerOpen(true)}
+              style={({ pressed }) => [
+                styles.selectionCard,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <View style={styles.selectionIcon}>
+                <UserRound color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>
+              <Text style={styles.selectionText}>
+                {assignedMember?.name ?? "Verantwortliche Person wählen"}
+              </Text>
+              <ChevronDown color={colors.harborBlue} size={20} strokeWidth={2} />
+            </Pressable>
+
+            {members.length > 0 ? (
+              <ScrollView
+                horizontal
+                keyboardShouldPersistTaps="handled"
+                showsHorizontalScrollIndicator={false}
+                style={styles.memberScroller}
+              >
+                <View style={styles.memberRow}>
+                  {members.map((member) => {
+                    const selected = assignedTo === member.id;
+                    return (
+                      <Pressable
+                        accessibilityLabel={`Aufgabe an ${member.name} geben`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        key={member.id}
+                        onPress={() => {
+                          setAssignedTo(selected ? "" : member.id);
+                          setError(null);
+                        }}
+                        style={styles.memberChip}
+                      >
+                        <View
+                          style={[
+                            styles.memberCircle,
+                            {
+                              backgroundColor:
+                                member.avatar_color ?? colors.sandLight,
+                            },
+                            selected && styles.memberCircleSelected,
+                          ]}
+                        >
+                          <Text style={styles.memberInitial}>
+                            {member.name.trim().charAt(0).toUpperCase() || "?"}
+                          </Text>
+                        </View>
+                        <Text numberOfLines={1} style={styles.memberName}>
+                          {member.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            ) : null}
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          {error ? (
+            <View accessibilityRole="alert" style={styles.errorBox}>
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          ) : null}
           <Pressable
-            accessibilityLabel="Aufgabe verwerfen"
+            accessibilityLabel="Aufgabe speichern"
             accessibilityRole="button"
-            onPress={confirmDismiss}
-            style={styles.dismissButton}
+            disabled={submitting}
+            onPress={() => void submit()}
+            style={({ pressed }) => [
+              styles.saveButton,
+              pressed && styles.saveButtonPressed,
+              submitting && styles.buttonDisabled,
+            ]}
           >
-            <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
+            {submitting ? (
+              <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : (
+              <Heart color={colors.warmWhite} size={20} strokeWidth={1.9} />
+            )}
+            <Text style={styles.saveLabel}>
+              {submitting ? "Wird gespeichert …" : "Speichern"}
+            </Text>
           </Pressable>
-        ) : null}
-      </View>
-      <ConfirmDialog
-        confirmLabel="Verwerfen"
-        message="Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen."
-        onCancel={() => setDismissOpen(false)}
-        onConfirm={() => {
-          setDismissOpen(false);
-          onDismiss?.();
-        }}
-        title="Aufgabe verwerfen?"
-        visible={dismissOpen}
+
+          {isEdit && onDismiss ? (
+            <Pressable
+              accessibilityLabel="Aufgabe verwerfen"
+              accessibilityRole="button"
+              onPress={confirmDismiss}
+              style={({ pressed }) => [
+                styles.dismissButton,
+                pressed && styles.cardPressed,
+              ]}
+            >
+              <Trash2 color={colors.destructive} size={19} strokeWidth={1.8} />
+              <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
+            </Pressable>
+          ) : null}
+        </View>
+        <ConfirmDialog
+          confirmLabel="Verwerfen"
+          message="Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen."
+          onCancel={() => setDismissOpen(false)}
+          onConfirm={() => {
+            setDismissOpen(false);
+            onDismiss?.();
+          }}
+          title="Aufgabe verwerfen?"
+          visible={dismissOpen}
+        />
+      </OrdiloFormSheet>
+
+      <OrdiloPickerModal
+        onClose={() => setDatePickerOpen(false)}
+        options={TASK_SCHEDULE_PRESETS.map((preset) => {
+          const date = resolveSchedulePreset(preset, todayStr);
+          const selected =
+            preset === "none"
+              ? dueDate === ""
+              : date !== null && dueDate === date;
+          const hint = formatTaskDayHint(date);
+          return {
+            hint: hint ?? undefined,
+            key: preset,
+            label: TASK_SCHEDULE_PRESET_LABELS[preset],
+            onPress: () => {
+              setDueDate(selected ? "" : (date ?? ""));
+              setError(null);
+              setDatePickerOpen(false);
+            },
+            selected,
+          };
+        })}
+        title="Wann ist das dran?"
+        visible={datePickerOpen}
       />
-    </OrdiloFormSheet>
+
+      <OrdiloPickerModal
+        onClose={() => setPersonPickerOpen(false)}
+        options={[
+          ...members.map((member) => ({
+            key: member.id,
+            label: member.name,
+            leading: (
+              <View
+                style={[
+                  styles.pickerAvatar,
+                  {
+                    backgroundColor:
+                      member.avatar_color ?? colors.sandLight,
+                  },
+                ]}
+              >
+                <Text style={styles.memberInitial}>
+                  {member.name.trim().charAt(0).toUpperCase() || "?"}
+                </Text>
+              </View>
+            ),
+            onPress: () => {
+              setAssignedTo(member.id);
+              setError(null);
+              setPersonPickerOpen(false);
+            },
+            selected: assignedTo === member.id,
+          })),
+          {
+            key: "unassigned",
+            label: "Niemandem",
+            leading: (
+              <View style={[styles.pickerAvatar, styles.unassignedAvatar]}>
+                <Text style={styles.unassignedLabel}>–</Text>
+              </View>
+            ),
+            onPress: () => {
+              setAssignedTo("");
+              setError(null);
+              setPersonPickerOpen(false);
+            },
+            selected: assignedTo === "",
+          },
+        ]}
+        title="Wer macht das?"
+        visible={personPickerOpen}
+      />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  formSheet: { height: "88%" },
+  formSheet: {
+    height: "96%",
+    maxHeight: "96%",
+    overflow: "hidden",
+    paddingHorizontal: spacing.lg,
+  },
   formBody: {
     flex: 1,
   },
   formContent: {
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.sm,
+  },
+  section: {
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
   },
   fieldLabel: {
-    color: colors.mistDark,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.label,
+    color: colors.harborBlue,
+    ...typography.timestamp,
   },
   input: {
     color: colors.graphite,
     flex: 1,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
+    minHeight: 62,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     ...typography.body,
   },
-  inputShell: {
-    alignItems: "center",
+  inputCard: {
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
-    borderRadius: radii.base,
+    borderRadius: radii.sm,
     borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingLeft: spacing.sm,
+    minHeight: 64,
+    ...cardRestShadow,
   },
-  noteShell: {
-    alignItems: "flex-start",
-    minHeight: 84,
-    paddingTop: spacing.sm,
+  noteCard: {
+    minHeight: 132,
   },
   noteInput: {
-    minHeight: 68,
-    paddingTop: 0,
+    minHeight: 130,
+    paddingTop: 14,
+    textAlignVertical: "top",
   },
-  dateSummary: {
-    alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  dateSummaryText: {
-    color: colors.graphite,
-    ...typography.timestamp,
-  },
-  presetScroller: {
-    marginTop: spacing.sm,
-  },
-  chipRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  chip: {
+  selectionCard: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
     borderRadius: radii.sm,
     borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 64,
+    padding: 12,
+    ...cardRestShadow,
+  },
+  selectionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
     justifyContent: "center",
-    minHeight: 52,
-    minWidth: 78,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+    width: 40,
   },
-  chipSelected: {
-    backgroundColor: colors.harborBlue,
-    borderColor: colors.harborBlue,
+  selectionText: {
+    color: colors.graphite,
+    flex: 1,
+    ...typography.title,
   },
-  chipLabel: {
-    color: colors.mistDark,
-    ...typography.label,
-    fontSize: 14,
-    lineHeight: 18,
+  cardPressed: {
+    backgroundColor: colors.sandWarm,
   },
-  chipLabelSelected: {
-    color: colors.warmWhite,
-  },
-  chipHint: {
-    color: colors.mistDark,
-    ...typography.label,
-  },
-  chipHintSelected: {
-    color: colors.warmWhite,
+  memberScroller: {
+    marginTop: spacing.xs,
   },
   memberRow: {
     flexDirection: "row",
-    gap: spacing.sm,
+    gap: spacing.lg,
     paddingVertical: spacing.xs,
   },
   memberChip: {
     alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: radii.sm,
-    borderWidth: 1,
     gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    width: 72,
-  },
-  memberChipSelected: {
-    backgroundColor: "rgba(48, 84, 96, 0.08)",
-    borderColor: colors.harborBlue,
+    width: 64,
   },
   memberCircle: {
     alignItems: "center",
+    borderColor: "transparent",
     borderRadius: radii.pill,
-    height: 36,
+    borderWidth: 2,
+    height: 48,
     justifyContent: "center",
-    width: 36,
+    width: 48,
   },
-  memberCircleEmpty: {
-    alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.pill,
-    borderStyle: "dashed",
-    borderWidth: 1,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  memberCircleEmptyText: {
-    color: colors.mistDark,
-    ...typography.title,
+  memberCircleSelected: {
+    borderColor: colors.harborBlue,
+    borderWidth: 3,
   },
   memberInitial: {
     color: colors.warmWhite,
@@ -506,20 +588,73 @@ const styles = StyleSheet.create({
     ...typography.timestamp,
   },
   footer: {
-    backgroundColor: colors.warmWhite,
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
     gap: spacing.sm,
     paddingTop: spacing.sm,
   },
+  saveButton: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "center",
+    minHeight: 56,
+    paddingHorizontal: spacing.lg,
+  },
+  saveButtonPressed: {
+    backgroundColor: colors.harborBlueDark,
+  },
+  buttonDisabled: {
+    opacity: 0.56,
+  },
+  saveLabel: {
+    color: colors.warmWhite,
+    ...typography.title,
+  },
   dismissButton: {
     alignItems: "center",
-    marginTop: spacing.md,
-    minHeight: 44,
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: spacing.lg,
   },
   dismissLabel: {
     color: colors.destructive,
+    ...typography.title,
+  },
+  decoration: {
+    left: -20,
+    opacity: 0.16,
+    position: "absolute",
+    top: 24,
+    transform: [{ rotate: "-24deg" }],
+  },
+  noteDecoration: {
+    opacity: 0.16,
+    position: "absolute",
+    right: -14,
+    top: 330,
+    transform: [{ rotate: "32deg" }],
+  },
+  pickerAvatar: {
+    alignItems: "center",
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  unassignedAvatar: {
+    borderColor: colors.mistLight,
+    borderStyle: "dashed",
+    borderWidth: 1,
+  },
+  unassignedLabel: {
+    color: colors.mistDark,
     ...typography.title,
   },
 });

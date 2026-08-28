@@ -20,7 +20,7 @@ import {
   View,
 } from "react-native";
 
-import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
+import { OrdiloPickerModal } from "@/src/components/picker-sheet";
 import { OrdiloFormSheet } from "@/src/components/sheet";
 import { OrdiloButton } from "@/src/components/ui";
 import {
@@ -380,8 +380,7 @@ function NoteTypePicker({
   visible: boolean;
 }) {
   return (
-    <OrdiloPickerSheet
-      accessibilityLabel="Art der Notiz auswählen"
+    <OrdiloPickerModal
       onClose={onClose}
       options={noteTypes.map(([type, label]) => ({
         key: type,

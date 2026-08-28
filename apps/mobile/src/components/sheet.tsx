@@ -139,6 +139,7 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
  */
 export function AnimatedSheetModal({
   children,
+  detached = false,
   dismissDisabled = false,
   keyboardAvoiding = false,
   onClose,
@@ -146,6 +147,8 @@ export function AnimatedSheetModal({
   visible,
 }: {
   children: ReactNode;
+  /** Inset the complete modal sheet from the phone edges. */
+  detached?: boolean;
   /** Blocks backdrop-tap and back-button dismissal (e.g. while saving). */
   dismissDisabled?: boolean;
   /** Lifts the sheet above the software keyboard (iOS padding behavior). */
@@ -154,6 +157,7 @@ export function AnimatedSheetModal({
   sheetStyle?: StyleProp<ViewStyle>;
   visible: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { height: windowHeight } = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
@@ -226,20 +230,45 @@ export function AnimatedSheetModal({
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             pointerEvents="box-none"
-            style={styles.modalSheetSlot}
+            style={[
+              styles.modalSheetSlot,
+              detached && styles.detachedModalSheetSlot,
+              detached && {
+                paddingBottom: Math.max(insets.bottom, spacing.md),
+              },
+            ]}
           >
             <Animated.View
               accessibilityViewIsModal
-              style={[styles.modalSheet, sheetStyle, sheetAnimatedStyle]}
+              style={[
+                styles.modalSheet,
+                detached && styles.detachedModalSheet,
+                sheetStyle,
+                sheetAnimatedStyle,
+              ]}
             >
               {children}
             </Animated.View>
           </KeyboardAvoidingView>
         ) : (
-          <View pointerEvents="box-none" style={styles.modalSheetSlot}>
+          <View
+            pointerEvents="box-none"
+            style={[
+              styles.modalSheetSlot,
+              detached && styles.detachedModalSheetSlot,
+              detached && {
+                paddingBottom: Math.max(insets.bottom, spacing.md),
+              },
+            ]}
+          >
             <Animated.View
               accessibilityViewIsModal
-              style={[styles.modalSheet, sheetStyle, sheetAnimatedStyle]}
+              style={[
+                styles.modalSheet,
+                detached && styles.detachedModalSheet,
+                sheetStyle,
+                sheetAnimatedStyle,
+              ]}
             >
               {children}
             </Animated.View>
@@ -265,6 +294,7 @@ export function OrdiloFormSheet({
   style,
   subtitle,
   title,
+  titleAlign = "left",
   visible,
 }: {
   children: ReactNode;
@@ -275,6 +305,7 @@ export function OrdiloFormSheet({
   style?: StyleProp<ViewStyle>;
   subtitle?: string;
   title: string;
+  titleAlign?: "left" | "center";
   visible: boolean;
 }) {
   const insets = useSafeAreaInsets();
@@ -293,8 +324,20 @@ export function OrdiloFormSheet({
     >
       <View style={styles.formHandle} />
       <View style={styles.formHeader}>
-        <View style={styles.formHeading}>
-          <Text style={styles.formTitle}>{title}</Text>
+        <View
+          style={[
+            styles.formHeading,
+            titleAlign === "center" && styles.formHeadingCentered,
+          ]}
+        >
+          <Text
+            style={[
+              styles.formTitle,
+              titleAlign === "center" && styles.formTitleCentered,
+            ]}
+          >
+            {title}
+          </Text>
           {subtitle ? <Text style={styles.formSubtitle}>{subtitle}</Text> : null}
         </View>
         <Pressable
@@ -353,6 +396,13 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radii.xl,
     maxHeight: "88%",
   },
+  detachedModalSheetSlot: {
+    paddingHorizontal: spacing.md,
+  },
+  detachedModalSheet: {
+    borderBottomLeftRadius: DETACHED_SHEET_BOTTOM_RADIUS,
+    borderBottomRightRadius: DETACHED_SHEET_BOTTOM_RADIUS,
+  },
   formSheetPadding: {
     paddingBottom: spacing.lg,
     paddingHorizontal: spacing.md,
@@ -374,7 +424,16 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   formHeading: { flex: 1, gap: 2 },
+  formHeadingCentered: {
+    alignItems: "center",
+    marginLeft: 44,
+  },
   formTitle: { color: colors.graphite, ...typography.display },
+  formTitleCentered: {
+    fontSize: 24,
+    lineHeight: 31,
+    textAlign: "center",
+  },
   formSubtitle: { color: colors.mistDark, ...typography.timestamp },
   formClose: {
     alignItems: "center",

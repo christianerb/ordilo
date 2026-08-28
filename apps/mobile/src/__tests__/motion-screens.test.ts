@@ -149,9 +149,25 @@ describe("native motion wiring", () => {
     for (const path of [
       "app/(tabs)/ablage.tsx",
       "app/(tabs)/plan.tsx",
-      "src/components/note-form-sheet.tsx",
     ]) {
       expect(source(path)).toContain("<OrdiloPickerSheet");
     }
+    for (const path of [
+      "src/components/note-form-sheet.tsx",
+      "src/components/task-form-sheet.tsx",
+    ]) {
+      expect(source(path)).toContain("<OrdiloPickerModal");
+    }
+  });
+
+  it("uses the journal task form layout for create and edit", () => {
+    const taskForm = source("src/components/task-form-sheet.tsx");
+    expect(taskForm).toContain('titleAlign="center"');
+    expect(taskForm).toContain("Aufgabe erstellen");
+    expect(taskForm).toContain("Aufgabe bearbeiten");
+    expect(taskForm.match(/<OrdiloPickerModal/g)).toHaveLength(2);
+    expect(taskForm).toContain("styles.selectionCard");
+    expect(taskForm).toContain("styles.memberCircleSelected");
+    expect(taskForm).toContain("styles.saveButton");
   });
 });

@@ -3,6 +3,7 @@ import { Check } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
+  AnimatedSheetModal,
   OrdiloSheet,
   useSheetPresentation,
 } from "@/src/components/sheet";
@@ -41,6 +42,46 @@ export function OrdiloPickerSheet({
       onDismiss={onClose}
       ref={sheetRef}
     >
+      <PickerContent options={options} title={title} />
+    </OrdiloSheet>
+  );
+}
+
+export function OrdiloPickerModal({
+  onClose,
+  options,
+  title,
+  visible,
+}: {
+  onClose: () => void;
+  options: OrdiloPickerOption[];
+  title: string;
+  visible: boolean;
+}) {
+  return (
+    <AnimatedSheetModal
+      detached
+      onClose={onClose}
+      sheetStyle={styles.modal}
+      visible={visible}
+    >
+      <View style={styles.modalHandle} />
+      <View style={styles.content}>
+        <PickerContent options={options} title={title} />
+      </View>
+    </AnimatedSheetModal>
+  );
+}
+
+function PickerContent({
+  options,
+  title,
+}: {
+  options: OrdiloPickerOption[];
+  title: string;
+}) {
+  return (
+    <>
       <Text style={styles.title}>{title}</Text>
       <View style={styles.list}>
         {options.map((option, index) => (
@@ -76,11 +117,22 @@ export function OrdiloPickerSheet({
           </Pressable>
         ))}
       </View>
-    </OrdiloSheet>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
+  modal: {
+    paddingBottom: spacing.md,
+  },
+  modalHandle: {
+    alignSelf: "center",
+    backgroundColor: colors.mistLight,
+    borderRadius: radii.pill,
+    height: 4,
+    marginTop: spacing.sm,
+    width: 40,
+  },
   content: {
     paddingBottom: spacing.md,
     paddingHorizontal: spacing.md,
