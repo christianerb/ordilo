@@ -78,7 +78,7 @@ describe("native motion wiring", () => {
       "CreateChoiceSheet",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "C334 18 352 36 352 58 C352 80 334 98 312 98",
+      "C137 28 139 0 180 0 C221 0 223 28 252 28",
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "centerGlow",

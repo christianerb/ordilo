@@ -77,7 +77,7 @@ export function OrdiloTabBar({
               width="100%"
             >
               <Path
-                d="M48 18 H119 C143 18 145 0 180 0 C215 0 217 18 241 18 H312 C334 18 352 36 352 58 C352 80 334 98 312 98 H48 C26 98 8 80 8 58 C8 36 26 18 48 18 Z"
+                d="M43 28 H108 C137 28 139 0 180 0 C221 0 223 28 252 28 H317 C336 28 352 44 352 63 C352 82 336 98 317 98 H43 C24 98 8 82 8 63 C8 44 24 28 43 28 Z"
                 fill="rgba(253,252,250,0.98)"
                 stroke="rgba(255,255,255,0.98)"
                 strokeWidth={2}
@@ -207,9 +207,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     gap: 5,
-    height: 76,
+    height: 70,
     justifyContent: "center",
-    marginTop: spacing.lg,
+    marginTop: 28,
     position: "relative",
   },
   startTab: {
