@@ -31,12 +31,16 @@ import {
 } from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
+  CONTACT_INPUT_LIMITS,
   buildWhatsAppHref,
   createContact,
+  getContactFieldErrors,
   getContactInitial,
+  isPhoneInputValue,
   normalizePhoneForLink,
   updateContact,
   type Contact,
+  type ContactFieldErrors,
   type ContactInput,
 } from "@/src/lib/contacts";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
@@ -278,6 +282,7 @@ export function ContactFormSheet({
   const [form, setForm] = useState<ContactInput>(EMPTY_CONTACT_FORM);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<ContactFieldErrors>({});
 
   // Re-seed the form whenever the sheet opens for another contact.
   useEffect(() => {
@@ -295,18 +300,44 @@ export function ContactFormSheet({
           : EMPTY_CONTACT_FORM,
       );
       setError(null);
+      setFieldErrors({});
       setSaving(false);
     });
   }, [visible, contact]);
 
   const patch = useCallback(
-    (key: keyof ContactInput) => (value: string) =>
-      setForm((current) => ({ ...current, [key]: value })),
+    (key: keyof ContactInput) => (value: string) => {
+      setForm((current) => ({ ...current, [key]: value }));
+      setError(null);
+      setFieldErrors((current) => {
+        if (!current[key]) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+    },
     [],
   );
 
+  const validateField = (key: keyof ContactInput) => {
+    const message = getContactFieldErrors(form)[key];
+    setFieldErrors((current) => {
+      if (current[key] === message) return current;
+      const next = { ...current };
+      if (message) next[key] = message;
+      else delete next[key];
+      return next;
+    });
+  };
+
   const save = async () => {
     if (!familyId || saving) return;
+    const nextFieldErrors = getContactFieldErrors(form);
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      await fail();
+      return;
+    }
     setSaving(true);
     setError(null);
     const result = contact
@@ -334,48 +365,87 @@ export function ContactFormSheet({
       visible={visible}
     >
       <OrdiloFormBody>
-        <OrdiloFormField label="Name">
+        <OrdiloFormField error={fieldErrors.name} label="Name">
           <OrdiloFormInput
             accessibilityLabel="Name"
             autoCapitalize="words"
             autoFocus
             autoCorrect={false}
+            invalid={Boolean(fieldErrors.name)}
+            maxLength={CONTACT_INPUT_LIMITS.name}
             onChangeText={patch("name")}
+            onBlur={() => validateField("name")}
+            placeholder="z. B. Dr. Anna Weber"
             value={form.name}
           />
         </OrdiloFormField>
-        <OrdiloFormField label="Organisation">
+        <OrdiloFormField
+          error={fieldErrors.organization}
+          label="Organisation (optional)"
+        >
           <OrdiloFormInput
             accessibilityLabel="Organisation"
             autoCorrect={false}
+            invalid={Boolean(fieldErrors.organization)}
+            maxLength={CONTACT_INPUT_LIMITS.organization}
             onChangeText={patch("organization")}
+            onBlur={() => validateField("organization")}
+            placeholder="z. B. Kinderarztpraxis"
             value={form.organization ?? ""}
           />
         </OrdiloFormField>
-        <OrdiloFormField label="Rolle">
+        <OrdiloFormField
+          error={fieldErrors.role}
+          label="Rolle (optional)"
+        >
           <OrdiloFormInput
             accessibilityLabel="Rolle"
             autoCorrect={false}
+            invalid={Boolean(fieldErrors.role)}
+            maxLength={CONTACT_INPUT_LIMITS.role}
             onChangeText={patch("role")}
+            onBlur={() => validateField("role")}
+            placeholder="z. B. Kinderärztin"
             value={form.role ?? ""}
           />
         </OrdiloFormField>
-        <OrdiloFormField label="Telefon">
+        <OrdiloFormField error={fieldErrors.phone} label="Telefon">
           <OrdiloFormInput
             accessibilityLabel="Telefon"
+            autoComplete="tel"
             autoCorrect={false}
+            invalid={Boolean(fieldErrors.phone)}
             keyboardType="phone-pad"
-            onChangeText={patch("phone")}
+            maxLength={CONTACT_INPUT_LIMITS.phone}
+            onBlur={() => validateField("phone")}
+            onChangeText={(value) => {
+              if (isPhoneInputValue(value)) {
+                patch("phone")(value);
+                return;
+              }
+              setFieldErrors((current) => ({
+                ...current,
+                phone: "Bitte nutze nur Zahlen und +, (), / oder -.",
+              }));
+            }}
+            placeholder="+49 30 123456"
+            textContentType="telephoneNumber"
             value={form.phone ?? ""}
           />
         </OrdiloFormField>
-        <OrdiloFormField label="E-Mail">
+        <OrdiloFormField error={fieldErrors.email} label="E-Mail">
           <OrdiloFormInput
             accessibilityLabel="E-Mail"
             autoCapitalize="none"
+            autoComplete="email"
             autoCorrect={false}
+            invalid={Boolean(fieldErrors.email)}
             keyboardType="email-address"
+            maxLength={CONTACT_INPUT_LIMITS.email}
+            onBlur={() => validateField("email")}
             onChangeText={patch("email")}
+            placeholder="name@beispiel.de"
+            textContentType="emailAddress"
             value={form.email}
           />
         </OrdiloFormField>

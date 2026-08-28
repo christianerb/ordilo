@@ -2,10 +2,12 @@ import {
   buildWhatsAppHref,
   contactInputSchema,
   filterContacts,
+  getContactFieldErrors,
   getContactInitial,
   getContactReachLine,
   getContactSearchText,
   getContactSectionKey,
+  isPhoneInputValue,
   getContactSubtitle,
   groupContactsIntoSections,
   mergeSavedContact,
@@ -42,7 +44,7 @@ const suggested: Contact = {
   source_document_id: "doc-9",
 };
 
-describe("contact input schema (ported from web)", () => {
+describe("shared contact input schema", () => {
   it("accepts a name with a phone number only", () => {
     const result = contactInputSchema.safeParse({
       name: "Oma Erna",
@@ -83,6 +85,33 @@ describe("contact input schema (ported from web)", () => {
     }
   });
 
+  it("rejects letters, repeated plus signs and implausibly long numbers", () => {
+    for (const phone of [
+      "030 Zentrale 12345",
+      "++49 30 123456",
+      "+49 123 456 789 012 345 6",
+    ]) {
+      const result = contactInputSchema.safeParse({ name: "A", phone });
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("returns the first validation message beside each affected field", () => {
+    expect(
+      getContactFieldErrors({
+        name: "",
+        organization: "",
+        role: "",
+        phone: "12",
+        email: "ohne-at-zeichen",
+      }),
+    ).toEqual({
+      name: "Bitte gib einen Namen ein.",
+      phone: "Bitte prüfe die Telefonnummer.",
+      email: "Bitte prüfe die E-Mail-Adresse.",
+    });
+  });
+
   it("requires a name", () => {
     const result = contactInputSchema.safeParse({
       name: "   ",
@@ -102,6 +131,12 @@ describe("phone link helpers", () => {
     expect(normalizePhoneForLink("+49 (0)171 234-56 78")).toBe("+4901712345678");
     expect(normalizePhoneForLink("030 123456")).toBe("030123456");
     expect(normalizePhoneForLink("abc")).toBe("");
+  });
+
+  it("accepts only dialable input characters without rewriting the value", () => {
+    expect(isPhoneInputValue("+49 (0)30 / 123-45")).toBe(true);
+    expect(isPhoneInputValue("030 Zentrale 12345")).toBe(false);
+    expect(isPhoneInputValue("++49 30 123")).toBe(false);
   });
 
   it("builds WhatsApp links only for international numbers", () => {

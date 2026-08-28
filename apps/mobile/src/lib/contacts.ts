@@ -1,16 +1,26 @@
-import { z } from "zod";
+import {
+  contactInputSchema,
+  type ContactInput,
+} from "@ordilo/contact-contract";
 
 import { getSupabase } from "./supabase";
+
+export {
+  CONTACT_INPUT_LIMITS,
+  buildWhatsAppHref,
+  contactInputSchema,
+  isPhoneInputValue,
+  normalizePhoneForLink,
+  whatsappNumber,
+  type ContactInput,
+} from "@ordilo/contact-contract";
 
 /**
  * Contacts for the native app.
  *
- * Fachliche Referenz ist die Web-App: das Validierungsschema, die
- * Telefon-/WhatsApp-Helper und die deutschen Fehlertexte sind 1:1 aus
- * src/lib/contacts.ts portiert, die Schreiblogik aus
- * src/app/(app)/dokumente/actions.ts. Der native Client schreibt mit dem
- * Publishable Key direkt gegen Supabase — RLS bleibt die Autorität, wie
- * beim Browser-Client der Web-App.
+ * Web and native share validation and phone helpers through the contact
+ * contract. The native client writes directly to Supabase with the
+ * Publishable Key; RLS remains the authority, as in the browser client.
  */
 
 export const FRIENDLY_ERROR =
@@ -34,59 +44,27 @@ export type ContactActionResult =
   | { success: true; contact: Contact }
   | { success: false; error: string };
 
-export const contactInputSchema = z
-  .object({
-    name: z.string().trim().min(1, "Bitte gib einen Namen ein.").max(120),
-    organization: z.string().trim().max(160).optional().default(""),
-    role: z.string().trim().max(120).optional().default(""),
-    phone: z
-      .string()
-      .trim()
-      .max(60)
-      .refine(
-        (value) =>
-          !value || normalizePhoneForLink(value).replace(/\D/g, "").length >= 5,
-        "Bitte prüfe die Telefonnummer.",
-      )
-      .optional()
-      .default(""),
-    email: z
-      .string()
-      .trim()
-      .max(254)
-      .refine(
-        (value) => !value || z.email().safeParse(value).success,
-        "Bitte prüfe die E-Mail-Adresse.",
-      )
-      .default(""),
-  })
-  .refine((contact) => Boolean(contact.phone || contact.email), {
-    path: ["phone"],
-    message: "Telefonnummer oder E-Mail-Adresse fehlt.",
-  });
+export type ContactFieldErrors = Partial<Record<keyof ContactInput, string>>;
 
-export type ContactInput = z.infer<typeof contactInputSchema>;
+/** First validation message per field, for calm inline form feedback. */
+export function getContactFieldErrors(
+  input: ContactInput,
+): ContactFieldErrors {
+  const parsed = contactInputSchema.safeParse(input);
+  if (parsed.success) return {};
 
-/** Keep only digits and an optional leading plus for tel/WhatsApp URLs. */
-export function normalizePhoneForLink(phone: string): string {
-  const trimmed = phone.trim();
-  const digits = trimmed.replace(/\D/g, "");
-  if (!digits) return "";
-  return trimmed.startsWith("+") ? `+${digits}` : digits;
-}
-
-/** WhatsApp requires an international number without punctuation or plus. */
-export function whatsappNumber(phone: string): string | null {
-  const normalized = normalizePhoneForLink(phone);
-  const digits = normalized.replace(/\D/g, "");
-  return normalized.startsWith("+") && digits.length >= 7 ? digits : null;
-}
-
-export function buildWhatsAppHref(phone: string, message = ""): string | null {
-  const number = whatsappNumber(phone);
-  if (!number) return null;
-  const query = message.trim() ? `?text=${encodeURIComponent(message.trim())}` : "";
-  return `https://wa.me/${number}${query}`;
+  const errors: ContactFieldErrors = {};
+  for (const issue of parsed.error.issues) {
+    const field = issue.path[0];
+    if (
+      typeof field === "string" &&
+      field in input &&
+      !errors[field as keyof ContactInput]
+    ) {
+      errors[field as keyof ContactInput] = issue.message;
+    }
+  }
+  return errors;
 }
 
 export const contactsSelect =

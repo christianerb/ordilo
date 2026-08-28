@@ -471,11 +471,13 @@ export function OrdiloFormBody({
 /** Shared label grouping so fields never invent their own vertical spacing. */
 export function OrdiloFormField({
   children,
+  error,
   helper,
   label,
   style,
 }: {
   children: ReactNode;
+  error?: string;
   helper?: string;
   label: string;
   style?: StyleProp<ViewStyle>;
@@ -484,7 +486,13 @@ export function OrdiloFormField({
     <View style={[styles.formField, style]}>
       <Text style={styles.formFieldLabel}>{label}</Text>
       {children}
-      {helper ? <Text style={styles.formFieldHelper}>{helper}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={styles.formFieldError}>
+          {error}
+        </Text>
+      ) : helper ? (
+        <Text style={styles.formFieldHelper}>{helper}</Text>
+      ) : null}
     </View>
   );
 }
@@ -497,6 +505,7 @@ export function OrdiloFormInput({
   containerStyle,
   leading,
   multiline = false,
+  invalid = false,
   onBlur,
   onFocus,
   placeholderTextColor = colors.mistDark,
@@ -506,6 +515,7 @@ export function OrdiloFormInput({
 }: TextInputProps & {
   containerStyle?: StyleProp<ViewStyle>;
   leading?: ReactNode;
+  invalid?: boolean;
   trailing?: ReactNode;
   style?: StyleProp<TextStyle>;
 }) {
@@ -517,12 +527,14 @@ export function OrdiloFormInput({
         styles.formControl,
         multiline && styles.formControlMultiline,
         focused && styles.formControlFocused,
+        invalid && styles.formControlInvalid,
         containerStyle,
       ]}
     >
       {leading}
       <TextInput
         {...props}
+        aria-invalid={invalid}
         multiline={multiline}
         onBlur={(event) => {
           setFocused(false);
@@ -759,6 +771,7 @@ const styles = StyleSheet.create({
   formField: { gap: spacing.xs },
   formFieldLabel: { color: colors.mistDark, ...typography.label },
   formFieldHelper: { color: colors.mistDark, ...typography.label },
+  formFieldError: { color: colors.destructive, ...typography.label },
   formControl: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
@@ -772,10 +785,11 @@ const styles = StyleSheet.create({
   },
   formControlFocused: {
     borderColor: colors.harborBlue,
-    outlineColor: "rgba(48, 84, 96, 0.5)",
-    outlineOffset: 1,
-    outlineStyle: "solid",
-    outlineWidth: 3,
+    borderWidth: 2,
+  },
+  formControlInvalid: {
+    borderColor: colors.destructive,
+    borderWidth: 2,
   },
   formControlPressed: { backgroundColor: colors.sandWarm },
   formControlDisabled: { opacity: 0.5 },

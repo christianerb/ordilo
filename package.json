@@ -24,6 +24,7 @@
   "dependencies": {
     "@ai-sdk/openai": "4.0.7",
     "@ai-sdk/react": "^4.0.17",
+    "@ordilo/contact-contract": "^0.1.0",
     "@ordilo/document-contract": "^0.1.0",
     "@sentry/nextjs": "^10.65.0",
     "@supabase/ssr": "0.12.0",
