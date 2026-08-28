@@ -449,24 +449,25 @@ export function OrdiloFormSheet({
 }
 
 /** The single scrolling body rhythm for every create/edit form sheet. */
-export function OrdiloFormBody({
-  children,
-  contentContainerStyle,
-}: {
-  children: ReactNode;
-  contentContainerStyle?: StyleProp<ViewStyle>;
-}) {
+export const OrdiloFormBody = forwardRef<
+  ScrollView,
+  {
+    children: ReactNode;
+    contentContainerStyle?: StyleProp<ViewStyle>;
+  }
+>(function OrdiloFormBody({ children, contentContainerStyle }, ref) {
   return (
     <ScrollView
       contentContainerStyle={[styles.formBodyContent, contentContainerStyle]}
       keyboardShouldPersistTaps="handled"
+      ref={ref}
       showsVerticalScrollIndicator={false}
       style={styles.formBody}
     >
       {children}
     </ScrollView>
   );
-}
+});
 
 /** Shared label grouping so fields never invent their own vertical spacing. */
 export function OrdiloFormField({

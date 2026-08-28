@@ -24,6 +24,16 @@ describe("native motion wiring", () => {
     expect(settings).toContain("SpringPressable");
   });
 
+  it("shows new scan queue items before the tall capture surface", () => {
+    const scan = source("app/scan.tsx");
+
+    expect(scan.indexOf("{queue.length > 0 ? (")).toBeLessThan(
+      scan.indexOf("<View style={styles.captureStage}>"),
+    );
+    expect(scan).toContain("bodyRef.current?.scrollTo");
+    expect(scan).toContain("ref={bodyRef}");
+  });
+
   it("animates the chat thinking state without ignoring reduced motion", () => {
     const chat = source("src/components/chat.tsx");
     const thinking = sourceSection(

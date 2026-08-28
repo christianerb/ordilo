@@ -1,6 +1,7 @@
 import { File } from "expo-file-system";
 
 import { getApiUrl } from "./api";
+import { nativeFetch } from "./native-fetch";
 import { getSupabase } from "./supabase";
 
 export class VoiceInputError extends Error {}
@@ -22,7 +23,7 @@ export async function transcribeVoiceRecording(input: {
 
   let response: Response;
   try {
-    response = await fetch(`${getApiUrl()}/api/realtime/transcribe`, {
+    response = await nativeFetch(`${getApiUrl()}/api/realtime/transcribe`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body,

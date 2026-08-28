@@ -1,3 +1,5 @@
+import { File } from "expo-file-system";
+
 import { apiFetch } from "./api";
 import type { DocumentType, ReviewAnalysis } from "./document-review";
 
@@ -74,8 +76,8 @@ export function getNoteContent(
 }
 
 /**
- * Sends the documented multipart note contract. React Native accepts the
- * URI descriptor as a FormData part at runtime; its DOM type does not.
+ * Sends the documented multipart note contract. Expo File implements Blob,
+ * so note attachments use the same native multipart transport as scans.
  */
 export async function createNote(input: CreateNoteInput): Promise<CreateNoteResponse> {
   const formData = new FormData();
@@ -87,11 +89,8 @@ export async function createNote(input: CreateNoteInput): Promise<CreateNoteResp
   if (input.attachment) {
     formData.append(
       "file",
-      {
-        uri: input.attachment.uri,
-        name: input.attachment.name,
-        type: input.attachment.mimeType,
-      } as unknown as Blob,
+      new File(input.attachment.uri),
+      input.attachment.name,
     );
   }
 

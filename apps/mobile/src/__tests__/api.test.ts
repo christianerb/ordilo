@@ -7,7 +7,12 @@ jest.mock("../lib/supabase", () => ({
 }));
 
 const mockFetch = jest.fn();
+const mockExpoFetch = jest.fn();
 globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+jest.mock("../lib/native-fetch", () => ({
+  nativeFetch: (...args: Parameters<typeof fetch>) => mockExpoFetch(...args),
+}));
 
 function sessionWithToken(token: string | null) {
   mockGetSession.mockResolvedValue({
@@ -21,6 +26,7 @@ describe("apiFetch", () => {
     process.env.EXPO_PUBLIC_API_URL = "https://ordilo.example.com";
     sessionWithToken("access-token-1");
     mockFetch.mockResolvedValue({ ok: true, status: 200 });
+    mockExpoFetch.mockResolvedValue({ ok: true, status: 200 });
   });
 
   it("attaches the session access token as a bearer header", async () => {
@@ -42,6 +48,22 @@ describe("apiFetch", () => {
     const headers = mockFetch.mock.calls[0][1].headers as Headers;
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(headers.get("Authorization")).toBe("Bearer access-token-1");
+  });
+
+  it("uses Expo fetch for native multipart file uploads", async () => {
+    const body = new FormData();
+    body.append("family_id", "family-1");
+
+    await apiFetch("/api/documents/upload", {
+      method: "POST",
+      body,
+    });
+
+    expect(mockExpoFetch).toHaveBeenCalledWith(
+      "https://ordilo.example.com/api/documents/upload",
+      expect.objectContaining({ body, headers: expect.any(Headers) }),
+    );
+    expect(mockFetch).not.toHaveBeenCalled();
   });
 
   it("throws a German 401 ApiError when no session exists", async () => {

@@ -1,4 +1,5 @@
 import { getSupabase } from "./supabase";
+import { nativeFetch } from "./native-fetch";
 
 /**
  * Client for the Ordilo Next.js API routes (the web app).
@@ -59,7 +60,14 @@ export async function apiFetch(
   const url = `${getApiUrl()}${path}`;
   let response: Response;
   try {
-    response = await fetch(url, { ...init, headers });
+    if (init.body instanceof FormData) {
+      // Expo File blobs need Expo's native fetch implementation. React
+      // Native's global fetch can serialize the same FormData as an empty
+      // request, so scanned documents never reach the upload route.
+      response = await nativeFetch(url, { ...init, headers });
+    } else {
+      response = await fetch(url, { ...init, headers });
+    }
   } catch {
     throw new ApiError(
       "Keine Verbindung. Bitte prüfe dein Internet und versuch's nochmal.",

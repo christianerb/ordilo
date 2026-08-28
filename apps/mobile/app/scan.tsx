@@ -24,6 +24,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -161,6 +162,7 @@ export default function ScanModal() {
   const [scannerBusy, setScannerBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
+  const bodyRef = useRef<ScrollView>(null);
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
@@ -229,6 +231,7 @@ export default function ScanModal() {
         { ...staged, state: "queued" },
       ]);
       setError(null);
+      bodyRef.current?.scrollTo({ animated: false, y: 0 });
       return true;
     } catch {
       setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
@@ -464,54 +467,10 @@ export default function ScanModal() {
       title="Dokument scannen"
       visible={sheetVisible}
     >
-      <OrdiloFormBody contentContainerStyle={styles.scrollContent}>
-        <View style={styles.captureStage}>
-          <ScanHeroIllustration />
-          <Text style={[typography.display, styles.captureTitle]}>
-            Brief scannen
-          </Text>
-          <Text style={[typography.body, styles.captureText]}>
-            Kanten, Zuschnitt und mehrere Seiten übernimmt dein Gerät.
-          </Text>
-          <OrdiloButton
-            disabled={scannerBusy || !queueHydrated}
-            icon={
-              scannerBusy ? (
-                <ActivityIndicator color={colors.warmWhite} />
-              ) : (
-                <ScanLine color={colors.warmWhite} size={18} />
-              )
-            }
-            onPress={() => void runSystemScanner()}
-            size="lg"
-            title={scannerBusy ? "Scanner wird geöffnet" : "Dokument scannen"}
-          />
-        </View>
-
-        <View style={styles.alternatives}>
-          <View style={styles.alternativeHeading}>
-            <View style={styles.alternativeLine} />
-            <Text style={styles.alternativeLabel}>Oder auswählen</Text>
-            <View style={styles.alternativeLine} />
-          </View>
-          <View style={styles.secondaryActions}>
-            <ScanSecondaryAction
-              accessibilityLabel="Fotos auswählen"
-              disabled={!queueHydrated}
-              icon={<Images color={colors.harborBlue} size={20} strokeWidth={1.8} />}
-              label="Fotos"
-              onPress={() => void pickImages()}
-            />
-            <ScanSecondaryAction
-              accessibilityLabel="Datei auswählen"
-              disabled={!queueHydrated}
-              icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
-              label="Datei"
-              onPress={() => void pickFile()}
-            />
-          </View>
-        </View>
-
+      <OrdiloFormBody
+        contentContainerStyle={styles.scrollContent}
+        ref={bodyRef}
+      >
         {error ? (
           <View accessibilityRole="alert" style={styles.error}>
             <Text style={styles.errorText}>{error}</Text>
@@ -574,6 +533,53 @@ export default function ScanModal() {
             ))}
           </Card>
         ) : null}
+
+        <View style={styles.captureStage}>
+          <ScanHeroIllustration />
+          <Text style={[typography.display, styles.captureTitle]}>
+            Brief scannen
+          </Text>
+          <Text style={[typography.body, styles.captureText]}>
+            Kanten, Zuschnitt und mehrere Seiten übernimmt dein Gerät.
+          </Text>
+          <OrdiloButton
+            disabled={scannerBusy || !queueHydrated}
+            icon={
+              scannerBusy ? (
+                <ActivityIndicator color={colors.warmWhite} />
+              ) : (
+                <ScanLine color={colors.warmWhite} size={18} />
+              )
+            }
+            onPress={() => void runSystemScanner()}
+            size="lg"
+            title={scannerBusy ? "Scanner wird geöffnet" : "Dokument scannen"}
+          />
+        </View>
+
+        <View style={styles.alternatives}>
+          <View style={styles.alternativeHeading}>
+            <View style={styles.alternativeLine} />
+            <Text style={styles.alternativeLabel}>Oder auswählen</Text>
+            <View style={styles.alternativeLine} />
+          </View>
+          <View style={styles.secondaryActions}>
+            <ScanSecondaryAction
+              accessibilityLabel="Fotos auswählen"
+              disabled={!queueHydrated}
+              icon={<Images color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+              label="Fotos"
+              onPress={() => void pickImages()}
+            />
+            <ScanSecondaryAction
+              accessibilityLabel="Datei auswählen"
+              disabled={!queueHydrated}
+              icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+              label="Datei"
+              onPress={() => void pickFile()}
+            />
+          </View>
+        </View>
       </OrdiloFormBody>
     </OrdiloFormSheet>
   );
