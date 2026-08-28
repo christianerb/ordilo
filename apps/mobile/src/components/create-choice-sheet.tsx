@@ -29,6 +29,7 @@ export const CreateChoiceSheet = forwardRef<
   return (
     <OrdiloSheet
       accessibilityLabel={accessibilityLabel}
+      contentContainerStyle={styles.sheetContent}
       onDismiss={onDismiss}
       ref={ref}
     >
@@ -96,11 +97,15 @@ function CreateChoiceRow({ item }: { item: CreateChoiceItem }) {
 }
 
 const styles = StyleSheet.create({
+  sheetContent: {
+    paddingHorizontal: 20,
+    paddingTop: spacing.md,
+  },
   header: {
-    minHeight: 104,
+    minHeight: 112,
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.xs,
   },
   headerCopy: {
     gap: spacing.xs,
@@ -146,7 +151,7 @@ const styles = StyleSheet.create({
     width: 9,
   },
   options: {
-    gap: 12,
+    gap: spacing.md,
     paddingBottom: spacing.sm,
   },
   option: {
@@ -156,9 +161,9 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 12,
-    minHeight: 86,
-    padding: 12,
+    gap: 14,
+    minHeight: 96,
+    padding: 14,
     ...cardRestShadow,
   },
   optionPressed: {
@@ -170,9 +175,9 @@ const styles = StyleSheet.create({
     borderColor: "rgba(48, 84, 96, 0.12)",
     borderRadius: 16,
     borderWidth: 1,
-    height: 54,
+    height: 58,
     justifyContent: "center",
-    width: 54,
+    width: 58,
   },
   optionIconApricot: {
     backgroundColor: colors.washApricot,
@@ -203,8 +208,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.sandLight,
     borderRadius: radii.pill,
-    height: 38,
+    height: 40,
     justifyContent: "center",
-    width: 38,
+    width: 40,
   },
 });

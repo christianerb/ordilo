@@ -44,6 +44,8 @@ export type OrdiloSheetHandle = BottomSheetModal;
 
 interface OrdiloSheetProps {
   children?: ReactNode;
+  /** Optional content spacing for composed sheet variants. */
+  contentContainerStyle?: StyleProp<ViewStyle>;
   /** Called after the sheet has fully dismissed (swipe, backdrop, or close). */
   onDismiss?: () => void;
   /** Accessible name for the sheet region. */
@@ -80,7 +82,15 @@ function renderBackdrop(props: BottomSheetBackdropProps) {
 }
 
 export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
-  function OrdiloSheet({ children, onDismiss, accessibilityLabel }, ref) {
+  function OrdiloSheet(
+    {
+      children,
+      contentContainerStyle,
+      onDismiss,
+      accessibilityLabel,
+    },
+    ref,
+  ) {
     const insets = useSafeAreaInsets();
 
     return (
@@ -97,6 +107,7 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
         <BottomSheetScrollView
           contentContainerStyle={[
             styles.content,
+            contentContainerStyle,
             { paddingBottom: spacing.lg + insets.bottom },
           ]}
         >
