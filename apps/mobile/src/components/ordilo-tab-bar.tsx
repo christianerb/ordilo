@@ -56,7 +56,6 @@ export function OrdiloTabBar({
       <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
         <View style={styles.dockBar}>
           <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
-            <View style={styles.centerGlow} />
             <Svg
               height="100%"
               preserveAspectRatio="none"
@@ -64,8 +63,8 @@ export function OrdiloTabBar({
               width="100%"
             >
               <Path
-                d="M42 14 H119 C143 14 145 51 180 56 C215 51 217 14 241 14 H318 C336 14 344 25 344 42 V69 C344 87 334 96 316 96 H44 C26 96 16 87 16 69 V42 C16 25 24 14 42 14 Z"
-                fill="rgba(253,252,250,0.96)"
+                d="M42 24 H119 C143 24 145 0 180 0 C215 0 217 24 241 24 H318 C336 24 344 34 344 52 V70 C344 88 334 96 316 96 H44 C26 96 16 88 16 70 V52 C16 34 24 24 42 24 Z"
+                fill="rgba(253,252,250,0.98)"
                 stroke="rgba(255,255,255,0.98)"
                 strokeWidth={2}
               />
@@ -124,7 +123,7 @@ export function OrdiloTabBar({
               >
                 <Icon
                   color={focused ? colors.harborBlueDarker : "rgba(48,84,96,0.58)"}
-                  size={24}
+                  size={25}
                   strokeWidth={focused ? 2.4 : 1.9}
                 />
                 <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
@@ -167,28 +166,28 @@ export function OrdiloTabBar({
 const styles = StyleSheet.create({
   dock: {
     backgroundColor: "transparent",
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: 0,
     paddingTop: 2,
   },
   dockBar: {
     alignItems: "center",
     backgroundColor: "transparent",
-    elevation: 8,
+    elevation: 10,
     flexDirection: "row",
     height: 100,
     justifyContent: "space-around",
     shadowColor: colors.harborBlueDarker,
-    shadowOffset: { height: 5, width: 0 },
-    shadowOpacity: 0.13,
-    shadowRadius: 14,
+    shadowOffset: { height: 7, width: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
   },
   tab: {
     alignItems: "center",
     flex: 1,
-    gap: 6,
-    height: 100,
+    gap: 5,
+    height: 76,
     justifyContent: "center",
-    paddingTop: 22,
+    marginTop: spacing.lg,
     position: "relative",
   },
   ordiloSlot: {
@@ -202,7 +201,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.washSage,
     borderColor: "rgba(255,255,255,0.98)",
     borderRadius: radii.pill,
-    borderWidth: 5,
+    borderWidth: 4,
     elevation: 8,
     height: 72,
     justifyContent: "center",
@@ -218,14 +217,17 @@ const styles = StyleSheet.create({
   },
   ordiloLabel: {
     color: colors.harborBlueDarker,
-    marginTop: 1,
-    textAlign: "center",
     ...typography.label,
+    fontSize: 13,
+    lineHeight: 16,
+    textAlign: "center",
   },
   tabLabel: {
     color: colors.mistDark,
-    textAlign: "center",
     ...typography.label,
+    fontSize: 13,
+    lineHeight: 16,
+    textAlign: "center",
   },
   tabLabelActive: {
     color: colors.harborBlueDarker,
@@ -237,14 +239,5 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     top: 0,
-  },
-  centerGlow: {
-    alignSelf: "center",
-    backgroundColor: "rgba(221,235,229,0.68)",
-    borderRadius: radii.pill,
-    height: 78,
-    position: "absolute",
-    top: 0,
-    width: 136,
   },
 });
