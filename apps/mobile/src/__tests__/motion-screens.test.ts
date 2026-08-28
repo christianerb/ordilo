@@ -47,6 +47,26 @@ describe("native motion wiring", () => {
     expect(document).toContain("Nächstes scannen");
   });
 
+  it("animates real scan stages without ignoring reduced motion", () => {
+    const scan = source("app/scan.tsx");
+    const hero = source("src/components/scan-processing-hero.tsx");
+    const motion = source("src/theme/motion.ts");
+
+    expect(scan).toContain("<ScanProcessingHero stage={processingStage}");
+    expect(scan).toContain("getProcessingStage(flow.status)");
+    expect(scan).toContain("completionEntering(reduceMotion)");
+    expect(hero).toContain("useReducedMotion()");
+    expect(hero).toContain("cancelAnimation(uploadLift)");
+    expect(hero).toContain("withRepeat(");
+    expect(hero).toContain("Easing.linear");
+    expect(hero).toContain("transform: [{ translateY:");
+    expect(hero).toContain("if (reduced)");
+    expect(hero).toContain("AccessibilityInfo.announceForAccessibility");
+    expect(hero).toContain('accessibilityLiveRegion="polite"');
+    expect(hero).toContain("accessibilityValue={{ text: stageLabel }}");
+    expect(motion).toContain("export function completionEntering");
+  });
+
   it("animates the chat thinking state without ignoring reduced motion", () => {
     const chat = source("src/components/chat.tsx");
     const thinking = sourceSection(

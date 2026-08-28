@@ -18,6 +18,7 @@ import {
   FadeOut,
   LinearTransition,
   ReduceMotion,
+  ZoomIn,
   type BaseAnimationBuilder,
 } from "react-native-reanimated";
 
@@ -108,4 +109,19 @@ export function feedbackExiting(): BaseAnimationBuilder {
   return FadeOut.duration(durations.fast)
     .easing(EASE_OUT)
     .reduceMotion(ReduceMotion.Never);
+}
+
+/** A completed status settles into place without making the checklist jump. */
+export function completionEntering(
+  reduceMotion: boolean,
+): BaseAnimationBuilder {
+  if (reduceMotion) {
+    return contentEntering();
+  }
+
+  return ZoomIn.duration(durations.base)
+    .withInitialValues({
+      transform: [{ scale: 0.92 }],
+    })
+    .easing(EASE_OUT);
 }

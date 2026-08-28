@@ -38,9 +38,12 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import Animated from "react-native-reanimated";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
-import { OrdiloCharacter } from "@/src/components/ordilo-character";
+import {
+  ScanProcessingHero,
+  type ScanProcessingStage,
+} from "@/src/components/scan-processing-hero";
 import {
   OrdiloFormBody,
   OrdiloFormSheet,
@@ -69,7 +72,10 @@ import {
   validateScannedDocument,
   waitForScannedDocumentAnalysis,
 } from "@/src/lib/scan";
-import { contentEntering } from "@/src/theme/motion";
+import {
+  completionEntering,
+  contentEntering,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { success, fail } from "@/src/lib/feedback";
 
@@ -87,6 +93,32 @@ type ScanFlow =
       status: "uploading" | DocumentPipelineStatus;
       error?: string;
     };
+
+function getProcessingStage(
+  status: "uploading" | DocumentPipelineStatus,
+): ScanProcessingStage {
+  if (status === "uploading") return "upload";
+  if (status === "uploaded" || status === "ocr_processing") return "ocr";
+  return "analysis";
+}
+
+const PROCESSING_COPY: Record<
+  ScanProcessingStage,
+  { heading: string; description: string }
+> = {
+  upload: {
+    heading: "Dein Dokument macht sich auf den Weg",
+    description: "Ordilo lädt es sicher hoch. Gleich beginnt die Texterkennung.",
+  },
+  ocr: {
+    heading: "Ordilo liest aufmerksam mit",
+    description: "Zeile für Zeile wird der Inhalt erkannt und für dich vorbereitet.",
+  },
+  analysis: {
+    heading: "Ordilo sortiert das Wichtigste",
+    description: "Namen, Termine und Aufgaben werden gefunden. Danach prüft ihr alles gemeinsam.",
+  },
+};
 
 function ScanSecondaryAction({
   accessibilityLabel,
@@ -179,6 +211,7 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
 export default function ScanModal() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const { family } = useFamily();
   const [sheetVisible, setSheetVisible] = useState(true);
   const [flow, setFlow] = useState<ScanFlow>({ phase: "capture" });
@@ -555,6 +588,8 @@ export default function ScanModal() {
         ? 0
         : getDocumentPipelineStepsCompleted(flow.status);
     const failed = Boolean(flow.error);
+    const processingStage = getProcessingStage(flow.status);
+    const processingCopy = PROCESSING_COPY[processingStage];
 
     return (
       <Screen
@@ -580,85 +615,99 @@ export default function ScanModal() {
           </Pressable>
         </View>
 
-        <Animated.View
-          entering={contentEntering()}
-          key={failed ? "failed" : "processing"}
-          style={styles.processingContent}
+        <ScrollView
+          contentContainerStyle={styles.processingScroller}
+          showsVerticalScrollIndicator={false}
+          style={styles.processingScroll}
         >
-          <View style={styles.characterWrap}>
-            {failed ? (
-              <View style={styles.failedCharacter}>
-                <XCircle color={colors.destructive} size={40} />
-              </View>
-            ) : (
-              <OrdiloCharacter animated size={96} />
-            )}
-          </View>
-          <Text style={styles.processingHeading}>
-            {failed
-              ? "Das hat noch nicht geklappt"
-              : "Wir machen dein Dokument bereit"}
-          </Text>
-          <Text style={styles.processingCopy}>
-            {failed
-              ? flow.error
-              : "Du siehst hier, wie weit Ordilo ist. Danach prüfen wir alles gemeinsam."}
-          </Text>
-
-          {item ? (
-            <View style={styles.processingFile}>
-              <FilePlus2 color={colors.harborBlue} size={18} />
-              <Text numberOfLines={1} style={styles.processingFileName}>
-                {item.name}
-              </Text>
-            </View>
-          ) : null}
-
-          <View style={styles.stepCard}>
-            {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
-              const done = index < completedSteps;
-              const active = !failed && index === completedSteps;
-              const failedStep = failed && index === completedSteps;
-
-              return (
-                <View
-                  key={step.key}
-                  style={[
-                    styles.stepRow,
-                    index > 0 && styles.stepRowBorder,
-                  ]}
-                >
-                  <View
-                    style={[
-                      styles.stepIcon,
-                      done && styles.stepIconDone,
-                      active && styles.stepIconActive,
-                      failedStep && styles.stepIconFailed,
-                    ]}
-                  >
-                    {done ? (
-                      <Check color={colors.warmWhite} size={16} strokeWidth={3} />
-                    ) : active ? (
-                      <ActivityIndicator color={colors.harborBlue} size="small" />
-                    ) : failedStep ? (
-                      <X color={colors.destructive} size={16} strokeWidth={2.5} />
-                    ) : (
-                      <View style={styles.stepDot} />
-                    )}
-                  </View>
-                  <Text
-                    style={[
-                      styles.stepLabel,
-                      (done || active) && styles.stepLabelCurrent,
-                    ]}
-                  >
-                    {step.label}
-                  </Text>
+          <Animated.View
+            entering={contentEntering()}
+            key={failed ? "failed" : "processing"}
+            style={styles.processingContent}
+          >
+            <View style={styles.characterWrap}>
+              {failed ? (
+                <View style={styles.failedCharacter}>
+                  <XCircle color={colors.destructive} size={40} />
                 </View>
-              );
-            })}
-          </View>
-        </Animated.View>
+              ) : (
+                <ScanProcessingHero stage={processingStage} />
+              )}
+            </View>
+            <Animated.View
+              entering={contentEntering()}
+              key={failed ? "failed-copy" : processingStage}
+              style={styles.processingMessage}
+            >
+              <Text style={styles.processingHeading}>
+                {failed ? "Das hat noch nicht geklappt" : processingCopy.heading}
+              </Text>
+              <Text style={styles.processingCopy}>
+                {failed ? flow.error : processingCopy.description}
+              </Text>
+            </Animated.View>
+
+            {item ? (
+              <View style={styles.processingFile}>
+                <FilePlus2 color={colors.harborBlue} size={18} />
+                <Text numberOfLines={1} style={styles.processingFileName}>
+                  {item.name}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.stepCard}>
+              {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
+                const done = index < completedSteps;
+                const active = !failed && index === completedSteps;
+                const failedStep = failed && index === completedSteps;
+
+                return (
+                  <View
+                    key={step.key}
+                    style={[
+                      styles.stepRow,
+                      index > 0 && styles.stepRowBorder,
+                    ]}
+                  >
+                    <Animated.View
+                      entering={done ? completionEntering(reduceMotion) : undefined}
+                      key={`${step.key}-${done ? "done" : active ? "active" : "waiting"}`}
+                      style={[
+                        styles.stepIcon,
+                        done && styles.stepIconDone,
+                        active && styles.stepIconActive,
+                        failedStep && styles.stepIconFailed,
+                      ]}
+                    >
+                      {done ? (
+                        <Check color={colors.warmWhite} size={16} strokeWidth={3} />
+                      ) : active ? (
+                        reduceMotion ? (
+                          <View style={styles.activeDot} />
+                        ) : (
+                          <ActivityIndicator color={colors.harborBlue} size="small" />
+                        )
+                      ) : failedStep ? (
+                        <X color={colors.destructive} size={16} strokeWidth={2.5} />
+                      ) : (
+                        <View style={styles.stepDot} />
+                      )}
+                    </Animated.View>
+                    <Text
+                      style={[
+                        styles.stepLabel,
+                        (done || active) && styles.stepLabelCurrent,
+                      ]}
+                    >
+                      {step.label}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Animated.View>
+        </ScrollView>
 
         <View style={styles.processingActions}>
           {failed && item ? (
@@ -811,6 +860,14 @@ const styles = StyleSheet.create({
   processingScreen: {
     justifyContent: "space-between",
   },
+  processingScroll: {
+    flex: 1,
+  },
+  processingScroller: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+  },
   processingTopBar: {
     alignItems: "center",
     flexDirection: "row",
@@ -844,7 +901,7 @@ const styles = StyleSheet.create({
   },
   characterWrap: {
     alignItems: "center",
-    height: 112,
+    height: 166,
     justifyContent: "center",
   },
   failedCharacter: {
@@ -861,6 +918,10 @@ const styles = StyleSheet.create({
     fontSize: 23,
     lineHeight: 30,
     textAlign: "center",
+  },
+  processingMessage: {
+    alignItems: "center",
+    gap: spacing.sm,
   },
   processingCopy: {
     color: colors.mistDark,
@@ -921,6 +982,12 @@ const styles = StyleSheet.create({
   stepIconActive: {
     backgroundColor: colors.blueSoft,
     borderColor: colors.harborBlue,
+  },
+  activeDot: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
   },
   stepIconFailed: {
     backgroundColor: colors.destructiveBackground,
