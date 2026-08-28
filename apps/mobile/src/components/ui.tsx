@@ -201,12 +201,11 @@ export function Screen({
 
 /**
  * The one compact screen header for every tab: a bordered journal card
- * with quiet landscape washes, one small motif, the Ordilo mark, and an
- * optional action. Its outer measurements never vary between screens.
+ * with quiet landscape washes, the Ordilo mark, and an optional action.
+ * Its outer measurements never vary between screens.
  */
 export function ScreenHeader({
   action,
-  motif,
   title,
   subtitle,
   trailing,
@@ -217,13 +216,11 @@ export function ScreenHeader({
     onPress: () => void;
     tone?: "primary" | "quiet";
   };
-  motif?: LucideIcon;
   title: string;
   subtitle?: string;
   trailing?: ReactNode;
 }) {
   const ActionIcon = action?.icon;
-  const MotifIcon = motif;
   const hasAction = Boolean(action || trailing);
   return (
     <View style={styles.header}>
@@ -231,19 +228,6 @@ export function ScreenHeader({
       <View accessible={false} style={styles.headerWashTwo} />
       <View accessible={false} style={styles.headerDotOne} />
       <View accessible={false} style={styles.headerDotTwo} />
-      {MotifIcon ? (
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          style={styles.headerMotif}
-        >
-          <MotifIcon
-            color={colors.warmApricot}
-            size={19}
-            strokeWidth={1.7}
-          />
-        </View>
-      ) : null}
       <View
         style={[
           styles.headerCopy,
@@ -483,7 +467,7 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    height: 112,
+    height: 96,
     justifyContent: "flex-end",
     marginTop: spacing.sm,
     overflow: "hidden",
@@ -531,13 +515,6 @@ const styles = StyleSheet.create({
     right: 117,
     top: 10,
     width: 7,
-  },
-  headerMotif: {
-    left: 14,
-    opacity: 0.72,
-    position: "absolute",
-    top: 12,
-    zIndex: 1,
   },
   headerCopy: {
     gap: 2,

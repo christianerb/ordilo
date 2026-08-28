@@ -168,7 +168,6 @@ export default function FamilieScreen() {
             icon: UserPlus,
             onPress: () => void handleInvite(),
           } : undefined}
-          motif={Heart}
           subtitle="Mitglieder und Einladungen"
           title="Familie"
         />

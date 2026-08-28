@@ -305,7 +305,6 @@ export default function HeuteScreen() {
         onPress: () => router.push("/einstellungen"),
         tone: "quiet",
       }}
-      motif={Sparkles}
       subtitle={dateLine}
       title={getHomeGreeting()}
     />

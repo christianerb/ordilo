@@ -310,7 +310,6 @@ export default function AblageScreen() {
             onPress: () => setToolsOpen(true),
             tone: "quiet",
           }}
-          motif={BookOpen}
           subtitle={
             loading && documents.length === 0
               ? view === "notes"

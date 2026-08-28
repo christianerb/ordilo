@@ -663,7 +663,6 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
         icon: Plus,
         onPress: onCreate,
       }}
-      motif={CalendarDays}
       subtitle="Aufgaben und Termine"
       title="Plan"
     />
