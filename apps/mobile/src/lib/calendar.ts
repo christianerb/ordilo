@@ -31,8 +31,20 @@ const eventSelect =
   "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const TIME_PATTERN = /^\d{2}:\d{2}$/;
+const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const GERMAN_DATE_PATTERN = /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/;
+
+function normalizePlannerEvent(
+  event: Omit<PlannerEvent, "attendee_ids">,
+  attendeeIds: string[],
+): PlannerEvent {
+  return {
+    ...event,
+    recurrence: event.recurrence as CalendarRecurrence,
+    recurrence_exceptions: event.recurrence_exceptions ?? [],
+    attendee_ids: attendeeIds,
+  };
+}
 
 /** Local calendar date, never UTC, so a Sunday night stays Sunday on-device. */
 export function toCalendarDate(date: Date): string {
@@ -304,12 +316,9 @@ export async function fetchPlannerEvents(
     current.push(attendee.family_member_id);
     attendeeIdsByEvent.set(attendee.event_id, current);
   }
-  return rows.map((event) => ({
-    ...event,
-    recurrence: event.recurrence as CalendarRecurrence,
-    recurrence_exceptions: event.recurrence_exceptions ?? [],
-    attendee_ids: attendeeIdsByEvent.get(event.id) ?? [],
-  }));
+  return rows.map((event) =>
+    normalizePlannerEvent(event, attendeeIdsByEvent.get(event.id) ?? []),
+  );
 }
 
 const plannerEventInputSchema = z.object({
@@ -368,7 +377,7 @@ export function validatePlannerEventInput(
   return { success: true, data: parsed.data };
 }
 
-/** Create a one-off family appointment and roll back if attendees fail. */
+/** Create a one-off family appointment and its attendees atomically. */
 export async function createPlannerEvent(
   familyId: string,
   input: PlannerEventInput,
@@ -377,25 +386,20 @@ export async function createPlannerEvent(
   if (!validation.success) return validation;
 
   const value = validation.data;
-  const { data, error } = await getSupabase()
-    .from("calendar_events")
-    .insert({
-      family_id: familyId,
-      title: value.title,
-      note: value.note || null,
-      starts_on: value.date,
-      ends_on: value.date,
-      all_day: value.allDay,
-      starts_time: value.allDay ? null : value.startsTime,
-      ends_time: value.allDay ? null : value.endsTime,
-      recurrence: "none",
-      recurrence_until: null,
-      recurrence_exceptions: [],
-      location: value.location || null,
-      responsible_member_id: null,
-    })
-    .select(eventSelect)
-    .single();
+  const { data, error } = await getSupabase().rpc(
+    "create_calendar_event_with_attendees",
+    {
+      p_all_day: value.allDay,
+      p_attendee_ids: value.attendeeIds,
+      p_date: value.date,
+      p_ends_time: value.allDay ? null : value.endsTime,
+      p_family_id: familyId,
+      p_location: value.location,
+      p_note: value.note,
+      p_starts_time: value.allDay ? null : value.startsTime,
+      p_title: value.title,
+    },
+  );
 
   if (error || !data) {
     return {
@@ -404,31 +408,10 @@ export async function createPlannerEvent(
     };
   }
 
-  if (value.attendeeIds.length > 0) {
-    const { error: attendeeError } = await getSupabase()
-      .from("calendar_event_attendees")
-      .insert(
-        value.attendeeIds.map((memberId) => ({
-          event_id: data.id,
-          family_member_id: memberId,
-        })),
-      );
-    if (attendeeError) {
-      await getSupabase().from("calendar_events").delete().eq("id", data.id);
-      return {
-        success: false,
-        error: "Der Termin konnte nicht gespeichert werden. Bitte versuch es nochmal.",
-      };
-    }
-  }
+  const event = data as Omit<PlannerEvent, "attendee_ids">;
 
   return {
     success: true,
-    event: {
-      ...(data as Omit<PlannerEvent, "attendee_ids">),
-      recurrence: data.recurrence as CalendarRecurrence,
-      recurrence_exceptions: data.recurrence_exceptions ?? [],
-      attendee_ids: value.attendeeIds,
-    },
+    event: normalizePlannerEvent(event, value.attendeeIds),
   };
 }

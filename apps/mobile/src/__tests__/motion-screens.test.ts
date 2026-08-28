@@ -42,6 +42,11 @@ describe("native motion wiring", () => {
     expect(scan).toContain("getDocumentPipelineStepsCompleted");
     expect(scan).toContain('params: { id: documentId, source: "scan" }');
     expect(scan).toContain("Im Hintergrund weiterlaufen");
+    expect(scan).toContain("flow.serverPipeline === true");
+    expect(scan).toContain("item.serverPipeline ?? false");
+    expect(scan).toContain("serverPipeline,");
+    expect(scan).toContain('\"Später fortsetzen\"');
+    expect(scan).toContain("detachServerPipelineRef.current = keepRunning");
     expect(document).toContain('source === "scan"');
     expect(document).toContain("Alles sicher abgelegt");
     expect(document).toContain("Nächstes scannen");

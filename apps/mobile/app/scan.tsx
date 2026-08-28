@@ -91,6 +91,7 @@ type ScanFlow =
       itemId: string;
       documentId?: string;
       status: "uploading" | DocumentPipelineStatus;
+      serverPipeline?: boolean;
       error?: string;
     };
 
@@ -224,6 +225,7 @@ export default function ScanModal() {
   const followFlowRef = useRef(true);
   const processingAbortRef = useRef<AbortController | null>(null);
   const processingPromiseRef = useRef<Promise<void> | null>(null);
+  const detachServerPipelineRef = useRef(false);
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
@@ -342,8 +344,10 @@ export default function ScanModal() {
       processingAbortRef.current?.abort();
       const controller = new AbortController();
       processingAbortRef.current = controller;
+      detachServerPipelineRef.current = false;
       let documentId = item.documentId;
       let processingStep = item.processingStep;
+      let serverPipeline = item.serverPipeline ?? false;
       let pipelineStatus: "uploading" | DocumentPipelineStatus =
         processingStep === "analysis" ? "analyzing" : "ocr_processing";
 
@@ -355,13 +359,20 @@ export default function ScanModal() {
             phase: "processing",
             itemId: item.id,
             documentId,
+            serverPipeline,
             status: pipelineStatus,
           });
         }
         await updateQueue((current) =>
           current.map((candidate) =>
             candidate.id === item.id
-              ? { ...candidate, documentId, processingStep: step, state: "processing" }
+              ? {
+                  ...candidate,
+                  documentId,
+                  processingStep: step,
+                  serverPipeline: false,
+                  state: "processing",
+                }
               : candidate,
           ),
         );
@@ -373,6 +384,7 @@ export default function ScanModal() {
           phase: "processing",
           itemId: item.id,
           documentId,
+          serverPipeline,
           status: documentId ? pipelineStatus : "uploading",
         });
         if (!documentId) {
@@ -387,12 +399,14 @@ export default function ScanModal() {
           documentId = result.document_id;
           processingStep = "ocr";
           pipelineStatus = result.status;
+          serverPipeline = result.server_pipeline;
 
           if (followFlowRef.current) {
             setFlow({
               phase: "processing",
               itemId: item.id,
               documentId,
+              serverPipeline,
               status: pipelineStatus,
             });
           }
@@ -401,7 +415,13 @@ export default function ScanModal() {
           await updateQueue((current) =>
             current.map((candidate) =>
               candidate.id === item.id
-                ? { ...candidate, documentId, processingStep, state: "processing" }
+                ? {
+                    ...candidate,
+                    documentId,
+                    processingStep,
+                    serverPipeline,
+                    state: "processing",
+                  }
                 : candidate,
             ),
           );
@@ -422,12 +442,14 @@ export default function ScanModal() {
                 : candidate,
             ),
           );
-          await continueScannedDocumentPipeline(
-            documentId,
-            processingStep ?? "ocr",
-            reportClientStep,
-            controller.signal,
-          );
+          if (!serverPipeline) {
+            await continueScannedDocumentPipeline(
+              documentId,
+              processingStep ?? "ocr",
+              reportClientStep,
+              controller.signal,
+            );
+          }
         }
 
         await waitForScannedDocumentAnalysis(documentId, async (status) => {
@@ -450,6 +472,7 @@ export default function ScanModal() {
               phase: "processing",
               itemId: item.id,
               documentId,
+              serverPipeline,
               status,
             });
           }
@@ -478,6 +501,7 @@ export default function ScanModal() {
       } catch (caughtError) {
         const interrupted =
           caughtError instanceof Error && caughtError.name === "AbortError";
+        if (interrupted && detachServerPipelineRef.current) return;
         const errorMessage = caughtError instanceof Error
           ? caughtError.message
           : "Das Dokument konnte nicht verarbeitet werden.";
@@ -498,6 +522,7 @@ export default function ScanModal() {
             phase: "processing",
             itemId: item.id,
             documentId,
+            serverPipeline,
             status: pipelineStatus,
             error: errorMessage || itemError,
           });
@@ -574,12 +599,24 @@ export default function ScanModal() {
   );
   const close = useCallback(() => setSheetVisible(false), []);
   const finishClose = useCallback(() => router.back(), [router]);
-  const continueInBackground = useCallback(async () => {
+  const leaveProcessing = useCallback(async (
+    keepRunning: boolean,
+    item?: QueueItem,
+  ) => {
     followFlowRef.current = false;
+    detachServerPipelineRef.current = keepRunning;
     processingAbortRef.current?.abort();
     await processingPromiseRef.current;
+    if (keepRunning && item) {
+      await Promise.allSettled([
+        updateQueue((current) =>
+          current.filter((candidate) => candidate.id !== item.id),
+        ),
+        removeStagedScannedDocument(item.uri),
+      ]);
+    }
     router.back();
-  }, [router]);
+  }, [router, updateQueue]);
 
   if (flow.phase === "processing") {
     const item = queue.find((candidate) => candidate.id === flow.itemId);
@@ -590,6 +627,12 @@ export default function ScanModal() {
     const failed = Boolean(flow.error);
     const processingStage = getProcessingStage(flow.status);
     const processingCopy = PROCESSING_COPY[processingStage];
+    const canContinueInBackground = flow.serverPipeline === true && !failed;
+    const leaveTitle = canContinueInBackground
+      ? "Im Hintergrund weiterlaufen"
+      : failed
+        ? "Zur Ablage"
+        : "Später fortsetzen";
 
     return (
       <Screen
@@ -607,8 +650,10 @@ export default function ScanModal() {
             <Text style={styles.processingTopTitle}>Ordilo ist dran</Text>
           </View>
           <Pressable
-            accessibilityLabel="Im Hintergrund weiterlaufen"
-            onPress={() => void continueInBackground()}
+            accessibilityLabel={leaveTitle}
+            onPress={() =>
+              void leaveProcessing(canContinueInBackground, item)
+            }
             style={styles.closeButton}
           >
             <X color={colors.graphite} size={22} />
@@ -718,9 +763,11 @@ export default function ScanModal() {
             />
           ) : null}
           <OrdiloButton
-            onPress={() => void continueInBackground()}
+            onPress={() =>
+              void leaveProcessing(canContinueInBackground, item)
+            }
             size="lg"
-            title={failed ? "Zur Ablage" : "Im Hintergrund weiterlaufen"}
+            title={leaveTitle}
             variant={failed ? "ghost" : "outline"}
           />
         </View>

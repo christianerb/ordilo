@@ -38,6 +38,7 @@ export type PersistedScanQueueItem = ScannedDocument & {
   documentId?: string;
   error?: string;
   processingStep?: ScanProcessingStep;
+  serverPipeline?: boolean;
   state: ScanQueueState;
 };
 

@@ -263,6 +263,7 @@ describe("native scan helpers", () => {
         uri: "file:///documents/scan-1.pdf",
         name: "scan-1.pdf",
         mimeType: "application/pdf",
+        serverPipeline: true,
         state: "queued",
       },
     ]);
@@ -277,6 +278,10 @@ describe("native scan helpers", () => {
     expect(FileSystem.writeAsStringAsync).toHaveBeenLastCalledWith(
       "file:///documents/ordilo-scan/queue.json",
       expect.stringContaining('"id":"scan-1"'),
+    );
+    expect(FileSystem.writeAsStringAsync).toHaveBeenLastCalledWith(
+      "file:///documents/ordilo-scan/queue.json",
+      expect.stringContaining('"serverPipeline":true'),
     );
   });
 });
