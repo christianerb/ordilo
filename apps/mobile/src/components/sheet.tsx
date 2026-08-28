@@ -139,7 +139,6 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
  */
 export function AnimatedSheetModal({
   children,
-  detached = false,
   dismissDisabled = false,
   keyboardAvoiding = false,
   onClose,
@@ -147,8 +146,6 @@ export function AnimatedSheetModal({
   visible,
 }: {
   children: ReactNode;
-  /** Inset the complete modal sheet from the phone edges. */
-  detached?: boolean;
   /** Blocks backdrop-tap and back-button dismissal (e.g. while saving). */
   dismissDisabled?: boolean;
   /** Lifts the sheet above the software keyboard (iOS padding behavior). */
@@ -157,7 +154,6 @@ export function AnimatedSheetModal({
   sheetStyle?: StyleProp<ViewStyle>;
   visible: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { height: windowHeight } = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
@@ -230,22 +226,11 @@ export function AnimatedSheetModal({
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             pointerEvents="box-none"
-            style={[
-              styles.modalSheetSlot,
-              detached && styles.detachedModalSheetSlot,
-              detached && {
-                paddingBottom: Math.max(insets.bottom, spacing.md),
-              },
-            ]}
+            style={styles.modalSheetSlot}
           >
             <Animated.View
               accessibilityViewIsModal
-              style={[
-                styles.modalSheet,
-                detached && styles.detachedModalSheet,
-                sheetStyle,
-                sheetAnimatedStyle,
-              ]}
+              style={[styles.modalSheet, sheetStyle, sheetAnimatedStyle]}
             >
               {children}
             </Animated.View>
@@ -253,22 +238,11 @@ export function AnimatedSheetModal({
         ) : (
           <View
             pointerEvents="box-none"
-            style={[
-              styles.modalSheetSlot,
-              detached && styles.detachedModalSheetSlot,
-              detached && {
-                paddingBottom: Math.max(insets.bottom, spacing.md),
-              },
-            ]}
+            style={styles.modalSheetSlot}
           >
             <Animated.View
               accessibilityViewIsModal
-              style={[
-                styles.modalSheet,
-                detached && styles.detachedModalSheet,
-                sheetStyle,
-                sheetAnimatedStyle,
-              ]}
+              style={[styles.modalSheet, sheetStyle, sheetAnimatedStyle]}
             >
               {children}
             </Animated.View>
@@ -395,13 +369,6 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: radii.xl,
     borderTopRightRadius: radii.xl,
     maxHeight: "88%",
-  },
-  detachedModalSheetSlot: {
-    paddingHorizontal: spacing.md,
-  },
-  detachedModalSheet: {
-    borderBottomLeftRadius: DETACHED_SHEET_BOTTOM_RADIUS,
-    borderBottomRightRadius: DETACHED_SHEET_BOTTOM_RADIUS,
   },
   formSheetPadding: {
     paddingBottom: spacing.lg,

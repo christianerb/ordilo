@@ -1,4 +1,7 @@
 import { useCallback, useState } from "react";
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
 import {
   CalendarDays,
   ChevronDown,
@@ -11,6 +14,7 @@ import {
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,19 +24,17 @@ import {
 } from "react-native";
 
 import { ConfirmDialog } from "./confirm-dialog";
-import { OrdiloPickerModal } from "./picker-sheet";
+import { OrdiloPickerOverlay } from "./picker-sheet";
 import { OrdiloFormSheet } from "./sheet";
 import { cardRestShadow } from "./ui";
 import {
   formatTaskDayHint,
-  resolveSchedulePreset,
-  TASK_SCHEDULE_PRESET_LABELS,
-  TASK_SCHEDULE_PRESETS,
   todayLocalDate,
   validateTaskInput,
   type FamilyMemberOption,
   type PlannerTask,
 } from "@/src/lib/tasks";
+import { toCalendarDate } from "@/src/lib/calendar";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 export interface TaskFormValues {
@@ -101,6 +103,17 @@ export function TaskFormSheet({
 
   const isEdit = Boolean(initialTask);
   const assignedMember = members.find((member) => member.id === assignedTo);
+  const pickerDate = new Date(`${dueDate || todayStr}T12:00:00`);
+
+  const changeDate = useCallback(
+    (event: DateTimePickerEvent, date?: Date) => {
+      if (Platform.OS === "android") setDatePickerOpen(false);
+      if (event.type === "dismissed" || !date) return;
+      setDueDate(toCalendarDate(date));
+      setError(null);
+    },
+    [],
+  );
 
   // Anything typed or changed since the sheet opened. A dirty form never
   // closes silently — backdrop tap and Android back both ask first, like
@@ -172,8 +185,7 @@ export function TaskFormSheet({
   }, [onDismiss]);
 
   return (
-    <>
-      <OrdiloFormSheet
+    <OrdiloFormSheet
         closeAccessibilityLabel="Aufgabe schließen"
         dismissDisabled={submitting}
         keyboardAvoiding
@@ -287,51 +299,6 @@ export function TaskFormSheet({
               <ChevronDown color={colors.harborBlue} size={20} strokeWidth={2} />
             </Pressable>
 
-            {members.length > 0 ? (
-              <ScrollView
-                horizontal
-                keyboardShouldPersistTaps="handled"
-                showsHorizontalScrollIndicator={false}
-                style={styles.memberScroller}
-              >
-                <View style={styles.memberRow}>
-                  {members.map((member) => {
-                    const selected = assignedTo === member.id;
-                    return (
-                      <Pressable
-                        accessibilityLabel={`Aufgabe an ${member.name} geben`}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected }}
-                        key={member.id}
-                        onPress={() => {
-                          setAssignedTo(selected ? "" : member.id);
-                          setError(null);
-                        }}
-                        style={styles.memberChip}
-                      >
-                        <View
-                          style={[
-                            styles.memberCircle,
-                            {
-                              backgroundColor:
-                                member.avatar_color ?? colors.sandLight,
-                            },
-                            selected && styles.memberCircleSelected,
-                          ]}
-                        >
-                          <Text style={styles.memberInitial}>
-                            {member.name.trim().charAt(0).toUpperCase() || "?"}
-                          </Text>
-                        </View>
-                        <Text numberOfLines={1} style={styles.memberName}>
-                          {member.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            ) : null}
           </View>
         </ScrollView>
 
@@ -388,34 +355,60 @@ export function TaskFormSheet({
           title="Aufgabe verwerfen?"
           visible={dismissOpen}
         />
-      </OrdiloFormSheet>
 
-      <OrdiloPickerModal
-        onClose={() => setDatePickerOpen(false)}
-        options={TASK_SCHEDULE_PRESETS.map((preset) => {
-          const date = resolveSchedulePreset(preset, todayStr);
-          const selected =
-            preset === "none"
-              ? dueDate === ""
-              : date !== null && dueDate === date;
-          const hint = formatTaskDayHint(date);
-          return {
-            hint: hint ?? undefined,
-            key: preset,
-            label: TASK_SCHEDULE_PRESET_LABELS[preset],
-            onPress: () => {
-              setDueDate(selected ? "" : (date ?? ""));
-              setError(null);
-              setDatePickerOpen(false);
-            },
-            selected,
-          };
-        })}
-        title="Wann ist das dran?"
-        visible={datePickerOpen}
-      />
+      {datePickerOpen ? (
+        <View
+          accessibilityViewIsModal
+          importantForAccessibility="yes"
+          style={styles.dateOverlay}
+        >
+          <Pressable
+            accessibilityLabel="Datumswahl schließen"
+            accessibilityRole="button"
+            onPress={() => setDatePickerOpen(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.datePanel}>
+            <View style={styles.dateHandle} />
+            <View style={styles.dateHeader}>
+              <Text style={styles.dateTitle}>Datum wählen</Text>
+              <Pressable
+                accessibilityLabel="Keinen Termin festlegen"
+                accessibilityRole="button"
+                onPress={() => {
+                  setDueDate("");
+                  setError(null);
+                  setDatePickerOpen(false);
+                }}
+                style={styles.noDateButton}
+              >
+                <Text style={styles.noDateLabel}>Kein Termin</Text>
+              </Pressable>
+            </View>
+            <DateTimePicker
+              accentColor={colors.harborBlue}
+              display={Platform.OS === "ios" ? "inline" : "default"}
+              locale="de-DE"
+              mode="date"
+              onChange={changeDate}
+              themeVariant="light"
+              value={pickerDate}
+            />
+            {Platform.OS === "ios" ? (
+              <Pressable
+                accessibilityLabel="Datum übernehmen"
+                accessibilityRole="button"
+                onPress={() => setDatePickerOpen(false)}
+                style={styles.dateDoneButton}
+              >
+                <Text style={styles.dateDoneLabel}>Fertig</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      ) : null}
 
-      <OrdiloPickerModal
+      <OrdiloPickerOverlay
         onClose={() => setPersonPickerOpen(false)}
         options={[
           ...members.map((member) => ({
@@ -462,7 +455,7 @@ export function TaskFormSheet({
         title="Wer macht das?"
         visible={personPickerOpen}
       />
-    </>
+    </OrdiloFormSheet>
   );
 }
 
@@ -540,40 +533,9 @@ const styles = StyleSheet.create({
   cardPressed: {
     backgroundColor: colors.sandWarm,
   },
-  memberScroller: {
-    marginTop: spacing.xs,
-  },
-  memberRow: {
-    flexDirection: "row",
-    gap: spacing.lg,
-    paddingVertical: spacing.xs,
-  },
-  memberChip: {
-    alignItems: "center",
-    gap: spacing.xs,
-    width: 64,
-  },
-  memberCircle: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: radii.pill,
-    borderWidth: 2,
-    height: 48,
-    justifyContent: "center",
-    width: 48,
-  },
-  memberCircleSelected: {
-    borderColor: colors.harborBlue,
-    borderWidth: 3,
-  },
   memberInitial: {
     color: colors.warmWhite,
     ...typography.title,
-  },
-  memberName: {
-    color: colors.graphite,
-    textAlign: "center",
-    ...typography.label,
   },
   errorBox: {
     backgroundColor: colors.destructiveBackground,
@@ -640,6 +602,64 @@ const styles = StyleSheet.create({
     right: -14,
     top: 330,
     transform: [{ rotate: "32deg" }],
+  },
+  dateOverlay: {
+    backgroundColor: "rgba(38, 36, 33, 0.28)",
+    bottom: 0,
+    elevation: 20,
+    justifyContent: "flex-end",
+    left: 0,
+    padding: spacing.md,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 20,
+  },
+  datePanel: {
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.xl,
+    overflow: "hidden",
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  dateHandle: {
+    alignSelf: "center",
+    backgroundColor: colors.mistLight,
+    borderRadius: radii.pill,
+    height: 4,
+    marginBottom: spacing.sm,
+    marginTop: spacing.sm,
+    width: 40,
+  },
+  dateHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+  },
+  dateTitle: {
+    color: colors.graphite,
+    ...typography.display,
+  },
+  noDateButton: {
+    justifyContent: "center",
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  noDateLabel: {
+    color: colors.harborBlue,
+    ...typography.timestamp,
+  },
+  dateDoneButton: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  dateDoneLabel: {
+    color: colors.warmWhite,
+    ...typography.title,
   },
   pickerAvatar: {
     alignItems: "center",

@@ -1,12 +1,16 @@
 import { useFocusEffect } from "expo-router";
 import {
   AlertCircle,
+  ArrowRight,
   CalendarDays,
   Check,
+  Clock3,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Inbox,
+  List,
   Plus,
   Undo2,
 } from "lucide-react-native";
@@ -61,7 +65,7 @@ import {
   type PlannerEvent,
 } from "@/src/lib/calendar";
 import { useFamily } from "@/src/lib/family-context";
-import { fail, select, success, tap } from "@/src/lib/feedback";
+import { fail, select, success } from "@/src/lib/feedback";
 import {
   createTask,
   fetchFamilyMembers,
@@ -132,10 +136,12 @@ export default function PlanScreen() {
   const [error, setError] = useState<string | null>(null);
   const [todayStr, setTodayStr] = useState(todayLocalDate());
   const [expanded, setExpanded] = useState<Partial<Record<TaskSectionId, boolean>>>({});
+  const [sectionOpen, setSectionOpen] = useState<
+    Partial<Record<TaskSectionId, boolean>>
+  >({ undated: true });
   const [formOpen, setFormOpen] = useState(false);
   const [eventFormOpen, setEventFormOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<PlannerTask | null>(null);
-  const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
   const [rescheduleTask, setRescheduleTask] = useState<PlannerTask | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [view, setView] = useState<"tasks" | "calendar">("tasks");
@@ -144,12 +150,6 @@ export default function PlanScreen() {
   const undoSeqRef = useRef(0);
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingCreateRef = useRef<"task" | "event" | null>(null);
-
-  const memberById = useMemo(() => {
-    const map = new Map<string, FamilyMemberOption>();
-    for (const member of members) map.set(member.id, member);
-    return map;
-  }, [members]);
 
   const showUndo = useCallback((message: string, revert: () => Promise<void>) => {
     undoSeqRef.current += 1;
@@ -275,34 +275,6 @@ export default function PlanScreen() {
       }
     },
     [replaceTask, showUndo],
-  );
-
-  const assign = useCallback(
-    async (task: PlannerTask, memberId: string | null) => {
-      setAssignTask(null);
-      const previousAssignee = task.assigned_to;
-      if (previousAssignee === memberId) return;
-      const assignedTask: PlannerTask = { ...task, assigned_to: memberId };
-      replaceTask(assignedTask);
-      const ok = await patchTask(task.id, { assigned_to: memberId });
-      if (!ok) {
-        replaceTask({ ...task, assigned_to: previousAssignee });
-        void fail();
-        Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
-        return;
-      }
-      tap();
-      const name = memberId ? (memberById.get(memberId)?.name ?? "jemandem") : null;
-      showUndo(name ? `Jetzt bei ${name}` : "Niemandem zugeordnet", async () => {
-        replaceTask({ ...task, assigned_to: previousAssignee });
-        const undoOk = await patchTask(task.id, { assigned_to: previousAssignee });
-        if (!undoOk) {
-          replaceTask(assignedTask);
-          notifyUndoFailed();
-        }
-      });
-    },
-    [memberById, replaceTask, showUndo],
   );
 
   /**
@@ -559,17 +531,35 @@ export default function PlanScreen() {
             const sectionTasks = grouped[section.id];
             if (sectionTasks.length === 0) return null;
             const isExpanded = expanded[section.id] ?? false;
-            const collapsed = Boolean(section.collapsible) && !isExpanded;
-            const shown = collapsed
-              ? sectionTasks.slice(0, section.peek ?? 0)
-              : sectionTasks;
+            const isOpen = section.collapsible
+              ? (sectionOpen[section.id] ?? false)
+              : true;
+            const shown = !isOpen
+              ? []
+              : section.id === "done" || isExpanded
+                ? sectionTasks
+                : sectionTasks.slice(0, section.peek ?? sectionTasks.length);
             const hiddenCount = sectionTasks.length - shown.length;
+            const SectionIcon =
+              section.id === "now"
+                ? Clock3
+                : section.id === "next"
+                  ? ArrowRight
+                  : section.id === "undated"
+                    ? Inbox
+                    : Check;
             return (
-              <View key={section.id} style={styles.section}>
+              <View
+                key={section.id}
+                style={[
+                  styles.taskSection,
+                  section.id === "done" && styles.taskSectionDone,
+                ]}
+              >
                 <Pressable
                   accessibilityHint={
                     section.collapsible
-                      ? isExpanded
+                      ? isOpen
                         ? "Bereich einklappen"
                         : "Bereich aufklappen"
                       : undefined
@@ -577,35 +567,51 @@ export default function PlanScreen() {
                   accessibilityRole={section.collapsible ? "button" : "header"}
                   disabled={!section.collapsible}
                   onPress={() =>
-                    setExpanded((prev) => ({ ...prev, [section.id]: !isExpanded }))
+                    setSectionOpen((prev) => ({
+                      ...prev,
+                      [section.id]: !isOpen,
+                    }))
                   }
-                  style={styles.sectionHeader}
+                  style={styles.taskSectionHeader}
                 >
+                  <View
+                    style={[
+                      styles.taskSectionIcon,
+                      section.id === "done" && styles.taskSectionIconDone,
+                    ]}
+                  >
+                    <SectionIcon
+                      color={colors.harborBlue}
+                      size={19}
+                      strokeWidth={2}
+                    />
+                  </View>
                   <Text style={styles.sectionTitle}>{section.label}</Text>
                   <Text style={styles.sectionCount}>{sectionTasks.length}</Text>
+                  <View style={styles.sectionHeaderSpacer} />
                   {section.collapsible ? (
-                    isExpanded ? (
+                    isOpen ? (
                       <ChevronUp color={colors.mistDark} size={18} />
                     ) : (
                       <ChevronDown color={colors.mistDark} size={18} />
                     )
                   ) : null}
                 </Pressable>
-                <View style={styles.sectionBody}>
-                  {shown.map((task) => (
-                    <SwipeableTaskRow
-                      key={task.id}
-                      member={task.assigned_to ? memberById.get(task.assigned_to) : undefined}
-                      onAssign={() => setAssignTask(task)}
-                      onPress={() => openEdit(task)}
-                      onReschedule={() => setRescheduleTask(task)}
-                      onToggle={() => void toggleDone(task)}
-                      task={task}
-                      todayStr={todayStr}
-                    />
-                  ))}
-                </View>
-                {hiddenCount > 0 ? (
+                {shown.length > 0 ? (
+                  <View style={styles.taskSectionBody}>
+                    {shown.map((task) => (
+                      <SwipeableTaskRow
+                        key={task.id}
+                        onPress={() => openEdit(task)}
+                        onReschedule={() => setRescheduleTask(task)}
+                        onToggle={() => void toggleDone(task)}
+                        task={task}
+                        todayStr={todayStr}
+                      />
+                    ))}
+                  </View>
+                ) : null}
+                {isOpen && hiddenCount > 0 && section.id !== "done" ? (
                   <Pressable
                     accessibilityRole="button"
                     onPress={() =>
@@ -613,7 +619,14 @@ export default function PlanScreen() {
                     }
                     style={styles.moreButton}
                   >
-                    <Text style={styles.moreLabel}>+ {hiddenCount} weitere</Text>
+                    <List
+                      color={colors.harborBlue}
+                      size={19}
+                      strokeWidth={1.9}
+                    />
+                    <Text style={styles.moreLabel}>
+                      Alle {sectionTasks.length} anzeigen
+                    </Text>
                   </Pressable>
                 ) : null}
               </View>
@@ -667,60 +680,6 @@ export default function PlanScreen() {
         ]}
         onDismiss={finishCreateChoice}
         ref={createSheetRef}
-      />
-
-      <OrdiloPickerSheet
-        accessibilityLabel="Wer macht das?"
-        onClose={() => setAssignTask(null)}
-        options={[
-          ...members.map((member) => ({
-            accessibilityLabel: `Aufgabe an ${member.name} geben`,
-            key: member.id,
-            label: member.name,
-            leading: (
-              <View
-                style={[
-                  styles.assigneeDot,
-                  styles.pickerAvatar,
-                  {
-                    backgroundColor:
-                      member.avatar_color ?? colors.sandLight,
-                  },
-                ]}
-              >
-                <Text style={styles.assigneeInitial}>
-                  {member.name.trim().charAt(0).toUpperCase() || "?"}
-                </Text>
-              </View>
-            ),
-            onPress: () => {
-              if (assignTask) void assign(assignTask, member.id);
-            },
-            selected: assignTask?.assigned_to === member.id,
-          })),
-          {
-            accessibilityLabel: "Niemandem zuordnen",
-            key: "unassigned",
-            label: "Niemandem",
-            leading: (
-              <View
-                style={[
-                  styles.assigneeDot,
-                  styles.pickerAvatar,
-                  styles.assigneeDotEmpty,
-                ]}
-              >
-                <Plus color={colors.mistDark} size={14} strokeWidth={2.2} />
-              </View>
-            ),
-            onPress: () => {
-              if (assignTask) void assign(assignTask, null);
-            },
-            selected: assignTask?.assigned_to == null,
-          },
-        ]}
-        title="Wer macht das?"
-        visible={assignTask !== null}
       />
 
       <OrdiloPickerSheet
@@ -973,16 +932,12 @@ function PlannerEventRow({
  * appear from the first dragged pixel so the gesture teaches itself.
  */
 function SwipeableTaskRow({
-  member,
-  onAssign,
   onPress,
   onReschedule,
   onToggle,
   task,
   todayStr,
 }: {
-  member: FamilyMemberOption | undefined;
-  onAssign: () => void;
   onPress: () => void;
   onReschedule: () => void;
   onToggle: () => void;
@@ -1049,8 +1004,6 @@ function SwipeableTaskRow({
         rightThreshold={40}
       >
         <TaskRow
-          member={member}
-          onAssign={onAssign}
           onPress={onPress}
           onToggle={onToggle}
           task={task}
@@ -1068,15 +1021,11 @@ function SwipeableTaskRow({
  * the row that is late, never as a red section.
  */
 function TaskRow({
-  member,
-  onAssign,
   onPress,
   onToggle,
   task,
   todayStr,
 }: {
-  member: FamilyMemberOption | undefined;
-  onAssign: () => void;
   onPress: () => void;
   onToggle: () => void;
   task: PlannerTask;
@@ -1121,28 +1070,11 @@ function TaskRow({
           </Text>
         ) : null}
       </Pressable>
-      <Pressable
-        accessibilityLabel={
-          member ? `${task.title} ist bei ${member.name} — neu zuordnen` : `${task.title} zuordnen`
-        }
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onAssign}
-        style={[
-          styles.assigneeDot,
-          member
-            ? { backgroundColor: member.avatar_color ?? colors.sandLight }
-            : styles.assigneeDotEmpty,
-        ]}
-      >
-        {member ? (
-          <Text style={styles.assigneeInitial}>
-            {member.name.trim().charAt(0).toUpperCase() || "?"}
-          </Text>
-        ) : (
-          <Plus color={colors.mistDark} size={14} strokeWidth={2.2} />
-        )}
-      </Pressable>
+      <ChevronRight
+        color={colors.mistDark}
+        size={18}
+        strokeWidth={1.9}
+      />
     </View>
   );
 }
@@ -1289,28 +1221,76 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: spacing.lg,
   },
+  taskSection: {
+    backgroundColor: colors.washSageSoft,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    marginBottom: spacing.md,
+    overflow: "hidden",
+  },
+  taskSectionDone: {
+    backgroundColor: colors.sand,
+  },
   sectionHeader: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
     minHeight: 44,
   },
+  taskSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 64,
+    paddingHorizontal: spacing.md,
+  },
+  taskSectionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  taskSectionIconDone: {
+    backgroundColor: colors.washSage,
+  },
   sectionTitle: {
     color: colors.harborBlue,
-    ...typography.headline,
+    ...typography.display,
   },
   sectionCount: {
-    color: colors.mistDark,
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    color: colors.harborBlue,
+    minWidth: 28,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    textAlign: "center",
     ...typography.timestamp,
+  },
+  sectionHeaderSpacer: {
+    flex: 1,
   },
   sectionBody: {
     gap: spacing.sm,
   },
-  moreButton: {
-    alignSelf: "flex-start",
-    minHeight: 44,
-    justifyContent: "center",
+  taskSectionBody: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
     paddingHorizontal: spacing.sm,
+  },
+  moreButton: {
+    alignItems: "center",
+    borderTopColor: colors.mistLight,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginHorizontal: spacing.md,
+    minHeight: 44,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.sm,
   },
   moreLabel: {
     color: colors.harborBlue,
@@ -1321,12 +1301,13 @@ const styles = StyleSheet.create({
   },
   taskRow: {
     alignItems: "center",
-    backgroundColor: colors.sand,
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
     borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
     gap: 10,
+    minHeight: 72,
     padding: 12,
   },
   eventRow: {
@@ -1352,9 +1333,9 @@ const styles = StyleSheet.create({
     borderColor: colors.mistDark,
     borderRadius: radii.pill,
     borderWidth: 2,
-    height: 24,
+    height: 28,
     justifyContent: "center",
-    width: 24,
+    width: 28,
   },
   checkboxDone: {
     backgroundColor: colors.harborBlue,
@@ -1383,22 +1364,6 @@ const styles = StyleSheet.create({
   taskDueOverdue: {
     color: colors.warmApricot,
   },
-  assigneeDot: {
-    alignItems: "center",
-    borderRadius: radii.pill,
-    height: 32,
-    justifyContent: "center",
-    width: 32,
-  },
-  assigneeDotEmpty: {
-    borderColor: colors.mist,
-    borderStyle: "dashed",
-    borderWidth: 1,
-  },
-  assigneeInitial: {
-    color: colors.warmWhite,
-    ...typography.title,
-  },
   swipePanel: {
     alignItems: "center",
     borderRadius: radii.sm,
@@ -1421,10 +1386,6 @@ const styles = StyleSheet.create({
   swipePanelLabel: {
     color: colors.warmWhite,
     ...typography.label,
-  },
-  pickerAvatar: {
-    height: 36,
-    width: 36,
   },
   undoBanner: {
     alignItems: "center",

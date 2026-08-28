@@ -1,9 +1,14 @@
 import type { ReactNode } from "react";
 import { Check } from "lucide-react-native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import {
-  AnimatedSheetModal,
   OrdiloSheet,
   useSheetPresentation,
 } from "@/src/components/sheet";
@@ -47,7 +52,7 @@ export function OrdiloPickerSheet({
   );
 }
 
-export function OrdiloPickerModal({
+export function OrdiloPickerOverlay({
   onClose,
   options,
   title,
@@ -58,18 +63,31 @@ export function OrdiloPickerModal({
   title: string;
   visible: boolean;
 }) {
+  if (!visible) return null;
+
   return (
-    <AnimatedSheetModal
-      detached
-      onClose={onClose}
-      sheetStyle={styles.modal}
-      visible={visible}
+    <View
+      accessibilityViewIsModal
+      importantForAccessibility="yes"
+      style={styles.overlay}
     >
-      <View style={styles.modalHandle} />
-      <View style={styles.content}>
-        <PickerContent options={options} title={title} />
+      <Pressable
+        accessibilityLabel="Auswahl schließen"
+        accessibilityRole="button"
+        onPress={onClose}
+        style={StyleSheet.absoluteFill}
+      />
+      <View style={styles.overlayPanel}>
+        <View style={styles.overlayHandle} />
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <PickerContent options={options} title={title} />
+        </ScrollView>
       </View>
-    </AnimatedSheetModal>
+    </View>
   );
 }
 
@@ -122,10 +140,25 @@ function PickerContent({
 }
 
 const styles = StyleSheet.create({
-  modal: {
-    paddingBottom: spacing.md,
+  overlay: {
+    backgroundColor: "rgba(38, 36, 33, 0.28)",
+    bottom: 0,
+    elevation: 20,
+    justifyContent: "flex-end",
+    left: 0,
+    padding: spacing.md,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 20,
   },
-  modalHandle: {
+  overlayPanel: {
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.xl,
+    maxHeight: "78%",
+    overflow: "hidden",
+  },
+  overlayHandle: {
     alignSelf: "center",
     backgroundColor: colors.mistLight,
     borderRadius: radii.pill,

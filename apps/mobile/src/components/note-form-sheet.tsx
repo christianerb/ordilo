@@ -20,7 +20,7 @@ import {
   View,
 } from "react-native";
 
-import { OrdiloPickerModal } from "@/src/components/picker-sheet";
+import { OrdiloPickerOverlay } from "@/src/components/picker-sheet";
 import { OrdiloFormSheet } from "@/src/components/sheet";
 import { OrdiloButton } from "@/src/components/ui";
 import {
@@ -195,8 +195,7 @@ export function NoteFormSheet({
   ]);
 
   return (
-    <>
-      <OrdiloFormSheet
+    <OrdiloFormSheet
         closeAccessibilityLabel="Notiz schließen"
         dismissDisabled={saving}
         keyboardAvoiding
@@ -348,14 +347,13 @@ export function NoteFormSheet({
             title={saving ? "Wird gespeichert …" : "Speichern"}
           />
         </View>
-      </OrdiloFormSheet>
       <NoteTypePicker
         onClose={() => setTypePickerVisible(false)}
         onSelect={chooseType}
         selected={documentType}
         visible={typePickerVisible}
       />
-    </>
+    </OrdiloFormSheet>
   );
 }
 
@@ -380,7 +378,7 @@ function NoteTypePicker({
   visible: boolean;
 }) {
   return (
-    <OrdiloPickerModal
+    <OrdiloPickerOverlay
       onClose={onClose}
       options={noteTypes.map(([type, label]) => ({
         key: type,

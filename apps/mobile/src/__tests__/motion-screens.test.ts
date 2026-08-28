@@ -156,7 +156,7 @@ describe("native motion wiring", () => {
       "src/components/note-form-sheet.tsx",
       "src/components/task-form-sheet.tsx",
     ]) {
-      expect(source(path)).toContain("<OrdiloPickerModal");
+      expect(source(path)).toContain("<OrdiloPickerOverlay");
     }
   });
 
@@ -165,9 +165,20 @@ describe("native motion wiring", () => {
     expect(taskForm).toContain('titleAlign="center"');
     expect(taskForm).toContain("Aufgabe erstellen");
     expect(taskForm).toContain("Aufgabe bearbeiten");
-    expect(taskForm.match(/<OrdiloPickerModal/g)).toHaveLength(2);
+    expect(taskForm).toContain("<DateTimePicker");
+    expect(taskForm).toContain('display={Platform.OS === "ios" ? "inline" : "default"}');
+    expect(taskForm.match(/<OrdiloPickerOverlay/g)).toHaveLength(1);
+    expect(taskForm).not.toContain("memberScroller");
     expect(taskForm).toContain("styles.selectionCard");
-    expect(taskForm).toContain("styles.memberCircleSelected");
+    expect(taskForm).not.toContain("memberCircleSelected");
     expect(taskForm).toContain("styles.saveButton");
+  });
+
+  it("groups the mobile task overview into warm journal sections", () => {
+    const plan = source("app/(tabs)/plan.tsx");
+    expect(plan).toContain("styles.taskSection");
+    expect(plan).toContain("Alle {sectionTasks.length} anzeigen");
+    expect(plan).toContain("styles.taskSectionIcon");
+    expect(plan).toContain("<SwipeableTaskRow");
   });
 });
