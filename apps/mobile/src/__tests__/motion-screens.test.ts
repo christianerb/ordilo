@@ -170,7 +170,10 @@ describe("native motion wiring", () => {
     expect(sheet).toContain('maxHeight: "88%"');
     expect(sheet).not.toContain('height: "88%"');
     expect(sheet).toContain("formBody: { flexShrink: 1 }");
-    expect(sheet).toContain("paddingBottom: FLOATING_SHEET_INSET");
+    // Floating sheets lift clear of the home indicator (safe-area aware).
+    expect(sheet).toContain(
+      "Math.max(FLOATING_SHEET_INSET, insets.bottom)",
+    );
     expect(sheet).toContain("paddingHorizontal: FLOATING_SHEET_INSET");
     expect(sheet).toContain(
       "borderBottomLeftRadius: FLOATING_SHEET_BOTTOM_RADIUS",
@@ -183,8 +186,13 @@ describe("native motion wiring", () => {
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       "CreateChoiceSheet",
     );
+    // The dock wave is rebuilt from the measured bar width so its corner
+    // radii stay round on every phone (no stretched 360pt viewBox).
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "C137 28 139 0 180 0 C221 0 223 28 252 28",
+      "buildDockWavePath(dockWidth)",
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
+      'preserveAspectRatio="none"',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "centerGlow",
@@ -226,7 +234,7 @@ describe("native motion wiring", () => {
     expect(choiceSheet).toContain("minHeight: 86");
     expect(choiceSheet).toContain("paddingBottom: spacing.md");
     expect(source("src/components/sheet.tsx")).toContain(
-      "bottomInset={detached ? FLOATING_SHEET_INSET : 0}",
+      "detached ? Math.max(FLOATING_SHEET_INSET, insets.bottom) : 0",
     );
     expect(source("src/components/sheet.tsx")).toContain(
       "marginHorizontal: FLOATING_SHEET_INSET",

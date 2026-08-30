@@ -91,6 +91,7 @@ const styles = StyleSheet.create({
     height: 270,
     marginHorizontal: -16,
     overflow: "hidden",
-    width: "100%",
+    // No explicit width: with the negative margins the frame stretches
+    // edge-to-edge on every screen instead of ending 16px short.
   },
 });

@@ -1391,7 +1391,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.harborBlueDarker,
     borderRadius: radii.md,
-    bottom: spacing.md,
+    // Sits above the floating dock, never behind it.
+    bottom: MOBILE_DOCK_CONTENT_INSET,
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between",

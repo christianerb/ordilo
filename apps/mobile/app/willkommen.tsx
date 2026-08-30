@@ -18,6 +18,7 @@ import {
   View,
   type GestureResponderEvent,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -44,6 +45,7 @@ const SWIPE_THRESHOLD_PX = 48;
 export default function WelcomeScreen() {
   const router = useRouter();
   const { family, refresh, markIntroSeenLocally } = useFamily();
+  const insets = useSafeAreaInsets();
 
   // 0 = arrival (celebration), 1–3 = the product cards.
   const [step, setStep] = useState(0);
@@ -115,7 +117,10 @@ export default function WelcomeScreen() {
   return (
     <Screen>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(spacing.xl, insets.bottom + spacing.sm) },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.body} {...panResponder.panHandlers}>

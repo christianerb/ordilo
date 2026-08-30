@@ -20,6 +20,7 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { colors, spacing, typography } from "@/src/theme/tokens";
 
@@ -54,6 +55,7 @@ export function SwipeImagePreview({
   title?: string;
 }) {
   const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const translateY = useSharedValue(reduceMotion ? 0 : height);
   const dragStart = useSharedValue(0);
@@ -227,7 +229,8 @@ export function SwipeImagePreview({
     >
       <GestureDetector gesture={drag}>
         <Animated.View style={[styles.preview, animatedStyle]}>
-          <View style={styles.header}>
+          {/* fullScreen covers the status bar — the header pads past it. */}
+          <View style={[styles.header, { paddingTop: insets.top }]}>
             <Text style={styles.title}>{title}</Text>
             <Pressable
               accessibilityLabel="Original schließen"

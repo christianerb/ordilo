@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 import Animated, { useReducedMotion } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Mail, ShieldCheck } from "lucide-react-native";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
@@ -64,6 +65,7 @@ async function clearPendingLogin(): Promise<void> {
  */
 export default function LoginScreen() {
   const reduceMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -238,7 +240,10 @@ export default function LoginScreen() {
         style={styles.keyboardAvoiding}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(spacing.xl, insets.bottom + spacing.sm) },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.wordmarkBlock}>

@@ -173,7 +173,9 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
           styles.background,
           detached && styles.detachedBackground,
         ]}
-        bottomInset={detached ? FLOATING_SHEET_INSET : 0}
+        bottomInset={
+          detached ? Math.max(FLOATING_SHEET_INSET, insets.bottom) : 0
+        }
         detached={detached}
         enableDynamicSizing
         handleIndicatorStyle={styles.handleIndicator}
@@ -226,8 +228,13 @@ export function AnimatedSheetModal({
   visible: boolean;
 }) {
   const reduceMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
   const [mounted, setMounted] = useState(visible);
+  // Lift the floating sheet clear of the home indicator so its bottom
+  // rounding is never crossed by it (DESIGN.md: bottom-anchored drawers
+  // pad by the safe-area inset).
+  const slotBottomInset = Math.max(FLOATING_SHEET_INSET, insets.bottom);
   const overlayOpacity = useSharedValue(0);
   const sheetOffset = useSharedValue(windowHeight);
   const finishDismiss = useCallback(() => {
@@ -310,7 +317,10 @@ export function AnimatedSheetModal({
           <KeyboardAvoidingView
             behavior={Platform.OS === "ios" ? "padding" : undefined}
             pointerEvents="box-none"
-            style={styles.modalSheetSlot}
+            style={[
+              styles.modalSheetSlot,
+              { paddingBottom: slotBottomInset },
+            ]}
           >
             <Animated.View
               accessibilityViewIsModal
@@ -322,7 +332,10 @@ export function AnimatedSheetModal({
         ) : (
           <View
             pointerEvents="box-none"
-            style={styles.modalSheetSlot}
+            style={[
+              styles.modalSheetSlot,
+              { paddingBottom: slotBottomInset },
+            ]}
           >
             <Animated.View
               accessibilityViewIsModal
@@ -421,18 +434,15 @@ export function OrdiloFormSheet({
   title: string;
   visible: boolean;
 }) {
-  const insets = useSafeAreaInsets();
-
   return (
     <AnimatedSheetModal
       dismissDisabled={dismissDisabled}
       keyboardAvoiding={keyboardAvoiding}
       onClose={onClose}
       onDismiss={onDismiss}
-      sheetStyle={[
-        styles.formSheetPadding,
-        { paddingBottom: Math.max(spacing.lg, insets.bottom) },
-      ]}
+      // The modal slot already lifts the sheet clear of the home
+      // indicator; inside, one calm spacing step of rhythm is enough.
+      sheetStyle={styles.formSheetPadding}
       visible={visible}
     >
       <View style={styles.floatingHandle} />
@@ -657,7 +667,7 @@ const styles = StyleSheet.create({
   modalSheetSlot: {
     flex: 1,
     justifyContent: "flex-end",
-    paddingBottom: FLOATING_SHEET_INSET,
+    // paddingBottom comes from the slotBottomInset above (safe-area aware).
     paddingHorizontal: FLOATING_SHEET_INSET,
   },
   modalSheet: {
