@@ -221,7 +221,15 @@ function RootLayoutNav() {
         <Stack.Screen name="(auth)/login" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="willkommen" />
-        <Stack.Screen name="scan" options={{ presentation: "modal" }} />
+        <Stack.Screen
+          name="scan"
+          options={{
+            animation: "none",
+            contentStyle: { backgroundColor: "transparent" },
+            gestureEnabled: false,
+            presentation: "transparentModal",
+          }}
+        />
         <Stack.Screen name="document/[id]" />
         <Stack.Screen name="sammlungen/index" />
         <Stack.Screen name="sammlungen/[id]" />

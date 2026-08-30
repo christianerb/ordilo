@@ -143,6 +143,7 @@ export async function POST(request: Request): Promise<Response> {
     familyId,
     sources: [],
     speakerName: null,
+    userId: auth.user.id,
   };
 
   // Success and failure are both recorded, never deleted: a duplicate tap

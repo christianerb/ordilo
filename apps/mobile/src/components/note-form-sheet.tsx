@@ -1,7 +1,6 @@
 import * as ImagePicker from "expo-image-picker";
 import {
   Camera,
-  CheckCircle2,
   Eye,
   EyeOff,
   FileText,
@@ -9,20 +8,25 @@ import {
   KeyRound,
   X,
 } from "lucide-react-native";
-import { useCallback, useState, type ReactNode } from "react";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Image,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
 
+import { OrdiloPickerOverlay } from "@/src/components/picker-sheet";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSelect,
+  OrdiloFormSheet,
+} from "@/src/components/sheet";
 import { OrdiloButton } from "@/src/components/ui";
 import {
   buildCredentialsContent,
@@ -34,7 +38,6 @@ import {
   type DocumentType,
 } from "@/src/lib/document-review";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-import { modalAnimationType } from "@/src/theme/motion";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
 
@@ -55,7 +58,6 @@ export function NoteFormSheet({
   onSubmit: (draft: NoteDraft) => Promise<void>;
   visible: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [documentType, setDocumentType] = useState<DocumentType>("note");
@@ -198,68 +200,38 @@ export function NoteFormSheet({
   ]);
 
   return (
-    <Modal
-      animationType={modalAnimationType(reduceMotion)}
-      onRequestClose={close}
-      presentationStyle="overFullScreen"
-      transparent
-      visible={visible}
-    >
-      <Pressable onPress={close} style={styles.overlay}>
-        <Pressable
-          accessibilityViewIsModal
-          onPress={(event) => event.stopPropagation()}
-          style={styles.sheet}
-        >
-          <View style={styles.handle} />
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.title}>Notiz schreiben</Text>
-              <Text style={styles.subtitle}>Für alles, was ihr euch merken möchtet.</Text>
-            </View>
-            <Pressable
-              accessibilityLabel="Notiz schließen"
-              accessibilityRole="button"
-              disabled={saving}
-              hitSlop={8}
-              onPress={close}
-              style={styles.close}
-            >
-              <X color={colors.mistDark} size={20} />
-            </Pressable>
-          </View>
-          <ScrollView
-            contentContainerStyle={styles.form}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            <Field label={isCredentials ? "Name" : "Titel"}>
-              <TextInput
+    <OrdiloFormSheet
+        closeAccessibilityLabel="Notiz schließen"
+        dismissDisabled={saving}
+        keyboardAvoiding
+        onClose={close}
+        subtitle="Für alles, was ihr euch merken möchtet."
+        title="Notiz schreiben"
+        visible={visible}
+      >
+        <OrdiloFormBody>
+            <OrdiloFormField label={isCredentials ? "Name" : "Titel"}>
+              <OrdiloFormInput
                 accessibilityLabel={isCredentials ? "Name der Zugangsdaten" : "Titel der Notiz"}
                 maxLength={200}
                 onChangeText={setTitle}
                 placeholder={isCredentials ? "z. B. WLAN oder Netflix" : "z. B. Abholzeit Kita"}
-                placeholderTextColor={colors.mistDark}
-                style={styles.input}
                 value={title}
               />
-            </Field>
-            <Field label="Art">
-              <Pressable
+            </OrdiloFormField>
+            <OrdiloFormField label="Art">
+              <OrdiloFormSelect
                 accessibilityHint="Öffnet die Auswahl für die Art der Notiz"
                 accessibilityLabel={`Art: ${documentTypeLabels[documentType]}`}
-                accessibilityRole="button"
+                leading={<FileText color={colors.mistDark} size={18} />}
                 onPress={() => setTypePickerVisible(true)}
-                style={({ pressed }) => [styles.typeButton, pressed && styles.pressed]}
-              >
-                <FileText color={colors.mistDark} size={18} />
-                <Text style={styles.typeText}>{documentTypeLabels[documentType]}</Text>
-              </Pressable>
-            </Field>
+                value={documentTypeLabels[documentType]}
+              />
+            </OrdiloFormField>
             {isCredentials ? (
               <>
-                <Field label="URL">
-                  <TextInput
+                <OrdiloFormField label="URL">
+                  <OrdiloFormInput
                     accessibilityLabel="URL"
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -267,39 +239,34 @@ export function NoteFormSheet({
                     maxLength={500}
                     onChangeText={setUrl}
                     placeholder="https://…"
-                    placeholderTextColor={colors.mistDark}
-                    style={styles.input}
                     value={url}
                   />
-                </Field>
-                <Field label="Benutzername">
-                  <TextInput
+                </OrdiloFormField>
+                <OrdiloFormField label="Benutzername">
+                  <OrdiloFormInput
                     accessibilityLabel="Benutzername"
                     autoCapitalize="none"
                     autoCorrect={false}
                     maxLength={200}
                     onChangeText={setUsername}
                     placeholder="familie@example.de"
-                    placeholderTextColor={colors.mistDark}
-                    style={styles.input}
                     value={username}
                   />
-                </Field>
-                <Field label="Passwort">
-                  <View style={styles.secretField}>
-                    <KeyRound color={colors.mistDark} size={18} />
-                    <TextInput
-                      accessibilityLabel="Passwort"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      maxLength={10_000}
-                      onChangeText={setSecret}
-                      placeholder="Passwort, PIN oder Code"
-                      placeholderTextColor={colors.mistDark}
-                      secureTextEntry={!showSecret}
-                      style={styles.secretInput}
-                      value={secret}
-                    />
+                </OrdiloFormField>
+                <OrdiloFormField
+                  helper="Wird verschlüsselt gespeichert und erst auf Wunsch gezeigt."
+                  label="Passwort"
+                >
+                  <OrdiloFormInput
+                    accessibilityLabel="Passwort"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    leading={<KeyRound color={colors.mistDark} size={18} />}
+                    maxLength={10_000}
+                    onChangeText={setSecret}
+                    placeholder="Passwort, PIN oder Code"
+                    secureTextEntry={!showSecret}
+                    trailing={
                     <Pressable
                       accessibilityLabel={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
                       accessibilityRole="button"
@@ -310,26 +277,22 @@ export function NoteFormSheet({
                         ? <EyeOff color={colors.mistDark} size={19} />
                         : <Eye color={colors.mistDark} size={19} />}
                     </Pressable>
-                  </View>
-                  <Text style={styles.helper}>
-                    Wird verschlüsselt gespeichert und erst auf Wunsch gezeigt.
-                  </Text>
-                </Field>
+                    }
+                    value={secret}
+                  />
+                </OrdiloFormField>
               </>
             ) : null}
-            <Field label={isCredentials ? "Beschreibung" : "Notiz"}>
-              <TextInput
+            <OrdiloFormField label={isCredentials ? "Beschreibung" : "Notiz"}>
+              <OrdiloFormInput
                 accessibilityLabel={isCredentials ? "Beschreibung" : "Inhalt der Notiz"}
                 maxLength={10_000}
                 multiline
                 onChangeText={setContent}
                 placeholder={isCredentials ? "Wer nutzt den Zugang? Was ist wichtig?" : "Schreib auf, was wichtig ist …"}
-                placeholderTextColor={colors.mistDark}
-                style={[styles.input, styles.textarea]}
-                textAlignVertical="top"
                 value={content}
               />
-            </Field>
+            </OrdiloFormField>
             {attachment ? (
               <View style={styles.attachment}>
                 <Image accessibilityLabel="Angehängtes Bild" source={{ uri: attachment.uri }} style={styles.preview} />
@@ -359,35 +322,25 @@ export function NoteFormSheet({
                 />
               </View>
             )}
-            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          </ScrollView>
-          <View style={styles.footer}>
-            <OrdiloButton disabled={saving} onPress={close} title="Abbrechen" variant="outline" />
-            <OrdiloButton
-              disabled={saving}
-              icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
-              onPress={() => void submit()}
-              title={saving ? "Wird gespeichert …" : "Speichern"}
-            />
-          </View>
-        </Pressable>
-      </Pressable>
+        </OrdiloFormBody>
+        <OrdiloFormFooter
+          error={error}
+          primary={<OrdiloButton
+            disabled={saving}
+            icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+            onPress={() => void submit()}
+            size="lg"
+            title={saving ? "Wird gespeichert …" : "Speichern"}
+          />}
+          secondary={<OrdiloButton disabled={saving} onPress={close} size="lg" title="Abbrechen" variant="outline" />}
+        />
       <NoteTypePicker
         onClose={() => setTypePickerVisible(false)}
         onSelect={chooseType}
         selected={documentType}
         visible={typePickerVisible}
       />
-    </Modal>
-  );
-}
-
-function Field({ children, label }: { children: ReactNode; label: string }) {
-  return (
-    <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
-      {children}
-    </View>
+    </OrdiloFormSheet>
   );
 }
 
@@ -402,62 +355,25 @@ function NoteTypePicker({
   selected: DocumentType;
   visible: boolean;
 }) {
-  const reduceMotion = useReducedMotion();
-
   return (
-    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible={visible}>
-      <Pressable onPress={onClose} style={styles.overlay}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.typeSheet}>
-          <View style={styles.handle} />
-          <Text style={styles.typeHeading}>Art wählen</Text>
-          <ScrollView>
-            {noteTypes.map(([type, label]) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ selected: selected === type }}
-                key={type}
-                onPress={() => onSelect(type)}
-                style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
-              >
-                <Text style={[styles.typeOptionText, selected === type && styles.typeOptionTextSelected]}>{label}</Text>
-                {selected === type ? <CheckCircle2 color={colors.harborBlue} size={20} /> : null}
-              </Pressable>
-            ))}
-          </ScrollView>
-        </Pressable>
-      </Pressable>
-    </Modal>
+    <OrdiloPickerOverlay
+      onClose={onClose}
+      options={noteTypes.map(([type, label]) => ({
+        key: type,
+        label,
+        onPress: () => onSelect(type),
+        selected: selected === type,
+      }))}
+      title="Art wählen"
+      visible={visible}
+    />
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: { backgroundColor: "rgba(38, 36, 33, 0.28)", flex: 1, justifyContent: "flex-end" },
-  sheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "90%", paddingBottom: spacing.md },
-  typeSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "78%", paddingBottom: spacing.lg, paddingHorizontal: spacing.md },
-  handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.sm, marginTop: spacing.sm, width: 40 },
-  header: { alignItems: "flex-start", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", paddingBottom: spacing.md, paddingHorizontal: spacing.md },
-  title: { color: colors.graphite, ...typography.display },
-  subtitle: { color: colors.mistDark, marginTop: spacing.xs, ...typography.timestamp },
-  close: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -8, marginTop: -8, width: 44 },
-  form: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing.lg },
-  field: { gap: spacing.xs },
-  label: { color: colors.graphite, ...typography.label },
-  input: { borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 44, paddingHorizontal: 12, ...typography.body },
-  textarea: { minHeight: 130, paddingTop: 10 },
-  typeButton: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, height: 44, paddingHorizontal: 12 },
-  typeText: { color: colors.graphite, ...typography.body },
-  secretField: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, minHeight: 44, paddingHorizontal: 12 },
-  secretInput: { color: colors.graphite, flex: 1, minHeight: 44, ...typography.body },
-  helper: { color: colors.mistDark, ...typography.label },
   imageActions: { flexDirection: "row", gap: spacing.sm },
   attachment: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.sm },
   preview: { borderRadius: radii.base, height: 44, width: 44 },
   attachmentName: { color: colors.graphite, flex: 1, ...typography.timestamp },
-  error: { color: colors.destructive, ...typography.timestamp },
-  footer: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.md },
-  typeHeading: { color: colors.graphite, marginBottom: spacing.sm, ...typography.display },
-  typeOption: { alignItems: "center", borderBottomColor: colors.mistLight, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", minHeight: 52, paddingHorizontal: spacing.xs },
-  typeOptionText: { color: colors.graphite, ...typography.body },
-  typeOptionTextSelected: { color: colors.harborBlue, fontFamily: typography.title.fontFamily },
   pressed: { opacity: 0.76 },
 });

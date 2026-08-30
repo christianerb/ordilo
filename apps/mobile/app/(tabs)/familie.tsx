@@ -11,20 +11,25 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
   Share,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
 
-import { OrdiloMark } from "@/src/components/ordilo-mark";
-import { OrdiloFormSheet } from "@/src/components/sheet";
-import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
+import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSheet,
+} from "@/src/components/sheet";
+import { Card, EmptyState, ListSkeleton, OrdiloButton, Screen, ScreenHeader } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
 import { useFamily } from "@/src/lib/family-context";
 import { createFamilyInvite } from "@/src/lib/invites";
@@ -163,7 +168,15 @@ export default function FamilieScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <FamilyHeader />
+        <ScreenHeader
+          action={family?.isOwner ? {
+            accessibilityLabel: "Person einladen",
+            icon: UserPlus,
+            onPress: () => void handleInvite(),
+          } : undefined}
+          subtitle="Mitglieder und Einladungen"
+          title="Familie"
+        />
 
         <View style={styles.summary}>
           <View style={styles.summaryIcon}>
@@ -276,28 +289,6 @@ export default function FamilieScreen() {
   );
 }
 
-function FamilyHeader() {
-  return (
-    <View style={styles.header}>
-      <View accessible={false} style={styles.headerWashOne} />
-      <View accessible={false} style={styles.headerWashTwo} />
-      <View accessible={false} style={styles.headerDotOne} />
-      <View accessible={false} style={styles.headerDotTwo} />
-      <View style={styles.headerCopy}>
-        <Text style={styles.headerTitle}>Familie</Text>
-        <Text style={styles.headerSubtitle}>Mitglieder und Einladungen</Text>
-      </View>
-      <View
-        accessible={false}
-        importantForAccessibility="no-hide-descendants"
-        style={styles.headerMark}
-      >
-        <OrdiloMark size={48} />
-      </View>
-    </View>
-  );
-}
-
 function MemberCard({
   member,
   onPress,
@@ -349,6 +340,7 @@ function MemberEditSheet({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [wasVisible, setWasVisible] = useState(false);
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
   if (visible !== wasVisible) {
     setWasVisible(visible);
@@ -357,6 +349,7 @@ function MemberEditSheet({
       setAvatarColor(member.avatar_color ?? AVATAR_COLORS[0]);
       setError(null);
       setSubmitting(false);
+      setDiscardDraftOpen(false);
     }
   }
 
@@ -379,41 +372,36 @@ function MemberEditSheet({
       onClose();
       return;
     }
-    Alert.alert(
-      "Änderungen verwerfen?",
-      "Deine Eingaben gehen verloren.",
-      [
-        { style: "cancel", text: "Weiter bearbeiten" },
-        { onPress: onClose, style: "destructive", text: "Verwerfen" },
-      ],
-    );
+    setDiscardDraftOpen(true);
   }, [avatarColor, member, name, onClose, submitting]);
 
   return (
     <OrdiloFormSheet
       closeAccessibilityLabel="Bearbeiten schließen"
+      dismissDisabled={submitting}
+      keyboardAvoiding
       onClose={requestClose}
-      style={styles.memberSheet}
       title="Person bearbeiten"
       visible={visible}
     >
-      <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text style={styles.sheetLabel}>Name</Text>
-            <TextInput
+      <OrdiloFormBody>
+          <OrdiloFormField label="Name">
+            <OrdiloFormInput
               accessibilityLabel="Name der Person"
               autoCapitalize="words"
               maxLength={100}
               onChangeText={setName}
-              style={styles.sheetInput}
               value={name}
             />
+          </OrdiloFormField>
 
-            <Text style={styles.sheetLabel}>Rolle</Text>
+          <OrdiloFormField label="Rolle">
             <Text style={styles.memberRoleRead}>
               {member?.role || "Familienmitglied"}
             </Text>
+          </OrdiloFormField>
 
-            <Text style={styles.sheetLabel}>Farbe</Text>
+          <OrdiloFormField label="Farbe">
             <View style={styles.avatarColors}>
               {AVATAR_COLORS.map((color) => {
                 const selected = avatarColor === color;
@@ -431,76 +419,38 @@ function MemberEditSheet({
                 );
               })}
             </View>
-
-            {error ? <Text accessibilityRole="alert" style={styles.sheetError}>{error}</Text> : null}
-            <View style={styles.sheetSubmit}>
-              <OrdiloButton
-                disabled={submitting}
-                icon={submitting ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
-                onPress={() => void submit()}
-                size="lg"
-                title={submitting ? "Wird gespeichert …" : "Speichern"}
-              />
-            </View>
-      </ScrollView>
+          </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton
+          disabled={submitting}
+          icon={submitting ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+          onPress={() => void submit()}
+          size="lg"
+          title={submitting ? "Wird gespeichert …" : "Speichern"}
+        />}
+      />
+      <ConfirmDialog
+        cancelLabel="Weiter bearbeiten"
+        contained
+        confirmLabel="Verwerfen"
+        message="Deine Eingaben gehen verloren."
+        onCancel={() => setDiscardDraftOpen(false)}
+        onConfirm={() => {
+          setDiscardDraftOpen(false);
+          onClose();
+        }}
+        title="Änderungen verwerfen?"
+        visible={discardDraftOpen}
+      />
     </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  content: { gap: spacing.md, paddingBottom: spacing["2xl"], paddingHorizontal: spacing.md },
-  header: {
-    backgroundColor: colors.sand,
-    borderRadius: radii.md,
-    height: 132,
-    justifyContent: "flex-end",
-    marginHorizontal: -spacing.md,
-    overflow: "hidden",
-    padding: spacing.md,
-  },
-  headerWashOne: {
-    backgroundColor: "#DDEBE5",
-    borderRadius: radii.xl,
-    height: 130,
-    left: -62,
-    opacity: 0.65,
-    position: "absolute",
-    top: -42,
-    transform: [{ rotate: "-12deg" }],
-    width: 220,
-  },
-  headerWashTwo: {
-    backgroundColor: "#F0B4A0",
-    borderRadius: radii.pill,
-    height: 46,
-    opacity: 0.38,
-    position: "absolute",
-    right: 126,
-    top: 18,
-    width: 46,
-  },
-  headerDotOne: { backgroundColor: colors.harborBlue, borderRadius: radii.pill, height: 8, opacity: 0.18, position: "absolute", right: 102, top: 70, width: 8 },
-  headerDotTwo: { backgroundColor: colors.warmApricot, borderRadius: radii.pill, height: 8, opacity: 0.36, position: "absolute", right: 62, top: 77, width: 8 },
-  headerCopy: { gap: spacing.xs, zIndex: 1 },
-  headerTitle: { color: colors.graphite, ...typography.display },
-  headerSubtitle: { color: colors.mistDark, ...typography.timestamp },
-  headerMark: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
-    elevation: 2,
-    height: 60,
-    justifyContent: "center",
-    position: "absolute",
-    right: spacing.md,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    top: 40,
-    width: 60,
-  },
+  content: { gap: spacing.md, paddingBottom: MOBILE_DOCK_CONTENT_INSET, paddingHorizontal: spacing.md },
   summary: {
     alignItems: "center",
     backgroundColor: colors.sand,
@@ -554,24 +504,6 @@ const styles = StyleSheet.create({
   accountCopy: { flex: 1, gap: 2, minWidth: 0 },
   accountLabel: { color: colors.mistDark, ...typography.label },
   accountEmail: { color: colors.graphite, ...typography.timestamp },
-  memberSheet: {
-    maxHeight: "82%",
-  },
-  sheetLabel: {
-    color: colors.mistDark,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.label,
-  },
-  sheetInput: {
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    color: colors.graphite,
-    height: 44,
-    paddingHorizontal: spacing.sm,
-    ...typography.body,
-  },
   memberRoleRead: {
     backgroundColor: colors.sandLight,
     borderRadius: radii.base,
@@ -591,8 +523,6 @@ const styles = StyleSheet.create({
     width: 36,
   },
   avatarColorSelected: { borderColor: colors.graphite },
-  sheetError: { color: colors.destructive, marginTop: spacing.md, ...typography.timestamp },
-  sheetSubmit: { marginTop: spacing.lg },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.56 },
 });

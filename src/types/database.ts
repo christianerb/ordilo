@@ -1559,6 +1559,20 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      create_calendar_event_with_attendees: {
+        Args: {
+          p_family_id: string;
+          p_title: string;
+          p_note: string;
+          p_date: string;
+          p_all_day: boolean;
+          p_starts_time: string | null;
+          p_ends_time: string | null;
+          p_location: string;
+          p_attendee_ids?: string[];
+        };
+        Returns: Database["public"]["Tables"]["calendar_events"]["Row"];
+      };
       reserve_voice_transcription: {
         Args: { p_family_id: string; p_limit: number };
         Returns: {

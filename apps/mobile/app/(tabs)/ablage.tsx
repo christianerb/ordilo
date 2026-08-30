@@ -4,14 +4,15 @@ import {
   BookOpen,
   CheckCircle2,
   ChevronDown,
-  Ellipsis,
+  ChevronRight,
   FileText,
-  FolderOpen,
+  FilePlus2,
   NotebookPen,
+  Plus,
   Search,
   SlidersHorizontal,
   ArrowDownAZ,
-  Sparkles,
+  UserPlus,
   Users,
 } from "lucide-react-native";
 import {
@@ -33,25 +34,44 @@ import {
 } from "react-native";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
+import {
+  ContactAvatar,
+  ContactFormSheet,
+} from "@/src/components/contacts";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
-import { OrdiloSheet, useSheetPresentation } from "@/src/components/sheet";
+import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
+import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
+import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import {
   EmptyState,
   ListSkeleton,
   OrdiloButton,
   Screen,
   ScreenHeader,
+  SegmentedControl,
   SpringPressable,
 } from "@/src/components/ui";
 import {
   documentTypeLabels,
   type DocumentType,
 } from "@/src/lib/document-review";
+import {
+  filterContacts,
+  getContactReachLine,
+  getContactSubtitle,
+  groupContactsIntoSections,
+  loadContacts,
+  mergeSavedContact,
+  splitContactsByStatus,
+  type Contact,
+} from "@/src/lib/contacts";
 import { useFamily } from "@/src/lib/family-context";
 import { createNote, triggerNoteAnalysis } from "@/src/lib/notes";
 import {
   filterLibraryDocuments,
   formatDocumentDate,
+  getDocumentSearchText,
   getDocumentStatusLabel,
   getDocumentTitle,
   getDocumentTypeLabel,
@@ -69,6 +89,7 @@ import {
   type LibraryFilters,
   type LibrarySort,
 } from "@/src/lib/library";
+import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -76,6 +97,8 @@ const documentTypes = Object.entries(documentTypeLabels) as [
   DocumentType,
   string,
 ][];
+type LibraryView = "documents" | "notes" | "contacts";
+type CreateKind = "document" | "note" | "contact";
 
 /**
  * Ablage — the family's RLS-scoped document library. It deliberately keeps
@@ -91,8 +114,14 @@ export default function AblageScreen() {
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
+  const [createContactOpen, setCreateContactOpen] = useState(false);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [contactsLoading, setContactsLoading] = useState(false);
+  const [contactsRefreshing, setContactsRefreshing] = useState(false);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+  const [contactQuery, setContactQuery] = useState("");
+  const [view, setView] = useState<LibraryView>("documents");
   const [sort, setSort] = useState<LibrarySort>("newest");
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -103,9 +132,17 @@ export default function AblageScreen() {
     documentType: "all",
   });
   const requestGeneration = useRef(0);
+  const createSheetRef = useRef<OrdiloSheetHandle>(null);
+  const pendingCreateRef = useRef<CreateKind | null>(null);
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
+      if (view === "contacts") {
+        setLoading(false);
+        setRefreshing(false);
+        setLoadingMore(false);
+        return;
+      }
       const requestId = requestGeneration.current + 1;
       requestGeneration.current = requestId;
       const isCurrentRequest = () => requestGeneration.current === requestId;
@@ -130,6 +167,11 @@ export default function AblageScreen() {
           .from("documents")
           .select(libraryDocumentSelect)
           .eq("family_id", family.id);
+        // Notes are documents with source "manual"; the two views split
+        // on that predicate so each list only ever shows its own kind.
+        query = view === "notes"
+          ? query.eq("source", "manual")
+          : query.neq("source", "manual");
         if (filters.status === "needs_review") query = query.eq("status", "analyzed");
         if (filters.status === "confirmed") query = query.eq("status", "confirmed");
         if (filters.status === "failed") query = query.eq("status", "failed");
@@ -171,7 +213,7 @@ export default function AblageScreen() {
         }
       }
     },
-    [family, filters, sort],
+    [family, filters, sort, view],
   );
 
   useFocusEffect(useCallback(() => {
@@ -179,12 +221,38 @@ export default function AblageScreen() {
   }, [loadDocuments]));
 
   useEffect(() => subscribeToLibraryChanges((change) => {
+    if (view === "contacts") return;
     if (change.type === "remove") {
       setDocuments((current) => current.filter((document) => document.id !== change.documentId));
       return;
     }
     void loadDocuments({ refresh: true });
-  }), [loadDocuments]);
+  }), [loadDocuments, view]);
+
+  const loadContactRows = useCallback(async ({ refresh = false } = {}) => {
+    if (!family) {
+      setContacts([]);
+      setContactsLoading(false);
+      return;
+    }
+    if (refresh) setContactsRefreshing(true);
+    else setContactsLoading(true);
+    setContactsError(null);
+    try {
+      setContacts(await loadContacts(family.id));
+    } catch {
+      setContactsError(
+        "Deine Kontakte konnten nicht geladen werden. Bitte versuch es nochmal.",
+      );
+    } finally {
+      setContactsLoading(false);
+      setContactsRefreshing(false);
+    }
+  }, [family]);
+
+  useFocusEffect(useCallback(() => {
+    if (view === "contacts") void loadContactRows();
+  }, [loadContactRows, view]));
 
   const reloadDocuments = useCallback(() => {
     void loadDocuments({ refresh: true });
@@ -194,6 +262,19 @@ export default function AblageScreen() {
     if (!hasMore || loadingMore) return;
     void loadDocuments({ append: true, page: nextPage });
   }, [hasMore, loadDocuments, loadingMore, nextPage]);
+
+  const chooseCreateKind = useCallback((kind: CreateKind) => {
+    pendingCreateRef.current = kind;
+    createSheetRef.current?.dismiss();
+  }, []);
+
+  const finishCreateChoice = useCallback(() => {
+    const kind = pendingCreateRef.current;
+    pendingCreateRef.current = null;
+    if (kind === "document") router.push("/scan");
+    if (kind === "note") setCreateNoteOpen(true);
+    if (kind === "contact") setCreateContactOpen(true);
+  }, [router]);
 
   const chooseSort = useCallback((nextSort: LibrarySort) => {
     setSort(nextSort);
@@ -206,9 +287,18 @@ export default function AblageScreen() {
   );
 
   const documentCountLabel = useMemo(() => {
+    if (view === "contacts") {
+      const confirmedCount = splitContactsByStatus(contacts).confirmed.length;
+      if (confirmedCount === 1) return "1 Kontakt der Familie";
+      return `${confirmedCount} Kontakte der Familie`;
+    }
+    if (view === "notes") {
+      if (documents.length === 1) return "1 Notiz der Familie";
+      return `${documents.length}${hasMore ? "+" : ""} Notizen der Familie`;
+    }
     if (documents.length === 1) return "1 Dokument der Familie";
     return `${documents.length}${hasMore ? "+" : ""} Dokumente der Familie`;
-  }, [documents.length, hasMore]);
+  }, [contacts, documents.length, hasMore, view]);
 
   const visibleDocuments = useMemo(
     () => filterLibraryDocuments(documents, filters),
@@ -222,6 +312,33 @@ export default function AblageScreen() {
     filters.documentType === "all"
       ? "Art"
       : documentTypeLabels[filters.documentType];
+
+  const switchView = useCallback((nextView: LibraryView) => {
+    if (nextView === view) return;
+    tap();
+    if (nextView === "contacts") {
+      requestGeneration.current += 1;
+      if (contacts.length === 0) setContactsLoading(true);
+      setView(nextView);
+      return;
+    }
+    // Invalidate the previous source query before replacing the visible
+    // list. A slow Documents response must never populate the Notes view.
+    requestGeneration.current += 1;
+    setDocuments([]);
+    setError(null);
+    setHasMore(false);
+    setLoading(true);
+    setNextPage(1);
+    setFilters({ query: "", status: "all", documentType: "all" });
+    setView(nextView);
+  }, [contacts.length, view]);
+
+  const handleContactCreated = useCallback((saved: Contact) => {
+    setContacts((current) => mergeSavedContact(current, saved));
+    setCreateContactOpen(false);
+    setView("contacts");
+  }, []);
 
   const createNewNote = useCallback(
     async (
@@ -240,7 +357,12 @@ export default function AblageScreen() {
     [family, loadDocuments, router],
   );
 
-  if (error && documents.length === 0 && !hasActiveFilters) {
+  if (
+    view !== "contacts" &&
+    error &&
+    documents.length === 0 &&
+    !hasActiveFilters
+  ) {
     return (
       <Screen style={styles.center}>
         <EmptyState
@@ -267,8 +389,14 @@ export default function AblageScreen() {
         refreshControl={
           <RefreshControl
             colors={[colors.harborBlue]}
-            onRefresh={reloadDocuments}
-            refreshing={refreshing}
+            onRefresh={() =>
+              view === "contacts"
+                ? void loadContactRows({ refresh: true })
+                : reloadDocuments()
+            }
+            refreshing={
+              view === "contacts" ? contactsRefreshing : refreshing
+            }
             tintColor={colors.harborBlue}
           />
         }
@@ -276,13 +404,17 @@ export default function AblageScreen() {
       >
         <ScreenHeader
           action={{
-            accessibilityLabel: "Mehr in der Ablage",
-            icon: Ellipsis,
-            onPress: () => setToolsOpen(true),
+            accessibilityLabel: "In der Ablage anlegen",
+            icon: Plus,
+            onPress: () => createSheetRef.current?.present(),
           }}
           subtitle={
-            loading && documents.length === 0
-              ? "Dokumente werden geladen"
+            view === "contacts" && contactsLoading && contacts.length === 0
+              ? "Kontakte werden geladen"
+              : loading && documents.length === 0
+              ? view === "notes"
+                ? "Notizen werden geladen"
+                : "Dokumente werden geladen"
               : hasActiveFilters && documents.length === 0
               ? "Keine Treffer für deine Suche oder Filter"
               : documentCountLabel
@@ -290,7 +422,58 @@ export default function AblageScreen() {
           title="Ablage"
         />
 
-        {loading && documents.length === 0 && !hasActiveFilters ? (
+        <SegmentedControl
+          items={[
+            {
+              icon: FileText,
+              label: "Dokumente",
+              onPress: () => switchView("documents"),
+              selected: view === "documents",
+            },
+            {
+              icon: NotebookPen,
+              label: "Notizen",
+              onPress: () => switchView("notes"),
+              selected: view === "notes",
+            },
+            {
+              icon: Users,
+              label: "Kontakte",
+              onPress: () => switchView("contacts"),
+              selected: view === "contacts",
+            },
+          ]}
+        />
+
+        {view === "contacts" ? (
+          <ContactsView
+            contacts={contacts}
+            error={contactsError}
+            loading={contactsLoading}
+            onOpen={(contactId) => router.push(`/contacts/${contactId}`)}
+            onOpenSource={(documentId) =>
+              router.push(`/document/${documentId}`)
+            }
+            onQueryChange={setContactQuery}
+            onRetry={() => void loadContactRows()}
+            query={contactQuery}
+          />
+        ) : view === "notes" ? (
+          <NotesView
+            error={error}
+            hasMore={hasMore}
+            loading={loading}
+            loadingMore={loadingMore}
+            notes={documents}
+            onLoadMore={loadMore}
+            onOpen={(documentId) => router.push(`/note/${documentId}`)}
+            onSearchChange={(query) =>
+              setFilters((current) => ({ ...current, query }))
+            }
+            onRetry={() => void loadDocuments()}
+            search={filters.query}
+          />
+        ) : loading && documents.length === 0 && !hasActiveFilters ? (
           <ListSkeleton rows={6} />
         ) : documents.length > 0 || hasActiveFilters ? (
           <>
@@ -466,32 +649,365 @@ export default function AblageScreen() {
         selected={sort}
         visible={sortPickerOpen}
       />
-      <LibraryToolsSheet
-        onClose={() => setToolsOpen(false)}
-        onCreateNote={() => {
-          setToolsOpen(false);
-          setCreateNoteOpen(true);
-        }}
-        onOpenContacts={() => {
-          setToolsOpen(false);
-          router.push("/contacts");
-        }}
-        onOpenSearch={() => {
-          setToolsOpen(false);
-          router.push("/suche");
-        }}
-        onOpenCollections={() => {
-          setToolsOpen(false);
-          router.push("/sammlungen");
-        }}
-        visible={toolsOpen}
+      <CreateChoiceSheet
+        accessibilityLabel="In der Ablage anlegen"
+        items={[
+          {
+            accessibilityLabel: "Neues Dokument",
+            description: "Scannen, fotografieren oder eine Datei wählen",
+            icon: FilePlus2,
+            label: "Dokument",
+            onPress: () => chooseCreateKind("document"),
+            tint: "sage",
+          },
+          {
+            accessibilityLabel: "Neue Notiz",
+            description: "Familienwissen direkt festhalten",
+            icon: NotebookPen,
+            label: "Notiz",
+            onPress: () => chooseCreateKind("note"),
+            tint: "apricot",
+          },
+          {
+            accessibilityLabel: "Neuer Kontakt",
+            description: "Adressen und wichtige Personen",
+            icon: UserPlus,
+            label: "Kontakt",
+            onPress: () => chooseCreateKind("contact"),
+            tint: "sand",
+          },
+        ]}
+        onDismiss={finishCreateChoice}
+        ref={createSheetRef}
       />
       <NoteFormSheet
         onClose={() => setCreateNoteOpen(false)}
         onSubmit={createNewNote}
         visible={createNoteOpen}
       />
+      <ContactFormSheet
+        contact={null}
+        familyId={family?.id ?? null}
+        onClose={() => setCreateContactOpen(false)}
+        onSaved={handleContactCreated}
+        visible={createContactOpen}
+      />
     </Screen>
+  );
+}
+
+/**
+ * The notes list: its own search, its own empty states, and a create
+ * call-to-action that is always one tap away. Notes live in the same
+ * documents table (source "manual") but read as their own thing here.
+ */
+function NotesView({
+  error,
+  hasMore,
+  loading,
+  loadingMore,
+  notes,
+  onLoadMore,
+  onOpen,
+  onRetry,
+  onSearchChange,
+  search,
+}: {
+  error: string | null;
+  hasMore: boolean;
+  loading: boolean;
+  loadingMore: boolean;
+  notes: LibraryDocument[];
+  onLoadMore: () => void;
+  onOpen: (documentId: string) => void;
+  onRetry: () => void;
+  onSearchChange: (query: string) => void;
+  search: string;
+}) {
+  const visibleNotes = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("de");
+    if (!query) return notes;
+    return notes.filter((note) => getDocumentSearchText(note).includes(query));
+  }, [notes, search]);
+
+  if (loading && notes.length === 0 && !search.trim()) {
+    return <ActivityIndicator accessibilityLabel="Notizen werden geladen" color={colors.harborBlue} style={styles.notesLoading} />;
+  }
+
+  if (error && notes.length === 0 && !search.trim()) {
+    return (
+      <EmptyState icon={AlertCircle} heading="Notizen nicht erreichbar" description={error}>
+        <OrdiloButton onPress={onRetry} size="lg" title="Erneut versuchen" />
+      </EmptyState>
+    );
+  }
+
+  if (notes.length === 0 && !search.trim()) {
+    return (
+      <EmptyState
+        icon={NotebookPen}
+        heading="Noch keine Notizen"
+        description="Lege über das Plus oben deine erste Notiz an."
+      />
+    );
+  }
+
+  return (
+    <>
+      <View style={styles.search}>
+        <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
+        <TextInput
+          accessibilityLabel="Notizen durchsuchen"
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          onChangeText={onSearchChange}
+          placeholder="Notizen durchsuchen"
+          placeholderTextColor={colors.mistDark}
+          returnKeyType="search"
+          style={styles.searchInput}
+          value={search}
+        />
+      </View>
+      {error ? (
+        <View accessibilityRole="alert" style={styles.inlineError}>
+          <Text style={styles.inlineErrorText}>{error}</Text>
+          <Pressable onPress={onRetry}><Text style={styles.dismiss}>Erneut versuchen</Text></Pressable>
+        </View>
+      ) : null}
+      {visibleNotes.length === 0 ? (
+        <View style={styles.filteredEmpty}>
+          <Search color={colors.mist} size={28} strokeWidth={1.5} />
+          <Text style={styles.filteredEmptyTitle}>Keine Notiz gefunden</Text>
+          <Text style={styles.filteredEmptyText}>Versuch es mit einem anderen Wort.</Text>
+        </View>
+      ) : (
+        <View style={styles.list}>
+          {visibleNotes.map((note) => (
+            <NoteRow key={note.id} note={note} onPress={() => onOpen(note.id)} />
+          ))}
+        </View>
+      )}
+      {hasMore ? (
+        <OrdiloButton
+          disabled={loadingMore}
+          icon={loadingMore ? <ActivityIndicator color={colors.harborBlue} size="small" /> : undefined}
+          onPress={onLoadMore}
+          title={loadingMore ? "Weitere Notizen werden geladen …" : "Weitere Notizen laden"}
+          variant="outline"
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** One note row: title, a one-line preview, and the creation date. */
+function NoteRow({
+  note,
+  onPress,
+}: {
+  note: LibraryDocument;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityHint="Öffnet die Notiz"
+      accessibilityLabel={getDocumentTitle(note)}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
+    >
+      <View style={styles.documentIcon}><NotebookPen color={colors.mistDark} size={20} strokeWidth={1.7} /></View>
+      <View style={styles.documentCopy}>
+        <Text numberOfLines={1} style={styles.documentTitle}>{getDocumentTitle(note)}</Text>
+        <Text numberOfLines={1} style={styles.documentSummary}>
+          {note.summary?.trim() || note.ocr_text?.trim() || "Notiz öffnen, um den Inhalt zu lesen"}
+        </Text>
+      </View>
+      <Text style={styles.noteDate}>{formatDocumentDate(note.created_at)}</Text>
+    </Pressable>
+  );
+}
+
+function ContactsView({
+  contacts,
+  error,
+  loading,
+  onOpen,
+  onOpenSource,
+  onQueryChange,
+  onRetry,
+  query,
+}: {
+  contacts: Contact[];
+  error: string | null;
+  loading: boolean;
+  onOpen: (contactId: string) => void;
+  onOpenSource: (documentId: string) => void;
+  onQueryChange: (query: string) => void;
+  onRetry: () => void;
+  query: string;
+}) {
+  const { suggested, confirmed } = useMemo(
+    () => splitContactsByStatus(contacts),
+    [contacts],
+  );
+  const sections = useMemo(
+    () => groupContactsIntoSections(filterContacts(confirmed, query)),
+    [confirmed, query],
+  );
+  const searching = Boolean(query.trim());
+
+  if (loading && contacts.length === 0) {
+    return <ListSkeleton rows={5} />;
+  }
+
+  if (error && contacts.length === 0) {
+    return (
+      <EmptyState
+        description={error}
+        heading="Kontakte nicht erreichbar"
+        icon={AlertCircle}
+      >
+        <OrdiloButton
+          onPress={onRetry}
+          size="lg"
+          title="Erneut versuchen"
+        />
+      </EmptyState>
+    );
+  }
+
+  if (contacts.length === 0) {
+    return (
+      <EmptyState
+        description="Lege über das Plus oben euren ersten Kontakt an."
+        heading="Noch keine Kontakte"
+        icon={Users}
+      />
+    );
+  }
+
+  return (
+    <>
+      <View style={styles.search}>
+        <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
+        <TextInput
+          accessibilityLabel="Kontakte durchsuchen"
+          autoCapitalize="none"
+          autoCorrect={false}
+          clearButtonMode="while-editing"
+          onChangeText={onQueryChange}
+          placeholder="Kontakte durchsuchen"
+          placeholderTextColor={colors.mistDark}
+          returnKeyType="search"
+          style={styles.searchInput}
+          value={query}
+        />
+      </View>
+
+      {error ? (
+        <View accessibilityRole="alert" style={styles.inlineError}>
+          <Text style={styles.inlineErrorText}>{error}</Text>
+          <Pressable onPress={onRetry}>
+            <Text style={styles.dismiss}>Erneut versuchen</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {suggested.length > 0 ? (
+        <View style={styles.contactSection}>
+          <Text style={styles.contactSectionTitle}>
+            In Dokumenten gefunden
+          </Text>
+          <View style={styles.list}>
+            {suggested.map((contact) => (
+              <ContactRow
+                contact={contact}
+                key={contact.id}
+                onPress={() =>
+                  contact.source_document_id
+                    ? onOpenSource(contact.source_document_id)
+                    : onOpen(contact.id)
+                }
+                review
+              />
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {sections.map((section) => (
+        <View key={section.title} style={styles.contactSection}>
+          <Text style={styles.contactSectionTitle}>{section.title}</Text>
+          <View style={styles.list}>
+            {section.data.map((contact) => (
+              <ContactRow
+                contact={contact}
+                key={contact.id}
+                onPress={() => onOpen(contact.id)}
+              />
+            ))}
+          </View>
+        </View>
+      ))}
+
+      {searching && sections.length === 0 ? (
+        <View style={styles.filteredEmpty}>
+          <Search color={colors.mist} size={28} strokeWidth={1.5} />
+          <Text style={styles.filteredEmptyTitle}>
+            Kein Kontakt gefunden
+          </Text>
+          <Text style={styles.filteredEmptyText}>
+            Versuch es mit einem anderen Namen.
+          </Text>
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+function ContactRow({
+  contact,
+  onPress,
+  review = false,
+}: {
+  contact: Contact;
+  onPress: () => void;
+  review?: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityHint={
+        review
+          ? "Öffnet das Dokument, in dem dieser Kontakt gefunden wurde"
+          : "Öffnet die Kontaktdaten"
+      }
+      accessibilityLabel={contact.name}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.contactRow,
+        pressed && styles.pressed,
+      ]}
+    >
+      <ContactAvatar name={contact.name} />
+      <View style={styles.documentCopy}>
+        <Text numberOfLines={1} style={styles.documentTitle}>
+          {contact.name}
+        </Text>
+        {getContactSubtitle(contact) || getContactReachLine(contact) ? (
+          <Text numberOfLines={1} style={styles.documentMeta}>
+            {getContactSubtitle(contact) || getContactReachLine(contact)}
+          </Text>
+        ) : null}
+      </View>
+      {review ? (
+        <Text style={styles.contactReview}>Prüfen</Text>
+      ) : (
+        <ChevronRight color={colors.mistDark} size={18} />
+      )}
+    </Pressable>
   );
 }
 
@@ -518,86 +1034,6 @@ function FilterChip({
       <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
         {label}
       </Text>
-    </Pressable>
-  );
-}
-
-function LibraryToolsSheet({
-  onClose,
-  onCreateNote,
-  onOpenCollections,
-  onOpenContacts,
-  onOpenSearch,
-  visible,
-}: {
-  onClose: () => void;
-  onCreateNote: () => void;
-  onOpenCollections: () => void;
-  onOpenContacts: () => void;
-  onOpenSearch: () => void;
-  visible: boolean;
-}) {
-  const sheetRef = useSheetPresentation(visible);
-  return (
-    <OrdiloSheet
-      accessibilityLabel="Mehr in der Ablage"
-      onDismiss={onClose}
-      ref={sheetRef}
-    >
-      <LibraryToolOption
-        description="Familienwissen direkt festhalten"
-        icon={NotebookPen}
-        label="Notiz anlegen"
-        onPress={onCreateNote}
-      />
-      <Text style={styles.sheetTitle}>Mehr in der Ablage</Text>
-      <LibraryToolOption
-        description="Frag Ordilo zu euren Dokumenten."
-        icon={Sparkles}
-        label="Ordilo fragen"
-        onPress={onOpenSearch}
-      />
-      <LibraryToolOption
-        description="Adressen und wichtige Personen."
-        icon={Users}
-        label="Kontakte"
-        onPress={onOpenContacts}
-      />
-      <LibraryToolOption
-        description="Dokumente gemeinsam sortieren."
-        icon={FolderOpen}
-        label="Sammlungen"
-        onPress={onOpenCollections}
-      />
-    </OrdiloSheet>
-  );
-}
-
-function LibraryToolOption({
-  description,
-  icon: Icon,
-  label,
-  onPress,
-}: {
-  description: string;
-  icon: typeof Sparkles;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.toolOption, pressed && styles.pressed]}
-    >
-      <View style={styles.toolIcon}>
-        <Icon color={colors.harborBlue} size={19} strokeWidth={1.8} />
-      </View>
-      <View style={styles.toolCopy}>
-        <Text style={styles.toolLabel}>{label}</Text>
-        <Text style={styles.toolDescription}>{description}</Text>
-      </View>
     </Pressable>
   );
 }
@@ -708,52 +1144,27 @@ function DocumentTypePicker({
   selected: DocumentType | "all";
   visible: boolean;
 }) {
-  const sheetRef = useSheetPresentation(visible);
   return (
-    <OrdiloSheet
+    <OrdiloPickerSheet
       accessibilityLabel="Dokumentart auswählen"
-      onDismiss={onClose}
-      ref={sheetRef}
-    >
-      <Text style={styles.sheetTitle}>Dokumentart</Text>
-      <TypeOption
-        label="Alle Arten"
-        onPress={() => onSelect("all")}
-        selected={selected === "all"}
-      />
-      {documentTypes.map(([value, label]) => (
-        <TypeOption
-          key={value}
-          label={label}
-          onPress={() => onSelect(value)}
-          selected={selected === value}
-        />
-      ))}
-    </OrdiloSheet>
-  );
-}
-
-function TypeOption({
-  label,
-  onPress,
-  selected,
-}: {
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [styles.typeOption, pressed && styles.pressed]}
-    >
-      <Text style={[styles.typeOptionText, selected && styles.typeOptionTextSelected]}>
-        {label}
-      </Text>
-      {selected ? <CheckCircle2 color={colors.harborBlue} size={19} /> : null}
-    </Pressable>
+      onClose={onClose}
+      options={[
+        {
+          key: "all",
+          label: "Alle Arten",
+          onPress: () => onSelect("all"),
+          selected: selected === "all",
+        },
+        ...documentTypes.map(([value, label]) => ({
+          key: value,
+          label,
+          onPress: () => onSelect(value),
+          selected: selected === value,
+        })),
+      ]}
+      title="Dokumentart"
+      visible={visible}
+    />
   );
 }
 
@@ -768,50 +1179,46 @@ function SortPicker({
   selected: LibrarySort;
   visible: boolean;
 }) {
-  const sheetRef = useSheetPresentation(visible);
   return (
-    <OrdiloSheet
+    <OrdiloPickerSheet
       accessibilityLabel="Sortierung auswählen"
-      onDismiss={onClose}
-      ref={sheetRef}
-    >
-      <Text style={styles.sheetTitle}>Sortieren</Text>
-      {librarySortOptions.map((option) => (
-        <TypeOption
-          key={option.value}
-          label={option.label}
-          onPress={() => onSelect(option.value)}
-          selected={selected === option.value}
-        />
-      ))}
-    </OrdiloSheet>
+      onClose={onClose}
+      options={librarySortOptions.map((option) => ({
+        key: option.value,
+        label: option.label,
+        onPress: () => onSelect(option.value),
+        selected: selected === option.value,
+      }))}
+      title="Sortieren"
+      visible={visible}
+    />
   );
 }
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
-  content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
-  toolOption: {
+  content: { gap: spacing.md, paddingBottom: MOBILE_DOCK_CONTENT_INSET },
+  noteDate: { color: colors.mistDark, ...typography.label },
+  notesLoading: { marginTop: spacing["2xl"] },
+  contactSection: { gap: spacing.xs },
+  contactSectionTitle: {
+    color: colors.mistDark,
+    paddingHorizontal: spacing.xs,
+    ...typography.label,
+  },
+  contactRow: {
     alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: radii.sm,
-    borderWidth: 1,
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 60,
-    paddingHorizontal: spacing.sm,
+    minHeight: 68,
+    padding: spacing.sm,
   },
-  toolIcon: {
-    alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: radii.sm,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
+  contactReview: {
+    color: colors.harborBlue,
+    ...typography.label,
   },
-  toolCopy: { flex: 1, gap: 1 },
-  toolLabel: { color: colors.graphite, ...typography.title },
-  toolDescription: { color: colors.mistDark, ...typography.timestamp },
   search: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
@@ -933,16 +1340,4 @@ const styles = StyleSheet.create({
   filteredEmptyText: { color: colors.mistDark, textAlign: "center", ...typography.timestamp },
   pressed: { opacity: 0.76 },
   ambientBehind: { marginHorizontal: -spacing.md },
-  sheetTitle: { color: colors.graphite, marginBottom: spacing.sm, ...typography.display },
-  typeOption: {
-    alignItems: "center",
-    borderBottomColor: colors.mistLight,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 52,
-    paddingHorizontal: spacing.xs,
-  },
-  typeOptionText: { color: colors.graphite, ...typography.body },
-  typeOptionTextSelected: { color: colors.harborBlue, fontFamily: typography.title.fontFamily },
 });

@@ -1,7 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   AlertCircle,
-  ArrowLeft,
   ChevronRight,
   FolderPlus,
 } from "lucide-react-native";
@@ -17,6 +16,7 @@ import {
 import { CollectionFormSheet } from "@/src/components/collection-form-sheet";
 import { CollectionIcon } from "@/src/components/collection-icon";
 import {
+  DetailTopBar,
   EmptyState,
   ListSkeleton,
   OrdiloButton,
@@ -96,9 +96,11 @@ export default function SammlungenScreen() {
   if (loading && collections.length === 0) {
     return (
       <Screen>
-        <BackBar onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} />
         <ScreenHeader subtitle="Sammlungen werden geladen" title="Sammlungen" />
-        <ListSkeleton rows={4} />
+        <View style={styles.loadingList}>
+          <ListSkeleton rows={4} />
+        </View>
       </Screen>
     );
   }
@@ -106,7 +108,7 @@ export default function SammlungenScreen() {
   if (error && collections.length === 0) {
     return (
       <Screen>
-        <BackBar onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} />
         <View style={styles.centerFill}>
           <EmptyState
             icon={AlertCircle}
@@ -138,7 +140,7 @@ export default function SammlungenScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <BackBar onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} />
 
         <ScreenHeader title="Sammlungen" subtitle={subtitle} />
 
@@ -247,37 +249,10 @@ function CollectionRow({
   );
 }
 
-/**
- * Explicit way back — the overview is pushed outside the tab navigator
- * and the root stack shows no header, so the swipe-back gesture must not
- * be the only exit (visible in the loading and error states too).
- */
-function BackBar({ onBack }: { onBack: () => void }) {
-  return (
-    <View style={styles.backBar}>
-      <Pressable
-        accessibilityHint="Zurück zur Ablage"
-        accessibilityLabel="Zurück"
-        accessibilityRole="button"
-        onPress={onBack}
-        style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}
-      >
-        <ArrowLeft color={colors.graphite} size={22} strokeWidth={1.8} />
-      </Pressable>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   centerFill: { alignItems: "center", flex: 1, justifyContent: "center" },
-  backBar: { alignItems: "flex-start", paddingTop: spacing.sm },
-  backButton: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
+  loadingList: { paddingTop: spacing.md },
   content: { gap: spacing.md, paddingBottom: spacing["2xl"] },
   inlineError: {
     alignItems: "center",

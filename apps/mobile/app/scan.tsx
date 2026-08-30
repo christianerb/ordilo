@@ -9,14 +9,26 @@ import {
 import * as Print from "expo-print";
 import { useRouter } from "expo-router";
 import {
+  DOCUMENT_PIPELINE_STEPS,
+  getDocumentPipelineStepsCompleted,
+  type DocumentPipelineStatus,
+} from "@ordilo/document-contract";
+import {
   Check,
   FilePlus2,
   Images,
   ScanLine,
   Upload,
   X,
+  XCircle,
 } from "lucide-react-native";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -25,9 +37,25 @@ import {
   Text,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Animated, { useReducedMotion } from "react-native-reanimated";
 
-import { Card, OrdiloButton } from "@/src/components/ui";
+import {
+  ScanProcessingHero,
+  type ScanProcessingStage,
+} from "@/src/components/scan-processing-hero";
+import {
+  OrdiloFormBody,
+  OrdiloFormSheet,
+} from "@/src/components/sheet";
+import {
+  Card,
+  OrdiloButton,
+  Screen,
+  SpringPressable,
+  cardRestShadow,
+} from "@/src/components/ui";
+import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
 import { useFamily } from "@/src/lib/family-context";
 import {
   continueScannedDocumentPipeline,
@@ -37,20 +65,87 @@ import {
   removeStagedScannedDocument,
   stageScannedDocument,
   type ScannedDocument,
+  type PersistedScanQueueItem,
+  type ScanQueueState,
   type ScanProcessingStep,
   uploadScannedDocument,
   validateScannedDocument,
+  waitForScannedDocumentAnalysis,
 } from "@/src/lib/scan";
+import {
+  completionEntering,
+  contentEntering,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { success, fail } from "@/src/lib/feedback";
 
-type UploadState = "queued" | "uploading" | "processing" | "failed" | "done";
-type QueueItem = ScannedDocument & {
-  documentId?: string;
-  error?: string;
-  processingStep?: ScanProcessingStep;
+type UploadState = ScanQueueState | "done";
+type QueueItem = Omit<PersistedScanQueueItem, "state"> & {
   state: UploadState;
 };
+
+type ScanFlow =
+  | { phase: "capture" }
+  | {
+      phase: "processing";
+      itemId: string;
+      documentId?: string;
+      status: "uploading" | DocumentPipelineStatus;
+      serverPipeline?: boolean;
+      error?: string;
+    };
+
+function getProcessingStage(
+  status: "uploading" | DocumentPipelineStatus,
+): ScanProcessingStage {
+  if (status === "uploading") return "upload";
+  if (status === "uploaded" || status === "ocr_processing") return "ocr";
+  return "analysis";
+}
+
+const PROCESSING_COPY: Record<
+  ScanProcessingStage,
+  { heading: string; description: string }
+> = {
+  upload: {
+    heading: "Dein Dokument macht sich auf den Weg",
+    description: "Ordilo lädt es sicher hoch. Gleich beginnt die Texterkennung.",
+  },
+  ocr: {
+    heading: "Ordilo liest aufmerksam mit",
+    description: "Zeile für Zeile wird der Inhalt erkannt und für dich vorbereitet.",
+  },
+  analysis: {
+    heading: "Ordilo sortiert das Wichtigste",
+    description: "Namen, Termine und Aufgaben werden gefunden. Danach prüft ihr alles gemeinsam.",
+  },
+};
+
+function ScanSecondaryAction({
+  accessibilityLabel,
+  disabled,
+  icon,
+  label,
+  onPress,
+}: {
+  accessibilityLabel: string;
+  disabled: boolean;
+  icon: ReactNode;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <SpringPressable
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled}
+      onPress={onPress}
+      style={styles.secondaryAction}
+    >
+      <View style={styles.secondaryActionIcon}>{icon}</View>
+      <Text style={styles.secondaryActionLabel}>{label}</Text>
+    </SpringPressable>
+  );
+}
 
 function isPersistedQueueItem(
   item: QueueItem,
@@ -116,12 +211,21 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  */
 export default function ScanModal() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const reduceMotion = useReducedMotion();
   const { family } = useFamily();
+  const [sheetVisible, setSheetVisible] = useState(true);
+  const [flow, setFlow] = useState<ScanFlow>({ phase: "capture" });
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
+  const bodyRef = useRef<ScrollView>(null);
+  const followFlowRef = useRef(true);
+  const processingAbortRef = useRef<AbortController | null>(null);
+  const processingPromiseRef = useRef<Promise<void> | null>(null);
+  const detachServerPipelineRef = useRef(false);
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
@@ -176,6 +280,13 @@ export default function ScanModal() {
     })().catch(() => setQueueHydrated(true));
   }, []);
 
+  useEffect(() => {
+    return () => {
+      followFlowRef.current = false;
+      processingAbortRef.current?.abort();
+    };
+  }, []);
+
   const addToQueue = useCallback(async (document: ScannedDocument): Promise<boolean> => {
     const validationError = validateScannedDocument(document);
     if (validationError) {
@@ -190,6 +301,7 @@ export default function ScanModal() {
         { ...staged, state: "queued" },
       ]);
       setError(null);
+      bodyRef.current?.scrollTo({ animated: false, y: 0 });
       return true;
     } catch {
       setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
@@ -226,63 +338,152 @@ export default function ScanModal() {
     }
   }, [addToQueue, scannerBusy]);
 
-  const uploadOne = useCallback(
+  const processQueueItem = useCallback(
     async (item: QueueItem) => {
-      if (!family) return;
-      let uploadedDocumentId: string | undefined;
-      let processingStep: ScanProcessingStep | undefined;
-      try {
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? { ...candidate, state: "uploading", error: undefined }
-              : candidate,
-          ),
-        );
-        const result = await uploadScannedDocument(item, family.id);
-        uploadedDocumentId = result.document_id;
-        // The document ID must reach durable storage before OCR starts.
-        // After a process interruption, retry can then resume this server
-        // document instead of uploading a duplicate.
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? {
-                  ...candidate,
-                  documentId: result.document_id,
-                  processingStep: "ocr",
-                  state: "processing",
-                }
-              : candidate,
-          ),
-        );
-        if (!result.server_pipeline) {
-          await continueScannedDocumentPipeline(
-            result.document_id,
-            "ocr",
-            async (step) => {
-              processingStep = step;
-              await updateQueue((current) =>
-                current.map((candidate) =>
-                  candidate.id === item.id
-                    ? {
-                        ...candidate,
-                        documentId: result.document_id,
-                        processingStep: step,
-                        state: "processing",
-                      }
-                    : candidate,
-                ),
-              );
-            },
-          );
+      if (!family && !item.documentId) return;
+      processingAbortRef.current?.abort();
+      const controller = new AbortController();
+      processingAbortRef.current = controller;
+      detachServerPipelineRef.current = false;
+      let documentId = item.documentId;
+      let processingStep = item.processingStep;
+      let serverPipeline = item.serverPipeline ?? false;
+      let pipelineStatus: "uploading" | DocumentPipelineStatus =
+        processingStep === "analysis" ? "analyzing" : "ocr_processing";
+
+      const reportClientStep = async (step: ScanProcessingStep) => {
+        processingStep = step;
+        pipelineStatus = step === "ocr" ? "ocr_processing" : "analyzing";
+        if (followFlowRef.current) {
+          setFlow({
+            phase: "processing",
+            itemId: item.id,
+            documentId,
+            serverPipeline,
+            status: pipelineStatus,
+          });
         }
         await updateQueue((current) =>
           current.map((candidate) =>
             candidate.id === item.id
               ? {
                   ...candidate,
-                  documentId: result.document_id,
+                  documentId,
+                  processingStep: step,
+                  serverPipeline: false,
+                  state: "processing",
+                }
+              : candidate,
+          ),
+        );
+      };
+
+      try {
+        followFlowRef.current = true;
+        setFlow({
+          phase: "processing",
+          itemId: item.id,
+          documentId,
+          serverPipeline,
+          status: documentId ? pipelineStatus : "uploading",
+        });
+        if (!documentId) {
+          await updateQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? { ...candidate, state: "uploading", error: undefined }
+                : candidate,
+            ),
+          );
+          const result = await uploadScannedDocument(item, family!.id);
+          documentId = result.document_id;
+          processingStep = "ocr";
+          pipelineStatus = result.status;
+          serverPipeline = result.server_pipeline;
+
+          if (followFlowRef.current) {
+            setFlow({
+              phase: "processing",
+              itemId: item.id,
+              documentId,
+              serverPipeline,
+              status: pipelineStatus,
+            });
+          }
+          // Persist the server ID before OCR so recovery never uploads a
+          // duplicate after interruption.
+          await updateQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? {
+                    ...candidate,
+                    documentId,
+                    processingStep,
+                    serverPipeline,
+                    state: "processing",
+                  }
+                : candidate,
+            ),
+          );
+
+          if (!result.server_pipeline) {
+            await continueScannedDocumentPipeline(
+              documentId,
+              processingStep,
+              reportClientStep,
+              controller.signal,
+            );
+          }
+        } else {
+          await updateQueue((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? { ...candidate, state: "processing", error: undefined }
+                : candidate,
+            ),
+          );
+          if (!serverPipeline) {
+            await continueScannedDocumentPipeline(
+              documentId,
+              processingStep ?? "ocr",
+              reportClientStep,
+              controller.signal,
+            );
+          }
+        }
+
+        await waitForScannedDocumentAnalysis(documentId, async (status) => {
+          pipelineStatus = status;
+          if (
+            (status === "ocr_done" || status === "analyzing") &&
+            processingStep !== "analysis"
+          ) {
+            processingStep = "analysis";
+            await updateQueue((current) =>
+              current.map((candidate) =>
+                candidate.id === item.id
+                  ? { ...candidate, processingStep }
+                  : candidate,
+              ),
+            );
+          }
+          if (followFlowRef.current) {
+            setFlow({
+              phase: "processing",
+              itemId: item.id,
+              documentId,
+              serverPipeline,
+              status,
+            });
+          }
+        }, undefined, undefined, controller.signal);
+
+        await updateQueue((current) =>
+          current.map((candidate) =>
+            candidate.id === item.id
+              ? {
+                  ...candidate,
+                  documentId,
                   processingStep: undefined,
                   state: "done",
                 }
@@ -291,84 +492,68 @@ export default function ScanModal() {
         );
         await removeStagedScannedDocument(item.uri);
         void success();
-      } catch {
+        if (followFlowRef.current) {
+          router.replace({
+            pathname: "/document/[id]",
+            params: { id: documentId, source: "scan" },
+          });
+        }
+      } catch (caughtError) {
+        const interrupted =
+          caughtError instanceof Error && caughtError.name === "AbortError";
+        if (interrupted && detachServerPipelineRef.current) return;
+        const errorMessage = caughtError instanceof Error
+          ? caughtError.message
+          : "Das Dokument konnte nicht verarbeitet werden.";
+        const itemError = interrupted
+          ? "Die Verarbeitung wurde unterbrochen. Du kannst sie fortsetzen."
+          : documentId
+          ? processingStep === "analysis"
+            ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
+            : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
+          : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.";
         await markQueueFailed(item.id, {
-          documentId: uploadedDocumentId ?? item.documentId,
+          documentId,
           processingStep,
-          error: uploadedDocumentId
-            ? processingStep === "analysis"
-              ? "Die Analyse hat nicht geklappt. Du kannst sie erneut starten."
-              : "Die Texterkennung hat nicht geklappt. Du kannst sie erneut starten."
-            : "Der Upload hat nicht geklappt. Du kannst es erneut versuchen.",
+          error: itemError,
         });
-        void fail();
+        if (followFlowRef.current) {
+          setFlow({
+            phase: "processing",
+            itemId: item.id,
+            documentId,
+            serverPipeline,
+            status: pipelineStatus,
+            error: errorMessage || itemError,
+          });
+        }
+        if (!interrupted || followFlowRef.current) void fail();
+      } finally {
+        if (processingAbortRef.current === controller) {
+          processingAbortRef.current = null;
+        }
       }
     },
-    [family, markQueueFailed, updateQueue],
+    [family, markQueueFailed, router, updateQueue],
   );
 
-  const retryProcessing = useCallback(
-    async (item: QueueItem) => {
-      if (!item.documentId) {
-        await uploadOne(item);
-        return;
-      }
-      let processingStep = item.processingStep ?? "ocr";
-      try {
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? { ...candidate, state: "processing", error: undefined }
-              : candidate,
-          ),
-        );
-        await continueScannedDocumentPipeline(
-          item.documentId,
-          processingStep,
-          async (step) => {
-            processingStep = step;
-            await updateQueue((current) =>
-              current.map((candidate) =>
-                candidate.id === item.id
-                  ? { ...candidate, processingStep: step, state: "processing" }
-                  : candidate,
-              ),
-            );
-          },
-        );
-        await updateQueue((current) =>
-          current.map((candidate) =>
-            candidate.id === item.id
-              ? { ...candidate, processingStep: undefined, state: "done" }
-              : candidate,
-          ),
-        );
-        await removeStagedScannedDocument(item.uri);
-        void success();
-      } catch {
-        await markQueueFailed(item.id, {
-          documentId: item.documentId,
-          processingStep,
-          error:
-            processingStep === "analysis"
-              ? "Die Analyse hat nicht geklappt. Bitte erneut versuchen."
-              : "Die Texterkennung hat nicht geklappt. Bitte erneut versuchen.",
-        });
-        void fail();
-      }
-    },
-    [markQueueFailed, updateQueue, uploadOne],
-  );
+  const startQueueItem = useCallback(async (item: QueueItem) => {
+    const processing = processQueueItem(item);
+    processingPromiseRef.current = processing;
+    await processing;
+    if (processingPromiseRef.current === processing) {
+      processingPromiseRef.current = null;
+    }
+  }, [processQueueItem]);
 
   const uploadQueued = useCallback(async () => {
-    for (const item of queue) {
-      if (item.state === "queued") {
-        await uploadOne(item);
-      } else if (item.state === "failed") {
-        await retryProcessing(item);
-      }
-    }
-  }, [queue, retryProcessing, uploadOne]);
+    const item = queue.find(
+      (candidate) =>
+        candidate.state === "queued" || candidate.state === "failed",
+    );
+    if (!item) return;
+    await startQueueItem(item);
+  }, [queue, startQueueItem]);
 
   const pickImages = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -412,75 +597,198 @@ export default function ScanModal() {
   const isProcessing = queue.some(
     (item) => item.state === "uploading" || item.state === "processing",
   );
+  const close = useCallback(() => setSheetVisible(false), []);
+  const finishClose = useCallback(() => router.back(), [router]);
+  const leaveProcessing = useCallback(async (
+    keepRunning: boolean,
+    item?: QueueItem,
+  ) => {
+    followFlowRef.current = false;
+    detachServerPipelineRef.current = keepRunning;
+    processingAbortRef.current?.abort();
+    await processingPromiseRef.current;
+    if (keepRunning && item) {
+      await Promise.allSettled([
+        updateQueue((current) =>
+          current.filter((candidate) => candidate.id !== item.id),
+        ),
+        removeStagedScannedDocument(item.uri),
+      ]);
+    }
+    router.back();
+  }, [router, updateQueue]);
 
-  return (
-    <SafeAreaView edges={["top", "left", "right"]} style={styles.screen}>
-      <View style={styles.header}>
-        <View>
-          <Text style={[typography.display, styles.title]}>Dokument scannen</Text>
-          <Text style={[typography.timestamp, styles.subtitle]}>
-            Ordilo richtet das Dokument für dich aus.
-          </Text>
-        </View>
-        <Pressable
-          accessibilityLabel="Scanner schließen"
-          accessibilityRole="button"
-          onPress={() => router.back()}
-          style={styles.close}
-        >
-          <X color={colors.mistDark} size={20} />
-        </Pressable>
-      </View>
+  if (flow.phase === "processing") {
+    const item = queue.find((candidate) => candidate.id === flow.itemId);
+    const completedSteps =
+      flow.status === "uploading"
+        ? 0
+        : getDocumentPipelineStepsCompleted(flow.status);
+    const failed = Boolean(flow.error);
+    const processingStage = getProcessingStage(flow.status);
+    const processingCopy = PROCESSING_COPY[processingStage];
+    const canContinueInBackground = flow.serverPipeline === true && !failed;
+    const leaveTitle = canContinueInBackground
+      ? "Im Hintergrund weiterlaufen"
+      : failed
+        ? "Zur Ablage"
+        : "Später fortsetzen";
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+    return (
+      <Screen
+        style={[
+          styles.processingScreen,
+          {
+            paddingBottom: Math.max(insets.bottom, spacing.md),
+            paddingTop: insets.top,
+          },
+        ]}
       >
-        <View style={styles.captureStage}>
-          <View style={styles.captureIcon}>
-            <ScanLine color={colors.harborBlue} size={30} strokeWidth={1.6} />
+        <View style={styles.processingTopBar}>
+          <View>
+            <Text style={styles.processingEyebrow}>Dokument aufnehmen</Text>
+            <Text style={styles.processingTopTitle}>Ordilo ist dran</Text>
           </View>
-          <Text style={[typography.display, styles.captureTitle]}>
-            Brief scannen
-          </Text>
-          <Text style={[typography.body, styles.captureText]}>
-            Kanten, Zuschnitt und mehrere Seiten übernimmt dein Gerät.
-          </Text>
-          <OrdiloButton
-            disabled={scannerBusy || !queueHydrated}
-            icon={
-              scannerBusy ? (
-                <ActivityIndicator color={colors.warmWhite} />
-              ) : (
-                <ScanLine color={colors.warmWhite} size={18} />
-              )
+          <Pressable
+            accessibilityLabel={leaveTitle}
+            onPress={() =>
+              void leaveProcessing(canContinueInBackground, item)
             }
-            onPress={() => void runSystemScanner()}
+            style={styles.closeButton}
+          >
+            <X color={colors.graphite} size={22} />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.processingScroller}
+          showsVerticalScrollIndicator={false}
+          style={styles.processingScroll}
+        >
+          <Animated.View
+            entering={contentEntering()}
+            key={failed ? "failed" : "processing"}
+            style={styles.processingContent}
+          >
+            <View style={styles.characterWrap}>
+              {failed ? (
+                <View style={styles.failedCharacter}>
+                  <XCircle color={colors.destructive} size={40} />
+                </View>
+              ) : (
+                <ScanProcessingHero stage={processingStage} />
+              )}
+            </View>
+            <Animated.View
+              entering={contentEntering()}
+              key={failed ? "failed-copy" : processingStage}
+              style={styles.processingMessage}
+            >
+              <Text style={styles.processingHeading}>
+                {failed ? "Das hat noch nicht geklappt" : processingCopy.heading}
+              </Text>
+              <Text style={styles.processingCopy}>
+                {failed ? flow.error : processingCopy.description}
+              </Text>
+            </Animated.View>
+
+            {item ? (
+              <View style={styles.processingFile}>
+                <FilePlus2 color={colors.harborBlue} size={18} />
+                <Text numberOfLines={1} style={styles.processingFileName}>
+                  {item.name}
+                </Text>
+              </View>
+            ) : null}
+
+            <View style={styles.stepCard}>
+              {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
+                const done = index < completedSteps;
+                const active = !failed && index === completedSteps;
+                const failedStep = failed && index === completedSteps;
+
+                return (
+                  <View
+                    key={step.key}
+                    style={[
+                      styles.stepRow,
+                      index > 0 && styles.stepRowBorder,
+                    ]}
+                  >
+                    <Animated.View
+                      entering={done ? completionEntering(reduceMotion) : undefined}
+                      key={`${step.key}-${done ? "done" : active ? "active" : "waiting"}`}
+                      style={[
+                        styles.stepIcon,
+                        done && styles.stepIconDone,
+                        active && styles.stepIconActive,
+                        failedStep && styles.stepIconFailed,
+                      ]}
+                    >
+                      {done ? (
+                        <Check color={colors.warmWhite} size={16} strokeWidth={3} />
+                      ) : active ? (
+                        reduceMotion ? (
+                          <View style={styles.activeDot} />
+                        ) : (
+                          <ActivityIndicator color={colors.harborBlue} size="small" />
+                        )
+                      ) : failedStep ? (
+                        <X color={colors.destructive} size={16} strokeWidth={2.5} />
+                      ) : (
+                        <View style={styles.stepDot} />
+                      )}
+                    </Animated.View>
+                    <Text
+                      style={[
+                        styles.stepLabel,
+                        (done || active) && styles.stepLabelCurrent,
+                      ]}
+                    >
+                      {step.label}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Animated.View>
+        </ScrollView>
+
+        <View style={styles.processingActions}>
+          {failed && item ? (
+            <OrdiloButton
+              onPress={() => void startQueueItem(item)}
+              size="lg"
+              title="Erneut versuchen"
+            />
+          ) : null}
+          <OrdiloButton
+            onPress={() =>
+              void leaveProcessing(canContinueInBackground, item)
+            }
             size="lg"
-            title={scannerBusy ? "Scanner wird geöffnet" : "Dokument scannen"}
+            title={leaveTitle}
+            variant={failed ? "ghost" : "outline"}
           />
         </View>
+      </Screen>
+    );
+  }
 
-        <View style={styles.alternatives}>
-          <Text style={styles.alternativeLabel}>Oder auswählen</Text>
-          <View style={styles.secondaryActions}>
-            <OrdiloButton
-              disabled={!queueHydrated}
-              icon={<Images color={colors.graphite} size={17} />}
-              onPress={() => void pickImages()}
-              title="Fotos"
-              variant="outline"
-            />
-            <OrdiloButton
-              disabled={!queueHydrated}
-              icon={<FilePlus2 color={colors.graphite} size={17} />}
-              onPress={() => void pickFile()}
-              title="Datei"
-              variant="outline"
-            />
-          </View>
-        </View>
-
+  return (
+    <OrdiloFormSheet
+      closeAccessibilityLabel="Scanner schließen"
+      dismissDisabled={isProcessing}
+      onClose={close}
+      onDismiss={finishClose}
+      subtitle="Ordilo richtet das Dokument für dich aus."
+      title="Dokument scannen"
+      visible={sheetVisible}
+    >
+      <OrdiloFormBody
+        contentContainerStyle={styles.scrollContent}
+        ref={bodyRef}
+      >
         {error ? (
           <View accessibilityRole="alert" style={styles.error}>
             <Text style={styles.errorText}>{error}</Text>
@@ -498,7 +806,7 @@ export default function ScanModal() {
                   disabled={!family || isProcessing}
                   icon={<Upload color={colors.warmWhite} size={16} />}
                   onPress={() => void uploadQueued()}
-                  title={actionableCount === 1 ? "Weiter" : `${actionableCount} verarbeiten`}
+                  title="Weiter"
                 />
               ) : null}
             </View>
@@ -534,7 +842,7 @@ export default function ScanModal() {
                 ) : null}
                 {item.state === "failed" ? (
                   <OrdiloButton
-                    onPress={() => void retryProcessing(item)}
+                    onPress={() => void startQueueItem(item)}
                     title="Erneut"
                     variant="outline"
                   />
@@ -543,64 +851,253 @@ export default function ScanModal() {
             ))}
           </Card>
         ) : null}
-      </ScrollView>
-    </SafeAreaView>
+
+        <View style={styles.captureStage}>
+          <ScanHeroIllustration />
+          <Text style={[typography.display, styles.captureTitle]}>
+            Brief scannen
+          </Text>
+          <Text style={[typography.body, styles.captureText]}>
+            Kanten, Zuschnitt und mehrere Seiten übernimmt dein Gerät.
+          </Text>
+          <OrdiloButton
+            disabled={scannerBusy || !queueHydrated}
+            icon={
+              scannerBusy ? (
+                <ActivityIndicator color={colors.warmWhite} />
+              ) : (
+                <ScanLine color={colors.warmWhite} size={18} />
+              )
+            }
+            onPress={() => void runSystemScanner()}
+            size="lg"
+            title={scannerBusy ? "Scanner wird geöffnet" : "Dokument scannen"}
+          />
+        </View>
+
+        <View style={styles.alternatives}>
+          <View style={styles.alternativeHeading}>
+            <View style={styles.alternativeLine} />
+            <Text style={styles.alternativeLabel}>Oder auswählen</Text>
+            <View style={styles.alternativeLine} />
+          </View>
+          <View style={styles.secondaryActions}>
+            <ScanSecondaryAction
+              accessibilityLabel="Fotos auswählen"
+              disabled={!queueHydrated}
+              icon={<Images color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+              label="Fotos"
+              onPress={() => void pickImages()}
+            />
+            <ScanSecondaryAction
+              accessibilityLabel="Datei auswählen"
+              disabled={!queueHydrated}
+              icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+              label="Datei"
+              onPress={() => void pickFile()}
+            />
+          </View>
+        </View>
+      </OrdiloFormBody>
+    </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: colors.warmWhite,
-    flex: 1,
-    paddingHorizontal: spacing.md,
+  processingScreen: {
+    justifyContent: "space-between",
   },
-  header: {
+  processingScroll: {
+    flex: 1,
+  },
+  processingScroller: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingVertical: spacing.md,
+  },
+  processingTopBar: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingTop: spacing.sm,
+    minHeight: 64,
   },
-  title: { color: colors.graphite },
-  subtitle: { color: colors.mistDark, marginTop: spacing.xs },
-  close: {
+  processingEyebrow: {
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  processingTopTitle: {
+    color: colors.graphite,
+    ...typography.display,
+  },
+  closeButton: {
     alignItems: "center",
     backgroundColor: colors.sand,
-    borderRadius: 22,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
     height: 44,
     justifyContent: "center",
     width: 44,
   },
-  scrollContent: {
-    gap: spacing.lg,
-    paddingBottom: spacing.xl,
-    paddingTop: spacing.xl,
-  },
-  captureStage: {
+  processingContent: {
     alignItems: "center",
+    alignSelf: "center",
+    gap: spacing.sm,
+    maxWidth: 420,
+    width: "100%",
+  },
+  characterWrap: {
+    alignItems: "center",
+    height: 166,
+    justifyContent: "center",
+  },
+  failedCharacter: {
+    alignItems: "center",
+    backgroundColor: colors.destructiveBackground,
+    borderRadius: radii.pill,
+    height: 80,
+    justifyContent: "center",
+    width: 80,
+  },
+  processingHeading: {
+    ...typography.display,
+    color: colors.harborBlueDarker,
+    fontSize: 23,
+    lineHeight: 30,
+    textAlign: "center",
+  },
+  processingMessage: {
+    alignItems: "center",
+    gap: spacing.sm,
+  },
+  processingCopy: {
+    color: colors.mistDark,
+    maxWidth: 340,
+    textAlign: "center",
+    ...typography.body,
+  },
+  processingFile: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+    maxWidth: "100%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  processingFileName: {
+    color: colors.harborBlueDarker,
+    flexShrink: 1,
+    ...typography.timestamp,
+  },
+  stepCard: {
+    ...cardRestShadow,
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.xl,
+    marginTop: spacing.md,
+    paddingHorizontal: spacing.md,
+    width: "100%",
   },
-  captureIcon: {
+  stepRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 64,
+  },
+  stepRowBorder: {
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  stepIcon: {
     alignItems: "center",
     backgroundColor: colors.sandLight,
-    borderRadius: 32,
-    height: 64,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 32,
     justifyContent: "center",
-    marginBottom: spacing.sm,
-    width: 64,
+    width: 32,
   },
-  captureTitle: { color: colors.graphite },
+  stepIconDone: {
+    backgroundColor: colors.harborBlue,
+    borderColor: colors.harborBlue,
+  },
+  stepIconActive: {
+    backgroundColor: colors.blueSoft,
+    borderColor: colors.harborBlue,
+  },
+  activeDot: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
+  },
+  stepIconFailed: {
+    backgroundColor: colors.destructiveBackground,
+    borderColor: colors.destructive,
+  },
+  stepDot: {
+    backgroundColor: colors.mist,
+    borderRadius: radii.pill,
+    height: 6,
+    width: 6,
+  },
+  stepLabel: {
+    color: colors.mistDark,
+    flex: 1,
+    ...typography.body,
+  },
+  stepLabelCurrent: {
+    color: colors.graphite,
+    ...typography.title,
+  },
+  processingActions: {
+    gap: spacing.sm,
+  },
+  scrollContent: {
+    gap: spacing.lg,
+    paddingBottom: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  captureStage: {
+    ...cardRestShadow,
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    gap: spacing.sm,
+    overflow: "hidden",
+    paddingBottom: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.sm,
+  },
+  captureTitle: {
+    color: colors.harborBlueDarker,
+    fontSize: 22,
+    lineHeight: 29,
+  },
   captureText: {
     color: colors.mistDark,
-    marginBottom: spacing.sm,
-    maxWidth: 280,
+    marginBottom: spacing.md,
+    maxWidth: 300,
     textAlign: "center",
   },
-  alternatives: { gap: spacing.sm },
+  alternatives: { gap: spacing.md },
+  alternativeHeading: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+  },
+  alternativeLine: {
+    backgroundColor: colors.mistLight,
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
   alternativeLabel: {
     color: colors.mistDark,
     fontFamily: typography.timestamp.fontFamily,
@@ -610,7 +1107,31 @@ const styles = StyleSheet.create({
   secondaryActions: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  secondaryAction: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "center",
+    minHeight: 64,
+    paddingHorizontal: spacing.md,
+  },
+  secondaryActionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  secondaryActionLabel: {
+    color: colors.graphite,
+    ...typography.title,
   },
   error: {
     backgroundColor: colors.destructiveBackground,

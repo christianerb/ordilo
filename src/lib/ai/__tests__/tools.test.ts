@@ -28,7 +28,11 @@ vi.mock("@/lib/supabase/document-helpers", () => ({
   restoreConfirmedAfterAnalysisFailure: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { executeTool, CONFIRMATION_TOOLS } from "@/lib/ai/tools";
+import {
+  executeTool,
+  CONFIRMATION_TOOLS,
+  TOOL_DEFINITIONS,
+} from "@/lib/ai/tools";
 import type { ToolContext } from "@/lib/ai/tools";
 import type { ChatSource } from "@/lib/schemas/chat";
 import {
@@ -116,6 +120,34 @@ function makeThenableChain(data: unknown, error: unknown = null) {
     reject?: (e: unknown) => unknown,
   ) => Promise.resolve({ data, error }).then(resolve, reject);
   return chain;
+}
+
+function makeContactCtx({
+  insertError = null,
+}: {
+  insertError?: unknown;
+} = {}) {
+  let capturedInsert: Record<string, unknown> | null = null;
+  const from = vi.fn((table: string) => {
+    if (table !== "contacts") return makeThenableChain(null);
+    return {
+      insert: vi.fn((payload: Record<string, unknown>) => {
+        capturedInsert = payload;
+        return Promise.resolve({ data: null, error: insertError });
+      }),
+    };
+  });
+
+  return {
+    ctx: {
+      client: { from } as unknown as ToolContext["client"],
+      familyId: "fam-1",
+      sources: [] as ChatSource[],
+      speakerName: null,
+      userId: "user-1",
+    },
+    getInsert: () => capturedInsert,
+  };
 }
 
 /**
@@ -279,6 +311,110 @@ describe("mark_task_done confirmation gate", () => {
     const parsed = JSON.parse(result);
 
     expect(parsed.error).toBe("Aufgabe konnte nicht aktualisiert werden.");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// add_contact confirmation gate
+// ---------------------------------------------------------------------------
+
+describe("add_contact confirmation gate", () => {
+  it("exposes add_contact to the model", () => {
+    expect(TOOL_DEFINITIONS.some((tool) => tool.name === "add_contact")).toBe(
+      true,
+    );
+  });
+
+  it("requires confirmation without writing", async () => {
+    const { ctx, getInsert } = makeContactCtx();
+    const result = await executeTool(
+      "add_contact",
+      { name: "Hein Blöd", phone: "+49 30 123456" },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(CONFIRMATION_TOOLS.has("add_contact")).toBe(true);
+    expect(parsed).toMatchObject({
+      needs_confirmation: true,
+      contact_name: "Hein Blöd",
+      phone: "+49 30 123456",
+    });
+    expect(getInsert()).toBeNull();
+  });
+
+  it("requires a name and at least one valid contact channel", async () => {
+    const { ctx, getInsert } = makeContactCtx();
+    const missingChannel = JSON.parse(
+      await executeTool("add_contact", { name: "Hein Blöd" }, ctx),
+    );
+    const invalidEmail = JSON.parse(
+      await executeTool(
+        "add_contact",
+        { name: "Hein Blöd", email: "ohne-at-zeichen" },
+        ctx,
+      ),
+    );
+
+    expect(missingChannel.error).toBe(
+      "Telefonnummer oder E-Mail-Adresse fehlt.",
+    );
+    expect(invalidEmail.error).toBe("Bitte prüfe die E-Mail-Adresse.");
+    expect(getInsert()).toBeNull();
+  });
+
+  it("writes a confirmed contact into the active chat family", async () => {
+    const { ctx, getInsert } = makeContactCtx();
+    const result = await executeTool(
+      "add_contact",
+      {
+        name: "  Hein Blöd ",
+        organization: " Praxis Nord ",
+        role: " Hausarzt ",
+        email: "HEIN@EXAMPLE.DE",
+        confirmed: true,
+      },
+      ctx,
+    );
+    const parsed = JSON.parse(result);
+
+    expect(getInsert()).toEqual({
+      family_id: "fam-1",
+      name: "Hein Blöd",
+      organization: "Praxis Nord",
+      role: "Hausarzt",
+      phone: null,
+      email: "hein@example.de",
+      status: "confirmed",
+      created_by: "user-1",
+    });
+    expect(parsed).toMatchObject({
+      success: true,
+      name: "Hein Blöd",
+    });
+  });
+
+  it("refuses a confirmed contact without creator provenance", async () => {
+    const { ctx, getInsert } = makeContactCtx();
+    const contextWithoutUser: ToolContext = {
+      ...ctx,
+      userId: undefined,
+    };
+
+    const result = JSON.parse(
+      await executeTool(
+        "add_contact",
+        {
+          name: "Hein Blöd",
+          phone: "+49 30 123456",
+          confirmed: true,
+        },
+        contextWithoutUser,
+      ),
+    );
+
+    expect(result.error).toBe("Kontakt konnte nicht angelegt werden.");
+    expect(getInsert()).toBeNull();
   });
 });
 

@@ -3,7 +3,9 @@ import {
   buildChatHistory,
   buildMarkTaskDoneUndo,
   formatChatDate,
+  formatChatMessageTime,
   getActionContent,
+  getChatThinkingLabel,
   getSuggestedContactAction,
   getToolStepLabel,
   mergeConfirmationProposal,
@@ -14,6 +16,7 @@ import {
 
 const baseMessage: ChatMessage = {
   id: "ai-1",
+  createdAt: "2026-08-21T10:05:00",
   dbId: null,
   role: "assistant",
   text: "",
@@ -24,6 +27,41 @@ const baseMessage: ChatMessage = {
   status: "streaming",
   feedback: null,
 };
+
+describe("chat message time formatting", () => {
+  it("formats valid local timestamps once in the German short-time style", () => {
+    expect(formatChatMessageTime("2026-08-21T10:05:00")).toBe("10:05");
+  });
+
+  it("falls back to Jetzt for malformed timestamps", () => {
+    expect(formatChatMessageTime("not-a-date")).toBe("Jetzt");
+  });
+});
+
+describe("chat thinking status", () => {
+  it("describes the current tool and answer-writing phase", () => {
+    expect(getChatThinkingLabel([])).toBe("Ordilo denkt nach …");
+    expect(
+      getChatThinkingLabel([
+        { toolName: "search_documents", state: "start" },
+      ]),
+    ).toBe("Durchsucht deine Dokumente …");
+    expect(
+      getChatThinkingLabel([
+        { toolName: "search_documents", state: "done" },
+      ]),
+    ).toBe("Ordilo formuliert die Antwort …");
+  });
+
+  it("keeps a still-running parallel tool as the visible status", () => {
+    expect(
+      getChatThinkingLabel([
+        { toolName: "search_documents", state: "start" },
+        { toolName: "list_documents", state: "done" },
+      ]),
+    ).toBe("Durchsucht deine Dokumente …");
+  });
+});
 
 describe("NDJSON chunk splitting", () => {
   it("splits complete lines and keeps the incomplete tail", () => {
@@ -95,6 +133,26 @@ describe("chat stream event parsing", () => {
           task_title: "Elternabend vormerken",
           due_date: "2026-09-01",
         },
+      },
+    });
+  });
+
+  it("accepts a contact proposal from the shared chat API", () => {
+    expect(
+      parseChatStreamEvent({
+        type: "confirmation_request",
+        tool_name: "add_contact",
+        action_id: "contact-1",
+        action_args: { name: "Hein Blöd", phone: "+49 30 123456" },
+        needs_confirmation: true,
+        contact_name: "Hein Blöd",
+      }),
+    ).toMatchObject({
+      type: "confirmation",
+      action: {
+        id: "contact-1",
+        toolName: "add_contact",
+        state: "ready",
       },
     });
   });
@@ -254,6 +312,32 @@ describe("action card content (ported from the web)", () => {
     expect(note.eyebrow).toBe("Zugangsdaten anlegen");
     expect(note.title).toBe("Neue Zugangsdaten");
     expect(note.details).toEqual([{ label: "URL", value: "https://stadtwerke.de" }]);
+  });
+
+  it("shows every supplied field in a contact proposal", () => {
+    expect(
+      getActionContent({
+        id: "a-contact",
+        toolName: "add_contact",
+        args: {
+          name: "Hein Blöd",
+          organization: "Praxis Nord",
+          role: "Hausarzt",
+          phone: "+49 30 123456",
+          email: "hein@example.de",
+        },
+        state: "ready",
+      }),
+    ).toEqual({
+      eyebrow: "Kontakt vorbereiten",
+      title: "Hein Blöd",
+      details: [
+        { label: "Organisation", value: "Praxis Nord" },
+        { label: "Rolle", value: "Hausarzt" },
+        { label: "Telefon", value: "+49 30 123456" },
+        { label: "E-Mail", value: "hein@example.de" },
+      ],
+    });
   });
 
   it("falls back to generic German titles", () => {

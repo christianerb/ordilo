@@ -4,7 +4,6 @@ import * as Haptics from "expo-haptics";
 import * as Linking from "expo-linking";
 import {
   AlertCircle,
-  ArrowLeft,
   Check,
   ChevronRight,
   Copy,
@@ -20,18 +19,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
-import { useReducedMotion } from "react-native-reanimated";
 
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSheet,
+} from "@/src/components/sheet";
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, EmptyState, OrdiloButton, Screen } from "@/src/components/ui";
+import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import {
   buildNoteUpdatePayload,
   getNoteContent,
@@ -53,7 +57,6 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
-import { modalAnimationType } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const noteTypes = Object.entries(documentTypeLabels) as [DocumentType, string][];
@@ -99,9 +102,13 @@ export default function NoteScreen() {
     void Promise.resolve().then(load);
   }, [load]);
 
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const deleteNote = useCallback(async () => {
     if (!id || deleting) return;
     setDeleting(true);
+    setDeleteError(null);
     removeLibraryDocumentOptimistically(id);
     try {
       await deleteDocument(id);
@@ -111,21 +118,15 @@ export default function NoteScreen() {
       refreshLibraryDocuments();
       setDeleting(false);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Notiz nicht gelöscht", "Bitte prüfe deine Verbindung und versuch es nochmal.");
+      setDeleteError("Die Notiz konnte nicht gelöscht werden. Bitte prüfe deine Verbindung und versuch es nochmal.");
     }
   }, [deleting, id, router]);
 
   const askToDelete = useCallback(() => {
     if (!note || deleting) return;
-    Alert.alert(
-      "Notiz löschen?",
-      `"${note.title?.trim() || "Diese Notiz"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`,
-      [
-        { text: "Abbrechen", style: "cancel" },
-        { text: "Löschen", style: "destructive", onPress: () => void deleteNote() },
-      ],
-    );
-  }, [deleteNote, deleting, note]);
+    setDeleteError(null);
+    setDeleteOpen(true);
+  }, [deleting, note]);
 
   const openOriginal = useCallback(async () => {
     if (!id || openingOriginal) return;
@@ -148,13 +149,20 @@ export default function NoteScreen() {
   }, [id, openingOriginal]);
 
   if (loading) {
-    return <Screen style={styles.center}><ActivityIndicator accessibilityLabel="Notiz wird geladen" color={colors.harborBlue} /></Screen>;
+    return (
+      <Screen style={styles.screen}>
+        <DetailTopBar onBack={() => router.back()} title="Notiz" />
+        <View style={styles.loadingContent}>
+          <ListSkeleton rows={4} />
+        </View>
+      </Screen>
+    );
   }
 
   if (!note || !("summary" in note)) {
     return (
       <Screen>
-        <NoteHeader onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} title="Notiz" />
         <EmptyState
           icon={AlertCircle}
           heading="Notiz nicht verfügbar"
@@ -172,9 +180,20 @@ export default function NoteScreen() {
 
   return (
     <Screen style={styles.screen}>
-      <NoteHeader
+      <DetailTopBar
         onBack={() => router.back()}
-        onEdit={editable ? () => setShowEditor(true) : undefined}
+        title="Notiz"
+        trailing={editable ? (
+          <Pressable
+            accessibilityLabel="Angaben bearbeiten"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => setShowEditor(true)}
+            style={styles.edit}
+          >
+            <Pencil color={colors.harborBlue} size={19} />
+          </Pressable>
+        ) : undefined}
       />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.hero}>
@@ -249,24 +268,18 @@ export default function NoteScreen() {
           }}
         />
       ) : null}
+      <ConfirmDialog
+        error={deleteError}
+        loading={deleting}
+        loadingLabel="Wird gelöscht …"
+        message={`"${note.title?.trim() || "Diese Notiz"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => void deleteNote()}
+        title="Notiz löschen?"
+        visible={deleteOpen}
+      />
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
-  );
-}
-
-function NoteHeader({ onBack, onEdit }: { onBack: () => void; onEdit?: () => void }) {
-  return (
-    <View style={styles.topbar}>
-      <Pressable accessibilityLabel="Zurück" accessibilityRole="button" hitSlop={8} onPress={onBack} style={styles.back}>
-        <ArrowLeft color={colors.graphite} size={22} />
-      </Pressable>
-      <Text style={styles.topTitle}>Notiz</Text>
-      {onEdit ? (
-        <Pressable accessibilityLabel="Angaben bearbeiten" accessibilityRole="button" hitSlop={8} onPress={onEdit} style={styles.edit}>
-          <Pencil color={colors.harborBlue} size={19} />
-        </Pressable>
-      ) : <View style={styles.edit} />}
-    </View>
   );
 }
 
@@ -394,7 +407,6 @@ function SecretEditor({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const [secret, setSecret] = useState("");
   const [showSecret, setShowSecret] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -417,26 +429,25 @@ function SecretEditor({
   };
 
   return (
-    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={saving ? undefined : onClose} presentationStyle="overFullScreen" transparent visible>
-      <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
-          <View style={styles.handle} />
-          <Text style={styles.editorTitle}>Passwort ändern</Text>
-          <Text style={styles.editorHint}>Leer lassen, um das gespeicherte Passwort zu entfernen.</Text>
-          <View style={styles.secretEditorField}>
-            <TextInput
-              accessibilityLabel="Neues Passwort"
-              autoCapitalize="none"
-              autoCorrect={false}
-              maxLength={10_000}
-              onChangeText={setSecret}
-              placeholder="Passwort, PIN oder Code"
-              placeholderTextColor={colors.mistDark}
-              secureTextEntry={!showSecret}
-              style={styles.secretEditorInput}
-              value={secret}
-            />
-            <Pressable
+    <OrdiloFormSheet
+      dismissDisabled={saving}
+      keyboardAvoiding
+      onClose={onClose}
+      subtitle="Leer lassen, um das gespeicherte Passwort zu entfernen."
+      title="Passwort ändern"
+      visible
+    >
+      <OrdiloFormBody>
+        <OrdiloFormField label="Passwort">
+          <OrdiloFormInput
+            accessibilityLabel="Neues Passwort"
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={10_000}
+            onChangeText={setSecret}
+            placeholder="Passwort, PIN oder Code"
+            secureTextEntry={!showSecret}
+            trailing={<Pressable
               accessibilityLabel={showSecret ? "Passwort verbergen" : "Passwort anzeigen"}
               accessibilityRole="button"
               hitSlop={8}
@@ -445,21 +456,23 @@ function SecretEditor({
               {showSecret
                 ? <EyeOff color={colors.mistDark} size={19} />
                 : <Eye color={colors.mistDark} size={19} />}
-            </Pressable>
-          </View>
-          {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-          <View style={styles.editorFooter}>
-            <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
-            <OrdiloButton
-              disabled={saving}
-              icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
-              onPress={() => void save()}
-              title={saving ? "Wird gespeichert …" : "Speichern"}
-            />
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+            </Pressable>}
+            value={secret}
+          />
+        </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton
+          disabled={saving}
+          icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : undefined}
+          onPress={() => void save()}
+          size="lg"
+          title={saving ? "Wird gespeichert …" : "Speichern"}
+        />}
+        secondary={<OrdiloButton disabled={saving} onPress={onClose} size="lg" title="Abbrechen" variant="outline" />}
+      />
+    </OrdiloFormSheet>
   );
 }
 
@@ -474,7 +487,6 @@ function NoteMetadataEditor({
   onClose: () => void;
   onSaved: (changes: Pick<ReviewAnalysis, "title" | "summary" | "document_type">) => void;
 }) {
-  const reduceMotion = useReducedMotion();
   const [title, setTitle] = useState(note.title);
   const [summary, setSummary] = useState(note.summary);
   const [documentType, setDocumentType] = useState(note.document_type);
@@ -502,40 +514,43 @@ function NoteMetadataEditor({
   };
 
   return (
-    <Modal animationType={modalAnimationType(reduceMotion)} onRequestClose={onClose} presentationStyle="overFullScreen" transparent visible>
-      <Pressable onPress={saving ? undefined : onClose} style={styles.overlay}>
-        <Pressable onPress={(event) => event.stopPropagation()} style={styles.editorSheet}>
-          <View style={styles.handle} />
-          <Text style={styles.editorTitle}>Angaben bearbeiten</Text>
-          <Text style={styles.editorHint}>Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert.</Text>
-          <ScrollView contentContainerStyle={styles.editorForm} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>Titel</Text>
-            <TextInput accessibilityLabel="Titel der Notiz" maxLength={200} onChangeText={setTitle} style={styles.input} value={title} />
-            <Text style={styles.label}>Art</Text>
-            <ScrollView contentContainerStyle={styles.typeChips} horizontal showsHorizontalScrollIndicator={false}>
-              {noteTypes.map(([type, label]) => (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: documentType === type }}
-                  key={type}
-                  onPress={() => setDocumentType(type)}
-                  style={({ pressed }) => [styles.typeChip, documentType === type && styles.typeChipSelected, pressed && styles.pressed]}
-                >
-                  <Text style={[styles.typeChipText, documentType === type && styles.typeChipTextSelected]}>{label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Text style={styles.label}>Kurz gesagt</Text>
-            <TextInput accessibilityLabel="Kurz gesagt" maxLength={10_000} multiline onChangeText={setSummary} style={[styles.input, styles.summaryInput]} textAlignVertical="top" value={summary} />
-            {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
+    <OrdiloFormSheet
+      dismissDisabled={saving}
+      keyboardAvoiding
+      onClose={onClose}
+      subtitle="Text, Bild und Passwort bleiben geschützt und werden hier nicht geändert."
+      title="Angaben bearbeiten"
+      visible
+    >
+      <OrdiloFormBody>
+        <OrdiloFormField label="Titel">
+          <OrdiloFormInput accessibilityLabel="Titel der Notiz" maxLength={200} onChangeText={setTitle} value={title} />
+        </OrdiloFormField>
+        <OrdiloFormField label="Art">
+          <ScrollView contentContainerStyle={styles.typeChips} horizontal showsHorizontalScrollIndicator={false}>
+            {noteTypes.map(([type, label]) => (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: documentType === type }}
+                key={type}
+                onPress={() => setDocumentType(type)}
+                style={({ pressed }) => [styles.typeChip, documentType === type && styles.typeChipSelected, pressed && styles.pressed]}
+              >
+                <Text style={[styles.typeChipText, documentType === type && styles.typeChipTextSelected]}>{label}</Text>
+              </Pressable>
+            ))}
           </ScrollView>
-          <View style={styles.editorFooter}>
-            <OrdiloButton disabled={saving} onPress={onClose} title="Abbrechen" variant="outline" />
-            <OrdiloButton disabled={saving} icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={17} />} onPress={() => void save()} title={saving ? "Wird gespeichert …" : "Speichern"} />
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </OrdiloFormField>
+        <OrdiloFormField label="Kurz gesagt">
+          <OrdiloFormInput accessibilityLabel="Kurz gesagt" maxLength={10_000} multiline onChangeText={setSummary} value={summary} />
+        </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        error={error}
+        primary={<OrdiloButton disabled={saving} icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={17} />} onPress={() => void save()} size="lg" title={saving ? "Wird gespeichert …" : "Speichern"} />}
+        secondary={<OrdiloButton disabled={saving} onPress={onClose} size="lg" title="Abbrechen" variant="outline" />}
+      />
+    </OrdiloFormSheet>
   );
 }
 
@@ -552,10 +567,7 @@ function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; 
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  center: { alignItems: "center", justifyContent: "center" },
-  topbar: { alignItems: "center", flexDirection: "row", height: 60, justifyContent: "space-between", paddingHorizontal: spacing.md },
-  back: { alignItems: "center", height: 44, justifyContent: "center", marginLeft: -6, width: 44 },
-  topTitle: { color: colors.graphite, ...typography.title },
+  loadingContent: { paddingHorizontal: spacing.md },
   edit: { alignItems: "center", height: 44, justifyContent: "center", marginRight: -6, width: 44 },
   content: { gap: spacing.md, padding: spacing.md, paddingBottom: spacing["2xl"] },
   hero: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
@@ -575,24 +587,11 @@ const styles = StyleSheet.create({
   secretHeader: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   secretValue: { backgroundColor: colors.sandLight, borderRadius: radii.base, color: colors.graphite, padding: 12, ...typography.body },
   secretActions: { flexDirection: "row", gap: spacing.sm },
-  secretEditorField: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, flexDirection: "row", gap: spacing.sm, margin: spacing.md, minHeight: 44, paddingHorizontal: 12 },
-  secretEditorInput: { color: colors.graphite, flex: 1, minHeight: 44, ...typography.body },
-  overlay: { backgroundColor: "rgba(38, 36, 33, 0.28)", flex: 1, justifyContent: "flex-end" },
-  editorSheet: { backgroundColor: colors.warmWhite, borderTopLeftRadius: radii.xl, borderTopRightRadius: radii.xl, maxHeight: "85%", paddingBottom: spacing.md },
-  handle: { alignSelf: "center", backgroundColor: colors.mistLight, borderRadius: radii.pill, height: 4, marginBottom: spacing.md, marginTop: spacing.sm, width: 40 },
-  editorTitle: { color: colors.graphite, paddingHorizontal: spacing.md, ...typography.display },
-  editorHint: { color: colors.mistDark, paddingHorizontal: spacing.md, paddingTop: spacing.xs, ...typography.timestamp },
-  editorForm: { gap: spacing.sm, padding: spacing.md },
-  label: { color: colors.graphite, ...typography.label },
-  input: { borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 44, paddingHorizontal: 12, ...typography.body },
-  summaryInput: { minHeight: 112, paddingTop: 10 },
   typeChips: { gap: spacing.xs },
   typeChip: { alignItems: "center", borderColor: colors.mistLight, borderRadius: radii.pill, borderWidth: 1, height: 36, justifyContent: "center", paddingHorizontal: 12 },
   typeChipSelected: { backgroundColor: colors.harborBlue, borderColor: colors.harborBlue },
   typeChipText: { color: colors.mistDark, ...typography.label },
   typeChipTextSelected: { color: colors.warmWhite },
-  error: { color: colors.destructive, ...typography.timestamp },
-  editorFooter: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.sm, justifyContent: "flex-end", paddingHorizontal: spacing.md, paddingTop: spacing.md },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.5 },
 });

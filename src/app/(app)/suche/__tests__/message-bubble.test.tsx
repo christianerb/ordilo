@@ -456,6 +456,32 @@ describe("MessageBubble — Ordilo Action Card", () => {
     );
     expect(onDismiss).toHaveBeenCalledWith("msg-1");
   });
+
+  it("renders a contact proposal with its saved contact details", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          action: {
+            id: "contact-action",
+            toolName: "add_contact",
+            args: {
+              name: "Hein Blöd",
+              phone: "+49 30 123456",
+              email: "hein@example.de",
+            },
+            state: "ready",
+          },
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Kontakt vorbereiten")).toBeDefined();
+    expect(screen.getByText("Hein Blöd")).toBeDefined();
+    expect(screen.getByText("+49 30 123456")).toBeDefined();
+    expect(screen.getByText("hein@example.de")).toBeDefined();
+  });
 });
 
 describe("MessageBubble — feedback icons", () => {

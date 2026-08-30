@@ -1,12 +1,26 @@
 import {
   calendarDays,
+  createPlannerEvent,
   eventOccursOn,
   eventsForDay,
+  formatEventDateInput,
   formatEventPeople,
+  parseEventDateInput,
   toCalendarDate,
   upcomingPlannerEvents,
+  validatePlannerEventInput,
   type PlannerEvent,
 } from "../lib/calendar";
+
+const mockRpc = jest.fn();
+
+jest.mock("../lib/supabase", () => ({
+  getSupabase: () => ({ rpc: mockRpc }),
+}));
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
 
 const event: PlannerEvent = {
   id: "event-1",
@@ -85,5 +99,83 @@ describe("native calendar", () => {
 
     expect(ongoing.starts_on).toBe("2026-08-10");
     expect(ongoing.ends_on).toBe("2026-08-12");
+  });
+
+  it("round-trips German event dates and rejects impossible days", () => {
+    expect(formatEventDateInput("2026-08-28")).toBe("28.08.2026");
+    expect(parseEventDateInput("28.8.2026")).toBe("2026-08-28");
+    expect(parseEventDateInput("31.02.2026")).toBeNull();
+  });
+
+  it("validates timed event ranges", () => {
+    const input = {
+      title: "Elternabend",
+      date: "2026-08-28",
+      allDay: false,
+      startsTime: "18:00",
+      endsTime: "17:00",
+      location: "",
+      note: "",
+      attendeeIds: [],
+    };
+    expect(validatePlannerEventInput(input)).toEqual({
+      success: false,
+      error: "Das Ende muss nach dem Beginn liegen.",
+    });
+    expect(
+      validatePlannerEventInput({ ...input, endsTime: "19:00" }).success,
+    ).toBe(true);
+    expect(validatePlannerEventInput({ ...input, startsTime: "24:00" })).toEqual({
+      success: false,
+      error: "Bitte gib Beginn und Ende als Uhrzeit ein.",
+    });
+    expect(validatePlannerEventInput({ ...input, endsTime: "18:60" })).toEqual({
+      success: false,
+      error: "Bitte gib Beginn und Ende als Uhrzeit ein.",
+    });
+  });
+
+  it("creates an event and its attendees through one atomic RPC", async () => {
+    mockRpc.mockResolvedValue({
+      data: {
+        ...event,
+        all_day: false,
+        created_at: "2026-08-28T12:00:00Z",
+        created_by: "user-1",
+        document_id: null,
+        family_id: "family-1",
+        recurrence: "none",
+      },
+      error: null,
+    });
+
+    await expect(createPlannerEvent("family-1", {
+      title: "Elternabend",
+      date: "2026-08-28",
+      allDay: false,
+      startsTime: "18:00",
+      endsTime: "19:00",
+      location: "Schule",
+      note: "Raum 2",
+      attendeeIds: ["member-1"],
+    })).resolves.toMatchObject({
+      success: true,
+      event: { attendee_ids: ["member-1"], title: "Schwimmen" },
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith(
+      "create_calendar_event_with_attendees",
+      {
+        p_all_day: false,
+        p_attendee_ids: ["member-1"],
+        p_date: "2026-08-28",
+        p_ends_time: "19:00",
+        p_family_id: "family-1",
+        p_location: "Schule",
+        p_note: "Raum 2",
+        p_starts_time: "18:00",
+        p_title: "Elternabend",
+      },
+    );
   });
 });

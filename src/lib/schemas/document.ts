@@ -3,6 +3,9 @@ import { FileText, ImageIcon, type LucideIcon } from "lucide-react";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
+  DOCUMENT_PIPELINE_STEPS,
+  DOCUMENT_PIPELINE_STATUSES,
+  getDocumentPipelineStepsCompleted,
   MAX_DOCUMENT_FILE_SIZE,
   MAX_DOCUMENT_FILE_SIZE_LABEL,
   type AcceptedDocumentMimeType,
@@ -72,15 +75,7 @@ export const IMAGE_MIME_TYPES = [
  *                 ↓                              ↓
  *               failed                         failed
  */
-export const DOCUMENT_STATUSES = [
-  "uploaded",
-  "ocr_processing",
-  "ocr_done",
-  "analyzing",
-  "analyzed",
-  "confirmed",
-  "failed",
-] as const;
+export const DOCUMENT_STATUSES = DOCUMENT_PIPELINE_STATUSES;
 
 export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 
@@ -149,11 +144,7 @@ export function isProcessingStatus(status: string): boolean {
  * wizard and the compact ReviewCard processing state so both narrate the
  * same real progress with the same German labels.
  */
-export const PIPELINE_STEPS = [
-  { key: "upload", label: "Foto wird hochgeladen" },
-  { key: "ocr", label: "Text wird erkannt" },
-  { key: "analysis", label: "Inhalt wird verstanden" },
-] as const;
+export const PIPELINE_STEPS = DOCUMENT_PIPELINE_STEPS;
 
 /**
  * How many of the three pipeline steps are complete for a given document
@@ -161,19 +152,7 @@ export const PIPELINE_STEPS = [
  * from the real, persisted status.
  */
 export function getPipelineStepsCompleted(status: string): number {
-  switch (status as DocumentStatus) {
-    case "uploaded":
-    case "ocr_processing":
-      return 1;
-    case "ocr_done":
-    case "analyzing":
-      return 2;
-    case "analyzed":
-    case "confirmed":
-      return 3;
-    default:
-      return 0;
-  }
+  return getDocumentPipelineStepsCompleted(status);
 }
 
 /**

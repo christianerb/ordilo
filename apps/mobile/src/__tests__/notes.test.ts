@@ -11,6 +11,14 @@ import {
 } from "../lib/notes";
 import type { ReviewAnalysis } from "../lib/document-review";
 
+jest.mock("expo-file-system", () => ({
+  File: class MockNoteFile extends Blob {
+    constructor(uri: string) {
+      super([uri], { type: "image/jpeg" });
+    }
+  },
+}));
+
 jest.mock("../lib/api", () => ({
   apiFetch: jest.fn(),
 }));
@@ -90,6 +98,11 @@ describe("native notes helpers", () => {
         documentType: "note",
         familyId: "family-1",
         secret: "nicht-im-text",
+        attachment: {
+          mimeType: "image/jpeg",
+          name: "router.jpg",
+          uri: "file:///cache/router.jpg",
+        },
       }),
     ).resolves.toMatchObject({ document_id: "note-1", status: "confirmed" });
 
@@ -98,6 +111,7 @@ describe("native notes helpers", () => {
       method: "POST",
     }));
     expect(options?.body).toBeInstanceOf(FormData);
+    expect((options?.body as FormData).get("file")).toBeInstanceOf(Blob);
   });
 
   it("uses only the supported protected PATCH fields for a confirmed note", async () => {

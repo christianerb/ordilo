@@ -1,6 +1,19 @@
 import { apiJson, getApiUrl } from "./api";
+import {
+  CHAT_ACTION_TOOL_NAMES,
+  CHAT_TOOL_STEP_LABELS,
+  formatChatActionDate,
+  getChatActionContent,
+  type ChatActionContent,
+  type ChatActionToolName,
+} from "@ordilo/chat-contract";
 import { buildWhatsAppHref, normalizePhoneForLink } from "./contacts";
 import { getSupabase } from "./supabase";
+
+export {
+  CHAT_ACTION_TOOL_NAMES,
+  type ChatActionToolName,
+} from "@ordilo/chat-contract";
 
 /**
  * „Ordilo fragen" — chat client for the native app.
@@ -56,21 +69,6 @@ export interface AnswerCard {
   };
 }
 
-export const CHAT_ACTION_TOOL_NAMES = [
-  "add_calendar_event",
-  "add_task",
-  "update_task",
-  "mark_task_done",
-  "add_family_member",
-  "create_collection",
-  "create_note",
-  "move_document_to_collection",
-  "add_document_tags",
-  "save_document_fact",
-] as const;
-
-export type ChatActionToolName = (typeof CHAT_ACTION_TOOL_NAMES)[number];
-
 export type ChatActionState =
   | "ready"
   | "confirming"
@@ -120,6 +118,8 @@ export type ChatStreamEvent =
 export interface ChatMessage {
   /** Local id ("user-…"/"ai-…"); dbId arrives via message_saved. */
   id: string;
+  /** Local send time for the calm conversation metadata shown on-device. */
+  createdAt: string;
   dbId: string | null;
   role: "user" | "assistant";
   text: string;
@@ -129,6 +129,18 @@ export interface ChatMessage {
   toolCalls: ToolCallProgress[];
   status: "streaming" | "done" | "error" | "rate_limited";
   feedback: "positive" | "negative" | null;
+}
+
+const chatMessageTimeFormatter = new Intl.DateTimeFormat("de-DE", {
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+export function formatChatMessageTime(createdAt: string): string {
+  const date = new Date(createdAt);
+  return Number.isNaN(date.getTime())
+    ? "Jetzt"
+    : chatMessageTimeFormatter.format(date);
 }
 
 // ---------------------------------------------------------------------------
@@ -149,25 +161,24 @@ export const CHAT_EXAMPLE_PROMPTS: string[] = [
 ];
 
 /** Live status line per tool call (ported from processing-checklist.tsx). */
-export const TOOL_STEP_LABELS: Record<string, string> = {
-  search_documents: "Durchsucht deine Dokumente",
-  list_documents: "Sieht die Dokumentenliste durch",
-  list_tasks: "Prüft Aufgaben und Fristen",
-  add_task: "Legt die Aufgabe an",
-  update_task: "Aktualisiert die Aufgabe",
-  create_collection: "Legt die Sammlung an",
-  create_note: "Speichert die Notiz",
-  list_family_members: "Schaut, wer zur Familie gehört",
-  graph_query: "Verfolgt Zusammenhänge",
-  mark_task_done: "Erledigt die Aufgabe",
-  save_document_fact: "Speichert die Nummer",
-  move_document_to_collection: "Sortiert das Dokument ein",
-  add_document_tags: "Ergänzt Schlagworte",
-  add_family_member: "Legt das Familienmitglied an",
-};
+export const TOOL_STEP_LABELS = CHAT_TOOL_STEP_LABELS;
 
 export function getToolStepLabel(toolName: string): string {
   return TOOL_STEP_LABELS[toolName] ?? "Arbeitet";
+}
+
+export function getChatThinkingLabel(
+  toolCalls: ToolCallProgress[],
+): string {
+  const active = [...toolCalls]
+    .reverse()
+    .find((call) => call.state === "start");
+  const latest = active ?? toolCalls[toolCalls.length - 1];
+
+  if (active) return `${getToolStepLabel(active.toolName)} …`;
+  if (latest?.state === "error") return "Da ist was schiefgegangen.";
+  if (latest?.state === "done") return "Ordilo formuliert die Antwort …";
+  return "Ordilo denkt nach …";
 }
 
 export const CHAT_FEEDBACK_REASONS = [
@@ -400,135 +411,17 @@ export function buildMarkTaskDoneUndo(
 // Action card content (ported from ordilo-action-card.tsx)
 // ---------------------------------------------------------------------------
 
-export interface ActionCardContent {
-  eyebrow: string;
-  title: string;
-  details: AnswerCardField[];
+export type ActionCardContent = ChatActionContent;
+
+export function formatChatDate(
+  iso: string | null | undefined,
+): string | null {
+  return formatChatActionDate(iso);
 }
 
-function asText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-/** "2026-07-15" (or ISO datetime) → "15.07.2026"; null when invalid. */
-export function formatChatDate(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const dateOnly = iso.split(/[T ]/)[0];
-  const parts = dateOnly.split("-");
-  if (parts.length !== 3) return null;
-  const [year, month, day] = parts;
-  if (!/^\d{4}$/.test(year) || !/^\d{2}$/.test(month) || !/^\d{2}$/.test(day)) {
-    return null;
-  }
-  return `${day}.${month}.${year}`;
-}
-
-/** Eyebrow, title and detail rows for a proposed action card. */
+/** Shared cross-platform copy and details for a proposed action card. */
 export function getActionContent(action: ChatAction): ActionCardContent {
-  const args = action.args;
-
-  switch (action.toolName) {
-    case "add_task": {
-      const dueDate = asText(args.due_date);
-      const assignee = asText(args.assignee_name);
-      return {
-        eyebrow: "Aufgabe vorbereiten",
-        title: asText(args.title) ?? "Neue Aufgabe",
-        details: [
-          ...(dueDate
-            ? [{ label: "Frist", value: formatChatDate(dueDate) || dueDate }]
-            : []),
-          ...(assignee ? [{ label: "Für", value: assignee }] : []),
-        ],
-      };
-    }
-    case "add_calendar_event": {
-      const start = asText(args.starts_on);
-      const end = asText(args.ends_on);
-      const time = asText(args.starts_time);
-      const date =
-        start && end && end !== start
-          ? `${formatChatDate(start) || start} bis ${formatChatDate(end) || end}`
-          : start
-            ? formatChatDate(start) || start
-            : null;
-      return {
-        eyebrow: "Termin vorbereiten",
-        title: asText(args.title) ?? "Neuer Termin",
-        details: [
-          ...(date ? [{ label: "Wann", value: date }] : []),
-          ...(time ? [{ label: "Uhrzeit", value: time }] : []),
-        ],
-      };
-    }
-    case "mark_task_done":
-      return {
-        eyebrow: "Aufgabe abschließen",
-        title: asText(args.task_title) ?? "Aufgabe erledigen",
-        details: [],
-      };
-    case "add_family_member":
-      return {
-        eyebrow: "Familie ergänzen",
-        title: `${asText(args.name) ?? asText(args.member_name) ?? "Neue Person"} hinzufügen`,
-        details: [],
-      };
-    case "create_collection":
-      return {
-        eyebrow: "Sammlung anlegen",
-        title: asText(args.name) ?? asText(args.collection_name) ?? "Neue Sammlung",
-        details: [],
-      };
-    case "create_note": {
-      const isCredentials = asText(args.document_type) === "credentials";
-      const details: AnswerCardField[] = [];
-      if (isCredentials) {
-        const url = asText(args.url);
-        const username = asText(args.username);
-        if (url) details.push({ label: "URL", value: url });
-        if (username) details.push({ label: "Benutzername", value: username });
-      }
-      return {
-        eyebrow: isCredentials ? "Zugangsdaten anlegen" : "Notiz anlegen",
-        title: asText(args.title) ?? (isCredentials ? "Neue Zugangsdaten" : "Neue Notiz"),
-        details,
-      };
-    }
-    case "move_document_to_collection":
-      return {
-        eyebrow: "Dokument einsortieren",
-        title: asText(args.document_title) ?? "Dokument verschieben",
-        details: asText(args.collection_name)
-          ? [{ label: "Sammlung", value: asText(args.collection_name)! }]
-          : [],
-      };
-    case "add_document_tags": {
-      const tags = Array.isArray(args.tags)
-        ? args.tags.filter((tag): tag is string => typeof tag === "string")
-        : [];
-      return {
-        eyebrow: "Schlagworte ergänzen",
-        title: asText(args.document_title) ?? "Dokument ergänzen",
-        details: tags.length
-          ? [{ label: "Schlagworte", value: tags.join(", ") }]
-          : [],
-      };
-    }
-    case "save_document_fact":
-      return {
-        eyebrow: "Angabe merken",
-        title: asText(args.document_title) ?? "Angabe speichern",
-        details: asText(args.value)
-          ? [{ label: asText(args.label) ?? "Angabe", value: asText(args.value)! }]
-          : [],
-      };
-    case "update_task":
-      return {
-        eyebrow: "Aufgabe ändern",
-        title: asText(args.task_title) ?? "Aufgabe anpassen",
-        details: [],
-      };
-  }
+  return getChatActionContent(action);
 }
 
 // ---------------------------------------------------------------------------

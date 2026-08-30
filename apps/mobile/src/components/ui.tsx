@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react-native";
+import { ChevronLeft, type LucideIcon } from "lucide-react-native";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Pressable,
@@ -27,6 +27,8 @@ import {
   pressScale,
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+
+import { OrdiloMark } from "./ordilo-mark";
 
 /**
  * Shared UI primitives for the native app, following DESIGN.md:
@@ -197,6 +199,11 @@ export function Screen({
   );
 }
 
+/**
+ * The one compact screen header for every tab: a bordered journal card
+ * with quiet landscape washes, the Ordilo mark, and an optional action.
+ * Its outer measurements never vary between screens.
+ */
 export function ScreenHeader({
   action,
   title,
@@ -207,31 +214,162 @@ export function ScreenHeader({
     accessibilityLabel: string;
     icon: LucideIcon;
     onPress: () => void;
+    tone?: "primary" | "quiet";
   };
   title: string;
   subtitle?: string;
   trailing?: ReactNode;
 }) {
   const ActionIcon = action?.icon;
+  const hasAction = Boolean(action || trailing);
   return (
     <View style={styles.header}>
-      <View style={styles.headerCopy}>
-        <Text style={[typography.display, styles.headerTitle]}>{title}</Text>
+      <View accessible={false} style={styles.headerWashOne} />
+      <View accessible={false} style={styles.headerWashTwo} />
+      <View accessible={false} style={styles.headerDotOne} />
+      <View accessible={false} style={styles.headerDotTwo} />
+      <View
+        style={[
+          styles.headerCopy,
+          hasAction ? styles.headerCopyWithAction : styles.headerCopyWithoutAction,
+        ]}
+      >
+        <Text numberOfLines={1} style={[typography.display, styles.headerTitle]}>
+          {title}
+        </Text>
         {subtitle ? (
-          <Text style={[typography.timestamp, styles.headerSubtitle]}>
+          <Text
+            numberOfLines={1}
+            style={[typography.timestamp, styles.headerSubtitle]}
+          >
             {subtitle}
           </Text>
         ) : null}
       </View>
-      {trailing ?? (action && ActionIcon ? (
-        <SpringPressable
-          accessibilityLabel={action.accessibilityLabel}
-          onPress={action.onPress}
-          style={styles.headerAction}
-        >
-          <ActionIcon color={colors.warmWhite} size={20} strokeWidth={2.2} />
-        </SpringPressable>
-      ) : null)}
+      <View pointerEvents="box-none" style={styles.headerActionSlot}>
+        {trailing ?? (action && ActionIcon ? (
+          <SpringPressable
+            accessibilityLabel={action.accessibilityLabel}
+            onPress={action.onPress}
+            style={[
+              styles.headerAction,
+              action.tone === "quiet"
+                ? styles.headerActionQuiet
+                : styles.headerActionPrimary,
+            ]}
+          >
+            <ActionIcon
+              color={
+                action.tone === "quiet"
+                  ? colors.harborBlue
+                  : colors.warmWhite
+              }
+              size={20}
+              strokeWidth={2.1}
+            />
+          </SpringPressable>
+        ) : null)}
+      </View>
+      <View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={styles.headerMark}
+      >
+        <OrdiloMark size={42} />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * The one view switcher (Dokumente/Notizen, Aufgaben/Termine): a sand
+ * track where the active segment fills in harbor blue.
+ */
+export function SegmentedControl({
+  items,
+  style,
+}: {
+  items: readonly {
+    icon: LucideIcon;
+    label: string;
+    onPress: () => void;
+    selected: boolean;
+  }[];
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View style={[styles.segmented, style]}>
+      {items.map((item) => {
+        const ItemIcon = item.icon;
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ selected: item.selected }}
+            key={item.label}
+            onPress={item.onPress}
+            style={({ pressed }) => [
+              styles.segment,
+              item.selected && styles.segmentSelected,
+              pressed && styles.segmentPressed,
+            ]}
+          >
+            <ItemIcon
+              color={item.selected ? colors.warmWhite : colors.mistDark}
+              size={17}
+            />
+            <Text
+              style={[
+                styles.segmentText,
+                item.selected && styles.segmentTextSelected,
+              ]}
+            >
+              {item.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * The one top bar for detail and stack screens: back chevron on the
+ * left, optional title and subtitle beside it, optional actions on the
+ * right. List screens that show a ScreenHeader pass no title.
+ */
+export function DetailTopBar({
+  onBack,
+  title,
+  subtitle,
+  trailing,
+}: {
+  onBack: () => void;
+  title?: string;
+  subtitle?: string;
+  trailing?: ReactNode;
+}) {
+  return (
+    <View style={styles.detailTopBar}>
+      <SpringPressable
+        accessibilityLabel="Zurück"
+        onPress={onBack}
+        style={styles.detailBack}
+      >
+        <ChevronLeft color={colors.graphite} size={22} strokeWidth={2} />
+      </SpringPressable>
+      {title ? (
+        <View style={styles.detailTopCopy}>
+          <Text numberOfLines={1} style={styles.detailTopTitle}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text numberOfLines={1} style={styles.detailTopSubtitle}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
+      {trailing}
     </View>
   );
 }
@@ -325,31 +463,147 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   header: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    paddingTop: spacing.md,
-    paddingBottom: spacing.lg,
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    height: 96,
+    justifyContent: "flex-end",
+    marginTop: spacing.sm,
+    overflow: "hidden",
+    padding: 14,
+    ...cardRestShadow,
+  },
+  headerWashOne: {
+    backgroundColor: colors.washSage,
+    borderRadius: radii.pill,
+    bottom: -65,
+    height: 94,
+    left: -34,
+    opacity: 0.88,
+    position: "absolute",
+    transform: [{ rotate: "7deg" }],
+    width: 235,
+  },
+  headerWashTwo: {
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.pill,
+    bottom: -69,
+    height: 96,
+    opacity: 0.96,
+    position: "absolute",
+    right: -26,
+    transform: [{ rotate: "-8deg" }],
+    width: 218,
+  },
+  headerDotOne: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 6,
+    opacity: 0.16,
+    position: "absolute",
+    right: 130,
+    top: 17,
+    width: 6,
+  },
+  headerDotTwo: {
+    backgroundColor: colors.warmApricot,
+    borderRadius: radii.pill,
+    height: 7,
+    opacity: 0.32,
+    position: "absolute",
+    right: 117,
+    top: 10,
+    width: 7,
   },
   headerCopy: {
-    flex: 1,
-    gap: spacing.xs,
+    gap: 2,
+    zIndex: 1,
   },
+  headerCopyWithAction: { paddingRight: 116 },
+  headerCopyWithoutAction: { paddingRight: 62 },
   headerTitle: {
     color: colors.graphite,
   },
   headerSubtitle: {
     color: colors.mistDark,
   },
+  headerActionSlot: {
+    position: "absolute",
+    right: 76,
+    top: 20,
+    zIndex: 1,
+  },
   headerAction: {
     alignItems: "center",
-    backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
     height: 44,
     justifyContent: "center",
     width: 44,
   },
+  headerActionPrimary: {
+    backgroundColor: colors.harborBlue,
+  },
+  headerActionQuiet: {
+    backgroundColor: colors.washSage,
+    borderColor: colors.mistLight,
+    borderWidth: 1,
+  },
+  headerMark: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: 18,
+    borderWidth: 1,
+    elevation: 2,
+    height: 52,
+    justifyContent: "center",
+    position: "absolute",
+    right: 14,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    top: 14,
+    width: 52,
+  },
+  segmented: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    padding: spacing.xs,
+  },
+  segment: {
+    alignItems: "center",
+    borderRadius: radii.base,
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 40,
+    justifyContent: "center",
+  },
+  segmentSelected: { backgroundColor: colors.harborBlue },
+  segmentPressed: { opacity: 0.76 },
+  segmentText: { color: colors.mistDark, ...typography.label },
+  segmentTextSelected: { color: colors.warmWhite },
+  detailTopBar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 60,
+    paddingHorizontal: spacing.sm,
+  },
+  detailBack: {
+    alignItems: "center",
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  detailTopCopy: { flex: 1, gap: 2, minWidth: 0 },
+  detailTopTitle: { color: colors.graphite, ...typography.title },
+  detailTopSubtitle: { color: colors.mistDark, ...typography.timestamp },
   card: {
     backgroundColor: colors.sand,
     borderColor: colors.mistLight,

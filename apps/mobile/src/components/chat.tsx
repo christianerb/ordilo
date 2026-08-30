@@ -15,7 +15,7 @@ import {
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -25,21 +25,25 @@ import {
   View,
 } from "react-native";
 import Animated, {
-  ReduceMotion,
+  cancelAnimation,
+  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withRepeat,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 
-import { OrdiloButton } from "./ui";
+import { OrdiloMark } from "./ordilo-mark";
+import { OrdiloButton, Skeleton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
 import {
   CHAT_FEEDBACK_REASONS,
+  formatChatMessageTime,
   getActionContent,
+  getChatThinkingLabel,
   getSuggestedContactAction,
-  getToolStepLabel,
   type AnswerCard,
   type ChatAction,
   type ChatFeedbackReason,
@@ -47,6 +51,12 @@ import {
   type ChatSource,
   type ToolCallProgress,
 } from "@/src/lib/chat";
+import {
+  contentEntering,
+  feedbackEntering,
+  feedbackExiting,
+  REDUCE_MOTION,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -55,29 +65,133 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  * German and mirrors the web (src/app/(app)/suche).
  */
 
-/** One live status line while Ordilo works (ported from the web). */
-export function ChatStatusLine({
+const THINKING_LINE_WIDTHS = ["92%", "52%", "78%", "47%", "30%"] as const;
+const THINKING_DOTS = [0, 1, 2] as const;
+
+function ThinkingDot({
+  index,
+  progress,
+  reduceMotion,
+}: {
+  index: number;
+  progress: SharedValue<number>;
+  reduceMotion: boolean;
+}) {
+  const animatedStyle = useAnimatedStyle(() => {
+    if (reduceMotion) return { opacity: 0.7 };
+    const phase = progress.get() * Math.PI * 2 - index * ((Math.PI * 2) / 3);
+    const emphasis = (Math.sin(phase - Math.PI / 2) + 1) / 2;
+    return {
+      opacity: 0.45 + emphasis * 0.55,
+      transform: [
+        { translateY: -2 * emphasis },
+        { scale: 0.9 + emphasis * 0.1 },
+      ],
+    };
+  }, [index, reduceMotion]);
+
+  return <Animated.View style={[styles.thinkingDot, animatedStyle]} />;
+}
+
+function ThinkingDots({ reduceMotion }: { reduceMotion: boolean }) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      progress.set(0);
+      return;
+    }
+    progress.set(
+      withRepeat(
+        withTiming(1, {
+          duration: 1_200,
+          easing: Easing.linear,
+        }),
+        -1,
+        false,
+      ),
+    );
+    return () => cancelAnimation(progress);
+  }, [progress, reduceMotion]);
+
+  return (
+    <View style={styles.thinkingDotsChip}>
+      {THINKING_DOTS.map((index) => (
+        <ThinkingDot
+          index={index}
+          key={index}
+          progress={progress}
+          reduceMotion={reduceMotion}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** Calm placeholder shown until Ordilo starts streaming the real answer. */
+export function ChatThinkingState({
   toolCalls,
-  hasText,
 }: {
   toolCalls: ToolCallProgress[];
-  hasText: boolean;
 }) {
-  const active = [...toolCalls].reverse().find((call) => call.state === "start");
-  const latest = active ?? toolCalls[toolCalls.length - 1];
-
-  let label = "Ordilo denkt nach …";
-  if (hasText) label = "Schreibt die Antwort …";
-  else if (active) label = `${getToolStepLabel(active.toolName)} …`;
-  else if (latest?.state === "error") label = "Da ist was schiefgegangen.";
+  const label = getChatThinkingLabel(toolCalls);
+  const reduceMotion = useReducedMotion();
 
   return (
     <View
       accessibilityLiveRegion="polite"
-      style={styles.statusLine}
+      style={styles.thinking}
     >
-      <ActivityIndicator color={colors.harborBlue} size="small" />
-      <Text style={styles.statusText}>{label}</Text>
+      <Animated.View
+        entering={feedbackEntering(reduceMotion)}
+        exiting={feedbackExiting()}
+        style={styles.thinkingStatusRow}
+      >
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.thinkingAvatar}
+        >
+          <OrdiloMark size={30} />
+        </View>
+        <View style={styles.thinkingStatusPill}>
+          {reduceMotion ? (
+            <View style={styles.thinkingStaticIndicator} />
+          ) : (
+            <ActivityIndicator color={colors.harborBlue} size="small" />
+          )}
+          <Animated.Text
+            entering={contentEntering()}
+            key={label}
+            style={styles.thinkingStatusText}
+          >
+            {label}
+          </Animated.Text>
+        </View>
+      </Animated.View>
+
+      <Animated.View
+        accessible={false}
+        entering={feedbackEntering(reduceMotion).delay(
+          reduceMotion ? 0 : 70,
+        )}
+        exiting={feedbackExiting()}
+        importantForAccessibility="no-hide-descendants"
+        style={styles.thinkingCard}
+      >
+        <ThinkingDots reduceMotion={reduceMotion} />
+        <View style={styles.thinkingLines}>
+          {THINKING_LINE_WIDTHS.map((width) => (
+            <Skeleton
+              height={10}
+              key={width}
+              radius={radii.pill}
+              style={styles.thinkingLine}
+              width={width}
+            />
+          ))}
+        </View>
+      </Animated.View>
     </View>
   );
 }
@@ -91,8 +205,22 @@ export function MessageBubble({
   children?: React.ReactNode;
 }) {
   const isUser = message.role === "user";
+  const messageTime = useMemo(
+    () => formatChatMessageTime(message.createdAt),
+    [message.createdAt],
+  );
+
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
+      {!isUser ? (
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.bubbleAvatar}
+        >
+          <OrdiloMark size={30} />
+        </View>
+      ) : null}
       <View
         accessibilityLiveRegion={
           !isUser && message.status === "streaming" ? "polite" : "none"
@@ -103,6 +231,11 @@ export function MessageBubble({
           <Text selectable style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
             {message.text}
             {message.status === "streaming" && !isUser ? " ▍" : ""}
+          </Text>
+        ) : null}
+        {message.text ? (
+          <Text style={[styles.bubbleTime, isUser && styles.bubbleTimeUser]}>
+            {messageTime}
           </Text>
         ) : null}
         {children}
@@ -549,53 +682,79 @@ function CopyAnswerButton({ text }: { text: string }) {
   );
 }
 
-const VOICE_WAVE_SAMPLES = 11;
+const VOICE_WAVE_SAMPLES = 31;
+const VOICE_WAVE_INTERVAL_MS = 85;
 
 function VoiceWaveBar({
-  sample,
+  index,
+  samples,
 }: {
-  sample: SharedValue<number>;
+  index: number;
+  samples: SharedValue<number[]>;
 }) {
   const style = useAnimatedStyle(() => ({
-    transform: [{ scaleY: Math.max(0.16, sample.get()) }],
-  }));
+    transform: [
+      {
+        scaleY: withTiming(
+          Math.max(0.12, samples.get()[index] ?? 0.12),
+          { duration: 70, reduceMotion: REDUCE_MOTION },
+        ),
+      },
+    ],
+  }), [index]);
   return <Animated.View style={[styles.voiceBar, style]} />;
 }
 
 /**
- * A short rolling audio history, rather than five copies of the current
- * meter. Reanimated keeps each bar's settling motion off the JS thread.
+ * Rolling audio history: a quiet cadence proves the recorder is live,
+ * while the real meter produces visibly taller peaks as someone speaks.
  */
 function VoiceWaveform({ level }: { level: number }) {
   const reduceMotion = useReducedMotion();
-  const samples = [
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-    useSharedValue(0.16),
-  ];
-  const samplesRef = useRef(samples);
+  const levelRef = useRef(level);
+  const tickRef = useRef(0);
+  const initialSamples = useMemo(
+    () => Array.from({ length: VOICE_WAVE_SAMPLES }, () => 0.12),
+    [],
+  );
+  const historyRef = useRef(initialSamples);
+  const samples = useSharedValue<number[]>(initialSamples);
 
   useEffect(() => {
-    const next = Math.max(0.16, Math.min(1, level));
-    const values = samplesRef.current.map((sample) => sample.get());
-    const duration = reduceMotion ? 0 : 120;
-    samplesRef.current.forEach((sample, index) => {
-      sample.set(
-        withTiming(
-          index === VOICE_WAVE_SAMPLES - 1 ? next : values[index + 1]!,
-          { duration, reduceMotion: ReduceMotion.System },
-        ),
+    levelRef.current = level;
+    if (reduceMotion) {
+      const signal = Math.max(0.12, Math.min(1, level));
+      historyRef.current = Array.from(
+        { length: VOICE_WAVE_SAMPLES },
+        (_, index) => (index % 3 === 1 ? signal : signal * 0.65),
       );
-    });
-  }, [level, reduceMotion]);
+      samples.set(historyRef.current);
+    }
+  }, [level, reduceMotion, samples]);
+
+  useEffect(() => {
+    if (reduceMotion) return;
+
+    const interval = setInterval(() => {
+      tickRef.current += 1;
+      const tick = tickRef.current;
+      const signal = Math.max(
+        0,
+        Math.min(1, (levelRef.current - 0.06) / 0.94),
+      );
+      const cadence =
+        0.14 + 0.08 * ((Math.sin(tick * 0.9) + 1) / 2);
+      const texture =
+        (Math.sin(tick * 1.7) + Math.sin(tick * 0.63) + 2) / 4;
+      const voicePeak =
+        signal * (0.18 + 0.82 * Math.pow(texture, 1.8));
+      const next = Math.max(cadence, voicePeak);
+      historyRef.current = [...historyRef.current.slice(1), next];
+      samples.set(historyRef.current);
+    }, VOICE_WAVE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [reduceMotion, samples]);
 
   return (
     <View
@@ -603,8 +762,12 @@ function VoiceWaveform({ level }: { level: number }) {
       importantForAccessibility="no-hide-descendants"
       style={styles.voiceWave}
     >
-      {samples.map((sample, index) => (
-        <VoiceWaveBar key={index} sample={sample} />
+      {Array.from({ length: VOICE_WAVE_SAMPLES }, (_, index) => (
+        <VoiceWaveBar
+          index={index}
+          key={index}
+          samples={samples}
+        />
       ))}
     </View>
   );
@@ -621,50 +784,48 @@ function VoiceRecordingPanel({
   onCancel: () => void;
   onFinish: () => void;
 }) {
+  const reduceMotion = useReducedMotion();
+
   return (
-    <View
+    <Animated.View
       accessibilityLabel={`Aufnahme läuft, ${formatVoiceDuration(durationMillis)}`}
       accessibilityLiveRegion="polite"
-      style={styles.voicePanel}
+      entering={feedbackEntering(reduceMotion)}
+      exiting={feedbackExiting()}
+      style={styles.voiceRecorder}
     >
-      <View style={styles.voicePanelHeader}>
-        <View style={styles.voicePanelStatus}>
-          <View accessibilityElementsHidden style={styles.voiceRecordingDot} />
-          <Text style={styles.voicePanelTitle}>Aufnahme läuft</Text>
-        </View>
-        <Text style={styles.voiceDuration}>
-          {formatVoiceDuration(durationMillis)}
-        </Text>
-      </View>
+      <Pressable
+        accessibilityLabel="Aufnahme verwerfen"
+        accessibilityRole="button"
+        hitSlop={4}
+        onPress={onCancel}
+        style={({ pressed }) => [
+          styles.voiceRecorderCancel,
+          pressed && styles.pressed,
+        ]}
+      >
+        <X color={colors.mistDark} size={18} strokeWidth={2} />
+      </Pressable>
       <VoiceWaveform level={level} />
-      <Text style={styles.voiceInstruction}>Tippe auf Fertig, wenn du fertig bist.</Text>
-      <View style={styles.voicePanelActions}>
-        <Pressable
-          accessibilityLabel="Aufnahme verwerfen"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onCancel}
-          style={({ pressed }) => [
-            styles.voicePanelSecondaryAction,
-            pressed && styles.pressed,
-          ]}
-        >
-          <X color={colors.mistDark} size={18} strokeWidth={2} />
-          <Text style={styles.voicePanelSecondaryText}>Verwerfen</Text>
-        </Pressable>
-        <Pressable
-          accessibilityLabel="Aufnahme beenden"
-          accessibilityRole="button"
-          onPress={onFinish}
-          style={({ pressed }) => [
-            styles.voicePanelPrimaryAction,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.voicePanelPrimaryText}>Fertig</Text>
-        </Pressable>
-      </View>
-    </View>
+      <Text style={styles.voiceDuration}>
+        {formatVoiceDuration(durationMillis)}
+      </Text>
+      <Pressable
+        accessibilityLabel="Aufnahme beenden"
+        accessibilityRole="button"
+        onPress={onFinish}
+        style={({ pressed }) => [
+          styles.voiceRecorderFinish,
+          pressed && styles.pressed,
+        ]}
+      >
+        <Square
+          color={colors.warmWhite}
+          fill={colors.warmWhite}
+          size={14}
+        />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -707,78 +868,68 @@ export function ChatComposer({
           onCancel={() => onVoiceCancel?.()}
           onFinish={() => onVoiceFinish?.()}
         />
-      ) : null}
-      <View style={styles.composer}>
-        <TextInput
-          accessibilityLabel="Frage an Ordilo"
-          accessibilityState={{ disabled: recording || voiceWorking }}
-          autoCapitalize="sentences"
-          editable={!recording && !voiceWorking}
-          multiline
-          onChangeText={onChange}
-          onSubmitEditing={canSend ? onSend : undefined}
-          placeholder="Frage Ordilo …"
-          placeholderTextColor={colors.mistDark}
-          ref={inputRef}
-          returnKeyType="send"
-          style={styles.composerInput}
-          value={value}
-        />
-        <View style={styles.composerActions}>
-          <Pressable
-            accessibilityHint={
-              recording
-                ? "Beendet die Aufnahme"
-                : "Tippe, um eine Sprachfrage aufzunehmen"
-            }
-            accessibilityLabel={
-              voiceStatus === "transcribing"
-                ? "Sprache wird in Text umgewandelt"
-                : recording
-                  ? "Aufnahme beenden"
-                  : "Sprachfrage aufnehmen"
-            }
-            accessibilityRole="button"
-            accessibilityState={{ disabled: !voiceEnabled }}
-            disabled={!voiceEnabled}
-            hitSlop={4}
-            onPress={recording ? onVoiceFinish : onVoiceStart}
-            style={({ pressed }) => [
-              styles.voiceButton,
-              recording && styles.voiceButtonRecording,
-              pressed && styles.pressed,
-              !voiceEnabled && styles.composerSendDisabled,
-            ]}
-          >
-            {voiceWorking ? (
-              <ActivityIndicator color={colors.warmWhite} size="small" />
-            ) : recording ? (
-              <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
-            ) : (
-              <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
-            )}
-          </Pressable>
-          {canSend ? (
+      ) : (
+        <View style={styles.composer}>
+          <TextInput
+            accessibilityLabel="Frage an Ordilo"
+            accessibilityState={{ disabled: voiceWorking }}
+            autoCapitalize="sentences"
+            editable={!voiceWorking}
+            multiline
+            onChangeText={onChange}
+            onSubmitEditing={canSend ? onSend : undefined}
+            placeholder="Frage Ordilo …"
+            placeholderTextColor={colors.mistDark}
+            ref={inputRef}
+            returnKeyType="send"
+            style={styles.composerInput}
+            value={value}
+          />
+          <View style={styles.composerActions}>
             <Pressable
-              accessibilityLabel="Frage senden"
+              accessibilityHint="Tippe, um eine Sprachfrage aufzunehmen"
+              accessibilityLabel={
+                voiceStatus === "transcribing"
+                  ? "Sprache wird in Text umgewandelt"
+                  : "Sprachfrage aufnehmen"
+              }
               accessibilityRole="button"
-              disabled={recording}
-              onPress={onSend}
+              accessibilityState={{ disabled: !voiceEnabled }}
+              disabled={!voiceEnabled}
+              hitSlop={4}
+              onPress={onVoiceStart}
               style={({ pressed }) => [
-                styles.composerSend,
-                recording && styles.composerSendDisabled,
+                styles.voiceButton,
                 pressed && styles.pressed,
+                !voiceEnabled && styles.composerSendDisabled,
               ]}
             >
-              {busy ? (
+              {voiceWorking ? (
                 <ActivityIndicator color={colors.warmWhite} size="small" />
               ) : (
-                <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+                <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
               )}
             </Pressable>
-          ) : null}
+            {canSend ? (
+              <Pressable
+                accessibilityLabel="Frage senden"
+                accessibilityRole="button"
+                onPress={onSend}
+                style={({ pressed }) => [
+                  styles.composerSend,
+                  pressed && styles.pressed,
+                ]}
+              >
+                {busy ? (
+                  <ActivityIndicator color={colors.warmWhite} size="small" />
+                ) : (
+                  <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+                )}
+              </Pressable>
+            ) : null}
+          </View>
         </View>
-      </View>
+      )}
     </View>
   );
 }
@@ -789,31 +940,125 @@ function formatVoiceDuration(durationMillis: number): string {
 }
 
 const styles = StyleSheet.create({
-  statusLine: {
+  thinking: {
+    gap: 12,
+    paddingHorizontal: spacing.xs,
+  },
+  thinkingStatusRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 28,
+  },
+  thinkingAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  thinkingStatusPill: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 40,
+    paddingHorizontal: 12,
+  },
+  thinkingStatusText: {
+    color: colors.mistDark,
+    flexShrink: 1,
+    ...typography.timestamp,
+  },
+  thinkingStaticIndicator: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 8,
+    width: 8,
+  },
+  thinkingCard: {
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    gap: spacing.md,
+    marginLeft: 48,
+    padding: spacing.md,
+    width: "82%",
+  },
+  thinkingDotsChip: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.base,
+    flexDirection: "row",
+    gap: spacing.xs,
+    height: 32,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  thinkingDot: {
+    backgroundColor: colors.warmApricotLight,
+    borderRadius: radii.pill,
+    height: 5,
+    width: 5,
+  },
+  thinkingLines: { gap: 12 },
+  thinkingLine: {
+    backgroundColor: colors.washSageSoft,
+  },
+  bubbleRow: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
     paddingHorizontal: spacing.xs,
   },
-  statusText: { color: colors.mistDark, ...typography.timestamp },
-  bubbleRow: { flexDirection: "row", paddingHorizontal: spacing.xs },
   bubbleRowUser: { justifyContent: "flex-end" },
-  bubble: {
-    borderRadius: radii.md,
-    gap: spacing.sm,
-    maxWidth: "88%",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  bubbleAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    marginTop: 2,
+    width: 40,
   },
-  bubbleUser: { backgroundColor: colors.harborBlue },
+  bubble: {
+    borderRadius: radii.sm,
+    gap: spacing.sm,
+    maxWidth: "82%",
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+  },
+  bubbleUser: {
+    backgroundColor: colors.harborBlue,
+    borderBottomRightRadius: 4,
+  },
   bubbleAi: {
-    backgroundColor: colors.sand,
+    backgroundColor: colors.warmWhite,
+    borderBottomLeftRadius: 4,
     borderColor: colors.mistLight,
     borderWidth: 1,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
   },
   bubbleText: { color: colors.graphite, ...typography.body },
   bubbleTextUser: { color: colors.warmWhite },
+  bubbleTime: {
+    alignSelf: "flex-start",
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  bubbleTimeUser: {
+    alignSelf: "flex-end",
+    color: colors.warmWhite,
+  },
   sources: { gap: spacing.xs, marginTop: spacing.xs },
   sourcesHeading: { color: colors.mistDark, ...typography.label },
   sourceCard: {
@@ -958,9 +1203,14 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
+    elevation: 2,
     flexDirection: "row",
     gap: spacing.xs,
     padding: spacing.xs,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
   },
   composerInput: {
     color: colors.graphite,
@@ -968,7 +1218,7 @@ const styles = StyleSheet.create({
     maxHeight: 96,
     minHeight: 40,
     paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
+    paddingVertical: spacing.sm,
     textAlignVertical: "center",
     ...typography.body,
   },
@@ -994,75 +1244,59 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 40,
   },
-  voiceButtonRecording: {
-    backgroundColor: colors.warmApricot,
-  },
-  voicePanel: {
-    backgroundColor: colors.sand,
+  voiceRecorder: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    gap: spacing.sm,
-    padding: spacing.md,
-  },
-  voicePanelHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  voicePanelStatus: {
-    alignItems: "center",
+    elevation: 2,
     flexDirection: "row",
     gap: spacing.xs,
+    minHeight: 50,
+    padding: spacing.xs,
+    shadowColor: colors.graphite,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
   },
-  voiceRecordingDot: {
+  voiceRecorderCancel: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  voiceRecorderFinish: {
+    alignItems: "center",
     backgroundColor: colors.warmApricot,
     borderRadius: radii.pill,
-    height: 8,
-    width: 8,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
   },
-  voicePanelTitle: { color: colors.graphite, ...typography.title },
-  voiceDuration: { color: colors.mistDark, ...typography.timestamp },
-  voiceInstruction: {
+  voiceDuration: {
     color: colors.mistDark,
-    textAlign: "center",
+    minWidth: 34,
+    textAlign: "right",
     ...typography.label,
   },
-  voicePanelActions: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "flex-end",
-  },
-  voicePanelSecondaryAction: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  voicePanelSecondaryText: { color: colors.mistDark, ...typography.label },
-  voicePanelPrimaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.sm,
-    height: 44,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-  },
-  voicePanelPrimaryText: { color: colors.warmWhite, ...typography.label },
   voiceWave: {
     alignItems: "center",
+    flex: 1,
     flexDirection: "row",
-    gap: 4,
-    height: 32,
-    justifyContent: "center",
+    gap: 2,
+    height: 34,
+    justifyContent: "space-between",
+    minWidth: 0,
+    overflow: "hidden",
   },
   voiceBar: {
     backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 24,
-    width: 3,
+    height: 28,
+    width: 2,
   },
   pressed: { opacity: 0.76 },
 });

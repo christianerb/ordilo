@@ -27,6 +27,10 @@ jest.mock("expo-file-system", () => ({
   },
 }));
 
+jest.mock("../lib/native-fetch", () => ({
+  nativeFetch: (...args: Parameters<typeof fetch>) => mockFetch(...args),
+}));
+
 jest.mock("../lib/supabase", () => ({
   getSupabase: () => ({ auth: { getSession: mockGetSession } }),
 }));
@@ -43,7 +47,6 @@ describe("voice recording client", () => {
       ok: true,
       json: async () => ({ text: "  Wann ist der Elternabend?  " }),
     });
-    globalThis.fetch = mockFetch as unknown as typeof fetch;
   });
 
   it("uploads an authenticated recording and returns trimmed draft text", async () => {

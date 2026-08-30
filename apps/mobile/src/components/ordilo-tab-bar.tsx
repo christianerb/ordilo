@@ -8,15 +8,15 @@ import {
   Sparkles,
   Users,
 } from "lucide-react-native";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useRef } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useReducedMotion } from "react-native-reanimated";
 import Svg, { Path } from "react-native-svg";
 
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
+import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import { haptics } from "@/src/lib/haptics";
-import { modalAnimationType } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const tabConfig = {
@@ -25,6 +25,9 @@ const tabConfig = {
   plan: { icon: CalendarDays, label: "Termine" },
   familie: { icon: Users, label: "Familie" },
 } as const;
+
+/** Scroll clearance for the absolute dock plus one calm spacing step. */
+export const MOBILE_DOCK_CONTENT_INSET = 136;
 
 /**
  * A floating, thumb-reachable family dock. Ordilo is the central action
@@ -35,17 +38,38 @@ export function OrdiloTabBar({
   navigation,
   state,
 }: BottomTabBarProps) {
-  const reduceMotion = useReducedMotion();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsSheetRef = useRef<OrdiloSheetHandle>(null);
+  const pendingActionRef = useRef<"/scan" | "/suche" | null>(null);
+
+  function chooseAction(route: "/scan" | "/suche") {
+    pendingActionRef.current = route;
+    actionsSheetRef.current?.dismiss();
+  }
+
+  function finishActionChoice() {
+    const route = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (route) router.push(route);
+  }
 
   return (
     <>
-      <View style={[styles.dock, { paddingBottom: Math.max(insets.bottom, spacing.sm) }]}>
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.dock,
+          {
+            paddingBottom: Math.max(
+              insets.bottom - spacing.lg,
+              spacing.sm,
+            ),
+          },
+        ]}
+      >
         <View style={styles.dockBar}>
           <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
-            <View style={styles.centerGlow} />
             <Svg
               height="100%"
               preserveAspectRatio="none"
@@ -53,8 +77,8 @@ export function OrdiloTabBar({
               width="100%"
             >
               <Path
-                d="M42 14 H119 C143 14 145 51 180 56 C215 51 217 14 241 14 H318 C336 14 344 25 344 42 V69 C344 87 334 96 316 96 H44 C26 96 16 87 16 69 V42 C16 25 24 14 42 14 Z"
-                fill="rgba(253,252,250,0.96)"
+                d="M43 28 H108 C137 28 139 0 180 0 C221 0 223 28 252 28 H317 C336 28 352 44 352 63 C352 82 336 98 317 98 H43 C24 98 8 82 8 63 C8 44 24 28 43 28 Z"
+                fill="rgba(253,252,250,0.98)"
                 stroke="rgba(255,255,255,0.98)"
                 strokeWidth={2}
               />
@@ -71,7 +95,7 @@ export function OrdiloTabBar({
                     hitSlop={6}
                     onPress={() => {
                       haptics.tap();
-                      setActionsOpen(true);
+                      actionsSheetRef.current?.present();
                     }}
                     style={({ pressed }) => [
                       styles.ordiloButton,
@@ -109,11 +133,15 @@ export function OrdiloTabBar({
                 onLongPress={() =>
                   navigation.emit({ target: route.key, type: "tabLongPress" })
                 }
-                style={styles.tab}
+                style={[
+                  styles.tab,
+                  route.name === "index" && styles.startTab,
+                  route.name === "familie" && styles.familyTab,
+                ]}
               >
                 <Icon
                   color={focused ? colors.harborBlueDarker : "rgba(48,84,96,0.58)"}
-                  size={24}
+                  size={25}
                   strokeWidth={focused ? 2.4 : 1.9}
                 />
                 <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
@@ -125,62 +153,30 @@ export function OrdiloTabBar({
         </View>
       </View>
 
-      <Modal
-        animationType={modalAnimationType(reduceMotion)}
-        onRequestClose={() => setActionsOpen(false)}
-        presentationStyle="overFullScreen"
-        transparent
-        visible={actionsOpen}
-      >
-        <Pressable onPress={() => setActionsOpen(false)} style={styles.overlay}>
-          <Pressable
-            accessibilityViewIsModal
-            onPress={(event) => event.stopPropagation()}
-            style={styles.actionSheet}
-          >
-            <View style={styles.sheetHandle} />
-            <View style={styles.actionSheetHeading}>
-              <OrdiloMark size={38} />
-              <View style={styles.actionSheetCopy}>
-                <Text style={styles.actionSheetTitle}>Was darf ich für euch tun?</Text>
-                <Text style={styles.actionSheetText}>Ordilo hilft beim Finden und Festhalten.</Text>
-              </View>
-            </View>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setActionsOpen(false);
-                router.push("/suche");
-              }}
-              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-            >
-              <View style={styles.actionIcon}>
-                <Sparkles color={colors.harborBlue} size={20} />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Frage Ordilo</Text>
-                <Text style={styles.actionText}>Antworten aus euren Dokumenten finden.</Text>
-              </View>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setActionsOpen(false);
-                router.push("/scan");
-              }}
-              style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
-            >
-              <View style={[styles.actionIcon, styles.scanActionIcon]}>
-                <ScanLine color={colors.harborBlue} size={20} />
-              </View>
-              <View style={styles.actionCopy}>
-                <Text style={styles.actionTitle}>Dokument scannen</Text>
-                <Text style={styles.actionText}>Brief abfotografieren und ablegen.</Text>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <CreateChoiceSheet
+        accessibilityLabel="Ordilo-Aktionen"
+        items={[
+          {
+            accessibilityLabel: "Ordilo fragen",
+            description: "Antworten aus euren Dokumenten finden",
+            icon: Sparkles,
+            label: "Frage Ordilo",
+            onPress: () => chooseAction("/suche"),
+          },
+          {
+            accessibilityLabel: "Dokument scannen",
+            description: "Brief abfotografieren und ablegen",
+            icon: ScanLine,
+            label: "Dokument scannen",
+            onPress: () => chooseAction("/scan"),
+            tint: "blue",
+          },
+        ]}
+        onDismiss={finishActionChoice}
+        ref={actionsSheetRef}
+        subtitle="Ordilo hilft beim Finden und Festhalten."
+        title="Was darf ich für euch tun?"
+      />
     </>
   );
 }
@@ -188,29 +184,39 @@ export function OrdiloTabBar({
 const styles = StyleSheet.create({
   dock: {
     backgroundColor: "transparent",
-    paddingHorizontal: spacing.md,
+    bottom: 0,
+    left: 0,
+    paddingHorizontal: 0,
     paddingTop: 2,
+    position: "absolute",
+    right: 0,
   },
   dockBar: {
     alignItems: "center",
     backgroundColor: "transparent",
-    elevation: 8,
+    elevation: 10,
     flexDirection: "row",
     height: 100,
     justifyContent: "space-around",
     shadowColor: colors.harborBlueDarker,
-    shadowOffset: { height: 5, width: 0 },
-    shadowOpacity: 0.13,
-    shadowRadius: 14,
+    shadowOffset: { height: 7, width: 0 },
+    shadowOpacity: 0.14,
+    shadowRadius: 16,
   },
   tab: {
     alignItems: "center",
     flex: 1,
-    gap: 6,
-    height: 100,
+    gap: 5,
+    height: 70,
     justifyContent: "center",
-    paddingTop: 22,
+    marginTop: 28,
     position: "relative",
+  },
+  startTab: {
+    left: spacing.xs,
+  },
+  familyTab: {
+    right: spacing.sm,
   },
   ordiloSlot: {
     alignItems: "center",
@@ -223,7 +229,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.washSage,
     borderColor: "rgba(255,255,255,0.98)",
     borderRadius: radii.pill,
-    borderWidth: 5,
+    borderWidth: 4,
     elevation: 8,
     height: 72,
     justifyContent: "center",
@@ -239,14 +245,17 @@ const styles = StyleSheet.create({
   },
   ordiloLabel: {
     color: colors.harborBlueDarker,
-    marginTop: 1,
-    textAlign: "center",
     ...typography.label,
+    fontSize: 13,
+    lineHeight: 16,
+    textAlign: "center",
   },
   tabLabel: {
     color: colors.mistDark,
-    textAlign: "center",
     ...typography.label,
+    fontSize: 13,
+    lineHeight: 16,
+    textAlign: "center",
   },
   tabLabelActive: {
     color: colors.harborBlueDarker,
@@ -259,65 +268,4 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
   },
-  centerGlow: {
-    alignSelf: "center",
-    backgroundColor: "rgba(221,235,229,0.68)",
-    borderRadius: radii.pill,
-    height: 78,
-    position: "absolute",
-    top: 0,
-    width: 136,
-  },
-  overlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  actionSheet: {
-    backgroundColor: colors.warmWhite,
-    borderTopLeftRadius: radii.xl,
-    borderTopRightRadius: radii.xl,
-    paddingBottom: spacing.xl,
-    paddingHorizontal: spacing.md,
-  },
-  sheetHandle: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    borderRadius: radii.pill,
-    height: 4,
-    marginBottom: spacing.md,
-    marginTop: spacing.sm,
-    width: 40,
-  },
-  actionSheetHeading: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  actionSheetCopy: { flex: 1, gap: 2 },
-  actionSheetTitle: { color: colors.graphite, ...typography.display },
-  actionSheetText: { color: colors.mistDark, ...typography.timestamp },
-  actionRow: {
-    alignItems: "center",
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 72,
-    paddingVertical: spacing.sm,
-  },
-  actionIcon: {
-    alignItems: "center",
-    backgroundColor: colors.washSageSoft,
-    borderRadius: radii.sm,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  scanActionIcon: { backgroundColor: colors.washBlue },
-  actionCopy: { flex: 1, gap: 2 },
-  actionTitle: { color: colors.graphite, ...typography.title },
-  actionText: { color: colors.mistDark, ...typography.timestamp },
-  pressed: { opacity: 0.82 },
 });

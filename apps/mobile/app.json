@@ -95,10 +95,11 @@
         {
           "microphonePermission": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": false
     },
     "extra": {
       "router": {},

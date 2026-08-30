@@ -51,4 +51,16 @@ describe("contact actions", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("rejects letters mixed into otherwise callable phone numbers", () => {
+    expect(
+      contactInputSchema.safeParse({
+        name: "Kita",
+        organization: "",
+        role: "",
+        phone: "030 Zentrale 12345",
+        email: "",
+      }).success,
+    ).toBe(false);
+  });
 });

@@ -1,7 +1,6 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   AlertCircle,
-  ArrowLeft,
   ChevronRight,
   MessageCircle,
   Phone,
@@ -31,6 +30,7 @@ import {
   openContactHref,
 } from "@/src/components/contacts";
 import {
+  DetailTopBar,
   EmptyState,
   ListSkeleton,
   OrdiloButton,
@@ -121,7 +121,7 @@ export default function ContactsScreen() {
   if (loading && contacts.length === 0) {
     return (
       <Screen>
-        <ListHeader title="Kontakte" onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} />
         <ListSkeleton rows={5} />
       </Screen>
     );
@@ -130,7 +130,7 @@ export default function ContactsScreen() {
   if (error && contacts.length === 0) {
     return (
       <Screen>
-        <ListHeader title="Kontakte" onBack={() => router.back()} />
+        <DetailTopBar onBack={() => router.back()} />
         <EmptyState
           icon={AlertCircle}
           heading="Kontakte nicht erreichbar"
@@ -150,7 +150,7 @@ export default function ContactsScreen() {
 
   return (
     <Screen>
-      <ListHeader title="Kontakte" onBack={() => router.back()} />
+      <DetailTopBar onBack={() => router.back()} />
       <SectionList
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -269,29 +269,6 @@ export default function ContactsScreen() {
         visible={formOpen}
       />
     </Screen>
-  );
-}
-
-function ListHeader({
-  title,
-  onBack,
-}: {
-  title: string;
-  onBack: () => void;
-}) {
-  return (
-    <View style={styles.topbar}>
-      <Pressable
-        accessibilityLabel="Zurück"
-        accessibilityRole="button"
-        hitSlop={8}
-        onPress={onBack}
-        style={styles.back}
-      >
-        <ArrowLeft color={colors.graphite} size={22} />
-      </Pressable>
-      <Text style={styles.topTitle}>{title}</Text>
-    </View>
   );
 }
 
@@ -452,14 +429,6 @@ function SwipeableContactRow({
 
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
-  topbar: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 44,
-  },
-  back: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
-  topTitle: { color: colors.graphite, ...typography.title },
   content: { flexGrow: 1, gap: 0, paddingBottom: spacing["2xl"] },
   headerContent: { gap: spacing.md, paddingBottom: spacing.md },
   emptyGrow: { flexGrow: 1, justifyContent: "center" },

@@ -7,7 +7,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { ArrowLeft, MessageCircleQuestion, Plus } from "lucide-react-native";
+import { ArrowLeft, ChevronRight, Plus, Sparkles } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -21,17 +21,20 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   ActionCardView,
   AnswerCardView,
   ChatComposer,
-  ChatStatusLine,
+  ChatThinkingState,
   FeedbackRow,
   MessageBubble,
   SourcesSection,
 } from "@/src/components/chat";
+import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
+import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import {
   applyChatEvent,
@@ -54,7 +57,10 @@ import {
   transcribeVoiceRecording,
   VoiceInputError,
 } from "@/src/lib/voice";
+import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+
+const CHAT_ANSWER_ENTERING = contentEntering();
 
 /**
  * „Ordilo fragen" — the chat with Ordilo. Streams the answer token by
@@ -135,6 +141,7 @@ export default function SucheScreen() {
   const createAssistantMessage = useCallback((): ChatMessage => {
     return {
       id: nextId("assistant"),
+      createdAt: new Date().toISOString(),
       dbId: null,
       role: "assistant",
       text: "",
@@ -211,6 +218,7 @@ export default function SucheScreen() {
 
       const userMessage: ChatMessage = {
         id: nextId("user"),
+        createdAt: new Date().toISOString(),
         dbId: null,
         role: "user",
         text: trimmed,
@@ -565,6 +573,13 @@ export default function SucheScreen() {
         >
           <ArrowLeft color={colors.graphite} size={22} />
         </Pressable>
+        <View
+          accessible={false}
+          importantForAccessibility="no-hide-descendants"
+          style={styles.topAvatar}
+        >
+          <OrdiloMark size={32} />
+        </View>
         <Text style={styles.topTitle}>Ordilo fragen</Text>
         <Pressable
           accessibilityHint="Verwirft den aktuellen Verlauf"
@@ -602,97 +617,121 @@ export default function SucheScreen() {
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <View style={styles.emptyIcon}>
-                <MessageCircleQuestion
-                  color={colors.mist}
-                  size={36}
-                  strokeWidth={1.5}
-                />
+              <OrdiloChatHero />
+              <View style={styles.welcomeCopy}>
+                <Text style={styles.emptyHeading}>Wie kann ich dir helfen?</Text>
+                <Text style={styles.emptyText}>
+                  Frag mich zu deinen Dokumenten, Terminen oder Aufgaben. Ich
+                  kenne alles, was du gescannt hast.
+                </Text>
               </View>
-              <Text style={styles.emptyHeading}>Wie kann ich dir helfen?</Text>
-              <Text style={styles.emptyText}>
-                Frag mich zu deinen Dokumenten, Terminen oder Aufgaben. Ich
-                kenne alles, was du gescannt hast.
-              </Text>
-              <View style={styles.examples}>
-                {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
-                  <Pressable
-                    accessibilityHint="Stellt diese Frage an Ordilo"
-                    accessibilityLabel={prompt}
-                    accessibilityRole="button"
-                    disabled={busy}
-                    key={prompt}
-                    onPress={() => void send(prompt)}
-                    style={({ pressed }) => [
-                      styles.exampleChip,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.exampleChipText}>{prompt}</Text>
-                  </Pressable>
-                ))}
+              <View style={styles.exampleSection}>
+                <View accessibilityRole="header" style={styles.exampleSectionHeader}>
+                  <View style={styles.exampleSectionIcon}>
+                    <Sparkles color={colors.harborBlue} size={19} strokeWidth={2} />
+                  </View>
+                  <Text style={styles.exampleSectionTitle}>Beispiel-Fragen</Text>
+                </View>
+                <View style={styles.exampleSectionBody}>
+                  {CHAT_EXAMPLE_PROMPTS.map((prompt) => (
+                    <Pressable
+                      accessibilityHint="Stellt diese Frage an Ordilo"
+                      accessibilityLabel={prompt}
+                      accessibilityRole="button"
+                      disabled={busy}
+                      key={prompt}
+                      onPress={() => void send(prompt)}
+                      style={({ pressed }) => [
+                        styles.exampleChip,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.exampleChipText}>{prompt}</Text>
+                      <ChevronRight color={colors.mistDark} size={18} strokeWidth={1.9} />
+                    </Pressable>
+                  ))}
+                </View>
               </View>
             </View>
           ) : (
-            messages.map((message) =>
-              message.role === "user" ? (
-                <MessageBubble key={message.id} message={message} />
-              ) : (
-                <View key={message.id} style={styles.assistantBlock}>
-                  {message.status === "streaming" ? (
-                    <ChatStatusLine
-                      hasText={message.text.length > 0}
-                      toolCalls={message.toolCalls}
-                    />
-                  ) : null}
-                  <MessageBubble message={message}>
-                    {message.card && message.status === "done" ? (
-                      <AnswerCardView
-                        card={message.card}
-                        onOpenContact={openContact}
-                        onOpenDocument={openDocument}
-                      />
-                    ) : null}
-                    {message.sources.length > 0 && message.status === "done" ? (
-                      <SourcesSection
-                        onOpenDocument={openDocument}
-                        sources={message.sources}
-                      />
-                    ) : null}
-                    {message.actions.map((action) => (
-                      <ActionCardView
-                        action={action}
-                        key={action.id}
-                        onAdjust={() => adjustAction(action)}
-                        onConfirm={() => void confirmAction(message.id, action)}
-                        onDismiss={() =>
-                          updateAction(message.id, action.id, (current) => ({
-                            ...current,
-                            state: "dismissed",
-                          }))
-                        }
-                        onUndo={() => void undoAction(message.id, action)}
-                      />
-                    ))}
-                    {message.status === "done" && message.dbId ? (
-                      <FeedbackRow
-                        message={message}
-                        onSend={(feedback, reasons, comment) =>
-                          sendFeedback(message, feedback, reasons, comment)
-                        }
-                      />
-                    ) : null}
-                    {message.status === "error" ? (
-                      <OrdiloButton
-                        onPress={() => retry(message.id)}
-                        title="Nochmal fragen"
-                        variant="outline"
-                      />
-                    ) : null}
-                  </MessageBubble>
-                </View>
-              ),
-            )
+            <>
+              <View style={styles.dayDivider}>
+                <Text style={styles.dayDividerText}>Heute</Text>
+              </View>
+              {messages.map((message) =>
+                message.role === "user" ? (
+                  <MessageBubble key={message.id} message={message} />
+                ) : (
+                  <View key={message.id} style={styles.assistantBlock}>
+                    {message.status === "streaming" &&
+                    !message.text &&
+                    message.actions.length === 0 ? (
+                      <ChatThinkingState toolCalls={message.toolCalls} />
+                    ) : (
+                      <Animated.View entering={CHAT_ANSWER_ENTERING}>
+                        <MessageBubble message={message}>
+                          {message.card && message.status === "done" ? (
+                            <AnswerCardView
+                              card={message.card}
+                              onOpenContact={openContact}
+                              onOpenDocument={openDocument}
+                            />
+                          ) : null}
+                          {message.sources.length > 0 &&
+                          message.status === "done" ? (
+                            <SourcesSection
+                              onOpenDocument={openDocument}
+                              sources={message.sources}
+                            />
+                          ) : null}
+                          {message.actions.map((action) => (
+                            <ActionCardView
+                              action={action}
+                              key={action.id}
+                              onAdjust={() => adjustAction(action)}
+                              onConfirm={() =>
+                                void confirmAction(message.id, action)
+                              }
+                              onDismiss={() =>
+                                updateAction(
+                                  message.id,
+                                  action.id,
+                                  (current) => ({
+                                    ...current,
+                                    state: "dismissed",
+                                  }),
+                                )
+                              }
+                              onUndo={() => void undoAction(message.id, action)}
+                            />
+                          ))}
+                          {message.status === "done" && message.dbId ? (
+                            <FeedbackRow
+                              message={message}
+                              onSend={(feedback, reasons, comment) =>
+                                sendFeedback(
+                                  message,
+                                  feedback,
+                                  reasons,
+                                  comment,
+                                )
+                              }
+                            />
+                          ) : null}
+                          {message.status === "error" ? (
+                            <OrdiloButton
+                              onPress={() => retry(message.id)}
+                              title="Nochmal fragen"
+                              variant="outline"
+                            />
+                          ) : null}
+                        </MessageBubble>
+                      </Animated.View>
+                    )}
+                  </View>
+                ),
+              )}
+            </>
           )}
         </ScrollView>
 
@@ -732,10 +771,13 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   topbar: {
     alignItems: "center",
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: "row",
     gap: spacing.sm,
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.md,
+    minHeight: 64,
+    paddingBottom: spacing.xs,
+    paddingHorizontal: 0,
   },
   back: {
     alignItems: "center",
@@ -744,6 +786,14 @@ const styles = StyleSheet.create({
     width: 44,
   },
   topTitle: { color: colors.graphite, flex: 1, ...typography.display },
+  topAvatar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
   newChat: {
     alignItems: "center",
     backgroundColor: colors.sand,
@@ -759,47 +809,97 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: spacing.md,
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.sm,
+    paddingHorizontal: 0,
   },
   assistantBlock: { gap: spacing.xs },
+  dayDivider: {
+    alignItems: "center",
+    paddingVertical: spacing.xs,
+  },
+  dayDividerText: {
+    backgroundColor: colors.sand,
+    borderRadius: radii.pill,
+    color: colors.mistDark,
+    overflow: "hidden",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    ...typography.label,
+  },
   empty: {
     alignItems: "center",
     flexGrow: 1,
-    gap: spacing.md,
-    justifyContent: "center",
-    padding: spacing.lg,
+    paddingBottom: spacing.lg,
   },
-  emptyIcon: {
+  welcomeCopy: {
     alignItems: "center",
-    backgroundColor: colors.sandLight,
-    borderRadius: radii.pill,
-    height: 80,
-    justifyContent: "center",
-    width: 80,
+    gap: spacing.sm,
+    marginTop: -spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
-  emptyHeading: { color: colors.graphite, textAlign: "center", ...typography.display },
+  emptyHeading: {
+    ...typography.display,
+    color: colors.harborBlueDarker,
+    fontSize: 20,
+    lineHeight: 26,
+    textAlign: "center",
+  },
   emptyText: {
     color: colors.mistDark,
-    maxWidth: 300,
+    maxWidth: 310,
     textAlign: "center",
     ...typography.timestamp,
   },
-  examples: { gap: spacing.sm, marginTop: spacing.sm, width: "100%" },
-  composerSafeArea: {
-    backgroundColor: colors.warmWhite,
-    gap: spacing.xs,
-  },
-  voiceError: { color: colors.destructive, ...typography.label },
-  exampleChip: {
-    backgroundColor: colors.sand,
+  exampleSection: {
+    backgroundColor: colors.washSageSoft,
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    minHeight: 52,
-    justifyContent: "center",
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
+    marginTop: spacing.xl,
+    overflow: "hidden",
+    width: "100%",
   },
-  exampleChipText: { color: colors.graphite, ...typography.body },
+  exampleSectionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 64,
+    paddingHorizontal: spacing.md,
+  },
+  exampleSectionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 40,
+    justifyContent: "center",
+    width: 40,
+  },
+  exampleSectionTitle: {
+    color: colors.harborBlue,
+    ...typography.display,
+  },
+  exampleSectionBody: {
+    gap: spacing.sm,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  composerSafeArea: {
+    backgroundColor: colors.warmWhite,
+    gap: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  voiceError: { color: colors.destructive, ...typography.label },
+  exampleChip: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
+  },
+  exampleChipText: { color: colors.graphite, flex: 1, ...typography.body },
   pressed: { opacity: 0.76 },
 });

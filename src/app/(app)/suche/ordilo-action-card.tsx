@@ -4,6 +4,7 @@ import {
   CalendarPlus,
   Check,
   CircleCheck,
+  ContactRound,
   FilePenLine,
   KeyRound,
   FolderPlus,
@@ -15,134 +16,32 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import {
+  getChatActionContent,
+  type ChatActionToolName,
+} from "@ordilo/chat-contract";
 import type { ChatAction } from "@/lib/schemas/chat";
 import { cn } from "@/lib/utils";
-import { formatGermanDate } from "@/lib/format";
 
-type Detail = { label: string; value: string };
+const ACTION_ICONS: Record<ChatActionToolName, typeof ListPlus> = {
+  add_calendar_event: CalendarPlus,
+  add_contact: ContactRound,
+  add_document_tags: Tag,
+  add_family_member: UserPlus,
+  add_task: ListPlus,
+  create_collection: FolderPlus,
+  create_note: FilePenLine,
+  mark_task_done: CircleCheck,
+  move_document_to_collection: FolderPlus,
+  save_document_fact: FilePenLine,
+  update_task: Pencil,
+};
 
-function asText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function getActionContent(action: ChatAction): {
-  icon: typeof ListPlus;
-  eyebrow: string;
-  title: string;
-  details: Detail[];
-} {
-  const args = action.args;
-
-  switch (action.toolName) {
-    case "add_task": {
-      const dueDate = asText(args.due_date);
-      const assignee = asText(args.assignee_name);
-      return {
-        icon: ListPlus,
-        eyebrow: "Aufgabe vorbereiten",
-        title: asText(args.title) ?? "Neue Aufgabe",
-        details: [
-          ...(dueDate
-            ? [{ label: "Frist", value: formatGermanDate(dueDate) || dueDate }]
-            : []),
-          ...(assignee ? [{ label: "Für", value: assignee }] : []),
-        ],
-      };
-    }
-    case "add_calendar_event": {
-      const start = asText(args.starts_on);
-      const end = asText(args.ends_on);
-      const time = asText(args.starts_time);
-      const date =
-        start && end && end !== start
-          ? `${formatGermanDate(start) || start} bis ${formatGermanDate(end) || end}`
-          : start
-            ? formatGermanDate(start) || start
-            : null;
-      return {
-        icon: CalendarPlus,
-        eyebrow: "Termin vorbereiten",
-        title: asText(args.title) ?? "Neuer Termin",
-        details: [
-          ...(date ? [{ label: "Wann", value: date }] : []),
-          ...(time ? [{ label: "Uhrzeit", value: time }] : []),
-        ],
-      };
-    }
-    case "mark_task_done":
-      return {
-        icon: CircleCheck,
-        eyebrow: "Aufgabe abschließen",
-        title: asText(args.task_title) ?? "Aufgabe erledigen",
-        details: [],
-      };
-    case "add_family_member":
-      return {
-        icon: UserPlus,
-        eyebrow: "Familie ergänzen",
-        title: `${asText(args.name) ?? asText(args.member_name) ?? "Neue Person"} hinzufügen`,
-        details: [],
-      };
-    case "create_collection":
-      return {
-        icon: FolderPlus,
-        eyebrow: "Sammlung anlegen",
-        title: asText(args.name) ?? asText(args.collection_name) ?? "Neue Sammlung",
-        details: [],
-      };
-    case "create_note": {
-      const isCredentials = asText(args.document_type) === "credentials";
-      const details: { label: string; value: string }[] = [];
-      if (isCredentials) {
-        const url = asText(args.url);
-        const username = asText(args.username);
-        if (url) details.push({ label: "URL", value: url });
-        if (username) details.push({ label: "Benutzername", value: username });
-      }
-      return {
-        icon: isCredentials ? KeyRound : FilePenLine,
-        eyebrow: isCredentials ? "Zugangsdaten anlegen" : "Notiz anlegen",
-        title: asText(args.title) ?? (isCredentials ? "Neue Zugangsdaten" : "Neue Notiz"),
-        details,
-      };
-    }
-    case "move_document_to_collection":
-      return {
-        icon: FolderPlus,
-        eyebrow: "Dokument einsortieren",
-        title: asText(args.document_title) ?? "Dokument verschieben",
-        details: asText(args.collection_name)
-          ? [{ label: "Sammlung", value: asText(args.collection_name)! }]
-          : [],
-      };
-    case "add_document_tags": {
-      const tags = Array.isArray(args.tags)
-        ? args.tags.filter((tag): tag is string => typeof tag === "string")
-        : [];
-      return {
-        icon: Tag,
-        eyebrow: "Schlagworte ergänzen",
-        title: asText(args.document_title) ?? "Dokument ergänzen",
-        details: tags.length ? [{ label: "Schlagworte", value: tags.join(", ") }] : [],
-      };
-    }
-    case "save_document_fact":
-      return {
-        icon: FilePenLine,
-        eyebrow: "Angabe merken",
-        title: asText(args.document_title) ?? "Angabe speichern",
-        details: asText(args.value)
-          ? [{ label: asText(args.label) ?? "Angabe", value: asText(args.value)! }]
-          : [],
-      };
-    case "update_task":
-      return {
-        icon: Pencil,
-        eyebrow: "Aufgabe ändern",
-        title: asText(args.task_title) ?? "Aufgabe anpassen",
-        details: [],
-      };
-  }
+function getActionIcon(action: ChatAction) {
+  return action.toolName === "create_note" &&
+    action.args.document_type === "credentials"
+    ? KeyRound
+    : ACTION_ICONS[action.toolName];
 }
 
 export function OrdiloActionCard({
@@ -158,7 +57,8 @@ export function OrdiloActionCard({
   onAdjust: () => void;
   onUndo?: () => void;
 }) {
-  const { icon: Icon, eyebrow, title, details } = getActionContent(action);
+  const Icon = getActionIcon(action);
+  const { eyebrow, title, details } = getChatActionContent(action);
   const isWorking = action.state === "confirming" || action.state === "undoing";
   const isResolved = action.state === "confirmed" || action.state === "undone";
 

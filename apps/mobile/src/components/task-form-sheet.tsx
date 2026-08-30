@@ -1,29 +1,45 @@
 import { useCallback, useState } from "react";
-import { CalendarDays, Check, Pencil } from "lucide-react-native";
+import DateTimePicker, {
+  type DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import {
+  CalendarDays,
+  ChevronDown,
+  ChevronRight,
+  Heart,
+  Trash2,
+  UserRound,
+} from "lucide-react-native";
 import {
   ActivityIndicator,
-  Alert,
+  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { OrdiloFormSheet } from "./sheet";
+import { ConfirmDialog } from "./confirm-dialog";
+import { OrdiloPickerOverlay } from "./picker-sheet";
+import {
+  OrdiloNestedSheet,
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormInput,
+  OrdiloFormSelect,
+  OrdiloFormSheet,
+  OrdiloSheetHeader,
+} from "./sheet";
 import { OrdiloButton } from "./ui";
 import {
   formatTaskDayHint,
-  resolveSchedulePreset,
-  TASK_SCHEDULE_PRESET_LABELS,
-  TASK_SCHEDULE_PRESETS,
   todayLocalDate,
   validateTaskInput,
   type FamilyMemberOption,
   type PlannerTask,
 } from "@/src/lib/tasks";
+import { toCalendarDate } from "@/src/lib/calendar";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 export interface TaskFormValues {
@@ -61,7 +77,6 @@ export function TaskFormSheet({
   onSubmit: TaskFormSubmit;
   visible: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -69,6 +84,9 @@ export function TaskFormSheet({
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [todayStr, setTodayStr] = useState(todayLocalDate());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [personPickerOpen, setPersonPickerOpen] = useState(false);
+  const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
   // Re-seed the draft every time the sheet opens so a stale edit never
   // leaks into the next task. Render-time adjustment instead of an
@@ -84,10 +102,25 @@ export function TaskFormSheet({
       setError(null);
       setSubmitting(false);
       setTodayStr(todayLocalDate());
+      setDatePickerOpen(false);
+      setPersonPickerOpen(false);
+      setDiscardDraftOpen(false);
     }
   }
 
   const isEdit = Boolean(initialTask);
+  const assignedMember = members.find((member) => member.id === assignedTo);
+  const pickerDate = new Date(`${dueDate || todayStr}T12:00:00`);
+
+  const changeDate = useCallback(
+    (event: DateTimePickerEvent, date?: Date) => {
+      if (Platform.OS === "android") setDatePickerOpen(false);
+      if (event.type === "dismissed" || !date) return;
+      setDueDate(toCalendarDate(date));
+      setError(null);
+    },
+    [],
+  );
 
   // Anything typed or changed since the sheet opened. A dirty form never
   // closes silently — backdrop tap and Android back both ask first, like
@@ -107,14 +140,7 @@ export function TaskFormSheet({
       onClose();
       return;
     }
-    Alert.alert(
-      "Änderungen verwerfen?",
-      "Deine Eingaben gehen verloren.",
-      [
-        { style: "cancel", text: "Weiter bearbeiten" },
-        { onPress: onClose, style: "destructive", text: "Verwerfen" },
-      ],
-    );
+    setDiscardDraftOpen(true);
   }, [isDirty, onClose, submitting]);
 
   const submit = useCallback(async () => {
@@ -151,36 +177,25 @@ export function TaskFormSheet({
     }
   }, [assignedTo, description, dueDate, initialTask, isEdit, onClose, onSubmit, title, todayStr]);
 
+  const [dismissOpen, setDismissOpen] = useState(false);
+
   const confirmDismiss = useCallback(() => {
     if (!onDismiss) return;
-    Alert.alert(
-      "Aufgabe verwerfen?",
-      "Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen.",
-      [
-        { style: "cancel", text: "Abbrechen" },
-        { onPress: onDismiss, style: "destructive", text: "Verwerfen" },
-      ],
-    );
+    setDismissOpen(true);
   }, [onDismiss]);
 
   return (
     <OrdiloFormSheet
-      closeAccessibilityLabel="Aufgabe schließen"
-      onClose={requestClose}
-      style={styles.formSheet}
-      title={isEdit ? "Aufgabe bearbeiten" : "Neue Aufgabe"}
-      visible={visible}
-    >
-      <ScrollView
-        contentContainerStyle={styles.formContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        style={styles.formBody}
+        closeAccessibilityLabel="Aufgabe schließen"
+        dismissDisabled={submitting}
+        keyboardAvoiding
+        onClose={requestClose}
+        title={isEdit ? "Aufgabe bearbeiten" : "Aufgabe erstellen"}
+        visible={visible}
       >
-            <Text style={styles.fieldLabel}>Titel</Text>
-            <View style={styles.inputShell}>
-              <Check color={colors.harborBlue} size={18} strokeWidth={2} />
-              <TextInput
+        <OrdiloFormBody>
+          <OrdiloFormField label="Titel">
+              <OrdiloFormInput
                 accessibilityLabel="Titel der Aufgabe"
                 autoCapitalize="sentences"
                 maxLength={200}
@@ -189,332 +204,269 @@ export function TaskFormSheet({
                   setError(null);
                 }}
                 placeholder="Zum Beispiel: Rechnung bezahlen"
-                placeholderTextColor={colors.mistDark}
                 returnKeyType="done"
-                style={styles.input}
                 value={title}
               />
-            </View>
+          </OrdiloFormField>
 
-            <Text style={styles.fieldLabel}>Notiz (optional)</Text>
-            <View style={[styles.inputShell, styles.noteShell]}>
-              <Pencil color={colors.harborBlue} size={18} strokeWidth={1.8} />
-              <TextInput
+          <OrdiloFormField label="Notiz (optional)">
+              <OrdiloFormInput
                 accessibilityLabel="Notiz zur Aufgabe"
                 autoCapitalize="sentences"
                 maxLength={2000}
                 multiline
                 onChangeText={setDescription}
                 placeholder="Was gehört dazu?"
-                placeholderTextColor={colors.mistDark}
-                style={[styles.input, styles.noteInput]}
-                textAlignVertical="top"
                 value={description}
               />
-            </View>
+          </OrdiloFormField>
 
-            <Text style={styles.fieldLabel}>Wann?</Text>
-            <View style={styles.dateSummary}>
-              <CalendarDays color={colors.graphite} size={18} strokeWidth={1.8} />
-              <Text style={styles.dateSummaryText}>
-                {dueDate ? formatTaskDayHint(dueDate) : "Kein Termin"}
-              </Text>
-            </View>
-            <ScrollView
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
-              style={styles.presetScroller}
-            >
-              <View style={styles.chipRow}>
-                {TASK_SCHEDULE_PRESETS.map((preset) => {
-                  const date = resolveSchedulePreset(preset, todayStr);
-                  const selected =
-                    preset === "none" ? dueDate === "" : date !== null && dueDate === date;
-                  const hint = formatTaskDayHint(date);
-                  return (
-                    <Pressable
-                      accessibilityHint={hint ?? undefined}
-                      accessibilityLabel={TASK_SCHEDULE_PRESET_LABELS[preset]}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      key={preset}
-                      onPress={() => setDueDate(selected ? "" : (date ?? ""))}
-                      style={[styles.chip, selected && styles.chipSelected]}
-                    >
-                      <Text style={[styles.chipLabel, selected && styles.chipLabelSelected]}>
-                        {TASK_SCHEDULE_PRESET_LABELS[preset]}
-                      </Text>
-                      {hint ? (
-                        <Text style={[styles.chipHint, selected && styles.chipHintSelected]}>
-                          {hint}
-                        </Text>
-                      ) : null}
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
+          <OrdiloFormField label="Wann?">
+            <OrdiloFormSelect
+              accessibilityHint="Öffnet die Auswahl für das Datum"
+              accessibilityLabel={`Datum: ${dueDate ? formatTaskDayHint(dueDate) : "Kein Termin"}`}
+              leading={<View style={styles.selectionIcon}>
+                <CalendarDays color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>}
+              onPress={() => setDatePickerOpen(true)}
+              trailing={<ChevronRight color={colors.harborBlue} size={20} strokeWidth={2} />}
+              value={dueDate ? formatTaskDayHint(dueDate) ?? "Datum wählen" : "Datum wählen"}
+            />
+          </OrdiloFormField>
 
-            <Text style={styles.fieldLabel}>Wer?</Text>
-            <ScrollView
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
+          <OrdiloFormField label="Wer?">
+            <OrdiloFormSelect
+              accessibilityHint="Öffnet die Auswahl für die verantwortliche Person"
+              accessibilityLabel={`Verantwortlich: ${assignedMember?.name ?? "Niemand"}`}
+              leading={<View style={styles.selectionIcon}>
+                <UserRound color={colors.harborBlue} size={20} strokeWidth={1.8} />
+              </View>}
+              onPress={() => setPersonPickerOpen(true)}
+              trailing={<ChevronDown color={colors.harborBlue} size={20} strokeWidth={2} />}
+              value={assignedMember?.name ?? "Verantwortliche Person wählen"}
+            />
+          </OrdiloFormField>
+        </OrdiloFormBody>
+
+        <OrdiloFormFooter
+          after={isEdit && onDismiss ? (
+            <Pressable
+              accessibilityLabel="Aufgabe verwerfen"
+              accessibilityRole="button"
+              onPress={confirmDismiss}
+              style={({ pressed }) => [
+                styles.dismissButton,
+                pressed && styles.cardPressed,
+              ]}
             >
-              <View style={styles.memberRow}>
-                <Pressable
-                  accessibilityLabel="Niemandem zuordnen"
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: assignedTo === "" }}
-                  onPress={() => setAssignedTo("")}
-                  style={[styles.memberChip, assignedTo === "" && styles.memberChipSelected]}
-                >
-                  <View style={styles.memberCircleEmpty}>
-                    <Text style={styles.memberCircleEmptyText}>–</Text>
-                  </View>
-                  <Text style={styles.memberName}>Niemandem</Text>
-                </Pressable>
-                {members.map((member) => {
-                  const selected = assignedTo === member.id;
-                  return (
-                    <Pressable
-                      accessibilityLabel={`Aufgabe an ${member.name} geben`}
-                      accessibilityRole="button"
-                      accessibilityState={{ selected }}
-                      key={member.id}
-                      onPress={() => setAssignedTo(selected ? "" : member.id)}
-                      style={[styles.memberChip, selected && styles.memberChipSelected]}
-                    >
-                      <View
-                        style={[
-                          styles.memberCircle,
-                          { backgroundColor: member.avatar_color ?? colors.sandLight },
-                        ]}
-                      >
-                        <Text style={styles.memberInitial}>
-                          {member.name.trim().charAt(0).toUpperCase() || "?"}
-                        </Text>
-                      </View>
-                      <Text numberOfLines={1} style={styles.memberName}>
-                        {member.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            </ScrollView>
-      </ScrollView>
-      <View style={[styles.footer, { paddingBottom: Math.max(spacing.md, insets.bottom) }]}>
-        {error ? (
-          <View accessibilityRole="alert" style={styles.errorBox}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        ) : null}
-        <OrdiloButton
-          disabled={submitting}
-          icon={
-            submitting ? (
-              <ActivityIndicator color={colors.warmWhite} size="small" />
-            ) : undefined
-          }
-          onPress={() => void submit()}
-          size="lg"
-          title={
-            submitting
-              ? "Wird gespeichert …"
-              : isEdit
-                ? "Speichern"
-                : "Aufgabe anlegen"
-          }
+              <Trash2 color={colors.destructive} size={19} strokeWidth={1.8} />
+              <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
+            </Pressable>
+          ) : undefined}
+          error={error}
+          primary={<OrdiloButton
+            disabled={submitting}
+            icon={submitting
+              ? <ActivityIndicator color={colors.warmWhite} size="small" />
+              : <Heart color={colors.warmWhite} size={20} strokeWidth={1.9} />}
+            onPress={() => void submit()}
+            size="lg"
+            title={submitting ? "Wird gespeichert …" : "Speichern"}
+          />}
         />
-        {isEdit && onDismiss ? (
-          <Pressable
-            accessibilityLabel="Aufgabe verwerfen"
-            accessibilityRole="button"
-            onPress={confirmDismiss}
-            style={styles.dismissButton}
-          >
-            <Text style={styles.dismissLabel}>Aufgabe verwerfen</Text>
-          </Pressable>
-        ) : null}
-      </View>
+        <ConfirmDialog
+          cancelLabel="Weiter bearbeiten"
+          contained
+          confirmLabel="Verwerfen"
+          message="Deine Eingaben gehen verloren."
+          onCancel={() => setDiscardDraftOpen(false)}
+          onConfirm={() => {
+            setDiscardDraftOpen(false);
+            onClose();
+          }}
+          title="Änderungen verwerfen?"
+          visible={discardDraftOpen}
+        />
+        <ConfirmDialog
+          contained
+          confirmLabel="Verwerfen"
+          message="Sie verschwindet aus der Liste. Du kannst das direkt danach rückgängig machen."
+          onCancel={() => setDismissOpen(false)}
+          onConfirm={() => {
+            setDismissOpen(false);
+            onDismiss?.();
+          }}
+          title="Aufgabe verwerfen?"
+          visible={dismissOpen}
+        />
+
+      {datePickerOpen ? (
+        <OrdiloNestedSheet
+          closeAccessibilityLabel="Datumswahl schließen"
+          contained
+          onClose={() => setDatePickerOpen(false)}
+          visible
+        >
+          <View style={styles.dateContent}>
+            <OrdiloSheetHeader title="Datum wählen" />
+            <Pressable
+              accessibilityLabel="Keinen Termin festlegen"
+              accessibilityRole="button"
+              onPress={() => {
+                setDueDate("");
+                setError(null);
+                setDatePickerOpen(false);
+              }}
+              style={styles.noDateButton}
+            >
+              <Text style={styles.noDateLabel}>Kein Termin</Text>
+            </Pressable>
+            <DateTimePicker
+              accentColor={colors.harborBlue}
+              display={Platform.OS === "ios" ? "inline" : "default"}
+              locale="de-DE"
+              mode="date"
+              onChange={changeDate}
+              themeVariant="light"
+              value={pickerDate}
+            />
+            {Platform.OS === "ios" ? (
+              <Pressable
+                accessibilityLabel="Datum übernehmen"
+                accessibilityRole="button"
+                onPress={() => setDatePickerOpen(false)}
+                style={styles.dateDoneButton}
+              >
+                <Text style={styles.dateDoneLabel}>Fertig</Text>
+              </Pressable>
+            ) : null}
+          </View>
+        </OrdiloNestedSheet>
+      ) : null}
+
+      <OrdiloPickerOverlay
+        onClose={() => setPersonPickerOpen(false)}
+        options={[
+          ...members.map((member) => ({
+            key: member.id,
+            label: member.name,
+            leading: (
+              <View
+                style={[
+                  styles.pickerAvatar,
+                  {
+                    backgroundColor:
+                      member.avatar_color ?? colors.sandLight,
+                  },
+                ]}
+              >
+                <Text style={styles.memberInitial}>
+                  {member.name.trim().charAt(0).toUpperCase() || "?"}
+                </Text>
+              </View>
+            ),
+            onPress: () => {
+              setAssignedTo(member.id);
+              setError(null);
+              setPersonPickerOpen(false);
+            },
+            selected: assignedTo === member.id,
+          })),
+          {
+            key: "unassigned",
+            label: "Niemandem",
+            leading: (
+              <View style={[styles.pickerAvatar, styles.unassignedAvatar]}>
+                <Text style={styles.unassignedLabel}>–</Text>
+              </View>
+            ),
+            onPress: () => {
+              setAssignedTo("");
+              setError(null);
+              setPersonPickerOpen(false);
+            },
+            selected: assignedTo === "",
+          },
+        ]}
+        title="Wer macht das?"
+        visible={personPickerOpen}
+      />
     </OrdiloFormSheet>
   );
 }
 
 const styles = StyleSheet.create({
-  formSheet: { height: "88%" },
-  formBody: {
-    flex: 1,
-  },
-  formContent: {
-    paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  fieldLabel: {
-    color: colors.mistDark,
-    marginBottom: spacing.xs,
-    marginTop: spacing.sm,
-    ...typography.label,
-  },
-  input: {
-    color: colors.graphite,
-    flex: 1,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 0,
-    ...typography.body,
-  },
-  inputShell: {
+  selectionIcon: {
     alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
-    paddingLeft: spacing.sm,
-  },
-  noteShell: {
-    alignItems: "flex-start",
-    minHeight: 84,
-    paddingTop: spacing.sm,
-  },
-  noteInput: {
-    minHeight: 68,
-    paddingTop: 0,
-  },
-  dateSummary: {
-    alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 44,
-    paddingHorizontal: spacing.sm,
-  },
-  dateSummaryText: {
-    color: colors.graphite,
-    ...typography.timestamp,
-  },
-  presetScroller: {
-    marginTop: spacing.sm,
-  },
-  chipRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-  },
-  chip: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 52,
-    minWidth: 78,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  chipSelected: {
-    backgroundColor: colors.harborBlue,
-    borderColor: colors.harborBlue,
-  },
-  chipLabel: {
-    color: colors.mistDark,
-    ...typography.label,
-    fontSize: 14,
-    lineHeight: 18,
-  },
-  chipLabelSelected: {
-    color: colors.warmWhite,
-  },
-  chipHint: {
-    color: colors.mistDark,
-    ...typography.label,
-  },
-  chipHintSelected: {
-    color: colors.warmWhite,
-  },
-  memberRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingVertical: spacing.xs,
-  },
-  memberChip: {
-    alignItems: "center",
-    borderColor: "transparent",
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    gap: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    width: 72,
-  },
-  memberChipSelected: {
-    backgroundColor: "rgba(48, 84, 96, 0.08)",
-    borderColor: colors.harborBlue,
-  },
-  memberCircle: {
-    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
     borderRadius: radii.pill,
     height: 36,
     justifyContent: "center",
     width: 36,
   },
-  memberCircleEmpty: {
-    alignItems: "center",
-    borderColor: colors.mistLight,
-    borderRadius: radii.pill,
-    borderStyle: "dashed",
-    borderWidth: 1,
-    height: 36,
-    justifyContent: "center",
-    width: 36,
-  },
-  memberCircleEmptyText: {
-    color: colors.mistDark,
-    ...typography.title,
+  cardPressed: {
+    backgroundColor: colors.sandWarm,
   },
   memberInitial: {
     color: colors.warmWhite,
     ...typography.title,
   },
-  memberName: {
-    color: colors.graphite,
-    textAlign: "center",
-    ...typography.label,
-  },
-  errorBox: {
-    backgroundColor: colors.destructiveBackground,
-    borderColor: colors.destructive,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    marginBottom: spacing.sm,
-    padding: spacing.sm,
-  },
-  errorText: {
-    color: colors.destructive,
-    ...typography.timestamp,
-  },
-  footer: {
-    backgroundColor: colors.warmWhite,
-    borderTopColor: colors.mistLight,
-    borderTopWidth: 1,
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm,
-  },
   dismissButton: {
     alignItems: "center",
-    marginTop: spacing.md,
-    minHeight: 44,
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: spacing.lg,
   },
   dismissLabel: {
     color: colors.destructive,
+    ...typography.title,
+  },
+  dateContent: {
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
+  },
+  noDateButton: {
+    alignSelf: "flex-end",
+    justifyContent: "center",
+    marginBottom: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  noDateLabel: {
+    color: colors.harborBlue,
+    ...typography.timestamp,
+  },
+  dateDoneButton: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    justifyContent: "center",
+    minHeight: 48,
+  },
+  dateDoneLabel: {
+    color: colors.warmWhite,
+    ...typography.title,
+  },
+  pickerAvatar: {
+    alignItems: "center",
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  unassignedAvatar: {
+    borderColor: colors.mistLight,
+    borderStyle: "dashed",
+    borderWidth: 1,
+  },
+  unassignedLabel: {
+    color: colors.mistDark,
     ...typography.title,
   },
 });

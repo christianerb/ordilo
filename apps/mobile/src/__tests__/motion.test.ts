@@ -3,7 +3,6 @@ import {
   contentEntering,
   feedbackEntering,
   feedbackExiting,
-  modalAnimationType,
   pressDuration,
   pressScale,
   REDUCE_MOTION,
@@ -61,10 +60,8 @@ describe("motion tokens", () => {
     expect(pressScale).toBeLessThan(1);
   });
 
-  it("uses one system Reduce Motion token and fades native modals", () => {
+  it("uses one system Reduce Motion token", () => {
     expect(REDUCE_MOTION).toBe("system");
-    expect(modalAnimationType(false)).toBe("slide");
-    expect(modalAnimationType(true)).toBe("fade");
   });
 
   it("selects directional step entries and opacity-only reduced motion", () => {

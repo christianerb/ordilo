@@ -1,6 +1,9 @@
 import type OpenAI from "openai";
 import type { Database } from "@/types/database";
-import type { ChatSource } from "@/lib/schemas/chat";
+import {
+  CHAT_ACTION_TOOL_NAMES,
+  type ChatSource,
+} from "@/lib/schemas/chat";
 import { redactPII } from "@/lib/ai/pii-redact";
 import {
   hybridSearch,
@@ -41,6 +44,7 @@ import {
   restoreConfirmedAfterAnalysisFailure,
 } from "@/lib/supabase/document-helpers";
 import { eventOccursOn, type EventOccurrenceSource } from "@/lib/calendar";
+import { contactInputSchema } from "@/lib/contacts";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,6 +65,8 @@ export interface ToolContext {
   client: ServerClient;
   familyId: string;
   sources: ChatSource[];
+  /** Authenticated user responsible for writes created through chat. */
+  userId?: string;
   /** Name of the family member talking to the assistant, or null if unknown. */
   speakerName: string | null;
 }
@@ -355,6 +361,50 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           },
         },
         required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_contact",
+      description:
+        "Legt einen neuen Kontakt für die Familie an. Verwende dies, wenn " +
+        "der Nutzer ausdrücklich einen Kontakt speichern möchte und Name " +
+        "sowie mindestens Telefonnummer oder E-Mail-Adresse genannt hat. " +
+        "Fehlen diese Angaben, frage zuerst danach. Setze confirmed erst " +
+        "auf true, wenn der Nutzer die Aktionskarte bestätigt hat.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: {
+            type: "string",
+            description: "Name des neuen Kontakts.",
+          },
+          organization: {
+            type: "string",
+            description: "Optionale Organisation oder Firma.",
+          },
+          role: {
+            type: "string",
+            description: "Optionale Rolle, z.B. Kinderärztin.",
+          },
+          phone: {
+            type: "string",
+            description: "Optionale Telefonnummer.",
+          },
+          email: {
+            type: "string",
+            description: "Optionale E-Mail-Adresse.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur nach Bestätigung in der Aktionskarte. false " +
+              "(Standard) fordert die Bestätigung an.",
+          },
+        },
+        required: ["name"],
       },
     },
   },
@@ -904,6 +954,8 @@ export async function executeTool(
       return executeListFamilyMembers(ctx);
     case "lookup_contact":
       return executeLookupContact(args, ctx);
+    case "add_contact":
+      return executeAddContact(args, ctx);
     case "mark_task_done":
       return executeMarkTaskDone(args, ctx);
     case "graph_query":
@@ -953,6 +1005,67 @@ async function executeLookupContact(
       telefon: contact.phone,
       email: contact.email,
     })),
+  });
+}
+
+async function executeAddContact(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const parsed = contactInputSchema.safeParse({
+    name: typeof args.name === "string" ? args.name : "",
+    organization:
+      typeof args.organization === "string" ? args.organization : "",
+    role: typeof args.role === "string" ? args.role : "",
+    phone: typeof args.phone === "string" ? args.phone : "",
+    email: typeof args.email === "string" ? args.email : "",
+  });
+  if (!parsed.success) {
+    return JSON.stringify({
+      error:
+        parsed.error.issues[0]?.message ??
+        "Die Kontaktdaten sind nicht vollständig.",
+    });
+  }
+
+  const contact = parsed.data;
+  if (args.confirmed !== true) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      contact_name: contact.name,
+      organization: contact.organization || null,
+      role: contact.role || null,
+      phone: contact.phone || null,
+      email: contact.email || null,
+      message: `Bitte bestaetige: Soll der Kontakt '${contact.name}' angelegt werden?`,
+    });
+  }
+
+  if (!ctx.userId) {
+    return JSON.stringify({ error: "Kontakt konnte nicht angelegt werden." });
+  }
+
+  const { error } = await ctx.client
+    .from("contacts")
+    .insert({
+      family_id: ctx.familyId,
+      name: contact.name,
+      organization: contact.organization || null,
+      role: contact.role || null,
+      phone: contact.phone || null,
+      email: contact.email.toLowerCase() || null,
+      status: "confirmed",
+      created_by: ctx.userId,
+    });
+
+  if (error) {
+    return JSON.stringify({ error: "Kontakt konnte nicht angelegt werden." });
+  }
+
+  return JSON.stringify({
+    success: true,
+    name: contact.name,
+    message: `Der Kontakt '${contact.name}' wurde angelegt.`,
   });
 }
 
@@ -1867,18 +1980,7 @@ async function executeAddCalendarEvent(
  * confirmation UI. Every tool that writes data (creates, moves, or
  * tags something) belongs in this set.
  */
-export const CONFIRMATION_TOOLS = new Set([
-  "add_calendar_event",
-  "add_task",
-  "update_task",
-  "mark_task_done",
-  "add_family_member",
-  "create_collection",
-  "create_note",
-  "move_document_to_collection",
-  "add_document_tags",
-  "save_document_fact",
-]);
+export const CONFIRMATION_TOOLS = new Set<string>(CHAT_ACTION_TOOL_NAMES);
 
 /**
  * Result shape when a tool requires user confirmation before executing.
