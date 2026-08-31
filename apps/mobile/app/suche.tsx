@@ -609,9 +609,14 @@ export default function SucheScreen() {
           ]}
           keyboardDismissMode="interactive"
           keyboardShouldPersistTaps="handled"
-          onContentSizeChange={() =>
-            scrollRef.current?.scrollToEnd({ animated: true })
-          }
+          // Auto-scroll is for conversations: the empty welcome state
+          // starts at the top so the hero and heading stay fully visible
+          // on short screens instead of being scrolled past.
+          onContentSizeChange={() => {
+            if (messages.length > 0) {
+              scrollRef.current?.scrollToEnd({ animated: true });
+            }
+          }}
           ref={scrollRef}
           showsVerticalScrollIndicator={false}
         >
