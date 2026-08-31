@@ -128,6 +128,31 @@ describe("native motion wiring", () => {
     expect(login).toContain("pendingLoginChecked");
   });
 
+  it("renders the login code state with the segmented code boxes and illustration", () => {
+    const login = source("app/(auth)/login.tsx");
+    const otpInput = source("src/components/otp-code-input.tsx");
+
+    expect(login).toContain("<MailSentIllustration");
+    expect(login).toContain("<OtpCodeInput");
+    // The hidden TextInput keeps iOS oneTimeCode autofill and number pad.
+    expect(otpInput).toContain('textContentType="oneTimeCode"');
+    expect(otpInput).toContain('keyboardType="number-pad"');
+    expect(otpInput).not.toContain("letterSpacing");
+  });
+
+  it("lands signed-out users on the intro screen that hands over to login", () => {
+    const layout = source("app/_layout.tsx");
+    const einstieg = source("app/(auth)/einstieg.tsx");
+    const login = source("app/(auth)/login.tsx");
+
+    expect(layout).toContain('router.replace("/(auth)/einstieg")');
+    expect(einstieg).toContain("Deine Familie. Gut organisiert.");
+    expect(einstieg).toContain('router.push("/(auth)/login")');
+    // The login screen offers the way back to the intro.
+    expect(login).toContain("Zurück zur Übersicht");
+    expect(login).toContain('router.replace("/(auth)/einstieg")');
+  });
+
   it("uses one gesture-capable image preview with no native slide owner", () => {
     const documentScreen = source("app/document/[id].tsx");
     const noteScreen = source("app/note/[id].tsx");
@@ -170,7 +195,10 @@ describe("native motion wiring", () => {
     expect(sheet).toContain('maxHeight: "88%"');
     expect(sheet).not.toContain('height: "88%"');
     expect(sheet).toContain("formBody: { flexShrink: 1 }");
-    expect(sheet).toContain("paddingBottom: FLOATING_SHEET_INSET");
+    // Floating sheets lift clear of the home indicator (safe-area aware).
+    expect(sheet).toContain(
+      "Math.max(FLOATING_SHEET_INSET, insets.bottom)",
+    );
     expect(sheet).toContain("paddingHorizontal: FLOATING_SHEET_INSET");
     expect(sheet).toContain(
       "borderBottomLeftRadius: FLOATING_SHEET_BOTTOM_RADIUS",
@@ -183,8 +211,13 @@ describe("native motion wiring", () => {
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       "CreateChoiceSheet",
     );
+    // The dock wave is rebuilt from the measured bar width so its corner
+    // radii stay round on every phone (no stretched 360pt viewBox).
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      "C137 28 139 0 180 0 C221 0 223 28 252 28",
+      "buildDockWavePath(dockWidth)",
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
+      'preserveAspectRatio="none"',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "centerGlow",
@@ -226,7 +259,7 @@ describe("native motion wiring", () => {
     expect(choiceSheet).toContain("minHeight: 86");
     expect(choiceSheet).toContain("paddingBottom: spacing.md");
     expect(source("src/components/sheet.tsx")).toContain(
-      "bottomInset={detached ? FLOATING_SHEET_INSET : 0}",
+      "detached ? Math.max(FLOATING_SHEET_INSET, insets.bottom) : 0",
     );
     expect(source("src/components/sheet.tsx")).toContain(
       "marginHorizontal: FLOATING_SHEET_INSET",

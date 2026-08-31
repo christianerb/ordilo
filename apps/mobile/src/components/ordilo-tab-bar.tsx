@@ -9,7 +9,7 @@ import {
   Users,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
@@ -30,6 +30,32 @@ const tabConfig = {
 export const MOBILE_DOCK_CONTENT_INSET = 136;
 
 /**
+ * The dock wave, rebuilt for the actual bar width so its corner radii
+ * stay perfectly round on every phone. The hand-tuned 360pt original
+ * stretched non-uniformly to fill the bar and turned the corners
+ * elliptical on narrower or wider screens — only the straight spans
+ * between the notch and the corners are allowed to grow.
+ */
+function buildDockWavePath(width: number) {
+  const left = 8;
+  const right = width - 8;
+  const cx = width / 2;
+  return [
+    `M ${left + 35} 28`,
+    `H ${cx - 72}`,
+    `C ${cx - 43} 28 ${cx - 41} 0 ${cx} 0`,
+    `C ${cx + 41} 0 ${cx + 43} 28 ${cx + 72} 28`,
+    `H ${right - 35}`,
+    `C ${right - 16} 28 ${right} 44 ${right} 63`,
+    `C ${right} 82 ${right - 16} 98 ${right - 35} 98`,
+    `H ${left + 35}`,
+    `C ${left + 16} 98 ${left} 82 ${left} 63`,
+    `C ${left} 44 ${left + 16} 28 ${left + 35} 28`,
+    "Z",
+  ].join(" ");
+}
+
+/**
  * A floating, thumb-reachable family dock. Ordilo is the central action
  * anchor, not another destination: tapping the large mark opens the two
  * meaningful family actions, asking Ordilo or capturing a document.
@@ -42,6 +68,7 @@ export function OrdiloTabBar({
   const insets = useSafeAreaInsets();
   const actionsSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingActionRef = useRef<"/scan" | "/suche" | null>(null);
+  const [dockWidth, setDockWidth] = useState(0);
 
   function chooseAction(route: "/scan" | "/suche") {
     pendingActionRef.current = route;
@@ -68,22 +95,26 @@ export function OrdiloTabBar({
           },
         ]}
       >
-        <View style={styles.dockBar}>
-          <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
-            <Svg
-              height="100%"
-              preserveAspectRatio="none"
-              viewBox="0 0 360 100"
-              width="100%"
-            >
-              <Path
-                d="M43 28 H108 C137 28 139 0 180 0 C221 0 223 28 252 28 H317 C336 28 352 44 352 63 C352 82 336 98 317 98 H43 C24 98 8 82 8 63 C8 44 24 28 43 28 Z"
-                fill="rgba(253,252,250,0.98)"
-                stroke="rgba(255,255,255,0.98)"
-                strokeWidth={2}
-              />
-            </Svg>
-          </View>
+        <View
+          onLayout={(event) => setDockWidth(event.nativeEvent.layout.width)}
+          style={styles.dockBar}
+        >
+          {dockWidth > 0 ? (
+            <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
+              <Svg
+                height={100}
+                viewBox={`0 0 ${dockWidth} 100`}
+                width={dockWidth}
+              >
+                <Path
+                  d={buildDockWavePath(dockWidth)}
+                  fill="rgba(253,252,250,0.98)"
+                  stroke="rgba(255,255,255,0.98)"
+                  strokeWidth={2}
+                />
+              </Svg>
+            </View>
+          ) : null}
           {state.routes.map((route, index) => {
             if (route.name === "scan-action") {
               return (

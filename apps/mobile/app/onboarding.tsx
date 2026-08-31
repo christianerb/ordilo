@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import Animated, { useReducedMotion } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -62,6 +63,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const { family, isLoading: familyLoading, refresh } = useFamily();
   const reduceMotion = useReducedMotion();
+  const insets = useSafeAreaInsets();
 
   // Overrides set by user actions; when absent, values derive from the
   // resolved family so a resumed run starts where it stopped (a family
@@ -252,7 +254,10 @@ export default function OnboardingScreen() {
         style={styles.flex}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(spacing.lg, insets.bottom + spacing.sm) },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           {step === "family-name" && (

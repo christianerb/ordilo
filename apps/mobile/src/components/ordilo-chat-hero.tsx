@@ -88,9 +88,13 @@ export function OrdiloChatHero() {
 
 const styles = StyleSheet.create({
   frame: {
+    // alignSelf beats the parent's alignItems: "center" — without it the
+    // frame collapses to content width and the SVG renders at 0pt wide.
+    alignSelf: "stretch",
     height: 270,
     marginHorizontal: -16,
     overflow: "hidden",
-    width: "100%",
+    // No explicit width: with the negative margins the frame stretches
+    // edge-to-edge on every screen instead of ending 16px short.
   },
 });

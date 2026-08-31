@@ -110,8 +110,9 @@ function RootLayoutNav() {
   const router = useRouter();
 
   // App gate — mirrors the web middleware (src/lib/supabase/middleware.ts):
-  // no session → login; no family or unfinished owner setup → onboarding;
-  // invited member with a pending intro → willkommen; else the tabs.
+  // no session → einstieg intro (which links to login); no family or
+  // unfinished owner setup → onboarding; invited member with a pending
+  // intro → willkommen; else the tabs.
   useEffect(() => {
     if (sessionLoading) return;
     if (session && familyLoading) return;
@@ -126,7 +127,7 @@ function RootLayoutNav() {
 
     if (!session) {
       if (!inAuthGroup && !onInvite) {
-        router.replace("/(auth)/login");
+        router.replace("/(auth)/einstieg");
       }
       return;
     }
@@ -218,6 +219,7 @@ function RootLayoutNav() {
         }}
       >
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="(auth)/einstieg" />
         <Stack.Screen name="(auth)/login" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="willkommen" />

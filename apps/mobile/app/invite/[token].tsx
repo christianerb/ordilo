@@ -25,6 +25,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { apiFetch } from "@/src/lib/api";
@@ -93,6 +94,7 @@ export default function InviteRoute() {
 
 function InviteScreen({ token }: { token: string }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { session, isLoading: sessionLoading } = useSession();
   const { refresh } = useFamily();
 
@@ -432,7 +434,10 @@ function InviteScreen({ token }: { token: string }) {
         style={styles.flex}
       >
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(spacing.xl, insets.bottom + spacing.sm) },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           {screen === "loading" && (
