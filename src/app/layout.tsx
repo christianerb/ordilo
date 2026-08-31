@@ -10,6 +10,7 @@ const figtree = Figtree({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://ordilo.de"),
   title: "Ordilo",
   description:
     "Das Familiengedächtnis für euren Papierkram: Ordilo liest Briefe, Rechnungen und Verträge, sortiert sie ein und beantwortet eure Fragen.",

@@ -56,4 +56,30 @@ describe("Reduced Motion CSS contract", () => {
     expect(reducedFade).toContain("opacity");
     expect(reducedFade).not.toMatch(/transform|translate|scale|clip-path/);
   });
+
+  it("keeps landing feedback without restoring movement", () => {
+    const reducedMotion = blockAfter("@media (prefers-reduced-motion: reduce)");
+
+    expect(CSS).toContain(
+      "@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference)",
+    );
+    expect(CSS).toMatch(
+      /\.landing-wordmark::before\s*\{[^}]*animation-fill-mode:\s*backwards/,
+    );
+    expect(CSS).toMatch(
+      /\.landing-wordmark \.ordilo-wordmark__mark,[^}]*animation-fill-mode:\s*backwards/,
+    );
+    expect(CSS).toMatch(
+      /\.landing-faq-chevron\s*\{[^}]*transition:\s*rotate 180ms var\(--ease-in-out\)/,
+    );
+    expect(reducedMotion).toMatch(
+      /\.group\[open\] \.landing-faq-answer\s*\{[^}]*animation:\s*reduced-fade 200ms ease/,
+    );
+    expect(reducedMotion).toMatch(
+      /\.landing-faq-chevron\s*\{[^}]*rotate:\s*none !important/,
+    );
+    expect(reducedMotion).toMatch(
+      /\.press-scale:active\s*\{[^}]*transform:\s*none;[^}]*opacity:\s*0\.82/,
+    );
+  });
 });

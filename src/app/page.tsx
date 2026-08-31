@@ -5,9 +5,27 @@ import { getPostAuthDestination } from "@/lib/auth/routing";
 import { LandingPage } from "./landing-page";
 
 export const metadata: Metadata = {
-  title: "Ordilo — Einmal scannen. Nie wieder suchen.",
+  title: "Ordilo — Dokumente scannen, fragen, erledigt",
   description:
-    "Ordilo liest eure Briefe, Rechnungen und Verträge, sortiert sie von selbst ein und beantwortet eure Fragen. Server in der EU, verschlüsselt, ohne Werbung. Kostenlos starten.",
+    "Die mobile Dokumenten-App für Familien: Briefe scannen, Ordilo fragen und wichtige Fristen automatisch im Blick behalten. Privat, verschlüsselt und auf Servern in der EU.",
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    locale: "de_DE",
+    url: "https://ordilo.de",
+    siteName: "Ordilo",
+    title: "Ordilo — Scannen. Fragen. Erledigt.",
+    description:
+      "Die Dokumenten-App, die den Papierkram deiner Familie versteht.",
+  },
+  twitter: {
+    card: "summary",
+    title: "Ordilo — Scannen. Fragen. Erledigt.",
+    description:
+      "Die Dokumenten-App, die den Papierkram deiner Familie versteht.",
+  },
 };
 
 /**

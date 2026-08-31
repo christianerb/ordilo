@@ -19,6 +19,11 @@ All plans were audited against commit `d230bcb`. They are specifications only; s
 | 013 | [Animate optional member fields](013-animate-optional-member-fields.md) | LOW | IMPLEMENTED* | 003 |
 | 014 | [Animate native onboarding steps](014-animate-native-onboarding-steps.md) | LOW | IMPLEMENTED* | 011 |
 | 015 | [Animate the native login state change](015-animate-native-login-state-change.md) | LOW | IMPLEMENTED* | 014 |
+| 016 | [Trigger the landing demo on visibility](016-trigger-landing-demo-on-visibility.md) | HIGH | TODO | — |
+| 017 | [Calm the landing mascots](017-calm-landing-mascots.md) | MEDIUM | DONE | — |
+| 018 | [Fix landing Reduced Motion feedback](018-fix-landing-reduced-motion.md) | MEDIUM | DONE | — |
+| 019 | [Make wordmark hover interruptible](019-make-wordmark-hover-interruptible.md) | LOW | DONE | 018 |
+| 020 | [Soften the landing FAQ disclosure](020-soften-landing-faq-disclosure.md) | LOW | DONE | 018 recommended |
 
 `IMPLEMENTED*` means automated checks passed; the plan's browser/device feel check remains pending.
 
@@ -43,6 +48,14 @@ All plans were audited against commit `d230bcb`. They are specifications only; s
 3. **009** completes Reduce Motion coverage for forms and previews.
 4. **014** adds the shared directional step transition and applies it to onboarding.
 5. **015** reuses that transition for login.
+
+### Landing page
+
+1. **016** makes the core mobile explanation visible and fixes its sequence.
+2. **017** removes competing perpetual mascot motion.
+3. **018** closes Reduced Motion gaps before further hover tuning.
+4. **019** makes the remaining wordmark hover response interruptible.
+5. **020** adds a quiet, state-explaining FAQ entrance.
 
 ## Execution rules
 

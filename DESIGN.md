@@ -19,6 +19,12 @@ colors:
   destructive: "#C0392B"
   destructive-foreground: "#FDFCFA"
 typography:
+  marketing-hero:
+    fontFamily: "Figtree, ui-sans-serif, system-ui, sans-serif"
+    fontSize: "clamp(3rem, 11vw, 5.25rem)"
+    fontWeight: 600
+    lineHeight: 0.95
+    letterSpacing: "-0.04em"
   display:
     fontFamily: "Figtree, ui-sans-serif, system-ui, sans-serif"
     fontSize: "1.125rem"
@@ -187,6 +193,7 @@ A restrained palette where one teal carries authority and one apricot carries wa
 
 ### Hierarchy
 
+- **Marketing Hero** (Figtree 600, fluid 3rem–5.25rem, 0.95 line-height): The public landing page's single high-impact promise. Reserved for one H1 per marketing surface; never used inside the app.
 - **Display** (Figtree 600, 1.125rem, 1.3 line-height): Section headings and card titles. Appears at the top of each tab and in card headers. Small for a "display" role — product UI density over brand spectacle.
 - **Headline** (Figtree 600, 1rem, 1.3 line-height): Page-level headings within tabs. The same weight as Display but at body size, distinguishing through placement and spacing rather than size inflation.
 - **Title** (Figtree 500, 1rem, 1.4 line-height): Card titles, document titles, task titles. Medium weight for content that users scan.
