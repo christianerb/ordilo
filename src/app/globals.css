@@ -75,6 +75,41 @@
     }
   }
 
+  /* The landing phone demonstrates the mobile workflow once: the device
+     settles, then evidence arrives in the order Ordilo creates it. */
+  @keyframes landing-phone-enter {
+    from {
+      opacity: 0;
+      transform: translateY(8%) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes landing-app-reveal {
+    from {
+      opacity: 0;
+      transform: translateY(18%) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes landing-faq-answer-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8%);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* The wordmark opens like a small family-journal flourish: the mascot
      settles first, then the name arrives. It is for a genuine brand moment,
      not a repeated page-loading effect. */
@@ -743,7 +778,9 @@
 
   /* Button press feedback — scale down on active */
   .press-scale {
-    transition: transform 0.1s var(--ease-out-quart);
+    transition:
+      transform 100ms var(--ease-out-quart),
+      opacity 100ms var(--ease-out);
   }
   .press-scale:active {
     transform: scale(0.97);
@@ -773,6 +810,7 @@
   .animate-page-fade-in {
     animation: page-fade-in 0.46s var(--ease-out-expo);
   }
+
   .animate-message-in {
     animation: message-in 0.25s var(--ease-out-quart);
   }
@@ -1028,6 +1066,61 @@
   }
 }
 
+/* The landing choreography is unlayered so Tailwind cannot tree-shake these
+   page-specific selectors while compiling the global utility layer. */
+.landing-phone-enter {
+  animation: landing-phone-enter 680ms var(--ease-out) backwards;
+}
+
+.landing-app-reveal {
+  animation: landing-app-reveal 420ms var(--ease-out) backwards;
+}
+
+.landing-app-reveal--notice {
+  animation-delay: 260ms;
+}
+
+.landing-app-reveal--document {
+  animation-delay: 340ms;
+}
+
+.landing-app-reveal--question {
+  animation-delay: 460ms;
+}
+
+.landing-app-reveal--answer {
+  animation-delay: 570ms;
+}
+
+.landing-app-reveal--nav {
+  animation-delay: 650ms;
+}
+
+.landing-mascot-static .ordilo-mascot-greet {
+  animation: none;
+}
+
+.landing-wordmark::before {
+  animation-fill-mode: backwards;
+  transition:
+    transform 180ms var(--ease-in-out),
+    background-color 180ms ease;
+}
+
+.landing-wordmark .ordilo-wordmark__mark,
+.landing-wordmark .ordilo-wordmark__label {
+  animation-fill-mode: backwards;
+  transition: transform 180ms var(--ease-in-out);
+}
+
+.group[open] .landing-faq-answer {
+  animation: landing-faq-answer-in 200ms var(--ease-out);
+}
+
+.landing-faq-chevron {
+  transition: rotate 180ms var(--ease-in-out);
+}
+
 /* ---------------------------------------------------------------------------
    Pointer / hover adaptation — separate hover vs touch behavior
    --------------------------------------------------------------------------- */
@@ -1036,27 +1129,6 @@
 @media (hover: hover) and (pointer: fine) {
   .ordilo-wordmark:hover::before {
     background-color: color-mix(in srgb, var(--wash-sage) 96%, transparent);
-    transform: translateY(-50%) scale(1.16);
-  }
-
-  .ordilo-wordmark:hover .ordilo-wordmark__mark {
-    animation: ordilo-wordmark-greet 0.58s var(--ease-out-expo);
-  }
-
-  .ordilo-wordmark:hover .ordilo-wordmark__label {
-    animation: ordilo-wordmark-name-delight 0.48s var(--ease-out-quart);
-  }
-
-  .ordilo-wordmark:hover .ordilo-wordmark__sparkle {
-    animation: ordilo-wordmark-sparkle-in 0.46s var(--ease-out-expo) both;
-  }
-
-  .ordilo-wordmark:hover .ordilo-wordmark__sparkle--two {
-    animation-delay: 70ms;
-  }
-
-  .ordilo-wordmark:hover .ordilo-wordmark__sparkle--three {
-    animation-delay: 130ms;
   }
 
   .card-lift:hover {
@@ -1068,6 +1140,24 @@
   .card-lift:active {
     transform: translateY(0) scale(0.99);
     transition-duration: 0.1s;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .landing-wordmark:hover::before {
+    transform: translateY(-50%) scale(1.08);
+  }
+
+  .landing-wordmark:hover .ordilo-wordmark__mark {
+    transform: rotate(-4deg) translateY(-1px);
+  }
+
+  .landing-wordmark:hover .ordilo-wordmark__label {
+    transform: translateX(1px);
+  }
+
+  .landing-wordmark:hover .ordilo-wordmark__sparkle {
+    animation: none;
   }
 }
 
@@ -1147,8 +1237,12 @@
   .animate-message-in,
   .animate-status-settle,
   .animate-upload-phase,
-  .animate-status-line {
+  .animate-status-line,
+  .landing-phone-enter,
+  .landing-app-reveal,
+  .group[open] .landing-faq-answer {
     animation: reduced-fade 200ms ease;
+    animation-delay: 0ms;
   }
 
   .card-lift:hover,
@@ -1158,6 +1252,11 @@
 
   .press-scale:active {
     transform: none;
+    opacity: 0.82;
+  }
+
+  .landing-faq-chevron {
+    rotate: none !important;
   }
 
   .sidebar-motion {

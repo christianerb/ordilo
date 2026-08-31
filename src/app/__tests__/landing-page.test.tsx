@@ -6,25 +6,40 @@ import { LandingPage } from "../landing-page";
 describe("LandingPage", () => {
   it("renders the hero promise and the primary CTA to /login", () => {
     render(<LandingPage />);
-    expect(screen.getByText(/Nie wieder suchen/)).toBeDefined();
+    expect(screen.getByText(/Dokumenten-App/)).toBeDefined();
     const cta = screen.getByTestId("landing-cta-hero");
-    expect(cta.textContent).toContain("Kostenlos starten");
+    expect(cta.textContent).toContain("Ordilo kostenlos starten");
     expect(cta.getAttribute("href")).toBe("/login");
   });
 
-  it("renders the three value props", () => {
-    render(<LandingPage />);
-    expect(screen.getByText("Scannen & vergessen")).toBeDefined();
-    // "Einfach fragen" appears twice by design (value prop + step 3).
-    expect(screen.getAllByText("Einfach fragen").length).toBeGreaterThan(0);
-    expect(screen.getByText("Nichts mehr verpassen")).toBeDefined();
+  it("renders the mobile scan-to-answer journey", () => {
+    const { container } = render(<LandingPage />);
+    expect(screen.getByText("Brief scannen")).toBeDefined();
+    expect(screen.getByText("Ordilo versteht ihn")).toBeDefined();
+    expect(screen.getByText("Du bleibst entspannt")).toBeDefined();
+    expect(screen.getByText(/Kündigungsfrist in 30 Tagen/)).toBeDefined();
+    expect(container.querySelector(".landing-phone-enter")).not.toBeNull();
+    expect(
+      container.querySelector(".landing-app-reveal--answer"),
+    ).not.toBeNull();
+    expect(container.querySelector(".landing-wordmark")).not.toBeNull();
+  });
+
+  it("keeps supporting mascots still and gives FAQ state visible continuity", () => {
+    const { container } = render(<LandingPage />);
+
+    expect(container.querySelectorAll(".landing-mascot-static")).toHaveLength(3);
+    expect(container.querySelectorAll(".landing-faq-answer")).toHaveLength(4);
+    expect(container.querySelectorAll(".landing-faq-chevron")).toHaveLength(4);
   });
 
   it("renders the privacy promise with concrete trust facts", () => {
     render(<LandingPage />);
-    expect(screen.getByText("Eure Dokumente gehören euch")).toBeDefined();
-    expect(screen.getByText("Server in der EU")).toBeDefined();
-    expect(screen.getByText("Verschlüsselt")).toBeDefined();
+    expect(
+      screen.getByText(/Deine privatesten Papiere verdienen/),
+    ).toBeDefined();
+    expect(screen.getAllByText(/Server in der EU/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Verschlüsselt auf dem Weg/)).toBeDefined();
   });
 
   it("answers the first-visit objections in an FAQ", () => {
@@ -35,19 +50,18 @@ describe("LandingPage", () => {
     expect(screen.getByText(/Kann das nicht auch ChatGPT/)).toBeDefined();
     expect(screen.getByText(/Was kostet Ordilo/)).toBeDefined();
     expect(screen.getByText(/Wer kann meine Dokumente lesen/)).toBeDefined();
-    expect(screen.getByText(/Was, wenn mir mal etwas passiert/)).toBeDefined();
   });
 
   it("names the persona who carries the paperwork", () => {
     render(<LandingPage />);
     expect(
-      screen.getByText("Für die, die alles im Kopf haben"),
+      screen.getByText(/Für die Person, die sonst alles im Kopf hat/),
     ).toBeDefined();
   });
 
-  it("meets visitors with their problem before the features", () => {
+  it("frames one document as a complete mobile workflow", () => {
     render(<LandingPage />);
-    expect(screen.getByText("Kennst du das?")).toBeDefined();
+    expect(screen.getByText("Ein Brief. Drei Sorgen weniger.")).toBeDefined();
   });
 
   it("offers a quiet login link in the header", () => {
