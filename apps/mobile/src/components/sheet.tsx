@@ -693,8 +693,13 @@ const styles = StyleSheet.create({
     width: 40,
   },
   sheetHeader: {
-    minHeight: 112,
-    paddingBottom: spacing.lg,
+    // Bottom-anchor the title so it sits directly above the body: the
+    // reserved height belongs to the decoration (72px sprout + wash),
+    // and with top alignment that slack landed as dead space between the
+    // title and the first field.
+    justifyContent: "flex-end",
+    minHeight: 96,
+    paddingBottom: spacing.md,
     paddingHorizontal: spacing.xs,
     paddingTop: spacing.xs,
   },

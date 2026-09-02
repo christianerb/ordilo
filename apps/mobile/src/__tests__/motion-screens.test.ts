@@ -306,6 +306,23 @@ describe("native motion wiring", () => {
     expect(layout).toContain('presentation: "transparentModal"');
   });
 
+  it("keeps shared headers scalable and document rows recognizable", () => {
+    const ui = source("src/components/ui.tsx");
+    const library = source("app/(tabs)/ablage.tsx");
+
+    expect(ui).toContain("const { fontScale } = useWindowDimensions()");
+    expect(ui).toContain(
+      "lineHeight: typography.display.lineHeight * fontScale",
+    );
+    expect(ui).toContain(
+      "lineHeight: typography.timestamp.lineHeight * fontScale",
+    );
+    expect(ui).toMatch(/header:\s*\{[^}]*minHeight: 80,/s);
+    expect(ui).not.toMatch(/header:\s*\{[^}]*\bheight: 80,/s);
+    expect(library).toContain("<View style={styles.documentIcon}>");
+    expect(library).toContain("backgroundColor: colors.sandLight");
+  });
+
   it("uses one shared compact picker sheet", () => {
     const pickerSheet = source("src/components/picker-sheet.tsx");
     expect(pickerSheet).toContain("<OrdiloSheet");

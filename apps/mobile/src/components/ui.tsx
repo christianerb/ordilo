@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -222,6 +223,7 @@ export function ScreenHeader({
 }) {
   const ActionIcon = action?.icon;
   const hasAction = Boolean(action || trailing);
+  const { fontScale } = useWindowDimensions();
   return (
     <View style={styles.header}>
       <View accessible={false} style={styles.headerWashOne} />
@@ -234,13 +236,24 @@ export function ScreenHeader({
           hasAction ? styles.headerCopyWithAction : styles.headerCopyWithoutAction,
         ]}
       >
-        <Text numberOfLines={1} style={[typography.display, styles.headerTitle]}>
+        <Text
+          numberOfLines={1}
+          style={[
+            typography.display,
+            styles.headerTitle,
+            { lineHeight: typography.display.lineHeight * fontScale },
+          ]}
+        >
           {title}
         </Text>
         {subtitle ? (
           <Text
             numberOfLines={1}
-            style={[typography.timestamp, styles.headerSubtitle]}
+            style={[
+              typography.timestamp,
+              styles.headerSubtitle,
+              { lineHeight: typography.timestamp.lineHeight * fontScale },
+            ]}
           >
             {subtitle}
           </Text>
@@ -467,8 +480,12 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    height: 96,
-    justifyContent: "flex-end",
+    // The mark defines the compact default, while larger system text can
+    // grow the header instead of being clipped by a fixed height.
+    minHeight: 80,
+    // Top-aligned like the mark (top: 14) and the action slot beside it —
+    // the copy, the button and the mark share one top edge.
+    justifyContent: "flex-start",
     marginTop: spacing.sm,
     overflow: "hidden",
     padding: 14,
@@ -517,7 +534,7 @@ const styles = StyleSheet.create({
     width: 7,
   },
   headerCopy: {
-    gap: 2,
+    gap: 4,
     zIndex: 1,
   },
   headerCopyWithAction: { paddingRight: 116 },
@@ -531,7 +548,8 @@ const styles = StyleSheet.create({
   headerActionSlot: {
     position: "absolute",
     right: 76,
-    top: 20,
+    // Same top edge as the copy padding and the mark (14).
+    top: 14,
     zIndex: 1,
   },
   headerAction: {

@@ -817,7 +817,6 @@ function NoteRow({
       onPress={onPress}
       style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
     >
-      <View style={styles.documentIcon}><NotebookPen color={colors.mistDark} size={20} strokeWidth={1.7} /></View>
       <View style={styles.documentCopy}>
         <Text numberOfLines={1} style={styles.documentTitle}>{getDocumentTitle(note)}</Text>
         <Text numberOfLines={1} style={styles.documentSummary}>
