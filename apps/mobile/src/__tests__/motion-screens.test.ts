@@ -378,8 +378,11 @@ describe("native motion wiring", () => {
     const search = source("app/suche.tsx");
     const hero = source("src/components/ordilo-chat-hero.tsx");
     expect(search).toContain("<OrdiloChatHero");
-    expect(search).toContain("Wie kann ich dir helfen?");
-    expect(search).toContain("CHAT_EXAMPLE_PROMPTS.map");
+    expect(search).toContain("Was möchtest du wissen?");
+    // Suggestions know the family; past conversations are one tap away.
+    expect(search).toContain("buildSuggestedPrompts({ members, recentDocumentTitle })");
+    expect(search).toContain("listConversations(family.id)");
+    expect(search).toContain("loadConversationMessages(conversation.id)");
     expect(hero).toContain("<Svg");
     expect(hero).toContain("colors.washSage");
   });
