@@ -9,6 +9,10 @@ import {
   getInboundHeadline,
   getOpenTasksWithoutDueDate,
   getUpcomingEntries,
+  getHeuteBriefing,
+  getUpcomingAgenda,
+  groupDocumentPeople,
+  formatDaySummary,
   mergeJournalDocuments,
   setHeuteTaskStatus,
   type HeuteDocument,
@@ -34,9 +38,11 @@ const DOCUMENT = (id: string, status = "confirmed"): HeuteDocument => ({
   title: `Dokument ${id}`,
   originalFilename: null,
   mimeType: "application/pdf",
+  documentType: "letter",
   status,
   createdAt: "2026-08-21T10:00:00Z",
   summary: null,
+  people: [],
 });
 
 const TASK = (overrides: Partial<HeuteTask> = {}): HeuteTask => ({
@@ -52,6 +58,7 @@ const TASK = (overrides: Partial<HeuteTask> = {}): HeuteTask => ({
   tags: [],
   documentId: null,
   documentTitle: null,
+  assignedTo: null,
   ...overrides,
 });
 
@@ -69,6 +76,7 @@ const EVENT = (overrides: Partial<HeuteEvent> = {}): HeuteEvent => ({
   location: null,
   responsibleMemberId: null,
   attendeeNames: [],
+  attendeeIds: [],
   ...overrides,
 });
 
@@ -167,6 +175,7 @@ describe("Heute pure helpers", () => {
           allDay: false,
           location: null,
           attendeeNames: [],
+          attendeeIds: [],
         },
       ],
       new Date(2026, 7, 21),
@@ -282,5 +291,102 @@ describe("Heute mutations", () => {
       event_name: "calendar_event_created",
       properties: { source: "inbound_email" },
     });
+  });
+
+  describe("briefing", () => {
+    const today = new Date(2026, 7, 21);
+
+    it("puts an overdue task before everything else", () => {
+      const briefing = getHeuteBriefing(
+        [TASK({ id: "late", dueDate: "2026-08-19" }), TASK({ id: "today", dueDate: "2026-08-21" })],
+        [DOCUMENT("d1", "analyzed")],
+        0,
+        today,
+      );
+      expect(briefing).toMatchObject({ kind: "task", task: { id: "late" }, due: { overdue: true } });
+    });
+
+    it("asks for a look at new documents before tomorrow's task", () => {
+      const briefing = getHeuteBriefing(
+        [TASK({ id: "tomorrow", dueDate: "2026-08-22" })],
+        [DOCUMENT("d1", "analyzed"), DOCUMENT("d2", "analyzed")],
+        0,
+        today,
+      );
+      expect(briefing).toMatchObject({ kind: "review", count: 2, document: { id: "d1" } });
+    });
+
+    it("falls back to tomorrow, then to calm", () => {
+      expect(
+        getHeuteBriefing([TASK({ id: "tomorrow", dueDate: "2026-08-22" })], [], 0, today),
+      ).toMatchObject({ kind: "task", task: { id: "tomorrow" } });
+      expect(getHeuteBriefing([TASK({ dueDate: "2026-09-10" })], [DOCUMENT("d1")], 3, today)).toEqual({
+        kind: "calm",
+        upcomingCount: 3,
+      });
+    });
+  });
+
+  it("groups the coming days into an agenda with events before tasks", () => {
+    const { days, hiddenCount } = getUpcomingAgenda(
+      [
+        TASK({ id: "t1", dueDate: "2026-08-22", title: "Formular zurückgeben" }),
+        TASK({ id: "t2", dueDate: "2026-08-25", title: "Rechnung zahlen" }),
+        TASK({ id: "old", dueDate: "2026-08-20" }),
+      ],
+      [
+        {
+          id: "e1",
+          title: "Sportfest",
+          date: "2026-08-22",
+          startsTime: "08:15:00",
+          allDay: false,
+          location: "Sporthalle",
+          attendeeNames: ["Emma"],
+          attendeeIds: ["m1"],
+        },
+      ],
+      new Date(2026, 7, 21),
+    );
+    expect(hiddenCount).toBe(0);
+    expect(days.map((day) => day.label)).toEqual(["Morgen", "Di., 25. Aug."]);
+    expect(days[0].entries.map((entry) => [entry.kind, entry.title, entry.time])).toEqual([
+      ["event", "Sportfest", "08:15"],
+      ["task", "Formular zurückgeben", null],
+    ]);
+  });
+
+  it("caps the agenda and reports what it left out", () => {
+    const tasks = Array.from({ length: 8 }, (_, index) =>
+      TASK({ id: `t${index}`, dueDate: "2026-08-23", title: `Aufgabe ${index}` }),
+    );
+    const { days, hiddenCount } = getUpcomingAgenda(tasks, [], new Date(2026, 7, 21), 6);
+    expect(days[0].entries).toHaveLength(6);
+    expect(hiddenCount).toBe(2);
+  });
+
+  it("maps person entities to family members per document", () => {
+    const people = groupDocumentPeople(
+      [
+        { document_id: "d1", entity_value: "Emma", linked_object_id: "m1" },
+        { document_id: "d1", entity_value: "Emma Müller", linked_object_id: "m1" },
+        { document_id: "d1", entity_value: "Herr Braun", linked_object_id: null },
+        { document_id: "d2", entity_value: "Leon", linked_object_id: "m2" },
+      ],
+      [{ id: "m1", name: "Emma Müller", role: "Tochter", avatarColor: "#27AE60" }],
+    );
+    expect(people.get("d1")).toEqual([
+      { id: "m1", name: "Emma Müller", color: "#27AE60" },
+      { id: null, name: "Herr Braun", color: null },
+    ]);
+    expect(people.get("d2")).toEqual([{ id: null, name: "Leon", color: null }]);
+  });
+
+  it("writes the day summary as one plain sentence", () => {
+    expect(formatDaySummary({ todayEvents: 0, todayTasks: 0, reviewDocuments: 0 })).toBeNull();
+    expect(formatDaySummary({ todayEvents: 1, todayTasks: 0, reviewDocuments: 0 })).toBe("Heute: 1 Termin");
+    expect(formatDaySummary({ todayEvents: 2, todayTasks: 1, reviewDocuments: 3 })).toBe(
+      "Heute: 2 Termine, 1 Aufgabe und 3 neue Dokumente",
+    );
   });
 });
