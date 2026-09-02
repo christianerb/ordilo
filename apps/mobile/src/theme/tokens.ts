@@ -25,6 +25,10 @@ export const colors = {
   washSageSoft: "#E6F0EC",
   washBlue: "#E5EEF1",
   washApricot: "#F8E7D4",
+  /** Harbor Blue at 10% — the quiet selected/tinted surface. */
+  harborTint: "rgba(48, 84, 96, 0.10)",
+  /** Harbor Blue at 18% — borders that belong to a harbor-tinted surface. */
+  harborLine: "rgba(48, 84, 96, 0.18)",
   destructive: "#C0392B",
   destructiveBackground: "#F9E8E5",
 } as const;
@@ -62,10 +66,40 @@ export const fonts = {
  * not fall back to font metrics that vary per platform.
  */
 export const typography = {
+  /** Screen titles only — one per screen, never inside cards. */
+  largeTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 28,
+    letterSpacing: -0.4,
+    lineHeight: 34,
+  },
+  /** The briefing headline and confirmation moments. */
+  heading: {
+    fontFamily: fonts.semibold,
+    fontSize: 22,
+    letterSpacing: -0.2,
+    lineHeight: 28,
+  },
   display: { fontFamily: fonts.semibold, fontSize: 18, lineHeight: 23.4 },
   headline: { fontFamily: fonts.semibold, fontSize: 16, lineHeight: 20.8 },
   title: { fontFamily: fonts.medium, fontSize: 16, lineHeight: 22.4 },
   body: { fontFamily: fonts.regular, fontSize: 16, lineHeight: 24 },
   label: { fontFamily: fonts.medium, fontSize: 12, lineHeight: 14.4 },
   timestamp: { fontFamily: fonts.regular, fontSize: 14, lineHeight: 19.6 },
+  /** Small emphasised metadata: due labels, chips, counts. */
+  caption: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 17 },
+} as const;
+
+/** Standard control sizes — one vocabulary for touch targets. */
+export const sizes = {
+  /** Minimum touch target (Apple HIG). */
+  touch: 44,
+  /** Compact circular icon button. */
+  iconButton: 40,
+  /** Row leading icon tile. */
+  tile: 40,
+  /** Row avatar. */
+  avatar: 32,
+  /** Inline chip avatar. */
+  avatarSmall: 22,
 } as const;

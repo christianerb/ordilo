@@ -181,7 +181,7 @@ describe("native motion wiring", () => {
       "src/components/event-form-sheet.tsx",
       "src/components/note-form-sheet.tsx",
       "src/components/task-form-sheet.tsx",
-      "app/(tabs)/familie.tsx",
+      "app/familie.tsx",
       "app/note/[id].tsx",
     ]) {
       const form = source(path);
@@ -207,9 +207,16 @@ describe("native motion wiring", () => {
     expect(sheet).toContain("formControlFocused");
     expect(sheet).toContain("formActions");
 
-    // The tab bar action sheet delegates presentation to the shared choice sheet.
-    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+    // The dock has no choice sheet: the mark opens the conversation and
+    // Scannen opens the camera, each in one tap.
+    expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "CreateChoiceSheet",
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'router.push("/suche")',
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'params: { auto: "1" }',
     );
     // The dock wave is rebuilt from the measured bar width so its corner
     // radii stay round on every phone (no stretched 360pt viewBox).
@@ -229,7 +236,7 @@ describe("native motion wiring", () => {
       'route.name === "index" && styles.startTab',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      'route.name === "familie" && styles.familyTab',
+      'route.name === "scannen"',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       "insets.bottom - spacing.lg",
@@ -244,7 +251,6 @@ describe("native motion wiring", () => {
       "app/(tabs)/index.tsx",
       "app/(tabs)/ablage.tsx",
       "app/(tabs)/plan.tsx",
-      "app/(tabs)/familie.tsx",
     ]) {
       expect(source(path)).toContain("MOBILE_DOCK_CONTENT_INSET");
     }
@@ -271,7 +277,6 @@ describe("native motion wiring", () => {
     for (const path of [
       "app/(tabs)/ablage.tsx",
       "app/(tabs)/plan.tsx",
-      "src/components/ordilo-tab-bar.tsx",
     ]) {
       expect(source(path)).toContain("<CreateChoiceSheet");
       expect(source(path)).not.toContain("CreatePlanItemSheet");
@@ -312,7 +317,7 @@ describe("native motion wiring", () => {
 
     expect(ui).toContain("const { fontScale } = useWindowDimensions()");
     expect(ui).toContain(
-      "lineHeight: typography.display.lineHeight * fontScale",
+      "lineHeight: typography.largeTitle.lineHeight * fontScale",
     );
     expect(ui).toContain(
       "lineHeight: typography.timestamp.lineHeight * fontScale",

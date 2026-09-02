@@ -232,6 +232,15 @@ function RootLayoutNav() {
             presentation: "transparentModal",
           }}
         />
+        <Stack.Screen
+          name="suche"
+          options={{
+            gestureEnabled: true,
+            presentation: "modal",
+          }}
+        />
+        <Stack.Screen name="familie" />
+        <Stack.Screen name="einstellungen" />
         <Stack.Screen name="document/[id]" />
         <Stack.Screen name="sammlungen/index" />
         <Stack.Screen name="sammlungen/[id]" />

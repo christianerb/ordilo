@@ -7,7 +7,7 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
-import { ArrowLeft, ChevronRight, Plus, Sparkles } from "lucide-react-native";
+import { ChevronDown, ChevronRight, Plus, Sparkles } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
@@ -565,13 +565,13 @@ export default function SucheScreen() {
     <Screen style={styles.screen}>
       <View style={styles.topbar}>
         <Pressable
-          accessibilityLabel="Zurück"
+          accessibilityLabel="Schließen"
           accessibilityRole="button"
           hitSlop={8}
           onPress={() => router.back()}
           style={styles.back}
         >
-          <ArrowLeft color={colors.graphite} size={22} />
+          <ChevronDown color={colors.graphite} size={24} />
         </Pressable>
         <View
           accessible={false}

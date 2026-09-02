@@ -1,29 +1,24 @@
 import { useRouter } from "expo-router";
 import type { BottomTabBarProps } from "expo-router/build/react-navigation/bottom-tabs";
 import {
-  BookOpen,
   CalendarDays,
+  FolderOpen,
   House,
   ScanLine,
-  Sparkles,
-  Users,
 } from "lucide-react-native";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
-import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
-import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import { haptics } from "@/src/lib/haptics";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const tabConfig = {
   index: { icon: House, label: "Start" },
-  ablage: { icon: BookOpen, label: "Dokumente" },
-  plan: { icon: CalendarDays, label: "Termine" },
-  familie: { icon: Users, label: "Familie" },
+  ablage: { icon: FolderOpen, label: "Dokumente" },
+  plan: { icon: CalendarDays, label: "Plan" },
 } as const;
 
 /** Scroll clearance for the absolute dock plus one calm spacing step. */
@@ -56,9 +51,10 @@ function buildDockWavePath(width: number) {
 }
 
 /**
- * A floating, thumb-reachable family dock. Ordilo is the central action
- * anchor, not another destination: tapping the large mark opens the two
- * meaningful family actions, asking Ordilo or capturing a document.
+ * A floating, thumb-reachable family dock. Three places to be — Start,
+ * Dokumente, Plan — and two things to do: the Ordilo mark in the middle
+ * opens the conversation, Scannen on the right opens the camera. Both are
+ * one tap; neither is a destination, so neither ever reads as selected.
  */
 export function OrdiloTabBar({
   navigation,
@@ -66,149 +62,133 @@ export function OrdiloTabBar({
 }: BottomTabBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const actionsSheetRef = useRef<OrdiloSheetHandle>(null);
-  const pendingActionRef = useRef<"/scan" | "/suche" | null>(null);
   const [dockWidth, setDockWidth] = useState(0);
 
-  function chooseAction(route: "/scan" | "/suche") {
-    pendingActionRef.current = route;
-    actionsSheetRef.current?.dismiss();
-  }
-
-  function finishActionChoice() {
-    const route = pendingActionRef.current;
-    pendingActionRef.current = null;
-    if (route) router.push(route);
-  }
-
   return (
-    <>
+    <View
+      pointerEvents="box-none"
+      style={[
+        styles.dock,
+        {
+          paddingBottom: Math.max(
+            insets.bottom - spacing.lg,
+            spacing.sm,
+          ),
+        },
+      ]}
+    >
       <View
-        pointerEvents="box-none"
-        style={[
-          styles.dock,
-          {
-            paddingBottom: Math.max(
-              insets.bottom - spacing.lg,
-              spacing.sm,
-            ),
-          },
-        ]}
+        onLayout={(event) => setDockWidth(event.nativeEvent.layout.width)}
+        style={styles.dockBar}
       >
-        <View
-          onLayout={(event) => setDockWidth(event.nativeEvent.layout.width)}
-          style={styles.dockBar}
-        >
-          {dockWidth > 0 ? (
-            <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
-              <Svg
-                height={100}
-                viewBox={`0 0 ${dockWidth} 100`}
-                width={dockWidth}
-              >
-                <Path
-                  d={buildDockWavePath(dockWidth)}
-                  fill="rgba(253,252,250,0.98)"
-                  stroke="rgba(255,255,255,0.98)"
-                  strokeWidth={2}
-                />
-              </Svg>
-            </View>
-          ) : null}
-          {state.routes.map((route, index) => {
-            if (route.name === "scan-action") {
-              return (
-                <View key={route.key} style={styles.ordiloSlot}>
-                  <Pressable
-                    accessibilityHint="Öffnet Ordilo-Aktionen"
-                    accessibilityLabel="Ordilo"
-                    accessibilityRole="button"
-                    hitSlop={6}
-                    onPress={() => {
-                      haptics.tap();
-                      actionsSheetRef.current?.present();
-                    }}
-                    style={({ pressed }) => [
-                      styles.ordiloButton,
-                      pressed && styles.ordiloButtonPressed,
-                    ]}
-                  >
-                    <OrdiloMark size={54} />
-                  </Pressable>
-                  <Text style={styles.ordiloLabel}>Frage Ordilo</Text>
-                </View>
-              );
-            }
+        {dockWidth > 0 ? (
+          <View accessible={false} pointerEvents="none" style={styles.waveSurface}>
+            <Svg
+              height={100}
+              viewBox={`0 0 ${dockWidth} 100`}
+              width={dockWidth}
+            >
+              <Path
+                d={buildDockWavePath(dockWidth)}
+                fill="rgba(253,252,250,0.98)"
+                stroke="rgba(255,255,255,0.98)"
+                strokeWidth={2}
+              />
+            </Svg>
+          </View>
+        ) : null}
+        {state.routes.map((route, index) => {
+          if (route.name === "scan-action") {
+            return (
+              <View key={route.key} style={styles.ordiloSlot}>
+                <Pressable
+                  accessibilityHint="Öffnet das Gespräch mit Ordilo"
+                  accessibilityLabel="Ordilo fragen"
+                  accessibilityRole="button"
+                  hitSlop={6}
+                  onPress={() => {
+                    haptics.tap();
+                    router.push("/suche");
+                  }}
+                  style={({ pressed }) => [
+                    styles.ordiloButton,
+                    pressed && styles.ordiloButtonPressed,
+                  ]}
+                >
+                  <OrdiloMark size={54} />
+                </Pressable>
+                <Text style={styles.ordiloLabel}>Ordilo fragen</Text>
+              </View>
+            );
+          }
 
-            const config = tabConfig[route.name as keyof typeof tabConfig];
-            if (!config) return null;
-            const focused = state.index === index;
-            const Icon = config.icon;
+          if (route.name === "scannen") {
             return (
               <Pressable
-                accessibilityLabel={config.label}
+                accessibilityHint="Öffnet die Kamera für ein neues Dokument"
+                accessibilityLabel="Dokument scannen"
                 accessibilityRole="button"
-                accessibilityState={{ selected: focused }}
                 hitSlop={4}
                 key={route.key}
                 onPress={() => {
-                  const event = navigation.emit({
-                    canPreventDefault: true,
-                    target: route.key,
-                    type: "tabPress",
-                  });
-                  if (!focused && !event.defaultPrevented) {
-                    navigation.navigate(route.name);
-                  }
+                  haptics.tap();
+                  router.push({ pathname: "/scan", params: { auto: "1" } });
                 }}
-                onLongPress={() =>
-                  navigation.emit({ target: route.key, type: "tabLongPress" })
-                }
-                style={[
-                  styles.tab,
-                  route.name === "index" && styles.startTab,
-                  route.name === "familie" && styles.familyTab,
-                ]}
+                style={[styles.tab, styles.scanTab]}
               >
+                <View style={styles.scanIcon}>
+                  <ScanLine color={colors.warmWhite} size={18} strokeWidth={2.3} />
+                </View>
+                <Text style={styles.tabLabel}>Scannen</Text>
+              </Pressable>
+            );
+          }
+
+          const config = tabConfig[route.name as keyof typeof tabConfig];
+          if (!config) return null;
+          const focused = state.index === index;
+          const Icon = config.icon;
+          return (
+            <Pressable
+              accessibilityLabel={config.label}
+              accessibilityRole="button"
+              accessibilityState={{ selected: focused }}
+              hitSlop={4}
+              key={route.key}
+              onPress={() => {
+                const event = navigation.emit({
+                  canPreventDefault: true,
+                  target: route.key,
+                  type: "tabPress",
+                });
+                if (!focused && !event.defaultPrevented) {
+                  haptics.selection();
+                  navigation.navigate(route.name);
+                }
+              }}
+              onLongPress={() =>
+                navigation.emit({ target: route.key, type: "tabLongPress" })
+              }
+              style={[
+                styles.tab,
+                route.name === "index" && styles.startTab,
+              ]}
+            >
+              <View style={styles.tabIcon}>
                 <Icon
                   color={focused ? colors.harborBlueDarker : "rgba(48,84,96,0.58)"}
                   size={25}
                   strokeWidth={focused ? 2.4 : 1.9}
                 />
-                <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
-                  {config.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+              </View>
+              <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+                {config.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
-
-      <CreateChoiceSheet
-        accessibilityLabel="Ordilo-Aktionen"
-        items={[
-          {
-            accessibilityLabel: "Ordilo fragen",
-            description: "Antworten aus euren Dokumenten finden",
-            icon: Sparkles,
-            label: "Frage Ordilo",
-            onPress: () => chooseAction("/suche"),
-          },
-          {
-            accessibilityLabel: "Dokument scannen",
-            description: "Brief abfotografieren und ablegen",
-            icon: ScanLine,
-            label: "Dokument scannen",
-            onPress: () => chooseAction("/scan"),
-            tint: "blue",
-          },
-        ]}
-        onDismiss={finishActionChoice}
-        ref={actionsSheetRef}
-        subtitle="Ordilo hilft beim Finden und Festhalten."
-        title="Was darf ich für euch tun?"
-      />
-    </>
+    </View>
   );
 }
 
@@ -237,16 +217,30 @@ const styles = StyleSheet.create({
   tab: {
     alignItems: "center",
     flex: 1,
-    gap: 5,
+    gap: 4,
     height: 70,
     justifyContent: "center",
     marginTop: 28,
     position: "relative",
   },
+  tabIcon: {
+    alignItems: "center",
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
+  scanIcon: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 30,
+    justifyContent: "center",
+    width: 30,
+  },
   startTab: {
     left: spacing.xs,
   },
-  familyTab: {
+  scanTab: {
     right: spacing.sm,
   },
   ordiloSlot: {

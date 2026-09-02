@@ -8,7 +8,6 @@ import {
   ListChecks,
   MapPin,
   ScanLine,
-  Settings,
   Sparkles,
 } from "lucide-react-native";
 import {
@@ -29,6 +28,7 @@ import {
   View,
 } from "react-native";
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { AvatarStack } from "@/src/components/person";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import {
@@ -66,6 +66,7 @@ import {
   type HeuteInboundSuggestion,
   type HeuteTask,
 } from "@/src/lib/heute";
+import { memberToPerson } from "@/src/lib/people";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -298,16 +299,30 @@ export default function HeuteScreen() {
     [mutatingRetentionId],
   );
 
+  const people = useMemo(
+    () => (data?.members ?? []).map(memberToPerson),
+    [data?.members],
+  );
   const header = (
     <ScreenHeader
-      action={{
-        accessibilityLabel: "Einstellungen öffnen",
-        icon: Settings,
-        onPress: () => router.push("/einstellungen"),
-        tone: "quiet",
-      }}
-      subtitle={dateLine}
+      eyebrow={dateLine}
       title={getHomeGreeting()}
+      trailing={
+        <Pressable
+          accessibilityHint="Öffnet Familie und Einstellungen"
+          accessibilityLabel="Familie"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => router.push("/familie")}
+          style={({ pressed }) => [styles.familyButton, pressed && styles.pressed]}
+        >
+          {people.length > 0 ? (
+            <AvatarStack max={3} people={people} size={34} />
+          ) : (
+            <View style={styles.familyPlaceholder} />
+          )}
+        </Pressable>
+      }
     />
   );
 
@@ -897,6 +912,18 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.78 },
   disabled: { opacity: 0.6 },
+  familyButton: {
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 44,
+    minWidth: 44,
+  },
+  familyPlaceholder: {
+    backgroundColor: colors.sandLight,
+    borderRadius: 17,
+    height: 34,
+    width: 34,
+  },
   hero: {
     borderRadius: radii.md,
     gap: spacing.lg,

@@ -7,7 +7,7 @@ import {
   SaveFormat,
 } from "expo-image-manipulator";
 import * as Print from "expo-print";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   DOCUMENT_PIPELINE_STEPS,
   getDocumentPipelineStepsCompleted,
@@ -211,6 +211,7 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  */
 export default function ScanModal() {
   const router = useRouter();
+  const { auto } = useLocalSearchParams<{ auto?: string }>();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
@@ -226,6 +227,10 @@ export default function ScanModal() {
   const processingAbortRef = useRef<AbortController | null>(null);
   const processingPromiseRef = useRef<Promise<void> | null>(null);
   const detachServerPipelineRef = useRef(false);
+  // Opened from the dock: the camera is the point, so it opens by itself
+  // once — the sheet behind it stays as the fallback (photos, files, a
+  // queue that still needs attention).
+  const autoLaunchRef = useRef(auto === "1");
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
@@ -337,6 +342,16 @@ export default function ScanModal() {
       setScannerBusy(false);
     }
   }, [addToQueue, scannerBusy]);
+
+  useEffect(() => {
+    if (!queueHydrated || !autoLaunchRef.current) return;
+    autoLaunchRef.current = false;
+    const hasWork = queueRef.current.some(
+      (item) => item.state === "queued" || item.state === "failed",
+    );
+    if (hasWork) return;
+    void runSystemScanner();
+  }, [queueHydrated, runSystemScanner]);
 
   const processQueueItem = useCallback(
     async (item: QueueItem) => {
