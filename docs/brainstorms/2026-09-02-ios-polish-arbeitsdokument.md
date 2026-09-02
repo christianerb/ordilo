@@ -50,13 +50,17 @@ Es ist kein Freigabedokument.
 
 ## 4. Entscheidungen mit größter Wirkung
 
-1. **Neue Dock-Struktur:** Start · Dokumente · **Scannen** (Mitte, ein
-   Tap öffnet direkt den Scanner) · Plan · **Ordilo** (Chat als echter Tab
-   mit Verlauf). Familie wird ein Stack-Screen, erreichbar über die
-   Familien-Avatare im Start-Header und aus dem Plan. Begründung: Scannen
-   und Fragen sind die zwei täglichen Aktionen; die Mitgliederliste ist
-   selten nötig, die Familie selbst aber überall sichtbar (Gesichter auf
-   Zeilen).
+1. **Neue Dock-Struktur:** Start · Dokumente · **Ordilo fragen** (Mitte,
+   die Marke bleibt der Anker; ein Tap öffnet das Gespräch als Modal, kein
+   Auswahl-Sheet mehr) · Plan · **Scannen** (ein Tap öffnet direkt die
+   Kamera; das kompakte Sheet bleibt als Rückfall für Fotos, Dateien und
+   die Warteschlange). Familie wird ein Stack-Screen, erreichbar über die
+   Familien-Gesichter im Start-Header. Begründung: Scannen und Fragen sind
+   die zwei täglichen Aktionen und verdienen je einen Tap; die
+   Mitgliederliste ist selten nötig, die Familie selbst aber überall
+   sichtbar (Gesichter auf Zeilen). Der Chat bleibt ein Vollbild-Modal,
+   weil Composer plus Dock am unteren Rand zu viel Chrom wären; der
+   Zustand geht nicht verloren, weil der Verlauf serverseitig liegt.
 2. **Start als Briefing:** eine Antwort auf „Was ist jetzt wichtig?" (überfällig,
    heute, neues Dokument prüfen oder „alles gut"), dann Heute, Demnächst
    (echte Liste der nächsten 7 Tage), Neu dazugekommen, Als Nächstes.
