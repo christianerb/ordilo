@@ -242,7 +242,7 @@ export default function FamilieScreen() {
                     </IconTile>
                   }
                   onPress={() => void handleInvite()}
-                  subtitle="Partner:in, Oma oder wer sonst mithelfen soll"
+                  subtitle="Partner:in, Oma oder wer mithelfen soll"
                   title={creating ? "Einladung wird erstellt …" : "Person einladen"}
                 />
               ) : null}

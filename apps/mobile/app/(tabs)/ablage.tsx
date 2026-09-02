@@ -1035,7 +1035,12 @@ function DocumentRow({
   const kind = getDocumentKind(document.document_type);
   const KindIcon = kind.icon;
   const tone = getDocumentStatusTone(document.status);
-  const statusLabel = tone ? getDocumentStatusLabel(document.status) : null;
+  const statusLabel =
+    tone === "processing"
+      ? "Wird gelesen"
+      : tone
+        ? getDocumentStatusLabel(document.status)
+        : null;
   const meta = [kind.label, formatDocumentDate(document.created_at), formatPeopleLine(people, 2)]
     .filter(Boolean)
     .join(" · ");
@@ -1050,9 +1055,6 @@ function DocumentRow({
           tone === "failed" && styles.statusPillFailed,
         ]}
       >
-        {tone === "processing" ? (
-          <ActivityIndicator color={colors.mistDark} size="small" style={styles.statusSpinner} />
-        ) : null}
         <Text
           numberOfLines={1}
           style={[
@@ -1248,13 +1250,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.pill,
     flexDirection: "row",
     gap: 4,
-    maxWidth: 110,
+    maxWidth: 128,
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   statusPillNew: { backgroundColor: colors.harborBlue },
   statusPillFailed: { backgroundColor: colors.destructiveBackground },
-  statusSpinner: { transform: [{ scale: 0.7 }] },
   statusText: { color: colors.mistDark, ...typography.caption },
   statusTextNew: { color: colors.warmWhite },
   statusTextFailed: { color: colors.destructive },

@@ -627,23 +627,6 @@ export default function PlanScreen() {
               </EmptyState>
             )
           ) : null}
-          {visibleEvents.length > 0 ? (
-            <View style={styles.section}>
-              <View accessibilityRole="header" style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Termine</Text>
-                <Text style={styles.sectionCount}>{visibleEvents.length}</Text>
-              </View>
-              <View style={styles.sectionBody}>
-                {visibleEvents.map((event) => (
-                  <PlannerEventRow
-                    event={event}
-                    key={event.id}
-                    members={members}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
           {TASK_SECTIONS.map((section) => {
             const sectionTasks = grouped[section.id];
             if (sectionTasks.length === 0) return null;
@@ -751,6 +734,23 @@ export default function PlanScreen() {
               </View>
             );
           })}
+          {visibleEvents.length > 0 ? (
+            <View style={styles.section}>
+              <View accessibilityRole="header" style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Termine</Text>
+                <Text style={styles.sectionCount}>{visibleEvents.length}</Text>
+              </View>
+              <View style={styles.sectionBody}>
+                {visibleEvents.map((event) => (
+                  <PlannerEventRow
+                    event={event}
+                    key={event.id}
+                    members={members}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
           <View style={styles.listBottomSpacer} />
         </ScrollView>
       )}
@@ -1392,6 +1392,7 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: spacing.lg,
+    marginTop: spacing.sm,
   },
   taskSection: {
     backgroundColor: colors.washSageSoft,
