@@ -28,7 +28,7 @@ describe("native motion wiring", () => {
     const scan = source("app/scan.tsx");
 
     expect(scan.indexOf("{queue.length > 0 ? (")).toBeLessThan(
-      scan.indexOf("<View style={styles.captureStage}>"),
+      scan.indexOf("style={styles.captureStage}"),
     );
     expect(scan).toContain("bodyRef.current?.scrollTo");
     expect(scan).toContain("ref={bodyRef}");
@@ -391,8 +391,10 @@ describe("native motion wiring", () => {
     const chat = source("src/components/chat.tsx");
 
     expect(scan).toContain("<ScanHeroIllustration");
-    expect(scan).toContain("styles.alternativeHeading");
+    expect(scan).toContain("styles.captureButton");
     expect(scan).toContain("styles.secondaryActionIcon");
+    // Opened from the dock, the camera opens by itself once.
+    expect(scan).toContain('autoLaunchRef = useRef(auto === "1")');
     expect(scanHero).toContain("<Svg");
     expect(search).toContain("styles.dayDivider");
     expect(search).toContain("<OrdiloMark");

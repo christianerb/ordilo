@@ -4,12 +4,12 @@ import Svg, { Circle, G, Path, Rect } from "react-native-svg";
 import { colors } from "@/src/theme/tokens";
 
 /** Warm, non-interactive scan preview used before the native scanner opens. */
-export function ScanHeroIllustration() {
+export function ScanHeroIllustration({ height = 230 }: { height?: number }) {
   return (
     <View
       accessible={false}
       importantForAccessibility="no-hide-descendants"
-      style={styles.frame}
+      style={[styles.frame, { height }]}
     >
       <Svg height="100%" viewBox="0 0 320 230" width="100%">
         <Circle cx={257} cy={160} fill={colors.washSageSoft} r={54} />
