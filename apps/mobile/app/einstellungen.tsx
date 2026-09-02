@@ -3,7 +3,6 @@ import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   Bell,
-  ChevronLeft,
   ChevronRight,
   EyeOff,
   FileText,
@@ -26,6 +25,7 @@ import {
 } from "react-native";
 
 import {
+  DetailTopBar,
   OrdiloButton,
   Screen,
   ScreenHeader,
@@ -134,18 +134,10 @@ export default function EinstellungenScreen() {
 
   return (
     <Screen>
+      <DetailTopBar onBack={() => router.back()} />
       <ScreenHeader
         subtitle="Schutz und Konto auf diesem Gerät"
         title="Einstellungen"
-        trailing={(
-          <SpringPressable
-            accessibilityLabel="Zurück"
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
-            <ChevronLeft color={colors.graphite} size={22} strokeWidth={2} />
-          </SpringPressable>
-        )}
       />
 
       <ScrollView
@@ -468,12 +460,6 @@ function SettingsLinkRow({
 }
 
 const styles = StyleSheet.create({
-  backButton: {
-    alignItems: "center",
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
   scrollContent: {
     gap: spacing.lg,
     paddingBottom: spacing["2xl"],

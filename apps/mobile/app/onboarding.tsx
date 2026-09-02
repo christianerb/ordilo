@@ -224,7 +224,7 @@ export default function OnboardingScreen() {
         await refresh();
         router.replace("/(tabs)");
         if (startsFirstScan) {
-          router.push("/scan");
+          router.push({ pathname: "/scan", params: { auto: "1" } });
         }
       } catch {
         setServerError(NETWORK_ERROR);

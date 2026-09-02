@@ -38,11 +38,14 @@ import Animated, { useReducedMotion } from "react-native-reanimated";
 
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { EventFormSheet } from "@/src/components/event-form-sheet";
+import { AvatarStack, EmptyPersonSeat, PersonAvatar, PersonChip } from "@/src/components/person";
+import { TaskCheck } from "@/src/components/task-check";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
 import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
 import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import { TaskFormSheet, type TaskFormValues } from "@/src/components/task-form-sheet";
 import {
+  Chip,
   EmptyState,
   ListSkeleton,
   OrdiloButton,
@@ -50,6 +53,7 @@ import {
   ScreenHeader,
   SegmentedControl,
 } from "@/src/components/ui";
+import { memberToPerson } from "@/src/lib/people";
 import {
   calendarDays,
   createPlannerEvent,
@@ -145,6 +149,8 @@ export default function PlanScreen() {
   const [rescheduleTask, setRescheduleTask] = useState<PlannerTask | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [view, setView] = useState<"tasks" | "calendar">("tasks");
+  const [personFilter, setPersonFilter] = useState<string | null>(null);
+  const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
   const undoSeqRef = useRef(0);
@@ -206,16 +212,36 @@ export default function PlanScreen() {
 
   /** Dismissed rows stay in the query result (shared OR filter) but never in the list — same rule as the web. */
   const visibleTasks = useMemo(
-    () => tasks.filter((task) => task.status !== "dismissed"),
-    [tasks],
+    () =>
+      tasks.filter(
+        (task) =>
+          task.status !== "dismissed" &&
+          (personFilter === null || task.assigned_to === personFilter),
+      ),
+    [personFilter, tasks],
+  );
+  const personEvents = useMemo(
+    () =>
+      personFilter === null
+        ? events
+        : events.filter(
+            (event) =>
+              event.responsible_member_id === personFilter ||
+              event.attendee_ids.includes(personFilter),
+          ),
+    [events, personFilter],
   );
   const visibleEvents = useMemo(
-    () => upcomingPlannerEvents(events, todayStr),
-    [events, todayStr],
+    () => upcomingPlannerEvents(personEvents, todayStr),
+    [personEvents, todayStr],
   );
   const selectedEvents = useMemo(
-    () => eventsForDay(events, selectedDate),
-    [events, selectedDate],
+    () => eventsForDay(personEvents, selectedDate),
+    [personEvents, selectedDate],
+  );
+  const filterPerson = useMemo(
+    () => members.find((member) => member.id === personFilter) ?? null,
+    [members, personFilter],
   );
 
   const grouped = useMemo(() => {
@@ -307,6 +333,38 @@ export default function PlanScreen() {
       });
     },
     [replaceTask, showUndo, todayStr],
+  );
+
+  /**
+   * "Wer macht das?" from the row: one tap on a face reassigns, with the
+   * same optimistic write and undo as every other change here.
+   */
+  const assign = useCallback(
+    async (task: PlannerTask, memberId: string | null) => {
+      setAssignTask(null);
+      if (memberId === task.assigned_to) return;
+      const previous = task.assigned_to;
+      const assignedTask: PlannerTask = { ...task, assigned_to: memberId };
+      replaceTask(assignedTask);
+      const ok = await patchTask(task.id, { assigned_to: memberId });
+      if (!ok) {
+        replaceTask(task);
+        void fail();
+        Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
+        return;
+      }
+      void success();
+      const name = members.find((member) => member.id === memberId)?.name;
+      showUndo(name ? `${name} kümmert sich` : "Niemand zugeteilt", async () => {
+        replaceTask(task);
+        const undoOk = await patchTask(task.id, { assigned_to: previous });
+        if (!undoOk) {
+          replaceTask(assignedTask);
+          notifyUndoFailed();
+        }
+      });
+    },
+    [members, replaceTask, showUndo],
   );
 
   const dismiss = useCallback(
@@ -417,10 +475,57 @@ export default function PlanScreen() {
     setFormOpen(true);
   }, []);
 
+  const headerSubtitle = (() => {
+    if (loading && tasks.length === 0) return "Wird geladen …";
+    const now = grouped.now.length;
+    const next = grouped.next.length;
+    const parts = [
+      now > 0 ? (now === 1 ? "1 heute dran" : `${now} heute dran`) : null,
+      next > 0 ? (next === 1 ? "1 als Nächstes" : `${next} als Nächstes`) : null,
+      visibleEvents.length > 0
+        ? visibleEvents.length === 1
+          ? "1 Termin"
+          : `${visibleEvents.length} Termine`
+        : null,
+    ].filter(Boolean);
+    if (parts.length === 0) return filterPerson ? `Nichts offen für ${filterPerson.name}` : "Nichts offen";
+    return parts.join(" · ");
+  })();
+
+  const personFilterRow =
+    members.length > 1 ? (
+      <ScrollView
+        contentContainerStyle={styles.personChips}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.personChipRow}
+      >
+        <Chip
+          label="Alle"
+          onPress={() => setPersonFilter(null)}
+          selected={personFilter === null}
+        />
+        {members.map((member) => (
+          <Pressable
+            accessibilityLabel={`Nur ${member.name}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: personFilter === member.id }}
+            key={member.id}
+            onPress={() => {
+              select();
+              setPersonFilter((current) => (current === member.id ? null : member.id));
+            }}
+          >
+            <PersonChip person={memberToPerson(member)} selected={personFilter === member.id} />
+          </Pressable>
+        ))}
+      </ScrollView>
+    ) : null;
+
   if (loading && tasks.length === 0) {
     return (
       <Screen>
-        <PlanHeader onCreate={openCreateMenu} />
+        <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
         <View style={styles.loadingList}>
           <ListSkeleton rows={4} />
         </View>
@@ -431,7 +536,7 @@ export default function PlanScreen() {
   if (error && tasks.length === 0) {
     return (
       <Screen>
-        <PlanHeader onCreate={openCreateMenu} />
+        <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
         <View style={styles.centerFill}>
           <EmptyState
             description={error}
@@ -477,8 +582,9 @@ export default function PlanScreen() {
           events={selectedEvents}
           header={
             <>
-              <PlanHeader onCreate={openCreateMenu} />
+              <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
               <SegmentedControl items={tabItems} />
+              {personFilterRow}
             </>
           }
           members={members}
@@ -499,16 +605,27 @@ export default function PlanScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          <PlanHeader onCreate={openCreateMenu} />
+          <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
           <SegmentedControl items={tabItems} style={styles.viewTabs} />
+          {personFilterRow}
           {visibleTasks.length === 0 && visibleEvents.length === 0 ? (
-            <EmptyState
-              description="Lege die erste Aufgabe an — Fristen aus deinen Dokumenten erscheinen hier ebenfalls."
-              heading="Noch nichts geplant"
-              icon={CalendarDays}
-            >
-              <OrdiloButton onPress={openTaskCreate} size="lg" title="Neue Aufgabe" />
-            </EmptyState>
+            filterPerson ? (
+              <EmptyState
+                description={`Für ${filterPerson.name} ist gerade nichts offen. Neue Aufgaben kannst du direkt zuteilen.`}
+                heading="Alles erledigt"
+                icon={Check}
+              >
+                <OrdiloButton onPress={() => setPersonFilter(null)} size="lg" title="Alle anzeigen" variant="outline" />
+              </EmptyState>
+            ) : (
+              <EmptyState
+                description="Lege die erste Aufgabe an. Fristen aus euren Dokumenten landen hier von selbst."
+                heading="Noch nichts geplant"
+                icon={CalendarDays}
+              >
+                <OrdiloButton onPress={openTaskCreate} size="lg" title="Neue Aufgabe" />
+              </EmptyState>
+            )
           ) : null}
           {visibleEvents.length > 0 ? (
             <View style={styles.section}>
@@ -602,6 +719,8 @@ export default function PlanScreen() {
                     {shown.map((task) => (
                       <SwipeableTaskRow
                         key={task.id}
+                        members={members}
+                        onAssign={() => setAssignTask(task)}
                         onPress={() => openEdit(task)}
                         onReschedule={() => setRescheduleTask(task)}
                         onToggle={() => void toggleDone(task)}
@@ -703,6 +822,33 @@ export default function PlanScreen() {
         visible={rescheduleTask !== null}
       />
 
+      <OrdiloPickerSheet
+        accessibilityLabel="Wer macht das?"
+        onClose={() => setAssignTask(null)}
+        options={[
+          ...members.map((member) => ({
+            key: member.id,
+            label: member.name,
+            leading: <PersonAvatar person={memberToPerson(member)} size={36} />,
+            onPress: () => {
+              if (assignTask) void assign(assignTask, member.id);
+            },
+            selected: assignTask?.assigned_to === member.id,
+          })),
+          {
+            key: "unassigned",
+            label: "Niemand",
+            leading: <EmptyPersonSeat size={36} />,
+            onPress: () => {
+              if (assignTask) void assign(assignTask, null);
+            },
+            selected: assignTask?.assigned_to === null,
+          },
+        ]}
+        title="Wer macht das?"
+        visible={assignTask !== null}
+      />
+
       {undo ? (
         <Animated.View
           entering={feedbackEntering(reduceMotion)}
@@ -732,7 +878,7 @@ export default function PlanScreen() {
 }
 
 /** Screen header: title, calm subtitle, and the one primary action. */
-function PlanHeader({ onCreate }: { onCreate: () => void }) {
+function PlanHeader({ onCreate, subtitle }: { onCreate: () => void; subtitle: string }) {
   return (
     <ScreenHeader
       action={{
@@ -740,7 +886,7 @@ function PlanHeader({ onCreate }: { onCreate: () => void }) {
         icon: Plus,
         onPress: onCreate,
       }}
-      subtitle="Aufgaben und Termine"
+      subtitle={subtitle}
       title="Plan"
     />
   );
@@ -899,6 +1045,13 @@ function PlannerEventRow({
         year: "numeric",
       });
   const people = formatEventPeople(event, members);
+  const faces = members
+    .filter(
+      (member) =>
+        event.attendee_ids.includes(member.id) ||
+        member.id === event.responsible_member_id,
+    )
+    .map(memberToPerson);
 
   return (
     <View style={styles.eventRow}>
@@ -918,6 +1071,7 @@ function PlannerEventRow({
           </Text>
         ) : null}
       </View>
+      {faces.length > 0 ? <AvatarStack people={faces} size={26} /> : null}
     </View>
   );
 }
@@ -932,12 +1086,16 @@ function PlannerEventRow({
  * appear from the first dragged pixel so the gesture teaches itself.
  */
 function SwipeableTaskRow({
+  members,
+  onAssign,
   onPress,
   onReschedule,
   onToggle,
   task,
   todayStr,
 }: {
+  members: FamilyMemberOption[];
+  onAssign: () => void;
   onPress: () => void;
   onReschedule: () => void;
   onToggle: () => void;
@@ -1004,6 +1162,8 @@ function SwipeableTaskRow({
         rightThreshold={40}
       >
         <TaskRow
+          members={members}
+          onAssign={onAssign}
           onPress={onPress}
           onToggle={onToggle}
           task={task}
@@ -1021,11 +1181,15 @@ function SwipeableTaskRow({
  * the row that is late, never as a red section.
  */
 function TaskRow({
+  members,
+  onAssign,
   onPress,
   onToggle,
   task,
   todayStr,
 }: {
+  members: FamilyMemberOption[];
+  onAssign: () => void;
   onPress: () => void;
   onToggle: () => void;
   task: PlannerTask;
@@ -1034,19 +1198,15 @@ function TaskRow({
   const done = task.status === "done";
   const overdue = done ? null : formatOverdueLabel(task.due_date, todayStr);
   const dueLabel = overdue ?? formatTaskDueLabel(task.due_date, todayStr);
+  const assignee = members.find((member) => member.id === task.assigned_to) ?? null;
 
   return (
     <View style={styles.taskRow}>
-      <Pressable
+      <TaskCheck
         accessibilityLabel={done ? `${task.title} wieder öffnen` : `${task.title} erledigen`}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: done }}
-        hitSlop={10}
-        onPress={onToggle}
-        style={[styles.checkbox, done && styles.checkboxDone]}
-      >
-        {done ? <Check color={colors.warmWhite} size={16} strokeWidth={3} /> : null}
-      </Pressable>
+        done={done}
+        onToggle={onToggle}
+      />
       <Pressable
         accessibilityLabel={`${task.title} bearbeiten`}
         accessibilityRole="button"
@@ -1070,11 +1230,23 @@ function TaskRow({
           </Text>
         ) : null}
       </Pressable>
-      <ChevronRight
-        color={colors.mistDark}
-        size={18}
-        strokeWidth={1.9}
-      />
+      <Pressable
+        accessibilityHint="Ändert, wer sich kümmert"
+        accessibilityLabel={
+          assignee ? `${assignee.name} kümmert sich, ändern` : "Niemand zugeteilt, jemanden auswählen"
+        }
+        accessibilityRole="button"
+        disabled={done}
+        hitSlop={6}
+        onPress={onAssign}
+        style={styles.assignee}
+      >
+        {assignee ? (
+          <PersonAvatar person={memberToPerson(assignee)} size={30} />
+        ) : done ? null : (
+          <EmptyPersonSeat size={30} />
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -1306,9 +1478,10 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
-    gap: 10,
+    gap: spacing.xs,
     minHeight: 72,
-    padding: 12,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
   },
   eventRow: {
     alignItems: "center",
@@ -1328,19 +1501,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 36,
   },
-  checkbox: {
+  assignee: {
     alignItems: "center",
-    borderColor: colors.mistDark,
-    borderRadius: radii.pill,
-    borderWidth: 2,
-    height: 28,
+    height: 44,
     justifyContent: "center",
-    width: 28,
+    width: 44,
   },
-  checkboxDone: {
-    backgroundColor: colors.harborBlue,
-    borderColor: colors.harborBlue,
-  },
+  personChipRow: { marginBottom: spacing.md, marginHorizontal: -spacing.md },
+  personChips: { gap: spacing.xs, paddingHorizontal: spacing.md },
   taskBody: {
     flex: 1,
     gap: 2,

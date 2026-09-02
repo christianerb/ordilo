@@ -1,10 +1,10 @@
+import { getDocumentKind, isDocumentType } from "../lib/document-kind";
+
 // lucide-react-native ships ESM only; the icon identity is all this test
-// needs, so every icon resolves to its own name.
+// needs, so every icon resolves to its own name (jest hoists the mock).
 jest.mock("lucide-react-native", () =>
   new Proxy({}, { get: (_target, name) => String(name) }),
 );
-
-import { getDocumentKind, isDocumentType } from "../lib/document-kind";
 
 describe("document kinds", () => {
   it("maps every known type to its icon and German label", () => {
