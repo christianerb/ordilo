@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -26,7 +27,7 @@ import {
   pressDuration,
   pressScale,
 } from "@/src/theme/motion";
-import { colors, fonts, radii, spacing, typography } from "@/src/theme/tokens";
+import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 import { OrdiloMark } from "./ordilo-mark";
 
@@ -222,6 +223,7 @@ export function ScreenHeader({
 }) {
   const ActionIcon = action?.icon;
   const hasAction = Boolean(action || trailing);
+  const { fontScale } = useWindowDimensions();
   return (
     <View style={styles.header}>
       <View accessible={false} style={styles.headerWashOne} />
@@ -234,13 +236,24 @@ export function ScreenHeader({
           hasAction ? styles.headerCopyWithAction : styles.headerCopyWithoutAction,
         ]}
       >
-        <Text numberOfLines={1} style={styles.headerTitle}>
+        <Text
+          numberOfLines={1}
+          style={[
+            typography.display,
+            styles.headerTitle,
+            { lineHeight: typography.display.lineHeight * fontScale },
+          ]}
+        >
           {title}
         </Text>
         {subtitle ? (
           <Text
             numberOfLines={1}
-            style={[typography.timestamp, styles.headerSubtitle]}
+            style={[
+              typography.timestamp,
+              styles.headerSubtitle,
+              { lineHeight: typography.timestamp.lineHeight * fontScale },
+            ]}
           >
             {subtitle}
           </Text>
@@ -467,9 +480,9 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    // Sized by the mark: 14 top + 52 mark + 14 bottom padding. With the
-    // copy top-aligned, anything taller is dead space under the text.
-    height: 80,
+    // The mark defines the compact default, while larger system text can
+    // grow the header instead of being clipped by a fixed height.
+    minHeight: 80,
     // Top-aligned like the mark (top: 14) and the action slot beside it —
     // the copy, the button and the mark share one top edge.
     justifyContent: "flex-start",
@@ -527,15 +540,7 @@ const styles = StyleSheet.create({
   headerCopyWithAction: { paddingRight: 116 },
   headerCopyWithoutAction: { paddingRight: 62 },
   headerTitle: {
-    // The tab's identity moment — one deliberate step above the app's
-    // display role (18px) so the page title outranks every card title on
-    // the screen. Still Figtree 600; the step comes from size and a
-    // touch of negative tracking, not a second family.
     color: colors.graphite,
-    fontFamily: fonts.semibold,
-    fontSize: 22,
-    letterSpacing: -0.4,
-    lineHeight: 27,
   },
   headerSubtitle: {
     color: colors.mistDark,
