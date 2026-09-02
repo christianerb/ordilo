@@ -1,6 +1,9 @@
 import {
   buildConfirmDocumentPayload,
   confirmDocumentReview,
+  formatRelativeDays,
+  formatReviewAmount,
+  getDocumentConsequences,
   canReviewDocument,
   deleteDocument,
   documentTypeLabels,
@@ -202,5 +205,57 @@ describe("document review", () => {
       value_date: "2026-09-02",
       confidence: 0.7,
     }]);
+  });
+
+  it("turns kept dates into calendar events and leaves the rest alone", () => {
+    const payload = buildConfirmDocumentPayload(
+      {
+        ...analysis,
+        title: "Elternbrief",
+        dates: [
+          { date: "2026-09-08", label: "Sportfest", type: "date", confidence: 1 },
+          { date: "2026-09-12", label: "", type: "date", confidence: 1 },
+          { date: "irgendwann", label: "Unklar", type: "date", confidence: 0.4 },
+        ],
+      },
+      { calendarDateIndices: [0, 1, 2] },
+    );
+    expect(payload.calendar_events).toEqual([
+      { date: "2026-09-08", label: "Sportfest" },
+      { date: "2026-09-12", label: "Elternbrief" },
+    ]);
+    expect(buildConfirmDocumentPayload(analysis).calendar_events).toEqual([]);
+  });
+
+  it("formats amounts and relative days the German way", () => {
+    expect(formatReviewAmount("84,20", "EUR")).toBe("84,20\u00a0€");
+    expect(formatReviewAmount("1.250,00", "eur")).toBe("1.250,00\u00a0€");
+    expect(formatReviewAmount("ca. 80", "EUR")).toBe("ca. 80 EUR");
+    const now = new Date(2026, 8, 2);
+    expect(formatRelativeDays("2026-09-02", now)).toBe("heute");
+    expect(formatRelativeDays("2026-09-03", now)).toBe("morgen");
+    expect(formatRelativeDays("2026-09-08", now)).toBe("in 6 Tagen");
+    expect(formatRelativeDays("2026-08-30", now)).toBe("vor 3 Tagen");
+    expect(formatRelativeDays("2027-03-01", now)).toBeNull();
+    expect(formatRelativeDays("bald", now)).toBeNull();
+  });
+
+  it("lists what a document means: dates first, then tasks, money and numbers", () => {
+    const consequences = getDocumentConsequences(
+      {
+        ...analysis,
+        dates: [
+          { date: "2026-09-12", label: "Rückgabe", type: "date", confidence: 1 },
+          { date: "2026-09-08", label: "Sportfest", type: "date", confidence: 1 },
+        ],
+        tasks: [{ title: "Sportzeug einpacken", due_date: "2026-09-08", confidence: 1 }],
+        amounts: [{ amount: "12,50", currency: "EUR", label: "", kind: "total", value_date: null, confidence: 1 }],
+        facts: [{ fact_type: "identifier", label: "Kundennummer", value: "4711", confidence: 1 }],
+      },
+      new Date(2026, 8, 2),
+    );
+    expect(consequences.map((entry) => entry.kind)).toEqual(["date", "date", "task", "amount", "fact"]);
+    expect(consequences[0]).toMatchObject({ label: "Sportfest", dateLabel: "Di., 8. Sept.", relative: "in 6 Tagen", index: 1 });
+    expect(consequences[3]).toMatchObject({ label: "Gesamtbetrag", value: "12,50\u00a0€" });
   });
 });

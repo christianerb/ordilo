@@ -1,31 +1,35 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
-import { fail, select, success } from "@/src/lib/feedback";
 import * as Linking from "expo-linking";
 import {
   AlertCircle,
   CalendarDays,
+  CalendarPlus,
   Check,
-  ChevronRight,
-  CircleAlert,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Eye,
   EyeOff,
   FileText,
+  Hash,
   KeyRound,
   ListChecks,
   Lock,
+  MoreHorizontal,
   Pencil,
   Plus,
   Tag,
   Trash2,
   UserRound,
+  Wallet,
   WalletCards,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -37,52 +41,114 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
-import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
-import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
+import { PersonChip } from "@/src/components/person";
+import type { OrdiloSheetHandle } from "@/src/components/sheet";
+import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
+import {
+  Card,
+  DetailTopBar,
+  EmptyState,
+  IconButton,
+  IconTile,
+  ListGroup,
+  ListRow,
+  ListSkeleton,
+  OrdiloButton,
+  Screen,
+  SectionHeader,
+} from "@/src/components/ui";
+import { getDocumentKind } from "@/src/lib/document-kind";
 import {
   canReviewDocument,
   confirmDocumentReview,
   deleteDocument,
   documentTypeLabels,
+  getDocumentConsequences,
   isImageFile,
   loadDocumentReview,
   loadOriginalFile,
   parseCredentialFields,
   revealDocumentSecret,
+  type ConfirmDocumentResult,
+  type DocumentConsequence,
   type DocumentReview,
   type ReviewAnalysis,
 } from "@/src/lib/document-review";
+import { useFamily } from "@/src/lib/family-context";
+import { fail, select, success, tap } from "@/src/lib/feedback";
 import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
+import { resolveDocumentPeople, type Person } from "@/src/lib/people";
+import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { contentEntering } from "@/src/theme/motion";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 
 type Icon = typeof Tag;
 
+/**
+ * A document, understood first. The screen leads with what Ordilo made of
+ * it — title, one-line meaning, whom it concerns — and then "was das
+ * bedeutet": dates (each one can go straight into the family calendar),
+ * tasks, amounts and numbers worth copying. The file itself stays one tap
+ * away but never comes first. A freshly read document is confirmed with
+ * one "Passt so"; corrections live one level deeper.
+ */
 export default function DocumentReviewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { family } = useFamily();
   const { id, source } = useLocalSearchParams<{
     id: string;
     source?: string;
   }>();
   const [document, setDocument] = useState<DocumentReview | null>(null);
+  const [members, setMembers] = useState<FamilyMemberOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tagDraft, setTagDraft] = useState("");
   const [openingOriginal, setOpeningOriginal] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [showDocumentDetails, setShowDocumentDetails] = useState(false);
-  const [scanConfirmed, setScanConfirmed] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(false);
+  const [calendarDates, setCalendarDates] = useState<Set<number>>(new Set());
+  const [confirmed, setConfirmed] = useState<ConfirmDocumentResult | null>(null);
+  const menuRef = useRef<OrdiloSheetHandle>(null);
+  const pendingMenuRef = useRef<"original" | "edit" | "delete" | null>(null);
+
+  const applyLoaded = useCallback(
+    (value: DocumentReview | null) => {
+      setDocument(value);
+      if (value && source === "scan" && canReviewDocument(value.status)) {
+        // A fresh scan starts in the overview too: the family confirms what
+        // Ordilo read before they correct anything.
+        setEditing(false);
+      }
+      if (value && "dates" in value && canReviewDocument(value.status)) {
+        // Every date Ordilo read with confidence is offered for the calendar
+        // by default; unsure ones wait for a deliberate tap.
+        setCalendarDates(
+          new Set(
+            value.dates
+              .map((date, index) => (date.confidence >= 0.7 && /^\d{4}-\d{2}-\d{2}$/.test(date.date) ? index : -1))
+              .filter((index) => index >= 0),
+          ),
+        );
+      }
+      if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
+    },
+    [source],
+  );
 
   const load = useCallback(async () => {
     if (!id) {
@@ -93,19 +159,14 @@ export default function DocumentReviewScreen() {
     setLoading(true);
     setError(null);
     try {
-      const value = await loadDocumentReview(id);
-      setDocument(value);
-      if (value && source === "scan" && canReviewDocument(value.status)) {
-        setEditing(true);
-      }
-      if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
+      applyLoaded(await loadDocumentReview(id));
     } catch {
       setDocument(null);
       setError("Keine Verbindung. Bitte prüfe dein Internet und versuch es nochmal.");
     } finally {
       setLoading(false);
     }
-  }, [id, source]);
+  }, [applyLoaded, id]);
 
   useEffect(() => {
     if (!id) {
@@ -115,20 +176,51 @@ export default function DocumentReviewScreen() {
       });
       return;
     }
+    let cancelled = false;
     void loadDocumentReview(id)
       .then((value) => {
-        setDocument(value);
-        if (value && source === "scan" && canReviewDocument(value.status)) {
-          setEditing(true);
-        }
-        if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
+        if (!cancelled) applyLoaded(value);
       })
       .catch(() => {
+        if (cancelled) return;
         setDocument(null);
         setError("Keine Verbindung. Bitte prüfe dein Internet und versuch es nochmal.");
       })
-      .finally(() => setLoading(false));
-  }, [id, source]);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLoaded, id]);
+
+  useEffect(() => {
+    if (!family) return;
+    let cancelled = false;
+    void fetchFamilyMembers(family.id)
+      .then((rows) => {
+        if (!cancelled) setMembers(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [family]);
+
+  // Images get an inline thumbnail: seeing the letter is part of
+  // understanding it. PDFs keep the explicit "Original ansehen".
+  useEffect(() => {
+    if (!id || !document || !isImageFile(document.mime_type)) return;
+    let cancelled = false;
+    void loadOriginalFile(id)
+      .then((file) => {
+        if (!cancelled && isImageFile(file.mimeType)) setThumbnailUrl(file.url);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [document, id]);
 
   const updateAnalysis = (updater: (current: ReviewAnalysis) => ReviewAnalysis) => {
     setDocument((current) => current && "summary" in current ? updater(current) : current);
@@ -138,17 +230,17 @@ export default function DocumentReviewScreen() {
     if (!document || !("summary" in document) || !canReviewDocument(document.status) || !id) return;
     if (!document.title.trim()) {
       Alert.alert("Titel fehlt", "Gib dem Dokument einen kurzen Namen, damit ihr es später wiederfindet.");
+      setEditing(true);
       return;
     }
     setSaving(true);
     try {
-      await confirmDocumentReview(id, document);
+      const result = await confirmDocumentReview(id, document, {
+        calendarDateIndices: [...calendarDates],
+      });
       await success();
-      if (source === "scan") {
-        setScanConfirmed(true);
-      } else {
-        router.replace("/(tabs)");
-      }
+      refreshLibraryDocuments();
+      setConfirmed(result);
     } catch {
       await fail();
       Alert.alert("Nicht gespeichert", "Bitte prüfe deine Verbindung und versuch es nochmal.");
@@ -182,6 +274,10 @@ export default function DocumentReviewScreen() {
 
   const viewOriginal = async () => {
     if (!id || openingOriginal) return;
+    if (thumbnailUrl) {
+      setImageUrl(thumbnailUrl);
+      return;
+    }
     setOpeningOriginal(true);
     try {
       const file = await loadOriginalFile(id);
@@ -203,6 +299,46 @@ export default function DocumentReviewScreen() {
     }
   };
 
+  const chooseMenu = (choice: "original" | "edit" | "delete") => {
+    pendingMenuRef.current = choice;
+    menuRef.current?.dismiss();
+  };
+  const finishMenu = () => {
+    const choice = pendingMenuRef.current;
+    pendingMenuRef.current = null;
+    if (choice === "original") void viewOriginal();
+    if (choice === "edit") setEditing(true);
+    if (choice === "delete") requestDelete();
+  };
+
+  const toggleCalendarDate = (index: number) => {
+    select();
+    setCalendarDates((current) => {
+      const next = new Set(current);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const people: Person[] = useMemo(
+    () =>
+      document && "family_members" in document
+        ? resolveDocumentPeople(
+            document.family_members.map((member) => ({
+              entity_value: member.name,
+              linked_object_id: member.person_id,
+            })),
+            members,
+          )
+        : [],
+    [document, members],
+  );
+  const consequences = useMemo(
+    () => (document && "summary" in document ? getDocumentConsequences(document) : []),
+    [document],
+  );
+
   if (loading) {
     return (
       <Screen style={styles.screen}>
@@ -217,6 +353,7 @@ export default function DocumentReviewScreen() {
   if (!document) {
     return (
       <Screen>
+        <DetailTopBar onBack={() => router.back()} title="Dokument" />
         <EmptyState
           icon={AlertCircle}
           heading="Dokument nicht verfügbar"
@@ -228,7 +365,19 @@ export default function DocumentReviewScreen() {
     );
   }
 
-  if (scanConfirmed) {
+  if (confirmed) {
+    const outcome = [
+      confirmed.eventsCreated === 1
+        ? "1 Termin im Kalender"
+        : confirmed.eventsCreated > 1
+          ? `${confirmed.eventsCreated} Termine im Kalender`
+          : null,
+      confirmed.tasksKept === 1
+        ? "1 Aufgabe auf der Liste"
+        : confirmed.tasksKept > 1
+          ? `${confirmed.tasksKept} Aufgaben auf der Liste`
+          : null,
+    ].filter(Boolean);
     return (
       <Screen
         style={[
@@ -252,7 +401,9 @@ export default function DocumentReviewScreen() {
           <Text style={styles.confirmedEyebrow}>Im Familienbuch</Text>
           <Text style={styles.confirmedHeading}>Alles sicher abgelegt</Text>
           <Text style={styles.confirmedCopy}>
-            Du hast das Dokument geprüft. Jetzt kann deine Familie es jederzeit wiederfinden.
+            {outcome.length > 0
+              ? `Ordilo hat sich das gemerkt: ${outcome.join(" und ")}.`
+              : "Deine Familie kann das Dokument jetzt jederzeit wiederfinden."}
           </Text>
           <Card style={styles.confirmedDocument}>
             <FileText color={colors.harborBlue} size={22} />
@@ -262,16 +413,18 @@ export default function DocumentReviewScreen() {
           </Card>
         </Animated.View>
         <View style={styles.confirmedActions}>
-          <OrdiloButton
-            onPress={() => router.replace("/scan")}
-            size="lg"
-            title="Nächstes scannen"
-          />
+          {source === "scan" ? (
+            <OrdiloButton
+              onPress={() => router.replace({ pathname: "/scan", params: { auto: "1" } })}
+              size="lg"
+              title="Nächstes scannen"
+            />
+          ) : null}
           <OrdiloButton
             onPress={() => router.replace("/(tabs)")}
             size="lg"
             title="Fertig"
-            variant="outline"
+            variant={source === "scan" ? "outline" : "primary"}
           />
         </View>
       </Screen>
@@ -283,7 +436,7 @@ export default function DocumentReviewScreen() {
       error={deleteError}
       loading={deleting}
       loadingLabel="Wird gelöscht …"
-      message={`"${document.title?.trim() || "Dieses Dokument"}" wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
+      message={`„${document.title?.trim() || "Dieses Dokument"}“ wird aus eurer Ablage gelöscht. Das kannst du nicht rückgängig machen.`}
       onCancel={() => setDeleteOpen(false)}
       onConfirm={() => void removeDocument()}
       title="Dokument löschen?"
@@ -307,29 +460,31 @@ export default function DocumentReviewScreen() {
 
   const isReadOnly = document.status === "confirmed";
   const editable = canReviewDocument(document.status);
+  const kind = getDocumentKind(document.document_type);
+  const KindIcon = kind.icon;
+  const summaryLong = document.summary.length > 180;
 
   return (
     <Screen style={styles.screen}>
       <DetailTopBar
         onBack={() => router.back()}
-        subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)} · ${document.suggested_category || documentTypeLabels[document.document_type]}`}
-        title={isReadOnly ? "Dokument" : "Dokument prüfen"}
-        trailing={(
-          <Pressable
-            accessibilityLabel="Dokument löschen"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={requestDelete}
-            style={styles.headerAction}
-          >
-            <Trash2 color={colors.destructive} size={20} />
-          </Pressable>
-        )}
+        subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)}`}
+        title={editing ? (editable ? "Angaben prüfen" : "Angaben") : kind.label}
+        trailing={
+          editing ? undefined : (
+            <IconButton
+              accessibilityLabel="Weitere Aktionen"
+              icon={MoreHorizontal}
+              onPress={() => menuRef.current?.present()}
+              tone="plain"
+            />
+          )
+        }
       />
       <ScrollView
         contentContainerStyle={[
           styles.content,
-          { paddingBottom: !editing ? 76 + insets.bottom : spacing["2xl"] },
+          { paddingBottom: (editing ? spacing.lg : 96) + insets.bottom },
         ]}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -337,46 +492,192 @@ export default function DocumentReviewScreen() {
         <Animated.View
           entering={contentEntering()}
           key={editing ? "document-editor" : "document-overview"}
-          style={[styles.contentState, !editing && styles.overviewContent]}
+          style={styles.contentState}
         >
         {!editing ? (
           <>
-            <DocumentHero document={document} />
-            <ExtractionOverview document={document} />
-            <Card style={styles.detailCard}>
-              <DetailLink
-                accessibilityLabel={editable ? "Extrahierte Angaben prüfen" : "Extrahierte Angaben ansehen"}
-                description="Name, Termine und mehr"
-                onPress={() => setEditing(true)}
-                title={editable ? "Extrahierte Angaben prüfen" : "Extrahierte Angaben ansehen"}
-              />
-              <DetailLink
-                accessibilityLabel="Dokumentdetails anzeigen"
-                description={document.original_filename ?? "Datei und Format"}
-                onPress={() => setShowDocumentDetails((current) => !current)}
-                separated
-                title="Dokumentdetails"
-              />
-            </Card>
-            {showDocumentDetails ? <DocumentMetadata document={document} /> : null}
-            <View style={styles.aiNotice}>
-              <View
-                accessible={false}
-                importantForAccessibility="no-hide-descendants"
-                style={styles.aiIcon}
-              >
-                <OrdiloMark size={28} />
+            <View style={styles.hero}>
+              <View style={styles.heroTop}>
+                <IconTile size={52} tint={kind.tint}>
+                  <KindIcon color={kind.ink} size={26} strokeWidth={1.8} />
+                </IconTile>
+                {editable ? (
+                  <View style={styles.newPill}>
+                    <Text style={styles.newPillText}>Neu gelesen</Text>
+                  </View>
+                ) : null}
               </View>
-              <Text style={styles.aiNoticeText}>
-                Ordilo hat die wichtigsten Informationen für dich herausgesucht. Bitte prüfe, ob alles stimmt.
-              </Text>
+              <Text style={styles.heroTitle}>{document.title}</Text>
+              {document.summary ? (
+                <Pressable
+                  accessibilityRole={summaryLong ? "button" : undefined}
+                  disabled={!summaryLong}
+                  onPress={() => setSummaryExpanded((current) => !current)}
+                >
+                  <Text
+                    numberOfLines={summaryExpanded ? undefined : 4}
+                    style={styles.heroSummary}
+                  >
+                    {document.summary}
+                  </Text>
+                  {summaryLong ? (
+                    <Text style={styles.heroMore}>
+                      {summaryExpanded ? "Weniger" : "Mehr lesen"}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ) : null}
+              {people.length > 0 ? (
+                <View style={styles.peopleRow}>
+                  <Text style={styles.peopleLabel}>Betrifft</Text>
+                  {people.map((person) => (
+                    <PersonChip key={`${person.id ?? person.name}`} person={person} />
+                  ))}
+                </View>
+              ) : null}
             </View>
+
+            <View style={styles.section}>
+              <SectionHeader
+                count={consequences.length || undefined}
+                title="Was das bedeutet"
+              />
+              {consequences.length > 0 ? (
+                <ListGroup>
+                  {consequences.map((entry, index) => (
+                    <ConsequenceRow
+                      calendarSelected={entry.kind === "date" && calendarDates.has(entry.index)}
+                      editable={editable}
+                      entry={entry}
+                      first={index === 0}
+                      key={`${entry.kind}-${entry.index}`}
+                      onToggleCalendar={() => toggleCalendarDate(entry.index)}
+                    />
+                  ))}
+                </ListGroup>
+              ) : (
+                <View style={styles.quietCard}>
+                  <Text style={styles.quietText}>
+                    Keine Termine, Aufgaben oder Beträge erkannt. Das Dokument ist
+                    einfach gut aufgehoben.
+                  </Text>
+                </View>
+              )}
+              {editable && consequences.some((entry) => entry.kind === "date") ? (
+                <Text style={styles.calendarHint}>
+                  Angehakte Termine legt Ordilo beim Bestätigen in euren Kalender.
+                </Text>
+              ) : null}
+              {document.needs_user_review && editable ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setEditing(true)}
+                  style={({ pressed }) => [styles.reviewNotice, pressed && styles.pressed]}
+                >
+                  <View style={styles.reviewNoticeIcon}>
+                    <AlertCircle color={colors.warmApricot} size={18} strokeWidth={2} />
+                  </View>
+                  <View style={styles.rowContent}>
+                    <Text style={styles.reviewNoticeTitle}>Ein paar Angaben sind unsicher</Text>
+                    <Text style={styles.reviewNoticeText}>Kurz prüfen, dann stimmt alles.</Text>
+                  </View>
+                  <Pencil color={colors.harborBlue} size={18} strokeWidth={2} />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {isReadOnly && document.document_type === "credentials" ? (
+              <CredentialsSection
+                documentId={id}
+                credentialText={document.credential_text}
+              />
+            ) : null}
+
+            <View style={styles.section}>
+              <SectionHeader title="Datei" />
+              {thumbnailUrl ? (
+                <Pressable
+                  accessibilityHint="Öffnet das Original in groß"
+                  accessibilityLabel="Original ansehen"
+                  accessibilityRole="imagebutton"
+                  onPress={() => setImageUrl(thumbnailUrl)}
+                  style={({ pressed }) => [styles.thumbnail, pressed && styles.pressed]}
+                >
+                  <Image
+                    accessibilityIgnoresInvertColors
+                    resizeMode="cover"
+                    source={{ uri: thumbnailUrl }}
+                    style={styles.thumbnailImage}
+                  />
+                </Pressable>
+              ) : null}
+              <ListGroup>
+                <ListRow
+                  accessibilityHint="Öffnet das gespeicherte Original."
+                  chevron
+                  first
+                  leading={
+                    <IconTile>
+                      {openingOriginal ? (
+                        <ActivityIndicator color={colors.harborBlue} size="small" />
+                      ) : (
+                        <Eye color={colors.mistDark} size={20} strokeWidth={1.9} />
+                      )}
+                    </IconTile>
+                  }
+                  onPress={() => void viewOriginal()}
+                  subtitle={document.original_filename ?? "Gespeicherte Datei"}
+                  title={openingOriginal ? "Wird geöffnet …" : "Original ansehen"}
+                />
+                <ListRow
+                  leading={
+                    <IconTile>
+                      <FileText color={colors.mistDark} size={20} strokeWidth={1.9} />
+                    </IconTile>
+                  }
+                  onPress={() => setShowDocumentDetails((current) => !current)}
+                  subtitle={[
+                    document.mime_type?.replace(/^application\//, "").toUpperCase(),
+                    document.page_count ? `${document.page_count} ${document.page_count === 1 ? "Seite" : "Seiten"}` : null,
+                    document.suggested_category || documentTypeLabels[document.document_type],
+                  ].filter(Boolean).join(" · ")}
+                  title="Details"
+                  trailing={
+                    showDocumentDetails ? (
+                      <ChevronUp color={colors.mist} size={18} />
+                    ) : (
+                      <ChevronDown color={colors.mist} size={18} />
+                    )
+                  }
+                />
+                {showDocumentDetails ? <DocumentMetadata document={document} /> : null}
+              </ListGroup>
+            </View>
+
+            {editable ? (
+              <View style={styles.aiNotice}>
+                <View
+                  accessible={false}
+                  importantForAccessibility="no-hide-descendants"
+                  style={styles.aiIcon}
+                >
+                  <OrdiloMark size={28} />
+                </View>
+                <Text style={styles.aiNoticeText}>
+                  Ordilo hat das Wichtigste herausgesucht. Wenn etwas nicht
+                  stimmt, tippe auf „Ändern“.
+                </Text>
+              </View>
+            ) : null}
           </>
         ) : (
           <>
             <View style={styles.editIntro}>
-              <Text style={styles.editTitle}>Angaben prüfen</Text>
-              <Text style={styles.editHelp}>Ändere nur, was nicht stimmt. Danach kannst du das Dokument speichern.</Text>
+              <Text style={styles.editHelp}>
+                {editable
+                  ? "Ändere nur, was nicht stimmt. Danach speicherst du das Dokument mit „Passt so“."
+                  : "So hat Ordilo das Dokument gelesen."}
+              </Text>
             </View>
 
             <Card style={styles.card}>
@@ -465,16 +766,9 @@ export default function DocumentReviewScreen() {
               </Section>
             ) : null}
 
-            {isReadOnly && document.document_type === "credentials" ? (
-              <CredentialsSection
-                documentId={id}
-                credentialText={document.credential_text}
-              />
-            ) : null}
-
             <View style={styles.actions}>
               {isReadOnly ? (
-                <OrdiloButton title="Zur Übersicht" size="lg" onPress={() => router.replace("/(tabs)")} />
+                <OrdiloButton title="Zurück zum Dokument" size="lg" onPress={() => setEditing(false)} variant="outline" />
               ) : (
                 <>
                   <OrdiloButton
@@ -492,36 +786,234 @@ export default function DocumentReviewScreen() {
         )}
         </Animated.View>
       </ScrollView>
+
       {!editing ? (
         <View style={[styles.bottomBar, { paddingBottom: Math.max(spacing.sm, insets.bottom) }]}>
-          <Pressable
-            accessibilityHint="Öffnet das gespeicherte Original."
-            accessibilityLabel="Original ansehen"
-            accessibilityRole="button"
-            disabled={openingOriginal}
-            onPress={() => void viewOriginal()}
-            style={({ pressed }) => [styles.bottomAction, pressed && styles.pressed, openingOriginal && styles.disabled]}
-          >
-            {openingOriginal ? <ActivityIndicator color={colors.harborBlue} size="small" /> : <Eye color={colors.harborBlue} size={19} />}
-            <Text style={styles.bottomActionText}>{openingOriginal ? "Wird geöffnet …" : "Original ansehen"}</Text>
-          </Pressable>
-          <View style={styles.bottomDivider} />
-          <Pressable
-            accessibilityLabel="Dokument bearbeiten"
-            accessibilityRole="button"
-            onPress={() => setEditing(true)}
-            style={({ pressed }) => [styles.bottomAction, pressed && styles.pressed]}
-          >
-            <Pencil color={colors.harborBlue} size={19} />
-            <Text style={styles.bottomActionText}>{editable ? "Bearbeiten" : "Angaben ansehen"}</Text>
-          </Pressable>
+          {editable ? (
+            <>
+              <View style={styles.bottomSecondary}>
+                <OrdiloButton
+                  icon={<Pencil color={colors.graphite} size={17} strokeWidth={2} />}
+                  onPress={() => setEditing(true)}
+                  size="lg"
+                  title="Ändern"
+                  variant="outline"
+                />
+              </View>
+              <View style={styles.bottomPrimary}>
+                <OrdiloButton
+                  disabled={saving}
+                  icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={19} strokeWidth={2.4} />}
+                  onPress={() => void confirm()}
+                  size="lg"
+                  title={saving ? "Wird gespeichert …" : "Passt so"}
+                />
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={styles.bottomSecondary}>
+                <OrdiloButton
+                  icon={<Eye color={colors.graphite} size={17} strokeWidth={2} />}
+                  onPress={() => void viewOriginal()}
+                  size="lg"
+                  title="Original"
+                  variant="outline"
+                />
+              </View>
+              <View style={styles.bottomPrimary}>
+                <OrdiloButton
+                  icon={<OrdiloMark size={20} />}
+                  onPress={() => {
+                    tap();
+                    router.push({
+                      pathname: "/suche",
+                      params: { q: `Was steht in „${document.title}“?` },
+                    });
+                  }}
+                  size="lg"
+                  title="Ordilo fragen"
+                  variant="outline"
+                />
+              </View>
+            </>
+          )}
         </View>
       ) : null}
+
+      <CreateChoiceSheet
+        accessibilityLabel="Aktionen für dieses Dokument"
+        items={[
+          {
+            accessibilityLabel: "Original ansehen",
+            description: document.original_filename ?? "Die gespeicherte Datei öffnen",
+            icon: Eye,
+            label: "Original ansehen",
+            onPress: () => chooseMenu("original"),
+            tint: "blue",
+          },
+          {
+            accessibilityLabel: editable ? "Angaben ändern" : "Angaben ansehen",
+            description: editable
+              ? "Namen, Termine, Beträge korrigieren"
+              : "Alles, was Ordilo gelesen hat",
+            icon: Pencil,
+            label: editable ? "Angaben ändern" : "Angaben ansehen",
+            onPress: () => chooseMenu("edit"),
+            tint: "sage",
+          },
+          {
+            accessibilityLabel: "Dokument löschen",
+            description: "Aus der Ablage entfernen",
+            icon: Trash2,
+            label: "Löschen",
+            onPress: () => chooseMenu("delete"),
+            tint: "sand",
+          },
+        ]}
+        onDismiss={finishMenu}
+        ref={menuRef}
+        subtitle={document.title}
+        title="Dokument"
+      />
 
       {deleteDialog}
 
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
+  );
+}
+
+/**
+ * One line of meaning. Dates carry the calendar toggle while the document
+ * is still being confirmed; numbers can be copied; everything else just
+ * reads.
+ */
+function ConsequenceRow({
+  calendarSelected,
+  editable,
+  entry,
+  first,
+  onToggleCalendar,
+}: {
+  calendarSelected: boolean;
+  editable: boolean;
+  entry: DocumentConsequence;
+  first: boolean;
+  onToggleCalendar: () => void;
+}) {
+  if (entry.kind === "date") {
+    return (
+      <ListRow
+        first={first}
+        leading={
+          <IconTile tint={colors.washBlue}>
+            <CalendarDays color={colors.harborBlue} size={20} strokeWidth={1.9} />
+          </IconTile>
+        }
+        subtitle={[entry.dateLabel, entry.relative].filter(Boolean).join(" · ")}
+        title={entry.label}
+        titleLines={2}
+        trailing={
+          editable && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) ? (
+            <Pressable
+              accessibilityLabel={
+                calendarSelected
+                  ? `${entry.label} nicht in den Kalender legen`
+                  : `${entry.label} in den Kalender legen`
+              }
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: calendarSelected }}
+              hitSlop={8}
+              onPress={onToggleCalendar}
+              style={[styles.calendarToggle, calendarSelected && styles.calendarToggleOn]}
+            >
+              {calendarSelected ? (
+                <Check color={colors.warmWhite} size={14} strokeWidth={3} />
+              ) : (
+                <CalendarPlus color={colors.harborBlue} size={14} strokeWidth={2.2} />
+              )}
+              <Text style={[styles.calendarToggleText, calendarSelected && styles.calendarToggleTextOn]}>
+                Kalender
+              </Text>
+            </Pressable>
+          ) : undefined
+        }
+      />
+    );
+  }
+  if (entry.kind === "task") {
+    return (
+      <ListRow
+        first={first}
+        leading={
+          <IconTile tint={colors.washSage}>
+            <ListChecks color="#2F6B52" size={20} strokeWidth={1.9} />
+          </IconTile>
+        }
+        subtitle={entry.dueLabel ? `Bis ${entry.dueLabel}` : "Ohne Frist"}
+        title={entry.title}
+        titleLines={2}
+      />
+    );
+  }
+  if (entry.kind === "amount") {
+    return (
+      <ListRow
+        first={first}
+        leading={
+          <IconTile tint={colors.washApricot}>
+            <Wallet color="#9A4A12" size={20} strokeWidth={1.9} />
+          </IconTile>
+        }
+        subtitle={entry.date ? `Zum ${formatDetailDate(`${entry.date}T12:00:00`)}` : null}
+        title={entry.label}
+        trailing={<Text style={styles.amountValue}>{entry.value}</Text>}
+      />
+    );
+  }
+  return (
+    <ListRow
+      first={first}
+      leading={
+        <IconTile>
+          <Hash color={colors.mistDark} size={20} strokeWidth={1.9} />
+        </IconTile>
+      }
+      subtitle={entry.value}
+      title={entry.label}
+      trailing={<CopyButton label={entry.label} value={entry.value} />}
+    />
+  );
+}
+
+function CopyButton({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+  return (
+    <Pressable
+      accessibilityLabel={`${label} kopieren`}
+      accessibilityRole="button"
+      hitSlop={6}
+      onPress={async () => {
+        const ok = await Clipboard.setStringAsync(value);
+        if (!ok) return;
+        select();
+        setCopied(true);
+        if (timer.current) clearTimeout(timer.current);
+        timer.current = setTimeout(() => setCopied(false), 1_500);
+      }}
+      style={styles.iconButton}
+    >
+      {copied ? (
+        <Check color={colors.harborBlue} size={18} />
+      ) : (
+        <Copy color={colors.harborBlue} size={18} strokeWidth={1.9} />
+      )}
+    </Pressable>
   );
 }
 
@@ -543,9 +1035,9 @@ function UnavailableState({
       <DetailTopBar onBack={onBack} title="Dokument" />
       <EmptyState
         icon={failed ? AlertCircle : FileText}
-        heading={failed ? "Das hat nicht geklappt" : processing ? "Dokument wird vorbereitet" : "Noch nicht bereit"}
+        heading={failed ? "Das hat nicht geklappt" : processing ? "Ordilo liest noch" : "Noch nicht bereit"}
         description={failed
-          ? "Die Verarbeitung dieses Dokuments ist fehlgeschlagen. Du kannst es später noch einmal scannen."
+          ? "Ordilo konnte dieses Dokument nicht lesen. Du kannst es später noch einmal scannen."
           : "Ordilo bereitet das Dokument gerade vor. Schau in einem Moment noch einmal vorbei."}
       >
         <OrdiloButton title="Zur Übersicht" size="lg" onPress={onBack} />
@@ -576,95 +1068,6 @@ function UnavailableState({
   );
 }
 
-function DocumentHero({ document }: { document: ReviewAnalysis }) {
-  return (
-    <Card style={styles.heroCard}>
-      <View style={styles.heroHeading}>
-        <View style={styles.heroFileIcon}><FileText color={colors.harborBlue} size={28} strokeWidth={1.7} /></View>
-        <View style={styles.heroCopy}>
-          <View style={styles.typeChip}><Text style={styles.typeChipText}>{documentTypeLabels[document.document_type]}</Text></View>
-          <Text style={styles.documentTitle}>{document.title}</Text>
-        </View>
-      </View>
-      {document.summary ? <Text numberOfLines={3} style={styles.documentSummary}>{document.summary}</Text> : null}
-    </Card>
-  );
-}
-
-function ExtractionOverview({ document }: { document: ReviewAnalysis }) {
-  const rows = [
-    ...document.dates.slice(0, 2).map((date) => ({
-      icon: CalendarDays,
-      label: date.label || "Termin",
-      value: formatExtractedDate(date.date),
-    })),
-    ...document.tasks.slice(0, 2).map((task) => ({
-      icon: ListChecks,
-      label: task.title || "Aufgabe",
-      value: task.due_date ? formatExtractedDate(task.due_date) : "Ohne Datum",
-    })),
-  ].slice(0, 3);
-
-  return (
-    <Card style={styles.overviewCard}>
-      <Text style={styles.overviewTitle}>Das Wichtigste auf einen Blick</Text>
-      {rows.length > 0 ? rows.map((row, index) => {
-        const IconComponent = row.icon;
-        return (
-          <View key={`${row.label}-${index}`} style={[styles.overviewRow, index > 0 && styles.overviewRowBorder]}>
-            <View style={styles.overviewIcon}><IconComponent color={colors.harborBlue} size={19} strokeWidth={1.8} /></View>
-            <View style={styles.overviewCopy}>
-              <Text numberOfLines={1} style={styles.overviewLabel}>{row.label}</Text>
-              <Text numberOfLines={1} style={styles.overviewValue}>{row.value}</Text>
-            </View>
-          </View>
-        );
-      }) : (
-        <Text style={styles.overviewEmpty}>Keine Termine oder Aufgaben erkannt.</Text>
-      )}
-      {document.needs_user_review ? (
-        <View accessibilityRole="alert" style={[styles.overviewRow, rows.length > 0 && styles.overviewRowBorder]}>
-          <View style={[styles.overviewIcon, styles.reviewIcon]}><CircleAlert color={colors.warmApricot} size={19} strokeWidth={1.8} /></View>
-          <View style={styles.overviewCopy}>
-            <Text style={styles.reviewLabel}>Noch auszufüllen</Text>
-            <Text numberOfLines={1} style={styles.overviewValue}>Ein paar Angaben sind unsicher</Text>
-          </View>
-        </View>
-      ) : null}
-    </Card>
-  );
-}
-
-function DetailLink({
-  accessibilityLabel,
-  description,
-  onPress,
-  separated = false,
-  title,
-}: {
-  accessibilityLabel: string;
-  description: string;
-  onPress: () => void;
-  separated?: boolean;
-  title: string;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.detailLink, separated && styles.detailLinkSeparated, pressed && styles.pressed]}
-    >
-      <View style={styles.detailLinkIcon}><FileText color={colors.graphite} size={20} strokeWidth={1.7} /></View>
-      <View style={styles.detailLinkCopy}>
-        <Text style={styles.detailLinkTitle}>{title}</Text>
-        <Text numberOfLines={1} style={styles.detailLinkDescription}>{description}</Text>
-      </View>
-      <ChevronRight color={colors.graphite} size={20} strokeWidth={1.8} />
-    </Pressable>
-  );
-}
-
 function OriginalImagePreview({ imageUrl, onClose }: { imageUrl: string | null; onClose: () => void }) {
   return imageUrl ? <SwipeImagePreview imageUrl={imageUrl} onClose={onClose} /> : null;
 }
@@ -679,15 +1082,14 @@ function DocumentMetadata({ document }: { document: DocumentReview }) {
   ].filter((row): row is { label: string; value: string } => Boolean(row.value));
 
   return (
-    <Card style={styles.metadataCard}>
-      <Text style={styles.sectionHeading}>Details</Text>
+    <View style={styles.metadata}>
       {rows.map((row) => (
         <View key={row.label} style={styles.metadataRow}>
           <Text style={styles.metadataLabel}>{row.label}</Text>
           <Text numberOfLines={2} style={styles.metadataValue}>{row.value}</Text>
         </View>
       ))}
-    </Card>
+    </View>
   );
 }
 
@@ -701,15 +1103,18 @@ function CredentialsSection({
   const fields = useMemo(() => parseCredentialFields(credentialText), [credentialText]);
 
   return (
-    <Card style={styles.card}>
-      <View style={styles.sectionTitle}>
-        <KeyRound color={colors.mistDark} size={18} />
-        <Text style={styles.sectionHeading}>Zugangsdaten</Text>
-      </View>
-      {fields.url ? <CredentialValue label="URL" value={fields.url} /> : null}
-      {fields.username ? <CredentialValue label="Benutzername" value={fields.username} /> : null}
-      <SecretReveal documentId={documentId} />
-    </Card>
+    <View style={styles.section}>
+      <SectionHeader title="Zugangsdaten" />
+      <Card style={styles.card}>
+        <View style={styles.sectionTitle}>
+          <KeyRound color={colors.mistDark} size={18} />
+          <Text style={styles.sectionHeading}>Nur für euch sichtbar</Text>
+        </View>
+        {fields.url ? <CredentialValue label="URL" value={fields.url} /> : null}
+        {fields.username ? <CredentialValue label="Benutzername" value={fields.username} /> : null}
+        <SecretReveal documentId={documentId} />
+      </Card>
+    </View>
   );
 }
 
@@ -722,8 +1127,8 @@ function CredentialValue({ label, value }: { label: string; value: string }) {
   }, []);
 
   const copy = async () => {
-    const success = await Clipboard.setStringAsync(value);
-    if (!success) return;
+    const ok = await Clipboard.setStringAsync(value);
+    if (!ok) return;
     setCopied(true);
     if (copiedTimer.current) clearTimeout(copiedTimer.current);
     copiedTimer.current = setTimeout(() => setCopied(false), 1_500);
@@ -794,8 +1199,8 @@ function SecretReveal({ documentId }: { documentId: string }) {
 
   const copy = async () => {
     if (secret === null) return;
-    const success = await Clipboard.setStringAsync(secret);
-    if (!success) return;
+    const ok = await Clipboard.setStringAsync(secret);
+    if (!ok) return;
     copiedSecretRef.current = secret;
     setCopied(true);
     armSecretExpiry();
@@ -846,18 +1251,8 @@ function formatDetailDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(date);
-}
-
-function formatExtractedDate(value: string): string {
-  const date = new Date(`${value}T12:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
+    day: "numeric",
+    month: "long",
     year: "numeric",
   }).format(date);
 }
@@ -932,7 +1327,7 @@ function AmountsSection({ analysis, editable, onChange }: SectionProps) {
 
 function FactsSection({ analysis, editable, onChange }: SectionProps) {
   return (
-    <Section icon={FileText} title="Nummern & Kennungen" onAdd={editable ? () => onChange((current) => ({ ...current, facts: [...current.facts, { fact_type: "identifier", label: "", value: "", confidence: 1 }] })) : undefined}>
+    <Section icon={Hash} title="Nummern & Kennungen" onAdd={editable ? () => onChange((current) => ({ ...current, facts: [...current.facts, { fact_type: "identifier", label: "", value: "", confidence: 1 }] })) : undefined}>
       {analysis.facts.length === 0 ? <EmptyRows text="Keine Nummer erkannt." /> : null}
       {analysis.facts.map((fact, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("facts", index, onChange)}>
@@ -1032,7 +1427,7 @@ function addTag(
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
-  confirmedScreen: { justifyContent: "space-between" },
+  confirmedScreen: { justifyContent: "space-between", paddingHorizontal: spacing.md },
   confirmedContent: {
     alignItems: "center",
     alignSelf: "center",
@@ -1059,9 +1454,9 @@ const styles = StyleSheet.create({
     right: 5,
     width: 40,
   },
-  confirmedEyebrow: { color: colors.harborBlue, ...typography.label },
+  confirmedEyebrow: { color: colors.harborBlue, ...typography.caption },
   confirmedHeading: {
-    ...typography.display,
+    ...typography.heading,
     color: colors.harborBlueDarker,
     fontSize: 25,
     lineHeight: 32,
@@ -1084,81 +1479,139 @@ const styles = StyleSheet.create({
   confirmedDocumentTitle: { color: colors.graphite, flex: 1, ...typography.title },
   confirmedActions: { gap: spacing.sm },
   loadingContent: { paddingHorizontal: spacing.md },
-  headerAction: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
-  content: { gap: spacing.md, padding: spacing.md, paddingBottom: 104 },
-  contentState: { gap: spacing.md },
-  overviewContent: { gap: spacing.md },
-  intro: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
-  introCopy: { flex: 1 },
-  fileIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 48, justifyContent: "center", width: 48 },
-  type: { color: colors.graphite, ...typography.title },
-  help: { color: colors.mistDark, ...typography.timestamp, marginTop: 2 },
-  heroCard: { gap: spacing.md, padding: spacing.md },
-  heroHeading: { flexDirection: "row", gap: 12 },
-  heroFileIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 52, justifyContent: "center", width: 52 },
-  heroCopy: { flex: 1, gap: 3, minWidth: 0 },
-  typeChip: { alignSelf: "flex-start", backgroundColor: colors.sandLight, borderRadius: radii.base, paddingHorizontal: 6, paddingVertical: 3 },
-  typeChipText: { color: colors.harborBlue, ...typography.label },
-  documentTitle: { color: colors.graphite, ...typography.display },
-  documentSummary: { color: colors.graphite, ...typography.body },
-  overviewCard: { gap: 0, paddingVertical: spacing.sm },
-  overviewTitle: { color: colors.graphite, marginBottom: spacing.sm, paddingHorizontal: spacing.md, ...typography.title },
-  overviewRow: { alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 64, paddingHorizontal: spacing.md },
-  overviewRowBorder: { borderTopColor: colors.mistLight, borderTopWidth: 1 },
-  overviewIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 36, justifyContent: "center", width: 36 },
-  overviewCopy: { flex: 1, gap: 1, minWidth: 0 },
-  overviewLabel: { color: colors.graphite, ...typography.title },
-  overviewValue: { color: colors.graphite, ...typography.timestamp },
-  overviewEmpty: { color: colors.mistDark, paddingHorizontal: spacing.md, ...typography.timestamp },
-  reviewIcon: { backgroundColor: colors.sandWarm },
-  reviewLabel: { color: colors.warmApricot, ...typography.title },
-  detailCard: { gap: 0, paddingVertical: 0 },
-  detailLink: { alignItems: "center", flexDirection: "row", gap: spacing.sm, minHeight: 68, paddingHorizontal: spacing.md },
-  detailLinkSeparated: { borderTopColor: colors.mistLight, borderTopWidth: 1 },
-  detailLinkIcon: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, height: 36, justifyContent: "center", width: 36 },
-  detailLinkCopy: { flex: 1, gap: 1, minWidth: 0 },
-  detailLinkTitle: { color: colors.graphite, ...typography.title },
-  detailLinkDescription: { color: colors.mistDark, ...typography.timestamp },
-  aiNotice: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.md },
+  content: { gap: spacing.md, padding: spacing.md, paddingTop: spacing.xs },
+  contentState: { gap: spacing.lg },
+  hero: { gap: spacing.sm, paddingHorizontal: spacing.xs },
+  heroTop: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  heroTitle: { color: colors.graphite, ...typography.heading },
+  heroSummary: { color: colors.graphite, ...typography.body },
+  heroMore: { color: colors.harborBlue, marginTop: spacing.xs, ...typography.caption },
+  peopleRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: spacing.xs,
+  },
+  peopleLabel: { color: colors.mistDark, ...typography.caption },
+  newPill: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  newPillText: { color: colors.warmWhite, ...typography.caption },
+  section: { gap: spacing.sm },
+  quietCard: {
+    backgroundColor: colors.sandLight,
+    borderRadius: radii.md,
+    padding: spacing.md,
+  },
+  quietText: { color: colors.mistDark, ...typography.timestamp },
+  calendarHint: {
+    color: colors.mistDark,
+    paddingHorizontal: spacing.xs,
+    ...typography.label,
+    lineHeight: 16,
+  },
+  calendarToggle: {
+    alignItems: "center",
+    borderColor: colors.harborLine,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 4,
+    minHeight: 32,
+    paddingHorizontal: 10,
+  },
+  calendarToggleOn: {
+    backgroundColor: colors.harborBlue,
+    borderColor: colors.harborBlue,
+  },
+  calendarToggleText: { color: colors.harborBlue, ...typography.caption },
+  calendarToggleTextOn: { color: colors.warmWhite },
+  amountValue: { color: colors.graphite, ...typography.title },
+  reviewNotice: {
+    alignItems: "center",
+    backgroundColor: colors.washApricot,
+    borderRadius: radii.md,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  reviewNoticeIcon: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
+  reviewNoticeTitle: { color: colors.graphite, ...typography.title },
+  reviewNoticeText: { color: colors.mistDark, ...typography.timestamp },
+  thumbnail: {
+    backgroundColor: colors.sandLight,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    height: 180,
+    overflow: "hidden",
+  },
+  thumbnailImage: { height: "100%", width: "100%" },
+  aiNotice: { alignItems: "center", backgroundColor: colors.sandLight, borderRadius: radii.md, flexDirection: "row", gap: spacing.sm, padding: spacing.md },
   aiIcon: { alignItems: "center", backgroundColor: colors.warmWhite, borderRadius: radii.pill, height: 36, justifyContent: "center", width: 36 },
   aiNoticeText: { color: colors.graphite, flex: 1, ...typography.timestamp },
-  editIntro: { gap: 2, paddingVertical: spacing.xs },
-  editTitle: { color: colors.graphite, ...typography.display },
+  editIntro: { paddingHorizontal: spacing.xs },
   editHelp: { color: colors.mistDark, ...typography.timestamp },
-  metadataCard: { gap: 0 },
-  metadataRow: { alignItems: "baseline", borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.md, minHeight: 38, paddingVertical: spacing.sm },
+  metadata: {
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 14,
+    paddingVertical: spacing.xs,
+  },
+  metadataRow: { alignItems: "baseline", flexDirection: "row", gap: spacing.md, minHeight: 36, paddingVertical: spacing.xs },
   metadataLabel: { color: colors.mistDark, minWidth: 92, ...typography.label },
   metadataValue: { color: colors.graphite, flex: 1, textAlign: "right", ...typography.timestamp },
-  bottomBar: { alignItems: "center", backgroundColor: colors.warmWhite, borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", minHeight: 68, paddingBottom: spacing.sm, paddingHorizontal: spacing.sm, paddingTop: spacing.xs },
-  bottomAction: { alignItems: "center", flex: 1, flexDirection: "row", gap: spacing.sm, height: 44, justifyContent: "center" },
-  bottomActionText: { color: colors.harborBlue, ...typography.title },
-  bottomDivider: { backgroundColor: colors.mistLight, height: 28, width: 1 },
+  bottomBar: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+  },
+  bottomSecondary: { flex: 1 },
+  bottomPrimary: { flex: 1.4 },
   pressed: { opacity: 0.76 },
   disabled: { opacity: 0.65 },
-  notice: { alignItems: "center", backgroundColor: colors.sandWarm, borderRadius: radii.sm, flexDirection: "row", gap: spacing.sm, padding: spacing.sm },
-  noticeText: { color: colors.graphite, flex: 1, ...typography.timestamp },
   card: { gap: spacing.sm },
   sectionHeader: { alignItems: "center", flexDirection: "row", justifyContent: "space-between", minHeight: 28 },
   sectionTitle: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   sectionHeading: { color: colors.graphite, ...typography.title },
   label: { color: colors.mistDark, marginTop: spacing.xs, ...typography.label },
-  input: { backgroundColor: colors.warmWhite, borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: 40, paddingHorizontal: spacing.sm, ...typography.body },
+  input: { backgroundColor: colors.warmWhite, borderColor: colors.mistLight, borderRadius: radii.base, borderWidth: 1, color: colors.graphite, minHeight: sizes.touch, paddingHorizontal: spacing.sm, ...typography.body },
   summary: { minHeight: 88, paddingTop: spacing.sm },
   value: { color: colors.graphite, ...typography.body },
   emptyRows: { color: colors.mistDark, ...typography.timestamp },
   confidence: { color: colors.warmApricot, ...typography.label },
   editableRow: { borderTopColor: colors.mistLight, borderTopWidth: 1, flexDirection: "row", gap: spacing.xs, paddingTop: spacing.sm },
-  rowContent: { flex: 1, gap: spacing.xs },
+  rowContent: { flex: 1, gap: spacing.xs, minWidth: 0 },
   deleteButton: { alignItems: "center", height: 44, justifyContent: "center", width: 44 },
   addButton: { alignItems: "center", flexDirection: "row", gap: 2, minHeight: 44, paddingHorizontal: spacing.xs },
   addButtonText: { color: colors.harborBlue, ...typography.label },
   addLine: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
   addInput: { flex: 1 },
-  smallButton: { alignItems: "center", backgroundColor: colors.harborBlue, borderRadius: radii.sm, height: 40, justifyContent: "center", paddingHorizontal: spacing.sm },
+  smallButton: { alignItems: "center", backgroundColor: colors.harborBlue, borderRadius: radii.sm, height: 44, justifyContent: "center", paddingHorizontal: spacing.sm },
   smallButtonText: { color: colors.warmWhite, ...typography.label },
   tags: { alignItems: "center", flexDirection: "row", flexWrap: "wrap", gap: spacing.xs },
-  tag: { alignItems: "center", backgroundColor: colors.blueSoft, borderColor: colors.harborBlue, borderRadius: radii.pill, borderWidth: 1, justifyContent: "center", minHeight: 44, paddingHorizontal: 10, paddingVertical: 4 },
-  tagText: { color: colors.harborBlue, ...typography.label },
+  tag: { alignItems: "center", backgroundColor: colors.harborTint, borderRadius: radii.pill, justifyContent: "center", minHeight: 36, paddingHorizontal: 12, paddingVertical: 4 },
+  tagText: { color: colors.harborBlue, ...typography.caption },
   twoColumns: { flexDirection: "row", gap: spacing.sm },
   half: { flex: 1, gap: spacing.xs },
   actions: { gap: spacing.sm, marginTop: spacing.sm },

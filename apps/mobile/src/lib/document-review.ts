@@ -87,6 +87,20 @@ export type OriginalFile = {
   mimeType: string | null;
 };
 
+export type ConfirmDocumentResult = {
+  /** How many planner events the confirm created from the kept dates. */
+  eventsCreated: number;
+  /** How many tasks were kept on the family list. */
+  tasksKept: number;
+};
+
+/** One line of "was das bedeutet": a date, a task, an amount or a number. */
+export type DocumentConsequence =
+  | { kind: "date"; index: number; label: string; date: string; dateLabel: string; relative: string | null }
+  | { kind: "task"; index: number; title: string; dueDate: string | null; dueLabel: string | null }
+  | { kind: "amount"; index: number; label: string; value: string; date: string | null }
+  | { kind: "fact"; index: number; label: string; value: string };
+
 type DocumentRow = {
   status: string;
   title: string | null;
@@ -301,7 +315,11 @@ export function parseCredentialFields(content: string | null): CredentialFields 
  * `status`, never crosses the network boundary. Empty edited rows mean the
  * user removed that entity and are omitted where the contract requires text.
  */
-export function buildConfirmDocumentPayload(analysis: ReviewAnalysis): ConfirmDocumentPayload {
+export function buildConfirmDocumentPayload(
+  analysis: ReviewAnalysis,
+  options: { calendarDateIndices?: number[] } = {},
+): ConfirmDocumentPayload {
+  const keptDates = new Set(options.calendarDateIndices ?? []);
   return {
     document_type: analysis.document_type,
     title: analysis.title.trim(),
@@ -323,19 +341,137 @@ export function buildConfirmDocumentPayload(analysis: ReviewAnalysis): ConfirmDo
     tags: analysis.tags.map((tag) => tag.trim()).filter(Boolean),
     needs_user_review: analysis.needs_user_review,
     deletedTaskIndices: [],
-    calendar_events: [],
+    // Dates the family kept checked become planner events in the same
+    // transaction as the confirmation — "Ordilo hat den Termin eingetragen".
+    calendar_events: analysis.dates
+      .map((date, index) => ({ date: date.date.trim(), label: date.label.trim(), index }))
+      .filter((date) => keptDates.has(date.index) && /^\d{4}-\d{2}-\d{2}$/.test(date.date))
+      .map((date) => ({ date: date.date, label: date.label || analysis.title.trim() || "Termin" })),
   };
 }
 
-export async function confirmDocumentReview(documentId: string, analysis: ReviewAnalysis): Promise<void> {
+export async function confirmDocumentReview(
+  documentId: string,
+  analysis: ReviewAnalysis,
+  options: { calendarDateIndices?: number[] } = {},
+): Promise<ConfirmDocumentResult> {
   if (!canReviewDocument(analysis.status)) {
     throw new Error("Only analysed documents can be confirmed.");
   }
-  await apiFetch(`/api/documents/${documentId}/confirm`, {
+  const payload = buildConfirmDocumentPayload(analysis, options);
+  const response = await apiFetch(`/api/documents/${documentId}/confirm`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildConfirmDocumentPayload(analysis)),
+    body: JSON.stringify(payload),
   });
+  let eventsCreated = 0;
+  try {
+    const body = (await response.json()) as { events_created?: unknown };
+    if (typeof body.events_created === "number") eventsCreated = body.events_created;
+  } catch {
+    // An empty or non-JSON body still means the confirm succeeded.
+  }
+  return { eventsCreated, tasksKept: payload.tasks.length };
+}
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+function parseDateOnly(value: string): Date | null {
+  if (!DATE_ONLY.test(value)) return null;
+  const date = new Date(`${value}T12:00:00`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** "Di., 8. Sep." — or the raw text when Ordilo could not read a date. */
+export function formatReviewDate(value: string): string {
+  const date = parseDateOnly(value.trim());
+  if (!date) return value.trim();
+  return new Intl.DateTimeFormat("de-DE", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}
+
+/** "heute", "morgen", "in 6 Tagen", "vor 3 Tagen", null beyond ~8 weeks. */
+export function formatRelativeDays(value: string, now = new Date()): string | null {
+  const date = parseDateOnly(value.trim());
+  if (!date) return null;
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  const days = Math.round((date.getTime() - today.getTime()) / 86_400_000);
+  if (days === 0) return "heute";
+  if (days === 1) return "morgen";
+  if (days === -1) return "gestern";
+  if (days > 1 && days <= 60) return `in ${days} Tagen`;
+  if (days < -1 && days >= -60) return `vor ${Math.abs(days)} Tagen`;
+  return null;
+}
+
+/** "84,20 €" from the loosely typed amount the extraction produces. */
+export function formatReviewAmount(amount: string, currency: string): string {
+  const normalized = amount.trim().replace(/\s/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", ".");
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) return [amount.trim(), currency.trim()].filter(Boolean).join(" ");
+  const code = (currency.trim() || "EUR").toUpperCase();
+  try {
+    return new Intl.NumberFormat("de-DE", { style: "currency", currency: code }).format(value);
+  } catch {
+    return `${value.toFixed(2).replace(".", ",")} ${code}`;
+  }
+}
+
+/**
+ * What a document means for the family, in the order a person would act
+ * on it: dates soonest first, then tasks, then money, then numbers worth
+ * copying. This is the heart of the detail screen — the file itself
+ * comes after.
+ */
+export function getDocumentConsequences(
+  analysis: ReviewAnalysis,
+  now = new Date(),
+): DocumentConsequence[] {
+  const dates: DocumentConsequence[] = analysis.dates
+    .map((date, index) => ({ date, index }))
+    .filter(({ date }) => date.date.trim() || date.label.trim())
+    .sort((a, b) => a.date.date.localeCompare(b.date.date))
+    .map(({ date, index }) => ({
+      kind: "date" as const,
+      index,
+      label: date.label.trim() || "Termin",
+      date: date.date.trim(),
+      dateLabel: formatReviewDate(date.date),
+      relative: formatRelativeDays(date.date, now),
+    }));
+  const tasks: DocumentConsequence[] = analysis.tasks
+    .map((task, index) => ({ task, index }))
+    .filter(({ task }) => task.title.trim())
+    .map(({ task, index }) => ({
+      kind: "task" as const,
+      index,
+      title: task.title.trim(),
+      dueDate: task.due_date?.trim() || null,
+      dueLabel: task.due_date?.trim() ? formatReviewDate(task.due_date) : null,
+    }));
+  const amounts: DocumentConsequence[] = analysis.amounts
+    .map((amount, index) => ({ amount, index }))
+    .filter(({ amount }) => amount.amount.trim())
+    .map(({ amount, index }) => ({
+      kind: "amount" as const,
+      index,
+      label: amount.label.trim() || (amount.kind === "total" ? "Gesamtbetrag" : "Betrag"),
+      value: formatReviewAmount(amount.amount, amount.currency),
+      date: amount.value_date?.trim() || null,
+    }));
+  const facts: DocumentConsequence[] = analysis.facts
+    .map((fact, index) => ({ fact, index }))
+    .filter(({ fact }) => fact.value.trim())
+    .map(({ fact, index }) => ({
+      kind: "fact" as const,
+      index,
+      label: fact.label.trim() || "Nummer",
+      value: fact.value.trim(),
+    }));
+  return [...dates, ...tasks, ...amounts, ...facts];
 }
 
 /** Loads a short-lived, signed original file URL via the bearer-auth API. */
