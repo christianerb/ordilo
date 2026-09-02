@@ -7,6 +7,8 @@ import {
   getDocumentStatusGroup,
   getDocumentStatusLabel,
   getDocumentTitle,
+  groupLibraryDocuments,
+  getDocumentStatusTone,
   isManualNote,
   mergeLibraryDocuments,
   refreshLibraryDocuments,
@@ -134,5 +136,45 @@ describe("document library helpers", () => {
     expect(listener).toHaveBeenCalledTimes(2);
     expect(listener).toHaveBeenNthCalledWith(1, { type: "remove", documentId: "invoice" });
     expect(listener).toHaveBeenNthCalledWith(2, { type: "refresh" });
+  });
+
+  it("groups date-sorted documents into this week and months", () => {
+    const now = new Date(2026, 8, 2, 12);
+    const doc = (id: string, created_at: string): LibraryDocument => ({
+      ...invoice,
+      id,
+      created_at,
+    });
+    const groups = groupLibraryDocuments(
+      [
+        doc("a", "2026-09-02T08:00:00Z"),
+        doc("b", "2026-08-28T08:00:00Z"),
+        doc("c", "2026-08-12T08:00:00Z"),
+        doc("d", "2026-07-30T08:00:00Z"),
+      ],
+      "newest",
+      now,
+    );
+    expect(groups.map((group) => [group.label, group.documents.map((d) => d.id)])).toEqual([
+      ["Diese Woche", ["a", "b"]],
+      ["August 2026", ["c"]],
+      ["Juli 2026", ["d"]],
+    ]);
+  });
+
+  it("groups the title sort by first letter", () => {
+    const doc = (id: string, title: string): LibraryDocument => ({ ...invoice, id, title });
+    const groups = groupLibraryDocuments(
+      [doc("1", "Arztbrief"), doc("2", "ärztliche Bescheinigung"), doc("3", "Bafög"), doc("4", "2026 Steuer")],
+      "title",
+    );
+    expect(groups.map((group) => group.label)).toEqual(["A", "Ä", "B", "#"]);
+  });
+
+  it("only speaks up for non-final statuses", () => {
+    expect(getDocumentStatusTone("confirmed")).toBeNull();
+    expect(getDocumentStatusTone("analyzed")).toBe("new");
+    expect(getDocumentStatusTone("ocr_processing")).toBe("processing");
+    expect(getDocumentStatusTone("failed")).toBe("failed");
   });
 });

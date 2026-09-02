@@ -324,8 +324,12 @@ describe("native motion wiring", () => {
     );
     expect(ui).toMatch(/header:\s*\{[^}]*minHeight: 80,/s);
     expect(ui).not.toMatch(/header:\s*\{[^}]*\bheight: 80,/s);
-    expect(library).toContain("<View style={styles.documentIcon}>");
-    expect(library).toContain("backgroundColor: colors.sandLight");
+    // Every row leads with the document kind (icon + tint), never a generic
+    // file glyph, and carries the people it concerns.
+    expect(library).toContain("<IconTile tint={kind.tint}>");
+    expect(library).toContain("getDocumentKind(document.document_type)");
+    expect(library).toContain("<AvatarStack people={people}");
+    expect(library).toContain("groupLibraryDocuments(");
   });
 
   it("uses one shared compact picker sheet", () => {

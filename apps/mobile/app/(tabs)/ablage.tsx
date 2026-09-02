@@ -1,19 +1,17 @@
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   AlertCircle,
+  ArrowDownAZ,
   BookOpen,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  FileText,
   FilePlus2,
   NotebookPen,
   Plus,
+  ScanLine,
   Search,
   SlidersHorizontal,
-  ArrowDownAZ,
   UserPlus,
   Users,
+  X,
 } from "lucide-react-native";
 import {
   useCallback,
@@ -21,6 +19,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   ActivityIndicator,
@@ -41,17 +40,23 @@ import {
 } from "@/src/components/contacts";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
+import { AvatarStack } from "@/src/components/person";
 import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
 import type { OrdiloSheetHandle } from "@/src/components/sheet";
 import {
+  Chip,
   EmptyState,
+  IconTile,
+  InlineNotice,
+  ListGroup,
+  ListRow,
   ListSkeleton,
   OrdiloButton,
   Screen,
   ScreenHeader,
   SegmentedControl,
-  SpringPressable,
 } from "@/src/components/ui";
+import { getDocumentKind } from "@/src/lib/document-kind";
 import {
   documentTypeLabels,
   type DocumentType,
@@ -67,30 +72,34 @@ import {
   type Contact,
 } from "@/src/lib/contacts";
 import { useFamily } from "@/src/lib/family-context";
+import { tap } from "@/src/lib/feedback";
 import { createNote, triggerNoteAnalysis } from "@/src/lib/notes";
 import {
   filterLibraryDocuments,
   formatDocumentDate,
   getDocumentSearchText,
   getDocumentStatusLabel,
+  getDocumentStatusTone,
   getDocumentTitle,
-  getDocumentTypeLabel,
-  isManualNote,
   getLibraryPageRange,
   getLibrarySortOrder,
-  toLibrarySearchPattern,
+  groupLibraryDocuments,
+  isManualNote,
+  libraryDocumentSelect,
   libraryPageSize,
   librarySortOptions,
-  mergeLibraryDocuments,
-  libraryDocumentSelect,
   libraryStatusFilters,
+  loadLibraryDocumentPeople,
+  mergeLibraryDocuments,
   subscribeToLibraryChanges,
+  toLibrarySearchPattern,
   type LibraryDocument,
   type LibraryFilters,
   type LibrarySort,
 } from "@/src/lib/library";
-import { tap } from "@/src/lib/feedback";
+import { formatPeopleLine, type Person } from "@/src/lib/people";
 import { getSupabase } from "@/src/lib/supabase";
+import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const documentTypes = Object.entries(documentTypeLabels) as [
@@ -101,14 +110,18 @@ type LibraryView = "documents" | "notes" | "contacts";
 type CreateKind = "document" | "note" | "contact";
 
 /**
- * Ablage — the family's RLS-scoped document library. It deliberately keeps
- * the controls close to the thumb: search, one status chip row, and a
- * compact document-type picker instead of a dense dashboard toolbar.
+ * Dokumente — the family's filing place. Three views (Unterlagen, Notizen,
+ * Kontakte) share one header and one search. Rows say what a document is
+ * (kind icon), whom it concerns (faces) and, only when it is not settled
+ * yet, what Ordilo still needs (Neu, wird gelesen, Fehler). Date-sorted
+ * lists are grouped by week and month so a year of paperwork keeps its
+ * bearings.
  */
 export default function AblageScreen() {
   const router = useRouter();
   const { family } = useFamily();
   const [documents, setDocuments] = useState<LibraryDocument[]>([]);
+  const [people, setPeople] = useState<Map<string, Person[]>>(new Map());
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,6 +147,21 @@ export default function AblageScreen() {
   const requestGeneration = useRef(0);
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
   const pendingCreateRef = useRef<CreateKind | null>(null);
+  const membersRef = useRef<FamilyMemberOption[]>([]);
+
+  useEffect(() => {
+    if (!family) return;
+    let cancelled = false;
+    void fetchFamilyMembers(family.id)
+      .then((rows) => {
+        if (cancelled) return;
+        membersRef.current = rows;
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [family]);
 
   const loadDocuments = useCallback(
     async ({ append = false, page = 0, refresh = false } = {}) => {
@@ -198,6 +226,20 @@ export default function AblageScreen() {
           );
           setHasMore(next.length === libraryPageSize);
           setNextPage(next.length === libraryPageSize ? page + 1 : page);
+        }
+        if (view === "documents" && next.length > 0) {
+          // People arrive a beat after the rows; the list never waits for them.
+          const pagePeople = await loadLibraryDocumentPeople(
+            next.map((document) => document.id),
+            membersRef.current,
+          );
+          if (isCurrentRequest()) {
+            setPeople((current) => {
+              const merged = append ? new Map(current) : new Map<string, Person[]>();
+              for (const [id, list] of pagePeople) merged.set(id, list);
+              return merged;
+            });
+          }
         }
       } catch {
         if (isCurrentRequest()) {
@@ -271,7 +313,7 @@ export default function AblageScreen() {
   const finishCreateChoice = useCallback(() => {
     const kind = pendingCreateRef.current;
     pendingCreateRef.current = null;
-    if (kind === "document") router.push("/scan");
+    if (kind === "document") router.push({ pathname: "/scan", params: { auto: "1" } });
     if (kind === "note") setCreateNoteOpen(true);
     if (kind === "contact") setCreateContactOpen(true);
   }, [router]);
@@ -286,23 +328,32 @@ export default function AblageScreen() {
     [sort],
   );
 
-  const documentCountLabel = useMemo(() => {
+  const subtitle = useMemo(() => {
     if (view === "contacts") {
+      if (contactsLoading && contacts.length === 0) return "Kontakte werden geladen";
       const confirmedCount = splitContactsByStatus(contacts).confirmed.length;
-      if (confirmedCount === 1) return "1 Kontakt der Familie";
-      return `${confirmedCount} Kontakte der Familie`;
+      if (confirmedCount === 0) return "Wichtige Menschen aus euren Unterlagen";
+      return confirmedCount === 1 ? "1 Kontakt" : `${confirmedCount} Kontakte`;
     }
+    if (loading && documents.length === 0) {
+      return view === "notes" ? "Notizen werden geladen" : "Unterlagen werden geladen";
+    }
+    const suffix = hasMore ? "+" : "";
     if (view === "notes") {
-      if (documents.length === 1) return "1 Notiz der Familie";
-      return `${documents.length}${hasMore ? "+" : ""} Notizen der Familie`;
+      if (documents.length === 0) return "Familienwissen, das nirgends auf Papier steht";
+      return documents.length === 1 ? "1 Notiz" : `${documents.length}${suffix} Notizen`;
     }
-    if (documents.length === 1) return "1 Dokument der Familie";
-    return `${documents.length}${hasMore ? "+" : ""} Dokumente der Familie`;
-  }, [contacts, documents.length, hasMore, view]);
+    if (documents.length === 0) return "Alles, was Ordilo für euch gelesen hat";
+    return documents.length === 1 ? "1 Dokument" : `${documents.length}${suffix} Dokumente`;
+  }, [contacts, contactsLoading, documents.length, hasMore, loading, view]);
 
   const visibleDocuments = useMemo(
     () => filterLibraryDocuments(documents, filters),
     [documents, filters],
+  );
+  const groups = useMemo(
+    () => groupLibraryDocuments(visibleDocuments, sort),
+    [visibleDocuments, sort],
   );
   const activeFilterCount =
     Number(filters.status !== "all") + Number(filters.documentType !== "all");
@@ -367,7 +418,7 @@ export default function AblageScreen() {
       <Screen style={styles.center}>
         <EmptyState
           icon={AlertCircle}
-          heading="Ablage nicht erreichbar"
+          heading="Dokumente nicht erreichbar"
           description={error}
         >
           <OrdiloButton
@@ -380,11 +431,15 @@ export default function AblageScreen() {
     );
   }
 
+  const showDocumentControls =
+    view === "documents" && (documents.length > 0 || hasActiveFilters);
+
   return (
     <Screen>
       <AmbientFields style={styles.ambientBehind} />
       <ScrollView
         contentContainerStyle={styles.content}
+        keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
@@ -404,29 +459,19 @@ export default function AblageScreen() {
       >
         <ScreenHeader
           action={{
-            accessibilityLabel: "In der Ablage anlegen",
+            accessibilityLabel: "Neu anlegen",
             icon: Plus,
             onPress: () => createSheetRef.current?.present(),
           }}
-          subtitle={
-            view === "contacts" && contactsLoading && contacts.length === 0
-              ? "Kontakte werden geladen"
-              : loading && documents.length === 0
-              ? view === "notes"
-                ? "Notizen werden geladen"
-                : "Dokumente werden geladen"
-              : hasActiveFilters && documents.length === 0
-              ? "Keine Treffer für deine Suche oder Filter"
-              : documentCountLabel
-          }
-          title="Ablage"
+          subtitle={subtitle}
+          title="Dokumente"
         />
 
         <SegmentedControl
           items={[
             {
-              icon: FileText,
-              label: "Dokumente",
+              icon: BookOpen,
+              label: "Unterlagen",
               onPress: () => switchView("documents"),
               selected: view === "documents",
             },
@@ -465,6 +510,7 @@ export default function AblageScreen() {
             loading={loading}
             loadingMore={loadingMore}
             notes={documents}
+            onCreate={() => setCreateNoteOpen(true)}
             onLoadMore={loadMore}
             onOpen={(documentId) => router.push(`/note/${documentId}`)}
             onSearchChange={(query) =>
@@ -475,104 +521,60 @@ export default function AblageScreen() {
           />
         ) : loading && documents.length === 0 && !hasActiveFilters ? (
           <ListSkeleton rows={6} />
-        ) : documents.length > 0 || hasActiveFilters ? (
+        ) : showDocumentControls ? (
           <>
-            <View style={styles.search}>
-              <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
-              <TextInput
-                accessibilityLabel="Dokumente durchsuchen"
-                autoCapitalize="none"
-                autoCorrect={false}
-                clearButtonMode="while-editing"
-                onChangeText={(query) =>
-                  setFilters((current) => ({ ...current, query }))
-                }
-                placeholder="Dokumente durchsuchen"
-                placeholderTextColor={colors.mistDark}
-                returnKeyType="search"
-                style={styles.searchInput}
-                value={filters.query}
-              />
-            </View>
+            <SearchField
+              accessibilityLabel="Unterlagen durchsuchen"
+              onChangeText={(query) =>
+                setFilters((current) => ({ ...current, query }))
+              }
+              placeholder="Titel, Inhalt oder Absender"
+              value={filters.query}
+            />
 
-            <View style={styles.filterRow}>
-              <ScrollView
-                contentContainerStyle={styles.chips}
-                horizontal
-                showsHorizontalScrollIndicator={false}
-              >
-                {libraryStatusFilters.map((filter) => (
-                  <FilterChip
-                    key={filter.value}
-                    label={filter.label}
-                    onPress={() =>
-                      setFilters((current) => ({
-                        ...current,
-                        status: filter.value,
-                      }))
-                    }
-                    selected={filters.status === filter.value}
-                  />
-                ))}
-              </ScrollView>
-              <Pressable
-                accessibilityHint="Wählt die Art der Dokumente aus"
-                accessibilityLabel={`Dokumentart: ${selectedTypeLabel}`}
-                accessibilityRole="button"
-                onPress={() => setTypePickerOpen(true)}
-                style={({ pressed }) => [
-                  styles.typeButton,
-                  filters.documentType !== "all" && styles.typeButtonSelected,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <SlidersHorizontal
-                  color={
-                    filters.documentType !== "all"
-                      ? colors.warmWhite
-                      : colors.harborBlue
-                  }
-                  size={16}
-                />
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    styles.typeButtonText,
-                    filters.documentType !== "all" && styles.typeButtonTextSelected,
-                  ]}
-                >
-                  {selectedTypeLabel}
-                </Text>
-                <ChevronDown
-                  color={
-                    filters.documentType !== "all"
-                      ? colors.warmWhite
-                      : colors.harborBlue
-                  }
-                  size={16}
-                />
-              </Pressable>
-            </View>
-
-            <Pressable
-              accessibilityHint="Wählt die Reihenfolge der Dokumente aus"
-              accessibilityLabel={`Sortierung: ${sortedLabel}`}
-              accessibilityRole="button"
-              onPress={() => setSortPickerOpen(true)}
-              style={({ pressed }) => [styles.sortButton, pressed && styles.pressed]}
+            <ScrollView
+              contentContainerStyle={styles.chips}
+              horizontal
+              keyboardShouldPersistTaps="handled"
+              showsHorizontalScrollIndicator={false}
+              style={styles.chipRow}
             >
-              <ArrowDownAZ color={colors.mistDark} size={16} />
-              <Text style={styles.sortButtonText}>{sortedLabel}</Text>
-              <ChevronDown color={colors.mistDark} size={16} />
-            </Pressable>
+              {libraryStatusFilters.map((filter) => (
+                <Chip
+                  key={filter.value}
+                  label={filter.label}
+                  onPress={() =>
+                    setFilters((current) => ({
+                      ...current,
+                      status: filter.value,
+                    }))
+                  }
+                  selected={filters.status === filter.value}
+                  tone={filter.value === "needs_review" ? "attention" : "neutral"}
+                />
+              ))}
+              <View style={styles.chipDivider} />
+              <Chip
+                accessibilityLabel={`Dokumentart: ${selectedTypeLabel}`}
+                icon={filters.documentType === "all" ? SlidersHorizontal : undefined}
+                label={selectedTypeLabel}
+                onPress={() => setTypePickerOpen(true)}
+                selected={filters.documentType !== "all"}
+              />
+              <Chip
+                accessibilityLabel={`Sortierung: ${sortedLabel}`}
+                icon={ArrowDownAZ}
+                label={sortedLabel}
+                onPress={() => setSortPickerOpen(true)}
+              />
+            </ScrollView>
 
             {error ? (
-              <View accessibilityRole="alert" style={styles.inlineError}>
-                <Text style={styles.inlineErrorText}>{error}</Text>
-                <Pressable onPress={() => void loadDocuments({ refresh: documents.length > 0 })}>
-                  <Text style={styles.dismiss}>Erneut versuchen</Text>
-                </Pressable>
-              </View>
+              <InlineNotice
+                actionLabel="Erneut versuchen"
+                message={error}
+                onAction={() => void loadDocuments({ refresh: documents.length > 0 })}
+              />
             ) : null}
 
             {loading && documents.length === 0 ? (
@@ -583,27 +585,35 @@ export default function AblageScreen() {
               />
             ) : visibleDocuments.length > 0 ? (
               <>
-                <View style={styles.list}>
-                  {visibleDocuments.map((document) => (
-                    <DocumentRow
-                      document={document}
-                      key={document.id}
-                      onPress={() =>
-                        router.push(
-                          isManualNote(document)
-                            ? `/note/${document.id}`
-                            : `/document/${document.id}`,
-                        )
-                      }
-                    />
-                  ))}
-                </View>
+                {groups.map((group) => (
+                  <View key={group.key} style={styles.group}>
+                    <Text style={styles.groupLabel}>{group.label}</Text>
+                    <ListGroup>
+                      {group.documents.map((document, index) => (
+                        <DocumentRow
+                          document={document}
+                          first={index === 0}
+                          key={document.id}
+                          onPress={() =>
+                            router.push(
+                              isManualNote(document)
+                                ? `/note/${document.id}`
+                                : `/document/${document.id}`,
+                            )
+                          }
+                          people={people.get(document.id) ?? []}
+                        />
+                      ))}
+                    </ListGroup>
+                  </View>
+                ))}
                 {hasMore ? (
                   <OrdiloButton
                     disabled={loadingMore}
                     icon={loadingMore ? <ActivityIndicator color={colors.harborBlue} size="small" /> : undefined}
                     onPress={loadMore}
-                    title={loadingMore ? "Weitere Dokumente werden geladen …" : "Weitere Dokumente laden"}
+                    size="lg"
+                    title={loadingMore ? "Weitere werden geladen …" : "Weitere Dokumente laden"}
                     variant="outline"
                   />
                 ) : null}
@@ -622,13 +632,14 @@ export default function AblageScreen() {
         ) : (
           <EmptyState
             icon={BookOpen}
-            heading="Deine Ablage ist noch leer"
-            description="Scanne ein Dokument. Danach findest du es hier wieder."
+            heading="Noch keine Unterlagen"
+            description="Scanne den ersten Brief. Ordilo liest ihn und legt ihn hier ab, mit allem, was drinsteht."
           >
             <OrdiloButton
-              title="Dokument scannen"
+              icon={<ScanLine color={colors.warmWhite} size={18} />}
+              onPress={() => router.push({ pathname: "/scan", params: { auto: "1" } })}
               size="lg"
-              onPress={() => router.push("/scan")}
+              title="Dokument scannen"
             />
           </EmptyState>
         )}
@@ -650,7 +661,7 @@ export default function AblageScreen() {
         visible={sortPickerOpen}
       />
       <CreateChoiceSheet
-        accessibilityLabel="In der Ablage anlegen"
+        accessibilityLabel="Neu anlegen"
         items={[
           {
             accessibilityLabel: "Neues Dokument",
@@ -696,6 +707,47 @@ export default function AblageScreen() {
   );
 }
 
+/** The one search field of the library: quiet, 44pt, clears in one tap. */
+function SearchField({
+  accessibilityLabel,
+  onChangeText,
+  placeholder,
+  value,
+}: {
+  accessibilityLabel: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  value: string;
+}) {
+  return (
+    <View style={styles.search}>
+      <Search color={colors.mistDark} size={18} strokeWidth={2} />
+      <TextInput
+        accessibilityLabel={accessibilityLabel}
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.mistDark}
+        returnKeyType="search"
+        style={styles.searchInput}
+        value={value}
+      />
+      {value ? (
+        <Pressable
+          accessibilityLabel="Suche löschen"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={() => onChangeText("")}
+          style={styles.searchClear}
+        >
+          <X color={colors.mistDark} size={14} strokeWidth={2.4} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 /**
  * The notes list: its own search, its own empty states, and a create
  * call-to-action that is always one tap away. Notes live in the same
@@ -707,6 +759,7 @@ function NotesView({
   loading,
   loadingMore,
   notes,
+  onCreate,
   onLoadMore,
   onOpen,
   onRetry,
@@ -718,6 +771,7 @@ function NotesView({
   loading: boolean;
   loadingMore: boolean;
   notes: LibraryDocument[];
+  onCreate: () => void;
   onLoadMore: () => void;
   onOpen: (documentId: string) => void;
   onRetry: () => void;
@@ -731,7 +785,7 @@ function NotesView({
   }, [notes, search]);
 
   if (loading && notes.length === 0 && !search.trim()) {
-    return <ActivityIndicator accessibilityLabel="Notizen werden geladen" color={colors.harborBlue} style={styles.notesLoading} />;
+    return <ListSkeleton rows={4} />;
   }
 
   if (error && notes.length === 0 && !search.trim()) {
@@ -747,84 +801,68 @@ function NotesView({
       <EmptyState
         icon={NotebookPen}
         heading="Noch keine Notizen"
-        description="Lege über das Plus oben deine erste Notiz an."
-      />
+        description="WLAN-Passwort, Schuhgröße, die Nummer vom Hausmeister: Dinge, die nirgends auf Papier stehen, aber jeder braucht."
+      >
+        <OrdiloButton onPress={onCreate} size="lg" title="Erste Notiz anlegen" />
+      </EmptyState>
     );
   }
 
   return (
     <>
-      <View style={styles.search}>
-        <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
-        <TextInput
-          accessibilityLabel="Notizen durchsuchen"
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-          onChangeText={onSearchChange}
-          placeholder="Notizen durchsuchen"
-          placeholderTextColor={colors.mistDark}
-          returnKeyType="search"
-          style={styles.searchInput}
-          value={search}
-        />
-      </View>
+      <SearchField
+        accessibilityLabel="Notizen durchsuchen"
+        onChangeText={onSearchChange}
+        placeholder="Notizen durchsuchen"
+        value={search}
+      />
       {error ? (
-        <View accessibilityRole="alert" style={styles.inlineError}>
-          <Text style={styles.inlineErrorText}>{error}</Text>
-          <Pressable onPress={onRetry}><Text style={styles.dismiss}>Erneut versuchen</Text></Pressable>
-        </View>
+        <InlineNotice actionLabel="Erneut versuchen" message={error} onAction={onRetry} />
       ) : null}
       {visibleNotes.length === 0 ? (
-        <View style={styles.filteredEmpty}>
-          <Search color={colors.mist} size={28} strokeWidth={1.5} />
-          <Text style={styles.filteredEmptyTitle}>Keine Notiz gefunden</Text>
-          <Text style={styles.filteredEmptyText}>Versuch es mit einem anderen Wort.</Text>
-        </View>
+        <FilteredEmptyState
+          activeFilterCount={0}
+          onReset={() => onSearchChange("")}
+          query={search}
+        />
       ) : (
-        <View style={styles.list}>
-          {visibleNotes.map((note) => (
-            <NoteRow key={note.id} note={note} onPress={() => onOpen(note.id)} />
+        <ListGroup>
+          {visibleNotes.map((note, index) => (
+            <ListRow
+              accessibilityHint="Öffnet die Notiz"
+              chevron
+              first={index === 0}
+              key={note.id}
+              leading={
+                <IconTile tint={colors.washSageSoft}>
+                  <NotebookPen color="#2F6B52" size={20} strokeWidth={1.9} />
+                </IconTile>
+              }
+              onPress={() => onOpen(note.id)}
+              subtitle={
+                note.summary?.trim() ||
+                note.ocr_text?.trim() ||
+                "Notiz öffnen, um den Inhalt zu lesen"
+              }
+              title={getDocumentTitle(note)}
+              trailing={
+                <Text style={styles.rowDate}>{formatDocumentDate(note.created_at)}</Text>
+              }
+            />
           ))}
-        </View>
+        </ListGroup>
       )}
       {hasMore ? (
         <OrdiloButton
           disabled={loadingMore}
           icon={loadingMore ? <ActivityIndicator color={colors.harborBlue} size="small" /> : undefined}
           onPress={onLoadMore}
-          title={loadingMore ? "Weitere Notizen werden geladen …" : "Weitere Notizen laden"}
+          size="lg"
+          title={loadingMore ? "Weitere werden geladen …" : "Weitere Notizen laden"}
           variant="outline"
         />
       ) : null}
     </>
-  );
-}
-
-/** One note row: title, a one-line preview, and the creation date. */
-function NoteRow({
-  note,
-  onPress,
-}: {
-  note: LibraryDocument;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityHint="Öffnet die Notiz"
-      accessibilityLabel={getDocumentTitle(note)}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [styles.documentRow, pressed && styles.pressed]}
-    >
-      <View style={styles.documentCopy}>
-        <Text numberOfLines={1} style={styles.documentTitle}>{getDocumentTitle(note)}</Text>
-        <Text numberOfLines={1} style={styles.documentSummary}>
-          {note.summary?.trim() || note.ocr_text?.trim() || "Notiz öffnen, um den Inhalt zu lesen"}
-        </Text>
-      </View>
-      <Text style={styles.noteDate}>{formatDocumentDate(note.created_at)}</Text>
-    </Pressable>
   );
 }
 
@@ -880,7 +918,7 @@ function ContactsView({
   if (contacts.length === 0) {
     return (
       <EmptyState
-        description="Lege über das Plus oben euren ersten Kontakt an."
+        description="Kinderarzt, Schule, Vermieter: Ordilo merkt sich Kontakte aus euren Briefen. Du kannst sie auch selbst anlegen."
         heading="Noch keine Kontakte"
         icon={Users}
       />
@@ -889,40 +927,25 @@ function ContactsView({
 
   return (
     <>
-      <View style={styles.search}>
-        <Search color={colors.mistDark} size={19} strokeWidth={1.8} />
-        <TextInput
-          accessibilityLabel="Kontakte durchsuchen"
-          autoCapitalize="none"
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-          onChangeText={onQueryChange}
-          placeholder="Kontakte durchsuchen"
-          placeholderTextColor={colors.mistDark}
-          returnKeyType="search"
-          style={styles.searchInput}
-          value={query}
-        />
-      </View>
+      <SearchField
+        accessibilityLabel="Kontakte durchsuchen"
+        onChangeText={onQueryChange}
+        placeholder="Name oder Organisation"
+        value={query}
+      />
 
       {error ? (
-        <View accessibilityRole="alert" style={styles.inlineError}>
-          <Text style={styles.inlineErrorText}>{error}</Text>
-          <Pressable onPress={onRetry}>
-            <Text style={styles.dismiss}>Erneut versuchen</Text>
-          </Pressable>
-        </View>
+        <InlineNotice actionLabel="Erneut versuchen" message={error} onAction={onRetry} />
       ) : null}
 
-      {suggested.length > 0 ? (
-        <View style={styles.contactSection}>
-          <Text style={styles.contactSectionTitle}>
-            In Dokumenten gefunden
-          </Text>
-          <View style={styles.list}>
-            {suggested.map((contact) => (
+      {suggested.length > 0 && !searching ? (
+        <View style={styles.group}>
+          <Text style={styles.groupLabel}>In Dokumenten gefunden</Text>
+          <ListGroup>
+            {suggested.map((contact, index) => (
               <ContactRow
                 contact={contact}
+                first={index === 0}
                 key={contact.id}
                 onPress={() =>
                   contact.source_document_id
@@ -932,35 +955,32 @@ function ContactsView({
                 review
               />
             ))}
-          </View>
+          </ListGroup>
         </View>
       ) : null}
 
       {sections.map((section) => (
-        <View key={section.title} style={styles.contactSection}>
-          <Text style={styles.contactSectionTitle}>{section.title}</Text>
-          <View style={styles.list}>
-            {section.data.map((contact) => (
+        <View key={section.title} style={styles.group}>
+          <Text style={styles.groupLabel}>{section.title}</Text>
+          <ListGroup>
+            {section.data.map((contact, index) => (
               <ContactRow
                 contact={contact}
+                first={index === 0}
                 key={contact.id}
                 onPress={() => onOpen(contact.id)}
               />
             ))}
-          </View>
+          </ListGroup>
         </View>
       ))}
 
       {searching && sections.length === 0 ? (
-        <View style={styles.filteredEmpty}>
-          <Search color={colors.mist} size={28} strokeWidth={1.5} />
-          <Text style={styles.filteredEmptyTitle}>
-            Kein Kontakt gefunden
-          </Text>
-          <Text style={styles.filteredEmptyText}>
-            Versuch es mit einem anderen Namen.
-          </Text>
-        </View>
+        <FilteredEmptyState
+          activeFilterCount={0}
+          onReset={() => onQueryChange("")}
+          query={query}
+        />
       ) : null}
     </>
   );
@@ -968,134 +988,109 @@ function ContactsView({
 
 function ContactRow({
   contact,
+  first,
   onPress,
   review = false,
 }: {
   contact: Contact;
+  first: boolean;
   onPress: () => void;
   review?: boolean;
 }) {
   return (
-    <Pressable
+    <ListRow
       accessibilityHint={
         review
           ? "Öffnet das Dokument, in dem dieser Kontakt gefunden wurde"
           : "Öffnet die Kontaktdaten"
       }
       accessibilityLabel={contact.name}
-      accessibilityRole="button"
+      chevron={!review}
+      first={first}
+      leading={<ContactAvatar name={contact.name} />}
       onPress={onPress}
-      style={({ pressed }) => [
-        styles.contactRow,
-        pressed && styles.pressed,
-      ]}
-    >
-      <ContactAvatar name={contact.name} />
-      <View style={styles.documentCopy}>
-        <Text numberOfLines={1} style={styles.documentTitle}>
-          {contact.name}
-        </Text>
-        {getContactSubtitle(contact) || getContactReachLine(contact) ? (
-          <Text numberOfLines={1} style={styles.documentMeta}>
-            {getContactSubtitle(contact) || getContactReachLine(contact)}
-          </Text>
-        ) : null}
-      </View>
-      {review ? (
-        <Text style={styles.contactReview}>Prüfen</Text>
-      ) : (
-        <ChevronRight color={colors.mistDark} size={18} />
-      )}
-    </Pressable>
+      subtitle={getContactSubtitle(contact) || getContactReachLine(contact) || null}
+      title={contact.name}
+      trailing={review ? <Text style={styles.reviewLink}>Prüfen</Text> : undefined}
+    />
   );
 }
 
-function FilterChip({
-  label,
-  onPress,
-  selected,
-}: {
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        selected && styles.chipSelected,
-        pressed && styles.pressed,
-      ]}
-    >
-      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
+/**
+ * One document row: what it is (kind icon), what it says (title and
+ * Ordilo's one-liner), whom it concerns (faces) — and only while Ordilo
+ * still needs something, a quiet state pill instead of the faces.
+ */
 function DocumentRow({
   document,
+  first,
   onPress,
+  people,
 }: {
   document: LibraryDocument;
+  first: boolean;
   onPress: () => void;
+  people: Person[];
 }) {
-  const typeLabel = getDocumentTypeLabel(document.document_type);
-  const needsReview = document.status === "analyzed";
-  const failed = document.status === "failed";
+  const kind = getDocumentKind(document.document_type);
+  const KindIcon = kind.icon;
+  const tone = getDocumentStatusTone(document.status);
+  const statusLabel = tone ? getDocumentStatusLabel(document.status) : null;
+  const meta = [kind.label, formatDocumentDate(document.created_at), formatPeopleLine(people, 2)]
+    .filter(Boolean)
+    .join(" · ");
 
-  return (
-    <SpringPressable
-      accessibilityHint="Öffnet die Dokumentansicht"
-      accessibilityLabel={`${getDocumentTitle(document)}, ${getDocumentStatusLabel(document.status)}`}
-      haptic={false}
-      onPress={onPress}
-      style={styles.documentRow}
-    >
-      <View style={styles.documentIcon}>
-        <FileText color={colors.mistDark} size={20} strokeWidth={1.7} />
-      </View>
-      <View style={styles.documentCopy}>
-        <Text numberOfLines={1} style={styles.documentTitle}>
-          {getDocumentTitle(document)}
-        </Text>
-        <Text numberOfLines={1} style={styles.documentMeta}>
-          {[typeLabel, formatDocumentDate(document.created_at)]
-            .filter(Boolean)
-            .join(" · ")}
-        </Text>
-        {document.summary ? (
-          <Text numberOfLines={1} style={styles.documentSummary}>
-            {document.summary}
-          </Text>
-        ) : null}
-      </View>
+  let trailing: ReactNode;
+  if (tone) {
+    trailing = (
       <View
         style={[
-          styles.status,
-          needsReview && styles.statusReview,
-          failed && styles.statusFailed,
+          styles.statusPill,
+          tone === "new" && styles.statusPillNew,
+          tone === "failed" && styles.statusPillFailed,
         ]}
       >
-        {document.status === "confirmed" ? (
-          <CheckCircle2 color={colors.harborBlue} size={14} />
+        {tone === "processing" ? (
+          <ActivityIndicator color={colors.mistDark} size="small" style={styles.statusSpinner} />
         ) : null}
         <Text
           numberOfLines={1}
           style={[
             styles.statusText,
-            needsReview && styles.statusReviewText,
-            failed && styles.statusFailedText,
+            tone === "new" && styles.statusTextNew,
+            tone === "failed" && styles.statusTextFailed,
           ]}
         >
-          {getDocumentStatusLabel(document.status)}
+          {tone === "new" ? "Neu" : statusLabel}
         </Text>
       </View>
-    </SpringPressable>
+    );
+  } else if (people.length > 0) {
+    trailing = <AvatarStack people={people} size={26} />;
+  }
+
+  return (
+    <ListRow
+      accessibilityHint={tone === "new" ? "Öffnet das Dokument zum Prüfen" : "Öffnet das Dokument"}
+      accessibilityLabel={`${getDocumentTitle(document)}, ${getDocumentStatusLabel(document.status)}`}
+      first={first}
+      leading={
+        <IconTile tint={kind.tint}>
+          <KindIcon color={kind.ink} size={20} strokeWidth={1.9} />
+        </IconTile>
+      }
+      meta={
+        document.summary ? (
+          <Text numberOfLines={1} style={styles.rowSummary}>
+            {document.summary}
+          </Text>
+        ) : undefined
+      }
+      onPress={onPress}
+      subtitle={meta}
+      title={getDocumentTitle(document)}
+      trailing={trailing}
+    />
   );
 }
 
@@ -1115,15 +1110,15 @@ function FilteredEmptyState({
     <View style={styles.filteredEmpty}>
       <Search color={colors.mist} size={28} strokeWidth={1.5} />
       <Text style={styles.filteredEmptyTitle}>
-        {searched ? "Nichts gefunden" : "Hier passt nichts"}
+        {searched ? `Nichts zu „${query.trim()}“` : "Hier passt nichts"}
       </Text>
       <Text style={styles.filteredEmptyText}>
         {searched
-          ? "Versuch es mit einem anderen Wort."
+          ? "Versuch es mit einem anderen Wort oder frag Ordilo direkt."
           : "Probier einen anderen Filter aus."}
       </Text>
       {(searched || activeFilterCount > 0) && (
-        <OrdiloButton onPress={onReset} title="Filter löschen" variant="ghost" />
+        <OrdiloButton onPress={onReset} title="Filter zurücksetzen" variant="ghost" />
       )}
       {onLoadMore ? (
         <OrdiloButton onPress={onLoadMore} title="Weitere Dokumente laden" variant="outline" />
@@ -1154,12 +1149,21 @@ function DocumentTypePicker({
           onPress: () => onSelect("all"),
           selected: selected === "all",
         },
-        ...documentTypes.map(([value, label]) => ({
-          key: value,
-          label,
-          onPress: () => onSelect(value),
-          selected: selected === value,
-        })),
+        ...documentTypes.map(([value, label]) => {
+          const kind = getDocumentKind(value);
+          const KindIcon = kind.icon;
+          return {
+            key: value,
+            label,
+            leading: (
+              <IconTile size={32} tint={kind.tint}>
+                <KindIcon color={kind.ink} size={16} strokeWidth={1.9} />
+              </IconTile>
+            ),
+            onPress: () => onSelect(value),
+            selected: selected === value,
+          };
+        }),
       ]}
       title="Dokumentart"
       visible={visible}
@@ -1197,136 +1201,63 @@ function SortPicker({
 const styles = StyleSheet.create({
   center: { alignItems: "center", justifyContent: "center" },
   content: { gap: spacing.md, paddingBottom: MOBILE_DOCK_CONTENT_INSET },
-  noteDate: { color: colors.mistDark, ...typography.label },
-  notesLoading: { marginTop: spacing["2xl"] },
-  contactSection: { gap: spacing.xs },
-  contactSectionTitle: {
-    color: colors.mistDark,
-    paddingHorizontal: spacing.xs,
-    ...typography.label,
-  },
-  contactRow: {
-    alignItems: "center",
-    borderBottomColor: colors.mistLight,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 68,
-    padding: spacing.sm,
-  },
-  contactReview: {
-    color: colors.harborBlue,
-    ...typography.label,
-  },
+  ambientBehind: { marginHorizontal: -spacing.md },
   search: {
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
+    backgroundColor: colors.sand,
     borderColor: colors.mistLight,
-    borderRadius: radii.base,
+    borderRadius: radii.sm,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    height: 44,
-    paddingHorizontal: 12,
+    height: 46,
+    paddingLeft: 12,
+    paddingRight: 6,
   },
-  searchInput: { color: colors.graphite, flex: 1, ...typography.body },
-  filterRow: { flexDirection: "row", gap: spacing.sm },
-  chips: { gap: spacing.xs, paddingRight: spacing.xs },
-  chip: {
+  searchInput: { color: colors.graphite, flex: 1, height: 44, ...typography.body },
+  searchClear: {
     alignItems: "center",
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
+    backgroundColor: colors.mistLight,
     borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 36,
+    height: 22,
     justifyContent: "center",
-    paddingHorizontal: 12,
+    width: 22,
   },
-  chipSelected: { backgroundColor: colors.harborBlue, borderColor: colors.harborBlue },
-  chipText: { color: colors.mistDark, ...typography.label },
-  chipTextSelected: { color: colors.warmWhite },
-  typeButton: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.harborBlue,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 3,
-    height: 36,
-    maxWidth: 128,
-    paddingHorizontal: 10,
+  chipRow: { marginHorizontal: -spacing.md },
+  chips: { gap: spacing.xs, paddingHorizontal: spacing.md },
+  chipDivider: {
+    alignSelf: "center",
+    backgroundColor: colors.mistLight,
+    height: 20,
+    marginHorizontal: spacing.xs,
+    width: 1,
   },
-  typeButtonSelected: { backgroundColor: colors.harborBlue },
-  typeButtonText: { color: colors.harborBlue, ...typography.label },
-  typeButtonTextSelected: { color: colors.warmWhite },
-  sortButton: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
+  group: { gap: spacing.xs },
+  groupLabel: {
+    color: colors.mistDark,
     paddingHorizontal: spacing.xs,
+    paddingTop: spacing.xs,
+    ...typography.caption,
   },
-  sortButtonText: { color: colors.mistDark, ...typography.label },
-  inlineError: {
-    alignItems: "center",
-    backgroundColor: colors.destructiveBackground,
-    borderColor: colors.destructive,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.sm,
-  },
-  inlineErrorText: { color: colors.destructive, flex: 1, ...typography.timestamp },
-  dismiss: { color: colors.destructive, ...typography.label },
-  list: {
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  documentRow: {
-    alignItems: "center",
-    borderBottomColor: colors.mistLight,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    minHeight: 76,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  documentIcon: {
+  rowDate: { color: colors.mistDark, ...typography.caption },
+  rowSummary: { color: colors.graphite, ...typography.timestamp },
+  reviewLink: { color: colors.harborBlue, ...typography.caption },
+  statusPill: {
     alignItems: "center",
     backgroundColor: colors.sandLight,
-    borderRadius: radii.sm,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  documentCopy: { flex: 1, gap: 1, minWidth: 0 },
-  documentTitle: { color: colors.graphite, ...typography.title },
-  documentMeta: { color: colors.mistDark, ...typography.label },
-  documentSummary: { color: colors.mistDark, ...typography.timestamp },
-  status: {
-    alignItems: "center",
-    backgroundColor: colors.blueSoft,
-    borderColor: "rgba(48, 84, 96, 0.2)",
     borderRadius: radii.pill,
-    borderWidth: 1,
     flexDirection: "row",
-    gap: 3,
-    maxWidth: 96,
-    paddingHorizontal: 8,
+    gap: 4,
+    maxWidth: 110,
+    paddingHorizontal: 10,
     paddingVertical: 4,
   },
-  statusReview: { backgroundColor: colors.sandWarm, borderColor: "rgba(228, 96, 24, 0.25)" },
-  statusFailed: { backgroundColor: colors.destructiveBackground, borderColor: "rgba(192, 57, 43, 0.25)" },
-  statusText: { color: colors.harborBlue, ...typography.label },
-  statusReviewText: { color: colors.warmApricot },
-  statusFailedText: { color: colors.destructive },
+  statusPillNew: { backgroundColor: colors.harborBlue },
+  statusPillFailed: { backgroundColor: colors.destructiveBackground },
+  statusSpinner: { transform: [{ scale: 0.7 }] },
+  statusText: { color: colors.mistDark, ...typography.caption },
+  statusTextNew: { color: colors.warmWhite },
+  statusTextFailed: { color: colors.destructive },
   filteredEmpty: {
     alignItems: "center",
     backgroundColor: colors.sandLight,
@@ -1335,8 +1266,6 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
   },
   filteredLoading: { marginTop: spacing.xl },
-  filteredEmptyTitle: { color: colors.graphite, ...typography.title },
+  filteredEmptyTitle: { color: colors.graphite, textAlign: "center", ...typography.title },
   filteredEmptyText: { color: colors.mistDark, textAlign: "center", ...typography.timestamp },
-  pressed: { opacity: 0.76 },
-  ambientBehind: { marginHorizontal: -spacing.md },
 });
