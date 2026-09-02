@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * A tiny in-memory stand-in for the Supabase client, good enough to render
  * every screen with fixture data in the web preview. It understands the
