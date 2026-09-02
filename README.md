@@ -112,6 +112,13 @@ Setup:
 Login is the same passwordless email code as on the web; the session persists
 in the iOS Keychain / Android Keystore.
 
+Navigation on the phone: a floating dock with three places (Start,
+Dokumente, Plan) and two one-tap actions (the Ordilo mark opens the
+conversation, Scannen opens the camera). Familie and Einstellungen are
+reached from the family faces in the Start header. See
+`docs/brainstorms/2026-09-02-ios-polish-arbeitsdokument.md` for the
+reasoning behind the mobile information architecture.
+
 ## Architecture overview
 
 - `src/app` uses the Next.js App Router. Route groups separate concerns:

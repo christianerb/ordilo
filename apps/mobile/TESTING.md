@@ -51,6 +51,32 @@ when testing away from the local network.
 - Ask **“Was steht in Emmas Dokumenten?”**: Ordilo performs a normal content
   search, not a title-only listing.
 
+## iOS polish smoke checklist (September 2026 redesign)
+
+These flows were built without a simulator in the loop and need one pass on
+a real iPhone (SE class and a Pro Max) before release:
+
+- Dock: Start · Dokumente · Ordilo fragen · Plan · Scannen. The mark opens
+  the chat as a modal in one tap; Scannen opens VisionKit directly, and
+  cancelling lands on the compact sheet with Fotos/PDF.
+- Start: briefing card (overdue → today → new document → calm), faces on
+  task and event rows, „Demnächst" grouped by day, tapping the family
+  faces opens Familie.
+- Dokumente: kind icons per row, people faces, month groups, filter chips
+  (Neu, Art, Sortierung), search clear button, empty and filtered states.
+- Dokument: „Was das bedeutet" rows, Kalender toggles on a freshly read
+  document, „Passt so" from the overview, inline image thumbnail, the
+  „…" menu (Original, Ändern, Löschen), success screen with counts.
+- Ordilo fragen: suggestions carry family names, „Zuletzt gefragt" opens a
+  past conversation with its sources and cards, history sheet, delete,
+  `?q=` prefill from a document.
+- Plan: assignee face on every row, „Wer macht das?" with undo, person
+  filter chips, header counts.
+- Familie: members with role/age, birthday edit, invite link, settings and
+  sign-out entries.
+- Dynamic Type at the largest accessibility size: headers, chips, rows.
+- Reduce Motion: TaskCheck spring, briefing card cross-fade.
+
 ## Automated checks
 
 Run before device testing:

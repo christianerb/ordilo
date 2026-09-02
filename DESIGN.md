@@ -331,6 +331,25 @@ Bottom tab bar, fixed, centered at max-w-md. Five tabs: Home, Scan, Suche, Famil
 - **Touch Target:** Full tab width, ~44px height minimum
 - **Hidden on:** /onboarding (full-screen conversational flow)
 
+### Native App (iOS)
+
+The Expo app follows the same palette, type family and component
+vocabulary, with three deliberate differences that come from the phone:
+
+- **Large title, no header card.** Every screen opens with one large,
+  quiet title (Figtree 600, 28/34) with an optional eyebrow (date, count)
+  and subtitle. The card header with washes and the mark was retired: the
+  mark lives in the dock, and brand presence comes from the elephant in
+  the briefing, in processing and in celebrations.
+- **The dock.** A floating wave dock with three places (Start, Dokumente,
+  Plan) and two one-tap actions: the Ordilo mark opens the conversation,
+  Scannen opens the camera. Neither action ever reads as selected. Familie
+  is a stack screen behind the family faces in the Start header.
+- **People on rows.** Tasks, appointments and documents carry the faces
+  of the family members they concern (PersonAvatar / AvatarStack, 26–34pt).
+  An empty dashed seat marks unowned work. Names never become form fields
+  the family has to maintain.
+
 ### Desktop Sidebar
 
 Persistent left rail on lg+ viewports, replacing the bottom tab bar. Collapsible (76px icon rail ⇄ 256px full width), with a Sammlungen (collections) list and a profile footer.

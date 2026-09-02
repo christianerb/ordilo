@@ -85,6 +85,10 @@ Es ist kein Freigabedokument.
 
 Jeder Schritt endet mit einem Commit.
 
+Stand 2. September 2026: Schritte 1–8 sind umgesetzt (siehe Git-Log auf
+`claude/ordilo-ios-polish-u2f31r`). Offen bleibt die Geräteprüfung; die
+Checkliste steht in `apps/mobile/TESTING.md`.
+
 ## 6. Technische Grenzen
 
 - Kein iOS-Simulator in dieser Umgebung (Linux). Verifikation über
