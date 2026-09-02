@@ -26,7 +26,7 @@ import {
   pressDuration,
   pressScale,
 } from "@/src/theme/motion";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { colors, fonts, radii, spacing, typography } from "@/src/theme/tokens";
 
 import { OrdiloMark } from "./ordilo-mark";
 
@@ -234,7 +234,7 @@ export function ScreenHeader({
           hasAction ? styles.headerCopyWithAction : styles.headerCopyWithoutAction,
         ]}
       >
-        <Text numberOfLines={1} style={[typography.display, styles.headerTitle]}>
+        <Text numberOfLines={1} style={styles.headerTitle}>
           {title}
         </Text>
         {subtitle ? (
@@ -467,8 +467,12 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    height: 96,
-    justifyContent: "flex-end",
+    // Sized by the mark: 14 top + 52 mark + 14 bottom padding. With the
+    // copy top-aligned, anything taller is dead space under the text.
+    height: 80,
+    // Top-aligned like the mark (top: 14) and the action slot beside it —
+    // the copy, the button and the mark share one top edge.
+    justifyContent: "flex-start",
     marginTop: spacing.sm,
     overflow: "hidden",
     padding: 14,
@@ -517,13 +521,21 @@ const styles = StyleSheet.create({
     width: 7,
   },
   headerCopy: {
-    gap: 2,
+    gap: 4,
     zIndex: 1,
   },
   headerCopyWithAction: { paddingRight: 116 },
   headerCopyWithoutAction: { paddingRight: 62 },
   headerTitle: {
+    // The tab's identity moment — one deliberate step above the app's
+    // display role (18px) so the page title outranks every card title on
+    // the screen. Still Figtree 600; the step comes from size and a
+    // touch of negative tracking, not a second family.
     color: colors.graphite,
+    fontFamily: fonts.semibold,
+    fontSize: 22,
+    letterSpacing: -0.4,
+    lineHeight: 27,
   },
   headerSubtitle: {
     color: colors.mistDark,
@@ -531,7 +543,8 @@ const styles = StyleSheet.create({
   headerActionSlot: {
     position: "absolute",
     right: 76,
-    top: 20,
+    // Same top edge as the copy padding and the mark (14).
+    top: 14,
     zIndex: 1,
   },
   headerAction: {
