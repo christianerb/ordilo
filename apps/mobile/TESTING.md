@@ -51,10 +51,33 @@ when testing away from the local network.
 - Ask **“Was steht in Emmas Dokumenten?”**: Ordilo performs a normal content
   search, not a title-only listing.
 
+## Visual preview without a device
+
+`ORDILO_PREVIEW=1` renders the app on the web with fixture data (Familie
+Müller, an unread Elternbrief, a confirmed Stromrechnung, appointments and
+tasks) instead of Supabase. The modules that only exist on a phone
+(scanner, keychain, push, biometrics, native date picker, recorder) are
+swapped for quiet stubs by `metro.config.js`; nothing of this touches a
+normal build. Useful for screenshots of every screen in an iPhone-sized
+Chromium, for example with Playwright:
+
+```bash
+cd apps/mobile
+ORDILO_PREVIEW=1 EXPO_OFFLINE=1 EXPO_PUBLIC_API_URL=http://localhost:9999 \
+  EXPO_PUBLIC_SUPABASE_URL=http://preview.invalid \
+  EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=preview \
+  npx expo export --platform web --output-dir /tmp/ordilo-web
+npx serve /tmp/ordilo-web   # any static server with an index.html fallback
+```
+
+Deep links do not survive the static export (the router resets to `/`);
+navigate by tapping through the app instead. Fixtures live in
+`preview/fixtures.ts`, the fake client in `preview/fake-supabase.ts`.
+
 ## iOS polish smoke checklist (September 2026 redesign)
 
-These flows were built without a simulator in the loop and need one pass on
-a real iPhone (SE class and a Pro Max) before release:
+These flows were verified on the web preview above (iPhone 15 and SE
+viewports) and still need one pass on a real iPhone before release:
 
 - Dock: Start · Dokumente · Ordilo fragen · Plan · Scannen. The mark opens
   the chat as a modal in one tap; Scannen opens VisionKit directly, and

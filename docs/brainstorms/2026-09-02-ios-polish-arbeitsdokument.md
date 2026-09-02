@@ -96,8 +96,11 @@ Checkliste steht in `apps/mobile/TESTING.md`.
 ## 6. Technische Grenzen
 
 - Kein iOS-Simulator in dieser Umgebung (Linux). Verifikation über
-  Typecheck, ESLint, Jest (jest-expo) und Render-Tests; Gerätetests bleiben
-  laut `plans/README.md` Pflicht vor einem Release.
+  Typecheck, ESLint, Jest (jest-expo) und die Web-Vorschau
+  (`ORDILO_PREVIEW=1`, siehe `apps/mobile/TESTING.md`), mit der alle
+  Screens von `main` und vom Branch in iPhone-Größe gerendert und
+  verglichen wurden. Gerätetests bleiben laut `plans/README.md` Pflicht vor
+  einem Release.
 - Personen an Dokumenten kommen aus `extracted_entities` (entity_type
   `person`, `linked_object_id` → `family_members.id`); nicht verknüpfte
   Namen bleiben als Text sichtbar.
