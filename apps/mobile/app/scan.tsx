@@ -226,9 +226,10 @@ export default function ScanModal() {
   const processingAbortRef = useRef<AbortController | null>(null);
   const processingPromiseRef = useRef<Promise<void> | null>(null);
   const detachServerPipelineRef = useRef(false);
-  // Opened from the dock: the camera is the point, so it opens by itself
-  // once — the sheet behind it stays as the fallback (photos, files, a
-  // queue that still needs attention).
+  // Opened from an explicit „scannen“ CTA: the camera is the point, so it
+  // opens by itself once — the sheet behind it stays as the fallback
+  // (photos, files, a queue that still needs attention). The dock opens
+  // the sheet itself, so photos and files are one tap away too.
   const autoLaunchRef = useRef(auto === "1");
 
   const updateQueue = useCallback(

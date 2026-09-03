@@ -53,8 +53,9 @@ function buildDockWavePath(width: number) {
 /**
  * A floating, thumb-reachable family dock. Three places to be — Start,
  * Dokumente, Plan — and two things to do: the Ordilo mark in the middle
- * opens the conversation, Scannen on the right opens the camera. Both are
- * one tap; neither is a destination, so neither ever reads as selected.
+ * opens the conversation, Scannen on the right opens the intake sheet
+ * (scan, photos, files). Both are one tap; neither is a destination, so
+ * neither ever reads as selected.
  */
 export function OrdiloTabBar({
   navigation,
@@ -125,14 +126,16 @@ export function OrdiloTabBar({
           if (route.name === "scannen") {
             return (
               <Pressable
-                accessibilityHint="Öffnet die Kamera für ein neues Dokument"
-                accessibilityLabel="Dokument scannen"
+                accessibilityHint="Öffnet Scannen, Fotos und Dateien"
+                accessibilityLabel="Dokument hinzufügen"
                 accessibilityRole="button"
                 hitSlop={4}
                 key={route.key}
                 onPress={() => {
                   haptics.tap();
-                  router.push({ pathname: "/scan", params: { auto: "1" } });
+                  // The chooser, not the camera: a photo or a PDF must not
+                  // have to pass through the scanner first.
+                  router.push("/scan");
                 }}
                 style={[styles.tab, styles.scanTab]}
               >

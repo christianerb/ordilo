@@ -313,7 +313,9 @@ export default function AblageScreen() {
   const finishCreateChoice = useCallback(() => {
     const kind = pendingCreateRef.current;
     pendingCreateRef.current = null;
-    if (kind === "document") router.push({ pathname: "/scan", params: { auto: "1" } });
+    // „Scannen, fotografieren oder eine Datei wählen“ — so the chooser, not
+    // straight into the camera.
+    if (kind === "document") router.push("/scan");
     if (kind === "note") setCreateNoteOpen(true);
     if (kind === "contact") setCreateContactOpen(true);
   }, [router]);

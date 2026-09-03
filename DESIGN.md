@@ -343,7 +343,8 @@ vocabulary, with three deliberate differences that come from the phone:
   the briefing, in processing and in celebrations.
 - **The dock.** A floating wave dock with three places (Start, Dokumente,
   Plan) and two one-tap actions: the Ordilo mark opens the conversation,
-  Scannen opens the camera. Neither action ever reads as selected. Familie
+  Scannen opens the intake sheet (scan as the big primary stage, photos and
+  files beside it). Neither action ever reads as selected. Familie
   is a stack screen behind the family faces in the Start header.
 - **People on rows.** Tasks, appointments and documents carry the faces
   of the family members they concern (PersonAvatar / AvatarStack, 26–34pt).

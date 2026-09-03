@@ -207,8 +207,9 @@ describe("native motion wiring", () => {
     expect(sheet).toContain("formControlFocused");
     expect(sheet).toContain("formActions");
 
-    // The dock has no choice sheet: the mark opens the conversation and
-    // Scannen opens the camera, each in one tap.
+    // The dock has no choice sheet: the mark opens the conversation in one
+    // tap, Scannen opens the intake sheet (scan stage, photos, files) — not
+    // the camera, so a photo or PDF never has to pass through the scanner.
     expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "CreateChoiceSheet",
     );
@@ -216,8 +217,13 @@ describe("native motion wiring", () => {
       'router.push("/suche")',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'router.push("/scan")',
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       'params: { auto: "1" }',
     );
+    // Explicit „scannen“ CTAs still open the camera directly.
+    expect(source("app/(tabs)/index.tsx")).toContain('params: { auto: "1" }');
     // The dock wave is rebuilt from the measured bar width so its corner
     // radii stay round on every phone (no stretched 360pt viewBox).
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
@@ -396,7 +402,7 @@ describe("native motion wiring", () => {
     expect(scan).toContain("<ScanHeroIllustration");
     expect(scan).toContain("styles.captureButton");
     expect(scan).toContain("styles.secondaryActionIcon");
-    // Opened from the dock, the camera opens by itself once.
+    // Opened from an explicit scan CTA, the camera opens by itself once.
     expect(scan).toContain('autoLaunchRef = useRef(auto === "1")');
     expect(scanHero).toContain("<Svg");
     expect(search).toContain("styles.dayDivider");

@@ -52,9 +52,11 @@ Es ist kein Freigabedokument.
 
 1. **Neue Dock-Struktur:** Start · Dokumente · **Ordilo fragen** (Mitte,
    die Marke bleibt der Anker; ein Tap öffnet das Gespräch als Modal, kein
-   Auswahl-Sheet mehr) · Plan · **Scannen** (ein Tap öffnet direkt die
-   Kamera; das kompakte Sheet bleibt als Rückfall für Fotos, Dateien und
-   die Warteschlange). Familie wird ein Stack-Screen, erreichbar über die
+   Auswahl-Sheet mehr) · Plan · **Scannen** (ein Tap öffnet das kompakte
+   Sheet mit Scannen als großer Bühne plus Fotos und Dateien; nur die
+   expliziten „Brief scannen“-Knöpfe starten die Kamera direkt — der
+   Umweg Kamera → abbrechen → Sheet für ein Foto war zu viel). Familie
+   wird ein Stack-Screen, erreichbar über die
    Familien-Gesichter im Start-Header. Begründung: Scannen und Fragen sind
    die zwei täglichen Aktionen und verdienen je einen Tap; die
    Mitgliederliste ist selten nötig, die Familie selbst aber überall

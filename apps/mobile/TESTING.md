@@ -80,8 +80,9 @@ These flows were verified on the web preview above (iPhone 15 and SE
 viewports) and still need one pass on a real iPhone before release:
 
 - Dock: Start · Dokumente · Ordilo fragen · Plan · Scannen. The mark opens
-  the chat as a modal in one tap; Scannen opens VisionKit directly, and
-  cancelling lands on the compact sheet with Fotos/PDF.
+  the chat as a modal in one tap; Scannen opens the compact sheet with the
+  scan stage, Fotos and PDF (no error banner); „Brief scannen“ from Start
+  opens VisionKit directly.
 - Start: briefing card (overdue → today → new document → calm), faces on
   task and event rows, „Demnächst" grouped by day, tapping the family
   faces opens Familie.
