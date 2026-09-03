@@ -6,6 +6,10 @@ const migration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/0065_family_contacts.sql"),
   "utf8",
 );
+const dismissalMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/0071_contact_dismissal.sql"),
+  "utf8",
+);
 
 describe("0065_family_contacts migration", () => {
   it("creates a family-scoped contact table with RLS", () => {
@@ -37,5 +41,31 @@ describe("0065_family_contacts migration", () => {
     );
     expect(migration).toContain("set family_id = new.target_family_id");
     expect(migration).toContain("where family_id = new.source_family_id");
+  });
+});
+
+describe("0071_contact_dismissal migration", () => {
+  it("allows a dismissed tombstone state", () => {
+    expect(dismissalMigration).toContain(
+      "check (status in ('suggested', 'confirmed', 'dismissed'))",
+    );
+  });
+
+  it("keeps dismissed contacts dismissed when extraction upserts them again", () => {
+    expect(dismissalMigration).toContain(
+      "c.source_document_id = new.document_id",
+    );
+    expect(dismissalMigration).toContain("c.status = 'dismissed'");
+    expect(dismissalMigration).toContain(
+      "regexp_replace(c.phone, '[^0-9]', '', 'g')",
+    );
+    expect(dismissalMigration).toContain(
+      "when contacts.status = 'dismissed' then 'dismissed'",
+    );
+    expect(dismissalMigration).toContain("else excluded.status");
+  });
+
+  it("leaves user-edited tombstones in place when source entities are deleted", () => {
+    expect(dismissalMigration).toContain("user_edited_at is null");
   });
 });

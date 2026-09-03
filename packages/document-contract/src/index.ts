@@ -52,3 +52,74 @@ export function getDocumentPipelineStepsCompleted(status: string): number {
       return 0;
   }
 }
+
+/**
+ * Builds the canonical text body for a credentials note.
+ *
+ * Web, native and chat all use this exact layout so the same login never
+ * produces different previews depending on where it was created.
+ */
+export function buildCredentialsContent({
+  title,
+  url,
+  username,
+  description,
+}: {
+  title: string;
+  url?: string;
+  username?: string;
+  description?: string;
+}): string {
+  const fields: string[] = [];
+  if (url?.trim()) fields.push(`- **URL:** ${url.trim()}`);
+  if (username?.trim()) {
+    fields.push(`- **Benutzername:** ${username.trim()}`);
+  }
+
+  const body = [fields.join("\n"), description?.trim() ?? ""]
+    .filter(Boolean)
+    .join("\n\n");
+  return body || `Zugangsdaten ${title.trim()}`;
+}
+
+/**
+ * Turns confirmed note text into a compact, deterministic list preview.
+ *
+ * It only removes lightweight Markdown presentation. It never summarizes,
+ * classifies or guesses what a value means.
+ */
+export function getManualNotePreview(
+  content: string | null | undefined,
+  title?: string | null,
+): string | null {
+  if (!content?.trim()) return null;
+
+  const lines = content
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const normalizedTitle = title?.trim().toLocaleLowerCase("de");
+
+  const previewParts = lines
+    .map((line, index) => {
+      const heading = line.replace(/^#{1,6}\s+/, "").trim();
+      if (
+        index === 0 &&
+        normalizedTitle &&
+        heading.toLocaleLowerCase("de") === normalizedTitle
+      ) {
+        return "";
+      }
+      return heading
+        .replace(/^[-*]\s+/, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/`/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    })
+    .filter(Boolean);
+
+  const preview = previewParts.join(" · ") || title?.trim() || "";
+  if (!preview) return null;
+  return preview.length > 240 ? `${preview.slice(0, 239)}…` : preview;
+}

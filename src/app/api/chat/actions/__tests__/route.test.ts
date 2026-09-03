@@ -16,11 +16,16 @@ vi.mock("@/lib/ai/tools", () => ({
   executeTool: vi.fn(),
 }));
 
+vi.mock("@/lib/jobs", () => ({
+  enqueueJob: vi.fn(),
+}));
+
 import { POST } from "@/app/api/chat/actions/route";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { executeTool } from "@/lib/ai/tools";
+import { enqueueJob } from "@/lib/jobs";
 
 const FAMILY_ID = "660e8400-e29b-41d4-a716-446655440001";
 
@@ -154,6 +159,39 @@ describe("POST /api/chat/actions", () => {
     });
     expect(ledger.update).toHaveBeenCalledWith(
       expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("queues refreshed analysis after an existing note was changed", async () => {
+    vi.mocked(executeTool).mockResolvedValue(
+      JSON.stringify({
+        success: true,
+        document_id: "note-1",
+        message: "Notiz ergänzt.",
+      }),
+    );
+    vi.mocked(enqueueJob).mockResolvedValue(true);
+
+    const response = await POST(
+      request({
+        family_id: FAMILY_ID,
+        action_id: "msg-1-update-note-0",
+        tool_name: "update_note",
+        args: {
+          document_id: "note-1",
+          append_content: "Neue Versicherungsnummer",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(enqueueJob).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        family_id: FAMILY_ID,
+        document_id: "note-1",
+        job_type: "analyze",
+      },
     );
   });
 

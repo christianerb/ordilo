@@ -1,4 +1,7 @@
-import { validateLoginEmail } from "../lib/validation";
+import {
+  validateLoginEmail,
+  validateLoginPassword,
+} from "../lib/validation";
 
 describe("validateLoginEmail", () => {
   it("rejects empty input with the German message from the web app", () => {
@@ -24,6 +27,22 @@ describe("validateLoginEmail", () => {
     expect(result).toEqual({
       success: true,
       data: { email: "max@beispiel.de" },
+    });
+  });
+});
+
+describe("validateLoginPassword", () => {
+  it("requires a password", () => {
+    expect(validateLoginPassword("")).toEqual({
+      success: false,
+      error: "Bitte Passwort eingeben",
+    });
+  });
+
+  it("preserves meaningful password whitespace", () => {
+    expect(validateLoginPassword("  geheim  ")).toEqual({
+      success: true,
+      data: { password: "  geheim  " },
     });
   });
 });

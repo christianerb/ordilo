@@ -176,6 +176,23 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
+    if (
+      toolName === "update_note" &&
+      typeof result.document_id === "string"
+    ) {
+      try {
+        const { enqueueJob } = await import("@/lib/jobs");
+        await enqueueJob(admin, {
+          family_id: familyId,
+          document_id: result.document_id,
+          job_type: "analyze",
+        });
+      } catch {
+        // The note text is already stored. Enrichment is best-effort and
+        // must not turn a successful user edit into a failed action card.
+      }
+    }
+
     await settleClaim("completed");
     return Response.json({
       success: true,

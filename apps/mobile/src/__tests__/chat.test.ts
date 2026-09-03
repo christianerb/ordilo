@@ -314,6 +314,48 @@ describe("action card content (ported from the web)", () => {
     expect(note.details).toEqual([{ label: "URL", value: "https://stadtwerke.de" }]);
   });
 
+  it("includes the complete note text in a note proposal", () => {
+    const note = getActionContent({
+      id: "a-note",
+      toolName: "create_note",
+      args: {
+        title: "Audi BKK – Emma Erb",
+        content: "Versicherungsnummer Emma Erb: X123456789",
+      },
+      state: "ready",
+    });
+
+    expect(note.details).toEqual([
+      {
+        label: "Notiz",
+        value: "Versicherungsnummer Emma Erb: X123456789",
+      },
+    ]);
+  });
+
+  it("labels an existing-note proposal as a change with the appended text", () => {
+    const note = getActionContent({
+      id: "a-update-note",
+      toolName: "update_note",
+      args: {
+        note_title: "Audi BKK – Emma Erb",
+        append_content: "Versicherungsnummer Emma Erb: X123456789",
+      },
+      state: "ready",
+    });
+
+    expect(note).toEqual({
+      eyebrow: "Notiz ändern",
+      title: "Audi BKK – Emma Erb",
+      details: [
+        {
+          label: "Ergänzung",
+          value: "Versicherungsnummer Emma Erb: X123456789",
+        },
+      ],
+    });
+  });
+
   it("shows every supplied field in a contact proposal", () => {
     expect(
       getActionContent({

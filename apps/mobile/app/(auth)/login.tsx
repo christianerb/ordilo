@@ -32,7 +32,10 @@ import { OtpCodeInput } from "@/src/components/otp-code-input";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { recordOnboardingStartedIfFirstTime } from "@/src/lib/analytics";
 import { getSupabase } from "@/src/lib/supabase";
-import { validateLoginEmail } from "@/src/lib/validation";
+import {
+  validateLoginEmail,
+  validateLoginPassword,
+} from "@/src/lib/validation";
 import {
   stepEntering,
   stepExiting,
@@ -41,6 +44,7 @@ import {
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 type FormState = "idle" | "submitting" | "sent" | "verifying" | "error";
+type LoginMethod = "code" | "password";
 
 // Expo SecureStore accepts only letters, digits, `.`, `-` and `_` in keys.
 const PENDING_LOGIN_KEY = "ordilo.pending-login";
@@ -81,6 +85,8 @@ export default function LoginScreen() {
   const reduceMotion = useReducedMotion();
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loginMethod, setLoginMethod] = useState<LoginMethod>("code");
   const [code, setCode] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [formState, setFormState] = useState<FormState>("idle");
@@ -184,6 +190,47 @@ export default function LoginScreen() {
     startCooldown();
   }
 
+  async function handlePasswordLogin() {
+    const emailResult = validateLoginEmail(email);
+    if (!emailResult.success) {
+      setValidationError(emailResult.error);
+      setFormState("idle");
+      return;
+    }
+    const passwordResult = validateLoginPassword(password);
+    if (!passwordResult.success) {
+      setValidationError(passwordResult.error);
+      setFormState("idle");
+      return;
+    }
+
+    Keyboard.dismiss();
+    setValidationError(null);
+    setErrorMessage(null);
+    setFormState("submitting");
+
+    try {
+      const { data, error } = await getSupabase().auth.signInWithPassword({
+        email: emailResult.data.email,
+        password: passwordResult.data.password,
+      });
+
+      if (error) {
+        setErrorMessage("E-Mail-Adresse oder Passwort stimmt nicht.");
+        setFormState("error");
+        return;
+      }
+
+      if (data.user) {
+        void recordOnboardingStartedIfFirstTime(getSupabase(), data.user.id);
+      }
+      await clearPendingLogin();
+    } catch {
+      setErrorMessage("Das hat nicht geklappt. Bitte versuch's nochmal.");
+      setFormState("error");
+    }
+  }
+
   async function handleResend() {
     // Guard synchronously: state updates lag a frame, so without the ref a
     // fast double-tap on a slow connection would send two codes and the
@@ -248,6 +295,16 @@ export default function LoginScreen() {
     setCode("");
     setErrorMessage(null);
     void clearPendingLogin();
+  }
+
+  function toggleLoginMethod() {
+    setLoginMethod((current) =>
+      current === "code" ? "password" : "code",
+    );
+    setPassword("");
+    setValidationError(null);
+    setErrorMessage(null);
+    setFormState("idle");
   }
 
   // The intro screen pushed us; without a stack entry (deep link) the
@@ -396,8 +453,9 @@ export default function LoginScreen() {
                       Schön, dass du da bist.
                     </Text>
                     <Text style={[typography.body, styles.bodyText]}>
-                      Melde dich mit deiner E-Mail-Adresse an. Ein Passwort
-                      brauchst du nicht.
+                      {loginMethod === "code"
+                        ? "Melde dich mit deiner E-Mail-Adresse an. Ein Passwort brauchst du nicht."
+                        : "Melde dich mit deiner E-Mail-Adresse und deinem Passwort an."}
                     </Text>
                   </View>
 
@@ -432,21 +490,81 @@ export default function LoginScreen() {
                               setErrorMessage(null);
                             }
                           }}
-                          onSubmitEditing={() => void handleSendCode()}
+                          onSubmitEditing={() => {
+                            if (loginMethod === "code") {
+                              void handleSendCode();
+                            }
+                          }}
                           placeholder="du@beispiel.de"
                           placeholderTextColor={colors.mistDark}
-                          returnKeyType="send"
+                          returnKeyType={
+                            loginMethod === "code" ? "send" : "next"
+                          }
                           style={styles.fieldInput}
                           value={email}
                         />
                       </View>
                     </View>
-                    {validationError ? (
+                    {validationError &&
+                    validationError !== "Bitte Passwort eingeben" ? (
                       <Text accessibilityRole="alert" style={styles.errorText}>
                         {validationError}
                       </Text>
                     ) : null}
                   </View>
+
+                  {loginMethod === "password" ? (
+                    <View style={styles.fieldGroup}>
+                      <View
+                        style={[
+                          styles.fieldBox,
+                          validationError === "Bitte Passwort eingeben"
+                            ? styles.inputError
+                            : null,
+                        ]}
+                      >
+                        <Lock
+                          color={colors.harborBlue}
+                          size={20}
+                          strokeWidth={1.75}
+                        />
+                        <View style={styles.fieldColumn}>
+                          <Text style={[typography.label, styles.fieldLabel]}>
+                            Passwort
+                          </Text>
+                          <TextInput
+                            accessibilityLabel="Passwort"
+                            autoCapitalize="none"
+                            autoComplete="current-password"
+                            autoCorrect={false}
+                            onChangeText={(value) => {
+                              setPassword(value);
+                              if (validationError) setValidationError(null);
+                              if (formState === "error") {
+                                setFormState("idle");
+                                setErrorMessage(null);
+                              }
+                            }}
+                            onSubmitEditing={() =>
+                              void handlePasswordLogin()
+                            }
+                            placeholder="Dein Passwort"
+                            placeholderTextColor={colors.mistDark}
+                            returnKeyType="go"
+                            secureTextEntry
+                            style={styles.fieldInput}
+                            textContentType="password"
+                            value={password}
+                          />
+                        </View>
+                      </View>
+                      {validationError === "Bitte Passwort eingeben" ? (
+                        <Text accessibilityRole="alert" style={styles.errorText}>
+                          {validationError}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
 
                   {errorMessage && formState === "error" ? (
                     <Text accessibilityRole="alert" style={styles.errorText}>
@@ -459,44 +577,67 @@ export default function LoginScreen() {
                     icon={
                       <ArrowRight color={colors.warmWhite} size={20} />
                     }
-                    onPress={() => void handleSendCode()}
+                    onPress={() =>
+                      loginMethod === "code"
+                        ? void handleSendCode()
+                        : void handlePasswordLogin()
+                    }
                     size="lg"
                     title={
                       formState === "submitting"
-                        ? "Wird verschickt…"
-                        : "Loslegen ohne Passwort"
+                        ? loginMethod === "code"
+                          ? "Wird verschickt…"
+                          : "Wird angemeldet…"
+                        : loginMethod === "code"
+                          ? "Loslegen ohne Passwort"
+                          : "Anmelden"
                     }
                   />
 
-                  <View style={styles.privacyNote}>
-                    <View style={styles.privacyIcon}>
-                      <ShieldCheck
-                        color={colors.harborBlue}
-                        size={20}
-                        strokeWidth={1.75}
-                      />
+                  {loginMethod === "code" ? (
+                    <View style={styles.privacyNote}>
+                      <View style={styles.privacyIcon}>
+                        <ShieldCheck
+                          color={colors.harborBlue}
+                          size={20}
+                          strokeWidth={1.75}
+                        />
+                      </View>
+                      <View style={styles.privacyColumn}>
+                        <Text style={[typography.title, styles.privacyTitle]}>
+                          Anmelden und Registrieren sind dasselbe.
+                        </Text>
+                        <Text style={[typography.label, styles.privacyText]}>
+                          Wenn es dein Konto noch nicht gibt, richten wir es
+                          automatisch für dich ein. Sicher, vertraulich und
+                          unkompliziert.
+                        </Text>
+                      </View>
                     </View>
-                    <View style={styles.privacyColumn}>
-                      <Text style={[typography.title, styles.privacyTitle]}>
-                        Anmelden und Registrieren sind dasselbe.
-                      </Text>
-                      <Text style={[typography.label, styles.privacyText]}>
-                        Wenn es dein Konto noch nicht gibt, richten wir es
-                        automatisch für dich ein. Sicher, vertraulich und
-                        unkompliziert.
-                      </Text>
-                    </View>
-                  </View>
+                  ) : null}
 
                   <View style={styles.lockHint}>
                     <View style={styles.lockCircle}>
                       <Lock color={colors.mistDark} size={12} strokeWidth={2} />
                     </View>
                     <Text style={[typography.label, styles.lockText]}>
-                      Wir senden dir anschließend einen 6-stelligen Code per
-                      E-Mail.
+                      {loginMethod === "code"
+                        ? "Wir senden dir anschließend einen 6-stelligen Code per E-Mail."
+                        : "Der Passwort-Zugang ist für bestehende Konten."}
                     </Text>
                   </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={toggleLoginMethod}
+                    style={styles.methodLink}
+                  >
+                    <Text style={[typography.timestamp, styles.link]}>
+                      {loginMethod === "code"
+                        ? "Mit Passwort anmelden"
+                        : "Mit E-Mail-Code anmelden"}
+                    </Text>
+                  </Pressable>
 
                   <Pressable
                     accessibilityRole="button"
@@ -571,6 +712,9 @@ const styles = StyleSheet.create({
   fieldColumn: {
     flex: 1,
     gap: 1,
+  },
+  fieldGroup: {
+    gap: spacing.xs,
   },
   fieldLabel: {
     color: colors.mistDark,
@@ -698,5 +842,10 @@ const styles = StyleSheet.create({
   },
   backLinkText: {
     color: colors.mistDark,
+  },
+  methodLink: {
+    alignSelf: "center",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
   },
 });

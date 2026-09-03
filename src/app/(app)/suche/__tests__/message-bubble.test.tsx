@@ -10,6 +10,7 @@ function buildMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     role: "assistant",
     content: "",
     sources: [],
+    actions: [],
     ...overrides,
   };
 }
@@ -415,7 +416,7 @@ describe("MessageBubble — Ordilo Action Card", () => {
       <MessageBubble
         message={buildMessage({
           content: "Ich habe das für dich vorbereitet.",
-          action: taskAction,
+          actions: [taskAction],
         })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
@@ -437,7 +438,7 @@ describe("MessageBubble — Ordilo Action Card", () => {
     const onAdjust = vi.fn();
     render(
       <MessageBubble
-        message={buildMessage({ action: taskAction })}
+        message={buildMessage({ actions: [taskAction] })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
         onActionConfirm={onConfirm}
@@ -450,18 +451,19 @@ describe("MessageBubble — Ordilo Action Card", () => {
     fireEvent.click(screen.getByTestId("action-card-adjust"));
     fireEvent.click(screen.getByTestId("action-card-dismiss"));
 
-    expect(onConfirm).toHaveBeenCalledWith("msg-1");
+    expect(onConfirm).toHaveBeenCalledWith("msg-1", "action-1");
     expect(onAdjust).toHaveBeenCalledWith(
       expect.objectContaining({ id: "msg-1" }),
+      taskAction,
     );
-    expect(onDismiss).toHaveBeenCalledWith("msg-1");
+    expect(onDismiss).toHaveBeenCalledWith("msg-1", "action-1");
   });
 
   it("renders a contact proposal with its saved contact details", () => {
     render(
       <MessageBubble
         message={buildMessage({
-          action: {
+          actions: [{
             id: "contact-action",
             toolName: "add_contact",
             args: {
@@ -470,7 +472,7 @@ describe("MessageBubble — Ordilo Action Card", () => {
               email: "hein@example.de",
             },
             state: "ready",
-          },
+          }],
         })}
         passesFilters={passesAllFilters}
         onSourceCardClick={vi.fn()}
@@ -481,6 +483,70 @@ describe("MessageBubble — Ordilo Action Card", () => {
     expect(screen.getByText("Hein Blöd")).toBeDefined();
     expect(screen.getByText("+49 30 123456")).toBeDefined();
     expect(screen.getByText("hein@example.de")).toBeDefined();
+  });
+
+  it("shows the complete note text before a note proposal is confirmed", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [{
+            id: "note-action",
+            toolName: "create_note",
+            args: {
+              title: "Audi BKK – Emma Erb",
+              content: "Versicherungsnummer Emma Erb: X123456789",
+            },
+            state: "ready",
+          }],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Notiz anlegen")).toBeDefined();
+    expect(screen.getByText("Notiz")).toBeDefined();
+    expect(
+      screen.getByText("Versicherungsnummer Emma Erb: X123456789"),
+    ).toBeDefined();
+  });
+
+  it("renders every proposed note change as its own action card", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          actions: [
+            {
+              id: "update-emma",
+              toolName: "update_note",
+              args: {
+                note_title: "Audi BKK – Emma Erb",
+                append_content: "Versicherungsnummer Emma Erb: X123456789",
+              },
+              state: "ready",
+            },
+            {
+              id: "update-hanna",
+              toolName: "update_note",
+              args: {
+                note_title: "Audi BKK – Hanna Erb",
+                append_content: "Versicherungsnummer Hanna Erb: Y987654321",
+              },
+              state: "ready",
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByText("Notiz ändern")).toHaveLength(2);
+    expect(screen.getByText("Audi BKK – Emma Erb")).toBeDefined();
+    expect(screen.getByText("Audi BKK – Hanna Erb")).toBeDefined();
+    expect(screen.getAllByRole("button", { name: "Übernehmen" })).toHaveLength(
+      2,
+    );
   });
 });
 

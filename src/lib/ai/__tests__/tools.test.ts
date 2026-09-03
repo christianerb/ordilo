@@ -2073,6 +2073,135 @@ describe("create_note confirmation gate", () => {
 });
 
 // ---------------------------------------------------------------------------
+// update_note confirmation gate
+// ---------------------------------------------------------------------------
+
+function makeUpdateNoteCtx({
+  note = {
+    id: "note-1",
+    title: "Audi BKK – Emma Erb",
+    source: "manual",
+    status: "confirmed",
+    document_type: "insurance",
+  } as {
+    id: string;
+    title: string;
+    source: string;
+    status: string;
+    document_type: string;
+  } | null,
+  rpcResult = [{ result_status: "updated", note_title: "Audi BKK – Emma Erb" }],
+}: {
+  note?: {
+    id: string;
+    title: string;
+    source: string;
+    status: string;
+    document_type: string;
+  } | null;
+  rpcResult?: Array<{ result_status: string; note_title: string | null }>;
+} = {}) {
+  const query = {
+    select: vi.fn(),
+    eq: vi.fn(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: note, error: null }),
+  };
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  const rpc = vi.fn().mockResolvedValue({ data: rpcResult, error: null });
+  const ctx = {
+    client: {
+      from: vi.fn(() => query),
+      rpc,
+    },
+    familyId: "fam-1",
+    sources: [] as ChatSource[],
+    speakerName: null,
+  } as unknown as ToolContext;
+  return { ctx, query, rpc };
+}
+
+describe("update_note confirmation gate", () => {
+  it("is available only through an explicit confirmation card", async () => {
+    const { ctx, rpc } = makeUpdateNoteCtx();
+
+    const result = JSON.parse(
+      await executeTool(
+        "update_note",
+        {
+          document_id: "note-1",
+          append_content: "Versicherungsnummer Emma Erb: X123456789",
+        },
+        ctx,
+      ),
+    );
+
+    expect(CONFIRMATION_TOOLS.has("update_note")).toBe(true);
+    expect(result).toMatchObject({
+      needs_confirmation: true,
+      note_title: "Audi BKK – Emma Erb",
+    });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("appends exactly the confirmed text to the family note", async () => {
+    const { ctx, query, rpc } = makeUpdateNoteCtx();
+
+    const result = JSON.parse(
+      await executeTool(
+        "update_note",
+        {
+          document_id: "note-1",
+          append_content: "Versicherungsnummer Emma Erb: X123456789",
+          confirmed: true,
+        },
+        ctx,
+      ),
+    );
+
+    expect(query.eq).toHaveBeenNthCalledWith(1, "id", "note-1");
+    expect(query.eq).toHaveBeenNthCalledWith(2, "family_id", "fam-1");
+    expect(rpc).toHaveBeenCalledWith("append_to_manual_note", {
+      p_document_id: "note-1",
+      p_family_id: "fam-1",
+      p_append_content: "Versicherungsnummer Emma Erb: X123456789",
+    });
+    expect(result).toMatchObject({
+      success: true,
+      document_id: "note-1",
+      already_updated: false,
+    });
+  });
+
+  it("never rewrites scans or credential notes", async () => {
+    const { ctx, rpc } = makeUpdateNoteCtx({
+      note: {
+        id: "scan-1",
+        title: "Audi BKK Scan",
+        source: "scan",
+        status: "confirmed",
+        document_type: "insurance",
+      },
+    });
+
+    const result = JSON.parse(
+      await executeTool(
+        "update_note",
+        {
+          document_id: "scan-1",
+          append_content: "Neue Angabe",
+          confirmed: true,
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toContain("nicht geändert");
+    expect(rpc).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // create_note — Zugangsdaten
 // ---------------------------------------------------------------------------
 

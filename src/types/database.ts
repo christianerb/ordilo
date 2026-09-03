@@ -887,7 +887,7 @@ export type Database = {
           role: string | null;
           phone: string | null;
           email: string | null;
-          status: "suggested" | "confirmed";
+          status: "suggested" | "confirmed" | "dismissed";
           user_edited_at: string | null;
           created_by: string | null;
           created_at: string;
@@ -903,19 +903,20 @@ export type Database = {
           role?: string | null;
           phone?: string | null;
           email?: string | null;
-          status?: "suggested" | "confirmed";
+          status?: "suggested" | "confirmed" | "dismissed";
           user_edited_at?: string | null;
           created_by?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: {
+          source_key?: string | null;
           name?: string;
           organization?: string | null;
           role?: string | null;
           phone?: string | null;
           email?: string | null;
-          status?: "suggested" | "confirmed";
+          status?: "suggested" | "confirmed" | "dismissed";
           user_edited_at?: string | null;
           updated_at?: string;
         };
@@ -1559,6 +1560,17 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      append_to_manual_note: {
+        Args: {
+          p_document_id: string;
+          p_family_id: string;
+          p_append_content: string;
+        };
+        Returns: {
+          result_status: string;
+          note_title: string | null;
+        }[];
+      };
       create_calendar_event_with_attendees: {
         Args: {
           p_family_id: string;

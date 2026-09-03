@@ -370,6 +370,73 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
     expect(screen.getByText("Übernommen")).toBeDefined();
   });
 
+  it("shows the complete note text in a streamed note proposal", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        {
+          type: "confirmation_request",
+          action_id: "proposal-create-note-1",
+          tool_name: "create_note",
+          action_args: {
+            title: "Audi BKK – Emma Erb",
+            content: "Versicherungsnummer Emma Erb: X123456789",
+          },
+        },
+        { type: "text", content: "Ich habe die Notiz vorbereitet." },
+        { type: "done" },
+      ]),
+    );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Speichere Emmas Versicherungsnummer");
+
+    expect(
+      await screen.findByText("Versicherungsnummer Emma Erb: X123456789"),
+    ).toBeDefined();
+    expect(screen.getByTestId("action-card-confirm")).toBeDefined();
+  });
+
+  it("keeps all streamed note changes instead of replacing the first card", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        {
+          type: "confirmation_request",
+          action_id: "proposal-update-emma",
+          tool_name: "update_note",
+          action_args: {
+            document_id: "note-emma",
+            append_content: "Versicherungsnummer Emma Erb: X123456789",
+          },
+          note_title: "Audi BKK – Emma Erb",
+        },
+        {
+          type: "confirmation_request",
+          action_id: "proposal-update-hanna",
+          tool_name: "update_note",
+          action_args: {
+            document_id: "note-hanna",
+            append_content: "Versicherungsnummer Hanna Erb: Y987654321",
+          },
+          note_title: "Audi BKK – Hanna Erb",
+        },
+        {
+          type: "text",
+          content:
+            "Ich habe für beide Notizen je eine Änderung vorbereitet.",
+        },
+        { type: "done" },
+      ]),
+    );
+
+    render(<SucheClient {...defaultProps} />);
+    await submitQuery("Ergänze beide Audi-BKK-Notizen");
+
+    expect(await screen.findByText("Audi BKK – Emma Erb")).toBeDefined();
+    expect(screen.getByText("Audi BKK – Hanna Erb")).toBeDefined();
+    expect(screen.getAllByTestId("ordilo-action-card")).toHaveLength(2);
+    expect(screen.getAllByTestId("action-card-confirm")).toHaveLength(2);
+  });
+
   it("shows a German error message when the chat API returns non-ok", async () => {
     global.fetch = vi.fn().mockResolvedValue(
       streamResponse([{ type: "error", error: "API error", code: "FAIL" }], false),

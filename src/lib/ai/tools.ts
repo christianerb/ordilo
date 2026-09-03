@@ -891,6 +891,40 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         required: ["title", "content"],
       },
     },
+  },
+  {
+    type: "function",
+    function: {
+      name: "update_note",
+      description:
+        "Ergaenzt den Text einer BESTEHENDEN, manuell angelegten Notiz. " +
+        "Verwende dies statt create_note, wenn der Nutzer eine vorhandene " +
+        "Notiz aendern oder um Angaben aus einem Scan ergaenzen moechte. " +
+        "Fuer jede zu aendernde Notiz ist ein eigener Tool-Aufruf noetig. " +
+        "Die document_id muss zuvor ueber die Dokumentensuche ermittelt " +
+        "werden. Setze confirmed erst auf true, wenn der Nutzer genau diese " +
+        "Ergaenzung in der Aktionskarte bestaetigt hat.",
+      parameters: {
+        type: "object",
+        properties: {
+          document_id: {
+            type: "string",
+            description: "ID der bestehenden Notiz.",
+          },
+          append_content: {
+            type: "string",
+            description:
+              "Text, der unveraendert an die bestehende Notiz angehaengt wird.",
+          },
+          confirmed: {
+            type: "boolean",
+            description:
+              "true nur nach ausdruecklicher Bestaetigung ueber die Aktionskarte.",
+          },
+        },
+        required: ["document_id", "append_content"],
+      },
+    },
   }
 ];
 
@@ -974,6 +1008,8 @@ export async function executeTool(
       return executeCreateCollection(args, ctx);
     case "create_note":
       return executeCreateNote(args, ctx);
+    case "update_note":
+      return executeUpdateNote(args, ctx);
     default:
       return JSON.stringify({ error: `Unbekanntes Tool: ${name}` });
   }
@@ -3030,5 +3066,96 @@ async function executeCreateNote(
       ? `Zugangsdaten '${title}' wurden angelegt. Das Passwort kann im ` +
         "Dokument selbst hinterlegt werden — ueber den Chat wird keines gespeichert."
       : `Notiz '${title}' wurde gespeichert.`,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// update_note (with confirmation gate)
+// ---------------------------------------------------------------------------
+
+async function executeUpdateNote(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const documentId = String(args.document_id ?? "").trim();
+  const addition = String(args.append_content ?? "").trim();
+
+  if (!documentId) {
+    return JSON.stringify({ error: "Keine Notiz angegeben." });
+  }
+  if (!addition) {
+    return JSON.stringify({ error: "Keine Ergänzung angegeben." });
+  }
+  if (addition.length > NOTE_CONTENT_MAX) {
+    return JSON.stringify({
+      error: `Ergänzung ist zu lang (max. ${NOTE_CONTENT_MAX} Zeichen).`,
+    });
+  }
+
+  const { data: note, error: readError } = await ctx.client
+    .from("documents")
+    .select("id, title, source, status, document_type")
+    .eq("id", documentId)
+    .eq("family_id", ctx.familyId)
+    .maybeSingle();
+
+  if (readError || !note) {
+    return JSON.stringify({ error: "Notiz wurde nicht gefunden." });
+  }
+  if (
+    note.source !== "manual" ||
+    note.status !== "confirmed" ||
+    note.document_type === "credentials"
+  ) {
+    return JSON.stringify({
+      error: "Diese Notiz kann über den Chat nicht geändert werden.",
+    });
+  }
+
+  const title = note.title?.trim() || "Notiz";
+  if (args.confirmed !== true) {
+    return JSON.stringify({
+      needs_confirmation: true,
+      note_title: title,
+      message: `Bitte bestätige die Ergänzung für „${title}“.`,
+    });
+  }
+
+  const { data, error } = await ctx.client.rpc("append_to_manual_note", {
+    p_document_id: documentId,
+    p_family_id: ctx.familyId,
+    p_append_content: addition,
+  });
+  const result = data?.[0];
+
+  if (error || !result || result.result_status === "not_found") {
+    return JSON.stringify({ error: "Notiz wurde nicht gefunden." });
+  }
+  if (result.result_status === "invalid_note") {
+    return JSON.stringify({
+      error: "Diese Notiz kann über den Chat nicht geändert werden.",
+    });
+  }
+  if (result.result_status === "too_long") {
+    return JSON.stringify({
+      error: `Notiz ist zu lang (max. ${NOTE_CONTENT_MAX} Zeichen).`,
+    });
+  }
+  if (
+    result.result_status !== "updated" &&
+    result.result_status !== "already_updated"
+  ) {
+    return JSON.stringify({ error: "Notiz konnte nicht geändert werden." });
+  }
+
+  return JSON.stringify({
+    success: true,
+    document_id: documentId,
+    titel: result.note_title ?? title,
+    already_updated: result.result_status === "already_updated",
+    message:
+      result.result_status === "already_updated"
+        ? `Notiz '${title}' enthielt diese Ergänzung bereits.`
+        : `Notiz '${title}' wurde ergänzt.`,
   });
 }

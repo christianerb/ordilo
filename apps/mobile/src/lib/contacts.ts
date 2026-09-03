@@ -35,7 +35,7 @@ export type Contact = {
   role: string | null;
   phone: string | null;
   email: string | null;
-  status: "suggested" | "confirmed";
+  status: "suggested" | "confirmed" | "dismissed";
   created_at: string;
   updated_at: string;
 };
@@ -80,6 +80,7 @@ export async function loadContacts(familyId: string): Promise<Contact[]> {
     .from("contacts")
     .select(contactsSelect)
     .eq("family_id", familyId)
+    .neq("status", "dismissed")
     .order("updated_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as Contact[];
@@ -155,6 +156,24 @@ export async function updateContact(
 
   if (error || !data) return { success: false, error: FRIENDLY_ERROR };
   return { success: true, contact: data as Contact };
+}
+
+export async function deleteContact(
+  contactId: string,
+  familyId: string,
+): Promise<void> {
+  const { data, error } = await getSupabase()
+    .from("contacts")
+    .update({
+      source_key: null,
+      status: "dismissed",
+      user_edited_at: new Date().toISOString(),
+    })
+    .eq("id", contactId)
+    .eq("family_id", familyId)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) throw error ?? new Error(FRIENDLY_ERROR);
 }
 
 /** Upserts a saved contact into the local list (create or update). */
@@ -250,6 +269,7 @@ export async function loadContact(
     .select(contactsSelect)
     .eq("id", contactId)
     .eq("family_id", familyId)
+    .neq("status", "dismissed")
     .maybeSingle();
   if (error) throw error;
   return (data as Contact | null) ?? null;

@@ -61,7 +61,9 @@ describe("native notes helpers", () => {
         description: "Familienkonto",
       }),
     ).toBe(
-      "# Netflix\n\n- **URL:** https://netflix.example\n\n- **Benutzername:** familie@example.de\n\nFamilienkonto",
+      "- **URL:** https://netflix.example\n" +
+        "- **Benutzername:** familie@example.de\n\n" +
+        "Familienkonto",
     );
   });
 

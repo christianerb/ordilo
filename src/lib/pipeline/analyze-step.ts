@@ -21,6 +21,7 @@ import {
   type PartialAnalysisPreview,
 } from "@/lib/ai/partial-json";
 import { buildEntityRows } from "@/lib/pipeline/entity-rows";
+import { getManualNotePreview } from "@ordilo/document-contract";
 
 /** Minimum time between `partial_analysis` writes — keeps the realtime/
  * polling load down to a couple of updates per document instead of one
@@ -315,13 +316,15 @@ export async function performAnalyzeStep(
     analysis.suggested_category = document.category;
   }
 
-  // Same for the title and the type: on a note they are the user's own
+  // Same for the title, type and visible preview: on a note they are the user's own
   // input (the title field and the type dropdown in "Dokument anlegen"),
-  // not something extracted from a scan. Everything else the analysis
-  // produces — summary, tags, dates, tasks, search embeddings — still
-  // lands on the note.
+  // not something extracted from a scan. The model may still enrich tags,
+  // dates, tasks and search data, but it must not replace the confirmed
+  // text with a speculative summary such as "vermutlich ...".
   if (isManualNote) {
     if (document.title) analysis.title = document.title;
+    analysis.summary =
+      getManualNotePreview(fullOcrText, document.title) ?? document.title ?? "";
     if (document.document_type) {
       const userType = document.document_type;
       if ((DOCUMENT_TYPES as readonly string[]).includes(userType)) {

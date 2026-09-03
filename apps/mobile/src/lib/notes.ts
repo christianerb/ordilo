@@ -1,4 +1,5 @@
 import { File } from "expo-file-system";
+import { buildCredentialsContent } from "@ordilo/document-contract";
 
 import { apiFetch } from "./api";
 import type { DocumentType, ReviewAnalysis } from "./document-review";
@@ -40,29 +41,7 @@ export type DocumentUpdatePayload = Pick<
   | "tags"
 >;
 
-/**
- * Keeps credentials readable as a note while leaving the password out of
- * document text. The secret travels separately to the encrypted API field.
- */
-export function buildCredentialsContent({
-  title,
-  url,
-  username,
-  description,
-}: {
-  title: string;
-  url: string;
-  username: string;
-  description: string;
-}): string {
-  const fields = [
-    `# ${title}`,
-    url ? `- **URL:** ${url}` : "",
-    username ? `- **Benutzername:** ${username}` : "",
-    description,
-  ].filter(Boolean);
-  return fields.join("\n\n");
-}
+export { buildCredentialsContent };
 
 /**
  * The note body always comes from the RLS-scoped OCR text. Credential text

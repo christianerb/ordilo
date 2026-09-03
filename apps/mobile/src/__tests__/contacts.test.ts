@@ -1,6 +1,7 @@
 import {
   buildWhatsAppHref,
   contactInputSchema,
+  deleteContact,
   filterContacts,
   getContactFieldErrors,
   getContactInitial,
@@ -17,6 +18,12 @@ import {
   whatsappNumber,
   type Contact,
 } from "../lib/contacts";
+
+const mockGetSupabase = jest.fn();
+
+jest.mock("../lib/supabase", () => ({
+  getSupabase: () => mockGetSupabase(),
+}));
 
 const base: Contact = {
   id: "contact-1",
@@ -236,5 +243,59 @@ describe("contact list helpers", () => {
     expect(sections[4]?.data.map((contact) => contact.name)).toEqual([
       "1. Hilfe",
     ]);
+  });
+});
+
+describe("contact persistence", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("marks only the selected family contact as dismissed", async () => {
+    const maybeSingle = jest.fn().mockResolvedValue({
+      data: { id: "contact-1" },
+      error: null,
+    });
+    const query = {
+      eq: jest.fn(),
+      select: jest.fn(),
+      maybeSingle,
+    };
+    query.eq.mockReturnValue(query);
+    query.select.mockReturnValue(query);
+    const update = jest.fn(() => query);
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn(() => ({ update })),
+    });
+
+    await deleteContact("contact-1", "family-1");
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source_key: null,
+        status: "dismissed",
+        user_edited_at: expect.any(String),
+      }),
+    );
+    expect(query.eq).toHaveBeenNthCalledWith(1, "id", "contact-1");
+    expect(query.eq).toHaveBeenNthCalledWith(2, "family_id", "family-1");
+    expect(maybeSingle).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects deletion when no family-scoped contact was updated", async () => {
+    const query = {
+      eq: jest.fn(),
+      select: jest.fn(),
+      maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+    };
+    query.eq.mockReturnValue(query);
+    query.select.mockReturnValue(query);
+    mockGetSupabase.mockReturnValue({
+      from: jest.fn(() => ({ update: jest.fn(() => query) })),
+    });
+
+    await expect(
+      deleteContact("contact-1", "other-family"),
+    ).rejects.toThrow("Etwas ist schiefgelaufen");
   });
 });

@@ -143,6 +143,71 @@ describe("DokumentePage empty state", () => {
     ).not.toHaveLength(0);
   });
 
+  it("uses the confirmed note text for previews and filters notes by type", async () => {
+    const baseNote = {
+      id: "note-credentials",
+      family_id: FAMILY_ID,
+      uploaded_by: "user-1",
+      title: "Bücherhalle Emma",
+      document_type: "credentials",
+      category: null,
+      status: "confirmed",
+      file_url: null,
+      original_filename: null,
+      mime_type: null,
+      page_count: 1,
+      ocr_text: null,
+      summary: "Enthält vermutlich ein Zugangsdatum.",
+      error_message: null,
+      created_at: new Date().toISOString(),
+      confirmed_at: new Date().toISOString(),
+      source: "manual",
+    };
+    const contractNote = {
+      ...baseNote,
+      id: "note-contract",
+      title: "Mietvertrag",
+      document_type: "contract",
+      summary: "Vermutlich ein Vertrag.",
+    };
+    const notes = [baseNote, contractNote] as unknown as DocumentRow[];
+    (createClient as ReturnType<typeof vi.fn>).mockReturnValue(
+      mockSupabaseClient(notes),
+    );
+
+    render(
+      <ScanProvider>
+        <CollectionsProvider>
+          <DokumenteClient
+            initialDocuments={notes}
+            initialNotePreviews={{
+              "note-credentials":
+                "- **URL:** https://buecherhallen.de/login\n" +
+                "- **Benutzername:** Emma123",
+              "note-contract": "Mietvertrag für die Wohnung",
+            }}
+          />
+        </CollectionsProvider>
+      </ScanProvider>,
+    );
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Notizen" }));
+
+    expect(
+      screen.getByText(
+        "URL: https://buecherhallen.de/login · Benutzername: Emma123",
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/vermutlich/i)).toBeNull();
+
+    fireEvent.change(screen.getByTestId("notes-filter-type"), {
+      target: { value: "credentials" },
+    });
+
+    expect(screen.getByText("Bücherhalle Emma")).toBeDefined();
+    expect(screen.queryByText("Mietvertrag")).toBeNull();
+  });
+
   it("does not render the empty state when documents exist", async () => {
     const doc = {
       id: "doc-1",
