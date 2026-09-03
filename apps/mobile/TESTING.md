@@ -88,9 +88,11 @@ viewports) and still need one pass on a real iPhone before release:
   faces opens Familie.
 - Dokumente: kind icons per row, people faces, month groups, filter chips
   (Neu, Art, Sortierung), search clear button, empty and filtered states.
-- Dokument: „Was das bedeutet" rows, Kalender toggles on a freshly read
-  document, „Passt so" from the overview, inline image thumbnail, the
-  „…" menu (Original, Ändern, Löschen), success screen with counts.
+- Dokument: the page starts on the title (no kind tile — the row you came
+  from carried that icon), „Neu gelesen" above it on a fresh document,
+  „Was das bedeutet" rows, Kalender toggles on a freshly read document,
+  „Passt so" from the overview, inline image thumbnail, the „…" menu
+  (Original, Ändern, Löschen), success screen with counts.
 - Ordilo fragen: suggestions carry family names, „Zuletzt gefragt" opens a
   past conversation with its sources and cards, history sheet, delete,
   `?q=` prefill from a document.

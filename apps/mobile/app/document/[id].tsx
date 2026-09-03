@@ -473,7 +473,6 @@ export default function DocumentReviewScreen() {
   const isReadOnly = document.status === "confirmed";
   const editable = canReviewDocument(document.status);
   const kind = getDocumentKind(document.document_type);
-  const KindIcon = kind.icon;
   const summaryLong = document.summary.length > 180;
 
   return (
@@ -509,16 +508,16 @@ export default function DocumentReviewScreen() {
         {!editing ? (
           <>
             <View style={styles.hero}>
-              <View style={styles.heroTop}>
-                <IconTile size={52} tint={kind.tint}>
-                  <KindIcon color={kind.ink} size={26} strokeWidth={1.8} />
-                </IconTile>
-                {editable ? (
+              {/* No kind icon here: the row you came from carried it, and
+                  on one open document there is nothing left to classify —
+                  title, summary and the image itself say what this is. */}
+              {editable ? (
+                <View style={styles.heroTop}>
                   <View style={styles.newPill}>
                     <Text style={styles.newPillText}>Neu gelesen</Text>
                   </View>
-                ) : null}
-              </View>
+                </View>
+              ) : null}
               <Text style={styles.heroTitle}>{document.title}</Text>
               {document.summary ? (
                 <Pressable
@@ -1510,10 +1509,12 @@ const styles = StyleSheet.create({
   content: { gap: spacing.md, padding: spacing.md, paddingTop: spacing.xs },
   contentState: { gap: spacing.lg },
   hero: { gap: spacing.sm, paddingHorizontal: spacing.xs },
+  // The „Neu gelesen“ pill reads as a status above the title, so it starts
+  // where the eye does — on the right it crowded the „…“ menu button.
   heroTop: {
     alignItems: "center",
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
   },
   heroTitle: { color: colors.graphite, ...typography.heading },
   heroSummary: { color: colors.graphite, ...typography.body },
