@@ -4,6 +4,7 @@ import {
   parseCredentialsContent,
   stripCredentialFields,
 } from "@/lib/credentials";
+import { getManualNotePreview } from "@ordilo/document-contract";
 
 describe("buildCredentialsContent", () => {
   it("lists URL and user name above the description", () => {
@@ -113,5 +114,29 @@ describe("stripCredentialFields", () => {
   it("leaves an ordinary note untouched", () => {
     const note = "Einkaufen:\n- Milch\n- Brot";
     expect(stripCredentialFields(note)).toBe(note);
+  });
+});
+
+describe("getManualNotePreview", () => {
+  it("shows confirmed credential fields without Markdown or guesses", () => {
+    expect(
+      getManualNotePreview(
+        "# Bücherhalle Hanna\n\n" +
+          "- **URL:** https://buecherhallen.de/login\n\n" +
+          "- **Benutzername:** Hanna123",
+        "Bücherhalle Hanna",
+      ),
+    ).toBe(
+      "URL: https://buecherhallen.de/login · Benutzername: Hanna123",
+    );
+  });
+
+  it("keeps the original wording instead of interpreting an identifier", () => {
+    expect(
+      getManualNotePreview(
+        "Versicherungsnummer Emma: X123456789",
+        "Audi BKK – Emma",
+      ),
+    ).toBe("Versicherungsnummer Emma: X123456789");
   });
 });

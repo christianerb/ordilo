@@ -7,6 +7,7 @@ export const CHAT_ACTION_TOOL_NAMES = [
   "add_family_member",
   "create_collection",
   "create_note",
+  "update_note",
   "move_document_to_collection",
   "add_document_tags",
   "save_document_fact",
@@ -23,6 +24,7 @@ export const CHAT_TOOL_STEP_LABELS: Record<string, string> = {
   update_task: "Aktualisiert die Aufgabe",
   create_collection: "Legt die Sammlung an",
   create_note: "Speichert die Notiz",
+  update_note: "Bereitet die Notizänderung vor",
   list_family_members: "Schaut, wer zur Familie gehört",
   graph_query: "Verfolgt Zusammenhänge",
   mark_task_done: "Erledigt die Aufgabe",
@@ -149,6 +151,7 @@ export function getChatActionContent(action: {
       };
     case "create_note": {
       const isCredentials = asText(args.document_type) === "credentials";
+      const note = asText(args.content);
       const details: Array<{ label: string; value: string }> = [];
       if (isCredentials) {
         const url = asText(args.url);
@@ -156,12 +159,31 @@ export function getChatActionContent(action: {
         if (url) details.push({ label: "URL", value: url });
         if (username) details.push({ label: "Benutzername", value: username });
       }
+      if (note) {
+        details.push({
+          label: isCredentials ? "Beschreibung" : "Notiz",
+          value: note,
+        });
+      }
       return {
         eyebrow: isCredentials ? "Zugangsdaten anlegen" : "Notiz anlegen",
         title:
           asText(args.title) ??
           (isCredentials ? "Neue Zugangsdaten" : "Neue Notiz"),
         details,
+      };
+    }
+    case "update_note": {
+      const addition = asText(args.append_content);
+      return {
+        eyebrow: "Notiz ändern",
+        title:
+          asText(args.note_title) ??
+          asText(args.document_title) ??
+          "Notiz ergänzen",
+        details: addition
+          ? [{ label: "Ergänzung", value: addition }]
+          : [],
       };
     }
     case "move_document_to_collection": {

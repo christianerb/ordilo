@@ -31,6 +31,7 @@ const ACTION_ICONS: Record<ChatActionToolName, typeof ListPlus> = {
   add_task: ListPlus,
   create_collection: FolderPlus,
   create_note: FilePenLine,
+  update_note: FilePenLine,
   mark_task_done: CircleCheck,
   move_document_to_collection: FolderPlus,
   save_document_fact: FilePenLine,
@@ -103,9 +104,9 @@ export function OrdiloActionCard({
         {details.length > 0 && (
           <dl className="mt-3 divide-y divide-border/60 rounded-ordilo-sm bg-card/60 px-3">
             {details.map((detail) => (
-              <div key={detail.label} className="flex items-baseline justify-between gap-3 py-2">
+              <div key={detail.label} className="flex items-start justify-between gap-3 py-2">
                 <dt className="text-xs text-[var(--mist-dark)]">{detail.label}</dt>
-                <dd className="min-w-0 text-right text-xs font-medium text-foreground">
+                <dd className="min-w-0 max-w-[75%] whitespace-pre-wrap break-words text-right text-xs font-medium text-foreground">
                   {detail.value}
                 </dd>
               </div>

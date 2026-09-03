@@ -1019,10 +1019,9 @@ describe("POST /api/documents/[id]/analyze", () => {
     expect(payload.title).toBe("Steuer ID Hanna");
     expect(payload.document_type).toBe("tax");
     expect(payload.category).toBe("Unterlagen");
-    // The enrichment the note is analyzed for still lands.
-    expect(payload.summary).toBe(
-      "Elternabend in der Kita Sonnenblume am 15. Juli 2026.",
-    );
+    // The visible preview stays grounded in the user's original note text,
+    // rather than replacing it with the model's interpretation.
+    expect(payload.summary).toBe("Page 1 · OCR content");
   });
 
   it("re-categorizes on re-analysis of a confirmed document even when a category is set", async () => {

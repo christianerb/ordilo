@@ -5,6 +5,7 @@ import {
   Building2,
   Mail,
   Phone,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,8 +20,11 @@ import {
 } from "@/lib/contacts";
 import { ContactActionLinks } from "@/components/ordilo/contact-actions";
 import { AblageSearchInput } from "@/components/ordilo/ablage-search-input";
+import { ConfirmAction } from "@/components/ordilo/confirm-action";
+import { toast } from "sonner";
 import {
   createContact,
+  deleteContact,
   updateContact,
   type ContactRow,
 } from "./actions";
@@ -45,6 +49,9 @@ export function ContactsView({
   const [contacts, setContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<ContactRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ContactRow | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<ContactRow | null>(null);
   const [handledCreateRequest, setHandledCreateRequest] = useState(createRequest);
@@ -173,6 +180,11 @@ export function ContactsView({
           setEditing(contact);
           setFormOpen(true);
         }}
+        onDelete={(contact) => {
+          setSelected(null);
+          setDeleteError(null);
+          setDeleteTarget(contact);
+        }}
         onOpenSource={onOpenSource}
       />
       <ContactForm
@@ -189,6 +201,49 @@ export function ContactsView({
           setFormOpen(false);
           setEditing(null);
         }}
+      />
+      <ConfirmAction
+        confirmLabel="Kontakt löschen"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" wird aus euren Kontakten entfernt.${
+                deleteTarget.source_document_id
+                  ? " Der Kontakt wird auch bei einer erneuten Analyse des Quelldokuments nicht wieder angelegt."
+                  : ""
+              }`
+            : ""
+        }
+        onConfirm={async () => {
+          if (!deleteTarget || deleting) return;
+          setDeleting(true);
+          setDeleteError(null);
+          const result = await deleteContact(deleteTarget.id);
+          if (!result.success) {
+            setDeleteError(result.error);
+            setDeleting(false);
+            return;
+          }
+          setContacts((current) =>
+            current.filter((contact) => contact.id !== deleteTarget.id),
+          );
+          setSelected(null);
+          setDeleteTarget(null);
+          setDeleting(false);
+          toast.success("Kontakt gelöscht");
+        }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteTarget(null);
+            setDeleteError(null);
+          }
+        }}
+        open={deleteTarget !== null}
+        error={deleteError}
+        loading={deleting}
+        loadingLabel="Wird gelöscht …"
+        testId="delete-contact-confirm"
+        title="Kontakt löschen?"
+        variant="drawer"
       />
     </div>
   );
@@ -208,11 +263,13 @@ function ContactAvatar({ name }: { name: string }) {
 function ContactDetail({
   contact,
   onOpenChange,
+  onDelete,
   onEdit,
   onOpenSource,
 }: {
   contact: ContactRow | null;
   onOpenChange: (open: boolean) => void;
+  onDelete: (contact: ContactRow) => void;
   onEdit: (contact: ContactRow) => void;
   onOpenSource: (documentId: string) => void;
 }) {
@@ -250,9 +307,20 @@ function ContactDetail({
         )}
       </div>
       <OrdiloDrawerFooter>
-        <Button variant="outline" className="w-full" onClick={() => onEdit(contact)}>
-          Kontakt bearbeiten
-        </Button>
+        <div className="flex w-full gap-2">
+          <Button variant="outline" className="flex-1" onClick={() => onEdit(contact)}>
+            Kontakt bearbeiten
+          </Button>
+          <Button
+            aria-label="Kontakt löschen"
+            className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+            onClick={() => onDelete(contact)}
+            size="icon"
+            variant="ghost"
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+          </Button>
+        </div>
       </OrdiloDrawerFooter>
     </OrdiloDrawer>
   );

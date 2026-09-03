@@ -25,6 +25,11 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { OrdiloFilterTabs } from "@/components/ordilo/ordilo-filter-tabs";
 import { AblageSearchInput } from "@/components/ordilo/ablage-search-input";
 import { formatGermanDate } from "@/lib/format";
+import {
+  DOCUMENT_TYPE_LABELS,
+  type DocumentType,
+} from "@/lib/schemas/extraction";
+import { getManualNotePreview } from "@ordilo/document-contract";
 import { ContactsView } from "./contacts-view";
 import type { ContactRow } from "./actions";
 
@@ -39,6 +44,24 @@ function getFilingHref(view: FilingView): string {
   if (view === "notizen") return "/dokumente?tab=notizen";
   if (view === "kontakte") return "/dokumente?tab=kontakte";
   return "/dokumente";
+}
+
+export function resolveManualNotePreviewSource(
+  note: DocumentRow,
+  serverPreview: string | undefined,
+  initialNote: DocumentRow | undefined,
+): string | null | undefined {
+  if (note.ocr_text?.trim()) return note.ocr_text;
+
+  const liveSummary = note.summary?.trim();
+  // The server preview is the best first-paint source because it contains
+  // the actual note text. Once realtime delivers a newly computed summary,
+  // that value must win over the stale RSC snapshot.
+  if (liveSummary && liveSummary !== initialNote?.summary?.trim()) {
+    return liveSummary;
+  }
+
+  return serverPreview?.trim() || liveSummary;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +164,15 @@ export function DokumenteClient({
     () => displayDocuments.filter((document) => document.source === "manual"),
     [displayDocuments],
   );
+  const initialNotesById = useMemo(
+    () =>
+      Object.fromEntries(
+        initialDocuments
+          .filter((document) => document.source === "manual")
+          .map((document) => [document.id, document]),
+      ),
+    [initialDocuments],
+  );
   const activeDocuments = view === "notizen" ? noteDocuments : libraryDocuments;
   const hasDocuments = activeDocuments.length > 0;
   const hasActiveUploads = uploads.length > 0;
@@ -218,6 +250,7 @@ export function DokumenteClient({
         <NotesView
           notes={noteDocuments}
           previews={initialNotePreviews}
+          initialNotes={initialNotesById}
           loading={loadingDocs}
           onCreate={() => openCreateNote()}
           onOpen={(documentId) => void openDocument(documentId)}
@@ -353,20 +386,36 @@ function NotesView({
   notes,
   loading,
   previews,
+  initialNotes,
   onCreate,
   onOpen,
 }: {
   notes: DocumentRow[];
   loading: boolean;
   previews: Record<string, string>;
+  initialNotes: Record<string, DocumentRow>;
   onCreate: () => void;
   onOpen: (documentId: string) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [documentType, setDocumentType] = useState<DocumentType | "all">("all");
   const visibleNotes = notes.filter((note) => {
+    if (
+      documentType !== "all" &&
+      note.document_type !== documentType
+    ) {
+      return false;
+    }
     const needle = search.trim().toLocaleLowerCase("de");
     if (!needle) return true;
-    return [note.title, note.summary, previews[note.id], note.ocr_text]
+    return [
+      note.title,
+      resolveManualNotePreviewSource(
+        note,
+        previews[note.id],
+        initialNotes[note.id],
+      ),
+    ]
       .filter(Boolean)
       .join(" ")
       .toLocaleLowerCase("de")
@@ -401,10 +450,38 @@ function NotesView({
         ariaLabel="Notizen durchsuchen"
         testId="notes-search-input"
       />
+      <select
+        aria-label="Notizen nach Art filtern"
+        className="h-10 rounded-ordilo-sm border border-border bg-[var(--sand)] px-3 text-sm text-foreground focus-ring"
+        data-testid="notes-filter-type"
+        onChange={(event) =>
+          setDocumentType(event.target.value as DocumentType | "all")
+        }
+        value={documentType}
+      >
+        <option value="all">Alle Arten</option>
+        {Object.entries(DOCUMENT_TYPE_LABELS).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
       {visibleNotes.length === 0 ? (
-        <p className="rounded-ordilo-md border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card">
-          Keine Notiz gefunden.
-        </p>
+        <div className="rounded-ordilo-md border border-border bg-card p-6 text-center text-sm text-muted-foreground shadow-card">
+          <p>Keine passende Notiz gefunden.</p>
+          {(search.trim() || documentType !== "all") && (
+            <button
+              type="button"
+              className="mt-2 font-medium text-[var(--petrol)] underline-offset-2 hover:underline focus-ring"
+              onClick={() => {
+                setSearch("");
+                setDocumentType("all");
+              }}
+            >
+              Filter zurücksetzen
+            </button>
+          )}
+        </div>
       ) : (
         <div
           className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--sand)] shadow-card animate-card-in"
@@ -425,9 +502,14 @@ function NotesView({
               {note.title?.trim() || "Notiz"}
             </span>
             <span className="block truncate text-sm text-muted-foreground">
-              {note.summary?.trim() ||
-                previews[note.id] ||
-                note.ocr_text?.trim() ||
+              {getManualNotePreview(
+                resolveManualNotePreviewSource(
+                  note,
+                  previews[note.id],
+                  initialNotes[note.id],
+                ),
+                note.title,
+              ) ||
                 "Notiz öffnen, um den Inhalt zu lesen"}
             </span>
           </span>

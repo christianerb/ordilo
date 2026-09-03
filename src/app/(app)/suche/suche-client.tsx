@@ -45,7 +45,7 @@ export interface InitialMessage {
   content: string;
   sources: ChatSource[];
   card?: AnswerCardData;
-  action?: ChatAction;
+  actions?: ChatAction[];
   feedback?: "positive" | "negative" | null;
 }
 
@@ -114,7 +114,7 @@ export function SucheClient({
       content: m.content,
       sources: m.sources,
       card: m.card,
-      action: m.action,
+      actions: m.actions ?? [],
       feedback: m.feedback ?? null,
     })),
   );
@@ -372,6 +372,7 @@ export function SucheClient({
         role: "user",
         content: query,
         sources: [],
+        actions: [],
         quotedText: quoted?.text,
       };
 
@@ -381,6 +382,7 @@ export function SucheClient({
         role: "assistant",
         content: "",
         sources: [],
+        actions: [],
       };
 
       setMessages((prev) => [...prev, userMsg, aiMsg]);
@@ -551,7 +553,16 @@ export function SucheClient({
                   };
                   setMessages((prev) =>
                     prev.map((m) =>
-                      m.id === aiMsgId ? { ...m, action } : m,
+                      m.id === aiMsgId
+                        ? {
+                            ...m,
+                            actions: m.actions.some(
+                              (current) => current.id === action.id,
+                            )
+                              ? m.actions
+                              : [...m.actions, action],
+                          }
+                        : m,
                     ),
                   );
                 }
@@ -635,12 +646,18 @@ export function SucheClient({
   const updateAction = useCallback(
     (
       messageId: string,
+      actionId: string,
       update: (action: ChatAction) => ChatAction,
     ) => {
       setMessages((previous) =>
         previous.map((message) =>
-          message.id === messageId && message.action
-            ? { ...message, action: update(message.action) }
+          message.id === messageId
+            ? {
+                ...message,
+                actions: message.actions.map((action) =>
+                  action.id === actionId ? update(action) : action,
+                ),
+              }
             : message,
         ),
       );
@@ -654,7 +671,7 @@ export function SucheClient({
       action: ChatAction,
       mode: "confirm" | "undo",
     ) => {
-      updateAction(messageId, (current) => ({
+      updateAction(messageId, action.id, (current) => ({
         ...current,
         state: mode === "confirm" ? "confirming" : "undoing",
         error: undefined,
@@ -683,7 +700,7 @@ export function SucheClient({
           );
         }
 
-        updateAction(messageId, (current) => {
+        updateAction(messageId, action.id, (current) => {
           if (mode === "undo") return { ...current, state: "undone" };
 
           const taskId =
@@ -704,7 +721,7 @@ export function SucheClient({
           };
         });
       } catch (error) {
-        updateAction(messageId, (current) => ({
+        updateAction(messageId, action.id, (current) => ({
           ...current,
           state: "error",
           error:
@@ -718,36 +735,47 @@ export function SucheClient({
   );
 
   const handleActionConfirm = useCallback(
-    (messageId: string) => {
-      const action = messages.find((message) => message.id === messageId)?.action;
+    (messageId: string, actionId: string) => {
+      const action = messages
+        .find((message) => message.id === messageId)
+        ?.actions.find((candidate) => candidate.id === actionId);
       if (action) void runAction(messageId, action, "confirm");
     },
     [messages, runAction],
   );
 
   const handleActionUndo = useCallback(
-    (messageId: string) => {
-      const action = messages.find((message) => message.id === messageId)?.action;
+    (messageId: string, actionId: string) => {
+      const action = messages
+        .find((message) => message.id === messageId)
+        ?.actions.find((candidate) => candidate.id === actionId);
       if (action?.undo) void runAction(messageId, action, "undo");
     },
     [messages, runAction],
   );
 
   const handleActionDismiss = useCallback(
-    (messageId: string) => {
-      updateAction(messageId, (action) => ({ ...action, state: "dismissed" }));
+    (messageId: string, actionId: string) => {
+      updateAction(messageId, actionId, (action) => ({
+        ...action,
+        state: "dismissed",
+      }));
     },
     [updateAction],
   );
 
-  const handleActionAdjust = useCallback((message: ChatMessage) => {
-    if (!message.action) return;
+  const handleActionAdjust = useCallback((
+    message: ChatMessage,
+    action: ChatAction,
+  ) => {
     const title =
-      typeof message.action.args.title === "string"
-        ? message.action.args.title
-        : message.action.toolName === "mark_task_done" &&
-            typeof message.action.args.task_title === "string"
-          ? message.action.args.task_title
+      typeof action.args.title === "string"
+        ? action.args.title
+        : typeof action.args.note_title === "string"
+          ? action.args.note_title
+          : action.toolName === "mark_task_done" &&
+              typeof action.args.task_title === "string"
+            ? action.args.task_title
           : "diesen Vorschlag";
     setQuotedMessage({
       text: `Vorschlag von Ordilo: ${title}`,

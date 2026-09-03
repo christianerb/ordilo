@@ -18,3 +18,14 @@ export function validateLoginEmail(
   }
   return { success: true, data: { email: trimmed.toLowerCase() } };
 }
+
+export function validateLoginPassword(
+  password: string,
+):
+  | { success: true; data: { password: string } }
+  | { success: false; error: string } {
+  if (password.length === 0) {
+    return { success: false, error: "Bitte Passwort eingeben" };
+  }
+  return { success: true, data: { password } };
+}

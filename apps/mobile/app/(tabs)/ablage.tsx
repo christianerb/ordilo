@@ -101,6 +101,7 @@ import { formatPeopleLine, type Person } from "@/src/lib/people";
 import { getSupabase } from "@/src/lib/supabase";
 import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import { getManualNotePreview } from "@ordilo/document-contract";
 
 const documentTypes = Object.entries(documentTypeLabels) as [
   DocumentType,
@@ -507,6 +508,7 @@ export default function AblageScreen() {
           />
         ) : view === "notes" ? (
           <NotesView
+            documentType={filters.documentType}
             error={error}
             hasMore={hasMore}
             loading={loading}
@@ -515,11 +517,20 @@ export default function AblageScreen() {
             onCreate={() => setCreateNoteOpen(true)}
             onLoadMore={loadMore}
             onOpen={(documentId) => router.push(`/note/${documentId}`)}
+            onOpenTypePicker={() => setTypePickerOpen(true)}
+            onResetFilters={() =>
+              setFilters((current) => ({
+                ...current,
+                query: "",
+                documentType: "all",
+              }))
+            }
             onSearchChange={(query) =>
               setFilters((current) => ({ ...current, query }))
             }
             onRetry={() => void loadDocuments()}
             search={filters.query}
+            selectedTypeLabel={selectedTypeLabel}
           />
         ) : loading && documents.length === 0 && !hasActiveFilters ? (
           <ListSkeleton rows={6} />
@@ -756,6 +767,7 @@ function SearchField({
  * documents table (source "manual") but read as their own thing here.
  */
 function NotesView({
+  documentType,
   error,
   hasMore,
   loading,
@@ -764,10 +776,14 @@ function NotesView({
   onCreate,
   onLoadMore,
   onOpen,
+  onOpenTypePicker,
+  onResetFilters,
   onRetry,
   onSearchChange,
   search,
+  selectedTypeLabel,
 }: {
+  documentType: DocumentType | "all";
   error: string | null;
   hasMore: boolean;
   loading: boolean;
@@ -776,21 +792,28 @@ function NotesView({
   onCreate: () => void;
   onLoadMore: () => void;
   onOpen: (documentId: string) => void;
+  onOpenTypePicker: () => void;
+  onResetFilters: () => void;
   onRetry: () => void;
   onSearchChange: (query: string) => void;
   search: string;
+  selectedTypeLabel: string;
 }) {
+  const hasTypeFilter = documentType !== "all";
   const visibleNotes = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("de");
-    if (!query) return notes;
-    return notes.filter((note) => getDocumentSearchText(note).includes(query));
-  }, [notes, search]);
+    return notes.filter(
+      (note) =>
+        (!hasTypeFilter || note.document_type === documentType) &&
+        (!query || getDocumentSearchText(note).includes(query)),
+    );
+  }, [documentType, hasTypeFilter, notes, search]);
 
-  if (loading && notes.length === 0 && !search.trim()) {
+  if (loading && notes.length === 0 && !search.trim() && !hasTypeFilter) {
     return <ListSkeleton rows={4} />;
   }
 
-  if (error && notes.length === 0 && !search.trim()) {
+  if (error && notes.length === 0 && !search.trim() && !hasTypeFilter) {
     return (
       <EmptyState icon={AlertCircle} heading="Notizen nicht erreichbar" description={error}>
         <OrdiloButton onPress={onRetry} size="lg" title="Erneut versuchen" />
@@ -798,7 +821,7 @@ function NotesView({
     );
   }
 
-  if (notes.length === 0 && !search.trim()) {
+  if (notes.length === 0 && !search.trim() && !hasTypeFilter) {
     return (
       <EmptyState
         icon={NotebookPen}
@@ -818,13 +841,27 @@ function NotesView({
         placeholder="Notizen durchsuchen"
         value={search}
       />
+      <ScrollView
+        contentContainerStyle={styles.chips}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.chipRow}
+      >
+        <Chip
+          accessibilityLabel={`Notizart: ${selectedTypeLabel}`}
+          icon={hasTypeFilter ? undefined : SlidersHorizontal}
+          label={selectedTypeLabel}
+          onPress={onOpenTypePicker}
+          selected={hasTypeFilter}
+        />
+      </ScrollView>
       {error ? (
         <InlineNotice actionLabel="Erneut versuchen" message={error} onAction={onRetry} />
       ) : null}
       {visibleNotes.length === 0 ? (
         <FilteredEmptyState
-          activeFilterCount={0}
-          onReset={() => onSearchChange("")}
+          activeFilterCount={Number(hasTypeFilter)}
+          onReset={onResetFilters}
           query={search}
         />
       ) : (
@@ -842,8 +879,7 @@ function NotesView({
               }
               onPress={() => onOpen(note.id)}
               subtitle={
-                note.summary?.trim() ||
-                note.ocr_text?.trim() ||
+                getManualNotePreview(note.ocr_text, note.title) ||
                 "Notiz öffnen, um den Inhalt zu lesen"
               }
               title={getDocumentTitle(note)}

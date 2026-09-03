@@ -84,3 +84,27 @@ export async function updateContact(
   revalidatePath("/dokumente");
   return { success: true, data };
 }
+
+export async function deleteContact(
+  contactId: string,
+): Promise<ActionResult<{ id: string }>> {
+  const supabase = await createClient();
+  const { data: family, error } = await getUserFamily(supabase);
+  if (error || !family) return { success: false, error: FRIENDLY_ERROR };
+
+  const { data, error: updateError } = await supabase
+    .from("contacts")
+    .update({
+      source_key: null,
+      status: "dismissed",
+      user_edited_at: new Date().toISOString(),
+    })
+    .eq("id", contactId)
+    .eq("family_id", family.id)
+    .select("id")
+    .maybeSingle();
+
+  if (updateError || !data) return { success: false, error: FRIENDLY_ERROR };
+  revalidatePath("/dokumente");
+  return { success: true, data };
+}

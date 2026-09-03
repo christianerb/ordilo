@@ -6,6 +6,10 @@ const migration = readFileSync(
   resolve(process.cwd(), "supabase/migrations/0065_family_contacts.sql"),
   "utf8",
 );
+const dismissalMigration = readFileSync(
+  resolve(process.cwd(), "supabase/migrations/0071_contact_dismissal.sql"),
+  "utf8",
+);
 
 describe("0065_family_contacts migration", () => {
   it("creates a family-scoped contact table with RLS", () => {
@@ -37,5 +41,40 @@ describe("0065_family_contacts migration", () => {
     );
     expect(migration).toContain("set family_id = new.target_family_id");
     expect(migration).toContain("where family_id = new.source_family_id");
+  });
+});
+
+describe("0071_contact_dismissal migration", () => {
+  it("allows a dismissed tombstone state", () => {
+    expect(dismissalMigration).toContain(
+      "check (status in ('suggested', 'confirmed', 'dismissed'))",
+    );
+  });
+
+  it("keeps dismissed contacts dismissed when extraction upserts them again", () => {
+    expect(dismissalMigration).toContain(
+      "c.source_document_id = new.document_id",
+    );
+    expect(dismissalMigration).toContain("c.status = 'dismissed'");
+    expect(dismissalMigration).toContain(
+      "regexp_replace(c.phone, '[^0-9]', '', 'g')",
+    );
+    expect(dismissalMigration).toContain(
+      "when contacts.status = 'dismissed' then 'dismissed'",
+    );
+    expect(dismissalMigration).toContain("else excluded.status");
+  });
+
+  it("uses the name fallback only when both contacts lack stronger identifiers", () => {
+    expect(dismissalMigration).toMatch(
+      /nullif\(trim\(c\.email\), ''\) is null\s+and nullif\(trim\(v_payload->>'email'\), ''\) is null/,
+    );
+    expect(dismissalMigration).toMatch(
+      /nullif\(regexp_replace\(coalesce\(c\.phone, ''\), '\[\^0-9\]', '', 'g'\), ''\) is null\s+and nullif\(regexp_replace\(coalesce\(v_payload->>'phone', ''\), '\[\^0-9\]', '', 'g'\), ''\) is null\s+and\s+lower\(trim\(c\.name\)\) = lower\(trim\(v_payload->>'name'\)\)/,
+    );
+  });
+
+  it("leaves user-edited tombstones in place when source entities are deleted", () => {
+    expect(dismissalMigration).toContain("user_edited_at is null");
   });
 });

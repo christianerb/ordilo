@@ -51,6 +51,7 @@ export default async function DokumentePage() {
     .from("contacts")
     .select("*")
     .eq("family_id", family.id)
+    .neq("status", "dismissed")
     .order("updated_at", { ascending: false });
   const notePreviewsPromise = supabase
     .from("documents")

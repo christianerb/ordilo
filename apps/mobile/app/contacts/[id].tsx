@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { AlertCircle, ChevronRight, Users } from "lucide-react-native";
+import { AlertCircle, ChevronRight, Trash2, Users } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
 import {
   Pressable,
@@ -15,13 +15,16 @@ import {
   ContactDetailsCard,
   ContactFormSheet,
 } from "@/src/components/contacts";
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import {
+  deleteContact,
   getContactSubtitle,
   loadContact,
   type Contact,
 } from "@/src/lib/contacts";
 import { useFamily } from "@/src/lib/family-context";
+import { fail, success } from "@/src/lib/feedback";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 
 /**
@@ -37,6 +40,9 @@ export default function ContactDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id || !family) {
@@ -129,6 +135,16 @@ export default function ContactDetailScreen() {
             title="Kontakt bearbeiten"
             variant="outline"
           />
+          <OrdiloButton
+            icon={<Trash2 color={colors.destructive} size={18} strokeWidth={1.8} />}
+            onPress={() => {
+              setDeleteError(null);
+              setDeleteOpen(true);
+            }}
+            size="lg"
+            title="Kontakt löschen"
+            variant="ghost"
+          />
         </ScrollView>
       )}
 
@@ -141,6 +157,36 @@ export default function ContactDetailScreen() {
           setFormOpen(false);
         }}
         visible={formOpen}
+      />
+      <ConfirmDialog
+        error={deleteError}
+        loading={deleting}
+        loadingLabel="Wird gelöscht …"
+        message={
+          contact?.source_document_id
+            ? `"${contact.name}" wird entfernt und nicht erneut aus dem Quelldokument angelegt.`
+            : `"${contact?.name ?? "Dieser Kontakt"}" wird aus euren Kontakten entfernt.`
+        }
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={() => {
+          if (!contact || !family || deleting) return;
+          setDeleting(true);
+          setDeleteError(null);
+          void deleteContact(contact.id, family.id)
+            .then(async () => {
+              await success();
+              router.back();
+            })
+            .catch(async () => {
+              setDeleting(false);
+              setDeleteError(
+                "Der Kontakt konnte nicht gelöscht werden. Bitte versuch es nochmal.",
+              );
+              await fail();
+            });
+        }}
+        title="Kontakt löschen?"
+        visible={deleteOpen}
       />
     </Screen>
   );
