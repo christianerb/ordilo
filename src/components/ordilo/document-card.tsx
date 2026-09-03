@@ -13,6 +13,7 @@ import { formatRelativeTime } from "@/lib/format";
 import {
   getStatusLabel,
   getStatusBadgeClasses,
+  getStatusBadgeSizeClasses,
   isProcessingStatus,
   getFileIcon,
   FAILED_CARD_COPY,
@@ -174,11 +175,13 @@ export function DocumentCard({
             key={status}
             data-testid={`status-badge-${status}`}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium animate-status-settle",
+              "inline-flex items-center rounded-full border font-medium animate-status-settle",
+              status !== "confirmed" && "gap-1",
+              getStatusBadgeSizeClasses(status),
               getStatusBadgeClasses(status),
             )}
           >
-            {StatusIcon && (
+            {StatusIcon && status !== "confirmed" && (
               <StatusIcon
                 className={cn("size-3", isProcessing && "animate-spin")}
                 aria-hidden="true"

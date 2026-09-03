@@ -16,11 +16,14 @@ import { colors } from "../theme/tokens";
 
 const SAGE = "#DDEBE5"; // --wash-sage from the web palette
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 interface OrdiloCharacterProps {
   size?: number;
   /** Set false for a perfectly still character (persistent surfaces). */
   animated?: boolean;
+  /** Adds the brief trumpet gesture used while Ordilo processes a document. */
+  processing?: boolean;
 }
 
 /**
@@ -33,17 +36,20 @@ interface OrdiloCharacterProps {
 export function OrdiloCharacter({
   size = 88,
   animated = true,
+  processing = false,
 }: OrdiloCharacterProps) {
   const reduceMotion = useReducedMotion();
   const alive = animated && !reduceMotion;
 
   const breath = useSharedValue(1);
   const eye = useSharedValue(1);
+  const trumpet = useSharedValue(0);
 
   useEffect(() => {
     if (!alive) {
       breath.set(1);
       eye.set(1);
+      trumpet.set(processing ? 1 : 0);
       return;
     }
     breath.set(withRepeat(
@@ -51,29 +57,59 @@ export function OrdiloCharacter({
       -1,
       true,
     ));
-    // Hold the eye open, blink shut for ~110ms, reopen, repeat.
-    eye.set(withRepeat(
-      withSequence(
-        withTiming(1, { duration: 3800 }),
-        withTiming(0.08, { duration: 110 }),
-        withTiming(1, { duration: 130 }),
-      ),
-      -1,
-    ));
+    if (processing) {
+      // Trumpeting is an active state. Keep the eye open so the character
+      // stays recognisable while the body tips towards the raised trunk.
+      eye.set(1);
+      trumpet.set(withRepeat(
+        withSequence(
+          withTiming(1, {
+            duration: 220,
+            easing: Easing.bezier(0.23, 1, 0.32, 1),
+          }),
+          withTiming(0, {
+            duration: 280,
+            easing: Easing.bezier(0.77, 0, 0.175, 1),
+          }),
+          withTiming(0, { duration: 900 }),
+        ),
+        -1,
+      ));
+    } else {
+      trumpet.set(0);
+      // Hold the eye open, blink shut for ~110ms, reopen, repeat.
+      eye.set(withRepeat(
+        withSequence(
+          withTiming(1, { duration: 3800 }),
+          withTiming(0.08, { duration: 110 }),
+          withTiming(1, { duration: 130 }),
+        ),
+        -1,
+      ));
+    }
     return () => {
       cancelAnimation(breath);
       cancelAnimation(eye);
+      cancelAnimation(trumpet);
     };
-  }, [alive, breath, eye]);
+  }, [alive, breath, eye, processing, trumpet]);
 
   const breathStyle = useAnimatedStyle(() => ({
     transform: [{ scale: breath.get() }],
   }));
 
   const eyeProps = useAnimatedProps(() => ({ opacity: eye.get() }));
+  const trumpetProps = useAnimatedProps(() => ({ opacity: trumpet.get() }));
+  const trumpetStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: -2 * trumpet.get() },
+      { rotate: `${-2 * trumpet.get()}deg` },
+      { scale: breath.get() },
+    ],
+  }));
 
   return (
-    <Animated.View style={breathStyle}>
+    <Animated.View style={processing ? trumpetStyle : breathStyle}>
       <Svg fill="none" height={size} viewBox="0 0 80 80" width={size}>
         {/* Body */}
         <Path
@@ -127,6 +163,26 @@ export function OrdiloCharacter({
           fill={colors.harborBlueDarker}
           r={2.1}
         />
+        {processing ? (
+          <>
+            <AnimatedPath
+              animatedProps={trumpetProps}
+              d="M72 38 C76 34 77 31 78 27"
+              fill="none"
+              stroke={colors.warmApricot}
+              strokeLinecap="round"
+              strokeWidth={1.8}
+            />
+            <AnimatedPath
+              animatedProps={trumpetProps}
+              d="M73 44 C76 43 78 41 78.5 39"
+              fill="none"
+              stroke={colors.warmApricot}
+              strokeLinecap="round"
+              strokeWidth={1.8}
+            />
+          </>
+        ) : null}
       </Svg>
     </Animated.View>
   );

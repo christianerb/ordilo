@@ -1,18 +1,21 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
-// Mock next/navigation useRouter so ProfileClient can call router.push.
-const mockPush = vi.fn();
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: mockPush,
-    replace: vi.fn(),
-    refresh: vi.fn(),
-  }),
-}));
 vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({
     openDocument: vi.fn(),
+  }),
+}));
+const mockTaskEq = vi.fn();
+const mockTaskUpdate = vi.fn(() => ({ eq: mockTaskEq }));
+vi.mock("@/lib/supabase/client", () => ({
+  createClient: () => ({
+    auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user: null } }),
+    },
+    from: vi.fn(() => ({
+      update: mockTaskUpdate,
+    })),
   }),
 }));
 
@@ -177,6 +180,39 @@ describe("ProfileClient — Bearbeiten", () => {
 
     const editLink = screen.getByTestId("profile-edit-button");
     expect(editLink).toHaveAttribute("href", "/familie/mem-1/bearbeiten");
+  });
+});
+
+describe("ProfileClient — Aufgaben", () => {
+  it("marks an open profile task done and updates the open count", async () => {
+    mockTaskEq.mockResolvedValueOnce({ error: null });
+    const task: ProfileTask = {
+      id: "task-1",
+      title: "Sportsachen einpacken",
+      due_date: "2026-07-10",
+      status: "open",
+      document_id: null,
+    };
+
+    render(
+      <ProfileClient
+        member={makeMember()}
+        documents={[]}
+        tasks={[task]}
+        dateEntities={emptyDateEntities}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Aufgabe als erledigt markieren" }),
+    );
+
+    expect(screen.queryByText("Sportsachen einpacken")).not.toBeInTheDocument();
+    expect(screen.queryByText("· 1 offen")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockTaskUpdate).toHaveBeenCalledWith({ status: "done" });
+      expect(mockTaskEq).toHaveBeenCalledWith("id", "task-1");
+    });
   });
 });
 

@@ -21,6 +21,7 @@ import { DocumentAttribution } from "@/components/ordilo/document-attribution";
 import {
   getFileIcon,
   getStatusBadgeClasses,
+  getStatusBadgeSizeClasses,
   getStatusLabel,
 } from "@/lib/schemas/document";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
@@ -496,7 +497,8 @@ export function DocumentDetailSheet({
                 <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                   <span
                     className={cn(
-                      "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
+                      "inline-flex rounded-full font-medium",
+                      getStatusBadgeSizeClasses(document.status),
                       getStatusBadgeClasses(document.status),
                     )}
                   >

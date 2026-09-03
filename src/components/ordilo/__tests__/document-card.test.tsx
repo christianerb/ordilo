@@ -87,6 +87,14 @@ describe("DocumentCard", () => {
     expect(screen.getByText(DOCUMENT_STATUS_LABELS.confirmed)).toBeDefined();
   });
 
+  it("keeps the confirmed badge compact so the title has room", () => {
+    render(<DocumentCard title="Ein längerer Dokumentname" status="confirmed" />);
+    const badge = screen.getByTestId("status-badge-confirmed");
+
+    expect(badge).toHaveClass("px-1.5", "py-0.5", "text-[11px]");
+    expect(badge.querySelector("svg")).toBeNull();
+  });
+
   it("shows the German label for 'failed' status", () => {
     render(<DocumentCard status="failed" />);
     expect(screen.getByText(DOCUMENT_STATUS_LABELS.failed)).toBeDefined();

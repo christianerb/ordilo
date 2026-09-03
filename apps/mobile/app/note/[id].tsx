@@ -37,10 +37,10 @@ import {
 import { SwipeImagePreview } from "@/src/components/swipe-image-preview";
 import { Card, DetailTopBar, EmptyState, ListSkeleton, OrdiloButton, Screen } from "@/src/components/ui";
 import {
-  buildNoteUpdatePayload,
+  buildDocumentUpdatePayload,
   getNoteContent,
   updateDocumentSecret,
-  updateConfirmedNote,
+  updateConfirmedDocument,
 } from "@/src/lib/notes";
 import {
   deleteDocument,
@@ -502,7 +502,10 @@ function NoteMetadataEditor({
     setError(null);
     const changes = { title, summary, document_type: documentType };
     try {
-      await updateConfirmedNote(documentId, buildNoteUpdatePayload(note, changes));
+      await updateConfirmedDocument(
+        documentId,
+        buildDocumentUpdatePayload(note, changes),
+      );
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onSaved({ title: title.trim(), summary: summary.trim(), document_type: documentType });
     } catch {

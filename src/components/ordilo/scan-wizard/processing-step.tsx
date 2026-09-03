@@ -194,8 +194,9 @@ export function ScanProcessingStep({
         </button>
       </div>
 
-      <div className="flex flex-1 flex-col items-center justify-center px-8 pb-16">
-        {failed ? (
+      <div className="min-h-0 flex-1 overflow-y-auto px-8">
+        <div className="flex min-h-full flex-col items-center justify-center pb-16 pt-8">
+          {failed ? (
           <div className="flex max-w-xs flex-col items-center gap-3 text-center">
             <div
               className="flex size-14 items-center justify-center rounded-full"
@@ -236,7 +237,7 @@ export function ScanProcessingStep({
           <>
             <OrdiloMascot
               size={56}
-              mood="thinking"
+              mood="processing"
               animate
               style={{ color: "var(--petrol)" }}
             />
@@ -321,6 +322,12 @@ export function ScanProcessingStep({
               </ul>
             </div>
 
+            <p className="mt-5 max-w-xs text-center text-sm text-muted-foreground">
+              Du kannst dieses Fenster schließen. Ordilo arbeitet im
+              Hintergrund weiter. Wenn du später zurückkommst, siehst du den
+              aktuellen Stand.
+            </p>
+
             {/* Background processing button */}
             <Button
               type="button"
@@ -334,7 +341,8 @@ export function ScanProcessingStep({
               <ArrowRight className="size-4" aria-hidden="true" />
             </Button>
           </>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

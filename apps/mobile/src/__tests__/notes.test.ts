@@ -1,13 +1,13 @@
 import { apiFetch } from "../lib/api";
 import {
   buildCredentialsContent,
-  buildNoteUpdatePayload,
+  buildDocumentUpdatePayload,
   createNote,
   getNoteContent,
   maxNoteContentLength,
   triggerNoteAnalysis,
   updateDocumentSecret,
-  updateConfirmedNote,
+  updateConfirmedDocument,
 } from "../lib/notes";
 import type { ReviewAnalysis } from "../lib/document-review";
 
@@ -118,13 +118,13 @@ describe("native notes helpers", () => {
 
   it("uses only the supported protected PATCH fields for a confirmed note", async () => {
     mockApiFetch.mockResolvedValue({} as Response);
-    const payload = buildNoteUpdatePayload(note, {
+    const payload = buildDocumentUpdatePayload(note, {
       title: " WLAN zuhause ",
       summary: "  Router im Flur  ",
       document_type: "credentials",
     });
 
-    await updateConfirmedNote("note-1", payload);
+    await updateConfirmedDocument("note-1", payload);
 
     expect(payload).toEqual({
       document_type: "credentials",
@@ -139,6 +139,24 @@ describe("native notes helpers", () => {
       tags: [],
     });
     expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/note-1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  });
+
+  it("uses the same protected PATCH contract to rename a confirmed document", async () => {
+    mockApiFetch.mockResolvedValue({} as Response);
+    const payload = buildDocumentUpdatePayload(note, {
+      title: " Neuer Dokumenttitel ",
+      summary: note.summary,
+      document_type: note.document_type,
+    });
+
+    await updateConfirmedDocument("document-1", payload);
+
+    expect(payload.title).toBe("Neuer Dokumenttitel");
+    expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/document-1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

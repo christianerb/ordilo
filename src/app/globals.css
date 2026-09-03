@@ -373,6 +373,18 @@
     0%, 100% { transform: rotate(0deg); }
     50% { transform: rotate(6deg); }
   }
+  @keyframes ordilo-mascot-trumpet-body {
+    0%, 36%, 100% { transform: translateY(0) rotate(0deg); }
+    16% { transform: translateY(-1px) rotate(-2deg); }
+  }
+  @keyframes ordilo-mascot-trumpet {
+    0%, 36%, 100% { transform: rotate(0deg); }
+    16% { transform: rotate(-8deg); }
+  }
+  @keyframes ordilo-mascot-trumpet-waves {
+    0%, 36%, 100% { opacity: 0; transform: scale(0.96); }
+    16% { opacity: 1; transform: scale(1); }
+  }
 
   /* Ordilo leans in from the edge of a card because it noticed something —
      one brief look, then it stays put. Plays once, not on a loop. */
@@ -895,6 +907,17 @@
   .ordilo-mascot-ear-wiggle {
     animation: ordilo-mascot-ear-wiggle 1.8s ease-in-out infinite;
   }
+  .ordilo-mascot-trumpet-body {
+    animation: ordilo-mascot-trumpet-body 1.4s var(--ease-in-out) infinite;
+    transform-origin: 34px 40px;
+  }
+  .ordilo-mascot-trumpet {
+    animation: ordilo-mascot-trumpet 1.4s var(--ease-in-out) infinite;
+  }
+  .ordilo-mascot-trumpet-waves {
+    animation: ordilo-mascot-trumpet-waves 1.4s var(--ease-in-out) infinite;
+    transform-origin: 62px 29px;
+  }
   .ordilo-peek {
     animation: ordilo-peek 640ms var(--ease-out-quart) 1 both;
   }
@@ -1206,6 +1229,9 @@
   .ordilo-mascot-greet,
   .ordilo-mascot-success,
   .ordilo-mascot-ear-wiggle,
+  .ordilo-mascot-trumpet-body,
+  .ordilo-mascot-trumpet,
+  .ordilo-mascot-trumpet-waves,
   .ordilo-peek,
   .invite-join-celebration__glow,
   .invite-join-celebration__elephant,

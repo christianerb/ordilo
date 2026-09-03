@@ -70,6 +70,23 @@ describe("native motion wiring", () => {
     expect(hero).toContain('accessibilityLiveRegion="polite"');
     expect(hero).toContain("accessibilityValue={{ text: stageLabel }}");
     expect(motion).toContain("export function completionEntering");
+    expect(hero).toContain("<OrdiloCharacter animated processing");
+    const character = source("src/components/ordilo-character.tsx");
+    expect(character).toContain("processing?: boolean");
+    expect(character).toContain("trumpet.set(withRepeat");
+    expect(character).toContain("eye.set(1)");
+    expect(character).toContain("useReducedMotion()");
+    expect(character).toContain("trumpet.set(processing ? 1 : 0)");
+  });
+
+  it("explains background processing without promising notifications", () => {
+    const scan = source("app/scan.tsx");
+
+    expect(scan).toContain("Du kannst diese Ansicht verlassen oder die App schließen");
+    expect(scan).toContain("Wenn du später zurückkommst");
+    expect(scan).toContain("Lass diese Ansicht geöffnet");
+    expect(scan).toContain("{!failed ? (");
+    expect(scan).not.toContain("Wir benachrichtigen dich");
   });
 
   it("animates the chat thinking state without ignoring reduced motion", () => {
@@ -338,6 +355,15 @@ describe("native motion wiring", () => {
     expect(library).toContain("groupLibraryDocuments(");
   });
 
+  it("lets a confirmed document be renamed through the protected update route", () => {
+    const document = source("app/document/[id].tsx");
+
+    expect(document).toContain("confirmedTitleDraft");
+    expect(document).toContain("updateConfirmedDocument");
+    expect(document).toContain("buildDocumentUpdatePayload");
+    expect(document).toContain('title={saving ? "Wird gespeichert …" : "Titel speichern"}');
+  });
+
   it("uses one shared compact picker sheet", () => {
     const pickerSheet = source("src/components/picker-sheet.tsx");
     expect(pickerSheet).toContain("<OrdiloSheet");
@@ -391,6 +417,15 @@ describe("native motion wiring", () => {
     expect(search).toContain("loadConversationMessages(conversation.id)");
     expect(hero).toContain("<Svg");
     expect(hero).toContain("colors.washSage");
+  });
+
+  it("keeps the iOS chat composer above the keyboard without double spacing", () => {
+    const search = source("app/suche.tsx");
+
+    expect(search).toContain("behavior={Platform.OS === \"ios\" ? \"padding\" : undefined}");
+    expect(search).not.toContain("keyboardVerticalOffset=");
+    expect(search).not.toContain("composerHeight");
+    expect(search).not.toContain("onLayout={(event) => setComposerHeight");
   });
 
   it("uses the same warm journal language for scanning and conversations", () => {
