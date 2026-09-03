@@ -1,6 +1,13 @@
 import {
   buildConfirmDocumentPayload,
+  calendarEligibleDateIndices,
   confirmDocumentReview,
+  defaultCalendarDateIndices,
+  isDeadlineLike,
+  remapCalendarSelection,
+  formatRelativeDays,
+  formatReviewAmount,
+  getDocumentConsequences,
   canReviewDocument,
   deleteDocument,
   documentTypeLabels,
@@ -202,5 +209,95 @@ describe("document review", () => {
       value_date: "2026-09-02",
       confidence: 0.7,
     }]);
+  });
+
+  it("turns kept dates into calendar events and leaves the rest alone", () => {
+    const payload = buildConfirmDocumentPayload(
+      {
+        ...analysis,
+        title: "Elternbrief",
+        dates: [
+          { date: "2026-09-08", label: "Sportfest", type: "date", confidence: 1 },
+          { date: "2026-09-12", label: "", type: "date", confidence: 1 },
+          { date: "irgendwann", label: "Unklar", type: "date", confidence: 0.4 },
+        ],
+      },
+      { calendarDateIndices: [0, 1, 2] },
+    );
+    expect(payload.calendar_events).toEqual([
+      { date: "2026-09-08", label: "Sportfest" },
+      { date: "2026-09-12", label: "Elternbrief" },
+    ]);
+    expect(buildConfirmDocumentPayload(analysis).calendar_events).toEqual([]);
+  });
+
+  it("formats amounts and relative days the German way", () => {
+    expect(formatReviewAmount("84,20", "EUR")).toBe("84,20\u00a0€");
+    expect(formatReviewAmount("1.250,00", "eur")).toBe("1.250,00\u00a0€");
+    expect(formatReviewAmount("ca. 80", "EUR")).toBe("ca. 80 EUR");
+    const now = new Date(2026, 8, 2);
+    expect(formatRelativeDays("2026-09-02", now)).toBe("heute");
+    expect(formatRelativeDays("2026-09-03", now)).toBe("morgen");
+    expect(formatRelativeDays("2026-09-08", now)).toBe("in 6 Tagen");
+    expect(formatRelativeDays("2026-08-30", now)).toBe("vor 3 Tagen");
+    expect(formatRelativeDays("2027-03-01", now)).toBeNull();
+    expect(formatRelativeDays("bald", now)).toBeNull();
+  });
+
+  it("lists what a document means: dates first, then tasks, money and numbers", () => {
+    const consequences = getDocumentConsequences(
+      {
+        ...analysis,
+        dates: [
+          { date: "2026-09-12", label: "Rückgabe", type: "date", confidence: 1 },
+          { date: "2026-09-08", label: "Sportfest", type: "date", confidence: 1 },
+        ],
+        tasks: [{ title: "Sportzeug einpacken", due_date: "2026-09-08", confidence: 1 }],
+        amounts: [{ amount: "12,50", currency: "EUR", label: "", kind: "total", value_date: null, confidence: 1 }],
+        facts: [{ fact_type: "identifier", label: "Kundennummer", value: "4711", confidence: 1 }],
+      },
+      new Date(2026, 8, 2),
+    );
+    expect(consequences.map((entry) => entry.kind)).toEqual(["date", "date", "task", "amount", "fact"]);
+    expect(consequences[0]).toMatchObject({ label: "Sportfest", dateLabel: "Di., 8. Sept.", relative: "in 6 Tagen", index: 1 });
+    expect(consequences[3]).toMatchObject({ label: "Gesamtbetrag", value: "12,50\u00a0€" });
+  });
+});
+
+/**
+ * The calendar defaults mirror src/lib/calendar-heuristics.ts on the web:
+ * appointments pre-checked, deadlines and past dates not.
+ */
+describe("calendar pre-selection", () => {
+  const dates = [
+    { date: "2026-09-10", label: "Elternabend Kita", confidence: 0.95 },
+    { date: "2026-09-30", label: "Zahlungsfrist", confidence: 0.95 },
+    { date: "2026-08-01", label: "Arzttermin", confidence: 0.95 },
+    { date: "2026-09-12", label: "Impfung", confidence: 0.4 },
+    { date: "19:25", label: "Abflug", confidence: 0.95 },
+  ];
+  const today = "2026-09-03";
+
+  it("offers only real ISO dates from today on", () => {
+    expect(calendarEligibleDateIndices(dates, today)).toEqual([0, 1, 3]);
+  });
+
+  it("pre-checks confident appointments and nothing else", () => {
+    expect(defaultCalendarDateIndices(dates, today)).toEqual([0]);
+  });
+
+  it("reads deadline words the way the web does", () => {
+    expect(isDeadlineLike("Zahlungsfrist")).toBe(true);
+    expect(isDeadlineLike("Gültig bis")).toBe(true);
+    expect(isDeadlineLike("Anmeldefrist für den Ausflug")).toBe(true);
+    expect(isDeadlineLike("Elternabend")).toBe(false);
+  });
+
+  it("keeps the selection on the same dates when one is removed", () => {
+    // Date 0 checked, date 1 deliberately unchecked: removing date 0 must
+    // not promote the unchecked one into the planner.
+    expect([...remapCalendarSelection(new Set([0, 2]), 0)]).toEqual([1]);
+    expect([...remapCalendarSelection(new Set([0, 2]), 3)]).toEqual([0, 2]);
+    expect([...remapCalendarSelection(new Set([1]), 1)]).toEqual([]);
   });
 });

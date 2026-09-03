@@ -22,11 +22,11 @@ eine seiner Zeilen offen ist.
 | A | Notizen | Liste, erstellen, bearbeiten, löschen | Ablage/Notizen | Notes API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
 | B | Kontakte | Liste, erstellen, bearbeiten, Aktionen | Ablage/Kontakte | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
 | C | Sammlungen | Liste, erstellen, bearbeiten, Beziehungen | Sammlungen | Supabase/API | ✅ | ⬜ | ⬜ | 🟡 |
-| B | Ordilo fragen | Suche, Chat, Streaming, Quellen, Feedback | Suche | Search/Chat API | ✅ | ⬜ | ⬜ | 🟡 |
+| B | Ordilo fragen | Suche, Chat, Streaming, Quellen, Feedback, Verlauf | Suche (Modal aus dem Dock) | Search/Chat API, RLS-Reads | ✅ | ⬜ | ⬜ | 🟡 |
 | B | Ordilo fragen | KI-Aktionen, Bestätigen/Anpassen/Verwerfen/Undo | Suche | Actions API | ✅ | ⬜ | ⬜ | 🟡 |
 | C | Familienplaner | Aufgaben, Zuständigkeiten, Fälligkeiten, Undo | Plan | Supabase/RPC | ✅ | ⬜ | ⬜ | 🟡 |
 | C | Familienplaner | Kalender, Wiederholungen, Konflikte, Vorschläge | Plan | Supabase/RPC | ⬜ | ⬜ | ⬜ | ⬜ |
-| C | Familie | Mitglieder, Profile, Fotos, Beziehungen, Timeline | Familie | Supabase/API | 🟡 | ⬜ | ⬜ | 🟡 |
+| C | Familie | Mitglieder, Profile, Fotos, Beziehungen, Timeline | Familie (Stack, über die Gesichter im Start-Header) | Supabase/API | 🟡 | ⬜ | ⬜ | 🟡 |
 | C | Familie | Einstellungen, Inbound-Adresse, Kalenderfeed | Familie/Einstellungen | API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
 | D | Datenschutz | Rechtliches, Konto-/Familien-Löschung | Einstellungen | API/Supabase | ⬜ | ⬜ | ⬜ | ⬜ |
 | D | Qualitätslayer | Deep Links, Share, Push, Privacy-Overlay, Biometrie | App-weit | Native APIs | 🟡 | ⬜ | ⬜ | 🟡 |

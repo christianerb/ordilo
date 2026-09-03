@@ -28,7 +28,7 @@ describe("native motion wiring", () => {
     const scan = source("app/scan.tsx");
 
     expect(scan.indexOf("{queue.length > 0 ? (")).toBeLessThan(
-      scan.indexOf("<View style={styles.captureStage}>"),
+      scan.indexOf("style={styles.captureStage}"),
     );
     expect(scan).toContain("bodyRef.current?.scrollTo");
     expect(scan).toContain("ref={bodyRef}");
@@ -181,7 +181,7 @@ describe("native motion wiring", () => {
       "src/components/event-form-sheet.tsx",
       "src/components/note-form-sheet.tsx",
       "src/components/task-form-sheet.tsx",
-      "app/(tabs)/familie.tsx",
+      "app/familie.tsx",
       "app/note/[id].tsx",
     ]) {
       const form = source(path);
@@ -207,10 +207,23 @@ describe("native motion wiring", () => {
     expect(sheet).toContain("formControlFocused");
     expect(sheet).toContain("formActions");
 
-    // The tab bar action sheet delegates presentation to the shared choice sheet.
-    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+    // The dock has no choice sheet: the mark opens the conversation in one
+    // tap, Scannen opens the intake sheet (scan stage, photos, files) — not
+    // the camera, so a photo or PDF never has to pass through the scanner.
+    expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
       "CreateChoiceSheet",
     );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'router.push("/suche")',
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
+      'router.push("/scan")',
+    );
+    expect(source("src/components/ordilo-tab-bar.tsx")).not.toContain(
+      'params: { auto: "1" }',
+    );
+    // Explicit „scannen“ CTAs still open the camera directly.
+    expect(source("app/(tabs)/index.tsx")).toContain('params: { auto: "1" }');
     // The dock wave is rebuilt from the measured bar width so its corner
     // radii stay round on every phone (no stretched 360pt viewBox).
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
@@ -229,7 +242,7 @@ describe("native motion wiring", () => {
       'route.name === "index" && styles.startTab',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
-      'route.name === "familie" && styles.familyTab',
+      'route.name === "scannen"',
     );
     expect(source("src/components/ordilo-tab-bar.tsx")).toContain(
       "insets.bottom - spacing.lg",
@@ -244,7 +257,6 @@ describe("native motion wiring", () => {
       "app/(tabs)/index.tsx",
       "app/(tabs)/ablage.tsx",
       "app/(tabs)/plan.tsx",
-      "app/(tabs)/familie.tsx",
     ]) {
       expect(source(path)).toContain("MOBILE_DOCK_CONTENT_INSET");
     }
@@ -271,7 +283,6 @@ describe("native motion wiring", () => {
     for (const path of [
       "app/(tabs)/ablage.tsx",
       "app/(tabs)/plan.tsx",
-      "src/components/ordilo-tab-bar.tsx",
     ]) {
       expect(source(path)).toContain("<CreateChoiceSheet");
       expect(source(path)).not.toContain("CreatePlanItemSheet");
@@ -312,15 +323,19 @@ describe("native motion wiring", () => {
 
     expect(ui).toContain("const { fontScale } = useWindowDimensions()");
     expect(ui).toContain(
-      "lineHeight: typography.display.lineHeight * fontScale",
+      "lineHeight: typography.largeTitle.lineHeight * fontScale",
     );
     expect(ui).toContain(
       "lineHeight: typography.timestamp.lineHeight * fontScale",
     );
     expect(ui).toMatch(/header:\s*\{[^}]*minHeight: 80,/s);
     expect(ui).not.toMatch(/header:\s*\{[^}]*\bheight: 80,/s);
-    expect(library).toContain("<View style={styles.documentIcon}>");
-    expect(library).toContain("backgroundColor: colors.sandLight");
+    // Every row leads with the document kind (icon + tint), never a generic
+    // file glyph, and carries the people it concerns.
+    expect(library).toContain("<IconTile tint={kind.tint}>");
+    expect(library).toContain("getDocumentKind(document.document_type)");
+    expect(library).toContain("<AvatarStack people={people}");
+    expect(library).toContain("groupLibraryDocuments(");
   });
 
   it("uses one shared compact picker sheet", () => {
@@ -369,8 +384,11 @@ describe("native motion wiring", () => {
     const search = source("app/suche.tsx");
     const hero = source("src/components/ordilo-chat-hero.tsx");
     expect(search).toContain("<OrdiloChatHero");
-    expect(search).toContain("Wie kann ich dir helfen?");
-    expect(search).toContain("CHAT_EXAMPLE_PROMPTS.map");
+    expect(search).toContain("Was möchtest du wissen?");
+    // Suggestions know the family; past conversations are one tap away.
+    expect(search).toContain("buildSuggestedPrompts({ members, recentDocumentTitle })");
+    expect(search).toContain("listConversations(family.id)");
+    expect(search).toContain("loadConversationMessages(conversation.id)");
     expect(hero).toContain("<Svg");
     expect(hero).toContain("colors.washSage");
   });
@@ -382,8 +400,10 @@ describe("native motion wiring", () => {
     const chat = source("src/components/chat.tsx");
 
     expect(scan).toContain("<ScanHeroIllustration");
-    expect(scan).toContain("styles.alternativeHeading");
+    expect(scan).toContain("styles.captureButton");
     expect(scan).toContain("styles.secondaryActionIcon");
+    // Opened from an explicit scan CTA, the camera opens by itself once.
+    expect(scan).toContain('autoLaunchRef = useRef(auto === "1")');
     expect(scanHero).toContain("<Svg");
     expect(search).toContain("styles.dayDivider");
     expect(search).toContain("<OrdiloMark");

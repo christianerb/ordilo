@@ -1,4 +1,6 @@
 import { documentTypeLabels, type DocumentType } from "./document-review";
+import { resolveDocumentPeople, type MemberLike, type Person } from "./people";
+import { getSupabase } from "./supabase";
 
 export type LibraryDocument = {
   id: string;
@@ -233,4 +235,102 @@ export function formatDocumentDate(
     month: "short",
     year: target.getFullYear() === now.getFullYear() ? undefined : "numeric",
   }).format(date);
+}
+
+/** Status tone for a document row: only the non-final states speak up. */
+export function getDocumentStatusTone(
+  status: string,
+): "new" | "processing" | "failed" | null {
+  if (status === "analyzed") return "new";
+  if (status === "failed") return "failed";
+  if (status === "confirmed") return null;
+  return "processing";
+}
+
+export interface LibraryDocumentGroup {
+  key: string;
+  /** "Diese Woche", "August 2026", or a letter for the title sort. */
+  label: string;
+  documents: LibraryDocument[];
+}
+
+/**
+ * Groups a date-sorted list into weeks and months so a long library keeps
+ * its bearings while scrolling; the title sort groups by first letter
+ * instead. Groups are computed on the already-sorted list so the order
+ * inside a group is never changed here.
+ */
+export function groupLibraryDocuments(
+  documents: LibraryDocument[],
+  sort: LibrarySort,
+  now = new Date(),
+): LibraryDocumentGroup[] {
+  const groups: LibraryDocumentGroup[] = [];
+  const push = (key: string, label: string, document: LibraryDocument) => {
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) {
+      last.documents.push(document);
+      return;
+    }
+    groups.push({ key, label, documents: [document] });
+  };
+
+  if (sort === "title") {
+    for (const document of documents) {
+      const first = getDocumentTitle(document).trim()[0] ?? "#";
+      const letter = /[a-zäöü]/i.test(first) ? first.toLocaleUpperCase("de") : "#";
+      push(`letter-${letter}`, letter, document);
+    }
+    return groups;
+  }
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekAgo = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6);
+  const monthFormatter = new Intl.DateTimeFormat("de-DE", {
+    month: "long",
+    year: "numeric",
+  });
+  for (const document of documents) {
+    const date = new Date(document.created_at);
+    if (Number.isNaN(date.getTime())) {
+      push("unknown", "Ohne Datum", document);
+      continue;
+    }
+    const day = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    if (day >= weekAgo && day <= today) {
+      push("this-week", "Diese Woche", document);
+      continue;
+    }
+    const monthKey = `${date.getFullYear()}-${date.getMonth()}`;
+    push(monthKey, monthFormatter.format(date), document);
+  }
+  return groups;
+}
+
+/**
+ * The people named in a page of documents, keyed by document id. One
+ * RLS-scoped read per page instead of one per row.
+ */
+export async function loadLibraryDocumentPeople(
+  documentIds: string[],
+  members: MemberLike[],
+): Promise<Map<string, Person[]>> {
+  const result = new Map<string, Person[]>();
+  if (documentIds.length === 0) return result;
+  const { data, error } = await getSupabase()
+    .from("extracted_entities")
+    .select("document_id, entity_value, linked_object_id")
+    .eq("entity_type", "person")
+    .in("document_id", documentIds);
+  if (error || !data) return result;
+  const byDocument = new Map<string, { entity_value: string; linked_object_id: string | null }[]>();
+  for (const row of data as { document_id: string; entity_value: string; linked_object_id: string | null }[]) {
+    const rows = byDocument.get(row.document_id) ?? [];
+    rows.push(row);
+    byDocument.set(row.document_id, rows);
+  }
+  for (const [documentId, rows] of byDocument) {
+    result.set(documentId, resolveDocumentPeople(rows, members));
+  }
+  return result;
 }

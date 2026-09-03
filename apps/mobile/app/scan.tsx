@@ -7,7 +7,7 @@ import {
   SaveFormat,
 } from "expo-image-manipulator";
 import * as Print from "expo-print";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   DOCUMENT_PIPELINE_STEPS,
   getDocumentPipelineStepsCompleted,
@@ -49,7 +49,6 @@ import {
   OrdiloFormSheet,
 } from "@/src/components/sheet";
 import {
-  Card,
   OrdiloButton,
   Screen,
   SpringPressable,
@@ -211,6 +210,7 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  */
 export default function ScanModal() {
   const router = useRouter();
+  const { auto } = useLocalSearchParams<{ auto?: string }>();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
@@ -226,6 +226,11 @@ export default function ScanModal() {
   const processingAbortRef = useRef<AbortController | null>(null);
   const processingPromiseRef = useRef<Promise<void> | null>(null);
   const detachServerPipelineRef = useRef(false);
+  // Opened from an explicit „scannen“ CTA: the camera is the point, so it
+  // opens by itself once — the sheet behind it stays as the fallback
+  // (photos, files, a queue that still needs attention). The dock opens
+  // the sheet itself, so photos and files are one tap away too.
+  const autoLaunchRef = useRef(auto === "1");
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
@@ -337,6 +342,16 @@ export default function ScanModal() {
       setScannerBusy(false);
     }
   }, [addToQueue, scannerBusy]);
+
+  useEffect(() => {
+    if (!queueHydrated || !autoLaunchRef.current) return;
+    autoLaunchRef.current = false;
+    const hasWork = queueRef.current.some(
+      (item) => item.state === "queued" || item.state === "failed",
+    );
+    if (hasWork) return;
+    void runSystemScanner();
+  }, [queueHydrated, runSystemScanner]);
 
   const processQueueItem = useCallback(
     async (item: QueueItem) => {
@@ -591,6 +606,13 @@ export default function ScanModal() {
     });
   }, [addToQueue]);
 
+  const removeQueued = useCallback(async (item: QueueItem) => {
+    await Promise.allSettled([
+      updateQueue((current) => current.filter((candidate) => candidate.id !== item.id)),
+      removeStagedScannedDocument(item.uri),
+    ]);
+  }, [updateQueue]);
+
   const actionableCount = queue.filter(
     (item) => item.state === "queued" || item.state === "failed",
   ).length;
@@ -781,8 +803,8 @@ export default function ScanModal() {
       dismissDisabled={isProcessing}
       onClose={close}
       onDismiss={finishClose}
-      subtitle="Ordilo richtet das Dokument für dich aus."
-      title="Dokument scannen"
+      subtitle="Ordilo liest mit und legt alles für euch ab."
+      title="Etwas hinzufügen"
       visible={sheetVisible}
     >
       <OrdiloFormBody
@@ -796,45 +818,51 @@ export default function ScanModal() {
         ) : null}
 
         {queue.length > 0 ? (
-          <Card style={styles.queueCard}>
+          <View style={styles.queueCard}>
             <View style={styles.rowHeader}>
               <Text style={[typography.title, styles.rowTitle]}>
-                Bereit zum Hochladen
+                {actionableCount > 0
+                  ? actionableCount === 1
+                    ? "1 Dokument wartet"
+                    : `${actionableCount} Dokumente warten`
+                  : "In Arbeit"}
               </Text>
               {actionableCount > 0 ? (
                 <OrdiloButton
                   disabled={!family || isProcessing}
                   icon={<Upload color={colors.warmWhite} size={16} />}
                   onPress={() => void uploadQueued()}
-                  title="Weiter"
+                  title="Hochladen"
                 />
               ) : null}
             </View>
-            {queue.map((item) => (
-              <View key={item.id} style={styles.queueRow}>
+            {queue.map((item, index) => (
+              <View key={item.id} style={[styles.queueRow, index > 0 && styles.queueRowDivider]}>
                 <View style={styles.queueIcon}>
                   {item.state === "uploading" || item.state === "processing" ? (
                     <ActivityIndicator color={colors.harborBlue} size="small" />
+                  ) : item.state === "failed" ? (
+                    <XCircle color={colors.destructive} size={18} />
                   ) : (
-                    <Upload color={colors.harborBlue} size={17} />
+                    <FilePlus2 color={colors.harborBlue} size={18} />
                   )}
                 </View>
                 <View style={styles.queueDetails}>
                   <Text numberOfLines={1} style={[typography.title, styles.rowTitle]}>
                     {item.name}
                   </Text>
-                  <Text style={[typography.timestamp, styles.queueStatus]}>
+                  <Text numberOfLines={2} style={[typography.timestamp, item.state === "failed" ? styles.queueStatusFailed : styles.queueStatus]}>
                     {item.state === "done"
                       ? "Hochgeladen, wird vorbereitet"
                       : item.state === "uploading"
                         ? "Wird hochgeladen"
                         : item.state === "processing"
                           ? item.processingStep === "analysis"
-                            ? "Inhalt wird verstanden"
-                            : "Text wird erkannt"
+                            ? "Ordilo versteht den Inhalt"
+                            : "Ordilo liest den Text"
                           : item.state === "failed"
                             ? item.error
-                            : "Bereit zum Hochladen"}
+                            : "Bereit"}
                   </Text>
                 </View>
                 {item.state === "done" ? (
@@ -847,57 +875,67 @@ export default function ScanModal() {
                     variant="outline"
                   />
                 ) : null}
+                {item.state === "queued" ? (
+                  <Pressable
+                    accessibilityLabel={`${item.name} entfernen`}
+                    accessibilityRole="button"
+                    hitSlop={8}
+                    onPress={() => void removeQueued(item)}
+                    style={styles.queueRemove}
+                  >
+                    <X color={colors.mistDark} size={16} strokeWidth={2.2} />
+                  </Pressable>
+                ) : null}
               </View>
             ))}
-          </Card>
+          </View>
         ) : null}
 
-        <View style={styles.captureStage}>
-          <ScanHeroIllustration />
-          <Text style={[typography.display, styles.captureTitle]}>
-            Brief scannen
-          </Text>
-          <Text style={[typography.body, styles.captureText]}>
-            Kanten, Zuschnitt und mehrere Seiten übernimmt dein Gerät.
-          </Text>
-          <OrdiloButton
-            disabled={scannerBusy || !queueHydrated}
-            icon={
-              scannerBusy ? (
-                <ActivityIndicator color={colors.warmWhite} />
-              ) : (
-                <ScanLine color={colors.warmWhite} size={18} />
-              )
-            }
-            onPress={() => void runSystemScanner()}
-            size="lg"
-            title={scannerBusy ? "Scanner wird geöffnet" : "Dokument scannen"}
+        <SpringPressable
+          accessibilityHint="Öffnet die Kamera. Kanten, Zuschnitt und mehrere Seiten erkennt dein Gerät."
+          accessibilityLabel="Dokument scannen"
+          disabled={scannerBusy || !queueHydrated}
+          onPress={() => void runSystemScanner()}
+          style={styles.captureStage}
+        >
+          <ScanHeroIllustration height={queue.length > 0 ? 120 : 170} />
+          <View style={styles.captureCopy}>
+            <Text style={[typography.display, styles.captureTitle]}>
+              {scannerBusy ? "Kamera öffnet sich …" : "Brief scannen"}
+            </Text>
+            <Text style={[typography.timestamp, styles.captureText]}>
+              Mehrere Seiten gehen in einem Zug.
+            </Text>
+          </View>
+          <View style={styles.captureButton}>
+            {scannerBusy ? (
+              <ActivityIndicator color={colors.warmWhite} size="small" />
+            ) : (
+              <ScanLine color={colors.warmWhite} size={22} strokeWidth={2.2} />
+            )}
+          </View>
+        </SpringPressable>
+
+        <View style={styles.secondaryActions}>
+          <ScanSecondaryAction
+            accessibilityLabel="Fotos auswählen"
+            disabled={!queueHydrated}
+            icon={<Images color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+            label="Aus Fotos"
+            onPress={() => void pickImages()}
+          />
+          <ScanSecondaryAction
+            accessibilityLabel="Datei auswählen"
+            disabled={!queueHydrated}
+            icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
+            label="PDF oder Datei"
+            onPress={() => void pickFile()}
           />
         </View>
-
-        <View style={styles.alternatives}>
-          <View style={styles.alternativeHeading}>
-            <View style={styles.alternativeLine} />
-            <Text style={styles.alternativeLabel}>Oder auswählen</Text>
-            <View style={styles.alternativeLine} />
-          </View>
-          <View style={styles.secondaryActions}>
-            <ScanSecondaryAction
-              accessibilityLabel="Fotos auswählen"
-              disabled={!queueHydrated}
-              icon={<Images color={colors.harborBlue} size={20} strokeWidth={1.8} />}
-              label="Fotos"
-              onPress={() => void pickImages()}
-            />
-            <ScanSecondaryAction
-              accessibilityLabel="Datei auswählen"
-              disabled={!queueHydrated}
-              icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
-              label="Datei"
-              onPress={() => void pickFile()}
-            />
-          </View>
-        </View>
+        <Text style={styles.privacyNote}>
+          Deine Dokumente bleiben in eurem Familienbuch und werden nur für
+          euch gelesen.
+        </Text>
       </OrdiloFormBody>
     </OrdiloFormSheet>
   );
@@ -1066,47 +1104,61 @@ const styles = StyleSheet.create({
   captureStage: {
     ...cardRestShadow,
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
+    backgroundColor: colors.washSageSoft,
     borderColor: colors.mistLight,
-    borderRadius: radii.xl,
+    borderRadius: radii.lg,
     borderWidth: 1,
     gap: spacing.sm,
     overflow: "hidden",
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.lg,
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.sm,
+    paddingTop: spacing.xs,
+  },
+  captureCopy: {
+    alignItems: "center",
+    gap: 2,
   },
   captureTitle: {
     color: colors.harborBlueDarker,
     fontSize: 22,
     lineHeight: 29,
+    textAlign: "center",
   },
   captureText: {
     color: colors.mistDark,
-    marginBottom: spacing.md,
-    maxWidth: 300,
     textAlign: "center",
   },
-  alternatives: { gap: spacing.md },
-  alternativeHeading: {
+  captureButton: {
     alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md,
-  },
-  alternativeLine: {
-    backgroundColor: colors.mistLight,
-    flex: 1,
-    height: StyleSheet.hairlineWidth,
-  },
-  alternativeLabel: {
-    color: colors.mistDark,
-    fontFamily: typography.timestamp.fontFamily,
-    fontSize: typography.timestamp.fontSize,
-    textAlign: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 56,
+    justifyContent: "center",
+    marginTop: spacing.sm,
+    width: 56,
   },
   secondaryActions: {
     flexDirection: "row",
     gap: spacing.sm,
+  },
+  privacyNote: {
+    color: colors.mistDark,
+    paddingHorizontal: spacing.sm,
+    textAlign: "center",
+    ...typography.label,
+    lineHeight: 16,
+  },
+  queueRowDivider: {
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.sm,
+  },
+  queueStatusFailed: { color: colors.destructive },
+  queueRemove: {
+    alignItems: "center",
+    height: 36,
+    justifyContent: "center",
+    width: 36,
   },
   secondaryAction: {
     alignItems: "center",
@@ -1118,8 +1170,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "center",
-    minHeight: 64,
-    paddingHorizontal: spacing.md,
+    minHeight: 56,
+    paddingHorizontal: spacing.sm,
   },
   secondaryActionIcon: {
     alignItems: "center",
@@ -1141,7 +1193,14 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   errorText: { color: colors.destructive, fontFamily: typography.timestamp.fontFamily },
-  queueCard: { gap: spacing.sm },
+  queueCard: {
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
   rowHeader: {
     alignItems: "center",
     flexDirection: "row",

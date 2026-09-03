@@ -40,9 +40,18 @@ export interface HeuteDocument {
   title: string | null;
   originalFilename: string | null;
   mimeType: string | null;
+  documentType: string | null;
   status: string;
   createdAt: string;
   summary: string | null;
+  /** People Ordilo read in the document — linked members first. */
+  people: HeutePerson[];
+}
+
+export interface HeutePerson {
+  id: string | null;
+  name: string;
+  color: string | null;
 }
 
 export interface HeuteTask {
@@ -58,6 +67,7 @@ export interface HeuteTask {
   tags: string[];
   documentId: string | null;
   documentTitle: string | null;
+  assignedTo: string | null;
 }
 
 export interface HeuteEvent {
@@ -74,6 +84,7 @@ export interface HeuteEvent {
   location: string | null;
   responsibleMemberId: string | null;
   attendeeNames: string[];
+  attendeeIds: string[];
 }
 
 export interface HeuteEventOccurrence {
@@ -84,6 +95,7 @@ export interface HeuteEventOccurrence {
   allDay: boolean;
   location: string | null;
   attendeeNames: string[];
+  attendeeIds: string[];
 }
 
 export interface HeuteInboundSuggestion {
@@ -127,22 +139,31 @@ interface TodayRow {
   title: string | null;
   original_filename: string | null;
   mime_type: string | null;
+  document_type: string | null;
   status: string;
   created_at: string;
   summary: string | null;
 }
 
-function mapDocument(row: TodayRow): HeuteDocument {
+function mapDocument(
+  row: TodayRow,
+  people: Map<string, HeutePerson[]>,
+): HeuteDocument {
   return {
     id: row.id,
     title: row.title,
     originalFilename: row.original_filename,
     mimeType: row.mime_type,
+    documentType: row.document_type,
     status: row.status,
     createdAt: row.created_at,
     summary: row.summary,
+    people: people.get(row.id) ?? [],
   };
 }
+
+const DOCUMENT_SELECT =
+  "id, title, original_filename, mime_type, document_type, status, created_at, summary";
 
 /**
  * Load every direct, RLS-scoped read the web home page uses. The user has
@@ -175,9 +196,7 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
       .order("created_at", { ascending: true }),
     supabase
       .from("documents")
-      .select(
-        "id, title, original_filename, mime_type, status, created_at, summary",
-      )
+      .select(DOCUMENT_SELECT)
       .eq("family_id", familyId)
       .eq("status", "analyzed")
       .order("created_at", { ascending: false })
@@ -200,7 +219,7 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
     supabase
       .from("tasks")
       .select(
-        "id, family_id, title, description, due_date, status, confidence, confirmed, created_at, document_id, tags",
+        "id, family_id, title, description, due_date, status, confidence, confirmed, created_at, document_id, tags, assigned_to",
       )
       .eq("family_id", familyId)
       .eq("confirmed", true)
@@ -208,9 +227,7 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
       .order("created_at", { ascending: false }),
     supabase
       .from("documents")
-      .select(
-        "id, title, original_filename, mime_type, status, created_at, summary",
-      )
+      .select(DOCUMENT_SELECT)
       .eq("family_id", familyId)
       .neq("status", "failed")
       .order("created_at", { ascending: false })
@@ -281,11 +298,15 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
     (attendeeMemberRows ?? []).map((member) => [member.id, member.name]),
   );
   const attendeeNamesByEvent = new Map<string, string[]>();
+  const attendeeIdsByEvent = new Map<string, string[]>();
   for (const attendee of attendeeRows ?? []) {
     const names = attendeeNamesByEvent.get(attendee.event_id) ?? [];
     const name = attendeeNames.get(attendee.family_member_id);
     if (name) names.push(name);
     attendeeNamesByEvent.set(attendee.event_id, names);
+    const ids = attendeeIdsByEvent.get(attendee.event_id) ?? [];
+    ids.push(attendee.family_member_id);
+    attendeeIdsByEvent.set(attendee.event_id, ids);
   }
 
   const taskDocumentIds = [
@@ -306,6 +327,28 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
   const taskDocumentTitles = new Map(
     (taskDocumentRows ?? []).map((document) => [document.id, document.title]),
   );
+
+  const members: HeuteMember[] = (memberRows ?? []).map((member) => ({
+    id: member.id,
+    name: member.name,
+    role: member.role,
+    avatarColor: member.avatar_color,
+  }));
+
+  const documentIds = [
+    ...new Set(
+      [...(analyzedRows ?? []), ...(recentRows ?? [])].map((row) => row.id),
+    ),
+  ];
+  const { data: personRows, error: personError } = documentIds.length
+    ? await supabase
+        .from("extracted_entities")
+        .select("document_id, entity_value, linked_object_id")
+        .eq("entity_type", "person")
+        .in("document_id", documentIds)
+    : { data: [], error: null };
+  if (personError) throw new Error(FRIENDLY_ERROR);
+  const peopleByDocument = groupDocumentPeople(personRows ?? [], members);
 
   const suggestionsByEmail = new Map<string, HeuteInboundSuggestion[]>();
   for (const suggestion of suggestionRows ?? []) {
@@ -339,13 +382,10 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
   if (emailsError) throw new Error(FRIENDLY_ERROR);
 
   return {
-    members: (memberRows ?? []).map((member) => ({
-      id: member.id,
-      name: member.name,
-      role: member.role,
-      avatarColor: member.avatar_color,
-    })),
-    analyzedDocuments: (analyzedRows ?? []).map(mapDocument),
+    members,
+    analyzedDocuments: (analyzedRows ?? []).map((row) =>
+      mapDocument(row, peopleByDocument),
+    ),
     unconfirmedDocumentCount: unconfirmedDocumentCount ?? 0,
     journalDocumentCount: journalDocumentCount ?? 0,
     confirmedDocumentCount: confirmedDocumentCount ?? 0,
@@ -364,8 +404,11 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
       documentTitle: task.document_id
         ? (taskDocumentTitles.get(task.document_id) ?? null)
         : null,
+      assignedTo: task.assigned_to ?? null,
     })),
-    recentDocuments: (recentRows ?? []).map(mapDocument),
+    recentDocuments: (recentRows ?? []).map((row) =>
+      mapDocument(row, peopleByDocument),
+    ),
     events: (eventRows ?? []).map((event) => ({
       id: event.id,
       title: event.title,
@@ -380,6 +423,7 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
       location: event.location,
       responsibleMemberId: event.responsible_member_id,
       attendeeNames: attendeeNamesByEvent.get(event.id) ?? [],
+      attendeeIds: attendeeIdsByEvent.get(event.id) ?? [],
     })),
     inboundDiscoveries: (emailRows ?? [])
       .map((email) => ({
@@ -598,6 +642,7 @@ export function getEventOccurrences(
         allDay: event.allDay,
         location: event.location,
         attendeeNames: event.attendeeNames,
+        attendeeIds: event.attendeeIds,
       });
     }
   }
@@ -726,6 +771,209 @@ export function formatInboundWhen(suggestion: HeuteInboundSuggestion): string {
 function toDisplayTime(value: string | null): string | null {
   const match = value ? /^(\d{2}):(\d{2})/.exec(value) : null;
   return match ? `${match[1]}:${match[2]}` : null;
+}
+
+/**
+ * People per document from its person entities: a linked entity takes the
+ * member's name and colour; an unlinked name stays as text. Duplicates by
+ * member or by name collapse.
+ */
+export function groupDocumentPeople(
+  rows: { document_id: string; entity_value: string; linked_object_id: string | null }[],
+  members: HeuteMember[],
+): Map<string, HeutePerson[]> {
+  const byId = new Map(members.map((member) => [member.id, member]));
+  const result = new Map<string, HeutePerson[]>();
+  const seen = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const member = row.linked_object_id ? byId.get(row.linked_object_id) : undefined;
+    const name = (member?.name ?? row.entity_value).trim();
+    if (!name) continue;
+    const key = member ? `id:${member.id}` : `name:${name.toLocaleLowerCase("de")}`;
+    const keys = seen.get(row.document_id) ?? new Set<string>();
+    if (keys.has(key)) continue;
+    keys.add(key);
+    seen.set(row.document_id, keys);
+    const people = result.get(row.document_id) ?? [];
+    people.push(
+      member
+        ? { id: member.id, name: member.name, color: member.avatarColor }
+        : { id: null, name, color: null },
+    );
+    result.set(row.document_id, people);
+  }
+  return result;
+}
+
+export function findMember(
+  members: HeuteMember[],
+  memberId: string | null,
+): HeutePerson | null {
+  if (!memberId) return null;
+  const member = members.find((candidate) => candidate.id === memberId);
+  return member
+    ? { id: member.id, name: member.name, color: member.avatarColor }
+    : null;
+}
+
+/**
+ * The one thing Start says first. In order: something overdue, something
+ * due today, documents waiting for a look, something due tomorrow —
+ * otherwise the honest "alles gut". Tasks win over documents because a
+ * missed deadline costs more than an unread letter.
+ */
+export type HeuteBriefing =
+  | { kind: "task"; task: HeuteTask; due: { text: string; overdue: boolean } }
+  | { kind: "review"; count: number; document: HeuteDocument }
+  | { kind: "calm"; upcomingCount: number };
+
+export function getHeuteBriefing(
+  tasks: HeuteTask[],
+  reviewDocuments: HeuteDocument[],
+  upcomingCount: number,
+  date = new Date(),
+): HeuteBriefing {
+  const today = toLocalDateStr(date);
+  const dated = getDatedOpenTasks(tasks);
+  const urgent = dated.find((task) => task.dueDate !== null && task.dueDate <= today);
+  if (urgent) {
+    return { kind: "task", task: urgent, due: formatDueLabel(urgent.dueDate, date)! };
+  }
+  const review = reviewDocuments.filter((document) => document.status === "analyzed");
+  if (review.length > 0) {
+    return { kind: "review", count: review.length, document: review[0]! };
+  }
+  const tomorrow = getHomePriorityTask(tasks, date);
+  if (tomorrow) {
+    return {
+      kind: "task",
+      task: tomorrow,
+      due: formatDueLabel(tomorrow.dueDate, date)!,
+    };
+  }
+  return { kind: "calm", upcomingCount };
+}
+
+export interface HeuteAgendaEntry {
+  id: string;
+  kind: "task" | "event";
+  title: string;
+  date: string;
+  /** "08:15" for timed events, null for tasks and all-day events. */
+  time: string | null;
+  location: string | null;
+  task?: HeuteTask;
+  occurrence?: HeuteEventOccurrence;
+}
+
+export interface HeuteAgendaDay {
+  date: string;
+  /** "Morgen", "Do., 4. Sep." */
+  label: string;
+  entries: HeuteAgendaEntry[];
+}
+
+/**
+ * "Demnächst": the next days after today with anything on them, events by
+ * time first, tasks after. Capped so Start stays a briefing — the Plan tab
+ * holds the rest.
+ */
+export function getUpcomingAgenda(
+  tasks: HeuteTask[],
+  occurrences: HeuteEventOccurrence[],
+  date = new Date(),
+  maxEntries = 6,
+): { days: HeuteAgendaDay[]; hiddenCount: number } {
+  const today = toLocalDateStr(date);
+  const tomorrow = toLocalDateStr(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
+  );
+  const horizon = toLocalDateStr(
+    new Date(date.getFullYear(), date.getMonth(), date.getDate() + HOME_EVENTS_HORIZON_DAYS),
+  );
+  const entries: HeuteAgendaEntry[] = [
+    ...occurrences
+      .filter((occurrence) => occurrence.date > today && occurrence.date <= horizon)
+      .map((occurrence) => ({
+        id: `event-${occurrence.id}-${occurrence.date}`,
+        kind: "event" as const,
+        title: occurrence.title,
+        date: occurrence.date,
+        time: occurrence.allDay ? null : toDisplayTime(occurrence.startsTime),
+        location: occurrence.location,
+        occurrence,
+      })),
+    ...tasks
+      .filter(
+        (task) =>
+          task.status === "open" &&
+          task.confirmed &&
+          task.dueDate !== null &&
+          task.dueDate > today &&
+          task.dueDate <= horizon,
+      )
+      .map((task) => ({
+        id: `task-${task.id}`,
+        kind: "task" as const,
+        title: task.title,
+        date: task.dueDate as string,
+        time: null,
+        location: null,
+        task,
+      })),
+  ].sort((a, b) => {
+    if (a.date !== b.date) return a.date.localeCompare(b.date);
+    if (a.kind !== b.kind) return a.kind === "event" ? -1 : 1;
+    return (a.time ?? "99").localeCompare(b.time ?? "99");
+  });
+
+  const shown = entries.slice(0, maxEntries);
+  const days: HeuteAgendaDay[] = [];
+  for (const entry of shown) {
+    const day = days[days.length - 1];
+    if (day && day.date === entry.date) {
+      day.entries.push(entry);
+      continue;
+    }
+    days.push({
+      date: entry.date,
+      label:
+        entry.date === tomorrow
+          ? "Morgen"
+          : new Intl.DateTimeFormat("de-DE", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
+            }).format(new Date(`${entry.date}T12:00:00`)),
+      entries: [entry],
+    });
+  }
+  return { days, hiddenCount: entries.length - shown.length };
+}
+
+/** Small, honest line under a greeting: what the day holds in numbers. */
+export function formatDaySummary(input: {
+  todayEvents: number;
+  todayTasks: number;
+  reviewDocuments: number;
+}): string | null {
+  const parts: string[] = [];
+  if (input.todayEvents > 0) {
+    parts.push(input.todayEvents === 1 ? "1 Termin" : `${input.todayEvents} Termine`);
+  }
+  if (input.todayTasks > 0) {
+    parts.push(input.todayTasks === 1 ? "1 Aufgabe" : `${input.todayTasks} Aufgaben`);
+  }
+  if (input.reviewDocuments > 0) {
+    parts.push(
+      input.reviewDocuments === 1
+        ? "1 neues Dokument"
+        : `${input.reviewDocuments} neue Dokumente`,
+    );
+  }
+  if (parts.length === 0) return null;
+  if (parts.length === 1) return `Heute: ${parts[0]}`;
+  return `Heute: ${parts.slice(0, -1).join(", ")} und ${parts[parts.length - 1]}`;
 }
 
 export async function setHeuteTaskStatus(

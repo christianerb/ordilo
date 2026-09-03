@@ -113,6 +113,11 @@
     },
     "updates": {
       "url": "https://u.expo.dev/c3106304-9b79-4ddc-a508-fb50fdb1fe0c"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/favicon.png"
     }
   }
 }

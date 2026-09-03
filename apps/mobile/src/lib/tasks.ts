@@ -130,6 +130,31 @@ export function getTaskSection(
  * to cover "did I tick that off?"; short enough that a household months
  * in is not carrying hundreds of rows it will never look at.
  */
+/**
+ * The line under „Plan“: what is open, before anyone reads the list.
+ * Undated tasks count as open — they are the easiest to forget, so the
+ * header must never say „Nichts offen“ while Ohne Termin still has rows.
+ */
+export function formatPlanHeaderSubtitle(counts: {
+  now: number;
+  next: number;
+  undated: number;
+  events: number;
+  filterName?: string | null;
+}): string {
+  const plural = (n: number, one: string, many: string) => (n === 1 ? one : `${n} ${many}`);
+  const parts = [
+    counts.now > 0 ? plural(counts.now, "1 heute dran", "heute dran") : null,
+    counts.next > 0 ? plural(counts.next, "1 als Nächstes", "als Nächstes") : null,
+    counts.undated > 0 ? plural(counts.undated, "1 ohne Termin", "ohne Termin") : null,
+    counts.events > 0 ? plural(counts.events, "1 Termin", "Termine") : null,
+  ].filter((part): part is string => part !== null);
+  if (parts.length === 0) {
+    return counts.filterName ? `Nichts offen für ${counts.filterName}` : "Nichts offen";
+  }
+  return parts.join(" · ");
+}
+
 export const RECENT_DONE_DAYS = 7;
 
 /** The oldest completion the planner loads, as an ISO timestamp. */

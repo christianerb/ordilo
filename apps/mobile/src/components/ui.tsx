@@ -1,4 +1,4 @@
-import { ChevronLeft, type LucideIcon } from "lucide-react-native";
+import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react-native";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Pressable,
@@ -27,9 +27,7 @@ import {
   pressDuration,
   pressScale,
 } from "@/src/theme/motion";
-import { colors, radii, spacing, typography } from "@/src/theme/tokens";
-
-import { OrdiloMark } from "./ordilo-mark";
+import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 
 /**
  * Shared UI primitives for the native app, following DESIGN.md:
@@ -201,12 +199,15 @@ export function Screen({
 }
 
 /**
- * The one compact screen header for every tab: a bordered journal card
- * with quiet landscape washes, the Ordilo mark, and an optional action.
- * Its outer measurements never vary between screens.
+ * The one screen header: a large, quiet title with an optional eyebrow
+ * (date, count) and subtitle, plus room on the right for one action or
+ * a custom control (the family faces on Start). No card, no border —
+ * the title is the header, like a well-made iOS app. Text scales with
+ * the system font size instead of clipping.
  */
 export function ScreenHeader({
   action,
+  eyebrow,
   title,
   subtitle,
   trailing,
@@ -217,38 +218,40 @@ export function ScreenHeader({
     onPress: () => void;
     tone?: "primary" | "quiet";
   };
+  eyebrow?: string;
   title: string;
   subtitle?: string;
   trailing?: ReactNode;
 }) {
-  const ActionIcon = action?.icon;
-  const hasAction = Boolean(action || trailing);
   const { fontScale } = useWindowDimensions();
   return (
     <View style={styles.header}>
-      <View accessible={false} style={styles.headerWashOne} />
-      <View accessible={false} style={styles.headerWashTwo} />
-      <View accessible={false} style={styles.headerDotOne} />
-      <View accessible={false} style={styles.headerDotTwo} />
-      <View
-        style={[
-          styles.headerCopy,
-          hasAction ? styles.headerCopyWithAction : styles.headerCopyWithoutAction,
-        ]}
-      >
+      <View style={styles.headerCopy}>
+        {eyebrow ? (
+          <Text
+            numberOfLines={1}
+            style={[
+              typography.caption,
+              styles.headerEyebrow,
+              { lineHeight: typography.caption.lineHeight * fontScale },
+            ]}
+          >
+            {eyebrow}
+          </Text>
+        ) : null}
         <Text
-          numberOfLines={1}
+          numberOfLines={2}
           style={[
-            typography.display,
+            typography.largeTitle,
             styles.headerTitle,
-            { lineHeight: typography.display.lineHeight * fontScale },
+            { lineHeight: typography.largeTitle.lineHeight * fontScale },
           ]}
         >
           {title}
         </Text>
         {subtitle ? (
           <Text
-            numberOfLines={1}
+            numberOfLines={2}
             style={[
               typography.timestamp,
               styles.headerSubtitle,
@@ -259,37 +262,316 @@ export function ScreenHeader({
           </Text>
         ) : null}
       </View>
-      <View pointerEvents="box-none" style={styles.headerActionSlot}>
-        {trailing ?? (action && ActionIcon ? (
-          <SpringPressable
+      {trailing ? (
+        <View style={styles.headerTrailing}>{trailing}</View>
+      ) : action ? (
+        <View style={styles.headerTrailing}>
+          <IconButton
             accessibilityLabel={action.accessibilityLabel}
+            icon={action.icon}
             onPress={action.onPress}
-            style={[
-              styles.headerAction,
-              action.tone === "quiet"
-                ? styles.headerActionQuiet
-                : styles.headerActionPrimary,
-            ]}
-          >
-            <ActionIcon
-              color={
-                action.tone === "quiet"
-                  ? colors.harborBlue
-                  : colors.warmWhite
-              }
-              size={20}
-              strokeWidth={2.1}
-            />
-          </SpringPressable>
-        ) : null)}
+            tone={action.tone ?? "primary"}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The one round icon button: 44pt target, three tones. Primary is the
+ * screen's single main action, quiet is a secondary control, plain sits
+ * inside toolbars.
+ */
+export function IconButton({
+  accessibilityLabel,
+  accessibilityHint,
+  icon: Icon,
+  onPress,
+  tone = "quiet",
+  disabled = false,
+  size = sizes.touch,
+}: {
+  accessibilityLabel: string;
+  accessibilityHint?: string;
+  icon: LucideIcon;
+  onPress: () => void;
+  tone?: "primary" | "quiet" | "plain";
+  disabled?: boolean;
+  size?: number;
+}) {
+  const color =
+    tone === "primary"
+      ? colors.warmWhite
+      : tone === "quiet"
+        ? colors.harborBlue
+        : colors.graphite;
+  return (
+    <SpringPressable
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel}
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.iconButton,
+        { borderRadius: size / 2, height: size, width: size },
+        tone === "primary" && styles.iconButtonPrimary,
+        tone === "quiet" && styles.iconButtonQuiet,
+      ]}
+    >
+      <Icon color={color} size={20} strokeWidth={2} />
+    </SpringPressable>
+  );
+}
+
+/**
+ * A section heading inside a scrolling screen: title on the left, an
+ * optional count or hint beside it, an optional text action on the right.
+ */
+export function SectionHeader({
+  action,
+  count,
+  hint,
+  title,
+}: {
+  action?: { label: string; onPress: () => void; accessibilityLabel?: string };
+  count?: number;
+  hint?: string;
+  title: string;
+}) {
+  return (
+    <View accessibilityRole="header" style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderCopy}>
+        <Text numberOfLines={1} style={styles.sectionTitle}>
+          {title}
+        </Text>
+        {typeof count === "number" ? (
+          <Text style={styles.sectionCount}>{count}</Text>
+        ) : null}
+        {hint ? (
+          <Text numberOfLines={1} style={styles.sectionHint}>
+            {hint}
+          </Text>
+        ) : null}
       </View>
-      <View
-        accessible={false}
-        importantForAccessibility="no-hide-descendants"
-        style={styles.headerMark}
+      {action ? (
+        <Pressable
+          accessibilityLabel={action.accessibilityLabel ?? action.label}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={action.onPress}
+          style={({ pressed }) => [styles.sectionAction, pressed && styles.pressedOpacity]}
+        >
+          <Text style={styles.sectionActionText}>{action.label}</Text>
+          <ChevronRight color={colors.harborBlue} size={16} strokeWidth={2.2} />
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * The grouped list surface: one rounded sand card whose rows are divided
+ * by hairlines. Rows go inside as children; use ListRow for the standard
+ * anatomy.
+ */
+export function ListGroup({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return <View style={[styles.listGroup, style]}>{children}</View>;
+}
+
+/**
+ * The standard row: leading tile or avatar, title, up to two supporting
+ * lines, trailing element. Pressable when onPress is given. Keeps a 56pt
+ * minimum so a row is always a comfortable target.
+ */
+export function ListRow({
+  accessibilityHint,
+  accessibilityLabel,
+  first = false,
+  leading,
+  meta,
+  onPress,
+  subtitle,
+  title,
+  titleLines = 1,
+  trailing,
+  chevron = false,
+  muted = false,
+}: {
+  accessibilityHint?: string;
+  accessibilityLabel?: string;
+  /** First row in a group draws no top hairline. */
+  first?: boolean;
+  leading?: ReactNode;
+  /** Small caption below the subtitle (due label, date). */
+  meta?: ReactNode;
+  onPress?: () => void;
+  subtitle?: string | null;
+  title: string;
+  titleLines?: number;
+  trailing?: ReactNode;
+  chevron?: boolean;
+  muted?: boolean;
+}) {
+  const content = (
+    <>
+      {leading ? <View style={styles.rowLeading}>{leading}</View> : null}
+      <View style={styles.rowCopy}>
+        <Text
+          numberOfLines={titleLines}
+          style={[styles.rowTitle, muted && styles.rowTitleMuted]}
+        >
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text numberOfLines={1} style={styles.rowSubtitle}>
+            {subtitle}
+          </Text>
+        ) : null}
+        {meta ? <View style={styles.rowMeta}>{meta}</View> : null}
+      </View>
+      {trailing ? <View style={styles.rowTrailing}>{trailing}</View> : null}
+      {chevron ? (
+        <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
+      ) : null}
+    </>
+  );
+  if (!onPress) {
+    return (
+      <View style={[styles.row, !first && styles.rowDivider]}>{content}</View>
+    );
+  }
+  return (
+    <Pressable
+      accessibilityHint={accessibilityHint}
+      accessibilityLabel={accessibilityLabel ?? title}
+      accessibilityRole="button"
+      onPress={() => {
+        tap();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.row,
+        !first && styles.rowDivider,
+        pressed && styles.rowPressed,
+      ]}
+    >
+      {content}
+    </Pressable>
+  );
+}
+
+/** The leading square tile that carries an icon on a row. */
+export function IconTile({
+  children,
+  size = sizes.tile,
+  tint = colors.sandLight,
+  style,
+}: {
+  children: ReactNode;
+  size?: number;
+  tint?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <View
+      style={[
+        styles.iconTile,
+        { backgroundColor: tint, borderRadius: Math.round(size * 0.3), height: size, width: size },
+        style,
+      ]}
+    >
+      {children}
+    </View>
+  );
+}
+
+/** Selectable pill — filters, presets, suggestions. */
+export function Chip({
+  accessibilityLabel,
+  icon: Icon,
+  label,
+  onPress,
+  selected = false,
+  tone = "neutral",
+}: {
+  accessibilityLabel?: string;
+  icon?: LucideIcon;
+  label: string;
+  onPress: () => void;
+  selected?: boolean;
+  tone?: "neutral" | "attention";
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      onPress={() => {
+        tap();
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.chip,
+        selected && styles.chipSelected,
+        tone === "attention" && !selected && styles.chipAttention,
+        pressed && styles.pressedOpacity,
+      ]}
+    >
+      {Icon ? (
+        <Icon
+          color={selected ? colors.warmWhite : tone === "attention" ? colors.warmApricot : colors.mistDark}
+          size={15}
+          strokeWidth={2}
+        />
+      ) : null}
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.chipText,
+          selected && styles.chipTextSelected,
+          tone === "attention" && !selected && styles.chipTextAttention,
+        ]}
       >
-        <OrdiloMark size={42} />
-      </View>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Inline, dismissible problem line for a screen that still has content. */
+export function InlineNotice({
+  actionLabel,
+  message,
+  onAction,
+  tone = "error",
+}: {
+  actionLabel?: string;
+  message: string;
+  onAction?: () => void;
+  tone?: "error" | "info";
+}) {
+  return (
+    <View
+      accessibilityRole={tone === "error" ? "alert" : undefined}
+      style={[styles.notice, tone === "info" && styles.noticeInfo]}
+    >
+      <Text style={[styles.noticeText, tone === "info" && styles.noticeTextInfo]}>
+        {message}
+      </Text>
+      {actionLabel && onAction ? (
+        <Pressable accessibilityRole="button" hitSlop={8} onPress={onAction}>
+          <Text style={[styles.noticeAction, tone === "info" && styles.noticeTextInfo]}>
+            {actionLabel}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -476,114 +758,202 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   header: {
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    // The mark defines the compact default, while larger system text can
-    // grow the header instead of being clipped by a fixed height.
+    alignItems: "flex-start",
+    flexDirection: "row",
+    gap: spacing.md,
     minHeight: 80,
-    // Top-aligned like the mark (top: 14) and the action slot beside it —
-    // the copy, the button and the mark share one top edge.
-    justifyContent: "flex-start",
-    marginTop: spacing.sm,
-    overflow: "hidden",
-    padding: 14,
-    ...cardRestShadow,
-  },
-  headerWashOne: {
-    backgroundColor: colors.washSage,
-    borderRadius: radii.pill,
-    bottom: -65,
-    height: 94,
-    left: -34,
-    opacity: 0.88,
-    position: "absolute",
-    transform: [{ rotate: "7deg" }],
-    width: 235,
-  },
-  headerWashTwo: {
-    backgroundColor: colors.washApricot,
-    borderRadius: radii.pill,
-    bottom: -69,
-    height: 96,
-    opacity: 0.96,
-    position: "absolute",
-    right: -26,
-    transform: [{ rotate: "-8deg" }],
-    width: 218,
-  },
-  headerDotOne: {
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.pill,
-    height: 6,
-    opacity: 0.16,
-    position: "absolute",
-    right: 130,
-    top: 17,
-    width: 6,
-  },
-  headerDotTwo: {
-    backgroundColor: colors.warmApricot,
-    borderRadius: radii.pill,
-    height: 7,
-    opacity: 0.32,
-    position: "absolute",
-    right: 117,
-    top: 10,
-    width: 7,
+    paddingBottom: spacing.sm,
+    paddingTop: spacing.sm,
   },
   headerCopy: {
-    gap: 4,
-    zIndex: 1,
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+    paddingTop: 2,
   },
-  headerCopyWithAction: { paddingRight: 116 },
-  headerCopyWithoutAction: { paddingRight: 62 },
+  headerEyebrow: {
+    color: colors.mistDark,
+  },
   headerTitle: {
     color: colors.graphite,
   },
   headerSubtitle: {
     color: colors.mistDark,
+    marginTop: 2,
   },
-  headerActionSlot: {
-    position: "absolute",
-    right: 76,
-    // Same top edge as the copy padding and the mark (14).
-    top: 14,
-    zIndex: 1,
+  headerTrailing: {
+    alignItems: "flex-end",
+    justifyContent: "flex-start",
+    paddingTop: 2,
   },
-  headerAction: {
+  iconButton: {
     alignItems: "center",
-    borderRadius: radii.pill,
-    height: 44,
     justifyContent: "center",
-    width: 44,
   },
-  headerActionPrimary: {
+  iconButtonPrimary: {
     backgroundColor: colors.harborBlue,
   },
-  headerActionQuiet: {
-    backgroundColor: colors.washSage,
+  iconButtonQuiet: {
+    backgroundColor: colors.sand,
     borderColor: colors.mistLight,
     borderWidth: 1,
   },
-  headerMark: {
+  sectionHeader: {
     alignItems: "center",
-    backgroundColor: colors.warmWhite,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    minHeight: 32,
+    paddingHorizontal: spacing.xs,
+  },
+  sectionHeaderCopy: {
+    alignItems: "baseline",
+    flexDirection: "row",
+    flexShrink: 1,
+    gap: spacing.sm,
+    minWidth: 0,
+  },
+  sectionTitle: {
+    color: colors.graphite,
+    flexShrink: 1,
+    ...typography.display,
+  },
+  sectionCount: {
+    color: colors.mistDark,
+    ...typography.caption,
+  },
+  sectionHint: {
+    color: colors.mistDark,
+    flexShrink: 1,
+    ...typography.timestamp,
+  },
+  sectionAction: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 2,
+    minHeight: 32,
+    paddingLeft: spacing.sm,
+  },
+  sectionActionText: {
+    color: colors.harborBlue,
+    ...typography.caption,
+  },
+  pressedOpacity: {
+    opacity: 0.7,
+  },
+  listGroup: {
+    backgroundColor: colors.sand,
     borderColor: colors.mistLight,
-    borderRadius: 18,
+    borderRadius: radii.md,
     borderWidth: 1,
-    elevation: 2,
-    height: 52,
+    overflow: "hidden",
+  },
+  row: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 60,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  rowDivider: {
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  rowPressed: {
+    backgroundColor: colors.sandWarm,
+  },
+  rowLeading: {
+    alignItems: "center",
     justifyContent: "center",
-    position: "absolute",
-    right: 14,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    top: 14,
-    width: 52,
+  },
+  rowCopy: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
+  },
+  rowTitle: {
+    color: colors.graphite,
+    ...typography.title,
+  },
+  rowTitleMuted: {
+    color: colors.mistDark,
+    textDecorationLine: "line-through",
+  },
+  rowSubtitle: {
+    color: colors.mistDark,
+    ...typography.timestamp,
+  },
+  rowMeta: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginTop: 2,
+  },
+  rowTrailing: {
+    alignItems: "flex-end",
+    justifyContent: "center",
+  },
+  iconTile: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  chip: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    height: 36,
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  chipSelected: {
+    backgroundColor: colors.harborBlue,
+    borderColor: colors.harborBlue,
+  },
+  chipAttention: {
+    backgroundColor: colors.washApricot,
+    borderColor: "rgba(228, 96, 24, 0.25)",
+  },
+  chipText: {
+    color: colors.mistDark,
+    ...typography.caption,
+  },
+  chipTextSelected: {
+    color: colors.warmWhite,
+  },
+  chipTextAttention: {
+    color: "#9A4A12",
+  },
+  notice: {
+    alignItems: "center",
+    backgroundColor: colors.destructiveBackground,
+    borderColor: "rgba(192, 57, 43, 0.25)",
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    padding: 12,
+  },
+  noticeInfo: {
+    backgroundColor: colors.washSageSoft,
+    borderColor: colors.mistLight,
+  },
+  noticeText: {
+    color: colors.destructive,
+    flex: 1,
+    ...typography.timestamp,
+  },
+  noticeTextInfo: {
+    color: colors.graphite,
+  },
+  noticeAction: {
+    color: colors.destructive,
+    ...typography.caption,
   },
   segmented: {
     backgroundColor: colors.sand,
