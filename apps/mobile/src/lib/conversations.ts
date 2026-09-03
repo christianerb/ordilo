@@ -75,10 +75,13 @@ export async function loadConversationMessages(
     // rating; a new thumbs-up/down still posts to the API.
     .select("id, role, content, sources, card, actions, created_at")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
+    // Newest first, then reversed for display: a long conversation must
+    // reopen on its most recent turns, not on the oldest `limit` of them
+    // (those would also be the history the next question carries).
+    .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return ((data ?? []) as MessageRow[]).map(rowToChatMessage);
+  return ((data ?? []) as MessageRow[]).slice().reverse().map(rowToChatMessage);
 }
 
 export async function deleteConversation(conversationId: string): Promise<void> {

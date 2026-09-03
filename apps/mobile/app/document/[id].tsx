@@ -62,8 +62,10 @@ import {
 } from "@/src/components/ui";
 import { getDocumentKind } from "@/src/lib/document-kind";
 import {
+  calendarEligibleDateIndices,
   canReviewDocument,
   confirmDocumentReview,
+  defaultCalendarDateIndices,
   deleteDocument,
   documentTypeLabels,
   getDocumentConsequences,
@@ -71,6 +73,7 @@ import {
   loadDocumentReview,
   loadOriginalFile,
   parseCredentialFields,
+  remapCalendarSelection,
   revealDocumentSecret,
   type ConfirmDocumentResult,
   type DocumentConsequence,
@@ -135,15 +138,10 @@ export default function DocumentReviewScreen() {
         setEditing(false);
       }
       if (value && "dates" in value && canReviewDocument(value.status)) {
-        // Every date Ordilo read with confidence is offered for the calendar
-        // by default; unsure ones wait for a deliberate tap.
-        setCalendarDates(
-          new Set(
-            value.dates
-              .map((date, index) => (date.confidence >= 0.7 && /^\d{4}-\d{2}-\d{2}$/.test(date.date) ? index : -1))
-              .filter((index) => index >= 0),
-          ),
-        );
+        // Appointments Ordilo read with confidence are offered for the
+        // calendar by default. Deadlines („Zahlungsfrist“), past dates and
+        // unsure ones wait for a deliberate tap — same defaults as the web.
+        setCalendarDates(new Set(defaultCalendarDateIndices(value.dates)));
       }
       if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
     },
@@ -209,8 +207,11 @@ export default function DocumentReviewScreen() {
 
   // Images get an inline thumbnail: seeing the letter is part of
   // understanding it. PDFs keep the explicit "Original ansehen".
+  // Keyed by the document's id and type, not by the document itself:
+  // otherwise every keystroke in the editor would sign a new file URL.
+  const documentMimeType = document && "mime_type" in document ? document.mime_type : null;
   useEffect(() => {
-    if (!id || !document || !isImageFile(document.mime_type)) return;
+    if (!id || !documentMimeType || !isImageFile(documentMimeType)) return;
     let cancelled = false;
     void loadOriginalFile(id)
       .then((file) => {
@@ -220,7 +221,7 @@ export default function DocumentReviewScreen() {
     return () => {
       cancelled = true;
     };
-  }, [document, id]);
+  }, [documentMimeType, id]);
 
   const updateAnalysis = (updater: (current: ReviewAnalysis) => ReviewAnalysis) => {
     setDocument((current) => current && "summary" in current ? updater(current) : current);
@@ -236,7 +237,7 @@ export default function DocumentReviewScreen() {
     setSaving(true);
     try {
       const result = await confirmDocumentReview(id, document, {
-        calendarDateIndices: [...calendarDates],
+        calendarDateIndices: [...calendarDates].filter((index) => calendarEligible.has(index)),
       });
       await success();
       refreshLibraryDocuments();
@@ -309,6 +310,17 @@ export default function DocumentReviewScreen() {
     if (choice === "original") void viewOriginal();
     if (choice === "edit") setEditing(true);
     if (choice === "delete") requestDelete();
+  };
+
+  // Which dates may become planner events at all — the Kalender toggle is
+  // only offered for these, and only these are submitted on confirm. A
+  // handful of dates, so no memo: the React Compiler owns this render.
+  const calendarEligible = new Set(
+    document && "dates" in document ? calendarEligibleDateIndices(document.dates) : [],
+  );
+
+  const removeDateAt = (index: number) => {
+    setCalendarDates((current) => remapCalendarSelection(current, index));
   };
 
   const toggleCalendarDate = (index: number) => {
@@ -546,6 +558,7 @@ export default function DocumentReviewScreen() {
                 <ListGroup>
                   {consequences.map((entry, index) => (
                     <ConsequenceRow
+                      calendarOffered={entry.kind === "date" && calendarEligible.has(entry.index)}
                       calendarSelected={entry.kind === "date" && calendarDates.has(entry.index)}
                       editable={editable}
                       entry={entry}
@@ -753,7 +766,7 @@ export default function DocumentReviewScreen() {
             </Section>
 
             <PeopleSection analysis={document} editable={editable} onChange={updateAnalysis} />
-            <DatesSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <DatesSection analysis={document} editable={editable} onChange={updateAnalysis} onRemoveDate={removeDateAt} />
             <TasksSection analysis={document} editable={editable} onChange={updateAnalysis} />
             <AmountsSection analysis={document} editable={editable} onChange={updateAnalysis} />
             <FactsSection analysis={document} editable={editable} onChange={updateAnalysis} />
@@ -890,12 +903,14 @@ export default function DocumentReviewScreen() {
  * reads.
  */
 function ConsequenceRow({
+  calendarOffered,
   calendarSelected,
   editable,
   entry,
   first,
   onToggleCalendar,
 }: {
+  calendarOffered: boolean;
   calendarSelected: boolean;
   editable: boolean;
   entry: DocumentConsequence;
@@ -915,7 +930,7 @@ function ConsequenceRow({
         title={entry.label}
         titleLines={2}
         trailing={
-          editable && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) ? (
+          editable && calendarOffered ? (
             <Pressable
               accessibilityLabel={
                 calendarSelected
@@ -1272,12 +1287,25 @@ function PeopleSection({ analysis, editable, onChange }: SectionProps) {
   );
 }
 
-function DatesSection({ analysis, editable, onChange }: SectionProps) {
+function DatesSection({
+  analysis,
+  editable,
+  onChange,
+  onRemoveDate,
+}: SectionProps & { onRemoveDate: (index: number) => void }) {
   return (
     <Section icon={CalendarDays} title="Termine" onAdd={editable ? () => onChange((current) => ({ ...current, dates: [...current.dates, { date: "", label: "", type: "other", confidence: 1 }] })) : undefined}>
       {analysis.dates.length === 0 ? <EmptyRows text="Kein Termin erkannt." /> : null}
       {analysis.dates.map((date, index) => editable ? (
-        <EditableRow key={index} onDelete={() => removeAt("dates", index, onChange)}>
+        <EditableRow
+          key={index}
+          onDelete={() => {
+            // The calendar selection follows the compacted array, so a
+            // removal never hands an unchecked date to the planner.
+            onRemoveDate(index);
+            removeAt("dates", index, onChange);
+          }}
+        >
           <FieldLabel text="Worum geht's?" />
           <TextInput accessibilityLabel={`Bezeichnung Termin ${index + 1}`} onChangeText={(label) => updateAt("dates", index, { label }, onChange)} placeholder="Zum Beispiel: Elternabend" placeholderTextColor={colors.mistDark} style={styles.input} value={date.label} />
           <FieldLabel text="Datum" />

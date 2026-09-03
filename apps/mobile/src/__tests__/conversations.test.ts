@@ -2,8 +2,10 @@ import {
   buildSuggestedPrompts,
   formatConversationWhen,
   getConversationTitle,
+  loadConversationMessages,
   rowToChatMessage,
 } from "../lib/conversations";
+import { getSupabase } from "../lib/supabase";
 
 jest.mock("../lib/api", () => ({ apiFetch: jest.fn() }));
 jest.mock("../lib/supabase", () => ({ getSupabase: jest.fn() }));
@@ -89,5 +91,29 @@ describe("conversations", () => {
       "Wann ist Max’ nächster Arzttermin?",
     ]);
     expect(buildSuggestedPrompts({ members: [] })).toContain("Finde die letzte Stromrechnung");
+  });
+});
+
+describe("loadConversationMessages", () => {
+  it("reads the newest page and hands it back oldest-first", async () => {
+    const order = jest.fn();
+    const query: Record<string, jest.Mock> = {};
+    for (const method of ["select", "eq"]) query[method] = jest.fn(() => query);
+    query.order = order.mockImplementation(() => query);
+    query.limit = jest.fn(async () => ({
+      data: [
+        { id: "m3", role: "user", content: "Und danach?", sources: null, card: null, actions: null, created_at: "2026-09-01T12:00:00Z" },
+        { id: "m2", role: "assistant", content: "Am 8. September.", sources: null, card: null, actions: null, created_at: "2026-09-01T11:00:00Z" },
+      ],
+      error: null,
+    }));
+    (getSupabase as jest.Mock).mockReturnValue({ from: jest.fn(() => query) });
+
+    const messages = await loadConversationMessages("c1", 2);
+
+    // Newest first from the database, so a long conversation reopens on its
+    // most recent turns — then reversed for display.
+    expect(order).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(messages.map((message) => message.dbId)).toEqual(["m2", "m3"]);
   });
 });

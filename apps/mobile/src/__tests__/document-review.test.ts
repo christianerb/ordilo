@@ -1,6 +1,10 @@
 import {
   buildConfirmDocumentPayload,
+  calendarEligibleDateIndices,
   confirmDocumentReview,
+  defaultCalendarDateIndices,
+  isDeadlineLike,
+  remapCalendarSelection,
   formatRelativeDays,
   formatReviewAmount,
   getDocumentConsequences,
@@ -257,5 +261,43 @@ describe("document review", () => {
     expect(consequences.map((entry) => entry.kind)).toEqual(["date", "date", "task", "amount", "fact"]);
     expect(consequences[0]).toMatchObject({ label: "Sportfest", dateLabel: "Di., 8. Sept.", relative: "in 6 Tagen", index: 1 });
     expect(consequences[3]).toMatchObject({ label: "Gesamtbetrag", value: "12,50\u00a0€" });
+  });
+});
+
+/**
+ * The calendar defaults mirror src/lib/calendar-heuristics.ts on the web:
+ * appointments pre-checked, deadlines and past dates not.
+ */
+describe("calendar pre-selection", () => {
+  const dates = [
+    { date: "2026-09-10", label: "Elternabend Kita", confidence: 0.95 },
+    { date: "2026-09-30", label: "Zahlungsfrist", confidence: 0.95 },
+    { date: "2026-08-01", label: "Arzttermin", confidence: 0.95 },
+    { date: "2026-09-12", label: "Impfung", confidence: 0.4 },
+    { date: "19:25", label: "Abflug", confidence: 0.95 },
+  ];
+  const today = "2026-09-03";
+
+  it("offers only real ISO dates from today on", () => {
+    expect(calendarEligibleDateIndices(dates, today)).toEqual([0, 1, 3]);
+  });
+
+  it("pre-checks confident appointments and nothing else", () => {
+    expect(defaultCalendarDateIndices(dates, today)).toEqual([0]);
+  });
+
+  it("reads deadline words the way the web does", () => {
+    expect(isDeadlineLike("Zahlungsfrist")).toBe(true);
+    expect(isDeadlineLike("Gültig bis")).toBe(true);
+    expect(isDeadlineLike("Anmeldefrist für den Ausflug")).toBe(true);
+    expect(isDeadlineLike("Elternabend")).toBe(false);
+  });
+
+  it("keeps the selection on the same dates when one is removed", () => {
+    // Date 0 checked, date 1 deliberately unchecked: removing date 0 must
+    // not promote the unchecked one into the planner.
+    expect([...remapCalendarSelection(new Set([0, 2]), 0)]).toEqual([1]);
+    expect([...remapCalendarSelection(new Set([0, 2]), 3)]).toEqual([0, 2]);
+    expect([...remapCalendarSelection(new Set([1]), 1)]).toEqual([]);
   });
 });

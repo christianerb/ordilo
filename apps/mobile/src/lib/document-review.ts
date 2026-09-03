@@ -1,5 +1,6 @@
 import { apiJson, apiFetch } from "./api";
 import { getSupabase } from "./supabase";
+import { todayLocalDate } from "./tasks";
 
 export type DocumentType =
   | "invoice"
@@ -315,6 +316,94 @@ export function parseCredentialFields(content: string | null): CredentialFields 
  * `status`, never crosses the network boundary. Empty edited rows mean the
  * user removed that entity and are omitted where the contract requires text.
  */
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Words that mark a date as a deadline or validity boundary rather than an
+ * appointment. Mirrors DEADLINE_KEYWORDS in src/lib/calendar-heuristics.ts
+ * on the web: the pre-selection default has to be trustworthy on both
+ * platforms, so an invoice's „Zahlungsfrist“ never lands in the family
+ * planner by itself. You have to BE at an appointment; a deadline is work
+ * with a due date and lives on its task.
+ */
+const CALENDAR_DEADLINE_KEYWORDS = [
+  "frist",
+  "fällig",
+  "faellig",
+  "zahlung",
+  "zahlbar",
+  "einzahlung",
+  "überweisung",
+  "ueberweisung",
+  "mahnung",
+  "kündigung",
+  "kuendigung",
+  "abgabe",
+  "einreichung",
+  "gezahlt",
+  "bezahlt",
+  "gültig",
+  "gueltig",
+  "ablauf",
+  "verlängerung",
+  "verlaengerung",
+  "widerspruch",
+] as const;
+
+/** Whether the label describes a deadline rather than an appointment. */
+export function isDeadlineLike(label: string): boolean {
+  const normalized = label.toLocaleLowerCase("de");
+  return CALENDAR_DEADLINE_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
+/**
+ * The dates that may become planner events at all: a real ISO calendar
+ * date that is not in the past. A „Gezahlt am …“ from last month is
+ * information, not something to plan — the web offers the same set.
+ */
+export function calendarEligibleDateIndices(
+  dates: readonly { date: string }[],
+  today: string = todayLocalDate(),
+): number[] {
+  return dates.flatMap((entry, index) => {
+    const value = entry.date.trim();
+    if (!ISO_DATE_PATTERN.test(value) || value < today) return [];
+    return [index];
+  });
+}
+
+/**
+ * The dates whose Kalender toggle starts checked: eligible, read with
+ * confidence, and an appointment rather than a deadline.
+ */
+export function defaultCalendarDateIndices(
+  dates: readonly { date: string; label: string; confidence: number }[],
+  today: string = todayLocalDate(),
+): number[] {
+  const eligible = new Set(calendarEligibleDateIndices(dates, today));
+  return dates.flatMap((entry, index) =>
+    eligible.has(index) && entry.confidence >= 0.7 && !isDeadlineLike(entry.label)
+      ? [index]
+      : [],
+  );
+}
+
+/**
+ * Keeps a calendar selection pointing at the same dates after one was
+ * removed: the array is compacted, so every later index shifts down by one.
+ */
+export function remapCalendarSelection(
+  selected: ReadonlySet<number>,
+  removedIndex: number,
+): Set<number> {
+  const next = new Set<number>();
+  for (const index of selected) {
+    if (index === removedIndex) continue;
+    next.add(index > removedIndex ? index - 1 : index);
+  }
+  return next;
+}
+
 export function buildConfirmDocumentPayload(
   analysis: ReviewAnalysis,
   options: { calendarDateIndices?: number[] } = {},
@@ -345,7 +434,7 @@ export function buildConfirmDocumentPayload(
     // transaction as the confirmation — "Ordilo hat den Termin eingetragen".
     calendar_events: analysis.dates
       .map((date, index) => ({ date: date.date.trim(), label: date.label.trim(), index }))
-      .filter((date) => keptDates.has(date.index) && /^\d{4}-\d{2}-\d{2}$/.test(date.date))
+      .filter((date) => keptDates.has(date.index) && ISO_DATE_PATTERN.test(date.date))
       .map((date) => ({ date: date.date, label: date.label || analysis.title.trim() || "Termin" })),
   };
 }
