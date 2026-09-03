@@ -100,6 +100,15 @@ viewports) and still need one pass on a real iPhone before release:
 - Dynamic Type at the largest accessibility size: headers, chips, rows.
 - Reduce Motion: TaskCheck spring, briefing card cross-fade.
 
+Verified on the iOS Simulator (iPhone 16, iOS 26.5) on 3 September 2026
+against the live API: dock, Start, Dokumente incl. filters and search,
+document detail, Ordilo fragen with answer and history, Plan incl. „Wer
+macht das?“ and „Wann ist das dran?“, Familie. Two notes for driving the
+app with Maestro: use `launchApp: { stopApp: false }` (a cold relaunch of
+the development client drops the first taps) and select elements by their
+accessibility labels („Dokument scannen“, „Niemand zugeteilt, jemanden
+auswählen“), not by the visible text.
+
 ## Automated checks
 
 Run before device testing:

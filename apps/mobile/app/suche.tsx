@@ -1,3 +1,4 @@
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import {
@@ -29,6 +30,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -705,315 +707,322 @@ export default function SucheScreen() {
   }, [discardVoiceRecording]);
 
   return (
-    <Screen style={styles.screen}>
-      <View style={styles.topbar}>
-        <Pressable
-          accessibilityLabel="Schließen"
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={() => router.back()}
-          style={styles.back}
-        >
-          <ChevronDown color={colors.graphite} size={24} />
-        </Pressable>
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          style={styles.topAvatar}
-        >
-          <OrdiloMark size={32} />
-        </View>
-        <View style={styles.topCopy}>
-          <Text numberOfLines={1} style={styles.topTitle}>
-            {activeConversation ? getConversationTitle(activeConversation) : "Ordilo fragen"}
-          </Text>
-          {activeConversation ? (
-            <Text numberOfLines={1} style={styles.topSubtitle}>
-              {formatConversationWhen(activeConversation.updatedAt)}
-            </Text>
-          ) : null}
-        </View>
-        {conversations.length > 0 ? (
-          <IconButton
-            accessibilityHint="Zeigt frühere Gespräche"
-            accessibilityLabel="Verlauf"
-            icon={History}
-            onPress={() => historySheetRef.current?.present()}
-            tone="plain"
-          />
-        ) : null}
-        <IconButton
-          accessibilityHint="Beginnt ein neues Gespräch"
-          accessibilityLabel="Neues Gespräch"
-          disabled={busy || messages.length === 0}
-          icon={Plus}
-          onPress={startNewChat}
-          tone="quiet"
-        />
-      </View>
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.flex}
-      >
-        <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            { paddingBottom: composerHeight + spacing.md },
-          ]}
-          keyboardDismissMode="interactive"
-          keyboardShouldPersistTaps="handled"
-          // Auto-scroll is for conversations: the empty welcome state
-          // starts at the top so the hero and heading stay fully visible
-          // on short screens instead of being scrolled past.
-          onContentSizeChange={() => {
-            if (messages.length > 0) {
-              scrollRef.current?.scrollToEnd({ animated: true });
-            }
-          }}
-          ref={scrollRef}
-          showsVerticalScrollIndicator={false}
-        >
-          {messages.length === 0 ? (
-            <View style={styles.empty}>
-              <OrdiloChatHero />
-              <View style={styles.welcomeCopy}>
-                <Text style={styles.emptyHeading}>Was möchtest du wissen?</Text>
-                <Text style={styles.emptyText}>
-                  Ordilo kennt eure Dokumente, Termine und Aufgaben und
-                  antwortet mit Quelle.
+    // suche is a native modal, so the root BottomSheetModalProvider's
+    // portal renders underneath it. The history sheet needs a host of
+    // its own inside the modal to appear on top.
+    <GestureHandlerRootView style={styles.flex}>
+      <BottomSheetModalProvider>
+        <Screen style={styles.screen}>
+          <View style={styles.topbar}>
+            <Pressable
+              accessibilityLabel="Schließen"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => router.back()}
+              style={styles.back}
+            >
+              <ChevronDown color={colors.graphite} size={24} />
+            </Pressable>
+            <View
+              accessible={false}
+              importantForAccessibility="no-hide-descendants"
+              style={styles.topAvatar}
+            >
+              <OrdiloMark size={32} />
+            </View>
+            <View style={styles.topCopy}>
+              <Text numberOfLines={1} style={styles.topTitle}>
+                {activeConversation ? getConversationTitle(activeConversation) : "Ordilo fragen"}
+              </Text>
+              {activeConversation ? (
+                <Text numberOfLines={1} style={styles.topSubtitle}>
+                  {formatConversationWhen(activeConversation.updatedAt)}
                 </Text>
-              </View>
-              <View style={styles.suggestions}>
-                {suggestions.map((prompt) => (
-                  <Pressable
-                    accessibilityHint="Stellt diese Frage an Ordilo"
-                    accessibilityLabel={prompt}
-                    accessibilityRole="button"
-                    disabled={busy}
-                    key={prompt}
-                    onPress={() => {
-                      tap();
-                      void send(prompt);
-                    }}
-                    style={({ pressed }) => [
-                      styles.suggestion,
-                      pressed && styles.pressed,
-                    ]}
-                  >
-                    <Text style={styles.suggestionText}>{prompt}</Text>
-                    <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
-                  </Pressable>
-                ))}
-              </View>
-              {conversations.length > 0 ? (
-                <View style={styles.recentBlock}>
-                  <SectionHeader
-                    action={
-                      conversations.length > 3
-                        ? {
-                            label: "Alle",
-                            onPress: () => historySheetRef.current?.present(),
-                            accessibilityLabel: "Alle Gespräche anzeigen",
-                          }
-                        : undefined
-                    }
-                    title="Zuletzt gefragt"
-                  />
-                  <ListGroup>
-                    {conversations.slice(0, 3).map((conversation, index) => (
-                      <ListRow
-                        accessibilityHint="Öffnet das frühere Gespräch"
-                        chevron
-                        first={index === 0}
-                        key={conversation.id}
-                        leading={
-                          <IconTile tint={colors.washSageSoft}>
-                            {historyLoading === conversation.id ? (
-                              <ActivityIndicator color={colors.harborBlue} size="small" />
-                            ) : (
-                              <MessageCircle color={colors.harborBlue} size={19} strokeWidth={1.9} />
-                            )}
-                          </IconTile>
-                        }
-                        onPress={() => void openConversation(conversation)}
-                        subtitle={formatConversationWhen(conversation.updatedAt)}
-                        title={getConversationTitle(conversation)}
-                      />
-                    ))}
-                  </ListGroup>
-                </View>
               ) : null}
             </View>
-          ) : (
-            <>
-              <View style={styles.dayDivider}>
-                <Text style={styles.dayDividerText}>
-                  {activeConversation
-                    ? formatConversationWhen(activeConversation.createdAt)
-                    : "Heute"}
-                </Text>
-              </View>
-              {messages.map((message) =>
-                message.role === "user" ? (
-                  <MessageBubble key={message.id} message={message} />
-                ) : (
-                  <View key={message.id} style={styles.assistantBlock}>
-                    {message.status === "streaming" &&
-                    !message.text &&
-                    message.actions.length === 0 ? (
-                      <ChatThinkingState toolCalls={message.toolCalls} />
-                    ) : (
-                      <Animated.View entering={CHAT_ANSWER_ENTERING}>
-                        <MessageBubble message={message}>
-                          {message.card && message.status === "done" ? (
-                            <AnswerCardView
-                              card={message.card}
-                              onOpenContact={openContact}
-                              onOpenDocument={openDocument}
-                            />
-                          ) : null}
-                          {message.sources.length > 0 &&
-                          message.status === "done" ? (
-                            <SourcesSection
-                              onOpenDocument={openDocument}
-                              sources={message.sources}
-                            />
-                          ) : null}
-                          {message.actions.map((action) => (
-                            <ActionCardView
-                              action={action}
-                              key={action.id}
-                              onAdjust={() => adjustAction(action)}
-                              onConfirm={() =>
-                                void confirmAction(message.id, action)
-                              }
-                              onDismiss={() =>
-                                updateAction(
-                                  message.id,
-                                  action.id,
-                                  (current) => ({
-                                    ...current,
-                                    state: "dismissed",
-                                  }),
-                                )
-                              }
-                              onUndo={() => void undoAction(message.id, action)}
-                            />
-                          ))}
-                          {message.status === "done" && message.dbId ? (
-                            <FeedbackRow
-                              message={message}
-                              onSend={(feedback, reasons, comment) =>
-                                sendFeedback(
-                                  message,
-                                  feedback,
-                                  reasons,
-                                  comment,
-                                )
-                              }
-                            />
-                          ) : null}
-                          {message.status === "error" ? (
-                            <OrdiloButton
-                              onPress={() => retry(message.id)}
-                              title="Nochmal fragen"
-                              variant="outline"
-                            />
-                          ) : null}
-                        </MessageBubble>
-                      </Animated.View>
-                    )}
-                  </View>
-                ),
-              )}
-            </>
-          )}
-        </ScrollView>
-
-        <View
-          onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
-          style={[
-            styles.composerSafeArea,
-            { paddingBottom: Math.max(insets.bottom, spacing.sm) },
-          ]}
-        >
-          {voiceError ? (
-            <Text accessibilityRole="alert" style={styles.voiceError}>
-              {voiceError}
-            </Text>
-          ) : null}
-          <ChatComposer
-            busy={busy}
-            inputRef={inputRef}
-            onChange={setInput}
-            onSend={() => void send(input)}
-            onVoiceStart={() => void startVoice()}
-            onVoiceCancel={() => void discardVoiceRecording()}
-            onVoiceFinish={() => void finishVoice()}
-            value={input}
-            voiceDurationMillis={recorderState.durationMillis}
-            voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
-            voiceStatus={voiceStatus}
-          />
-        </View>
-      </KeyboardAvoidingView>
-
-      <OrdiloSheet
-        accessibilityLabel="Frühere Gespräche"
-        contentContainerStyle={styles.historySheet}
-        detached
-        onDismiss={finishHistoryChoice}
-        ref={historySheetRef}
-      >
-        <OrdiloSheetHeader
-          subtitle="Ordilo merkt sich, worüber ihr gesprochen habt."
-          title="Frühere Gespräche"
-        />
-        <ListGroup style={styles.historyList}>
-          {conversations.map((conversation, index) => (
-            <ListRow
-              accessibilityHint="Öffnet das Gespräch"
-              first={index === 0}
-              key={conversation.id}
-              leading={
-                <IconTile tint={colors.washSageSoft}>
-                  <MessageCircle color={colors.harborBlue} size={19} strokeWidth={1.9} />
-                </IconTile>
-              }
-              onPress={() => chooseHistory(conversation)}
-              subtitle={formatConversationWhen(conversation.updatedAt)}
-              title={getConversationTitle(conversation)}
-              trailing={
-                <Pressable
-                  accessibilityLabel={`${getConversationTitle(conversation)} löschen`}
-                  accessibilityRole="button"
-                  hitSlop={8}
-                  onPress={() => {
-                    historySheetRef.current?.dismiss();
-                    setDeleteCandidate(conversation);
-                  }}
-                  style={styles.historyDelete}
-                >
-                  <Trash2 color={colors.mistDark} size={18} strokeWidth={1.9} />
-                </Pressable>
-              }
+            {conversations.length > 0 ? (
+              <IconButton
+                accessibilityHint="Zeigt frühere Gespräche"
+                accessibilityLabel="Verlauf"
+                icon={History}
+                onPress={() => historySheetRef.current?.present()}
+                tone="plain"
+              />
+            ) : null}
+            <IconButton
+              accessibilityHint="Beginnt ein neues Gespräch"
+              accessibilityLabel="Neues Gespräch"
+              disabled={busy || messages.length === 0}
+              icon={Plus}
+              onPress={startNewChat}
+              tone="quiet"
             />
-          ))}
-        </ListGroup>
-      </OrdiloSheet>
+          </View>
 
-      <ConfirmDialog
-        confirmLabel="Löschen"
-        loading={deleting}
-        loadingLabel="Wird gelöscht …"
-        message="Das Gespräch wird für die ganze Familie gelöscht. Eure Dokumente bleiben unberührt."
-        onCancel={() => setDeleteCandidate(null)}
-        onConfirm={() => void removeConversation()}
-        title="Gespräch löschen?"
-        visible={deleteCandidate !== null}
-      />
-    </Screen>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === "ios" ? "padding" : undefined}
+            style={styles.flex}
+          >
+            <ScrollView
+              contentContainerStyle={[
+                styles.content,
+                { paddingBottom: composerHeight + spacing.md },
+              ]}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              // Auto-scroll is for conversations: the empty welcome state
+              // starts at the top so the hero and heading stay fully visible
+              // on short screens instead of being scrolled past.
+              onContentSizeChange={() => {
+                if (messages.length > 0) {
+                  scrollRef.current?.scrollToEnd({ animated: true });
+                }
+              }}
+              ref={scrollRef}
+              showsVerticalScrollIndicator={false}
+            >
+              {messages.length === 0 ? (
+                <View style={styles.empty}>
+                  <OrdiloChatHero />
+                  <View style={styles.welcomeCopy}>
+                    <Text style={styles.emptyHeading}>Was möchtest du wissen?</Text>
+                    <Text style={styles.emptyText}>
+                      Ordilo kennt eure Dokumente, Termine und Aufgaben und
+                      antwortet mit Quelle.
+                    </Text>
+                  </View>
+                  <View style={styles.suggestions}>
+                    {suggestions.map((prompt) => (
+                      <Pressable
+                        accessibilityHint="Stellt diese Frage an Ordilo"
+                        accessibilityLabel={prompt}
+                        accessibilityRole="button"
+                        disabled={busy}
+                        key={prompt}
+                        onPress={() => {
+                          tap();
+                          void send(prompt);
+                        }}
+                        style={({ pressed }) => [
+                          styles.suggestion,
+                          pressed && styles.pressed,
+                        ]}
+                      >
+                        <Text style={styles.suggestionText}>{prompt}</Text>
+                        <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
+                      </Pressable>
+                    ))}
+                  </View>
+                  {conversations.length > 0 ? (
+                    <View style={styles.recentBlock}>
+                      <SectionHeader
+                        action={
+                          conversations.length > 3
+                            ? {
+                                label: "Alle",
+                                onPress: () => historySheetRef.current?.present(),
+                                accessibilityLabel: "Alle Gespräche anzeigen",
+                              }
+                            : undefined
+                        }
+                        title="Zuletzt gefragt"
+                      />
+                      <ListGroup>
+                        {conversations.slice(0, 3).map((conversation, index) => (
+                          <ListRow
+                            accessibilityHint="Öffnet das frühere Gespräch"
+                            chevron
+                            first={index === 0}
+                            key={conversation.id}
+                            leading={
+                              <IconTile tint={colors.washSageSoft}>
+                                {historyLoading === conversation.id ? (
+                                  <ActivityIndicator color={colors.harborBlue} size="small" />
+                                ) : (
+                                  <MessageCircle color={colors.harborBlue} size={19} strokeWidth={1.9} />
+                                )}
+                              </IconTile>
+                            }
+                            onPress={() => void openConversation(conversation)}
+                            subtitle={formatConversationWhen(conversation.updatedAt)}
+                            title={getConversationTitle(conversation)}
+                          />
+                        ))}
+                      </ListGroup>
+                    </View>
+                  ) : null}
+                </View>
+              ) : (
+                <>
+                  <View style={styles.dayDivider}>
+                    <Text style={styles.dayDividerText}>
+                      {activeConversation
+                        ? formatConversationWhen(activeConversation.createdAt)
+                        : "Heute"}
+                    </Text>
+                  </View>
+                  {messages.map((message) =>
+                    message.role === "user" ? (
+                      <MessageBubble key={message.id} message={message} />
+                    ) : (
+                      <View key={message.id} style={styles.assistantBlock}>
+                        {message.status === "streaming" &&
+                        !message.text &&
+                        message.actions.length === 0 ? (
+                          <ChatThinkingState toolCalls={message.toolCalls} />
+                        ) : (
+                          <Animated.View entering={CHAT_ANSWER_ENTERING}>
+                            <MessageBubble message={message}>
+                              {message.card && message.status === "done" ? (
+                                <AnswerCardView
+                                  card={message.card}
+                                  onOpenContact={openContact}
+                                  onOpenDocument={openDocument}
+                                />
+                              ) : null}
+                              {message.sources.length > 0 &&
+                              message.status === "done" ? (
+                                <SourcesSection
+                                  onOpenDocument={openDocument}
+                                  sources={message.sources}
+                                />
+                              ) : null}
+                              {message.actions.map((action) => (
+                                <ActionCardView
+                                  action={action}
+                                  key={action.id}
+                                  onAdjust={() => adjustAction(action)}
+                                  onConfirm={() =>
+                                    void confirmAction(message.id, action)
+                                  }
+                                  onDismiss={() =>
+                                    updateAction(
+                                      message.id,
+                                      action.id,
+                                      (current) => ({
+                                        ...current,
+                                        state: "dismissed",
+                                      }),
+                                    )
+                                  }
+                                  onUndo={() => void undoAction(message.id, action)}
+                                />
+                              ))}
+                              {message.status === "done" && message.dbId ? (
+                                <FeedbackRow
+                                  message={message}
+                                  onSend={(feedback, reasons, comment) =>
+                                    sendFeedback(
+                                      message,
+                                      feedback,
+                                      reasons,
+                                      comment,
+                                    )
+                                  }
+                                />
+                              ) : null}
+                              {message.status === "error" ? (
+                                <OrdiloButton
+                                  onPress={() => retry(message.id)}
+                                  title="Nochmal fragen"
+                                  variant="outline"
+                                />
+                              ) : null}
+                            </MessageBubble>
+                          </Animated.View>
+                        )}
+                      </View>
+                    ),
+                  )}
+                </>
+              )}
+            </ScrollView>
+
+            <View
+              onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
+              style={[
+                styles.composerSafeArea,
+                { paddingBottom: Math.max(insets.bottom, spacing.sm) },
+              ]}
+            >
+              {voiceError ? (
+                <Text accessibilityRole="alert" style={styles.voiceError}>
+                  {voiceError}
+                </Text>
+              ) : null}
+              <ChatComposer
+                busy={busy}
+                inputRef={inputRef}
+                onChange={setInput}
+                onSend={() => void send(input)}
+                onVoiceStart={() => void startVoice()}
+                onVoiceCancel={() => void discardVoiceRecording()}
+                onVoiceFinish={() => void finishVoice()}
+                value={input}
+                voiceDurationMillis={recorderState.durationMillis}
+                voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
+                voiceStatus={voiceStatus}
+              />
+            </View>
+          </KeyboardAvoidingView>
+
+          <OrdiloSheet
+            accessibilityLabel="Frühere Gespräche"
+            contentContainerStyle={styles.historySheet}
+            detached
+            onDismiss={finishHistoryChoice}
+            ref={historySheetRef}
+          >
+            <OrdiloSheetHeader
+              subtitle="Ordilo merkt sich, worüber ihr gesprochen habt."
+              title="Frühere Gespräche"
+            />
+            <ListGroup style={styles.historyList}>
+              {conversations.map((conversation, index) => (
+                <ListRow
+                  accessibilityHint="Öffnet das Gespräch"
+                  first={index === 0}
+                  key={conversation.id}
+                  leading={
+                    <IconTile tint={colors.washSageSoft}>
+                      <MessageCircle color={colors.harborBlue} size={19} strokeWidth={1.9} />
+                    </IconTile>
+                  }
+                  onPress={() => chooseHistory(conversation)}
+                  subtitle={formatConversationWhen(conversation.updatedAt)}
+                  title={getConversationTitle(conversation)}
+                  trailing={
+                    <Pressable
+                      accessibilityLabel={`${getConversationTitle(conversation)} löschen`}
+                      accessibilityRole="button"
+                      hitSlop={8}
+                      onPress={() => {
+                        historySheetRef.current?.dismiss();
+                        setDeleteCandidate(conversation);
+                      }}
+                      style={styles.historyDelete}
+                    >
+                      <Trash2 color={colors.mistDark} size={18} strokeWidth={1.9} />
+                    </Pressable>
+                  }
+                />
+              ))}
+            </ListGroup>
+          </OrdiloSheet>
+
+          <ConfirmDialog
+            confirmLabel="Löschen"
+            loading={deleting}
+            loadingLabel="Wird gelöscht …"
+            message="Das Gespräch wird für die ganze Familie gelöscht. Eure Dokumente bleiben unberührt."
+            onCancel={() => setDeleteCandidate(null)}
+            onConfirm={() => void removeConversation()}
+            title="Gespräch löschen?"
+            visible={deleteCandidate !== null}
+          />
+        </Screen>
+      </BottomSheetModalProvider>
+    </GestureHandlerRootView>
   );
 }
 

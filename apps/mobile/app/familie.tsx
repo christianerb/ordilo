@@ -46,6 +46,7 @@ import {
   SectionHeader,
 } from "@/src/components/ui";
 import { getApiUrl } from "@/src/lib/api";
+import { formatFamilyTitle } from "@/src/lib/family";
 import { useFamily } from "@/src/lib/family-context";
 import { createFamilyInvite } from "@/src/lib/invites";
 import { listMembers, updateMember, type MemberRow } from "@/src/lib/onboarding-actions";
@@ -196,7 +197,7 @@ export default function FamilieScreen() {
       >
         <ScreenHeader
           subtitle={subtitle}
-          title={family?.name ? `Familie ${family.name}` : "Familie"}
+          title={formatFamilyTitle(family?.name)}
           trailing={people.length > 0 ? <AvatarStack max={4} people={people} size={36} /> : undefined}
         />
 

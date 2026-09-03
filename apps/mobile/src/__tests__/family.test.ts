@@ -1,4 +1,5 @@
 import {
+  formatFamilyTitle,
   isOnboardingComplete,
   needsWelcomeIntro,
   resolveUserFamily,
@@ -190,5 +191,18 @@ describe("needsWelcomeIntro", () => {
   it("is never true for owners", () => {
     expect(needsWelcomeIntro({ ...base, isOwner: true })).toBe(false);
     expect(needsWelcomeIntro(null)).toBe(false);
+  });
+});
+
+describe("formatFamilyTitle", () => {
+  it("does not double the word when the name already carries it", () => {
+    expect(formatFamilyTitle("Familie Erb")).toBe("Familie Erb");
+    expect(formatFamilyTitle("  familie müller ")).toBe("familie müller");
+  });
+
+  it("prefixes a bare surname and falls back without a name", () => {
+    expect(formatFamilyTitle("Erb")).toBe("Familie Erb");
+    expect(formatFamilyTitle("")).toBe("Familie");
+    expect(formatFamilyTitle(null)).toBe("Familie");
   });
 });

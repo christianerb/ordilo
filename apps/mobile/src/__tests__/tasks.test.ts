@@ -1,5 +1,6 @@
 import {
   formatOverdueLabel,
+  formatPlanHeaderSubtitle,
   formatTaskDayHint,
   formatTaskDueLabel,
   getTaskSection,
@@ -226,5 +227,31 @@ describe("validateTaskInput", () => {
       validateTaskInput({ title: "Test", dueDate: "2026-08-01" }, TODAY, true)
         .success,
     ).toBe(true);
+  });
+});
+
+describe("formatPlanHeaderSubtitle", () => {
+  it("counts undated tasks as open instead of claiming nothing is open", () => {
+    expect(
+      formatPlanHeaderSubtitle({ now: 0, next: 0, undated: 9, events: 0 }),
+    ).toBe("9 ohne Termin");
+    expect(
+      formatPlanHeaderSubtitle({ now: 0, next: 0, undated: 1, events: 0 }),
+    ).toBe("1 ohne Termin");
+  });
+
+  it("joins the open groups in reading order", () => {
+    expect(
+      formatPlanHeaderSubtitle({ now: 2, next: 1, undated: 3, events: 1 }),
+    ).toBe("2 heute dran · 1 als Nächstes · 3 ohne Termin · 1 Termin");
+  });
+
+  it("names the filtered person only when nothing is open", () => {
+    expect(
+      formatPlanHeaderSubtitle({ now: 0, next: 0, undated: 0, events: 0, filterName: "Emma" }),
+    ).toBe("Nichts offen für Emma");
+    expect(
+      formatPlanHeaderSubtitle({ now: 0, next: 0, undated: 0, events: 0 }),
+    ).toBe("Nichts offen");
   });
 });

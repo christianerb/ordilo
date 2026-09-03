@@ -78,9 +78,18 @@ interface OrdiloSheetProps {
  */
 export function useSheetPresentation(open: boolean) {
   const ref = useRef<OrdiloSheetHandle>(null);
+  // Calling dismiss() on a BottomSheetModal that was never presented tears
+  // down its portal registration, and every later present() is silently
+  // ignored. Only dismiss what this hook has presented itself.
+  const presentedRef = useRef(false);
   useEffect(() => {
-    if (open) ref.current?.present();
-    else ref.current?.dismiss();
+    if (open) {
+      presentedRef.current = true;
+      ref.current?.present();
+    } else if (presentedRef.current) {
+      presentedRef.current = false;
+      ref.current?.dismiss();
+    }
   }, [open]);
   return ref;
 }
@@ -167,6 +176,10 @@ export const OrdiloSheet = forwardRef<OrdiloSheetHandle, OrdiloSheetProps>(
 
     return (
       <BottomSheetModal
+        // The library marks the sheet itself as one accessible element,
+        // which hides every row inside from VoiceOver. The header title is
+        // the sheet's name; the rows must stay reachable.
+        accessible={false}
         accessibilityLabel={accessibilityLabel}
         backdropComponent={renderBackdrop}
         backgroundStyle={[

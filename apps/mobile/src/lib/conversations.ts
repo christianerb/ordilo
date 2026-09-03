@@ -38,7 +38,7 @@ interface MessageRow {
   sources: unknown;
   card: unknown;
   actions: unknown;
-  feedback: string | null;
+  feedback?: string | null;
   created_at: string;
 }
 
@@ -69,7 +69,11 @@ export async function loadConversationMessages(
 ): Promise<ChatMessage[]> {
   const { data, error } = await getSupabase()
     .from("chat_messages")
-    .select("id, role, content, sources, card, actions, feedback, created_at")
+    // No `feedback` here: the production schema does not carry that column
+    // on chat_messages (migration 0014 declares it), and PostgREST rejects the
+    // whole query for one unknown column. Restored answers start without a
+    // rating; a new thumbs-up/down still posts to the API.
+    .select("id, role, content, sources, card, actions, created_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true })
     .limit(limit);

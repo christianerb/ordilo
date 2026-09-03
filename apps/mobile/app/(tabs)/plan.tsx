@@ -75,6 +75,7 @@ import {
   fetchFamilyMembers,
   fetchPlannerTasks,
   formatOverdueLabel,
+  formatPlanHeaderSubtitle,
   formatTaskDayHint,
   formatTaskDueLabel,
   getTaskSection,
@@ -475,22 +476,16 @@ export default function PlanScreen() {
     setFormOpen(true);
   }, []);
 
-  const headerSubtitle = (() => {
-    if (loading && tasks.length === 0) return "Wird geladen …";
-    const now = grouped.now.length;
-    const next = grouped.next.length;
-    const parts = [
-      now > 0 ? (now === 1 ? "1 heute dran" : `${now} heute dran`) : null,
-      next > 0 ? (next === 1 ? "1 als Nächstes" : `${next} als Nächstes`) : null,
-      visibleEvents.length > 0
-        ? visibleEvents.length === 1
-          ? "1 Termin"
-          : `${visibleEvents.length} Termine`
-        : null,
-    ].filter(Boolean);
-    if (parts.length === 0) return filterPerson ? `Nichts offen für ${filterPerson.name}` : "Nichts offen";
-    return parts.join(" · ");
-  })();
+  const headerSubtitle =
+    loading && tasks.length === 0
+      ? "Wird geladen …"
+      : formatPlanHeaderSubtitle({
+          now: grouped.now.length,
+          next: grouped.next.length,
+          undated: grouped.undated.length,
+          events: visibleEvents.length,
+          filterName: filterPerson?.name ?? null,
+        });
 
   const personFilterRow =
     members.length > 1 ? (

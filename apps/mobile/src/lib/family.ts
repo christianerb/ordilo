@@ -125,3 +125,14 @@ export async function resolveUserFamily(
     error: null,
   };
 }
+
+/**
+ * Screen title for the family. Onboarding suggests „Familie Müller“, so most
+ * names already carry the word; only a bare surname gets the prefix.
+ */
+export function formatFamilyTitle(name: string | null | undefined): string {
+  const trimmed = name?.trim() ?? "";
+  if (!trimmed) return "Familie";
+  if (/^familie\b/i.test(trimmed)) return trimmed;
+  return `Familie ${trimmed}`;
+}
