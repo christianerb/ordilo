@@ -45,7 +45,13 @@ begin
     return;
   end if;
 
-  if position(v_addition in v_content) > 0 then
+  -- Retries are idempotent only when the same complete block is already
+  -- present. A substring match would incorrectly treat "Milch" as already
+  -- appended when the note merely contains "Milch kaufen".
+  if position(
+    E'\n\n' || v_addition || E'\n\n'
+    in E'\n\n' || v_content || E'\n\n'
+  ) > 0 then
     return query select 'already_updated'::text, v_note.title;
     return;
   end if;

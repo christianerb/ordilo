@@ -56,6 +56,11 @@ begin
             = regexp_replace(v_payload->>'phone', '[^0-9]', '', 'g')
         )
         or (
+          nullif(trim(c.email), '') is null
+          and nullif(trim(v_payload->>'email'), '') is null
+          and nullif(regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g'), '') is null
+          and nullif(regexp_replace(coalesce(v_payload->>'phone', ''), '[^0-9]', '', 'g'), '') is null
+          and
           lower(trim(c.name)) = lower(trim(v_payload->>'name'))
           and coalesce(lower(trim(c.organization)), '')
             = coalesce(lower(trim(v_payload->>'organization')), '')

@@ -46,6 +46,24 @@ function getFilingHref(view: FilingView): string {
   return "/dokumente";
 }
 
+export function resolveManualNotePreviewSource(
+  note: DocumentRow,
+  serverPreview: string | undefined,
+  initialNote: DocumentRow | undefined,
+): string | null | undefined {
+  if (note.ocr_text?.trim()) return note.ocr_text;
+
+  const liveSummary = note.summary?.trim();
+  // The server preview is the best first-paint source because it contains
+  // the actual note text. Once realtime delivers a newly computed summary,
+  // that value must win over the stale RSC snapshot.
+  if (liveSummary && liveSummary !== initialNote?.summary?.trim()) {
+    return liveSummary;
+  }
+
+  return serverPreview?.trim() || liveSummary;
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
@@ -146,6 +164,15 @@ export function DokumenteClient({
     () => displayDocuments.filter((document) => document.source === "manual"),
     [displayDocuments],
   );
+  const initialNotesById = useMemo(
+    () =>
+      Object.fromEntries(
+        initialDocuments
+          .filter((document) => document.source === "manual")
+          .map((document) => [document.id, document]),
+      ),
+    [initialDocuments],
+  );
   const activeDocuments = view === "notizen" ? noteDocuments : libraryDocuments;
   const hasDocuments = activeDocuments.length > 0;
   const hasActiveUploads = uploads.length > 0;
@@ -223,6 +250,7 @@ export function DokumenteClient({
         <NotesView
           notes={noteDocuments}
           previews={initialNotePreviews}
+          initialNotes={initialNotesById}
           loading={loadingDocs}
           onCreate={() => openCreateNote()}
           onOpen={(documentId) => void openDocument(documentId)}
@@ -358,12 +386,14 @@ function NotesView({
   notes,
   loading,
   previews,
+  initialNotes,
   onCreate,
   onOpen,
 }: {
   notes: DocumentRow[];
   loading: boolean;
   previews: Record<string, string>;
+  initialNotes: Record<string, DocumentRow>;
   onCreate: () => void;
   onOpen: (documentId: string) => void;
 }) {
@@ -378,7 +408,14 @@ function NotesView({
     }
     const needle = search.trim().toLocaleLowerCase("de");
     if (!needle) return true;
-    return [note.title, previews[note.id], note.ocr_text]
+    return [
+      note.title,
+      resolveManualNotePreviewSource(
+        note,
+        previews[note.id],
+        initialNotes[note.id],
+      ),
+    ]
       .filter(Boolean)
       .join(" ")
       .toLocaleLowerCase("de")
@@ -466,7 +503,11 @@ function NotesView({
             </span>
             <span className="block truncate text-sm text-muted-foreground">
               {getManualNotePreview(
-                previews[note.id] ?? note.ocr_text,
+                resolveManualNotePreviewSource(
+                  note,
+                  previews[note.id],
+                  initialNotes[note.id],
+                ),
                 note.title,
               ) ||
                 "Notiz öffnen, um den Inhalt zu lesen"}

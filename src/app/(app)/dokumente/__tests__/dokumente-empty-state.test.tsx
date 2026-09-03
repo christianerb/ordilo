@@ -27,7 +27,10 @@ vi.mock("@/lib/ocr", () => ({
   triggerOcr: vi.fn(),
 }));
 
-import { DokumenteClient } from "@/app/(app)/dokumente/dokumente-client";
+import {
+  DokumenteClient,
+  resolveManualNotePreviewSource,
+} from "@/app/(app)/dokumente/dokumente-client";
 import { ScanProvider } from "@/lib/scan/scan-context";
 import { CollectionsProvider } from "@/lib/collections/collections-context";
 import { createClient } from "@/lib/supabase/client";
@@ -206,6 +209,27 @@ describe("DokumentePage empty state", () => {
 
     expect(screen.getByText("Bücherhalle Emma")).toBeDefined();
     expect(screen.queryByText("Mietvertrag")).toBeNull();
+  });
+
+  it("uses a refreshed live summary instead of a stale server note preview", () => {
+    const initialNote = {
+      id: "note-live",
+      title: "Einkauf",
+      ocr_text: null,
+      summary: "Milch · Brot",
+    } as DocumentRow;
+    const liveNote = {
+      ...initialNote,
+      summary: "Milch · Brot · Äpfel",
+    };
+
+    expect(
+      resolveManualNotePreviewSource(
+        liveNote,
+        "Milch · Brot",
+        initialNote,
+      ),
+    ).toBe("Milch · Brot · Äpfel");
   });
 
   it("does not render the empty state when documents exist", async () => {

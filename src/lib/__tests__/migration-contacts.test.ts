@@ -65,6 +65,15 @@ describe("0071_contact_dismissal migration", () => {
     expect(dismissalMigration).toContain("else excluded.status");
   });
 
+  it("uses the name fallback only when both contacts lack stronger identifiers", () => {
+    expect(dismissalMigration).toMatch(
+      /nullif\(trim\(c\.email\), ''\) is null\s+and nullif\(trim\(v_payload->>'email'\), ''\) is null/,
+    );
+    expect(dismissalMigration).toMatch(
+      /nullif\(regexp_replace\(coalesce\(c\.phone, ''\), '\[\^0-9\]', '', 'g'\), ''\) is null\s+and nullif\(regexp_replace\(coalesce\(v_payload->>'phone', ''\), '\[\^0-9\]', '', 'g'\), ''\) is null\s+and\s+lower\(trim\(c\.name\)\) = lower\(trim\(v_payload->>'name'\)\)/,
+    );
+  });
+
   it("leaves user-edited tombstones in place when source entities are deleted", () => {
     expect(dismissalMigration).toContain("user_edited_at is null");
   });

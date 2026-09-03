@@ -18,8 +18,11 @@ describe("0072_append_manual_note migration", () => {
     expect(migration).toContain("v_note.document_type = 'credentials'");
   });
 
-  it("updates the document and first page together without duplicating text", () => {
-    expect(migration).toContain("position(v_addition in v_content) > 0");
+  it("updates the document and first page together without duplicating a complete block", () => {
+    expect(migration).toMatch(
+      /position\(\s*E'\\n\\n' \|\| v_addition \|\| E'\\n\\n'\s+in E'\\n\\n' \|\| v_content \|\| E'\\n\\n'\s*\) > 0/,
+    );
+    expect(migration).not.toContain("position(v_addition in v_content)");
     expect(migration).toContain("set ocr_text = v_content");
     expect(migration).toContain("set ocr_markdown = v_content");
   });
