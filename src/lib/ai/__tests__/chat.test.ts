@@ -838,6 +838,97 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("drops an uncited buffered lead-in and lets the card carry the answer", async () => {
+    // The prose next to a card must pass the same citation guard as a final
+    // answer — an unsupported claim must not reach the client.
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Die Frist läuft nächste Woche ab." },
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "dokument",
+              title: "Stromrechnung",
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      {
+        document_id: "doc-1",
+        title: "Stromrechnung",
+        excerpt: "45 EUR",
+        score: 0.9,
+      },
+    ]);
+    const stream = await streamAgenticAnswer(
+      "Zeig mir die Rechnungsdetails.",
+      [],
+      toolContext,
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((l) => l.type === "card")).toBe(true);
+    expect(lines.filter((l) => l.type === "text")).toEqual([]);
+  });
+
+  it("releases a cited buffered lead-in alongside the card", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Laut Stromrechnung ist der Betrag fällig." },
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "dokument",
+              title: "Stromrechnung",
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      {
+        document_id: "doc-1",
+        title: "Stromrechnung",
+        excerpt: "45 EUR",
+        score: 0.9,
+      },
+    ]);
+    const stream = await streamAgenticAnswer(
+      "Zeig mir die Rechnungsdetails.",
+      [],
+      toolContext,
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "text")).toEqual([
+      {
+        type: "text",
+        content: "Laut Stromrechnung ist der Betrag fällig.",
+      },
+    ]);
+    expect(lines.some((l) => l.type === "card")).toBe(true);
+  });
+
   it("keeps actionDocumentId when it matches an accumulated source", async () => {
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([

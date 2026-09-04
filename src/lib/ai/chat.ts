@@ -1212,13 +1212,21 @@ export async function streamAgenticAnswer(
                 };
               }
               // A buffered round held back the lead-in text accompanying
-              // the card; release it once it passes the hedging guard. The
-              // card itself carries the claim, so a hedged lead-in is
-              // dropped rather than corrected.
+              // the card; release it only when it passes the same guards
+              // as a final answer. Otherwise the validated card alone
+              // carries the answer — an unsupported claim must not slip
+              // through next to it.
               const cardLeadIn = bufferAnswerText
                 ? contentChunks.join("").trim()
                 : "";
-              if (cardLeadIn && !containsHedgingLanguage(cardLeadIn)) {
+              const cardCitationSources =
+                requiredCitationSources(toolContext);
+              if (
+                cardLeadIn &&
+                !containsHedgingLanguage(cardLeadIn) &&
+                (cardCitationSources.length === 0 ||
+                  answerCitesSources(cardLeadIn, cardCitationSources))
+              ) {
                 send({ type: "text", content: cardLeadIn });
               }
               send({ type: "card", card: cardToSend });
