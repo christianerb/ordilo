@@ -3,7 +3,10 @@ import {
   MAX_CLIENT_CHAT_HISTORY_CONTENT,
   MAX_CLIENT_CHAT_HISTORY_MESSAGES,
   CHAT_ACTION_TOOL_NAMES,
+  CHAT_FEEDBACK_REASONS,
+  FORBIDDEN_HEDGING_PHRASES,
   type ChatActionToolName,
+  type ChatFeedbackReason,
   type ChatSource,
 } from "@ordilo/chat-contract";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
@@ -11,10 +14,12 @@ import type { ApiErrorResponse } from "@/lib/schemas/api";
 export {
   CHAT_ACTION_TOOL_NAMES,
   isChatResponseState,
+  mergeConfirmationProposal,
   type ChatActionToolName,
   type ChatResponseState,
   type ChatSource,
   type ChatSuggestion,
+  FORBIDDEN_HEDGING_PHRASES,
 } from "@ordilo/chat-contract";
 
 /**
@@ -56,12 +61,7 @@ const UUID_REGEX =
 export const MAX_CHAT_MESSAGE_LENGTH = 4000;
 
 /** Fixed feedback reason choices, also used by controlled answer repair. */
-export const CHAT_FEEDBACK_REASONS = [
-  "falsche_antwort",
-  "falsches_dokument",
-  "unvollstaendig",
-] as const;
-export type ChatFeedbackReason = (typeof CHAT_FEEDBACK_REASONS)[number];
+export { CHAT_FEEDBACK_REASONS, type ChatFeedbackReason };
 export const MAX_FEEDBACK_COMMENT_LENGTH = 500;
 export const MAX_FEEDBACK_REASONS = 3;
 
@@ -86,6 +86,17 @@ export const chatRequestSchema = z.object({
       MAX_CHAT_MESSAGE_LENGTH,
       `Nachricht ist zu lang (maximal ${MAX_CHAT_MESSAGE_LENGTH} Zeichen).`,
     ),
+  display_message: z
+    .string()
+    .trim()
+    .min(1)
+    .max(MAX_CHAT_MESSAGE_LENGTH)
+    .optional(),
+  capabilities: z
+    .array(z.enum(["web_source_urls"]))
+    .max(5)
+    .optional()
+    .default([]),
   family_id: z
     .string()
     .trim()
@@ -221,36 +232,6 @@ export type ChatActionConfirmationInput = z.infer<
   typeof chatActionConfirmationSchema
 >;
 
-const CONFIRMATION_EVENT_META_KEYS = new Set([
-  "type",
-  "tool_name",
-  "action_args",
-  "action_id",
-  "needs_confirmation",
-  "message",
-]);
-
-/**
- * Combines raw proposed arguments and server-resolved display fields for an
- * action card. This is shared by live streaming and restored messages.
- */
-export function mergeConfirmationProposal(
-  event: Record<string, unknown>,
-): Record<string, unknown> {
-  const base =
-    event.action_args &&
-    typeof event.action_args === "object" &&
-    !Array.isArray(event.action_args)
-      ? (event.action_args as Record<string, unknown>)
-      : {};
-  const preview = Object.fromEntries(
-    Object.entries(event).filter(
-      ([key]) => !CONFIRMATION_EVENT_META_KEYS.has(key),
-    ),
-  );
-  return { ...base, ...preview };
-}
-
 // ---------------------------------------------------------------------------
 // Chat feedback schema (POST /api/chat/feedback)
 // ---------------------------------------------------------------------------
@@ -276,6 +257,7 @@ export const chatFeedbackSchema = z.object({
     .min(1)
     .max(MAX_FEEDBACK_COMMENT_LENGTH)
     .optional(),
+  repair_requested: z.boolean().optional().default(false),
 });
 export type ChatFeedbackInput = z.infer<typeof chatFeedbackSchema>;
 
@@ -298,13 +280,6 @@ export const NO_RESULTS_FALLBACK = "Ich finde dazu kein Dokument.";
  * The system prompt instructs the model to avoid them, and this list is
  * used by `containsHedgingLanguage` for post-generation verification.
  */
-export const FORBIDDEN_HEDGING_PHRASES = [
-  "Ich glaube",
-  "Vermutlich",
-  "Wahrscheinlich",
-  "Könnte sein",
-] as const;
-
 /**
  * Check whether a text contains any forbidden hedging language.
  *

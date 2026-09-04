@@ -1,10 +1,10 @@
 import {
-  buildSuggestedPrompts,
   formatConversationWhen,
   getConversationTitle,
   loadConversationMessages,
   rowToChatMessage,
 } from "../lib/conversations";
+import { buildPersonalChatPrompts } from "@ordilo/chat-contract";
 import { getSupabase } from "../lib/supabase";
 
 jest.mock("../lib/api", () => ({ apiFetch: jest.fn() }));
@@ -80,13 +80,12 @@ describe("conversations", () => {
   });
 
   it("writes suggestions with the family's names", () => {
-    const prompts = buildSuggestedPrompts({
+    const prompts = buildPersonalChatPrompts({
       members: [
         { name: "Christian Müller", role: "Vater" },
         { name: "Emma Müller", role: "Tochter" },
       ],
       recentDocumentTitle: "Elternbrief Sportfest",
-      now: new Date(2026, 8, 2),
     });
     expect(prompts).toEqual([
       "Was muss ich bei „Elternbrief Sportfest“ beachten?",
@@ -94,16 +93,15 @@ describe("conversations", () => {
       "Was ist diese Woche für uns wichtig?",
     ]);
     expect(
-      buildSuggestedPrompts({
+      buildPersonalChatPrompts({
         members: [{ name: "Max", role: "Sohn" }],
-        now: new Date(2026, 8, 5),
       }),
     ).toEqual([
       "Was steht für Max als Nächstes an?",
       "Was ist diese Woche für uns wichtig?",
       "Erkläre mir den Unterschied zwischen Garantie und Gewährleistung.",
     ]);
-    expect(buildSuggestedPrompts({ members: [] })).toEqual([
+    expect(buildPersonalChatPrompts({ members: [] })).toEqual([
       "Was ist diese Woche für uns wichtig?",
       "Erkläre mir den Unterschied zwischen Garantie und Gewährleistung.",
       "Welche Änderungen gibt es aktuell beim Deutschlandticket?",

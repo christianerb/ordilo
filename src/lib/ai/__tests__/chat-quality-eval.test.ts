@@ -6,7 +6,7 @@ import {
   scoreChatAnswer,
 } from "@/lib/ai/evals/chat-quality-v1";
 
-describe(`${CHAT_EVAL_VERSION} deterministic quality gate`, () => {
+describe(`${CHAT_EVAL_VERSION} deterministic scoring contract`, () => {
   it("keeps every versioned reference answer above the acceptance floor", () => {
     const results = CHAT_QUALITY_CASES_V1.map((testCase) =>
       scoreChatAnswer(
@@ -16,7 +16,7 @@ describe(`${CHAT_EVAL_VERSION} deterministic quality gate`, () => {
       ),
     );
 
-    expect(CHAT_QUALITY_CASES_V1).toHaveLength(8);
+    expect(CHAT_QUALITY_CASES_V1).toHaveLength(13);
     expect(new Set(CHAT_QUALITY_CASES_V1.map((testCase) => testCase.knowledgeSpace))).toEqual(
       new Set(["family", "general", "web", "mixed"]),
     );

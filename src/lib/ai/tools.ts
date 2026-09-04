@@ -79,6 +79,13 @@ export interface ToolContext {
   searchedScopes?: Set<"family" | "web">;
   responseState?: ChatResponseState;
   toolCallCount?: number;
+  privateWebTerms?: string[];
+  webPrivacyReady?: boolean;
+  preloadedFamilyMembers?: Array<{
+    name: string;
+    role: string | null;
+  }>;
+  preloadedFamilyMembersPrivacyReady?: boolean;
 }
 
 /**
@@ -1287,19 +1294,14 @@ async function executeSearchWeb(
     });
   }
 
-  const { data: members, error: memberError } = await ctx.client
-    .from("family_members")
-    .select("name")
-    .eq("family_id", ctx.familyId);
-  if (memberError) {
+  if (!ctx.webPrivacyReady) {
     return JSON.stringify({
       error:
         "Die Web-Suche wurde aus Datenschutzgründen nicht gestartet. Bitte versuch es noch einmal.",
     });
   }
   const privateNames = [
-    ctx.speakerName,
-    ...(members ?? []).map((member) => member.name),
+    ...(ctx.privateWebTerms ?? []),
     ...ctx.sources
       .map((source) => source.title)
       .filter(

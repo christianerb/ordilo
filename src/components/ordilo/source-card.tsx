@@ -2,6 +2,7 @@
 
 import { FileText, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SourceCardRoot } from "@/components/ordilo/source-card-root";
 
 /** Icon + label describing where a source citation came from (e.g. document search vs. task search). */
 export interface SourceCardKind {
@@ -94,27 +95,11 @@ export function SourceCard({
 
   const Icon = kind.icon;
   const isInteractive = !!onClick || !!href;
-  const Root = href ? "a" : "div";
 
   return (
-    <Root
+    <SourceCardRoot
       href={href}
-      target={href ? "_blank" : undefined}
-      rel={href ? "noopener noreferrer" : undefined}
-      data-testid="source-card"
-      role={!href && isInteractive ? "button" : undefined}
-      tabIndex={!href && isInteractive ? 0 : undefined}
-      onClick={isInteractive ? onClick : undefined}
-      onKeyDown={
-        !href && isInteractive
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick?.();
-              }
-            }
-          : undefined
-      }
+      onClick={onClick}
       style={style}
       className={cn(
         "flex w-full items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors animate-source-card-in",
@@ -142,6 +127,6 @@ export function SourceCard({
       >
         {`Relevanz ${percentage} Prozent`}
       </span>
-    </Root>
+    </SourceCardRoot>
   );
 }

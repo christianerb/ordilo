@@ -11,6 +11,8 @@ import { POST } from "@/app/api/chat/feedback/route";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
+let updateMessageFeedback: ReturnType<typeof vi.fn>;
+
 function request(body: unknown) {
   return new Request("http://localhost/api/chat/feedback", {
     method: "POST",
@@ -28,13 +30,14 @@ function mockServerClient({
 }: {
   updateError?: unknown;
 } = {}) {
+  updateMessageFeedback = vi.fn().mockReturnValue({
+    eq: vi.fn().mockResolvedValue({ error: updateError }),
+  });
   return {
     from: vi.fn((table: string) => {
       if (table === "chat_messages") {
         return {
-          update: vi.fn().mockReturnValue({
-            eq: vi.fn().mockResolvedValue({ error: updateError }),
-          }),
+          update: updateMessageFeedback,
           select: vi.fn().mockReturnValue({
             eq: vi.fn().mockReturnValue({
               maybeSingle: vi
@@ -107,5 +110,22 @@ describe("POST /api/chat/feedback", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ success: true });
+    expect(updateMessageFeedback).toHaveBeenCalledWith({
+      feedback: "positive",
+    });
+  });
+
+  it("records repair feedback without rating the replacement answer", async () => {
+    const response = await POST(
+      request({
+        message_id: "m-1",
+        feedback: "negative",
+        reasons: ["falsche_antwort"],
+        repair_requested: true,
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateMessageFeedback).not.toHaveBeenCalled();
   });
 });

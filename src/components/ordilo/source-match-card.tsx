@@ -6,6 +6,7 @@ import {
   getRelevanceLabel,
   type SourceCardKind,
 } from "@/components/ordilo/source-card";
+import { SourceCardRoot } from "@/components/ordilo/source-card-root";
 
 export interface SourceMatchCardProps {
   /** The UUID of the source document (used for navigation). */
@@ -72,32 +73,16 @@ export function SourceMatchCard({
   const Icon = kind.icon;
   const relevanceLabel = getRelevanceLabel(clampedScore);
   const isInteractive = !!onClick || !!href;
-  const Root = href ? "a" : "div";
   const displayExcerpt = excerpt
     ?.replace(/^(Aufgabe|Person):\s*/u, "")
     .trim();
 
   return (
-    <Root
+    <SourceCardRoot
       href={href}
-      target={href ? "_blank" : undefined}
-      rel={href ? "noopener noreferrer" : undefined}
+      onClick={onClick}
       id={id}
-      data-testid="source-card"
-      data-relevance={relevanceLabel}
-      role={!href && isInteractive ? "button" : undefined}
-      tabIndex={!href && isInteractive ? 0 : undefined}
-      onClick={isInteractive ? onClick : undefined}
-      onKeyDown={
-        !href && isInteractive
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick?.();
-              }
-            }
-          : undefined
-      }
+      relevance={relevanceLabel}
       style={style}
       className={cn(
         "group flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 animate-source-card-in",
@@ -150,6 +135,6 @@ export function SourceMatchCard({
           <span className="sr-only">Dokument öffnen</span>
         </span>
       )}
-    </Root>
+    </SourceCardRoot>
   );
 }

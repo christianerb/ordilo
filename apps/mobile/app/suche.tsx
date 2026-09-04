@@ -76,7 +76,6 @@ import {
   type ChatMessage,
 } from "@/src/lib/chat";
 import {
-  buildSuggestedPrompts,
   deleteConversation,
   formatConversationWhen,
   getConversationTitle,
@@ -84,6 +83,7 @@ import {
   loadConversationMessages,
   type ConversationSummary,
 } from "@/src/lib/conversations";
+import { buildPersonalChatPrompts } from "@ordilo/chat-contract";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
@@ -129,6 +129,7 @@ export default function SucheScreen() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [members, setMembers] = useState<FamilyMemberOption[]>([]);
   const [recentDocumentTitle, setRecentDocumentTitle] = useState<string | null>(null);
+  const [upcomingTaskTitle, setUpcomingTaskTitle] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<ConversationSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -192,6 +193,24 @@ export default function SucheScreen() {
         // The suggestion falls back to a general question.
       }
     })();
+    void (async () => {
+      try {
+        const { data } = await getSupabase()
+          .from("tasks")
+          .select("title")
+          .eq("family_id", family.id)
+          .eq("status", "open")
+          .eq("confirmed", true)
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        if (!cancelled && data && typeof data.title === "string") {
+          setUpcomingTaskTitle(data.title);
+        }
+      } catch {
+        // The suggestion falls back to family or general context.
+      }
+    })();
     void Promise.resolve().then(() => refreshConversations());
     return () => {
       cancelled = true;
@@ -199,8 +218,13 @@ export default function SucheScreen() {
   }, [family, refreshConversations]);
 
   const suggestions = useMemo(
-    () => buildSuggestedPrompts({ members, recentDocumentTitle }),
-    [members, recentDocumentTitle],
+    () =>
+      buildPersonalChatPrompts({
+        members,
+        recentDocumentTitle,
+        upcomingTaskTitle,
+      }),
+    [members, recentDocumentTitle, upcomingTaskTitle],
   );
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === conversationId) ?? null,
@@ -318,6 +342,20 @@ export default function SucheScreen() {
       setBusy(true);
       let receivedDone = false;
       let receivedError = false;
+      let pendingText = "";
+      let textFlushTimer: ReturnType<typeof setTimeout> | null = null;
+      const flushPendingText = () => {
+        if (textFlushTimer) {
+          clearTimeout(textFlushTimer);
+          textFlushTimer = null;
+        }
+        if (!pendingText) return;
+        const content = pendingText;
+        pendingText = "";
+        updateMessage(assistantMessage.id, (message) =>
+          applyChatEvent(message, { type: "text", content }),
+        );
+      };
 
       try {
         await streamChat(
@@ -335,6 +373,12 @@ export default function SucheScreen() {
               : undefined,
           },
           (event) => {
+            if (event.type === "text") {
+              pendingText += event.content;
+              textFlushTimer ??= setTimeout(flushPendingText, 32);
+              return;
+            }
+            flushPendingText();
             if (event.type === "conversation") {
               setConversationId(event.conversationId);
               return;
@@ -353,6 +397,7 @@ export default function SucheScreen() {
             }
           },
         );
+        flushPendingText();
         if (!receivedDone || receivedError) {
           if (repair) {
             updateMessage(assistantMessage.id, () => repair.originalMessage);
@@ -366,6 +411,11 @@ export default function SucheScreen() {
           }
         }
       } catch (error) {
+        if (textFlushTimer) {
+          clearTimeout(textFlushTimer);
+          textFlushTimer = null;
+        }
+        pendingText = "";
         const status = httpStatusOf(error);
         updateMessage(assistantMessage.id, (message) =>
           repair
@@ -382,6 +432,7 @@ export default function SucheScreen() {
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         if (repair) throw error;
       } finally {
+        flushPendingText();
         setBusy(false);
       }
     },
@@ -525,6 +576,7 @@ export default function SucheScreen() {
       feedback: "positive" | "negative",
       reasons: ChatFeedbackReason[],
       comment: string,
+      repairRequested = false,
     ) => {
       if (!family || !message.dbId) return;
       // sendChatFeedback throws a German ApiError on failure.
@@ -533,6 +585,7 @@ export default function SucheScreen() {
         feedback,
         reasons: feedback === "negative" ? reasons : undefined,
         comment: feedback === "negative" && comment.trim() ? comment.trim() : undefined,
+        repairRequested,
       });
       updateMessage(message.id, (current) => ({
         ...current,
@@ -1006,12 +1059,18 @@ export default function SucheScreen() {
                               {message.status === "done" && message.dbId ? (
                                 <FeedbackRow
                                   message={message}
-                                  onSend={(feedback, reasons, comment) =>
+                                  onSend={(
+                                    feedback,
+                                    reasons,
+                                    comment,
+                                    repairRequested,
+                                  ) =>
                                     sendFeedback(
                                       message,
                                       feedback,
                                       reasons,
                                       comment,
+                                      repairRequested,
                                     )
                                   }
                                   onRepair={
@@ -1024,6 +1083,7 @@ export default function SucheScreen() {
                                           )
                                       : undefined
                                   }
+                                  onRepairStart={() => setBusy(true)}
                                 />
                               ) : null}
                               {message.status === "error" ? (

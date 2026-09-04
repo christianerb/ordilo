@@ -1,16 +1,16 @@
 import { apiFetch } from "./api";
 import {
-  CHAT_ACTION_TOOL_NAMES,
   type AnswerCard,
   type ChatAction,
-  type ChatActionToolName,
   type ChatMessage,
   type ChatSource,
 } from "./chat";
 import { getSupabase } from "./supabase";
 import {
-  buildPersonalChatPrompts,
+  isChatActionToolName,
   isChatResponseState,
+  isChatSuggestion,
+  MAX_CHAT_CONVERSATIONS,
 } from "@ordilo/chat-contract";
 
 /**
@@ -48,7 +48,7 @@ interface MessageRow {
   created_at: string;
 }
 
-export const CONVERSATION_LIST_LIMIT = 30;
+export const CONVERSATION_LIST_LIMIT = MAX_CHAT_CONVERSATIONS;
 
 export async function listConversations(
   familyId: string,
@@ -92,13 +92,6 @@ export async function loadConversationMessages(
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await apiFetch(`/api/conversations/${conversationId}`, { method: "DELETE" });
-}
-
-function isToolName(value: unknown): value is ChatActionToolName {
-  return (
-    typeof value === "string" &&
-    (CHAT_ACTION_TOOL_NAMES as readonly string[]).includes(value)
-  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -155,7 +148,11 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
   const actions: ChatAction[] = Array.isArray(row.actions)
     ? (row.actions as unknown[]).flatMap((entry) => {
         const action = asRecord(entry);
-        if (!action || typeof action.action_id !== "string" || !isToolName(action.tool_name)) {
+        if (
+          !action ||
+          typeof action.action_id !== "string" ||
+          !isChatActionToolName(action.tool_name)
+        ) {
           return [];
         }
         return [{
@@ -166,16 +163,9 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
         }];
       })
     : [];
-  const suggestionRecord = asRecord(row.suggestion);
-  const suggestion =
-    suggestionRecord &&
-    typeof suggestionRecord.label === "string" &&
-    typeof suggestionRecord.prompt === "string"
-      ? {
-          label: suggestionRecord.label,
-          prompt: suggestionRecord.prompt,
-        }
-      : null;
+  const suggestion = isChatSuggestion(row.suggestion)
+    ? row.suggestion
+    : null;
   const responseState = isChatResponseState(row.response_state)
     ? row.response_state
     : "answered";
@@ -217,21 +207,4 @@ export function formatConversationWhen(iso: string, now = new Date()): string {
 /** The title a conversation shows: its stored title or "Gespräch". */
 export function getConversationTitle(conversation: Pick<ConversationSummary, "title">): string {
   return conversation.title?.trim() || "Gespräch";
-}
-
-/**
- * Suggestions that know the family. Children's names make the questions
- * real ("Zeig mir Emmas Schulunterlagen"), a recent document makes the
- * first one concrete. Falls back to the general prompts when the family
- * has no members or documents yet.
- */
-export function buildSuggestedPrompts(input: {
-  members: { name: string; role: string | null }[];
-  recentDocumentTitle?: string | null;
-  now?: Date;
-}): string[] {
-  return buildPersonalChatPrompts({
-    members: input.members,
-    recentDocumentTitle: input.recentDocumentTitle,
-  });
 }

@@ -4,6 +4,9 @@ import {
   buildAssistantHistoryContext,
   buildPersonalChatPrompts,
   isSafePublicSourceUrl,
+  parseChatWireEvent,
+  splitChatNdjsonChunk,
+  splitChatSources,
 } from "@ordilo/chat-contract";
 
 describe("shared chat contract", () => {
@@ -43,5 +46,78 @@ describe("shared chat contract", () => {
     expect(history).toContain("Bundesministerium");
     expect(history).toContain("https://example.org/regeln");
     expect(history).toContain("Regelung ab Januar 2026");
+  });
+
+  it("parses the shared confirmation wire event for both clients", () => {
+    expect(
+      parseChatWireEvent({
+        type: "confirmation_request",
+        tool_name: "add_task",
+        action_id: "action-1",
+        action_args: { title: "Elternabend" },
+        due_date: "2026-09-12",
+      }),
+    ).toEqual({
+      type: "confirmation",
+      action: {
+        id: "action-1",
+        toolName: "add_task",
+        args: {
+          title: "Elternabend",
+          due_date: "2026-09-12",
+        },
+      },
+    });
+    expect(parseChatWireEvent({ type: "text" })).toBeNull();
+  });
+
+  it("rejects malformed cards and sources at the shared wire boundary", () => {
+    expect(
+      parseChatWireEvent({
+        type: "sources",
+        sources: [
+          {
+            document_id: "broken",
+            title: "Quelle",
+            score: 0.8,
+          },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      parseChatWireEvent({
+        type: "card",
+        card: {
+          type: "dokument",
+          title: "Brief",
+          subtitle: null,
+          fields: "not-an-array",
+          actionDocumentId: null,
+          hasSecret: false,
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("shares NDJSON buffering and source ranking", () => {
+    expect(
+      splitChatNdjsonChunk(
+        '{"type":"text","content":"A',
+        '"}\n{"type":"done"}\npartial',
+      ),
+    ).toEqual({
+      lines: [
+        '{"type":"text","content":"A"}',
+        '{"type":"done"}',
+      ],
+      rest: "partial",
+    });
+
+    const ranked = splitChatSources([
+      { document_id: "low", title: "B", excerpt: "", score: 0.2 },
+      { document_id: "high", title: "A", excerpt: "", score: 0.9 },
+    ]);
+    expect(ranked.best?.document_id).toBe("high");
+    expect(ranked.rest.map((source) => source.document_id)).toEqual(["low"]);
   });
 });

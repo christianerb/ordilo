@@ -41,6 +41,17 @@ describe("sanitizeWebSearchQuery", () => {
     expect(result.query).not.toMatch(/Özlem|87654321/);
   });
 
+  it("redacts customer references with punctuation in the label", () => {
+    const result = sanitizeWebSearchQuery(
+      "Deutschlandticket Regeln für Kunden-Nr. 87654321",
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.query).not.toContain("87654321");
+    expect(result.query).not.toContain("Kunden-Nr.");
+  });
+
   it("removes contact details, addresses, dates, and UUIDs", () => {
     const result = sanitizeWebSearchQuery(
       "Termin 12.09.2026 für test@example.de, +49 170 1234567, Hauptstraße 12, 10115, 123e4567-e89b-42d3-a456-426614174000: Kita Regeln",

@@ -412,7 +412,10 @@ describe("native motion wiring", () => {
     expect(search).toContain("<OrdiloChatHero");
     expect(search).toContain("Was möchtest du wissen?");
     // Suggestions know the family; past conversations are one tap away.
-    expect(search).toContain("buildSuggestedPrompts({ members, recentDocumentTitle })");
+    expect(search).toContain(
+      "buildPersonalChatPrompts({",
+    );
+    expect(search).toContain("upcomingTaskTitle");
     expect(search).toContain("listConversations(family.id)");
     expect(search).toContain("loadConversationMessages(conversation.id)");
     expect(hero).toContain("<Svg");

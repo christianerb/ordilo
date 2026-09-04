@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   ListChecks,
@@ -30,8 +30,10 @@ import type {
 import { OrdiloActionCard } from "./ordilo-action-card";
 import {
   CHAT_RESPONSE_STATE_LABELS,
+  CHAT_FEEDBACK_REASON_OPTIONS,
   isSafePublicSourceUrl,
   isWebChatSource,
+  splitChatSources,
 } from "@ordilo/chat-contract";
 import {
   ProcessingChecklist,
@@ -100,18 +102,7 @@ function getSourceKind(source: ChatSource): SourceCardKind {
  * The answer owns the hierarchy: exactly one best source is visible, while
  * every additional source stays one tap away.
  */
-function splitSources(sources: ChatSource[]): {
-  top: ChatSource[];
-  rest: ChatSource[];
-} {
-  const sorted = [...sources].sort((a, b) => b.score - a.score);
-  const top = sorted.slice(0, 1);
-  const topIds = new Set(top.map((s) => s.document_id));
-  const rest = sorted.filter((s) => !topIds.has(s.document_id));
-  return { top, rest };
-}
-
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming = false,
   passesFilters,
@@ -147,7 +138,8 @@ export function MessageBubble({
     (source) =>
       isWebChatSource(source) || passesFilters(source.document_id),
   );
-  const { top: topSources, rest: restSources } = splitSources(visibleSources);
+  const { best, rest: restSources } = splitChatSources(visibleSources);
+  const topSources = best ? [best] : [];
   const citations = topSources.map((source, i) => ({
     index: i + 1,
     title: (source.title ?? "").trim(),
@@ -271,26 +263,27 @@ export function MessageBubble({
             </span>
           </div>
           <div className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--surface-story)]">
-            {topSources.map((source, i) => (
-              <SourceMatchCard
-                key={source.document_id}
-                id={citationSourceId(message.id, i + 1)}
-                documentId={source.document_id}
-                title={source.title}
-                score={source.score}
-                excerpt={source.excerpt}
-                kind={getSourceKind(source)}
-                isBestMatch={i === 0}
-                citationIndex={i + 1}
-                href={sourceHref(source)}
-                onClick={
-                  sourceHref(source)
-                    ? undefined
-                    : () => handleSourceClick(source)
-                }
-                style={{ animationDelay: `${i * 40}ms` }}
-              />
-            ))}
+            {topSources.map((source, i) => {
+              const href = sourceHref(source);
+              return (
+                <SourceMatchCard
+                  key={source.document_id}
+                  id={citationSourceId(message.id, i + 1)}
+                  documentId={source.document_id}
+                  title={source.title}
+                  score={source.score}
+                  excerpt={source.excerpt}
+                  kind={getSourceKind(source)}
+                  isBestMatch={i === 0}
+                  citationIndex={i + 1}
+                  href={href}
+                  onClick={
+                    href ? undefined : () => handleSourceClick(source)
+                  }
+                  style={{ animationDelay: `${i * 40}ms` }}
+                />
+              );
+            })}
           </div>
           {restSources.length > 0 && (
             <RestSources
@@ -324,7 +317,7 @@ export function MessageBubble({
       )}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Collapsed low-relevance sources
@@ -365,22 +358,21 @@ function RestSources({
 
   return (
     <div className="space-y-0.5 pt-0.5">
-      {sources.map((source, i) => (
-        <SourceCard
-          key={source.document_id}
-          documentId={source.document_id}
-          title={source.title}
-          score={source.score}
-          kind={kindFor(source)}
-          href={getSourceHref(source)}
-          onClick={
-            getSourceHref(source)
-              ? undefined
-              : () => onSourceClick(source)
-          }
-          style={{ animationDelay: `${i * 40}ms` }}
-        />
-      ))}
+      {sources.map((source, i) => {
+        const href = getSourceHref(source);
+        return (
+          <SourceCard
+            key={source.document_id}
+            documentId={source.document_id}
+            title={source.title}
+            score={source.score}
+            kind={kindFor(source)}
+            href={href}
+            onClick={href ? undefined : () => onSourceClick(source)}
+            style={{ animationDelay: `${i * 40}ms` }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -403,11 +395,10 @@ export function messageToPlainText(message: ChatMessage): string {
 }
 
 /** Fixed thumbs-down reasons — one tap each, no typing required. */
-const DOWN_REASONS = [
-  { key: "falsche_antwort", label: "Falsche Antwort" },
-  { key: "falsches_dokument", label: "Falsches Dokument" },
-  { key: "unvollstaendig", label: "Unvollständig" },
-] as const;
+const DOWN_REASONS = CHAT_FEEDBACK_REASON_OPTIONS.map((option) => ({
+  key: option.value,
+  label: option.label,
+}));
 
 function AnswerFeedback({
   message,
@@ -439,7 +430,11 @@ function AnswerFeedback({
 
   const sendFeedback = async (
     payload: "positive" | "negative",
-    extras?: { reasons?: string[]; comment?: string },
+    extras?: {
+      reasons?: string[];
+      comment?: string;
+      repairRequested?: boolean;
+    },
   ) => {
     if (!persistedId) return;
     await fetch("/api/chat/feedback", {
@@ -450,6 +445,7 @@ function AnswerFeedback({
         feedback: payload,
         ...(extras?.reasons?.length ? { reasons: extras.reasons } : {}),
         ...(extras?.comment ? { comment: extras.comment } : {}),
+        ...(extras?.repairRequested ? { repair_requested: true } : {}),
       }),
     });
   };
@@ -491,8 +487,10 @@ function AnswerFeedback({
       const feedbackRequest = sendFeedback("negative", {
         reasons,
         comment: cleanComment || undefined,
+        repairRequested: Boolean(onRepair),
       }).catch(() => undefined);
       if (onRepair) {
+        await feedbackRequest;
         await onRepair(message, reasons, cleanComment);
       } else {
         await feedbackRequest;
@@ -636,7 +634,13 @@ function AnswerFeedback({
               data-testid="feedback-submit-button"
               className="rounded-ordilo-sm bg-[var(--petrol)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {repairing ? "Suche neu …" : "Besser antworten"}
+              {repairing
+                ? onRepair
+                  ? "Suche neu …"
+                  : "Speichert …"
+                : onRepair
+                  ? "Besser antworten"
+                  : "Feedback senden"}
             </button>
           </div>
         </div>

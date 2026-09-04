@@ -10,6 +10,10 @@ vi.mock("@/lib/ai/search", () => ({
   graphSearch: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("@/lib/ai/web-search", () => ({
+  searchPublicWeb: vi.fn(),
+}));
+
 vi.mock("@/lib/ai/chat", () => ({
   filterByRelevanceThreshold: vi.fn((r: unknown[]) => r),
   combineSearchResults: vi.fn(() => []),
@@ -43,6 +47,7 @@ import {
   markDocumentFailed,
   restoreConfirmedAfterAnalysisFailure,
 } from "@/lib/supabase/document-helpers";
+import { searchPublicWeb } from "@/lib/ai/web-search";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2735,5 +2740,45 @@ describe("answer metadata tools", () => {
     await executeTool("search_web", {}, ctx);
 
     expect([...searchedScopes].sort()).toEqual(["family", "web"]);
+  });
+
+  it("fails Web search closed when private family names were not loaded", async () => {
+    const ctx = makeCtx({ webPrivacyReady: false });
+
+    const result = JSON.parse(
+      await executeTool(
+        "search_web",
+        { query: "Deutschlandticket Regeln" },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toMatch(/Datenschutzgründen/);
+    expect(searchPublicWeb).not.toHaveBeenCalled();
+    expect(ctx.client.from).not.toHaveBeenCalled();
+  });
+
+  it("reuses preloaded family names for Web anonymization", async () => {
+    vi.mocked(searchPublicWeb).mockResolvedValueOnce({
+      query: "Deutschlandticket Regeln",
+      summary: "Aktuelle Regeln.",
+      sources: [],
+    });
+    const ctx = makeCtx({
+      webPrivacyReady: true,
+      privateWebTerms: ["Emma", "Christian"],
+    });
+
+    await executeTool(
+      "search_web",
+      { query: "Deutschlandticket Regeln" },
+      ctx,
+    );
+
+    expect(searchPublicWeb).toHaveBeenCalledWith(
+      "Deutschlandticket Regeln",
+      ["Emma", "Christian"],
+    );
+    expect(ctx.client.from).not.toHaveBeenCalled();
   });
 });

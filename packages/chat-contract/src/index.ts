@@ -51,6 +51,22 @@ export interface ChatSource {
   url?: string;
 }
 
+export function isChatSource(value: unknown): value is ChatSource {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.document_id === "string" &&
+    (typeof value.title === "string" || value.title === null) &&
+    typeof value.excerpt === "string" &&
+    typeof value.score === "number" &&
+    Number.isFinite(value.score) &&
+    (value.origin === undefined ||
+      value.origin === "semantic" ||
+      value.origin === "graph" ||
+      value.origin === "web") &&
+    (value.url === undefined || typeof value.url === "string")
+  );
+}
+
 export function isSafePublicSourceUrl(value: string | undefined): value is string {
   if (!value || value.length > 2_048) return false;
   try {
@@ -103,6 +119,12 @@ export const CHAT_RESPONSE_STATES = [
   "conflict",
   "not_found",
 ] as const;
+export const FORBIDDEN_HEDGING_PHRASES = [
+  "Ich glaube",
+  "Vermutlich",
+  "Wahrscheinlich",
+  "Könnte sein",
+] as const;
 export type ChatResponseState = (typeof CHAT_RESPONSE_STATES)[number];
 
 export function isChatResponseState(value: unknown): value is ChatResponseState {
@@ -123,13 +145,221 @@ export function isWebChatSource(source: ChatSource): boolean {
   return source.origin === "web";
 }
 
+export function splitChatSources(sources: ChatSource[]): {
+  best: ChatSource | null;
+  rest: ChatSource[];
+} {
+  const sorted = [...sources].sort((a, b) => b.score - a.score);
+  return { best: sorted[0] ?? null, rest: sorted.slice(1) };
+}
+
 export const MAX_CLIENT_CHAT_HISTORY_MESSAGES = 30;
 export const MAX_CLIENT_CHAT_HISTORY_CONTENT = 10_000;
+export const MAX_CHAT_CONVERSATIONS = 30;
 
 /** One safe follow-up the user can deliberately send as a new chat turn. */
 export interface ChatSuggestion {
   label: string;
   prompt: string;
+}
+
+export function isChatSuggestion(value: unknown): value is ChatSuggestion {
+  return (
+    isRecord(value) &&
+    typeof value.label === "string" &&
+    typeof value.prompt === "string"
+  );
+}
+
+export const CHAT_FEEDBACK_REASONS = [
+  "falsche_antwort",
+  "falsches_dokument",
+  "unvollstaendig",
+] as const;
+export type ChatFeedbackReason = (typeof CHAT_FEEDBACK_REASONS)[number];
+export const CHAT_FEEDBACK_REASON_OPTIONS: ReadonlyArray<{
+  value: ChatFeedbackReason;
+  label: string;
+}> = [
+  { value: CHAT_FEEDBACK_REASONS[0], label: "Falsche Antwort" },
+  { value: CHAT_FEEDBACK_REASONS[1], label: "Falsches Dokument" },
+  { value: CHAT_FEEDBACK_REASONS[2], label: "Unvollständig" },
+];
+
+export type ChatToolCallState = "start" | "done" | "error";
+
+export type ChatWireEvent =
+  | { type: "conversation"; conversationId: string }
+  | { type: "tool"; toolName: string; state: ChatToolCallState }
+  | { type: "text"; content: string }
+  | { type: "replace"; content: string }
+  | { type: "card"; card: Record<string, unknown> }
+  | { type: "sources"; sources: ChatSource[] }
+  | { type: "suggestion"; suggestion: ChatSuggestion }
+  | { type: "response_state"; state: ChatResponseState }
+  | {
+      type: "confirmation";
+      action: {
+        id: string;
+        toolName: ChatActionToolName;
+        args: Record<string, unknown>;
+      };
+    }
+  | { type: "message_saved"; messageId: string }
+  | { type: "done" }
+  | { type: "error"; error: string; code: string | null };
+
+export function splitChatNdjsonChunk(
+  buffered: string,
+  chunk: string,
+): { lines: string[]; rest: string } {
+  const parts = (buffered + chunk).split("\n");
+  const rest = parts.pop() ?? "";
+  return { lines: parts.filter((line) => line.trim().length > 0), rest };
+}
+
+const CONFIRMATION_EVENT_META_KEYS = new Set([
+  "type",
+  "tool_name",
+  "action_args",
+  "action_id",
+  "needs_confirmation",
+  "message",
+]);
+
+export function mergeConfirmationProposal(
+  event: Record<string, unknown>,
+): Record<string, unknown> {
+  const base =
+    event.action_args &&
+    typeof event.action_args === "object" &&
+    !Array.isArray(event.action_args)
+      ? (event.action_args as Record<string, unknown>)
+      : {};
+  const preview = Object.fromEntries(
+    Object.entries(event).filter(
+      ([key]) => !CONFIRMATION_EVENT_META_KEYS.has(key),
+    ),
+  );
+  return { ...base, ...preview };
+}
+
+export function isChatActionToolName(
+  value: unknown,
+): value is ChatActionToolName {
+  return (
+    typeof value === "string" &&
+    (CHAT_ACTION_TOOL_NAMES as readonly string[]).includes(value)
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+const CHAT_ANSWER_CARD_TYPES = new Set([
+  "termin",
+  "aufgabe",
+  "dokument",
+  "zugangsdaten",
+  "kontakt",
+  "allgemein",
+]);
+
+function isChatAnswerCard(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.type === "string" &&
+    CHAT_ANSWER_CARD_TYPES.has(value.type) &&
+    typeof value.title === "string" &&
+    (typeof value.subtitle === "string" || value.subtitle === null) &&
+    Array.isArray(value.fields) &&
+    value.fields.every(
+      (field) =>
+        isRecord(field) &&
+        typeof field.label === "string" &&
+        typeof field.value === "string",
+    ) &&
+    (typeof value.actionDocumentId === "string" ||
+      value.actionDocumentId === null) &&
+    typeof value.hasSecret === "boolean"
+  );
+}
+
+/**
+ * Parses the shared NDJSON wire protocol once for Web, iOS, and the
+ * persistence wrapper. Unknown or malformed lines return null.
+ */
+export function parseChatWireEvent(raw: unknown): ChatWireEvent | null {
+  if (!isRecord(raw)) return null;
+
+  switch (raw.type) {
+    case "conversation":
+      return typeof raw.conversation_id === "string"
+        ? { type: "conversation", conversationId: raw.conversation_id }
+        : null;
+    case "tool":
+      return typeof raw.tool === "string" &&
+        (raw.state === "start" ||
+          raw.state === "done" ||
+          raw.state === "error")
+        ? { type: "tool", toolName: raw.tool, state: raw.state }
+        : null;
+    case "text":
+    case "replace":
+      return typeof raw.content === "string"
+        ? { type: raw.type, content: raw.content }
+        : null;
+    case "card":
+      return isChatAnswerCard(raw.card)
+        ? { type: "card", card: raw.card }
+        : null;
+    case "sources":
+      return Array.isArray(raw.sources) && raw.sources.every(isChatSource)
+        ? { type: "sources", sources: raw.sources }
+        : null;
+    case "suggestion":
+      return isChatSuggestion(raw.suggestion)
+        ? {
+            type: "suggestion",
+            suggestion: raw.suggestion,
+          }
+        : null;
+    case "response_state":
+      return isChatResponseState(raw.state)
+        ? { type: "response_state", state: raw.state }
+        : null;
+    case "confirmation_request":
+      return isChatActionToolName(raw.tool_name) &&
+        typeof raw.action_id === "string" &&
+        raw.action_id.length > 0
+        ? {
+            type: "confirmation",
+            action: {
+              id: raw.action_id,
+              toolName: raw.tool_name,
+              args: mergeConfirmationProposal(raw),
+            },
+          }
+        : null;
+    case "message_saved":
+      return typeof raw.message_id === "string"
+        ? { type: "message_saved", messageId: raw.message_id }
+        : null;
+    case "done":
+      return { type: "done" };
+    case "error":
+      return {
+        type: "error",
+        error:
+          typeof raw.error === "string"
+            ? raw.error
+            : "Da ist was schiefgegangen. Bitte frag nochmal.",
+        code: typeof raw.code === "string" ? raw.code : null,
+      };
+    default:
+      return null;
+  }
 }
 
 export type ChatActionContent = {

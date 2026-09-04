@@ -104,6 +104,13 @@ export function emptyAnswerFallback(
   return "Ich konnte gerade keine verlässliche Antwort erstellen. Bitte versuch es noch einmal.";
 }
 
+function requiredCitationSources(toolContext: ToolContext): ChatSource[] {
+  const webSources = toolContext.sources.filter(
+    (source) => source.origin === "web",
+  );
+  return webSources.length > 0 ? webSources : toolContext.sources;
+}
+
 // ---------------------------------------------------------------------------
 // Relevance threshold filtering
 // ---------------------------------------------------------------------------
@@ -514,16 +521,21 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
   upcomingTasks: Array<{ title: string; dueDate: string | null }>;
   documentCount: number;
   speakerName: string | null;
+  privateNamesAvailable: boolean;
 }> {
   const { client, familyId } = toolContext;
 
   const [membersResult, tasksResult, docsResult] = await Promise.all([
-    client
-      .from("family_members")
-      .select("name, role")
-      .eq("family_id", familyId)
-      .order("created_at", { ascending: true })
-      .limit(20),
+    toolContext.preloadedFamilyMembers !== undefined
+      ? Promise.resolve({
+          data: toolContext.preloadedFamilyMembers,
+          error: toolContext.preloadedFamilyMembersPrivacyReady ? null : true,
+        })
+      : client
+          .from("family_members")
+          .select("name, role")
+          .eq("family_id", familyId)
+          .order("created_at", { ascending: true }),
     client
       .from("tasks")
       .select("title, due_date")
@@ -550,6 +562,7 @@ async function loadFamilyContext(toolContext: ToolContext): Promise<{
     })),
     documentCount: docsResult.count ?? 0,
     speakerName: toolContext.speakerName,
+    privateNamesAvailable: !membersResult.error,
   };
 }
 
@@ -756,6 +769,11 @@ export async function streamAgenticAnswer(
   // document count, speaker identity). This lets the model answer
   // proactively without always needing to call tools first.
   const familyContext = await loadFamilyContext(toolContext);
+  toolContext.privateWebTerms = [
+    toolContext.speakerName,
+    ...familyContext.members.map((member) => member.name),
+  ].filter((name): name is string => Boolean(name));
+  toolContext.webPrivacyReady = familyContext.privateNamesAvailable;
   const namedMember = namedMemberDocumentListIntent(query, familyContext.members);
   if (namedMember) {
     return streamNamedMemberDocumentList(namedMember, toolContext);
@@ -897,7 +915,15 @@ export async function streamAgenticAnswer(
             // next turn so the reasoning chain remains valid.
             input.push(...responseOutput.filter(isResponseContextItem));
 
-            if (answerTextVisible) {
+            const silentUiTools = new Set([
+              "set_response_state",
+              "suggest_next_action",
+            ]);
+            const onlySidebandTools = toolCalls.every((toolCall) =>
+              silentUiTools.has(toolCall.name),
+            );
+
+            if (answerTextVisible && !onlySidebandTools) {
               send({ type: "replace", content: "" });
               answerTextVisible = false;
             }
@@ -935,11 +961,6 @@ export async function streamAgenticAnswer(
               name: string;
               args: Record<string, unknown>;
             }[] = [];
-            const silentUiTools = new Set([
-              "set_response_state",
-              "suggest_next_action",
-            ]);
-
             for (let i = 0; i < toolCalls.length; i++) {
               const toolCall = toolCalls[i];
               let args: Record<string, unknown>;
@@ -1194,6 +1215,42 @@ export async function streamAgenticAnswer(
               return;
             }
 
+            const sidebandDraft =
+              `${contentChunks.join("")}${pendingRelease}`.trim();
+            const citationSources = requiredCitationSources(toolContext);
+            if (
+              onlySidebandTools &&
+              sidebandDraft &&
+              !containsHedgingLanguage(sidebandDraft) &&
+              (citationSources.length === 0 ||
+                answerCitesSources(sidebandDraft, citationSources))
+            ) {
+              // State/suggestion tools describe an answer that already
+              // exists in this response. They do not need another paid
+              // model round when that answer already passes the guards.
+              // Long text may already be visible. Only flush the held-back
+              // suffix so no content is duplicated on the client.
+              if (pendingRelease) {
+                send({ type: "text", content: pendingRelease });
+              }
+              send({ type: "sources", sources: toolContext.sources });
+              send({
+                type: "response_state",
+                state: toolContext.responseState ?? "answered",
+              });
+              if (toolContext.suggestion) {
+                send({ type: "suggestion", suggestion: toolContext.suggestion });
+              }
+              send({ type: "done" });
+              controller.close();
+              return;
+            }
+
+            if (answerTextVisible) {
+              send({ type: "replace", content: "" });
+              answerTextVisible = false;
+            }
+
             // Emit one confirmation request event per destructive tool that
             // requires user confirmation. The model will also ask the
             // user in its text response, but these events let the client
@@ -1234,13 +1291,9 @@ export async function streamAgenticAnswer(
             send({ type: "text", content: fullAnswer });
             answerTextVisible = true;
           }
-          const webSources = toolContext.sources.filter(
-            (source) => source.origin === "web",
-          );
           // If public research contributed, naming only a family document
           // is not enough to substantiate a current claim.
-          const citationSources =
-            webSources.length > 0 ? webSources : toolContext.sources;
+          const citationSources = requiredCitationSources(toolContext);
           const citationMissing =
             citationSources.length > 0 &&
             !answerCitesSources(fullAnswer, citationSources);

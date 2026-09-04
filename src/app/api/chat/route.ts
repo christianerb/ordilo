@@ -10,9 +10,13 @@ import {
 import type { ToolContext } from "@/lib/ai/tools";
 import {
   chatRequestSchema,
-  mergeConfirmationProposal,
+  type AnswerCard,
   type ChatErrorResponse,
 } from "@/lib/schemas/chat";
+import {
+  parseChatWireEvent,
+  splitChatNdjsonChunk,
+} from "@ordilo/chat-contract";
 import {
   getOrCreateConversation,
   loadConversationMessages,
@@ -20,6 +24,7 @@ import {
   saveAssistantMessage,
   replaceAssistantMessage,
   rowsToHistory,
+  appendUnpersistedClientSuffix,
   autoGenerateTitle,
   updateConversationTitle,
   type PersistedChatAction,
@@ -84,10 +89,13 @@ export async function POST(request: Request): Promise<Response> {
 
   const {
     message,
+    display_message: displayMessage,
+    capabilities,
     family_id: familyId,
     history: clientHistory,
     repair,
   } = parsed.data;
+  const supportsWebSourceUrls = capabilities.includes("web_source_urls");
   const conversationIdParam = parsed.data.conversation_id;
 
   // 3. Dev-only failure simulation (header-controlled)
@@ -107,7 +115,7 @@ export async function POST(request: Request): Promise<Response> {
   //      the validated input — so they run concurrently instead of
   //      stacking sequential database round-trips onto every message's
   //      time-to-first-word.
-  const [membershipResult, rateLimit, conversation, speakerName] =
+  const [membershipResult, rateLimit, conversation, familyMembersResult] =
     await Promise.all([
       // Membership: the client-supplied family_id is otherwise unverified:
       // a non-member would pass the rate-limit check (RLS hides the
@@ -168,22 +176,13 @@ export async function POST(request: Request): Promise<Response> {
           return { kind: "fallback", dbHistory: clientHistory };
         }
       })(),
-      // Speaker identity — the family member linked to the current auth
-      // user, so the assistant knows who it's talking to.
-      (async (): Promise<string | null> => {
-        try {
-          const { data: linkedMember } = await serverClient
-            .from("family_members")
-            .select("name")
-            .eq("family_id", familyId)
-            .eq("linked_user_id", user.id)
-            .maybeSingle();
-
-          return linkedMember?.name ?? null;
-        } catch {
-          return null;
-        }
-      })(),
+      // One family-member read serves both speaker identity and the system
+      // prompt, avoiding a second query inside the streaming path.
+      serverClient
+        .from("family_members")
+        .select("name, role, linked_user_id")
+        .eq("family_id", familyId)
+        .order("created_at", { ascending: true }),
     ]);
 
   const { data: membership } = membershipResult;
@@ -202,6 +201,15 @@ export async function POST(request: Request): Promise<Response> {
     };
     return Response.json(body, { status: 429 });
   }
+
+  const familyMembers = (familyMembersResult.data ?? []).map((member) => ({
+    name: member.name,
+    role: member.role,
+  }));
+  const speakerName =
+    familyMembersResult.data?.find(
+      (member) => member.linked_user_id === user.id,
+    )?.name ?? null;
 
   // 8b. Resolve the conversation now that the request is authorized.
   //     Only this step may CREATE one — a rejected request (403/429
@@ -296,7 +304,7 @@ export async function POST(request: Request): Promise<Response> {
   // model still works on the message as typed — it has to, to act on it —
   // but `documents.secret` exists so that no password sits in the
   // database in plain text, and a chat message is stored verbatim.
-  const messageForStorage = redactSecretsForStorage(message);
+  const messageForStorage = redactSecretsForStorage(displayMessage ?? message);
 
   // Auto-generate a title for a new/untitled conversation once this is
   // its first message.
@@ -324,6 +332,8 @@ export async function POST(request: Request): Promise<Response> {
     searchedScopes: new Set(),
     responseState: "answered",
     speakerName,
+    preloadedFamilyMembers: familyMembers,
+    preloadedFamilyMembersPrivacyReady: !familyMembersResult.error,
     userId: user.id,
   };
 
@@ -333,7 +343,7 @@ export async function POST(request: Request): Promise<Response> {
   const effectiveHistory =
     repairHistory ??
     (conversation.kind === "existing"
-      ? dbHistory
+      ? appendUnpersistedClientSuffix(dbHistory, clientHistory)
       : clientHistory);
 
   try {
@@ -361,7 +371,7 @@ export async function POST(request: Request): Promise<Response> {
         }
 
         let fullAnswer = "";
-        let answerCard = null;
+        let answerCard: AnswerCard | null = null;
         let streamError = false;
         let streamDone = false;
         let repairPersistenceFailed = false;
@@ -381,44 +391,64 @@ export async function POST(request: Request): Promise<Response> {
           if (!line.trim()) return;
 
           try {
-            const data = JSON.parse(line);
+            const raw: unknown = JSON.parse(line);
+            // The wrapper persists output from our own server stream. Keep
+            // older structured card shapes for storage compatibility even
+            // though current Web/iOS clients only render validated answer
+            // cards at their public wire boundary.
+            if (
+              raw &&
+              typeof raw === "object" &&
+              !Array.isArray(raw) &&
+              (raw as Record<string, unknown>).type === "card"
+            ) {
+              const card = (raw as Record<string, unknown>).card;
+              if (card && typeof card === "object" && !Array.isArray(card)) {
+                answerCard = card as unknown as AnswerCard;
+                firstVisibleAt ??= Date.now();
+              }
+              ctrl.enqueue(encoder.encode(line + "\n"));
+              return;
+            }
+
+            const event = parseChatWireEvent(raw);
+            if (!event) {
+              ctrl.enqueue(encoder.encode(line + "\n"));
+              return;
+            }
             // `done` is terminal for clients. Hold it until the best-effort
             // persistence event has been emitted, so freshly streamed
             // answers can receive feedback immediately.
-            if (data.type === "done") {
+            if (event.type === "done") {
               streamDone = true;
               return;
             }
 
-            ctrl.enqueue(encoder.encode(line + "\n"));
+            const outboundLine =
+              event.type === "sources" && !supportsWebSourceUrls
+                ? JSON.stringify({
+                    type: "sources",
+                    sources: event.sources.filter(
+                      (source) => source.origin !== "web",
+                    ),
+                  })
+                : line;
+            ctrl.enqueue(encoder.encode(outboundLine + "\n"));
 
-            if (data.type === "text") {
-              fullAnswer += data.content;
+            if (event.type === "text") {
+              fullAnswer += event.content;
               firstVisibleAt ??= Date.now();
-            } else if (data.type === "replace") {
+            } else if (event.type === "replace") {
               // Guardrail correction or scratchpad retraction — the
               // persisted answer mirrors what the client ends up seeing.
-              fullAnswer =
-                typeof data.content === "string" ? data.content : "";
-            } else if (data.type === "card") {
-              answerCard = data.card;
-              firstVisibleAt ??= Date.now();
-            } else if (data.type === "confirmation_request") {
-              if (
-                typeof data.tool_name === "string" &&
-                typeof data.action_id === "string" &&
-                data.action_args &&
-                typeof data.action_args === "object"
-              ) {
-                // Persist the SAME merged proposal the live card renders
-                // so a restored card discloses everything the live card did.
-                pendingActions.push({
-                  action_id: data.action_id,
-                  tool_name: data.tool_name,
-                  action_args: mergeConfirmationProposal(data),
-                });
-              }
-            } else if (data.type === "error") {
+              fullAnswer = event.content;
+            } else if (event.type === "confirmation") {
+              pendingActions.push({
+                action_id: event.action.id,
+                tool_name: event.action.toolName,
+                action_args: event.action.args,
+              });
+            } else if (event.type === "error") {
               streamError = true;
             }
           } catch {
@@ -433,11 +463,13 @@ export async function POST(request: Request): Promise<Response> {
             const { done, value } = await reader.read();
             if (done) break;
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
+            const chunk = splitChatNdjsonChunk(
+              buffer,
+              decoder.decode(value, { stream: true }),
+            );
+            buffer = chunk.rest;
 
-            for (const line of lines) {
+            for (const line of chunk.lines) {
               forwardLine(line);
             }
           }
@@ -461,25 +493,29 @@ export async function POST(request: Request): Promise<Response> {
             const savedMessageId = repairMessageId
               ? await replaceAssistantMessage(
                   serverClient,
-                  repairMessageId,
-                  familyId,
-                  persistedAnswer,
-                  toolContext.sources,
-                  answerCard,
-                  pendingActions,
-                  toolContext.responseState ?? "answered",
-                  toolContext.suggestion ?? null,
+                  {
+                    messageId: repairMessageId,
+                    familyId,
+                    content: persistedAnswer,
+                    sources: toolContext.sources,
+                    card: answerCard,
+                    actions: pendingActions,
+                    responseState: toolContext.responseState ?? "answered",
+                    suggestion: toolContext.suggestion ?? null,
+                  },
                 )
               : await saveAssistantMessage(
                   serverClient,
-                  conversationId,
-                  familyId,
-                  persistedAnswer,
-                  toolContext.sources,
-                  answerCard,
-                  pendingActions,
-                  toolContext.responseState ?? "answered",
-                  toolContext.suggestion ?? null,
+                  {
+                    conversationId,
+                    familyId,
+                    content: persistedAnswer,
+                    sources: toolContext.sources,
+                    card: answerCard,
+                    actions: pendingActions,
+                    responseState: toolContext.responseState ?? "answered",
+                    suggestion: toolContext.suggestion ?? null,
+                  },
                 );
             if (savedMessageId) {
               ctrl.enqueue(

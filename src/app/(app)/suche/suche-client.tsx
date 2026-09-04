@@ -12,7 +12,6 @@ import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { useActiveSearch } from "@/lib/search/active-search-context";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
 import {
-  CHAT_ACTION_TOOL_NAMES,
   type ChatAction,
   type ChatFeedbackReason,
   type ChatResponseState,
@@ -25,7 +24,8 @@ import {
   buildPersonalChatPrompts,
   MAX_CLIENT_CHAT_HISTORY_CONTENT,
   MAX_CLIENT_CHAT_HISTORY_MESSAGES,
-  isChatResponseState,
+  parseChatWireEvent,
+  splitChatNdjsonChunk,
 } from "@ordilo/chat-contract";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
@@ -72,6 +72,7 @@ export interface SucheClientProps {
   familyName: string;
   members: Array<{ id: string; name: string }>;
   documents: DocumentMetadata[];
+  upcomingTaskTitle?: string | null;
   initialQuery?: string;
   conversationId?: string;
   initialMessages?: InitialMessage[];
@@ -98,6 +99,7 @@ export function SucheClient({
   familyId,
   members,
   documents,
+  upcomingTaskTitle = null,
   initialQuery = "",
   initialMessages = [],
   conversationId: initialConversationId = "",
@@ -122,6 +124,8 @@ export function SucheClient({
       responseState: m.responseState ?? "answered",
     })),
   );
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   // Read here rather than next to setActiveHandler below: handleSubmit
   // reports the streaming state through setBusy, so it must be in scope
   // before that callback is defined.
@@ -140,8 +144,9 @@ export function SucheClient({
       buildPersonalChatPrompts({
         members,
         recentDocumentTitle: documents[0]?.title,
+        upcomingTaskTitle,
       }),
-    [documents, members],
+    [documents, members, upcomingTaskTitle],
   );
 
   // --- Last query for retry on error ---
@@ -422,7 +427,9 @@ export function SucheClient({
       // Include source context so the model knows which documents were
       // found in previous turns — enables follow-up questions like
       // "Welche davon hat Fristen?" without re-searching.
-      const history = messages.slice(-MAX_CLIENT_CHAT_HISTORY_MESSAGES).map((m) => {
+      const history = messagesRef.current
+        .slice(-MAX_CLIENT_CHAT_HISTORY_MESSAGES)
+        .map((m) => {
         const entry: { role: string; content: string } = {
           role: m.role,
           content: m.content,
@@ -436,7 +443,7 @@ export function SucheClient({
         }
         entry.content = entry.content.slice(0, MAX_CLIENT_CHAT_HISTORY_CONTENT);
         return entry;
-      });
+        });
 
       // The model sees the quoted excerpt inline so a follow-up like "und
       // welche Frist gilt dafür?" resolves against it — the chat bubble
@@ -451,6 +458,8 @@ export function SucheClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: messageForModel,
+            display_message: query,
+            capabilities: ["web_source_urls"],
             family_id: familyId,
             history,
             conversation_id: activeConversationId || undefined,
@@ -486,6 +495,9 @@ export function SucheClient({
             setError(true);
           }
           setStreamingId(null);
+          if (repairRequest) {
+            throw new Error("Chat repair request failed");
+          }
           return;
         }
 
@@ -498,18 +510,20 @@ export function SucheClient({
 
         for (;;) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done && !buffer.trim()) break;
 
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
+          const chunk = splitChatNdjsonChunk(
+            buffer,
+            done ? "\n" : decoder.decode(value, { stream: true }),
+          );
+          buffer = chunk.rest;
 
-          for (const line of lines) {
-            if (!line.trim()) continue;
+          for (const line of chunk.lines) {
             try {
-              const data = JSON.parse(line);
-              if (data.type === "text") {
-                accumulatedText += data.content;
+              const event = parseChatWireEvent(JSON.parse(line));
+              if (!event) continue;
+              if (event.type === "text") {
+                accumulatedText += event.content;
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === aiMsg.id
@@ -517,12 +531,12 @@ export function SucheClient({
                       : m,
                   ),
                 );
-              } else if (data.type === "replace") {
+              } else if (event.type === "replace") {
                 // The server retracts or corrects what was streamed for
                 // this message so far — preamble on the way to a tool
                 // call, or a guardrail rewrite — so replace, don't append.
                 accumulatedText =
-                  typeof data.content === "string" ? data.content : "";
+                  event.content;
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === aiMsg.id
@@ -530,11 +544,11 @@ export function SucheClient({
                       : m,
                   ),
                 );
-              } else if (data.type === "tool") {
+              } else if (event.type === "tool") {
                 // Real tool activity, so the progress list can stop
                 // inventing steps on a timer.
-                const toolName = data.tool as string;
-                const state = data.state as "start" | "done" | "error";
+                const toolName = event.toolName;
+                const state = event.state;
                 setMessages((prev) =>
                   prev.map((m) => {
                     if (m.id !== aiMsg.id) return m;
@@ -553,102 +567,63 @@ export function SucheClient({
                     return { ...m, toolCalls: calls };
                   }),
                 );
-              } else if (data.type === "card") {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === aiMsg.id ? { ...m, card: data.card } : m,
-                  ),
-                );
-              } else if (data.type === "sources") {
+              } else if (event.type === "card") {
                 setMessages((prev) =>
                   prev.map((m) =>
                     m.id === aiMsg.id
-                      ? { ...m, sources: data.sources as ChatSource[] }
+                      ? {
+                          ...m,
+                          card: event.card as unknown as AnswerCardData,
+                        }
                       : m,
                   ),
                 );
-              } else if (
-                data.type === "suggestion" &&
-                data.suggestion &&
-                typeof data.suggestion.label === "string" &&
-                typeof data.suggestion.prompt === "string"
-              ) {
+              } else if (event.type === "sources") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === aiMsg.id
+                      ? { ...m, sources: event.sources }
+                      : m,
+                  ),
+                );
+              } else if (event.type === "suggestion") {
                 setMessages((prev) =>
                   prev.map((message) =>
                     message.id === aiMsg.id
-                      ? { ...message, suggestion: data.suggestion }
+                      ? { ...message, suggestion: event.suggestion }
                       : message,
                   ),
                 );
-              } else if (
-                data.type === "response_state" &&
-                isChatResponseState(data.state)
-              ) {
+              } else if (event.type === "response_state") {
                 setMessages((prev) =>
                   prev.map((message) =>
                     message.id === aiMsg.id
-                      ? { ...message, responseState: data.state }
+                      ? { ...message, responseState: event.state }
                       : message,
                   ),
                 );
-              } else if (data.type === "confirmation_request") {
-                const toolName = data.tool_name;
-                const actionArgs = data.action_args;
-                if (
-                  typeof toolName === "string" &&
-                  CHAT_ACTION_TOOL_NAMES.includes(
-                    toolName as (typeof CHAT_ACTION_TOOL_NAMES)[number],
-                  ) &&
-                  actionArgs &&
-                  typeof actionArgs === "object" &&
-                  !Array.isArray(actionArgs)
-                ) {
-                  const previewFields = Object.fromEntries(
-                    Object.entries(data).filter(
-                      ([key]) =>
-                        ![
-                          "type",
-                          "tool_name",
-                          "action_args",
-                          "action_id",
-                          "needs_confirmation",
-                          "message",
-                        ].includes(key),
-                    ),
-                  );
-                  const action: ChatAction = {
-                    // The server mints this idempotency key with the
-                    // proposal. Reuse it for retries and restored cards so
-                    // the confirmation API can safely execute the write.
-                    id:
-                      typeof data.action_id === "string" && data.action_id
-                        ? data.action_id
-                        : `${aiMsg.id}-${toolName}`,
-                    toolName: toolName as ChatAction["toolName"],
-                    args: {
-                      ...(actionArgs as Record<string, unknown>),
-                      ...previewFields,
-                    },
-                    state: "ready",
-                  };
-                  setMessages((prev) =>
-                    prev.map((m) =>
-                      m.id === aiMsg.id
-                        ? {
-                            ...m,
-                            actions: m.actions.some(
-                              (current) => current.id === action.id,
-                            )
-                              ? m.actions
-                              : [...m.actions, action],
-                          }
-                        : m,
-                    ),
-                  );
-                }
-              } else if (data.type === "conversation") {
+              } else if (event.type === "confirmation") {
+                const action: ChatAction = {
+                  ...event.action,
+                  state: "ready",
+                };
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === aiMsg.id
+                      ? {
+                          ...m,
+                          actions: m.actions.some(
+                            (current) => current.id === action.id,
+                          )
+                            ? m.actions
+                            : [...m.actions, action],
+                        }
+                      : m,
+                  ),
+                );
+              } else if (event.type === "conversation") {
                 // Conversation ID from the server — update URL and state
-                const newId = data.conversation_id as string;
+                const newId = event.conversationId;
                 if (newId && newId !== activeConversationId) {
                   setActiveConversationId(newId);
                   // Update URL without full reload
@@ -663,26 +638,24 @@ export function SucheClient({
                     ]);
                   }
                 }
-              } else if (
-                data.type === "message_saved" &&
-                typeof data.message_id === "string"
-              ) {
+              } else if (event.type === "message_saved") {
                 setMessages((prev) =>
                   prev.map((message) =>
                     message.id === aiMsg.id
-                      ? { ...message, dbId: data.message_id }
+                      ? { ...message, dbId: event.messageId }
                       : message,
                   ),
                 );
-              } else if (data.type === "done") {
+              } else if (event.type === "done") {
                 receivedDone = true;
-              } else if (data.type === "error") {
+              } else if (event.type === "error") {
                 receivedError = true;
               }
             } catch {
               // Ignore partial/unparseable lines.
             }
           }
+          if (done) break;
         }
         if (!receivedDone || receivedError) {
           throw new Error("Chat stream incomplete");
@@ -707,7 +680,7 @@ export function SucheClient({
         setBusy(false);
       }
     },
-    [familyId, isLoading, messages, activeConversationId, conversations, setBusy, quotedMessage],
+    [familyId, isLoading, activeConversationId, conversations, setBusy, quotedMessage],
   );
 
   // -------------------------------------------------------------------------
@@ -841,22 +814,22 @@ export function SucheClient({
 
   const handleActionConfirm = useCallback(
     (messageId: string, actionId: string) => {
-      const action = messages
+      const action = messagesRef.current
         .find((message) => message.id === messageId)
         ?.actions.find((candidate) => candidate.id === actionId);
       if (action) void runAction(messageId, action, "confirm");
     },
-    [messages, runAction],
+    [runAction],
   );
 
   const handleActionUndo = useCallback(
     (messageId: string, actionId: string) => {
-      const action = messages
+      const action = messagesRef.current
         .find((message) => message.id === messageId)
         ?.actions.find((candidate) => candidate.id === actionId);
       if (action?.undo) void runAction(messageId, action, "undo");
     },
-    [messages, runAction],
+    [runAction],
   );
 
   const handleActionDismiss = useCallback(
@@ -932,6 +905,12 @@ export function SucheClient({
   const handleExampleClick = useCallback(
     (query: string) => {
       void handleSubmit(query);
+    },
+    [handleSubmit],
+  );
+  const handleSuggestionClick = useCallback(
+    (prompt: string) => {
+      void handleSubmit(prompt);
     },
     [handleSubmit],
   );
@@ -1055,7 +1034,7 @@ export function SucheClient({
                       ? handleRepairAnswer
                       : undefined
                   }
-                  onSuggestionClick={(prompt) => void handleSubmit(prompt)}
+                  onSuggestionClick={handleSuggestionClick}
                   onActionConfirm={handleActionConfirm}
                   onActionDismiss={handleActionDismiss}
                   onActionAdjust={handleActionAdjust}

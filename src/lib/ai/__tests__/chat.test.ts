@@ -1480,6 +1480,59 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     expect(lines).toContainEqual({ type: "text", content: "Alles im Blick." });
   });
 
+  it("finishes without another model round when only answer metadata follows valid text", async () => {
+    const answer =
+      "Das Deutschlandticket kostet ab Januar 63 Euro pro Monat.";
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: answer },
+        {
+          toolCall: {
+            index: 0,
+            id: "call_state",
+            name: "set_response_state",
+            argumentsChunk: JSON.stringify({ state: "answered" }),
+          },
+        },
+        {
+          toolCall: {
+            index: 1,
+            id: "call_suggestion",
+            name: "suggest_next_action",
+            argumentsChunk: JSON.stringify({
+              label: "Kosten vergleichen",
+              prompt: "Vergleiche die Kosten mit Einzelfahrten.",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const stream = await streamAgenticAnswer(
+      "Was kostet das Deutschlandticket?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((line) => line.type === "text")).toEqual([
+      { type: "text", content: answer },
+    ]);
+    expect(lines.some((line) => line.type === "replace")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "response_state",
+      state: "answered",
+    });
+    expect(lines).toContainEqual({
+      type: "suggestion",
+      suggestion: {
+        label: "Kosten vergleichen",
+        prompt: "Vergleiche die Kosten mit Einzelfahrten.",
+      },
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("streams a long final answer incrementally once past the release threshold", async () => {
     const firstChunk =
       "Das ist eine ausführliche Antwort, die mehr als achtundvierzig Zeichen hat, ";

@@ -55,19 +55,11 @@ describe("SourceCard", () => {
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it("is keyboard accessible (has role button and tabIndex)", () => {
+  it("uses a native button when interactive", () => {
     render(<SourceCard {...defaultProps} onClick={vi.fn()} />);
     const card = screen.getByTestId("source-card");
-    expect(card.getAttribute("role")).toBe("button");
-    expect(card.getAttribute("tabindex")).toBe("0");
-  });
-
-  it("triggers onClick via Enter key", () => {
-    const onClick = vi.fn();
-    render(<SourceCard {...defaultProps} onClick={onClick} />);
-    const card = screen.getByTestId("source-card");
-    fireEvent.keyDown(card, { key: "Enter" });
-    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(card.tagName).toBe("BUTTON");
+    expect(card.getAttribute("type")).toBe("button");
   });
 
   it("does not crash when onClick is not provided", () => {

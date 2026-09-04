@@ -64,6 +64,7 @@ import {
   CHAT_RESPONSE_STATE_LABELS,
   isSafePublicSourceUrl,
   isWebChatSource,
+  splitChatSources,
 } from "@ordilo/chat-contract";
 
 /**
@@ -270,9 +271,8 @@ export function SourcesSection({
   const [expanded, setExpanded] = useState(false);
   if (sources.length === 0) return null;
 
-  const sorted = [...sources].sort((a, b) => b.score - a.score);
-  const top = sorted.slice(0, 1);
-  const rest = sorted.slice(1);
+  const { best, rest } = splitChatSources(sources);
+  const top = best ? [best] : [];
   const visible = expanded ? [...top, ...rest] : top;
 
   return (
@@ -593,17 +593,20 @@ export function FeedbackRow({
   message,
   onSend,
   onRepair,
+  onRepairStart,
 }: {
   message: ChatMessage;
   onSend: (
     feedback: "positive" | "negative",
     reasons: ChatFeedbackReason[],
     comment: string,
+    repairRequested: boolean,
   ) => Promise<void>;
   onRepair?: (
     reasons: ChatFeedbackReason[],
     comment: string,
   ) => Promise<void>;
+  onRepairStart?: () => void;
 }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [reasons, setReasons] = useState<ChatFeedbackReason[]>([]);
@@ -626,13 +629,17 @@ export function FeedbackRow({
     setSending(true);
     try {
       if (feedback === "negative" && onRepair) {
-        const feedbackRequest = onSend(feedback, reasons, comment).catch(
-          () => undefined,
-        );
-        await onRepair(reasons, comment.trim());
+        onRepairStart?.();
+        const feedbackRequest = onSend(
+          feedback,
+          reasons,
+          comment,
+          true,
+        ).catch(() => undefined);
         await feedbackRequest;
+        await onRepair(reasons, comment.trim());
       } else {
-        await onSend(feedback, reasons, comment);
+        await onSend(feedback, reasons, comment, false);
       }
       setThanks(true);
       setPanelOpen(false);
