@@ -1620,10 +1620,17 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     const lines = await readNdjsonStream(stream);
 
     expect(lines).toContainEqual({
-      type: "replace",
+      type: "text",
       content:
         "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
     });
+    // The uncited draft was buffered and never reached the client — the
+    // validated correction is the first and only answer text sent.
+    expect(lines).not.toContainEqual({
+      type: "text",
+      content: "Laut Hannas Ticket gelten die neuen Regeln.",
+    });
+    expect(lines.filter((l) => l.type === "replace")).toEqual([]);
   });
 
   it("fails closed when a sourced answer remains uncited", async () => {
@@ -1647,9 +1654,49 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     const lines = await readNdjsonStream(stream);
 
     expect(lines).toContainEqual({
-      type: "replace",
+      type: "text",
       content: FAIL_CLOSED_CITATION,
     });
+    // The unsupported claim was never streamed before the check ran.
+    expect(lines).not.toContainEqual({
+      type: "text",
+      content: "Die Regel gilt ab Januar.",
+    });
+    expect(lines.filter((l) => l.type === "replace")).toEqual([]);
+  });
+
+  it("releases a validated source-backed answer in one piece", async () => {
+    // With sources present, the answer is buffered for the whole-answer
+    // guardrails instead of streaming chunk by chunk.
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Die neuen Regeln gelten laut " },
+        { content: "Bundesregierung Deutschlandticket." },
+      ]),
+    );
+    const context = makeToolContext([
+      {
+        document_id: "web-1",
+        title: "Bundesregierung Deutschlandticket",
+        excerpt: "Aktuelle Regeln",
+        score: 0.8,
+        origin: "web",
+        url: "https://example.org/ticket",
+      },
+    ]);
+
+    const stream = await streamAgenticAnswer("Was gilt aktuell?", [], context);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "text")).toEqual([
+      {
+        type: "text",
+        content:
+          "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
+      },
+    ]);
+    expect(lines.filter((l) => l.type === "replace")).toEqual([]);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
   it("sends only the corrected answer when the first final answer hedges", async () => {
