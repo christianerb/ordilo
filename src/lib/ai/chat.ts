@@ -11,7 +11,11 @@ import {
   type AnswerCardField,
 } from "@/lib/schemas/chat";
 import { parseCredentialsContent } from "@/lib/credentials";
-import { MAX_RESULTS, RELEVANCE_THRESHOLD } from "@/lib/ai/search";
+import {
+  MAX_RESULTS,
+  RELEVANCE_THRESHOLD,
+  shouldUseAsRepresentative,
+} from "@/lib/ai/search";
 import {
   TOOL_DEFINITIONS,
   executeTool,
@@ -126,8 +130,8 @@ export function filterByRelevanceThreshold(
  * For each document:
  *   - title: taken from any result (all results for the same document
  *     share the same title)
- *   - excerpt: prefers the semantic result's chunk_text (the actual
- *     matching document content) over graph metadata (e.g. "Person: Emma").
+ *   - excerpt: prefers the content result's chunk_text (the actual matching
+ *     document content or typed fact) over graph metadata (e.g. "Person: Emma").
  *     This gives the user and the LLM the most informative excerpt.
  *   - score: the highest score among all results for that document
  *
@@ -137,55 +141,33 @@ export function filterByRelevanceThreshold(
  * documents from both search types are included in the combined sources.
  */
 export function combineSearchResults(
-  semanticResults: SearchResult[],
+  contentResults: SearchResult[],
   graphResults: SearchResult[],
 ): ChatSource[] {
-  const allResults = [...semanticResults, ...graphResults];
-
-  // Group results by document_id, tracking the semantic result (for excerpt)
-  // and the best-scoring result (for title and score).
+  // Group results by document_id, tracking the content result (for excerpt)
+  // separately from the best-scoring result (for title and score).
   // We track both the best question-shaped chunk and the best content chunk
   // separately, so we can prefer actual content for the excerpt even when a
   // synthetic question scores higher (the question helps find the document,
   // but the content has the answer the LLM needs).
   const byDocId = new Map<
     string,
-    { semantic: SearchResult | null; best: SearchResult }
+    { content: SearchResult | null; best: SearchResult }
   >();
 
-  /** Heuristic: does this chunk look like a synthetic question? */
-  const isQuestion = (text: string): boolean =>
-    text.trimEnd().endsWith("?") && text.length < 150;
-
-  for (const result of allResults) {
+  for (const result of contentResults) {
     const existing = byDocId.get(result.document_id);
     if (!existing) {
       byDocId.set(result.document_id, {
-        semantic: result.source === "semantic" ? result : null,
+        content: result,
         best: result,
       });
     } else {
-      if (result.source === "semantic") {
-        // For the excerpt, prefer content chunks over synthetic questions.
-        // A synthetic question may score highest (it's query-aligned), but
-        // the content chunk has the actual answer the LLM needs to see.
-        if (!existing.semantic) {
-          existing.semantic = result;
-        } else if (isQuestion(existing.semantic.chunk_text) && !isQuestion(result.chunk_text)) {
-          // Replace a question with content, even if the content has a lower score.
-          existing.semantic = result;
-        } else if (!isQuestion(existing.semantic.chunk_text) && !isQuestion(result.chunk_text)) {
-          // Both are content — keep the higher-scoring one.
-          if (result.score > existing.semantic.score) {
-            existing.semantic = result;
-          }
-        } else if (isQuestion(existing.semantic.chunk_text) && isQuestion(result.chunk_text)) {
-          // Both are questions — keep the higher-scoring one.
-          if (result.score > existing.semantic.score) {
-            existing.semantic = result;
-          }
-        }
-        // If existing is content and new is question, keep existing (content wins).
+      if (
+        !existing.content ||
+        shouldUseAsRepresentative(existing.content, result)
+      ) {
+        existing.content = result;
       }
       if (result.score > existing.best.score) {
         existing.best = result;
@@ -193,21 +175,30 @@ export function combineSearchResults(
     }
   }
 
+  for (const result of graphResults) {
+    const existing = byDocId.get(result.document_id);
+    if (!existing) {
+      byDocId.set(result.document_id, { content: null, best: result });
+    } else if (result.score > existing.best.score) {
+      existing.best = result;
+    }
+  }
+
   const sources: ChatSource[] = [];
-  for (const { semantic, best } of byDocId.values()) {
+  for (const { content, best } of byDocId.values()) {
     sources.push({
       document_id: best.document_id,
       title: best.title,
-      // Prefer semantic chunk_text (document content) over graph metadata.
-      excerpt: semantic ? semantic.chunk_text : best.chunk_text,
+      // Prefer document content or a typed fact over graph metadata.
+      excerpt: content ? content.chunk_text : best.chunk_text,
       score: best.score,
-      // Mark the origin: 'semantic' when a semantic result exists for the
-      // document (the excerpt is real document content susceptible to
+      // Mark the origin: 'semantic' when a content result exists for the
+      // document (the excerpt is document content susceptible to
       // hallucination), 'graph' when only graph results exist (deterministic
       // DB matches, not hallucination risk). This lets answerCitesSources
       // relax the citation check for graph-only sources (VAL-SEARCH-023)
       // while keeping the strict check for semantic sources (VAL-CHAT-004).
-      origin: semantic ? "semantic" : "graph",
+      origin: content ? "semantic" : "graph",
     });
   }
 
@@ -407,7 +398,7 @@ STRENGE REGELN:
 1. Antworte IMMER auf Deutsch.
 2. Verwende VERBOTENE Formulierungen: ${forbiddenList}. Formuliere bestimmt und direkt.
 3. Verwende NIEMALS interne Fachbegriffe: "Knowledge Graph", "pgvector", "embedding", "HNSW", "Vektor", "Vektordatenbank", "Knoten", "Kanten".
-4. Wenn du Dokumente durchsucht hast, beziehe dich auf das Dokument (z.B. "Laut dem Kita-Brief..." oder "Das Dokument 'Stromrechnung' zeigt...").
+4. Wenn du Dokumente durchsucht hast, beantworte die konkrete Frage im ERSTEN Satz und beziehe dich dabei auf das Dokument (z.B. "Laut dem Kita-Brief ist das Fest am Freitag."). Nenne niemals nur passende Dokumente, wenn deren Inhalt die Frage beantwortet. Die Quellenkarten unter deiner Antwort sind nur Belege und niemals ein Ersatz fuer die Antwort.
 5. Wenn du Aufgaben auflistest, nenne Titel und Frist (falls vorhanden).
 6. Bei allgemeinen Fragen (Begruessung, Dank, Smalltalk) antworte natuerlich und freundlich, ohne Tools aufzurufen.
 6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
@@ -421,7 +412,7 @@ STRENGE REGELN:
 10. WICHTIG: Wenn du mehrere Elemente mit MEHREREN Detail-Eigenschaften auflistest (z.B. mehrere Aufgaben mit Frist, mehrere Rechnungen mit Betrag UND Faelligkeit), formatiere die Antwort als Markdown-Tabelle mit sprechenden Spaltenkoepfen (z.B. "| Aufgabe | Frist |") statt als Fliesstext. AUSNAHME: Wenn du als Ergebnis einer Dokumentensuche einfach mehrere GEFUNDENE DOKUMENTE auflistest (ohne weitere Detailfelder pro Dokument), schreibe KEINE Tabelle und KEINE Aufzaehlung — nenne die gefundenen Dokumente stattdessen in ein bis zwei kurzen Saetzen namentlich (z.B. "Ich habe den Kita-Brief und den Schulbrief zum Sommerfest gefunden."), denn die Dokumente selbst werden dem Nutzer bereits separat als Karten angezeigt.
 11. Erwaehne dasselbe Dokument nur einmal, auch wenn es mehrfach in den Quellen auftaucht.
 12. Beginne die Antwort direkt mit dem Inhalt — keine Einleitung wie "Hier ist die Antwort".
-13. Wenn die Antwort GENAU EIN konkretes Ergebnis mit mehreren Detailfeldern ist (ein Termin, eine Frist, eine Rechnung, eine einzelne Aufgabe oder ein Kontakt), rufe present_answer_card auf statt Fliesstext zu schreiben. Bei Listen, allgemeinen Erklaerungen oder Smalltalk NICHT present_answer_card verwenden.
+13. Wenn die Antwort GENAU EIN konkretes Ergebnis mit mehreren zusammengehoerigen Detailfeldern ist (ein Termin, eine Frist, eine Rechnung, eine einzelne Aufgabe oder ein Kontakt), rufe present_answer_card auf statt Fliesstext zu schreiben. Fragt der Nutzer nur nach EINEM Fakt aus einem Dokument (z.B. "wie lange gueltig?", "wie hoch ist der Betrag?"), antworte im ersten Satz in normalem Text. Eine Karte muss die konkret erfragte Information in mindestens einem Detailfeld enthalten; nur Titel, Person und Dokumentlink sind keine Antwort. Kannst du kein beantwortendes Detailfeld fuellen, antworte in normalem Text. Bei Listen, allgemeinen Erklaerungen oder Smalltalk NICHT present_answer_card verwenden.
 13a. ZUGANGSDATEN: Fragt jemand nach einem Login, Zugang oder Passwort ("Was sind die Zugangsdaten fuer X?", "Wie komme ich ins X-Portal?"), suche das Dokument (Typ 'credentials') und antworte mit present_answer_card, card_type 'zugangsdaten' und source_document_id des Dokuments. Die konkreten Werte kennst du NICHT: URL, Benutzername und Passwort tauchen in keinem Suchergebnis auf. Erfinde sie niemals und behaupte auch nicht, du faendest sie nicht — die Karte fuellt sie selbst aus dem Dokument. Nenne im Text nur, um welchen Zugang es geht.
 13b. ZUGANGSDATEN ANLEGEN: Bittet jemand darum, Zugangsdaten zu speichern ("Leg mir die Zugangsdaten fuer X an"), rufe create_note mit document_type='credentials', title=Name des Zugangs, url und username auf. Nimm NIEMALS ein Passwort entgegen: nicht in content, nicht in einem anderen Feld. Sag dem Nutzer stattdessen freundlich, dass er das Passwort im Dokument selbst hinterlegt — es wird verschluesselt gespeichert und darf nicht im Chatverlauf stehen. Nennt der Nutzer trotzdem ein Passwort im Chat, wiederhole es NICHT.
 13c. KONTAKTE: Bei Fragen nach Telefonnummern oder E-Mail-Adressen sowie Bitten wie "Ruf Ursula an" oder "Schreib Ursula bei WhatsApp ..." rufe zuerst lookup_contact auf. Bei genau einem Treffer zeige danach present_answer_card mit card_type='kontakt', contact_id aus dem Treffer, passender contact_action und bei WhatsApp dem gewuenschten message_draft. Bittet jemand darum, einen neuen Kontakt anzulegen, verwende add_contact. Dafuer brauchst du einen Namen und mindestens Telefonnummer oder E-Mail-Adresse. Fehlt etwas davon, frage konkret danach und behaupte niemals, Kontakte koennten nicht angelegt werden. Behaupte nie, eine Nachricht sei gesendet. Die Karte oeffnet nur die externe App; der Nutzer prueft und sendet selbst.
@@ -883,7 +874,13 @@ export async function streamAgenticAnswer(
             // `present_answer_card` is a terminal action, not a data-fetch
             // tool: when the model calls it with valid arguments, the
             // structured card IS the final answer (no further rounds).
+            type CardSourceDocument = {
+              secret: string | null;
+              document_type: string | null;
+              ocr_text: string | null;
+            };
             let cardToSend: AnswerCard | null = null;
+            let cardSourceDocument: CardSourceDocument | null = null;
             // When a mutating tool (mark_task_done, add_family_member, ...)
             // requires user confirmation, we emit a `confirmation_request`
             // event to the client so it can render a confirmation UI
@@ -977,19 +974,54 @@ export async function streamAgenticAnswer(
                       email: contact.email,
                     };
                   }
+
                   // Never trust an unverified document reference — only
                   // keep it if it matches a source actually returned by
                   // search_documents in this conversation.
+                  const verifiedDocumentId =
+                    card.actionDocumentId &&
+                    toolContext.sources.some(
+                      (source) =>
+                        source.document_id === card.actionDocumentId,
+                    )
+                      ? card.actionDocumentId
+                      : null;
+                  let sourceDocument: CardSourceDocument | null = null;
+                  if (verifiedDocumentId) {
+                    try {
+                      const { data } = await toolContext.client
+                        .from("documents")
+                        .select("secret, document_type, ocr_text")
+                        .eq("id", verifiedDocumentId)
+                        .maybeSingle();
+                      sourceDocument = data;
+                    } catch {
+                      // A normal prose answer remains available below if
+                      // document metadata cannot be loaded.
+                    }
+                  }
+
+                  const isCredentialsCard =
+                    card.type === "zugangsdaten" ||
+                    sourceDocument?.document_type === "credentials";
+                  if (
+                    toolContext.sources.length > 0 &&
+                    card.type !== "kontakt" &&
+                    !isCredentialsCard &&
+                    card.fields.length === 1
+                  ) {
+                    results[i] = JSON.stringify({
+                      error:
+                        "Eine einzelne Information aus einem Dokument muss im ersten Satz als normaler Text beantwortet werden.",
+                    });
+                    continue;
+                  }
+
                   cardToSend = {
                     ...card,
-                    actionDocumentId:
-                      card.actionDocumentId &&
-                      toolContext.sources.some(
-                        (s) => s.document_id === card.actionDocumentId,
-                      )
-                        ? card.actionDocumentId
-                        : null,
+                    actionDocumentId: verifiedDocumentId,
                   };
+                  cardSourceDocument = sourceDocument;
                   results[i] = JSON.stringify({ success: true });
                 } else {
                   results[i] = JSON.stringify({
@@ -1078,39 +1110,29 @@ export async function streamAgenticAnswer(
               // database, not something the model may assert — it never
               // sees `documents.secret` in any tool result. Look it up
               // here, after the document reference has been verified.
-              if (cardToSend.actionDocumentId) {
-                try {
-                  const { data: sourceDoc } = await toolContext.client
-                    .from("documents")
-                    .select("secret, document_type, ocr_text")
-                    .eq("id", cardToSend.actionDocumentId)
-                    .maybeSingle();
-                  const isCredentialsDoc =
-                    sourceDoc?.document_type === "credentials";
+              if (cardToSend.actionDocumentId && cardSourceDocument) {
+                const isCredentialsDoc =
+                  cardSourceDocument.document_type === "credentials";
 
-                  cardToSend = {
-                    ...cardToSend,
-                    // The card type decides whether the row values become
-                    // working controls, so it must not hang on the model
-                    // picking the right enum: a card about a credentials
-                    // document IS a credentials card.
-                    type: isCredentialsDoc ? "zugangsdaten" : cardToSend.type,
-                    // A login's URL and user name never pass through the
-                    // model — they are kept out of its search results, so
-                    // the card reads them from the document itself. The
-                    // model's own fields are dropped rather than used as a
-                    // fallback: not seeing the values, anything it offers
-                    // here is a guess, and a guessed user name on a
-                    // credentials card is worse than an empty card.
-                    fields: isCredentialsDoc
-                      ? credentialCardFields(sourceDoc?.ocr_text ?? "")
-                      : cardToSend.fields,
-                    hasSecret: Boolean(sourceDoc?.secret),
-                  };
-                } catch {
-                  // The answer stands on its own — a failed lookup only
-                  // costs the reveal button, never the card.
-                }
+                cardToSend = {
+                  ...cardToSend,
+                  // The card type decides whether the row values become
+                  // working controls, so it must not hang on the model
+                  // picking the right enum: a card about a credentials
+                  // document IS a credentials card.
+                  type: isCredentialsDoc ? "zugangsdaten" : cardToSend.type,
+                  // A login's URL and user name never pass through the
+                  // model — they are kept out of its search results, so
+                  // the card reads them from the document itself. The
+                  // model's own fields are dropped rather than used as a
+                  // fallback: not seeing the values, anything it offers
+                  // here is a guess, and a guessed user name on a
+                  // credentials card is worse than an empty card.
+                  fields: isCredentialsDoc
+                    ? credentialCardFields(cardSourceDocument.ocr_text ?? "")
+                    : cardToSend.fields,
+                  hasSecret: Boolean(cardSourceDocument.secret),
+                };
               }
               send({ type: "card", card: cardToSend });
               send({ type: "sources", sources: toolContext.sources });

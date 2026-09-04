@@ -669,6 +669,39 @@ async function narrowFactCandidates<T extends ScopableFact>(
 const RRF_K = 60;
 
 /**
+ * Synthetic question embeddings improve retrieval, but their text does not
+ * contain the answer. They may therefore rank a document, but must not replace
+ * an answer-bearing document excerpt returned to the chat model.
+ */
+function isSyntheticQuestionChunk(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.endsWith("?") && trimmed.length < 150;
+}
+
+/**
+ * Choose the chunk whose text will represent a matched document without
+ * changing the document's best relevance score.
+ */
+export function shouldUseAsRepresentative(
+  current: SearchResult,
+  candidate: SearchResult,
+): boolean {
+  // Typed facts contain an exact label/value answer and take precedence over
+  // prose chunks when both identify the same document.
+  if (current.source === "fact" || candidate.source === "fact") {
+    return candidate.source === "fact" && current.source !== "fact";
+  }
+
+  const currentIsQuestion = isSyntheticQuestionChunk(current.chunk_text);
+  const candidateIsQuestion = isSyntheticQuestionChunk(candidate.chunk_text);
+  if (currentIsQuestion !== candidateIsQuestion) {
+    return !candidateIsQuestion;
+  }
+
+  return candidate.score > current.score;
+}
+
+/**
  * Fuse multiple ranked result lists with Reciprocal Rank Fusion.
  *
  * Each list contributes `1 / (k + rank)` per document; documents appearing
@@ -683,41 +716,62 @@ export function fuseResultsRrf(
 ): SearchResult[] {
   const byDoc = new Map<
     string,
-    { best: SearchResult; rrf: number; sources: Set<string> }
+    {
+      representative: SearchResult;
+      bestScore: number;
+      rrf: number;
+      sources: Set<string>;
+    }
   >();
 
   for (const list of lists) {
-    for (let rank = 0; rank < list.length; rank++) {
-      const result = list[rank];
-      const contribution = 1 / (k + rank + 1);
+    // RRF is document-based. Several chunks from one document in the same
+    // result list improve the excerpt choice, but must not inflate its rank.
+    const contributedDocuments = new Set<string>();
+    let uniqueDocumentRank = 0;
+
+    for (const result of list) {
+      const isFirstChunkForDocument = !contributedDocuments.has(
+        result.document_id,
+      );
+      const contribution = isFirstChunkForDocument
+        ? 1 / (k + uniqueDocumentRank + 1)
+        : 0;
+      contributedDocuments.add(result.document_id);
+      if (isFirstChunkForDocument) uniqueDocumentRank += 1;
+
       const existing = byDoc.get(result.document_id);
       if (!existing) {
         byDoc.set(result.document_id, {
-          best: result,
+          representative: result,
+          bestScore: result.score,
           rrf: contribution,
           sources: new Set([result.source]),
         });
       } else {
         existing.rrf += contribution;
         existing.sources.add(result.source);
-        if (result.score > existing.best.score) {
-          existing.best = result;
+        existing.bestScore = Math.max(existing.bestScore, result.score);
+        if (shouldUseAsRepresentative(existing.representative, result)) {
+          existing.representative = result;
         }
       }
     }
   }
 
-  const fused = [...byDoc.values()].map(({ best, rrf, sources }) => ({
-    result: {
-      ...best,
-      score:
-        sources.size > 1
-          ? Math.min(best.score + (sources.size - 1) * 0.05, 1.0)
-          : best.score,
-      source: sources.size > 1 ? "hybrid" : best.source,
-    },
-    rrf,
-  }));
+  const fused = [...byDoc.values()].map(
+    ({ representative, bestScore, rrf, sources }) => ({
+      result: {
+        ...representative,
+        score:
+          sources.size > 1
+            ? Math.min(bestScore + (sources.size - 1) * 0.05, 1.0)
+            : bestScore,
+        source: sources.size > 1 ? "hybrid" : representative.source,
+      },
+      rrf,
+    }),
+  );
 
   fused.sort(
     (a, b) =>

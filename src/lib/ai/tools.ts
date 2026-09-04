@@ -419,7 +419,9 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "eine Rechnung, eine einzelne Aufgabe). Verwende dies NICHT fuer " +
         "Listen mit mehreren Elementen, allgemeine Erklaerungen, " +
         "Begruessungen/Smalltalk oder wenn die Quellen die Frage nicht " +
-        "beantworten (dann normal in Text antworten). " +
+        "beantworten (dann normal in Text antworten). Die konkret erfragte " +
+        "Information MUSS in fields stehen. Eine Karte nur mit Dokumenttitel, " +
+        "Person oder Dokumentlink ist keine Antwort und ist ungueltig. " +
         "Bei Fragen nach Zugangsdaten (Login, Passwort, Zugang zu einem " +
         "Portal) IMMER card_type 'zugangsdaten' mit source_document_id " +
         "verwenden: die Karte liest URL, Benutzername und Passwort selbst " +

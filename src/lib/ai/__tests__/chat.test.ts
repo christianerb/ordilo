@@ -470,6 +470,29 @@ describe("combineSearchResults", () => {
     expect(result[0].score).toBe(0.95);
   });
 
+  it("preserves a hybrid fact excerpt when graph metadata scores higher", () => {
+    const content = [
+      {
+        ...makeSemanticResult(
+          "doc-1",
+          "Deutschlandticket",
+          "Gültig bis: 31. August 2027",
+          0.9,
+        ),
+        source: "hybrid" as const,
+      },
+    ];
+    const graph = [
+      makeGraphPersonResult("doc-1", "Deutschlandticket", "Hanna", 0.95),
+    ];
+
+    const result = combineSearchResults(content, graph);
+
+    expect(result[0].excerpt).toBe("Gültig bis: 31. August 2027");
+    expect(result[0].score).toBe(0.95);
+    expect(result[0].origin).toBe("semantic");
+  });
+
   it("uses graph excerpt when no semantic result exists for the document", () => {
     const graph = [
       makeGraphPersonResult("doc-1", "Brief", "Hanna", 0.85),
@@ -613,6 +636,17 @@ describe("buildAgenticSystemPrompt", () => {
   it("instructs to answer directly without tools when the context already has the answer", () => {
     expect(prompt).toContain("DIREKT ohne Tool-Aufruf");
     expect(prompt).toContain("NICHT erneut");
+  });
+
+  it("requires the concrete document answer before source references", () => {
+    expect(prompt).toContain("konkrete Frage im ERSTEN Satz");
+    expect(prompt).toContain(
+      "Quellenkarten unter deiner Antwort sind nur Belege",
+    );
+    expect(prompt).toContain(
+      "konkret erfragte Information in mindestens einem Detailfeld",
+    );
+    expect(prompt).toContain("nur nach EINEM Fakt aus einem Dokument");
   });
 
   it("instructs to call as few tools as possible per question", () => {
@@ -808,7 +842,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
             argumentsChunk: JSON.stringify({
               card_type: "dokument",
               title: "Stromrechnung",
-              fields: [{ label: "Betrag", value: "45 EUR" }],
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
               source_document_id: "doc-1",
             }),
           },
@@ -819,7 +856,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const toolContext = makeToolContext([
       { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
     ]);
-    const stream = await streamAgenticAnswer("Wie hoch ist die Stromrechnung?", [], toolContext);
+    const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
     expect(lines[0]).toMatchObject({
@@ -986,7 +1023,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
             argumentsChunk: JSON.stringify({
               card_type: "dokument",
               title: "Stromrechnung",
-              fields: [{ label: "Betrag", value: "45 EUR" }],
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
               source_document_id: "doc-1",
             }),
           },
@@ -999,7 +1039,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       null,
       "invoice",
     );
-    const stream = await streamAgenticAnswer("Wie hoch ist die Rechnung?", [], toolContext);
+    const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
     expect(lines[0]).toMatchObject({ type: "card", card: { type: "dokument" } });
@@ -1044,7 +1084,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
             argumentsChunk: JSON.stringify({
               card_type: "dokument",
               title: "Stromrechnung",
-              fields: [{ label: "Betrag", value: "45 EUR" }],
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
               source_document_id: "doc-does-not-exist",
             }),
           },
@@ -1055,7 +1098,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const toolContext = makeToolContext([
       { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
     ]);
-    const stream = await streamAgenticAnswer("Wie hoch ist die Stromrechnung?", [], toolContext);
+    const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
     expect(lines[0]).toMatchObject({
@@ -1144,6 +1187,109 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       type: "text",
       content: "Der Termin ist am 12.08.2026.",
     });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers a document question instead of showing an empty source card", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "present_answer_card",
+              argumentsChunk: JSON.stringify({
+                card_type: "dokument",
+                title: "Vorläufiges Deutschlandticket für Schüler:innen",
+                subtitle: "Hanna Erb",
+                fields: [],
+                source_document_id: "ticket-doc",
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            content:
+              "Laut dem vorläufigen Deutschlandticket ist Hannas Ticket bis zum **31. August 2027** gültig.",
+          },
+        ]),
+      );
+
+    const source = {
+      document_id: "ticket-doc",
+      title: "Vorläufiges Deutschlandticket für Schüler:innen",
+      excerpt:
+        "Das Ticket gilt vom 1. September 2026 bis zum 31. August 2027.",
+      score: 0.94,
+    };
+    const stream = await streamAgenticAnswer(
+      "Wie lange ist das Deutschland-Ticket von Hanna gültig?",
+      [],
+      makeToolContext([source]),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((line) => line.type === "card")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "text",
+      content:
+        "Laut dem vorläufigen Deutschlandticket ist Hannas Ticket bis zum **31. August 2027** gültig.",
+    });
+    expect(lines).toContainEqual({ type: "sources", sources: [source] });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces prose for a single document fact even when the card is valid", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "present_answer_card",
+              argumentsChunk: JSON.stringify({
+                card_type: "dokument",
+                title: "Stromrechnung",
+                fields: [{ label: "Betrag", value: "45 EUR" }],
+                source_document_id: "doc-1",
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            content:
+              "Laut der Stromrechnung beträgt der Abschlag **45 Euro**.",
+          },
+        ]),
+      );
+
+    const source = {
+      document_id: "doc-1",
+      title: "Stromrechnung",
+      excerpt: "Monatlicher Abschlag: 45 EUR",
+      score: 0.9,
+    };
+    const stream = await streamAgenticAnswer(
+      "Wie hoch ist der Abschlag?",
+      [],
+      makeToolContext([source]),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((line) => line.type === "card")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "text",
+      content: "Laut der Stromrechnung beträgt der Abschlag **45 Euro**.",
+    });
+    expect(lines).toContainEqual({ type: "sources", sources: [source] });
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
