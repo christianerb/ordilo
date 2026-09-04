@@ -14,6 +14,7 @@ import {
   type ChatErrorResponse,
 } from "@/lib/schemas/chat";
 import {
+  extractHistoryEvidence,
   parseChatWireEvent,
   splitChatNdjsonChunk,
 } from "@ordilo/chat-contract";
@@ -334,6 +335,23 @@ export async function POST(request: Request): Promise<Response> {
     speakerName,
     preloadedFamilyMembers: familyMembers,
     preloadedFamilyMembersPrivacyReady: !familyMembersResult.error,
+    // Private excerpts from earlier turns join the Web-search guard: the
+    // per-turn source list starts empty, so a query copied from a prior
+    // answer would otherwise reach the public Web search unchecked.
+    historyExcerpts: [
+      ...(conversation.kind === "existing"
+        ? conversation.rows.flatMap((row) =>
+            (row.sources ?? [])
+              .filter((source) => source.origin !== "web")
+              .map((source) => source.excerpt)
+              .filter((excerpt) => excerpt.trim().length > 0),
+          )
+        : []),
+      // The client-history fallback and any accepted unpersisted suffix
+      // carry the same private excerpts — the guard must see them even
+      // when no persisted rows are available for those turns.
+      ...extractHistoryEvidence(clientHistory),
+    ],
     userId: user.id,
   };
 

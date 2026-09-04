@@ -16,6 +16,16 @@ describe("redactPII", () => {
     expect(result).not.toContain("DE89370400440532013000");
   });
 
+  it("stops at the country-specific IBAN boundary", () => {
+    const text = "DE89 3704 0044 0532 0130 00 NICHT ZAHLEN";
+    expect(redactPII(text)).toBe("[IBAN] NICHT ZAHLEN");
+  });
+
+  it("preserves uppercase text after an alphanumeric IBAN", () => {
+    const text = "GB29 NWBK 6016 1331 9268 19 NICHT ZAHLEN";
+    expect(redactPII(text)).toBe("[IBAN] NICHT ZAHLEN");
+  });
+
   it("redacts German tax IDs (dotted format)", () => {
     const text = "Steuer-ID: 12.345.678.901";
     const result = redactPII(text);

@@ -2758,6 +2758,31 @@ describe("answer metadata tools", () => {
     expect(ctx.client.from).not.toHaveBeenCalled();
   });
 
+  it("checks excerpts from earlier turns before a Web search", async () => {
+    // The per-turn source list starts empty; without the history excerpts a
+    // query copied from a prior private answer would bypass the guard.
+    const ctx = makeCtx({
+      webPrivacyReady: true,
+      historyExcerpts: [
+        "Das vorläufige Deutschlandticket für Schülerinnen ist gültig bis zum Schuljahresende.",
+      ],
+    });
+
+    const result = JSON.parse(
+      await executeTool(
+        "search_web",
+        {
+          query:
+            "Suche das vorläufige Deutschlandticket für Schülerinnen ist gültig",
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toMatch(/privaten Unterlage/);
+    expect(searchPublicWeb).not.toHaveBeenCalled();
+  });
+
   it("reuses preloaded family names for Web anonymization", async () => {
     vi.mocked(searchPublicWeb).mockResolvedValueOnce({
       query: "Deutschlandticket Regeln",

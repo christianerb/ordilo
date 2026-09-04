@@ -838,6 +838,97 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
+  it("drops an uncited buffered lead-in and lets the card carry the answer", async () => {
+    // The prose next to a card must pass the same citation guard as a final
+    // answer — an unsupported claim must not reach the client.
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Die Frist läuft nächste Woche ab." },
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "dokument",
+              title: "Stromrechnung",
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      {
+        document_id: "doc-1",
+        title: "Stromrechnung",
+        excerpt: "45 EUR",
+        score: 0.9,
+      },
+    ]);
+    const stream = await streamAgenticAnswer(
+      "Zeig mir die Rechnungsdetails.",
+      [],
+      toolContext,
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((l) => l.type === "card")).toBe(true);
+    expect(lines.filter((l) => l.type === "text")).toEqual([]);
+  });
+
+  it("releases a cited buffered lead-in alongside the card", async () => {
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Laut Stromrechnung ist der Betrag fällig." },
+        {
+          toolCall: {
+            index: 0,
+            id: "call_1",
+            name: "present_answer_card",
+            argumentsChunk: JSON.stringify({
+              card_type: "dokument",
+              title: "Stromrechnung",
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
+              source_document_id: "doc-1",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const toolContext = makeToolContext([
+      {
+        document_id: "doc-1",
+        title: "Stromrechnung",
+        excerpt: "45 EUR",
+        score: 0.9,
+      },
+    ]);
+    const stream = await streamAgenticAnswer(
+      "Zeig mir die Rechnungsdetails.",
+      [],
+      toolContext,
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "text")).toEqual([
+      {
+        type: "text",
+        content: "Laut Stromrechnung ist der Betrag fällig.",
+      },
+    ]);
+    expect(lines.some((l) => l.type === "card")).toBe(true);
+  });
+
   it("keeps actionDocumentId when it matches an accumulated source", async () => {
     mockCreate.mockResolvedValueOnce(
       fakeOpenAIStream([
@@ -1620,10 +1711,17 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     const lines = await readNdjsonStream(stream);
 
     expect(lines).toContainEqual({
-      type: "replace",
+      type: "text",
       content:
         "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
     });
+    // The uncited draft was buffered and never reached the client — the
+    // validated correction is the first and only answer text sent.
+    expect(lines).not.toContainEqual({
+      type: "text",
+      content: "Laut Hannas Ticket gelten die neuen Regeln.",
+    });
+    expect(lines.filter((l) => l.type === "replace")).toEqual([]);
   });
 
   it("fails closed when a sourced answer remains uncited", async () => {
@@ -1647,9 +1745,49 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     const lines = await readNdjsonStream(stream);
 
     expect(lines).toContainEqual({
-      type: "replace",
+      type: "text",
       content: FAIL_CLOSED_CITATION,
     });
+    // The unsupported claim was never streamed before the check ran.
+    expect(lines).not.toContainEqual({
+      type: "text",
+      content: "Die Regel gilt ab Januar.",
+    });
+    expect(lines.filter((l) => l.type === "replace")).toEqual([]);
+  });
+
+  it("releases a validated source-backed answer in one piece", async () => {
+    // With sources present, the answer is buffered for the whole-answer
+    // guardrails instead of streaming chunk by chunk.
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: "Die neuen Regeln gelten laut " },
+        { content: "Bundesregierung Deutschlandticket." },
+      ]),
+    );
+    const context = makeToolContext([
+      {
+        document_id: "web-1",
+        title: "Bundesregierung Deutschlandticket",
+        excerpt: "Aktuelle Regeln",
+        score: 0.8,
+        origin: "web",
+        url: "https://example.org/ticket",
+      },
+    ]);
+
+    const stream = await streamAgenticAnswer("Was gilt aktuell?", [], context);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((l) => l.type === "text")).toEqual([
+      {
+        type: "text",
+        content:
+          "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
+      },
+    ]);
+    expect(lines.filter((l) => l.type === "replace")).toEqual([]);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 
   it("sends only the corrected answer when the first final answer hedges", async () => {

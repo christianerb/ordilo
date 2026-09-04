@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAssistantHistoryContext,
   buildPersonalChatPrompts,
+  extractHistoryEvidence,
   isSafePublicSourceUrl,
   parseChatWireEvent,
   splitChatNdjsonChunk,
@@ -46,6 +47,126 @@ describe("shared chat contract", () => {
     expect(history).toContain("Bundesministerium");
     expect(history).toContain("https://example.org/regeln");
     expect(history).toContain("Regelung ab Januar 2026");
+  });
+
+  it("redacts structured identifiers before excerpts re-enter the model", () => {
+    const history = buildAssistantHistoryContext({
+      text: "Die Überweisung ist raus.",
+      sources: [
+        {
+          document_id: "doc-1",
+          title: "Kontoauszug",
+          excerpt:
+            "IBAN DE89 3704 0044 0532 0130 00, Steuer-ID 12.345.678.901, Versicherungsnummer A123456789",
+          score: 0.9,
+        },
+      ],
+    });
+
+    expect(history).not.toContain("DE89");
+    expect(history).not.toContain("12.345.678.901");
+    expect(history).not.toContain("A123456789");
+    expect(history).toContain("[IBAN]");
+    expect(history).toContain("[Steuer-ID]");
+    expect(history).toContain("[Versicherungsnummer]");
+  });
+
+  it("masks alphanumeric IBANs completely, not just the prefix", () => {
+    const history = buildAssistantHistoryContext({
+      text: "Die Überweisung ist raus.",
+      sources: [
+        {
+          document_id: "doc-1",
+          title: "Kontoauszug",
+          excerpt: "IBAN GB29 NWBK 6016 1331 9268 19 bitte verwenden",
+          score: 0.9,
+        },
+      ],
+    });
+
+    expect(history).toContain("[IBAN]");
+    expect(history).toContain("bitte verwenden");
+    expect(history).not.toContain("NWBK");
+    expect(history).not.toContain("6016");
+    expect(history).not.toContain("GB29");
+  });
+
+  it("masks line-wrapped IBANs from OCR text", () => {
+    const history = buildAssistantHistoryContext({
+      text: "Die Überweisung ist raus.",
+      sources: [
+        {
+          document_id: "doc-1",
+          title: "Kontoauszug",
+          excerpt: "IBAN DE89\n3704 0044 0532 0130 00 verwenden",
+          score: 0.9,
+        },
+      ],
+    });
+
+    expect(history).toContain("[IBAN]");
+    expect(history).toContain("verwenden");
+    expect(history).not.toContain("3704");
+    expect(history).not.toContain("DE89");
+  });
+
+  it("extracts evidence sections from client-built history turns", () => {
+    const history = [
+      { role: "user", content: "Wie war das nochmal?" },
+      {
+        role: "assistant",
+        content: buildAssistantHistoryContext({
+          text: "Das Ticket gilt noch.",
+          sources: [
+            {
+              document_id: "doc-1",
+              title: "Kita Vertrag",
+              excerpt: "Das vorläufige Ticket gilt bis Ende August.",
+              score: 0.9,
+            },
+          ],
+        }),
+      },
+      { role: "assistant", content: "Kurze Antwort ohne Belege." },
+    ];
+
+    const evidence = extractHistoryEvidence(history);
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toContain("Das vorläufige Ticket gilt bis Ende August.");
+  });
+
+  it("excludes public web evidence from the private-passage guard", () => {
+    const history = [
+      {
+        role: "assistant",
+        content: buildAssistantHistoryContext({
+          text: "Die Regel wurde geändert.",
+          sources: [
+            {
+              document_id: "doc-1",
+              title: "Kita Vertrag",
+              excerpt: "Das vorläufige Ticket gilt bis Ende August.",
+              score: 0.9,
+            },
+            {
+              document_id: "web-1",
+              title: "Bundesregierung",
+              excerpt: "Öffentliche Regelung ab Januar 2026.",
+              score: 0.8,
+              origin: "web",
+              url: "https://example.org/regeln",
+            },
+          ],
+        }),
+      },
+    ];
+
+    const evidence = extractHistoryEvidence(history);
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toContain("Das vorläufige Ticket gilt bis Ende August.");
+    expect(evidence[0]).not.toContain("Öffentliche Regelung");
   });
 
   it("parses the shared confirmation wire event for both clients", () => {

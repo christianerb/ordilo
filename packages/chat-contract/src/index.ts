@@ -406,6 +406,86 @@ export function buildPersonalChatPrompts(input: {
   return prompts.slice(0, 3);
 }
 
+// ---------------------------------------------------------------------------
+// PII redaction for model-bound history
+// ---------------------------------------------------------------------------
+
+/** ISO 13616/SWIFT registry lengths, including country and check digits. */
+const IBAN_LENGTHS: Readonly<Record<string, number>> = {
+  AD: 24, AE: 23, AL: 28, AO: 25, AT: 20, AZ: 28,
+  BA: 20, BE: 16, BF: 27, BG: 22, BH: 22, BI: 27, BJ: 28, BR: 29, BY: 28,
+  CF: 27, CG: 27, CH: 21, CI: 28, CM: 27, CR: 22, CV: 25, CY: 28, CZ: 24,
+  DE: 22, DJ: 27, DK: 18, DO: 28, DZ: 24,
+  EE: 20, EG: 29, ES: 24,
+  FI: 18, FK: 18, FO: 18, FR: 27,
+  GA: 27, GB: 22, GE: 22, GI: 23, GL: 18, GQ: 27, GR: 27, GT: 28, GW: 25,
+  HR: 21, HU: 28,
+  IE: 22, IL: 23, IQ: 23, IR: 26, IS: 26, IT: 27,
+  JO: 30,
+  KM: 27, KW: 30, KZ: 20,
+  LB: 28, LC: 32, LI: 21, LT: 20, LU: 20, LV: 21, LY: 25,
+  MA: 28, MC: 27, MD: 24, ME: 22, MG: 27, MK: 19, ML: 28, MN: 20, MR: 27,
+  MT: 31, MU: 30, MZ: 25,
+  NI: 32, NL: 18, NO: 15,
+  OM: 23,
+  PK: 24, PL: 28, PS: 29, PT: 25,
+  QA: 29,
+  RO: 24, RS: 22, RU: 33,
+  SA: 24, SC: 31, SD: 18, SE: 24, SI: 19, SK: 24, SM: 27, SN: 28, SO: 23,
+  ST: 25, SV: 28,
+  TD: 27, TG: 28, TL: 23, TN: 24, TR: 26,
+  UA: 29,
+  VA: 22, VG: 24,
+  XK: 20,
+  YE: 30,
+};
+
+/**
+ * Broad candidate matcher. The replacement below uses the country-specific
+ * length to stop exactly at the IBAN boundary, preserving adjacent uppercase
+ * OCR text such as "NICHT ZAHLEN". Whitespace includes OCR line wraps/tabs.
+ */
+const IBAN_CANDIDATE_PATTERN =
+  /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/g;
+
+function redactIbanCandidate(candidate: string): string {
+  const ibanLength = IBAN_LENGTHS[candidate.slice(0, 2)];
+  if (!ibanLength) return candidate;
+
+  let identifierCharacters = 0;
+  for (let index = 0; index < candidate.length; index += 1) {
+    if (!/[A-Z0-9]/.test(candidate[index])) continue;
+    identifierCharacters += 1;
+    if (identifierCharacters === ibanLength) {
+      return `[IBAN]${candidate.slice(index + 1)}`;
+    }
+  }
+
+  return candidate;
+}
+
+/** German tax ID: 11 digits, often formatted as XX.XXX.XXX.XXX. */
+const TAX_ID_PATTERN = /\b\d{2}\.?\d{3}\.?\d{3}\.?\d{3}\b/g;
+
+/** German health/social insurance number: one letter plus 8-9 digits. */
+const INSURANCE_NUMBER_PATTERN = /\b[A-Z]\d{8}\d?\b/g;
+
+/**
+ * Masks structured identifiers (IBAN, tax ID, insurance number) before a
+ * persisted source excerpt is fed back into a model turn. Tool results are
+ * redacted the same way, so follow-up history must not reintroduce the raw
+ * values the tool boundary deliberately removed.
+ */
+export function redactPII(text: string): string {
+  return text
+    .replace(IBAN_CANDIDATE_PATTERN, redactIbanCandidate)
+    .replace(TAX_ID_PATTERN, "[Steuer-ID]")
+    .replace(INSURANCE_NUMBER_PATTERN, "[Versicherungsnummer]");
+}
+
+/** Marks the evidence section inside a client-built assistant history turn. */
+const HISTORY_EVIDENCE_MARKER = "[Belege der vorherigen Antwort]";
+
 /** Compact, source-bearing context shared by server, Web and iOS follow-ups. */
 export function buildAssistantHistoryContext(input: {
   text: string;
@@ -437,7 +517,9 @@ export function buildAssistantHistoryContext(input: {
         isWebChatSource(source)
           ? "Web-Quelle"
           : "Familien-Unterlage";
-      const excerpt = source.excerpt.trim().slice(0, 500);
+      // Redact before slicing so an identifier straddling the 500-char
+      // cut is still masked instead of leaking as a partial value.
+      const excerpt = redactPII(source.excerpt.trim()).slice(0, 500);
       const webUrl =
         kind === "Web-Quelle" && isSafePublicSourceUrl(source.url)
           ? ` (${source.url})`
@@ -446,10 +528,44 @@ export function buildAssistantHistoryContext(input: {
         excerpt ? ` — ${excerpt}` : ""
       }`;
     });
-    parts.push(`[Belege der vorherigen Antwort]\n${sourceContext.join("\n")}`);
+    parts.push(`${HISTORY_EVIDENCE_MARKER}\n${sourceContext.join("\n")}`);
   }
 
   return parts.join("\n\n");
+}
+
+/**
+ * Extracts the evidence sections (quoted source excerpts) from client-built
+ * assistant history turns. Privacy guards match against these even when
+ * persisted conversation rows are unavailable — the client-history fallback
+ * or an unpersisted suffix the server accepted carries the same private
+ * excerpts.
+ */
+export function extractHistoryEvidence(
+  history: ReadonlyArray<{ role: string; content: string }>,
+): string[] {
+  const sections: string[] = [];
+  // Entry shape written by buildAssistantHistoryContext — "1. <kind>: ...".
+  const entryStart = /(?:^|\n)\d+\.\s+(Familien-Unterlage|Web-Quelle):/g;
+  for (const message of history) {
+    if (message.role !== "assistant") continue;
+    const markerIndex = message.content.indexOf(HISTORY_EVIDENCE_MARKER);
+    if (markerIndex === -1) continue;
+    const section = message.content.slice(
+      markerIndex + HISTORY_EVIDENCE_MARKER.length,
+    );
+    // Keep only family-document entries: Web-Quelle excerpts are public
+    // material, and feeding them into the private-passage guard would block
+    // legitimate follow-up searches quoting earlier public evidence.
+    const matches = [...section.matchAll(entryStart)];
+    for (let index = 0; index < matches.length; index += 1) {
+      if (matches[index][1] !== "Familien-Unterlage") continue;
+      const end = matches[index + 1]?.index ?? section.length;
+      // Multi-line excerpts stay whole: an entry runs until the next one.
+      sections.push(section.slice(matches[index].index, end).trim());
+    }
+  }
+  return sections;
 }
 
 function asText(value: unknown): string | null {

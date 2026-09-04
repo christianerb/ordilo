@@ -842,6 +842,14 @@ export async function streamAgenticAnswer(
           // the way to a tool call never flash on screen.
           let pendingRelease = "";
 
+          // A source-backed answer must pass the citation guard as a whole
+          // before any character reaches the client (fail closed), so such
+          // a round buffers its text instead of streaming it. Sources only
+          // accumulate while tools run, so the requirement is stable for
+          // the whole round.
+          const bufferAnswerText =
+            requiredCitationSources(toolContext).length > 0;
+
           for await (const event of openaiStream) {
             if (event.type === "error") {
               throw new ChatError(
@@ -874,6 +882,13 @@ export async function streamAgenticAnswer(
             // retracted below; text still in the hold-back buffer is
             // discarded silently and never appears at all.
             if (event.type === "response.output_text.delta") {
+              if (bufferAnswerText) {
+                // Held back for the whole-answer guardrails below: an
+                // uncited or hedged source-backed draft must never be
+                // visible, not even for the seconds a correction takes.
+                contentChunks.push(event.delta);
+                continue;
+              }
               pendingRelease += event.delta;
               if (
                 answerTextVisible ||
@@ -1196,6 +1211,24 @@ export async function streamAgenticAnswer(
                   hasSecret: Boolean(cardSourceDocument.secret),
                 };
               }
+              // A buffered round held back the lead-in text accompanying
+              // the card; release it only when it passes the same guards
+              // as a final answer. Otherwise the validated card alone
+              // carries the answer — an unsupported claim must not slip
+              // through next to it.
+              const cardLeadIn = bufferAnswerText
+                ? contentChunks.join("").trim()
+                : "";
+              const cardCitationSources =
+                requiredCitationSources(toolContext);
+              if (
+                cardLeadIn &&
+                !containsHedgingLanguage(cardLeadIn) &&
+                (cardCitationSources.length === 0 ||
+                  answerCitesSources(cardLeadIn, cardCitationSources))
+              ) {
+                send({ type: "text", content: cardLeadIn });
+              }
               send({ type: "card", card: cardToSend });
               send({ type: "sources", sources: toolContext.sources });
               send({
@@ -1228,10 +1261,15 @@ export async function streamAgenticAnswer(
               // State/suggestion tools describe an answer that already
               // exists in this response. They do not need another paid
               // model round when that answer already passes the guards.
-              // Long text may already be visible. Only flush the held-back
-              // suffix so no content is duplicated on the client.
-              if (pendingRelease) {
-                send({ type: "text", content: pendingRelease });
+              // In a buffered round nothing has reached the client yet, so
+              // the validated draft goes out in one piece; otherwise only
+              // the held-back suffix is flushed, so no content is
+              // duplicated on the client.
+              const unreleased = bufferAnswerText
+                ? contentChunks.join("")
+                : pendingRelease;
+              if (unreleased) {
+                send({ type: "text", content: unreleased });
               }
               send({ type: "sources", sources: toolContext.sources });
               send({
@@ -1340,8 +1378,12 @@ export async function streamAgenticAnswer(
               send({ type: "text", content: finalText });
               answerTextVisible = true;
             }
+          } else if (bufferAnswerText && fullAnswer) {
+            // The clean, source-backed answer was buffered for the
+            // whole-answer guardrails and is released in one piece now.
+            send({ type: "text", content: fullAnswer });
           }
-          // Otherwise the clean, source-bearing answer has already streamed.
+          // Otherwise the clean answer has already streamed piece by piece.
 
           // Send accumulated sources and done signal.
           send({ type: "sources", sources: toolContext.sources });
