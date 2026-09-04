@@ -410,14 +410,59 @@ export function buildPersonalChatPrompts(input: {
 // PII redaction for model-bound history
 // ---------------------------------------------------------------------------
 
+/** ISO 13616/SWIFT registry lengths, including country and check digits. */
+const IBAN_LENGTHS: Readonly<Record<string, number>> = {
+  AD: 24, AE: 23, AL: 28, AO: 25, AT: 20, AZ: 28,
+  BA: 20, BE: 16, BF: 27, BG: 22, BH: 22, BI: 27, BJ: 28, BR: 29, BY: 28,
+  CF: 27, CG: 27, CH: 21, CI: 28, CM: 27, CR: 22, CV: 25, CY: 28, CZ: 24,
+  DE: 22, DJ: 27, DK: 18, DO: 28, DZ: 24,
+  EE: 20, EG: 29, ES: 24,
+  FI: 18, FK: 18, FO: 18, FR: 27,
+  GA: 27, GB: 22, GE: 22, GI: 23, GL: 18, GQ: 27, GR: 27, GT: 28, GW: 25,
+  HR: 21, HU: 28,
+  IE: 22, IL: 23, IQ: 23, IR: 26, IS: 26, IT: 27,
+  JO: 30,
+  KM: 27, KW: 30, KZ: 20,
+  LB: 28, LC: 32, LI: 21, LT: 20, LU: 20, LV: 21, LY: 25,
+  MA: 28, MC: 27, MD: 24, ME: 22, MG: 27, MK: 19, ML: 28, MN: 20, MR: 27,
+  MT: 31, MU: 30, MZ: 25,
+  NI: 32, NL: 18, NO: 15,
+  OM: 23,
+  PK: 24, PL: 28, PS: 29, PT: 25,
+  QA: 29,
+  RO: 24, RS: 22, RU: 33,
+  SA: 24, SC: 31, SD: 18, SE: 24, SI: 19, SK: 24, SM: 27, SN: 28, SO: 23,
+  ST: 25, SV: 28,
+  TD: 27, TG: 28, TL: 23, TN: 24, TR: 26,
+  UA: 29,
+  VA: 22, VG: 24,
+  XK: 20,
+  YE: 30,
+};
+
 /**
- * IBAN: 2-letter country code + 2 check digits + 11–28 alphanumeric BBAN
- * characters, optional whitespace between them. The BBAN itself may contain
- * letters (e.g. GB, CH), so a digits-only match would mask just the prefix
- * and leak the account body; and OCR output wraps lines, so groups may be
- * split by newlines or tabs rather than plain spaces.
+ * Broad candidate matcher. The replacement below uses the country-specific
+ * length to stop exactly at the IBAN boundary, preserving adjacent uppercase
+ * OCR text such as "NICHT ZAHLEN". Whitespace includes OCR line wraps/tabs.
  */
-const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,28}\b/g;
+const IBAN_CANDIDATE_PATTERN =
+  /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,30}\b/g;
+
+function redactIbanCandidate(candidate: string): string {
+  const ibanLength = IBAN_LENGTHS[candidate.slice(0, 2)];
+  if (!ibanLength) return candidate;
+
+  let identifierCharacters = 0;
+  for (let index = 0; index < candidate.length; index += 1) {
+    if (!/[A-Z0-9]/.test(candidate[index])) continue;
+    identifierCharacters += 1;
+    if (identifierCharacters === ibanLength) {
+      return `[IBAN]${candidate.slice(index + 1)}`;
+    }
+  }
+
+  return candidate;
+}
 
 /** German tax ID: 11 digits, often formatted as XX.XXX.XXX.XXX. */
 const TAX_ID_PATTERN = /\b\d{2}\.?\d{3}\.?\d{3}\.?\d{3}\b/g;
@@ -433,7 +478,7 @@ const INSURANCE_NUMBER_PATTERN = /\b[A-Z]\d{8}\d?\b/g;
  */
 export function redactPII(text: string): string {
   return text
-    .replace(IBAN_PATTERN, "[IBAN]")
+    .replace(IBAN_CANDIDATE_PATTERN, redactIbanCandidate)
     .replace(TAX_ID_PATTERN, "[Steuer-ID]")
     .replace(INSURANCE_NUMBER_PATTERN, "[Versicherungsnummer]");
 }
