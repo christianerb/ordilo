@@ -419,6 +419,39 @@ describe("POST /api/chat", () => {
     );
   });
 
+  it("feeds client-history evidence into the web-search guard input", async () => {
+    // When the client history is the (fallback) source of a turn, its
+    // evidence sections still carry private excerpts — the search_web
+    // guard must see them.
+    (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ndjsonStream([{ type: "done" }]),
+    );
+
+    const history = [
+      { role: "user", content: "Wie war das nochmal?" },
+      {
+        role: "assistant",
+        content:
+          "Das Ticket gilt noch.\n\n[Belege der vorherigen Antwort]\n" +
+          "1. Familien-Unterlage: Kita Vertrag — Das vorläufige Ticket gilt bis Ende August.",
+      },
+    ];
+
+    await POST(createRequest(validBody({ history })));
+
+    expect(streamAgenticAnswer).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Array),
+      expect.objectContaining({
+        historyExcerpts: expect.arrayContaining([
+          expect.stringContaining(
+            "Das vorläufige Ticket gilt bis Ende August.",
+          ),
+        ]),
+      }),
+    );
+  });
+
   it("returns 500 on ChatError (before stream starts)", async () => {
     (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ChatError("OpenAI: API-Fehler.", "OPENAI_API_ERROR", 500),

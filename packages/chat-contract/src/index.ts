@@ -410,8 +410,13 @@ export function buildPersonalChatPrompts(input: {
 // PII redaction for model-bound history
 // ---------------------------------------------------------------------------
 
-/** IBAN: 2-letter country code + 2 check digits + up to 30 alphanumeric chars. */
-const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:\s?\d{0,4}){5,8}\b/g;
+/**
+ * IBAN: 2-letter country code + 2 check digits + 11–28 alphanumeric BBAN
+ * characters, optional single spaces between them. The BBAN itself may
+ * contain letters (e.g. GB, CH), so a digits-only match would mask just the
+ * prefix and leak the account body into the next model turn.
+ */
+const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,28}\b/g;
 
 /** German tax ID: 11 digits, often formatted as XX.XXX.XXX.XXX. */
 const TAX_ID_PATTERN = /\b\d{2}\.?\d{3}\.?\d{3}\.?\d{3}\b/g;
@@ -431,6 +436,9 @@ export function redactPII(text: string): string {
     .replace(TAX_ID_PATTERN, "[Steuer-ID]")
     .replace(INSURANCE_NUMBER_PATTERN, "[Versicherungsnummer]");
 }
+
+/** Marks the evidence section inside a client-built assistant history turn. */
+const HISTORY_EVIDENCE_MARKER = "[Belege der vorherigen Antwort]";
 
 /** Compact, source-bearing context shared by server, Web and iOS follow-ups. */
 export function buildAssistantHistoryContext(input: {
@@ -474,10 +482,32 @@ export function buildAssistantHistoryContext(input: {
         excerpt ? ` — ${excerpt}` : ""
       }`;
     });
-    parts.push(`[Belege der vorherigen Antwort]\n${sourceContext.join("\n")}`);
+    parts.push(`${HISTORY_EVIDENCE_MARKER}\n${sourceContext.join("\n")}`);
   }
 
   return parts.join("\n\n");
+}
+
+/**
+ * Extracts the evidence sections (quoted source excerpts) from client-built
+ * assistant history turns. Privacy guards match against these even when
+ * persisted conversation rows are unavailable — the client-history fallback
+ * or an unpersisted suffix the server accepted carries the same private
+ * excerpts.
+ */
+export function extractHistoryEvidence(
+  history: ReadonlyArray<{ role: string; content: string }>,
+): string[] {
+  const sections: string[] = [];
+  for (const message of history) {
+    if (message.role !== "assistant") continue;
+    const markerIndex = message.content.indexOf(HISTORY_EVIDENCE_MARKER);
+    if (markerIndex === -1) continue;
+    sections.push(
+      message.content.slice(markerIndex + HISTORY_EVIDENCE_MARKER.length),
+    );
+  }
+  return sections;
 }
 
 function asText(value: unknown): string | null {

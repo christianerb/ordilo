@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildAssistantHistoryContext,
   buildPersonalChatPrompts,
+  extractHistoryEvidence,
   isSafePublicSourceUrl,
   parseChatWireEvent,
   splitChatNdjsonChunk,
@@ -68,6 +69,52 @@ describe("shared chat contract", () => {
     expect(history).toContain("[IBAN]");
     expect(history).toContain("[Steuer-ID]");
     expect(history).toContain("[Versicherungsnummer]");
+  });
+
+  it("masks alphanumeric IBANs completely, not just the prefix", () => {
+    const history = buildAssistantHistoryContext({
+      text: "Die Überweisung ist raus.",
+      sources: [
+        {
+          document_id: "doc-1",
+          title: "Kontoauszug",
+          excerpt: "IBAN GB29 NWBK 6016 1331 9268 19 bitte verwenden",
+          score: 0.9,
+        },
+      ],
+    });
+
+    expect(history).toContain("[IBAN]");
+    expect(history).toContain("bitte verwenden");
+    expect(history).not.toContain("NWBK");
+    expect(history).not.toContain("6016");
+    expect(history).not.toContain("GB29");
+  });
+
+  it("extracts evidence sections from client-built history turns", () => {
+    const history = [
+      { role: "user", content: "Wie war das nochmal?" },
+      {
+        role: "assistant",
+        content: buildAssistantHistoryContext({
+          text: "Das Ticket gilt noch.",
+          sources: [
+            {
+              document_id: "doc-1",
+              title: "Kita Vertrag",
+              excerpt: "Das vorläufige Ticket gilt bis Ende August.",
+              score: 0.9,
+            },
+          ],
+        }),
+      },
+      { role: "assistant", content: "Kurze Antwort ohne Belege." },
+    ];
+
+    const evidence = extractHistoryEvidence(history);
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toContain("Das vorläufige Ticket gilt bis Ende August.");
   });
 
   it("parses the shared confirmation wire event for both clients", () => {
