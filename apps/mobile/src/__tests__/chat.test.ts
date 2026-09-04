@@ -107,6 +107,24 @@ describe("chat stream event parsing", () => {
       parseChatStreamEvent({ type: "message_saved", message_id: "m-9" }),
     ).toEqual({ type: "message_saved", messageId: "m-9" });
     expect(
+      parseChatStreamEvent({ type: "response_state", state: "conflict" }),
+    ).toEqual({ type: "response_state", state: "conflict" });
+    expect(
+      parseChatStreamEvent({
+        type: "suggestion",
+        suggestion: {
+          label: "Fristen prüfen",
+          prompt: "Welche Fristen laufen bald ab?",
+        },
+      }),
+    ).toEqual({
+      type: "suggestion",
+      suggestion: {
+        label: "Fristen prüfen",
+        prompt: "Welche Fristen laufen bald ab?",
+      },
+    });
+    expect(
       parseChatStreamEvent({ type: "error", error: "Kaputt", code: "CHAT_FAILED" }),
     ).toEqual({ type: "error", error: "Kaputt", code: "CHAT_FAILED" });
   });
@@ -233,6 +251,20 @@ describe("chat message reducer", () => {
 
     message = applyChatEvent(message, { type: "message_saved", messageId: "m-1" });
     expect(message.dbId).toBe("m-1");
+
+    message = applyChatEvent(message, {
+      type: "response_state",
+      state: "partial",
+    });
+    message = applyChatEvent(message, {
+      type: "suggestion",
+      suggestion: {
+        label: "Mehr prüfen",
+        prompt: "Prüfe die übrigen Quellen.",
+      },
+    });
+    expect(message.responseState).toBe("partial");
+    expect(message.suggestion?.prompt).toBe("Prüfe die übrigen Quellen.");
   });
 
   it("marks stream errors on the message", () => {
@@ -246,7 +278,7 @@ describe("chat message reducer", () => {
 });
 
 describe("chat history for follow-up questions", () => {
-  it("appends source titles to assistant answers like the web client", () => {
+  it("appends source context to assistant answers like the web client", () => {
     const history = buildChatHistory([
       {
         ...baseMessage,
@@ -269,7 +301,10 @@ describe("chat history for follow-up questions", () => {
       { role: "user", content: "Was steht in der Stromrechnung?" },
       {
         role: "assistant",
-        content: "Der Abschlag beträgt 80 Euro.\n\n[Gefundene Dokumente: Stromrechnung Juli]",
+        content:
+          "Der Abschlag beträgt 80 Euro.\n\n" +
+          "[Belege der vorherigen Antwort]\n" +
+          "1. Familien-Unterlage: Stromrechnung Juli",
       },
     ]);
   });

@@ -7,9 +7,9 @@ import {
 import { SucheClient } from "./suche-client";
 import type { DocumentMetadata, InitialMessage } from "./suche-client";
 import {
-  CHAT_ACTION_TOOL_NAMES,
   type ChatActionToolName,
 } from "@/lib/schemas/chat";
+import { isChatActionToolName } from "@ordilo/chat-contract";
 
 /**
  * Search / Chat page (server component).
@@ -62,6 +62,7 @@ export default async function SuchePage({
     { data: docData },
     conversations,
     { data: selectedConversation },
+    { data: upcomingTask },
   ] = await Promise.all([
     supabase
       .from("family_members")
@@ -83,6 +84,15 @@ export default async function SuchePage({
           .eq("family_id", family.id)
           .maybeSingle()
       : Promise.resolve({ data: null }),
+    supabase
+      .from("tasks")
+      .select("title")
+      .eq("family_id", family.id)
+      .eq("status", "open")
+      .eq("confirmed", true)
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const members = (memberData ?? []).map((m) => ({
@@ -140,6 +150,8 @@ export default async function SuchePage({
         content: row.content,
         sources: row.sources ?? [],
         card: row.card ?? undefined,
+        responseState: row.response_state ?? "answered",
+        suggestion: row.suggestion ?? null,
         // Pending action cards are restored as "ready" — re-confirming is
         // safe because the confirmation endpoint deduplicates on the
         // action id, and the persisted id IS the one the live card used.
@@ -149,8 +161,7 @@ export default async function SuchePage({
         actions: (row.actions ?? [])
           .filter(
             (action) =>
-              typeof action?.tool_name === "string" &&
-              (CHAT_ACTION_TOOL_NAMES as readonly string[]).includes(action.tool_name) &&
+              isChatActionToolName(action?.tool_name) &&
               Boolean(action?.action_args),
           )
           .map((action, index) => ({
@@ -176,6 +187,7 @@ export default async function SuchePage({
       familyName={family.name}
       members={members}
       documents={documents}
+      upcomingTaskTitle={upcomingTask?.title ?? null}
       initialQuery={initialQuery}
       conversationId={conversationId}
       initialMessages={initialMessages}

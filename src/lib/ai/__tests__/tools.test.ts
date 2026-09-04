@@ -10,6 +10,10 @@ vi.mock("@/lib/ai/search", () => ({
   graphSearch: vi.fn().mockResolvedValue([]),
 }));
 
+vi.mock("@/lib/ai/web-search", () => ({
+  searchPublicWeb: vi.fn(),
+}));
+
 vi.mock("@/lib/ai/chat", () => ({
   filterByRelevanceThreshold: vi.fn((r: unknown[]) => r),
   combineSearchResults: vi.fn(() => []),
@@ -43,6 +47,7 @@ import {
   markDocumentFailed,
   restoreConfirmedAfterAnalysisFailure,
 } from "@/lib/supabase/document-helpers";
+import { searchPublicWeb } from "@/lib/ai/web-search";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -2700,5 +2705,80 @@ describe("query_calendar_events", () => {
       uhrzeit: "ganztägig",
       wiederholung: "jährlich",
     });
+  });
+});
+
+describe("answer metadata tools", () => {
+  it("records a non-success response state without touching family data", async () => {
+    const ctx = makeCtx({ responseState: "answered" });
+
+    const result = JSON.parse(
+      await executeTool("set_response_state", { state: "conflict" }, ctx),
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(ctx.responseState).toBe("conflict");
+    expect(ctx.client.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invented response state", async () => {
+    const ctx = makeCtx({ responseState: "answered" });
+
+    const result = JSON.parse(
+      await executeTool("set_response_state", { state: "guessing" }, ctx),
+    );
+
+    expect(result.error).toBe("Ungültiger Antwortzustand.");
+    expect(ctx.responseState).toBe("answered");
+  });
+
+  it("tracks family and Web knowledge tools centrally", async () => {
+    const searchedScopes = new Set<"family" | "web">();
+    const ctx = makeCtx({ searchedScopes });
+
+    await executeTool("list_family_members", {}, ctx);
+    await executeTool("search_web", {}, ctx);
+
+    expect([...searchedScopes].sort()).toEqual(["family", "web"]);
+  });
+
+  it("fails Web search closed when private family names were not loaded", async () => {
+    const ctx = makeCtx({ webPrivacyReady: false });
+
+    const result = JSON.parse(
+      await executeTool(
+        "search_web",
+        { query: "Deutschlandticket Regeln" },
+        ctx,
+      ),
+    );
+
+    expect(result.error).toMatch(/Datenschutzgründen/);
+    expect(searchPublicWeb).not.toHaveBeenCalled();
+    expect(ctx.client.from).not.toHaveBeenCalled();
+  });
+
+  it("reuses preloaded family names for Web anonymization", async () => {
+    vi.mocked(searchPublicWeb).mockResolvedValueOnce({
+      query: "Deutschlandticket Regeln",
+      summary: "Aktuelle Regeln.",
+      sources: [],
+    });
+    const ctx = makeCtx({
+      webPrivacyReady: true,
+      privateWebTerms: ["Emma", "Christian"],
+    });
+
+    await executeTool(
+      "search_web",
+      { query: "Deutschlandticket Regeln" },
+      ctx,
+    );
+
+    expect(searchPublicWeb).toHaveBeenCalledWith(
+      "Deutschlandticket Regeln",
+      ["Emma", "Christian"],
+    );
+    expect(ctx.client.from).not.toHaveBeenCalled();
   });
 });

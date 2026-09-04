@@ -42,6 +42,7 @@ import {
   FeedbackRow,
   MessageBubble,
   SourcesSection,
+  SuggestionButton,
 } from "@/src/components/chat";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
@@ -75,7 +76,6 @@ import {
   type ChatMessage,
 } from "@/src/lib/chat";
 import {
-  buildSuggestedPrompts,
   deleteConversation,
   formatConversationWhen,
   getConversationTitle,
@@ -83,6 +83,7 @@ import {
   loadConversationMessages,
   type ConversationSummary,
 } from "@/src/lib/conversations";
+import { buildPersonalChatPrompts } from "@ordilo/chat-contract";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
@@ -128,6 +129,7 @@ export default function SucheScreen() {
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [members, setMembers] = useState<FamilyMemberOption[]>([]);
   const [recentDocumentTitle, setRecentDocumentTitle] = useState<string | null>(null);
+  const [upcomingTaskTitle, setUpcomingTaskTitle] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState<string | null>(null);
   const [deleteCandidate, setDeleteCandidate] = useState<ConversationSummary | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -191,6 +193,24 @@ export default function SucheScreen() {
         // The suggestion falls back to a general question.
       }
     })();
+    void (async () => {
+      try {
+        const { data } = await getSupabase()
+          .from("tasks")
+          .select("title")
+          .eq("family_id", family.id)
+          .eq("status", "open")
+          .eq("confirmed", true)
+          .order("due_date", { ascending: true, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+        if (!cancelled && data && typeof data.title === "string") {
+          setUpcomingTaskTitle(data.title);
+        }
+      } catch {
+        // The suggestion falls back to family or general context.
+      }
+    })();
     void Promise.resolve().then(() => refreshConversations());
     return () => {
       cancelled = true;
@@ -198,8 +218,13 @@ export default function SucheScreen() {
   }, [family, refreshConversations]);
 
   const suggestions = useMemo(
-    () => buildSuggestedPrompts({ members, recentDocumentTitle }),
-    [members, recentDocumentTitle],
+    () =>
+      buildPersonalChatPrompts({
+        members,
+        recentDocumentTitle,
+        upcomingTaskTitle,
+      }),
+    [members, recentDocumentTitle, upcomingTaskTitle],
   );
   const activeConversation = useMemo(
     () => conversations.find((conversation) => conversation.id === conversationId) ?? null,
@@ -289,6 +314,8 @@ export default function SucheScreen() {
       text: "",
       card: null,
       sources: [],
+      suggestion: null,
+      responseState: "answered",
       actions: [],
       toolCalls: [],
       status: "streaming",
@@ -302,11 +329,33 @@ export default function SucheScreen() {
       question: string,
       assistantMessage: ChatMessage,
       history: { role: "user" | "assistant"; content: string }[],
+      repair?: {
+        messageId: string;
+        reasons: ChatFeedbackReason[];
+        comment?: string;
+        originalMessage: ChatMessage;
+      },
     ) => {
       if (!family) return;
       lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setBusy(true);
+      let receivedDone = false;
+      let receivedError = false;
+      let pendingText = "";
+      let textFlushTimer: ReturnType<typeof setTimeout> | null = null;
+      const flushPendingText = () => {
+        if (textFlushTimer) {
+          clearTimeout(textFlushTimer);
+          textFlushTimer = null;
+        }
+        if (!pendingText) return;
+        const content = pendingText;
+        pendingText = "";
+        updateMessage(assistantMessage.id, (message) =>
+          applyChatEvent(message, { type: "text", content }),
+        );
+      };
 
       try {
         await streamChat(
@@ -315,8 +364,21 @@ export default function SucheScreen() {
             message: question,
             conversationId,
             history,
+            repair: repair
+              ? {
+                  messageId: repair.messageId,
+                  reasons: repair.reasons,
+                  comment: repair.comment,
+                }
+              : undefined,
           },
           (event) => {
+            if (event.type === "text") {
+              pendingText += event.content;
+              textFlushTimer ??= setTimeout(flushPendingText, 32);
+              return;
+            }
+            flushPendingText();
             if (event.type === "conversation") {
               setConversationId(event.conversationId);
               return;
@@ -325,29 +387,52 @@ export default function SucheScreen() {
               applyChatEvent(message, event),
             );
             if (event.type === "done") {
+              receivedDone = true;
               void Haptics.notificationAsync(
                 Haptics.NotificationFeedbackType.Success,
               );
               void refreshConversations();
+            } else if (event.type === "error") {
+              receivedError = true;
             }
           },
         );
-        // The stream may end without a terminal event (dropped connection).
-        updateMessage(assistantMessage.id, (message) => {
-          if (message.status !== "streaming") return message;
-          return message.text.trim()
-            ? { ...message, status: "done" }
-            : { ...message, text: CHAT_ERROR_MESSAGE, status: "error" };
-        });
+        flushPendingText();
+        if (!receivedDone || receivedError) {
+          if (repair) {
+            updateMessage(assistantMessage.id, () => repair.originalMessage);
+            throw new Error("Chat repair stream incomplete");
+          } else {
+            updateMessage(assistantMessage.id, (message) => ({
+              ...message,
+              text: CHAT_ERROR_MESSAGE,
+              status: "error",
+            }));
+          }
+        }
       } catch (error) {
+        if (textFlushTimer) {
+          clearTimeout(textFlushTimer);
+          textFlushTimer = null;
+        }
+        pendingText = "";
         const status = httpStatusOf(error);
-        updateMessage(assistantMessage.id, (message) => ({
-          ...message,
-          text: status === 429 ? CHAT_RATE_LIMIT_MESSAGE : CHAT_ERROR_MESSAGE,
-          status: status === 429 ? "rate_limited" : "error",
-        }));
+        updateMessage(assistantMessage.id, (message) =>
+          repair
+            ? repair.originalMessage
+            : {
+                ...message,
+                text:
+                  status === 429
+                    ? CHAT_RATE_LIMIT_MESSAGE
+                    : CHAT_ERROR_MESSAGE,
+                status: status === 429 ? "rate_limited" : "error",
+              },
+        );
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (repair) throw error;
       } finally {
+        flushPendingText();
         setBusy(false);
       }
     },
@@ -367,6 +452,8 @@ export default function SucheScreen() {
         text: trimmed,
         card: null,
         sources: [],
+        suggestion: null,
+        responseState: "answered",
         actions: [],
         toolCalls: [],
         status: "done",
@@ -489,6 +576,7 @@ export default function SucheScreen() {
       feedback: "positive" | "negative",
       reasons: ChatFeedbackReason[],
       comment: string,
+      repairRequested = false,
     ) => {
       if (!family || !message.dbId) return;
       // sendChatFeedback throws a German ApiError on failure.
@@ -497,6 +585,7 @@ export default function SucheScreen() {
         feedback,
         reasons: feedback === "negative" ? reasons : undefined,
         comment: feedback === "negative" && comment.trim() ? comment.trim() : undefined,
+        repairRequested,
       });
       updateMessage(message.id, (current) => ({
         ...current,
@@ -504,6 +593,49 @@ export default function SucheScreen() {
       }));
     },
     [family, updateMessage],
+  );
+
+  const repairAnswer = useCallback(
+    async (
+      message: ChatMessage,
+      reasons: ChatFeedbackReason[],
+      comment: string,
+    ) => {
+      if (busy || !message.dbId) return;
+      const targetIndex = messages.findIndex(
+        (candidate) => candidate.id === message.id,
+      );
+      const userIndex = messages
+        .slice(0, targetIndex)
+        .map((candidate, index) => ({ candidate, index }))
+        .reverse()
+        .find(({ candidate }) => candidate.role === "user")?.index;
+      if (userIndex === undefined) return;
+
+      const userMessage = messages[userIndex];
+      const history = buildChatHistory(messages.slice(0, userIndex));
+      const replacement: ChatMessage = {
+        ...createAssistantMessage(),
+        id: message.id,
+        dbId: message.dbId,
+      };
+      const originalMessage: ChatMessage = {
+        ...message,
+        feedback: "negative",
+      };
+      setMessages((current) =>
+        current.map((candidate) =>
+          candidate.id === message.id ? replacement : candidate,
+        ),
+      );
+      await runStream(userMessage.text, replacement, history, {
+        messageId: message.dbId,
+        reasons,
+        comment: comment || undefined,
+        originalMessage,
+      });
+    },
+    [busy, createAssistantMessage, messages, runStream],
   );
 
   const startNewChat = useCallback(() => {
@@ -704,6 +836,18 @@ export default function SucheScreen() {
     };
   }, [discardVoiceRecording]);
 
+  const latestRepairableMessageId = busy
+    ? null
+    : messages
+        .slice()
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "assistant" &&
+            message.status === "done" &&
+            message.dbId,
+        )?.id ?? null;
+
   return (
     // suche is a native modal, so the root BottomSheetModalProvider's
     // portal renders underneath it. The history sheet needs a host of
@@ -882,6 +1026,15 @@ export default function SucheScreen() {
                                   sources={message.sources}
                                 />
                               ) : null}
+                              {message.suggestion &&
+                              message.status === "done" ? (
+                                <SuggestionButton
+                                  label={message.suggestion.label}
+                                  onPress={() =>
+                                    void send(message.suggestion!.prompt)
+                                  }
+                                />
+                              ) : null}
                               {message.actions.map((action) => (
                                 <ActionCardView
                                   action={action}
@@ -906,14 +1059,31 @@ export default function SucheScreen() {
                               {message.status === "done" && message.dbId ? (
                                 <FeedbackRow
                                   message={message}
-                                  onSend={(feedback, reasons, comment) =>
+                                  onSend={(
+                                    feedback,
+                                    reasons,
+                                    comment,
+                                    repairRequested,
+                                  ) =>
                                     sendFeedback(
                                       message,
                                       feedback,
                                       reasons,
                                       comment,
+                                      repairRequested,
                                     )
                                   }
+                                  onRepair={
+                                    message.id === latestRepairableMessageId
+                                      ? (reasons, comment) =>
+                                          repairAnswer(
+                                            message,
+                                            reasons,
+                                            comment,
+                                          )
+                                      : undefined
+                                  }
+                                  onRepairStart={() => setBusy(true)}
                                 />
                               ) : null}
                               {message.status === "error" ? (

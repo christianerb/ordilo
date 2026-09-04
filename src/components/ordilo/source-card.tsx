@@ -2,6 +2,7 @@
 
 import { FileText, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SourceCardRoot } from "@/components/ordilo/source-card-root";
 
 /** Icon + label describing where a source citation came from (e.g. document search vs. task search). */
 export interface SourceCardKind {
@@ -21,6 +22,8 @@ export interface SourceCardProps {
   score: number;
   /** Click handler — when provided, the card is interactive (navigates to document). */
   onClick?: () => void;
+  /** Safe external URL. When set, the card is a real link. */
+  href?: string;
   /** Optional additional className. */
   className?: string;
   /**
@@ -78,6 +81,7 @@ export function SourceCard({
   title,
   score,
   onClick,
+  href,
   className,
   kind = DEFAULT_SOURCE_KIND,
   style,
@@ -90,24 +94,12 @@ export function SourceCard({
   const displayTitle = title?.trim() || "Unbenanntes Dokument";
 
   const Icon = kind.icon;
-  const isInteractive = !!onClick;
+  const isInteractive = !!onClick || !!href;
 
   return (
-    <div
-      data-testid="source-card"
-      role={isInteractive ? "button" : undefined}
-      tabIndex={isInteractive ? 0 : undefined}
-      onClick={isInteractive ? onClick : undefined}
-      onKeyDown={
-        isInteractive
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick?.();
-              }
-            }
-          : undefined
-      }
+    <SourceCardRoot
+      href={href}
+      onClick={onClick}
       style={style}
       className={cn(
         "flex w-full items-center gap-2 rounded-ordilo-sm px-2 py-1.5 transition-colors animate-source-card-in",
@@ -135,6 +127,6 @@ export function SourceCard({
       >
         {`Relevanz ${percentage} Prozent`}
       </span>
-    </div>
+    </SourceCardRoot>
   );
 }

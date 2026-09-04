@@ -63,21 +63,24 @@ export async function POST(request: Request): Promise<Response> {
   const feedback = parsed.data.feedback;
   const reasons = parsed.data.reasons ?? [];
   const comment = parsed.data.comment ?? null;
+  const repairRequested = parsed.data.repair_requested;
 
   // 3. Update the message's feedback column (RLS-scoped)
   const serverClient = await createServerClient();
 
-  const { error } = await serverClient
-    .from("chat_messages")
-    .update({ feedback })
-    .eq("id", messageId);
+  if (!repairRequested) {
+    const { error } = await serverClient
+      .from("chat_messages")
+      .update({ feedback })
+      .eq("id", messageId);
 
-  if (error) {
-    const body: ChatErrorResponse = {
-      error: "Feedback konnte nicht gespeichert werden.",
-      code: "FEEDBACK_UPDATE_FAILED",
-    };
-    return Response.json(body, { status: 500 });
+    if (error) {
+      const body: ChatErrorResponse = {
+        error: "Feedback konnte nicht gespeichert werden.",
+        code: "FEEDBACK_UPDATE_FAILED",
+      };
+      return Response.json(body, { status: 500 });
+    }
   }
 
   // 4. Record the privacy-preserving feedback event (best-effort) ---------

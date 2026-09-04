@@ -8,8 +8,17 @@
  *     token budget so long conversations don't exceed the model's limit.
  */
 
-import type { ChatSource, AnswerCard } from "@/lib/schemas/chat";
+import type {
+  AnswerCard,
+  ChatResponseState,
+  ChatSource,
+  ChatSuggestion,
+} from "@/lib/schemas/chat";
 import type { HistoryMessage } from "@/lib/ai/chat";
+import {
+  buildAssistantHistoryContext,
+  MAX_CHAT_CONVERSATIONS,
+} from "@ordilo/chat-contract";
 
 type ServerClient = Awaited<
   ReturnType<typeof import("@/lib/supabase/server").createClient>
@@ -47,6 +56,8 @@ export interface ChatMessageRow {
   sources: ChatSource[] | null;
   card: AnswerCard | null;
   actions: PersistedChatAction[] | null;
+  response_state?: ChatResponseState | null;
+  suggestion?: ChatSuggestion | null;
   feedback: string | null;
   created_at: string;
 }
@@ -65,7 +76,7 @@ export interface ChatConversationRow {
 // ---------------------------------------------------------------------------
 
 /**
- * List all conversations for a family, newest first.
+ * List the most recent conversations for a family, newest first.
  */
 export async function listConversations(
   client: ServerClient,
@@ -75,7 +86,8 @@ export async function listConversations(
     .from("chat_conversations")
     .select("id, family_id, title, created_at, updated_at")
     .eq("family_id", familyId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .limit(MAX_CHAT_CONVERSATIONS);
 
   if (error) return [];
   return (data ?? []) as unknown as ChatConversationRow[];
@@ -199,28 +211,82 @@ export async function saveUserMessage(
  * attach feedback to a freshly streamed answer). Returns null when the
  * insert fails — persistence is best-effort and never breaks the chat.
  */
+type AssistantMessagePayload = {
+  content: string;
+  sources: ChatSource[];
+  card: AnswerCard | null;
+  actions?: PersistedChatAction[];
+  responseState?: ChatResponseState;
+  suggestion?: ChatSuggestion | null;
+};
+
+function assistantMessageValues(payload: AssistantMessagePayload) {
+  const {
+    content,
+    sources,
+    card,
+    actions = [],
+    responseState = "answered",
+    suggestion = null,
+  } = payload;
+  return {
+    content,
+    sources:
+      sources.length > 0
+        ? (sources as unknown as Record<string, unknown>[])
+        : null,
+    card: card as unknown as Record<string, unknown> | null,
+    actions:
+      actions.length > 0
+        ? (actions as unknown as Record<string, unknown>[])
+        : null,
+    response_state: responseState,
+    suggestion: suggestion as unknown as Record<string, unknown> | null,
+    feedback: null,
+  };
+}
+
 export async function saveAssistantMessage(
   client: ServerClient,
-  conversationId: string,
-  familyId: string,
-  content: string,
-  sources: ChatSource[],
-  card: AnswerCard | null,
-  actions: PersistedChatAction[] = [],
+  input: AssistantMessagePayload & {
+    conversationId: string;
+    familyId: string;
+  },
 ): Promise<string | null> {
   const { data, error } = await client
     .from("chat_messages")
     .insert({
-      conversation_id: conversationId,
-      family_id: familyId,
+      conversation_id: input.conversationId,
+      family_id: input.familyId,
       role: "assistant",
-      content,
-      sources: sources.length > 0 ? sources as unknown as Record<string, unknown>[] : null,
-      card: card as unknown as Record<string, unknown> | null,
-      actions: actions.length > 0 ? (actions as unknown as Record<string, unknown>[]) : null,
+      ...assistantMessageValues(input),
     })
     .select("id")
     .single();
+  if (error) return null;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Replaces a persisted assistant answer after an explicit user-requested
+ * repair. The original user question stays in place and no duplicate turn is
+ * inserted.
+ */
+export async function replaceAssistantMessage(
+  client: ServerClient,
+  input: AssistantMessagePayload & {
+    messageId: string;
+    familyId: string;
+  },
+): Promise<string | null> {
+  const { data, error } = await client
+    .from("chat_messages")
+    .update(assistantMessageValues(input))
+    .eq("id", input.messageId)
+    .eq("family_id", input.familyId)
+    .eq("role", "assistant")
+    .select("id")
+    .maybeSingle();
   if (error) return null;
   return (data as { id: string } | null)?.id ?? null;
 }
@@ -241,14 +307,14 @@ export async function loadConversationMessages(
 ): Promise<ChatMessageRow[]> {
   const { data, error } = await client
     .from("chat_messages")
-    .select("id, conversation_id, family_id, role, content, sources, card, actions, created_at")
+    .select("id, conversation_id, family_id, role, content, sources, card, actions, response_state, suggestion, created_at")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(limit);
 
-  if (error) return [];
+  if (error) throw error;
 
-  return (data ?? []) as unknown as ChatMessageRow[];
+  return ((data ?? []) as unknown as ChatMessageRow[]).slice().reverse();
 }
 
 /**
@@ -261,20 +327,47 @@ export async function loadConversationMessages(
  */
 export function rowsToHistory(rows: ChatMessageRow[]): HistoryMessage[] {
   return rows.map((row) => {
-    if (row.role === "assistant" && row.sources && row.sources.length > 0) {
-      const sourceNames = row.sources
-        .map((s) => s.title ?? s.document_id)
-        .join(", ");
+    if (row.role === "assistant") {
       return {
         role: "assistant" as const,
-        content: `${row.content}\n\n[Gefundene Dokumente: ${sourceNames}]`,
+        content: buildAssistantHistoryContext({
+          text: row.content,
+          sources: row.sources ?? [],
+          card: row.card,
+        }),
       };
     }
     return {
       role: row.role,
       content: row.content,
-    } as HistoryMessage;
+    };
   });
+}
+
+/**
+ * Keeps verified database history authoritative while recovering a visible
+ * client turn that failed best-effort persistence. Only a suffix after an
+ * exact verified anchor may be appended, so arbitrary client history cannot
+ * replace or reorder persisted messages.
+ */
+export function appendUnpersistedClientSuffix(
+  serverHistory: HistoryMessage[],
+  clientHistory: HistoryMessage[],
+): HistoryMessage[] {
+  const anchor = serverHistory[serverHistory.length - 1];
+  if (!anchor || clientHistory.length === 0) return serverHistory;
+
+  for (let index = clientHistory.length - 1; index >= 0; index -= 1) {
+    const candidate = clientHistory[index];
+    if (
+      candidate.role === anchor.role &&
+      candidate.content === anchor.content &&
+      index < clientHistory.length - 1
+    ) {
+      return [...serverHistory, ...clientHistory.slice(index + 1)];
+    }
+  }
+  return serverHistory;
 }
 
 // ---------------------------------------------------------------------------

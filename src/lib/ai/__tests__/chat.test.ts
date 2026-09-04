@@ -40,6 +40,7 @@ import {
   ChatError,
 } from "@/lib/ai/chat";
 import {
+  FAIL_CLOSED_CITATION,
   FAIL_CLOSED_HEDGING,
   containsHedgingLanguage,
   type ChatSource,
@@ -470,6 +471,29 @@ describe("combineSearchResults", () => {
     expect(result[0].score).toBe(0.95);
   });
 
+  it("preserves a hybrid fact excerpt when graph metadata scores higher", () => {
+    const content = [
+      {
+        ...makeSemanticResult(
+          "doc-1",
+          "Deutschlandticket",
+          "Gültig bis: 31. August 2027",
+          0.9,
+        ),
+        source: "hybrid" as const,
+      },
+    ];
+    const graph = [
+      makeGraphPersonResult("doc-1", "Deutschlandticket", "Hanna", 0.95),
+    ];
+
+    const result = combineSearchResults(content, graph);
+
+    expect(result[0].excerpt).toBe("Gültig bis: 31. August 2027");
+    expect(result[0].score).toBe(0.95);
+    expect(result[0].origin).toBe("semantic");
+  });
+
   it("uses graph excerpt when no semantic result exists for the document", () => {
     const graph = [
       makeGraphPersonResult("doc-1", "Brief", "Hanna", 0.85),
@@ -615,8 +639,21 @@ describe("buildAgenticSystemPrompt", () => {
     expect(prompt).toContain("NICHT erneut");
   });
 
-  it("instructs to call as few tools as possible per question", () => {
-    expect(prompt).toContain("GENAU EINS pro Frage");
+  it("requires the concrete document answer before source references", () => {
+    expect(prompt).toContain("konkrete Frage im ERSTEN Satz");
+    expect(prompt).toContain(
+      "Quellen unter der Antwort sind Belege",
+    );
+    expect(prompt).toContain(
+      "konkret erfragte Information in mindestens einem Detailfeld",
+    );
+    expect(prompt).toContain("nur nach EINEM Fakt aus einem Dokument");
+  });
+
+  it("lets the agent combine the few tools needed for a reliable answer", () => {
+    expect(prompt).toContain("so wenige Tools wie noetig");
+    expect(prompt).toContain("verschiedene Wissensraeume verbindet");
+    expect(prompt).toContain("voneinander unabhaengige Suchen parallel");
   });
 
   it("names the deterministic listing tool for a family member's documents", () => {
@@ -786,13 +823,17 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     );
     const lines = await readNdjsonStream(stream);
 
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toMatchObject({
       type: "card",
       card: { type: "termin", title: "Zahnarzttermin" },
     });
     expect(lines[1]).toMatchObject({ type: "sources", sources: [] });
-    expect(lines[2]).toEqual({ type: "done" });
+    expect(lines[2]).toEqual({
+      type: "response_state",
+      state: "answered",
+    });
+    expect(lines[3]).toEqual({ type: "done" });
     // The card is a terminal action — only one round of the model is used.
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
@@ -808,7 +849,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
             argumentsChunk: JSON.stringify({
               card_type: "dokument",
               title: "Stromrechnung",
-              fields: [{ label: "Betrag", value: "45 EUR" }],
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
               source_document_id: "doc-1",
             }),
           },
@@ -819,7 +863,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const toolContext = makeToolContext([
       { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
     ]);
-    const stream = await streamAgenticAnswer("Wie hoch ist die Stromrechnung?", [], toolContext);
+    const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
     expect(lines[0]).toMatchObject({
@@ -986,7 +1030,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
             argumentsChunk: JSON.stringify({
               card_type: "dokument",
               title: "Stromrechnung",
-              fields: [{ label: "Betrag", value: "45 EUR" }],
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
               source_document_id: "doc-1",
             }),
           },
@@ -999,7 +1046,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       null,
       "invoice",
     );
-    const stream = await streamAgenticAnswer("Wie hoch ist die Rechnung?", [], toolContext);
+    const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
     expect(lines[0]).toMatchObject({ type: "card", card: { type: "dokument" } });
@@ -1044,7 +1091,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
             argumentsChunk: JSON.stringify({
               card_type: "dokument",
               title: "Stromrechnung",
-              fields: [{ label: "Betrag", value: "45 EUR" }],
+              fields: [
+                { label: "Betrag", value: "45 EUR" },
+                { label: "Fällig", value: "15.09.2026" },
+              ],
               source_document_id: "doc-does-not-exist",
             }),
           },
@@ -1055,7 +1105,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const toolContext = makeToolContext([
       { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
     ]);
-    const stream = await streamAgenticAnswer("Wie hoch ist die Stromrechnung?", [], toolContext);
+    const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
     expect(lines[0]).toMatchObject({
@@ -1144,6 +1194,109 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       type: "text",
       content: "Der Termin ist am 12.08.2026.",
     });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers a document question instead of showing an empty source card", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "present_answer_card",
+              argumentsChunk: JSON.stringify({
+                card_type: "dokument",
+                title: "Vorläufiges Deutschlandticket für Schüler:innen",
+                subtitle: "Hanna Erb",
+                fields: [],
+                source_document_id: "ticket-doc",
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            content:
+              "Laut dem vorläufigen Deutschlandticket ist Hannas Ticket bis zum **31. August 2027** gültig.",
+          },
+        ]),
+      );
+
+    const source = {
+      document_id: "ticket-doc",
+      title: "Vorläufiges Deutschlandticket für Schüler:innen",
+      excerpt:
+        "Das Ticket gilt vom 1. September 2026 bis zum 31. August 2027.",
+      score: 0.94,
+    };
+    const stream = await streamAgenticAnswer(
+      "Wie lange ist das Deutschland-Ticket von Hanna gültig?",
+      [],
+      makeToolContext([source]),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((line) => line.type === "card")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "text",
+      content:
+        "Laut dem vorläufigen Deutschlandticket ist Hannas Ticket bis zum **31. August 2027** gültig.",
+    });
+    expect(lines).toContainEqual({ type: "sources", sources: [source] });
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+  });
+
+  it("enforces prose for a single document fact even when the card is valid", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            toolCall: {
+              index: 0,
+              id: "call_1",
+              name: "present_answer_card",
+              argumentsChunk: JSON.stringify({
+                card_type: "dokument",
+                title: "Stromrechnung",
+                fields: [{ label: "Betrag", value: "45 EUR" }],
+                source_document_id: "doc-1",
+              }),
+            },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          {
+            content:
+              "Laut der Stromrechnung beträgt der Abschlag **45 Euro**.",
+          },
+        ]),
+      );
+
+    const source = {
+      document_id: "doc-1",
+      title: "Stromrechnung",
+      excerpt: "Monatlicher Abschlag: 45 EUR",
+      score: 0.9,
+    };
+    const stream = await streamAgenticAnswer(
+      "Wie hoch ist der Abschlag?",
+      [],
+      makeToolContext([source]),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.some((line) => line.type === "card")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "text",
+      content: "Laut der Stromrechnung beträgt der Abschlag **45 Euro**.",
+    });
+    expect(lines).toContainEqual({ type: "sources", sources: [source] });
     expect(mockCreate).toHaveBeenCalledTimes(2);
   });
 
@@ -1327,6 +1480,59 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
     expect(lines).toContainEqual({ type: "text", content: "Alles im Blick." });
   });
 
+  it("finishes without another model round when only answer metadata follows valid text", async () => {
+    const answer =
+      "Das Deutschlandticket kostet ab Januar 63 Euro pro Monat.";
+    mockCreate.mockResolvedValueOnce(
+      fakeOpenAIStream([
+        { content: answer },
+        {
+          toolCall: {
+            index: 0,
+            id: "call_state",
+            name: "set_response_state",
+            argumentsChunk: JSON.stringify({ state: "answered" }),
+          },
+        },
+        {
+          toolCall: {
+            index: 1,
+            id: "call_suggestion",
+            name: "suggest_next_action",
+            argumentsChunk: JSON.stringify({
+              label: "Kosten vergleichen",
+              prompt: "Vergleiche die Kosten mit Einzelfahrten.",
+            }),
+          },
+        },
+      ]),
+    );
+
+    const stream = await streamAgenticAnswer(
+      "Was kostet das Deutschlandticket?",
+      [],
+      makeToolContext(),
+    );
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines.filter((line) => line.type === "text")).toEqual([
+      { type: "text", content: answer },
+    ]);
+    expect(lines.some((line) => line.type === "replace")).toBe(false);
+    expect(lines).toContainEqual({
+      type: "response_state",
+      state: "answered",
+    });
+    expect(lines).toContainEqual({
+      type: "suggestion",
+      suggestion: {
+        label: "Kosten vergleichen",
+        prompt: "Vergleiche die Kosten mit Einzelfahrten.",
+      },
+    });
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("streams a long final answer incrementally once past the release threshold", async () => {
     const firstChunk =
       "Das ist eine ausführliche Antwort, die mehr als achtundvierzig Zeichen hat, ";
@@ -1378,6 +1584,72 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         store: false,
       }),
     );
+  });
+
+  it("requires the public source when family and Web evidence are mixed", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: "Laut Hannas Ticket gelten die neuen Regeln." },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockResponse(
+          "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
+        ),
+      );
+    const context = makeToolContext([
+      {
+        document_id: "doc-1",
+        title: "Hannas Ticket",
+        excerpt: "Gültig bis August",
+        score: 0.9,
+        origin: "semantic",
+      },
+      {
+        document_id: "web-1",
+        title: "Bundesregierung Deutschlandticket",
+        excerpt: "Aktuelle Regeln",
+        score: 0.8,
+        origin: "web",
+        url: "https://example.org/ticket",
+      },
+    ]);
+
+    const stream = await streamAgenticAnswer("Was gilt aktuell?", [], context);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toContainEqual({
+      type: "replace",
+      content:
+        "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
+    });
+  });
+
+  it("fails closed when a sourced answer remains uncited", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Die Regel gilt ab Januar." }]),
+      )
+      .mockResolvedValueOnce(mockResponse("Sie gilt ab Januar."));
+    const context = makeToolContext([
+      {
+        document_id: "web-1",
+        title: "Bundesregierung Deutschlandticket",
+        excerpt: "Aktuelle Regeln",
+        score: 0.8,
+        origin: "web",
+        url: "https://example.org/ticket",
+      },
+    ]);
+
+    const stream = await streamAgenticAnswer("Was gilt aktuell?", [], context);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toContainEqual({
+      type: "replace",
+      content: FAIL_CLOSED_CITATION,
+    });
   });
 
   it("sends only the corrected answer when the first final answer hedges", async () => {

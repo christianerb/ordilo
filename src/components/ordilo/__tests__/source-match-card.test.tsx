@@ -78,14 +78,11 @@ describe("SourceMatchCard", () => {
     expect(screen.getByText("Dokument öffnen")).toBeDefined();
   });
 
-  it("is keyboard accessible (role button, tabIndex, Enter key)", () => {
-    const onClick = vi.fn();
-    render(<SourceMatchCard {...defaultProps} onClick={onClick} />);
+  it("uses a native button when interactive", () => {
+    render(<SourceMatchCard {...defaultProps} onClick={vi.fn()} />);
     const card = screen.getByTestId("source-card");
-    expect(card.getAttribute("role")).toBe("button");
-    expect(card.getAttribute("tabindex")).toBe("0");
-    fireEvent.keyDown(card, { key: "Enter" });
-    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(card.tagName).toBe("BUTTON");
+    expect(card.getAttribute("type")).toBe("button");
   });
 
   it("does not crash when onClick is not provided", () => {

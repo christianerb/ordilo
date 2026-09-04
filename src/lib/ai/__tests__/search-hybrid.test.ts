@@ -18,11 +18,12 @@ function result(
   documentId: string,
   score: number,
   source: string,
+  chunkText: string = "…",
 ): SearchResult {
   return {
     document_id: documentId,
     title: `Doc ${documentId}`,
-    chunk_text: "…",
+    chunk_text: chunkText,
     score,
     source,
   };
@@ -88,6 +89,84 @@ describe("fuseResultsRrf", () => {
 
     expect(fused).toHaveLength(1);
     expect(fused[0].score).toBeCloseTo(0.65, 5);
+  });
+
+  it("keeps answer-bearing content when a synthetic question scores higher", () => {
+    const originalQuery = [
+      result(
+        "ticket",
+        0.94,
+        "semantic",
+        "Wie lange ist das Deutschland-Ticket von Hannah gültig?",
+      ),
+    ];
+    const answerVariant = [
+      result(
+        "ticket",
+        0.72,
+        "semantic",
+        "Das Ticket gilt vom 1. September 2026 bis zum 31. August 2027.",
+      ),
+    ];
+
+    const [fused] = fuseResultsRrf([originalQuery, answerVariant]);
+
+    expect(fused.chunk_text).toContain("31. August 2027");
+    expect(fused.score).toBe(0.94);
+  });
+
+  it("uses an exact fact as the excerpt even when prose scores higher", () => {
+    const facts = [
+      result("meter", 0.7, "fact", "Zählernummer: MTR-4823"),
+    ];
+    const semantic = [
+      result(
+        "meter",
+        0.9,
+        "semantic",
+        "Unterlagen zum Stromanschluss und Zählerstand.",
+      ),
+    ];
+
+    const [fused] = fuseResultsRrf([facts, semantic]);
+
+    expect(fused.chunk_text).toBe("Zählernummer: MTR-4823");
+    expect(fused.score).toBeCloseTo(0.95, 5);
+  });
+
+  it("counts a document only once per result list", () => {
+    const repeatedChunks = [
+      result("other", 0.95, "semantic", "Anderes Dokument"),
+      result("repeated", 0.9, "semantic", "Frage?"),
+      result("repeated", 0.9, "semantic", "Antwort"),
+    ];
+
+    const fused = fuseResultsRrf([repeatedChunks]);
+
+    expect(fused.map((entry) => entry.document_id)).toEqual([
+      "other",
+      "repeated",
+    ]);
+    expect(fused[1].chunk_text).toBe("Antwort");
+  });
+
+  it("ranks following documents by unique position, not chunk position", () => {
+    const firstList = [
+      result("a", 0.5, "semantic", "A Frage?"),
+      result("a", 0.5, "semantic", "A Antwort"),
+      result("b", 0.9, "semantic", "B Antwort"),
+    ];
+    const secondList = [
+      result("c", 0.8, "semantic", "C Antwort"),
+      result("b", 0.9, "semantic", "B Antwort"),
+    ];
+
+    const fused = fuseResultsRrf([firstList, secondList], 0);
+
+    expect(fused.indexOf(fused.find((entry) => entry.document_id === "b")!))
+      .toBeLessThan(
+        fused.indexOf(fused.find((entry) => entry.document_id === "c")!),
+      );
   });
 
   it("caps the boosted score at 1.0", () => {

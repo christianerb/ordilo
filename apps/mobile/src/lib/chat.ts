@@ -1,18 +1,32 @@
 import { apiJson, getApiUrl } from "./api";
 import {
-  CHAT_ACTION_TOOL_NAMES,
   CHAT_TOOL_STEP_LABELS,
+  buildAssistantHistoryContext,
   formatChatActionDate,
   getChatActionContent,
+  MAX_CLIENT_CHAT_HISTORY_CONTENT,
+  MAX_CLIENT_CHAT_HISTORY_MESSAGES,
+  mergeConfirmationProposal,
+  parseChatWireEvent,
+  splitChatNdjsonChunk,
   type ChatActionContent,
   type ChatActionToolName,
+  type ChatFeedbackReason,
+  type ChatResponseState,
+  type ChatSource,
+  type ChatSuggestion,
 } from "@ordilo/chat-contract";
 import { buildWhatsAppHref, normalizePhoneForLink } from "./contacts";
 import { getSupabase } from "./supabase";
 
 export {
   CHAT_ACTION_TOOL_NAMES,
+  CHAT_FEEDBACK_REASON_OPTIONS as CHAT_FEEDBACK_REASONS,
   type ChatActionToolName,
+  type ChatFeedbackReason,
+  type ChatResponseState,
+  type ChatSource,
+  type ChatSuggestion,
 } from "@ordilo/chat-contract";
 
 /**
@@ -31,14 +45,6 @@ export {
 // ---------------------------------------------------------------------------
 // Types (ported from src/lib/schemas/chat.ts)
 // ---------------------------------------------------------------------------
-
-export interface ChatSource {
-  document_id: string;
-  title: string | null;
-  excerpt: string;
-  score: number;
-  origin?: "semantic" | "graph";
-}
 
 export interface AnswerCardField {
   label: string;
@@ -110,6 +116,8 @@ export type ChatStreamEvent =
   | { type: "replace"; content: string }
   | { type: "card"; card: AnswerCard }
   | { type: "sources"; sources: ChatSource[] }
+  | { type: "suggestion"; suggestion: ChatSuggestion }
+  | { type: "response_state"; state: ChatResponseState }
   | { type: "confirmation"; action: ChatAction }
   | { type: "message_saved"; messageId: string }
   | { type: "done" }
@@ -125,6 +133,8 @@ export interface ChatMessage {
   text: string;
   card: AnswerCard | null;
   sources: ChatSource[];
+  suggestion?: ChatSuggestion | null;
+  responseState?: ChatResponseState;
   actions: ChatAction[];
   toolCalls: ToolCallProgress[];
   status: "streaming" | "done" | "error" | "rate_limited";
@@ -181,14 +191,6 @@ export function getChatThinkingLabel(
   return "Ordilo denkt nach …";
 }
 
-export const CHAT_FEEDBACK_REASONS = [
-  { value: "falsche_antwort", label: "Falsche Antwort" },
-  { value: "falsches_dokument", label: "Falsches Dokument" },
-  { value: "unvollstaendig", label: "Unvollständig" },
-] as const;
-
-export type ChatFeedbackReason = (typeof CHAT_FEEDBACK_REASONS)[number]["value"];
-
 // ---------------------------------------------------------------------------
 // NDJSON parsing (pure, testable)
 // ---------------------------------------------------------------------------
@@ -202,48 +204,10 @@ export function splitNdjsonChunk(
   buffered: string,
   chunk: string,
 ): { lines: string[]; rest: string } {
-  const parts = (buffered + chunk).split("\n");
-  const rest = parts.pop() ?? "";
-  return { lines: parts.filter((line) => line.trim().length > 0), rest };
+  return splitChatNdjsonChunk(buffered, chunk);
 }
 
-const CONFIRMATION_EVENT_META_KEYS = new Set([
-  "type",
-  "tool_name",
-  "action_args",
-  "action_id",
-  "needs_confirmation",
-  "message",
-]);
-
-/**
- * Combines raw proposed arguments and server-resolved display fields
- * (task_title, collection_name, …) — 1:1 port of mergeConfirmationProposal
- * from src/lib/schemas/chat.ts.
- */
-export function mergeConfirmationProposal(
-  event: Record<string, unknown>,
-): Record<string, unknown> {
-  const base =
-    event.action_args &&
-    typeof event.action_args === "object" &&
-    !Array.isArray(event.action_args)
-      ? (event.action_args as Record<string, unknown>)
-      : {};
-  const preview = Object.fromEntries(
-    Object.entries(event).filter(
-      ([key]) => !CONFIRMATION_EVENT_META_KEYS.has(key),
-    ),
-  );
-  return { ...base, ...preview };
-}
-
-function isChatActionToolName(value: unknown): value is ChatActionToolName {
-  return (
-    typeof value === "string" &&
-    (CHAT_ACTION_TOOL_NAMES as readonly string[]).includes(value)
-  );
-}
+export { mergeConfirmationProposal };
 
 /**
  * Narrows one parsed NDJSON line to a typed stream event. Returns null
@@ -251,63 +215,18 @@ function isChatActionToolName(value: unknown): value is ChatActionToolName {
  * kill the stream (the web client skips such lines the same way).
  */
 export function parseChatStreamEvent(raw: unknown): ChatStreamEvent | null {
-  if (!raw || typeof raw !== "object") return null;
-  const data = raw as Record<string, unknown>;
-
-  switch (data.type) {
-    case "conversation":
-      return typeof data.conversation_id === "string"
-        ? { type: "conversation", conversationId: data.conversation_id }
-        : null;
-    case "tool":
-      return typeof data.tool === "string" &&
-        (data.state === "start" || data.state === "done" || data.state === "error")
-        ? { type: "tool", toolName: data.tool, state: data.state }
-        : null;
-    case "text":
-      return typeof data.content === "string"
-        ? { type: "text", content: data.content }
-        : null;
-    case "replace":
-      return typeof data.content === "string"
-        ? { type: "replace", content: data.content }
-        : null;
-    case "card":
-      return data.card && typeof data.card === "object"
-        ? { type: "card", card: data.card as AnswerCard }
-        : null;
-    case "sources":
-      return Array.isArray(data.sources)
-        ? { type: "sources", sources: data.sources as ChatSource[] }
-        : null;
-    case "confirmation_request": {
-      if (!isChatActionToolName(data.tool_name)) return null;
-      if (typeof data.action_id !== "string" || !data.action_id) return null;
-      return {
-        type: "confirmation",
-        action: {
-          id: data.action_id,
-          toolName: data.tool_name,
-          args: mergeConfirmationProposal(data),
-          state: "ready",
-        },
-      };
-    }
-    case "message_saved":
-      return typeof data.message_id === "string"
-        ? { type: "message_saved", messageId: data.message_id }
-        : null;
-    case "done":
-      return { type: "done" };
-    case "error":
-      return {
-        type: "error",
-        error: typeof data.error === "string" ? data.error : CHAT_ERROR_MESSAGE,
-        code: typeof data.code === "string" ? data.code : null,
-      };
-    default:
-      return null;
+  const event = parseChatWireEvent(raw);
+  if (!event) return null;
+  if (event.type === "card") {
+    return { type: "card", card: event.card as unknown as AnswerCard };
   }
+  if (event.type === "confirmation") {
+    return {
+      type: "confirmation",
+      action: { ...event.action, state: "ready" },
+    };
+  }
+  return event;
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +247,10 @@ export function applyChatEvent(
       return { ...message, card: event.card };
     case "sources":
       return { ...message, sources: event.sources };
+    case "suggestion":
+      return { ...message, suggestion: event.suggestion };
+    case "response_state":
+      return { ...message, responseState: event.state };
     case "tool": {
       const toolCalls = [...message.toolCalls];
       const openIndex = toolCalls.findIndex(
@@ -369,20 +292,22 @@ export function buildChatHistory(
         message.status === "done" ||
         (message.role === "user" && message.status !== "streaming"),
     )
+    .slice(-MAX_CLIENT_CHAT_HISTORY_MESSAGES)
     .map((message) => {
-      if (message.role === "assistant" && message.sources.length > 0) {
-        const titles = message.sources
-          .map((source) => source.title)
-          .filter(Boolean)
-          .join(", ");
-        if (titles) {
-          return {
-            role: "assistant" as const,
-            content: `${message.text}\n\n[Gefundene Dokumente: ${titles}]`,
-          };
-        }
+      if (message.role === "assistant") {
+        return {
+          role: "assistant" as const,
+          content: buildAssistantHistoryContext({
+            text: message.text,
+            sources: message.sources,
+            card: message.card,
+          }).slice(0, MAX_CLIENT_CHAT_HISTORY_CONTENT),
+        };
       }
-      return { role: message.role, content: message.text };
+      return {
+        role: message.role,
+        content: message.text.slice(0, MAX_CLIENT_CHAT_HISTORY_CONTENT),
+      };
     });
 }
 
@@ -478,6 +403,11 @@ export interface ChatRequestInput {
   familyId: string;
   history: { role: "user" | "assistant"; content: string }[];
   conversationId?: string | null;
+  repair?: {
+    messageId: string;
+    reasons: ChatFeedbackReason[];
+    comment?: string;
+  };
 }
 
 /**
@@ -510,7 +440,19 @@ export async function streamChat(
       message: input.message,
       family_id: input.familyId,
       history: input.history,
+      capabilities: ["web_source_urls"],
       ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
+      ...(input.repair
+        ? {
+            repair: {
+              message_id: input.repair.messageId,
+              reasons: input.repair.reasons,
+              ...(input.repair.comment
+                ? { comment: input.repair.comment }
+                : {}),
+            },
+          }
+        : {}),
     }),
   });
 
@@ -590,6 +532,7 @@ export async function sendChatFeedback(input: {
   feedback: "positive" | "negative";
   reasons?: ChatFeedbackReason[];
   comment?: string;
+  repairRequested?: boolean;
 }): Promise<void> {
   await apiJson("/api/chat/feedback", {
     method: "POST",
@@ -599,6 +542,7 @@ export async function sendChatFeedback(input: {
       feedback: input.feedback,
       ...(input.reasons?.length ? { reasons: input.reasons } : {}),
       ...(input.comment?.trim() ? { comment: input.comment.trim() } : {}),
+      ...(input.repairRequested ? { repair_requested: true } : {}),
     }),
   });
 }

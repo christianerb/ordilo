@@ -301,6 +301,35 @@ describe("POST /api/chat", () => {
     expect(response.body).toBeDefined();
   });
 
+  it("hides Web URLs from older clients without the capability flag", async () => {
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(
+      ndjsonStream([
+        {
+          type: "sources",
+          sources: [
+            {
+              document_id: "web:source",
+              title: "Bundesregierung",
+              excerpt: "Aktuelle Regel",
+              score: 1,
+              origin: "web",
+              url: "https://www.bundesregierung.de/example",
+            },
+          ],
+        },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(createRequest(validBody()));
+    const events = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    expect(events).toContainEqual({ type: "sources", sources: [] });
+  });
+
   it("announces the persisted assistant message id via message_saved", async () => {
     (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
       ndjsonStream([

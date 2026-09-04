@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { memo, useState } from "react";
 import dynamic from "next/dynamic";
 import {
   ListChecks,
@@ -11,6 +11,8 @@ import {
   Copy,
   Check,
   Reply,
+  Globe2,
+  ArrowRight,
 } from "lucide-react";
 import { SourceCard, type SourceCardKind } from "@/components/ordilo/source-card";
 import { SourceMatchCard } from "@/components/ordilo/source-match-card";
@@ -19,10 +21,20 @@ import { cn } from "@/lib/utils";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import type {
   ChatAction,
+  ChatFeedbackReason,
+  ChatResponseState,
   ChatSource,
+  ChatSuggestion,
   AnswerCard as AnswerCardData,
 } from "@/lib/schemas/chat";
 import { OrdiloActionCard } from "./ordilo-action-card";
+import {
+  CHAT_RESPONSE_STATE_LABELS,
+  CHAT_FEEDBACK_REASON_OPTIONS,
+  isSafePublicSourceUrl,
+  isWebChatSource,
+  splitChatSources,
+} from "@ordilo/chat-contract";
 import {
   ProcessingChecklist,
   type ToolCallProgress,
@@ -46,6 +58,8 @@ function citationSourceId(messageId: string, index: number): string {
 
 export interface ChatMessage {
   id: string;
+  /** Persisted assistant row id; local streaming ids never go to feedback APIs. */
+  dbId?: string | null;
   role: "user" | "assistant";
   content: string;
   sources: ChatSource[];
@@ -56,6 +70,8 @@ export interface ChatMessage {
   toolCalls?: ToolCallProgress[];
   /** Persisted feedback: "positive" | "negative" | null. */
   feedback?: "positive" | "negative" | null;
+  suggestion?: ChatSuggestion | null;
+  responseState?: ChatResponseState;
   /** An excerpt of an earlier message the user quoted before asking this one. */
   quotedText?: string;
   /** Writes proposed by Ordilo that each need an explicit family-member choice. */
@@ -69,6 +85,9 @@ export interface ChatMessage {
  * from the document search.
  */
 function getSourceKind(source: ChatSource): SourceCardKind {
+  if (isWebChatSource(source)) {
+    return { icon: Globe2, label: "Web-Quelle" };
+  }
   const excerpt = source.excerpt ?? "";
   if (excerpt.startsWith("Aufgabe: ")) {
     return { icon: ListChecks, label: "Aufgaben-Suche" };
@@ -79,41 +98,18 @@ function getSourceKind(source: ChatSource): SourceCardKind {
   return { icon: FileText, label: "Dokumenten-Suche" };
 }
 
-/** Sources at/above this relevance are promoted to a prominent match card. */
-const TOP_SOURCE_SCORE_THRESHOLD = 0.5;
-/** Cap on how many sources can be promoted, so the grid never overwhelms the answer. */
-const MAX_TOP_SOURCES = 4;
-
 /**
- * Split sources (sorted by relevance) into a small set of high-relevance
- * "top" matches and everything else. There is always at least one top
- * match when sources exist, so the best result is never buried in the
- * plain list — but low-relevance citations stay out of the way instead of
- * padding out a long "Quellen" list (VAL-CHAT design: geiler answers,
- * minimalistic references).
+ * The answer owns the hierarchy: exactly one best source is visible, while
+ * every additional source stays one tap away.
  */
-function splitSources(sources: ChatSource[]): {
-  top: ChatSource[];
-  rest: ChatSource[];
-} {
-  const sorted = [...sources].sort((a, b) => b.score - a.score);
-  let top = sorted
-    .filter((s) => s.score >= TOP_SOURCE_SCORE_THRESHOLD)
-    .slice(0, MAX_TOP_SOURCES);
-  if (top.length === 0 && sorted.length > 0) {
-    top = [sorted[0]];
-  }
-  const topIds = new Set(top.map((s) => s.document_id));
-  const rest = sorted.filter((s) => !topIds.has(s.document_id));
-  return { top, rest };
-}
-
-export function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   isStreaming = false,
   passesFilters,
   onSourceCardClick,
   onQuote,
+  onRepair,
+  onSuggestionClick,
   onActionConfirm,
   onActionDismiss,
   onActionAdjust,
@@ -125,6 +121,12 @@ export function MessageBubble({
   onSourceCardClick: (docId: string) => void;
   /** Called with the message when the user taps "Zitieren" on an assistant answer. */
   onQuote?: (message: ChatMessage) => void;
+  onRepair?: (
+    message: ChatMessage,
+    reasons: ChatFeedbackReason[],
+    comment: string,
+  ) => Promise<void>;
+  onSuggestionClick?: (prompt: string) => void;
   onActionConfirm?: (messageId: string, actionId: string) => void;
   onActionDismiss?: (messageId: string, actionId: string) => void;
   onActionAdjust?: (message: ChatMessage, action: ChatAction) => void;
@@ -132,10 +134,12 @@ export function MessageBubble({
 }) {
   const isUser = message.role === "user";
 
-  const visibleSources = message.sources.filter((s) =>
-    passesFilters(s.document_id),
+  const visibleSources = message.sources.filter(
+    (source) =>
+      isWebChatSource(source) || passesFilters(source.document_id),
   );
-  const { top: topSources, rest: restSources } = splitSources(visibleSources);
+  const { best, rest: restSources } = splitChatSources(visibleSources);
+  const topSources = best ? [best] : [];
   const citations = topSources.map((source, i) => ({
     index: i + 1,
     title: (source.title ?? "").trim(),
@@ -148,6 +152,15 @@ export function MessageBubble({
     el.classList.add("animate-citation-flash");
     window.setTimeout(() => el.classList.remove("animate-citation-flash"), 900);
   };
+
+  const handleSourceClick = (source: ChatSource) => {
+    onSourceCardClick(source.document_id);
+  };
+
+  const sourceHref = (source: ChatSource): string | undefined =>
+    isWebChatSource(source) && isSafePublicSourceUrl(source.url)
+      ? source.url
+      : undefined;
 
   if (isUser) {
     return (
@@ -173,6 +186,10 @@ export function MessageBubble({
   // card) has arrived yet.
   const showLoading = isStreaming && !message.content && !message.card;
   const hasAnswer = !showLoading && (message.content || message.card);
+  const responseStateLabel =
+    message.responseState && message.responseState !== "answered"
+      ? CHAT_RESPONSE_STATE_LABELS[message.responseState]
+      : null;
 
   return (
     <div className="flex flex-col items-start gap-2 animate-message-in">
@@ -211,7 +228,11 @@ export function MessageBubble({
         </div>
       </div>
 
-      {hasAnswer && <AnswerFeedback message={message} onQuote={onQuote} />}
+      {responseStateLabel && !isStreaming && (
+        <p className="ml-10 text-xs font-medium text-muted-foreground">
+          {responseStateLabel}
+        </p>
+      )}
 
       {message.actions.length > 0 && (
         <div className="ml-10 w-[calc(100%_-_2.5rem)] max-w-md space-y-2">
@@ -232,7 +253,7 @@ export function MessageBubble({
         <div className="ml-10 w-[calc(100%_-_2.5rem)] space-y-1.5">
           <div className="flex items-center justify-between px-1">
             <span className="text-xs font-medium text-muted-foreground">
-              Passende Dokumente
+              Quellen
             </span>
             <span
               className="text-[11px] text-muted-foreground"
@@ -242,34 +263,61 @@ export function MessageBubble({
             </span>
           </div>
           <div className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--surface-story)]">
-            {topSources.map((source, i) => (
-              <SourceMatchCard
-                key={source.document_id}
-                id={citationSourceId(message.id, i + 1)}
-                documentId={source.document_id}
-                title={source.title}
-                score={source.score}
-                excerpt={source.excerpt}
-                kind={getSourceKind(source)}
-                isBestMatch={i === 0}
-                citationIndex={i + 1}
-                onClick={() => onSourceCardClick(source.document_id)}
-                style={{ animationDelay: `${i * 40}ms` }}
-              />
-            ))}
+            {topSources.map((source, i) => {
+              const href = sourceHref(source);
+              return (
+                <SourceMatchCard
+                  key={source.document_id}
+                  id={citationSourceId(message.id, i + 1)}
+                  documentId={source.document_id}
+                  title={source.title}
+                  score={source.score}
+                  excerpt={source.excerpt}
+                  kind={getSourceKind(source)}
+                  isBestMatch={i === 0}
+                  citationIndex={i + 1}
+                  href={href}
+                  onClick={
+                    href ? undefined : () => handleSourceClick(source)
+                  }
+                  style={{ animationDelay: `${i * 40}ms` }}
+                />
+              );
+            })}
           </div>
           {restSources.length > 0 && (
             <RestSources
               sources={restSources}
               getSourceKind={getSourceKind}
-              onSourceCardClick={onSourceCardClick}
+              getSourceHref={sourceHref}
+              onSourceClick={handleSourceClick}
             />
           )}
         </div>
       )}
+
+      {message.suggestion && !isStreaming && (
+        <button
+          type="button"
+          onClick={() => onSuggestionClick?.(message.suggestion!.prompt)}
+          className="ml-10 inline-flex items-center gap-2 rounded-ordilo-sm border border-border bg-[var(--warm-white)] px-3 py-2 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--sand-warm)] focus-ring"
+          data-testid="chat-suggestion"
+        >
+          {message.suggestion.label}
+          <ArrowRight className="size-3.5" aria-hidden="true" />
+        </button>
+      )}
+
+      {hasAnswer && !isStreaming && (
+        <AnswerFeedback
+          message={message}
+          onQuote={onQuote}
+          onRepair={onRepair}
+        />
+      )}
     </div>
   );
-}
+});
 
 // ---------------------------------------------------------------------------
 // Collapsed low-relevance sources
@@ -283,11 +331,13 @@ export function MessageBubble({
 function RestSources({
   sources,
   getSourceKind: kindFor,
-  onSourceCardClick,
+  getSourceHref,
+  onSourceClick,
 }: {
   sources: ChatSource[];
   getSourceKind: (source: ChatSource) => SourceCardKind;
-  onSourceCardClick: (docId: string) => void;
+  getSourceHref: (source: ChatSource) => string | undefined;
+  onSourceClick: (source: ChatSource) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -300,25 +350,29 @@ function RestSources({
         data-testid="show-more-sources"
       >
         {sources.length === 1
-          ? "1 weiteres mögliches Dokument anzeigen"
-          : `${sources.length} weitere mögliche Dokumente anzeigen`}
+          ? "1 weitere Quelle anzeigen"
+          : `${sources.length} weitere Quellen anzeigen`}
       </button>
     );
   }
 
   return (
     <div className="space-y-0.5 pt-0.5">
-      {sources.map((source, i) => (
-        <SourceCard
-          key={source.document_id}
-          documentId={source.document_id}
-          title={source.title}
-          score={source.score}
-          kind={kindFor(source)}
-          onClick={() => onSourceCardClick(source.document_id)}
-          style={{ animationDelay: `${i * 40}ms` }}
-        />
-      ))}
+      {sources.map((source, i) => {
+        const href = getSourceHref(source);
+        return (
+          <SourceCard
+            key={source.document_id}
+            documentId={source.document_id}
+            title={source.title}
+            score={source.score}
+            kind={kindFor(source)}
+            href={href}
+            onClick={href ? undefined : () => onSourceClick(source)}
+            style={{ animationDelay: `${i * 40}ms` }}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -341,18 +395,23 @@ export function messageToPlainText(message: ChatMessage): string {
 }
 
 /** Fixed thumbs-down reasons — one tap each, no typing required. */
-const DOWN_REASONS = [
-  { key: "falsche_antwort", label: "Falsche Antwort" },
-  { key: "falsches_dokument", label: "Falsches Dokument" },
-  { key: "unvollstaendig", label: "Unvollständig" },
-] as const;
+const DOWN_REASONS = CHAT_FEEDBACK_REASON_OPTIONS.map((option) => ({
+  key: option.value,
+  label: option.label,
+}));
 
 function AnswerFeedback({
   message,
   onQuote,
+  onRepair,
 }: {
   message: ChatMessage;
   onQuote?: (message: ChatMessage) => void;
+  onRepair?: (
+    message: ChatMessage,
+    reasons: ChatFeedbackReason[],
+    comment: string,
+  ) => Promise<void>;
 }) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(
     message.feedback === "positive" ? "up" : message.feedback === "negative" ? "down" : null,
@@ -362,24 +421,33 @@ function AnswerFeedback({
   const [selectedReasons, setSelectedReasons] = useState<Set<string>>(new Set());
   const [comment, setComment] = useState("");
   const [thanked, setThanked] = useState(false);
+  const [repairing, setRepairing] = useState(false);
 
-  const persistable = Boolean(message.id && !message.id.startsWith("ai-"));
+  const persistedId =
+    message.dbId ??
+    (message.id && !message.id.startsWith("ai-") ? message.id : null);
+  const persistable = Boolean(persistedId);
 
-  const sendFeedback = (
+  const sendFeedback = async (
     payload: "positive" | "negative",
-    extras?: { reasons?: string[]; comment?: string },
+    extras?: {
+      reasons?: string[];
+      comment?: string;
+      repairRequested?: boolean;
+    },
   ) => {
-    if (!persistable) return;
-    void fetch("/api/chat/feedback", {
+    if (!persistedId) return;
+    await fetch("/api/chat/feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        message_id: message.id,
+        message_id: persistedId,
         feedback: payload,
         ...(extras?.reasons?.length ? { reasons: extras.reasons } : {}),
         ...(extras?.comment ? { comment: extras.comment } : {}),
+        ...(extras?.repairRequested ? { repair_requested: true } : {}),
       }),
-    }).catch(() => {});
+    });
   };
 
   const handleFeedback = (value: "up" | "down") => {
@@ -387,7 +455,7 @@ function AnswerFeedback({
       const next = prev === value ? null : value;
       if (next === "up") {
         setPanelOpen(false);
-        sendFeedback("positive");
+        void sendFeedback("positive").catch(() => {});
         setThanked(true);
         setTimeout(() => setThanked(false), 2500);
       } else if (next === "down") {
@@ -410,14 +478,32 @@ function AnswerFeedback({
     });
   };
 
-  const handleSubmitDown = () => {
-    sendFeedback("negative", {
-      reasons: [...selectedReasons],
-      comment: comment.trim() || undefined,
-    });
-    setPanelOpen(false);
-    setThanked(true);
-    setTimeout(() => setThanked(false), 2500);
+  const handleSubmitDown = async () => {
+    if (selectedReasons.size === 0 || repairing) return;
+    const reasons = [...selectedReasons] as ChatFeedbackReason[];
+    const cleanComment = comment.trim();
+    setRepairing(true);
+    try {
+      const feedbackRequest = sendFeedback("negative", {
+        reasons,
+        comment: cleanComment || undefined,
+        repairRequested: Boolean(onRepair),
+      }).catch(() => undefined);
+      if (onRepair) {
+        await feedbackRequest;
+        await onRepair(message, reasons, cleanComment);
+      } else {
+        await feedbackRequest;
+      }
+      setPanelOpen(false);
+      setThanked(true);
+      setTimeout(() => setThanked(false), 2500);
+    } catch {
+      // The parent keeps the original answer and shows the chat error.
+      // Leave this panel open so the family can try again.
+    } finally {
+      setRepairing(false);
+    }
   };
 
   const handleCopy = async () => {
@@ -543,11 +629,18 @@ function AnswerFeedback({
           <div className="flex items-center justify-end gap-2">
             <button
               type="button"
-              onClick={handleSubmitDown}
+              onClick={() => void handleSubmitDown()}
+              disabled={selectedReasons.size === 0 || repairing || !persistable}
               data-testid="feedback-submit-button"
-              className="rounded-ordilo-sm bg-[var(--petrol)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
+              className="rounded-ordilo-sm bg-[var(--petrol)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Senden
+              {repairing
+                ? onRepair
+                  ? "Suche neu …"
+                  : "Speichert …"
+                : onRepair
+                  ? "Besser antworten"
+                  : "Feedback senden"}
             </button>
           </div>
         </div>

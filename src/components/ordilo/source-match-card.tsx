@@ -6,6 +6,7 @@ import {
   getRelevanceLabel,
   type SourceCardKind,
 } from "@/components/ordilo/source-card";
+import { SourceCardRoot } from "@/components/ordilo/source-card-root";
 
 export interface SourceMatchCardProps {
   /** The UUID of the source document (used for navigation). */
@@ -30,6 +31,8 @@ export interface SourceMatchCardProps {
   id?: string;
   /** Click handler — when provided, the card is interactive (navigates to document). */
   onClick?: () => void;
+  /** Safe external URL. When set, the card is a real link. */
+  href?: string;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -61,6 +64,7 @@ export function SourceMatchCard({
   citationIndex,
   id,
   onClick,
+  href,
   className,
   style,
 }: SourceMatchCardProps) {
@@ -68,29 +72,17 @@ export function SourceMatchCard({
   const displayTitle = title?.trim() || "Unbenanntes Dokument";
   const Icon = kind.icon;
   const relevanceLabel = getRelevanceLabel(clampedScore);
-  const isInteractive = !!onClick;
+  const isInteractive = !!onClick || !!href;
   const displayExcerpt = excerpt
     ?.replace(/^(Aufgabe|Person):\s*/u, "")
     .trim();
 
   return (
-    <div
+    <SourceCardRoot
+      href={href}
+      onClick={onClick}
       id={id}
-      data-testid="source-card"
-      data-relevance={relevanceLabel}
-      role={isInteractive ? "button" : undefined}
-      tabIndex={isInteractive ? 0 : undefined}
-      onClick={isInteractive ? onClick : undefined}
-      onKeyDown={
-        isInteractive
-          ? (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick?.();
-              }
-            }
-          : undefined
-      }
+      relevance={relevanceLabel}
       style={style}
       className={cn(
         "group flex min-h-14 w-full items-center gap-2.5 px-3 py-2.5 animate-source-card-in",
@@ -143,6 +135,6 @@ export function SourceMatchCard({
           <span className="sr-only">Dokument öffnen</span>
         </span>
       )}
-    </div>
+    </SourceCardRoot>
   );
 }

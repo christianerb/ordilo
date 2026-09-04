@@ -3,6 +3,9 @@ import type { Database } from "@/types/database";
 import {
   CHAT_ACTION_TOOL_NAMES,
   type ChatSource,
+  type ChatSuggestion,
+  type ChatResponseState,
+  isChatResponseState,
 } from "@/lib/schemas/chat";
 import { redactPII } from "@/lib/ai/pii-redact";
 import {
@@ -45,6 +48,7 @@ import {
 } from "@/lib/supabase/document-helpers";
 import { eventOccursOn, type EventOccurrenceSource } from "@/lib/calendar";
 import { contactInputSchema } from "@/lib/contacts";
+import { searchPublicWeb } from "@/lib/ai/web-search";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -69,6 +73,19 @@ export interface ToolContext {
   userId?: string;
   /** Name of the family member talking to the assistant, or null if unknown. */
   speakerName: string | null;
+  /** At most one safe, user-triggered follow-up offered under the answer. */
+  suggestion?: ChatSuggestion | null;
+  /** Search spaces actually attempted during this answer. */
+  searchedScopes?: Set<"family" | "web">;
+  responseState?: ChatResponseState;
+  toolCallCount?: number;
+  privateWebTerms?: string[];
+  webPrivacyReady?: boolean;
+  preloadedFamilyMembers?: Array<{
+    name: string;
+    role: string | null;
+  }>;
+  preloadedFamilyMembersPrivacyReady?: boolean;
 }
 
 /**
@@ -148,6 +165,30 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
           },
         },
         required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_web",
+      description:
+        "Sucht aktuelle oder öffentliche Informationen im Web. Verwende " +
+        "dies für aktuelle Regeln, Preise, Öffnungszeiten, Nachrichten oder " +
+        "Wissen, das sich geändert haben kann. Formuliere query vollständig " +
+        "allgemein: niemals Namen aus der Familie, Dokumenttext, Adressen, " +
+        "Kontaktdaten, Kennnummern, Gesundheits- oder Finanzdaten übergeben. " +
+        "Der Server anonymisiert die Anfrage zusätzlich.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description:
+              "Allgemeine öffentliche Suchanfrage ohne private Angaben.",
+          },
+        },
+        required: ["query"],
       },
     },
   },
@@ -411,6 +452,52 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
   {
     type: "function",
     function: {
+      name: "set_response_state",
+      description:
+        "Kennzeichnet die endgültige Antwort als teilweise beantwortet, " +
+        "widersprüchlich oder nicht gefunden. Verwende es vor der Antwort " +
+        "genau dann, wenn 'answered' nicht zutrifft.",
+      parameters: {
+        type: "object",
+        properties: {
+          state: {
+            type: "string",
+            enum: ["partial", "conflict", "not_found"],
+          },
+        },
+        required: ["state"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "suggest_next_action",
+      description:
+        "Bietet nach einer hilfreichen Antwort genau EINEN passenden nächsten " +
+        "Schritt als Button an. Das Tool führt nichts aus. Verwende es nur, " +
+        "wenn der Schritt wirklich aus der Antwort folgt, z.B. eine Erinnerung " +
+        "vorbereiten, ein Dokument öffnen lassen oder gezielt weiterfragen.",
+      parameters: {
+        type: "object",
+        properties: {
+          label: {
+            type: "string",
+            description: "Kurze Button-Beschriftung, höchstens 80 Zeichen.",
+          },
+          prompt: {
+            type: "string",
+            description:
+              "Die vollständige Nachfrage, die erst nach einem Tap gesendet wird.",
+          },
+        },
+        required: ["label", "prompt"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "present_answer_card",
       description:
         "Zeigt die Antwort als strukturierte Karte statt als Fliesstext an. " +
@@ -419,7 +506,9 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
         "eine Rechnung, eine einzelne Aufgabe). Verwende dies NICHT fuer " +
         "Listen mit mehreren Elementen, allgemeine Erklaerungen, " +
         "Begruessungen/Smalltalk oder wenn die Quellen die Frage nicht " +
-        "beantworten (dann normal in Text antworten). " +
+        "beantworten (dann normal in Text antworten). Die konkret erfragte " +
+        "Information MUSS in fields stehen. Eine Karte nur mit Dokumenttitel, " +
+        "Person oder Dokumentlink ist keine Antwort und ist ungueltig. " +
         "Bei Fragen nach Zugangsdaten (Login, Passwort, Zugang zu einem " +
         "Portal) IMMER card_type 'zugangsdaten' mit source_document_id " +
         "verwenden: die Karte liest URL, Benutzername und Passwort selbst " +
@@ -957,6 +1046,17 @@ export const TOOL_DEFINITIONS: OpenAI.Responses.FunctionTool[] =
 // Tool executors
 // ---------------------------------------------------------------------------
 
+const FAMILY_KNOWLEDGE_TOOLS = new Set([
+  "search_documents",
+  "query_payments",
+  "list_tasks",
+  "list_documents",
+  "list_family_members",
+  "lookup_contact",
+  "graph_query",
+  "query_calendar_events",
+]);
+
 /**
  * Execute a tool call by name, returning the result string for the LLM.
  *
@@ -969,11 +1069,23 @@ export async function executeTool(
   args: Record<string, unknown>,
   ctx: ToolContext,
 ): Promise<string> {
+  if (FAMILY_KNOWLEDGE_TOOLS.has(name)) {
+    ctx.searchedScopes?.add("family");
+  } else if (name === "search_web") {
+    ctx.searchedScopes?.add("web");
+  }
+
   switch (name) {
     case "add_calendar_event":
       return executeAddCalendarEvent(args, ctx);
     case "query_calendar_events":
       return executeQueryCalendarEvents(args, ctx);
+    case "set_response_state":
+      return executeSetResponseState(args, ctx);
+    case "suggest_next_action":
+      return executeSuggestNextAction(args, ctx);
+    case "search_web":
+      return executeSearchWeb(args, ctx);
     case "search_documents":
       return executeSearchDocuments(args, ctx);
     case "query_payments":
@@ -1103,6 +1215,130 @@ async function executeAddContact(
     name: contact.name,
     message: `Der Kontakt '${contact.name}' wurde angelegt.`,
   });
+}
+
+// ---------------------------------------------------------------------------
+// search_web
+// ---------------------------------------------------------------------------
+
+function executeSetResponseState(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): string {
+  const state = args.state;
+  if (!isChatResponseState(state) || state === "answered") {
+    return JSON.stringify({ error: "Ungültiger Antwortzustand." });
+  }
+  ctx.responseState = state;
+  return JSON.stringify({ success: true });
+}
+
+function executeSuggestNextAction(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): string {
+  const label = String(args.label ?? "").trim().slice(0, 80);
+  const prompt = String(args.prompt ?? "").trim().slice(0, 400);
+  if (!label || !prompt) {
+    return JSON.stringify({
+      error: "Der nächste Schritt braucht eine Beschriftung und eine Nachfrage.",
+    });
+  }
+  ctx.suggestion ??= { label, prompt };
+  return JSON.stringify({ success: true });
+}
+
+function normalizedWords(value: string): string[] {
+  return value
+    .toLocaleLowerCase("de-DE")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * A public query may mention a general concept found in a document, but it
+ * must never copy a private passage verbatim. Six consecutive matching words
+ * are specific enough to block while still allowing "Deutschlandticket
+ * Gültigkeit aktuell".
+ */
+export function copiesPrivateExcerpt(
+  query: string,
+  excerpts: string[],
+): boolean {
+  const normalizedQuery = ` ${normalizedWords(query).join(" ")} `;
+  return excerpts.some((excerpt) => {
+    const words = normalizedWords(excerpt);
+    for (let index = 0; index <= words.length - 6; index += 1) {
+      const phrase = ` ${words.slice(index, index + 6).join(" ")} `;
+      if (normalizedQuery.includes(phrase)) return true;
+    }
+    return false;
+  });
+}
+
+async function executeSearchWeb(
+  args: Record<string, unknown>,
+  ctx: ToolContext,
+): Promise<string> {
+  const query = String(args.query ?? "").trim();
+  if (!query) return JSON.stringify({ error: "Keine Suchanfrage angegeben." });
+
+  const privateExcerpts = ctx.sources
+    .filter((source) => source.origin !== "web")
+    .map((source) => source.excerpt);
+  if (copiesPrivateExcerpt(query, privateExcerpts)) {
+    return JSON.stringify({
+      error:
+        "Die Web-Suchanfrage enthält zu viel Text aus einer privaten Unterlage. Formuliere sie allgemein und ohne private Angaben.",
+    });
+  }
+
+  if (!ctx.webPrivacyReady) {
+    return JSON.stringify({
+      error:
+        "Die Web-Suche wurde aus Datenschutzgründen nicht gestartet. Bitte versuch es noch einmal.",
+    });
+  }
+  const privateNames = [
+    ...(ctx.privateWebTerms ?? []),
+    ...ctx.sources
+      .map((source) => source.title)
+      .filter(
+        (title): title is string =>
+          Boolean(title && title.trim().split(/\s+/).length >= 2),
+      ),
+  ].filter((name): name is string => Boolean(name));
+
+  try {
+    const result = await searchPublicWeb(query, privateNames);
+    for (const source of result.sources) {
+      if (
+        !ctx.sources.some(
+          (existing) => existing.document_id === source.document_id,
+        )
+      ) {
+        ctx.sources.push(source);
+      }
+    }
+
+    return JSON.stringify({
+      öffentliche_suchanfrage: result.query,
+      ergebnis: result.summary,
+      quellen: result.sources.map((source) => ({
+        source_id: source.document_id,
+        title: source.title,
+        url: source.url,
+      })),
+    });
+  } catch (error) {
+    return JSON.stringify({
+      error:
+        error instanceof Error
+          ? error.message
+          : "Die Web-Suche hat nicht geklappt.",
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

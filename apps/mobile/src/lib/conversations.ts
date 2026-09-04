@@ -1,13 +1,17 @@
 import { apiFetch } from "./api";
 import {
-  CHAT_ACTION_TOOL_NAMES,
   type AnswerCard,
   type ChatAction,
-  type ChatActionToolName,
   type ChatMessage,
   type ChatSource,
 } from "./chat";
 import { getSupabase } from "./supabase";
+import {
+  isChatActionToolName,
+  isChatResponseState,
+  isChatSuggestion,
+  MAX_CHAT_CONVERSATIONS,
+} from "@ordilo/chat-contract";
 
 /**
  * Past conversations with Ordilo. Reads go straight to Supabase under RLS
@@ -39,10 +43,12 @@ interface MessageRow {
   card: unknown;
   actions: unknown;
   feedback?: string | null;
+  response_state?: unknown;
+  suggestion?: unknown;
   created_at: string;
 }
 
-export const CONVERSATION_LIST_LIMIT = 30;
+export const CONVERSATION_LIST_LIMIT = MAX_CHAT_CONVERSATIONS;
 
 export async function listConversations(
   familyId: string,
@@ -73,7 +79,7 @@ export async function loadConversationMessages(
     // on chat_messages (migration 0014 declares it), and PostgREST rejects the
     // whole query for one unknown column. Restored answers start without a
     // rating; a new thumbs-up/down still posts to the API.
-    .select("id, role, content, sources, card, actions, created_at")
+    .select("id, role, content, sources, card, actions, response_state, suggestion, created_at")
     .eq("conversation_id", conversationId)
     // Newest first, then reversed for display: a long conversation must
     // reopen on its most recent turns, not on the oldest `limit` of them
@@ -86,13 +92,6 @@ export async function loadConversationMessages(
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await apiFetch(`/api/conversations/${conversationId}`, { method: "DELETE" });
-}
-
-function isToolName(value: unknown): value is ChatActionToolName {
-  return (
-    typeof value === "string" &&
-    (CHAT_ACTION_TOOL_NAMES as readonly string[]).includes(value)
-  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -112,6 +111,13 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
           title: typeof source.title === "string" ? source.title : null,
           excerpt: typeof source.excerpt === "string" ? source.excerpt : "",
           score: typeof source.score === "number" ? source.score : 0,
+          origin:
+            source.origin === "semantic" ||
+            source.origin === "graph" ||
+            source.origin === "web"
+              ? source.origin
+              : undefined,
+          url: typeof source.url === "string" ? source.url : undefined,
         }];
       })
     : [];
@@ -142,7 +148,11 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
   const actions: ChatAction[] = Array.isArray(row.actions)
     ? (row.actions as unknown[]).flatMap((entry) => {
         const action = asRecord(entry);
-        if (!action || typeof action.action_id !== "string" || !isToolName(action.tool_name)) {
+        if (
+          !action ||
+          typeof action.action_id !== "string" ||
+          !isChatActionToolName(action.tool_name)
+        ) {
           return [];
         }
         return [{
@@ -153,6 +163,13 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
         }];
       })
     : [];
+  const suggestion = isChatSuggestion(row.suggestion)
+    ? row.suggestion
+    : null;
+  const responseState = isChatResponseState(row.response_state)
+    ? row.response_state
+    : "answered";
+
   return {
     id: `db-${row.id}`,
     createdAt: row.created_at,
@@ -161,6 +178,8 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
     text: row.content,
     card,
     sources,
+    suggestion,
+    responseState,
     actions,
     toolCalls: [],
     status: "done",
@@ -188,41 +207,4 @@ export function formatConversationWhen(iso: string, now = new Date()): string {
 /** The title a conversation shows: its stored title or "Gespräch". */
 export function getConversationTitle(conversation: Pick<ConversationSummary, "title">): string {
   return conversation.title?.trim() || "Gespräch";
-}
-
-/**
- * Suggestions that know the family. Children's names make the questions
- * real ("Zeig mir Emmas Schulunterlagen"), a recent document makes the
- * first one concrete. Falls back to the general prompts when the family
- * has no members or documents yet.
- */
-export function buildSuggestedPrompts(input: {
-  members: { name: string; role: string | null }[];
-  recentDocumentTitle?: string | null;
-  now?: Date;
-}): string[] {
-  const now = input.now ?? new Date();
-  const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? "";
-  const child = input.members.find((member) =>
-    /kind|tochter|sohn/i.test(member.role ?? ""),
-  );
-  const someone = child ?? input.members.find((member) => firstName(member.name));
-  const name = someone ? firstName(someone.name) : null;
-  const genitive = name ? (/[sßxz]$/i.test(name) ? `${name}’` : `${name}s`) : null;
-  const weekend = now.getDay() === 5 || now.getDay() === 6;
-
-  const prompts: string[] = [];
-  if (input.recentDocumentTitle) {
-    prompts.push(`Was steht in „${input.recentDocumentTitle}“?`);
-  }
-  prompts.push(weekend ? "Was steht nächste Woche an?" : "Was muss ich diese Woche erledigen?");
-  prompts.push("Welche Fristen laufen bald ab?");
-  if (genitive) {
-    prompts.push(`Zeig mir ${genitive} letzte Unterlagen`);
-    prompts.push(`Wann ist ${genitive} nächster Arzttermin?`);
-  } else {
-    prompts.push("Finde die letzte Stromrechnung");
-    prompts.push("Wann ist der nächste Arzttermin?");
-  }
-  return prompts.slice(0, 4);
 }

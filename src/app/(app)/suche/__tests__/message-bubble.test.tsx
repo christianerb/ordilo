@@ -94,7 +94,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
     },
   ];
 
-  it("renders one compact chip per visible source", () => {
+  it("renders only the best source until the rest are expanded", () => {
     render(
       <MessageBubble
         message={buildMessage({ content: "Antwort", sources })}
@@ -102,6 +102,8 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
+    expect(screen.getAllByTestId("source-card")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("show-more-sources"));
     expect(screen.getAllByTestId("source-card")).toHaveLength(2);
   });
 
@@ -124,7 +126,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.queryByText("Passende Dokumente")).toBeNull();
+    expect(screen.queryByText("Quellen")).toBeNull();
   });
 
   it("renders the document suggestions label and count when sources are visible", () => {
@@ -135,7 +137,7 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("Passende Dokumente")).toBeDefined();
+    expect(screen.getByText("Quellen")).toBeDefined();
     expect(screen.getByTestId("source-count-badge").textContent).toBe("2");
   });
 
@@ -189,7 +191,139 @@ describe("MessageBubble — Quellen (source citations)", () => {
         onSourceCardClick={vi.fn()}
       />,
     );
+    expect(screen.getAllByText("Dokumenten-Suche")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("show-more-sources"));
     expect(screen.getAllByText("Dokumenten-Suche")).toHaveLength(2);
+  });
+
+  it("opens safe web sources as external links", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Antwort laut Verbraucherzentrale.",
+          sources: [
+            {
+              document_id: "web-1",
+              title: "Verbraucherzentrale",
+              excerpt: "Aktuelle Information",
+              score: 0.9,
+              origin: "web",
+              url: "https://www.verbraucherzentrale.de/wissen",
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /Verbraucherzentrale/ });
+    expect(link.getAttribute("href")).toBe(
+      "https://www.verbraucherzentrale.de/wissen",
+    );
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(screen.getByText("Web-Quelle")).toBeDefined();
+  });
+
+  it("does not create a link for an unsafe web URL", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Antwort",
+          sources: [
+            {
+              document_id: "web-unsafe",
+              title: "Unsichere Quelle",
+              excerpt: "Nicht öffnen",
+              score: 0.9,
+              origin: "web",
+              url: "javascript:alert(1)",
+            },
+          ],
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("link", { name: /Unsichere Quelle/ }),
+    ).toBeNull();
+  });
+});
+
+describe("MessageBubble — answer metadata", () => {
+  it("renders a non-success response state after streaming completes", () => {
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Ich habe nur einen Teil gefunden.",
+          responseState: "partial",
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Teilweise beantwortet")).toBeDefined();
+  });
+
+  it("runs the single suggested follow-up from its button", () => {
+    const onSuggestionClick = vi.fn();
+    render(
+      <MessageBubble
+        message={buildMessage({
+          content: "Antwort",
+          suggestion: {
+            label: "Fristen prüfen",
+            prompt: "Welche Fristen laufen diese Woche ab?",
+          },
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+        onSuggestionClick={onSuggestionClick}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Fristen prüfen" }));
+    expect(onSuggestionClick).toHaveBeenCalledWith(
+      "Welche Fristen laufen diese Woche ab?",
+    );
+  });
+});
+
+describe("MessageBubble — controlled repair", () => {
+  it("starts a new search even when feedback storage fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("offline")));
+    const onRepair = vi.fn().mockResolvedValue(undefined);
+    render(
+      <MessageBubble
+        message={buildMessage({
+          dbId: "3f668177-5e95-455e-894a-e42e4bcc7a1e",
+          content: "Die alte Antwort.",
+        })}
+        passesFilters={passesAllFilters}
+        onSourceCardClick={vi.fn()}
+        onRepair={onRepair}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Antwort war nicht hilfreich" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Falsche Antwort" }));
+    fireEvent.click(screen.getByRole("button", { name: "Besser antworten" }));
+
+    await waitFor(() =>
+      expect(onRepair).toHaveBeenCalledWith(
+        expect.objectContaining({
+          dbId: "3f668177-5e95-455e-894a-e42e4bcc7a1e",
+        }),
+        ["falsche_antwort"],
+        "",
+      ),
+    );
+    vi.unstubAllGlobals();
   });
 });
 
@@ -235,14 +369,13 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
     expect(screen.getByText("Beste Übereinstimmung")).toBeDefined();
   });
 
-  it("does not show a sources toggle when every source is a top match", () => {
+  it("does not show a sources toggle for one source", () => {
     render(
       <MessageBubble
         message={buildMessage({
           content: "Antwort",
           sources: [
             { document_id: "doc-1", title: "Kita-Brief", excerpt: "x", score: 0.92 },
-            { document_id: "doc-2", title: "Schulbrief", excerpt: "x", score: 0.7 },
           ],
         })}
         passesFilters={passesAllFilters}
@@ -270,7 +403,7 @@ describe("MessageBubble — top matches vs. minimal reference list", () => {
     // Low-relevance sources are collapsed behind a quiet toggle by
     // default (answer-first hierarchy) …
     const toggle = screen.getByTestId("show-more-sources");
-    expect(toggle.textContent).toContain("2 weitere mögliche Dokumente");
+    expect(toggle.textContent).toContain("2 weitere Quellen");
     expect(screen.queryByText("Duplikat 1")).toBeNull();
     // … and expand on demand. Raw percentages are announced to assistive
     // tech only, never shown as visible UI noise.
