@@ -136,8 +136,6 @@ export default function SucheScreen() {
   const [busy, setBusy] = useState(false);
   const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>("idle");
   const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [composerHeight, setComposerHeight] = useState(0);
-
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
   const counter = useRef(0);
@@ -764,10 +762,7 @@ export default function SucheScreen() {
             style={styles.flex}
           >
             <ScrollView
-              contentContainerStyle={[
-                styles.content,
-                { paddingBottom: composerHeight + spacing.md },
-              ]}
+              contentContainerStyle={styles.content}
               keyboardDismissMode="interactive"
               keyboardShouldPersistTaps="handled"
               // Auto-scroll is for conversations: the empty welcome state
@@ -939,7 +934,6 @@ export default function SucheScreen() {
             </ScrollView>
 
             <View
-              onLayout={(event) => setComposerHeight(event.nativeEvent.layout.height)}
               style={[
                 styles.composerSafeArea,
                 { paddingBottom: Math.max(insets.bottom, spacing.sm) },

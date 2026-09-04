@@ -177,4 +177,16 @@ describe("ScanProcessingStep", () => {
     fireEvent.click(screen.getByTestId("processing-background-button"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("explains that the user may leave while processing continues", () => {
+    const { container } = render(
+      <ScanProcessingStep doc={null} onRetry={vi.fn()} onClose={vi.fn()} />,
+    );
+
+    expect(
+      screen.getByText(/Du kannst dieses Fenster schließen/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/später zurückkommst/)).toBeInTheDocument();
+    expect(container.querySelector(".overflow-y-auto")).not.toBeNull();
+  });
 });

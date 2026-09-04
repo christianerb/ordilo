@@ -65,6 +65,17 @@ describe("OrdiloMascot", () => {
     expect(svg?.getAttribute("class")).toContain("ordilo-mascot-success");
   });
 
+  it("trumpets with an open eye while processing", () => {
+    const { container } = render(<OrdiloMascot mood="processing" />);
+    const svg = container.querySelector("svg");
+
+    expect(svg?.getAttribute("class")).toContain("ordilo-mascot-trumpet-body");
+    expect(container.querySelector(".ordilo-mascot-trumpet")).not.toBeNull();
+    expect(container.querySelector(".ordilo-mascot-trumpet-waves")).not.toBeNull();
+    expect(container.querySelector('[data-part="eye"]')?.tagName).toBe("circle");
+    expect(container.querySelector(".ordilo-mascot-blink")).toBeNull();
+  });
+
   it("is hidden from assistive tech (decorative)", () => {
     const { container } = render(<OrdiloMascot />);
     const svg = container.querySelector("svg");

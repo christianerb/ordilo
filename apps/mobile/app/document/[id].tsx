@@ -86,6 +86,10 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
+import {
+  buildDocumentUpdatePayload,
+  updateConfirmedDocument,
+} from "@/src/lib/notes";
 import { resolveDocumentPeople, type Person } from "@/src/lib/people";
 import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { contentEntering } from "@/src/theme/motion";
@@ -122,6 +126,7 @@ export default function DocumentReviewScreen() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [confirmedTitleDraft, setConfirmedTitleDraft] = useState("");
   const [showDocumentDetails, setShowDocumentDetails] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [calendarDates, setCalendarDates] = useState<Set<number>>(new Set());
@@ -227,6 +232,13 @@ export default function DocumentReviewScreen() {
     setDocument((current) => current && "summary" in current ? updater(current) : current);
   };
 
+  const beginEditing = () => {
+    if (document && "summary" in document && document.status === "confirmed") {
+      setConfirmedTitleDraft(document.title);
+    }
+    setEditing(true);
+  };
+
   const confirm = async () => {
     if (!document || !("summary" in document) || !canReviewDocument(document.status) || !id) return;
     if (!document.title.trim()) {
@@ -245,6 +257,58 @@ export default function DocumentReviewScreen() {
     } catch {
       await fail();
       Alert.alert("Nicht gespeichert", "Bitte prüfe deine Verbindung und versuch es nochmal.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveConfirmedTitle = async () => {
+    if (
+      !document ||
+      !("summary" in document) ||
+      document.status !== "confirmed" ||
+      !id
+    ) {
+      return;
+    }
+    if (!confirmedTitleDraft.trim()) {
+      Alert.alert(
+        "Titel fehlt",
+        "Gib dem Dokument einen kurzen Namen, damit ihr es später wiederfindet.",
+      );
+      return;
+    }
+    setSaving(true);
+    try {
+      // The update contract replaces extracted metadata as one atomic set.
+      // Reload first so a title-only change never writes an old snapshot
+      // over corrections another family member made while this view was open.
+      const latest = await loadDocumentReview(id);
+      if (
+        !latest ||
+        !("summary" in latest) ||
+        latest.status !== "confirmed"
+      ) {
+        throw new Error("Confirmed document could not be reloaded.");
+      }
+      await updateConfirmedDocument(
+        id,
+        buildDocumentUpdatePayload(latest, {
+          title: confirmedTitleDraft,
+          summary: latest.summary,
+          document_type: latest.document_type,
+        }),
+      );
+      await success();
+      refreshLibraryDocuments();
+      setDocument({ ...latest, title: confirmedTitleDraft.trim() });
+      setEditing(false);
+    } catch {
+      await fail();
+      Alert.alert(
+        "Titel nicht gespeichert",
+        "Bitte prüfe dein Internet und versuch es nochmal.",
+      );
     } finally {
       setSaving(false);
     }
@@ -308,7 +372,7 @@ export default function DocumentReviewScreen() {
     const choice = pendingMenuRef.current;
     pendingMenuRef.current = null;
     if (choice === "original") void viewOriginal();
-    if (choice === "edit") setEditing(true);
+    if (choice === "edit") beginEditing();
     if (choice === "delete") requestDelete();
   };
 
@@ -480,7 +544,13 @@ export default function DocumentReviewScreen() {
       <DetailTopBar
         onBack={() => router.back()}
         subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)}`}
-        title={editing ? (editable ? "Angaben prüfen" : "Angaben") : kind.label}
+        title={
+          editing
+            ? editable
+              ? "Angaben prüfen"
+              : "Titel ändern"
+            : kind.label
+        }
         trailing={
           editing ? undefined : (
             <IconButton
@@ -519,6 +589,20 @@ export default function DocumentReviewScreen() {
                 </View>
               ) : null}
               <Text style={styles.heroTitle}>{document.title}</Text>
+              {isReadOnly ? (
+                <Pressable
+                  accessibilityLabel="Titel ändern"
+                  accessibilityRole="button"
+                  onPress={beginEditing}
+                  style={({ pressed }) => [
+                    styles.titleEditLink,
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Pencil color={colors.harborBlue} size={15} strokeWidth={2} />
+                  <Text style={styles.titleEditLinkText}>Titel ändern</Text>
+                </Pressable>
+              ) : null}
               {document.summary ? (
                 <Pressable
                   accessibilityRole={summaryLong ? "button" : undefined}
@@ -688,20 +772,24 @@ export default function DocumentReviewScreen() {
               <Text style={styles.editHelp}>
                 {editable
                   ? "Ändere nur, was nicht stimmt. Danach speicherst du das Dokument mit „Passt so“."
-                  : "So hat Ordilo das Dokument gelesen."}
+                  : "Gib dem Dokument einen Namen, unter dem ihr es schnell wiederfindet."}
               </Text>
             </View>
 
             <Card style={styles.card}>
               <Text style={styles.sectionHeading}>Das Wichtigste</Text>
               <FieldLabel text="Name" />
-              {editable ? (
+              {editable || isReadOnly ? (
                 <TextInput
                   accessibilityLabel="Name des Dokuments"
                   maxLength={200}
-                  onChangeText={(title) => updateAnalysis((current) => ({ ...current, title }))}
+                  onChangeText={(title) =>
+                    isReadOnly
+                      ? setConfirmedTitleDraft(title)
+                      : updateAnalysis((current) => ({ ...current, title }))
+                  }
                   style={styles.input}
-                  value={document.title}
+                  value={isReadOnly ? confirmedTitleDraft : document.title}
                 />
               ) : <ReadValue value={document.title} />}
               <FieldLabel text="Worum geht's?" />
@@ -780,7 +868,26 @@ export default function DocumentReviewScreen() {
 
             <View style={styles.actions}>
               {isReadOnly ? (
-                <OrdiloButton title="Zurück zum Dokument" size="lg" onPress={() => setEditing(false)} variant="outline" />
+                <>
+                  <OrdiloButton
+                    disabled={saving || !confirmedTitleDraft.trim()}
+                    icon={
+                      saving ? (
+                        <ActivityIndicator color={colors.warmWhite} />
+                      ) : (
+                        <Check color={colors.warmWhite} size={19} />
+                      )
+                    }
+                    onPress={() => void saveConfirmedTitle()}
+                    size="lg"
+                    title={saving ? "Wird gespeichert …" : "Titel speichern"}
+                  />
+                  <OrdiloButton
+                    title="Abbrechen"
+                    onPress={() => setEditing(false)}
+                    variant="ghost"
+                  />
+                </>
               ) : (
                 <>
                   <OrdiloButton
@@ -865,12 +972,12 @@ export default function DocumentReviewScreen() {
             tint: "blue",
           },
           {
-            accessibilityLabel: editable ? "Angaben ändern" : "Angaben ansehen",
+            accessibilityLabel: editable ? "Angaben ändern" : "Titel ändern",
             description: editable
               ? "Namen, Termine, Beträge korrigieren"
-              : "Alles, was Ordilo gelesen hat",
+              : "Dokument umbenennen",
             icon: Pencil,
-            label: editable ? "Angaben ändern" : "Angaben ansehen",
+            label: editable ? "Angaben ändern" : "Titel ändern",
             onPress: () => chooseMenu("edit"),
             tint: "sage",
           },
@@ -1517,6 +1624,17 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   heroTitle: { color: colors.graphite, ...typography.heading },
+  titleEditLink: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 44,
+  },
+  titleEditLinkText: {
+    color: colors.harborBlue,
+    ...typography.label,
+  },
   heroSummary: { color: colors.graphite, ...typography.body },
   heroMore: { color: colors.harborBlue, marginTop: spacing.xs, ...typography.caption },
   peopleRow: {

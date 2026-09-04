@@ -7,6 +7,7 @@ import {
   IMAGE_MIME_TYPES,
   DOCUMENT_STATUSES,
   DOCUMENT_STATUS_LABELS,
+  getStatusBadgeSizeClasses,
   STATUS_BADGE_CLASSES,
   PROCESSING_STATUSES,
   isProcessingStatus,
@@ -106,6 +107,11 @@ describe("STATUS_BADGE_CLASSES", () => {
 
   it("failed status uses destructive styling", () => {
     expect(STATUS_BADGE_CLASSES.failed).toContain("destructive");
+  });
+
+  it("uses the compact size only for confirmed documents", () => {
+    expect(getStatusBadgeSizeClasses("confirmed")).toContain("text-[11px]");
+    expect(getStatusBadgeSizeClasses("analyzed")).toContain("text-xs");
   });
 });
 

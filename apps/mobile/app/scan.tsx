@@ -723,6 +723,21 @@ export default function ScanModal() {
               </View>
             ) : null}
 
+            {!failed ? (
+              <View style={styles.backgroundInfo}>
+                <Text style={styles.backgroundInfoTitle}>
+                  {canContinueInBackground
+                    ? "Du kannst ruhig weiter"
+                    : "Bitte noch kurz geöffnet lassen"}
+                </Text>
+                <Text style={styles.backgroundInfoText}>
+                  {canContinueInBackground
+                    ? "Du kannst diese Ansicht verlassen oder die App schließen. Ordilo arbeitet im Hintergrund weiter. Wenn du später zurückkommst, siehst du hier den Stand."
+                    : "Dieses Dokument wird gerade auf deinem Gerät vorbereitet. Lass diese Ansicht geöffnet, bis der nächste Schritt beginnt."}
+                </Text>
+              </View>
+            ) : null}
+
             <View style={styles.stepCard}>
               {DOCUMENT_PIPELINE_STEPS.map((step, index) => {
                 const done = index < completedSteps;
@@ -1028,6 +1043,22 @@ const styles = StyleSheet.create({
   processingFileName: {
     color: colors.harborBlueDarker,
     flexShrink: 1,
+    ...typography.timestamp,
+  },
+  backgroundInfo: {
+    backgroundColor: colors.washSageSoft,
+    borderRadius: radii.sm,
+    gap: spacing.xs,
+    marginTop: spacing.md,
+    padding: spacing.md,
+    width: "100%",
+  },
+  backgroundInfoTitle: {
+    color: colors.harborBlueDarker,
+    ...typography.title,
+  },
+  backgroundInfoText: {
+    color: colors.mistDark,
     ...typography.timestamp,
   },
   stepCard: {

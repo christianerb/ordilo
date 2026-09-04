@@ -107,7 +107,7 @@ export async function updateDocumentSecret(
  * The existing protected PATCH route edits confirmed document metadata.
  * It intentionally cannot change note body text, attachments, or secrets.
  */
-export async function updateConfirmedNote(
+export async function updateConfirmedDocument(
   documentId: string,
   payload: DocumentUpdatePayload,
 ): Promise<void> {
@@ -118,20 +118,20 @@ export async function updateConfirmedNote(
   });
 }
 
-export function buildNoteUpdatePayload(
-  note: ReviewAnalysis,
+export function buildDocumentUpdatePayload(
+  document: ReviewAnalysis,
   changes: Pick<ReviewAnalysis, "title" | "summary" | "document_type">,
 ): DocumentUpdatePayload {
   return {
     document_type: changes.document_type,
     title: changes.title.trim(),
     summary: changes.summary.trim(),
-    family_members: note.family_members,
-    organizations: note.organizations,
-    contacts: note.contacts,
-    dates: note.dates,
-    amounts: note.amounts,
-    suggested_category: note.suggested_category,
-    tags: note.tags,
+    family_members: document.family_members,
+    organizations: document.organizations,
+    contacts: document.contacts,
+    dates: document.dates,
+    amounts: document.amounts,
+    suggested_category: document.suggested_category,
+    tags: document.tags,
   };
 }

@@ -153,7 +153,7 @@ export function ScanProcessingHero({
       </Animated.View>
 
       <View style={styles.character}>
-        <OrdiloCharacter animated size={104} />
+        <OrdiloCharacter animated processing size={104} />
       </View>
     </View>
   );

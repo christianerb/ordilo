@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import {
   ArrowLeft,
   Cake,
@@ -29,6 +30,7 @@ import {
   type DocumentType,
 } from "@/lib/schemas/extraction";
 import { useDocumentViewer } from "@/lib/scan/scan-context";
+import { useTaskMutation } from "@/lib/hooks/use-task-mutation";
 
 type MemberRow = Database["public"]["Tables"]["family_members"]["Row"];
 
@@ -57,6 +59,32 @@ export function ProfileClient({
   otherMembers = [],
 }: ProfileClientProps) {
   const { openDocument } = useDocumentViewer();
+  const [localTasks, setLocalTasks] = useState(tasks);
+  const [taskError, setTaskError] = useState<string | null>(null);
+
+  const { toggleDone } = useTaskMutation({
+    onOptimisticToggle: (taskId, newStatus) => {
+      setTaskError(null);
+      setLocalTasks((current) =>
+        current.map((task) =>
+          task.id === taskId ? { ...task, status: newStatus } : task,
+        ),
+      );
+    },
+    onRevertToggle: (taskId, newStatus) =>
+      setLocalTasks((current) =>
+        current.map((task) =>
+          task.id === taskId
+            ? { ...task, status: newStatus === "done" ? "open" : "done" }
+            : task,
+        ),
+      ),
+    onOptimisticDismiss: () => undefined,
+    onRevertDismiss: () => undefined,
+    onToggleError: () =>
+      setTaskError("Die Aufgabe konnte nicht gespeichert werden. Bitte nochmal versuchen."),
+    onDismissError: () => undefined,
+  });
 
   // Editing happens on its own page (/familie/[id]/bearbeiten), so these
   // are read-only here — a save navigates back and the server re-renders.
@@ -85,8 +113,11 @@ export function ProfileClient({
     docTypeMap.set(doc.id, label);
   }
 
+  const openTasks = localTasks.filter(
+    (task) => task.status !== "done" && task.status !== "dismissed",
+  );
   const timelineEvents = sortTimelineEvents(
-    buildTimelineEvents(documents, tasks, dateEntities),
+    buildTimelineEvents(documents, openTasks, dateEntities),
     "desc",
   ).map((event) => {
     let description: string | undefined;
@@ -96,7 +127,7 @@ export function ProfileClient({
     return { ...event, description };
   });
 
-  const taskCardData: TaskCardData[] = tasks.map((task) => ({
+  const taskCardData: TaskCardData[] = openTasks.map((task) => ({
     id: task.id,
     family_id: member.family_id,
     document_id: task.document_id,
@@ -111,7 +142,7 @@ export function ProfileClient({
     assigned_to: null,
     completed_at: null,
     document_title: task.document_id ? documentTitles?.get(task.document_id) ?? null : null,
-  }));
+    }));
 
   const navigateToDocument = (docId: string) => {
     void openDocument(docId);
@@ -203,7 +234,9 @@ export function ProfileClient({
             {/* Quick stats */}
             <div className="mt-2 flex gap-3 text-xs text-muted-foreground">
               <span>{documents.length} Dokumente</span>
-              {tasks.length > 0 && <span>· {tasks.length} offen</span>}
+              {taskCardData.length > 0 && (
+                <span>· {taskCardData.length} offen</span>
+              )}
             </div>
           </div>
         </div>
@@ -240,9 +273,18 @@ export function ProfileClient({
           <h2 className="text-sm font-semibold text-muted-foreground">Offene Aufgaben</h2>
           <div className="space-y-2 stagger-children" data-testid="profile-task-list">
             {taskCardData.map((task) => (
-              <TaskCard key={task.id} task={task} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                onToggleDone={(newStatus) => void toggleDone(task.id, newStatus)}
+              />
             ))}
           </div>
+          {taskError ? (
+            <p className="text-sm text-destructive" role="alert">
+              {taskError}
+            </p>
+          ) : null}
         </section>
       )}
 

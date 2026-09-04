@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
  * - greeting: trunk raised in a wave, happy eyes — plays once on mount
  * - success: same happy pose as greeting, with a brief settle-in — plays once
  * - helping: trunk raised and held, ear perked — ready to assist
+ * - processing: trunk raised with a short trumpet pulse, eye held open
  * - sleepy: eyes closed, trunk resting low, no idle animation
  */
 export type OrdiloMascotMood =
@@ -19,6 +20,7 @@ export type OrdiloMascotMood =
   | "greeting"
   | "success"
   | "helping"
+  | "processing"
   | "sleepy";
 
 export interface OrdiloMascotProps {
@@ -59,12 +61,18 @@ export function OrdiloMascot({
 }: OrdiloMascotProps) {
   const eyesClosed = mood === "sleepy";
   const eyesHappy = mood === "greeting" || mood === "success";
-  const trunkUp = mood === "greeting" || mood === "success" || mood === "helping";
+  const trunkUp =
+    mood === "greeting" ||
+    mood === "success" ||
+    mood === "helping" ||
+    mood === "processing";
   const showBlush = mood === "greeting" || mood === "success";
 
   const bodyAnimClass =
     mood === "success"
       ? "ordilo-mascot-success"
+      : mood === "processing" && animate
+        ? "ordilo-mascot-trumpet-body"
       : animate
         ? "ordilo-mascot-breathe"
         : undefined;
@@ -72,12 +80,14 @@ export function OrdiloMascot({
   const earAnimClass = animate && (mood === "helping" || mood === "greeting")
     ? "ordilo-mascot-ear-wiggle"
     : undefined;
-  const eyeAnimClass = animate && !eyesClosed && !eyesHappy
+  const eyeAnimClass = animate && !eyesClosed && !eyesHappy && mood !== "processing"
     ? "ordilo-mascot-blink"
     : undefined;
   const trunkAnimClass =
     mood === "greeting"
       ? "ordilo-mascot-greet"
+      : animate && mood === "processing"
+        ? "ordilo-mascot-trumpet"
       : animate && mood === "searching"
         ? "ordilo-mascot-sway"
         : undefined;
@@ -191,6 +201,22 @@ export function OrdiloMascot({
           fill="none"
         />
       </g>
+      {mood === "processing" ? (
+        <g className={animate ? "ordilo-mascot-trumpet-waves" : undefined}>
+          <path
+            d="M62 25 C65 23 67 20 67 17"
+            stroke="var(--apricot)"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+          />
+          <path
+            d="M64 31 C66 30 67 28 67.5 26"
+            stroke="var(--apricot)"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+          />
+        </g>
+      ) : null}
     </svg>
   );
 }

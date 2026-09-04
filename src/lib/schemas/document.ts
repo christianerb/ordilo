@@ -171,6 +171,16 @@ export function getStatusBadgeClasses(status: string): string {
   return STATUS_BADGE_CLASSES[status as DocumentStatus] ?? STATUS_BADGE_CLASSES.uploaded;
 }
 
+/**
+ * Keeps the long confirmed label compact wherever it shares a row with a
+ * document title. Other statuses retain room for their progress/error icon.
+ */
+export function getStatusBadgeSizeClasses(status: string): string {
+  return status === "confirmed"
+    ? "px-1.5 py-0.5 text-[11px]"
+    : "px-2.5 py-1 text-xs";
+}
+
 // ---------------------------------------------------------------------------
 // File validation helpers
 // ---------------------------------------------------------------------------
