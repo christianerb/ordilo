@@ -81,6 +81,12 @@ export interface ToolContext {
   toolCallCount?: number;
   privateWebTerms?: string[];
   webPrivacyReady?: boolean;
+  /**
+   * Excerpts from private sources of earlier turns in this conversation.
+   * `sources` starts empty on every request, so without these a Web query
+   * copied verbatim from an older answer would bypass the excerpt guard.
+   */
+  historyExcerpts?: string[];
   preloadedFamilyMembers?: Array<{
     name: string;
     role: string | null;
@@ -1284,9 +1290,12 @@ async function executeSearchWeb(
   const query = String(args.query ?? "").trim();
   if (!query) return JSON.stringify({ error: "Keine Suchanfrage angegeben." });
 
-  const privateExcerpts = ctx.sources
-    .filter((source) => source.origin !== "web")
-    .map((source) => source.excerpt);
+  const privateExcerpts = [
+    ...ctx.sources
+      .filter((source) => source.origin !== "web")
+      .map((source) => source.excerpt),
+    ...(ctx.historyExcerpts ?? []),
+  ];
   if (copiesPrivateExcerpt(query, privateExcerpts)) {
     return JSON.stringify({
       error:

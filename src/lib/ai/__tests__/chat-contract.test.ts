@@ -48,6 +48,28 @@ describe("shared chat contract", () => {
     expect(history).toContain("Regelung ab Januar 2026");
   });
 
+  it("redacts structured identifiers before excerpts re-enter the model", () => {
+    const history = buildAssistantHistoryContext({
+      text: "Die Überweisung ist raus.",
+      sources: [
+        {
+          document_id: "doc-1",
+          title: "Kontoauszug",
+          excerpt:
+            "IBAN DE89 3704 0044 0532 0130 00, Steuer-ID 12.345.678.901, Versicherungsnummer A123456789",
+          score: 0.9,
+        },
+      ],
+    });
+
+    expect(history).not.toContain("DE89");
+    expect(history).not.toContain("12.345.678.901");
+    expect(history).not.toContain("A123456789");
+    expect(history).toContain("[IBAN]");
+    expect(history).toContain("[Steuer-ID]");
+    expect(history).toContain("[Versicherungsnummer]");
+  });
+
   it("parses the shared confirmation wire event for both clients", () => {
     expect(
       parseChatWireEvent({

@@ -406,6 +406,32 @@ export function buildPersonalChatPrompts(input: {
   return prompts.slice(0, 3);
 }
 
+// ---------------------------------------------------------------------------
+// PII redaction for model-bound history
+// ---------------------------------------------------------------------------
+
+/** IBAN: 2-letter country code + 2 check digits + up to 30 alphanumeric chars. */
+const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:\s?\d{0,4}){5,8}\b/g;
+
+/** German tax ID: 11 digits, often formatted as XX.XXX.XXX.XXX. */
+const TAX_ID_PATTERN = /\b\d{2}\.?\d{3}\.?\d{3}\.?\d{3}\b/g;
+
+/** German health/social insurance number: one letter plus 8-9 digits. */
+const INSURANCE_NUMBER_PATTERN = /\b[A-Z]\d{8}\d?\b/g;
+
+/**
+ * Masks structured identifiers (IBAN, tax ID, insurance number) before a
+ * persisted source excerpt is fed back into a model turn. Tool results are
+ * redacted the same way, so follow-up history must not reintroduce the raw
+ * values the tool boundary deliberately removed.
+ */
+export function redactPII(text: string): string {
+  return text
+    .replace(IBAN_PATTERN, "[IBAN]")
+    .replace(TAX_ID_PATTERN, "[Steuer-ID]")
+    .replace(INSURANCE_NUMBER_PATTERN, "[Versicherungsnummer]");
+}
+
 /** Compact, source-bearing context shared by server, Web and iOS follow-ups. */
 export function buildAssistantHistoryContext(input: {
   text: string;
@@ -437,7 +463,9 @@ export function buildAssistantHistoryContext(input: {
         isWebChatSource(source)
           ? "Web-Quelle"
           : "Familien-Unterlage";
-      const excerpt = source.excerpt.trim().slice(0, 500);
+      // Redact before slicing so an identifier straddling the 500-char
+      // cut is still masked instead of leaking as a partial value.
+      const excerpt = redactPII(source.excerpt.trim()).slice(0, 500);
       const webUrl =
         kind === "Web-Quelle" && isSafePublicSourceUrl(source.url)
           ? ` (${source.url})`
