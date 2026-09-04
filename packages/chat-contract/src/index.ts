@@ -412,11 +412,12 @@ export function buildPersonalChatPrompts(input: {
 
 /**
  * IBAN: 2-letter country code + 2 check digits + 11–28 alphanumeric BBAN
- * characters, optional single spaces between them. The BBAN itself may
- * contain letters (e.g. GB, CH), so a digits-only match would mask just the
- * prefix and leak the account body into the next model turn.
+ * characters, optional whitespace between them. The BBAN itself may contain
+ * letters (e.g. GB, CH), so a digits-only match would mask just the prefix
+ * and leak the account body; and OCR output wraps lines, so groups may be
+ * split by newlines or tabs rather than plain spaces.
  */
-const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]){11,28}\b/g;
+const IBAN_PATTERN = /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]){11,28}\b/g;
 
 /** German tax ID: 11 digits, often formatted as XX.XXX.XXX.XXX. */
 const TAX_ID_PATTERN = /\b\d{2}\.?\d{3}\.?\d{3}\.?\d{3}\b/g;
@@ -499,13 +500,25 @@ export function extractHistoryEvidence(
   history: ReadonlyArray<{ role: string; content: string }>,
 ): string[] {
   const sections: string[] = [];
+  // Entry shape written by buildAssistantHistoryContext — "1. <kind>: ...".
+  const entryStart = /(?:^|\n)\d+\.\s+(Familien-Unterlage|Web-Quelle):/g;
   for (const message of history) {
     if (message.role !== "assistant") continue;
     const markerIndex = message.content.indexOf(HISTORY_EVIDENCE_MARKER);
     if (markerIndex === -1) continue;
-    sections.push(
-      message.content.slice(markerIndex + HISTORY_EVIDENCE_MARKER.length),
+    const section = message.content.slice(
+      markerIndex + HISTORY_EVIDENCE_MARKER.length,
     );
+    // Keep only family-document entries: Web-Quelle excerpts are public
+    // material, and feeding them into the private-passage guard would block
+    // legitimate follow-up searches quoting earlier public evidence.
+    const matches = [...section.matchAll(entryStart)];
+    for (let index = 0; index < matches.length; index += 1) {
+      if (matches[index][1] !== "Familien-Unterlage") continue;
+      const end = matches[index + 1]?.index ?? section.length;
+      // Multi-line excerpts stay whole: an entry runs until the next one.
+      sections.push(section.slice(matches[index].index, end).trim());
+    }
   }
   return sections;
 }

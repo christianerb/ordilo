@@ -91,6 +91,25 @@ describe("shared chat contract", () => {
     expect(history).not.toContain("GB29");
   });
 
+  it("masks line-wrapped IBANs from OCR text", () => {
+    const history = buildAssistantHistoryContext({
+      text: "Die Überweisung ist raus.",
+      sources: [
+        {
+          document_id: "doc-1",
+          title: "Kontoauszug",
+          excerpt: "IBAN DE89\n3704 0044 0532 0130 00 verwenden",
+          score: 0.9,
+        },
+      ],
+    });
+
+    expect(history).toContain("[IBAN]");
+    expect(history).toContain("verwenden");
+    expect(history).not.toContain("3704");
+    expect(history).not.toContain("DE89");
+  });
+
   it("extracts evidence sections from client-built history turns", () => {
     const history = [
       { role: "user", content: "Wie war das nochmal?" },
@@ -115,6 +134,39 @@ describe("shared chat contract", () => {
 
     expect(evidence).toHaveLength(1);
     expect(evidence[0]).toContain("Das vorläufige Ticket gilt bis Ende August.");
+  });
+
+  it("excludes public web evidence from the private-passage guard", () => {
+    const history = [
+      {
+        role: "assistant",
+        content: buildAssistantHistoryContext({
+          text: "Die Regel wurde geändert.",
+          sources: [
+            {
+              document_id: "doc-1",
+              title: "Kita Vertrag",
+              excerpt: "Das vorläufige Ticket gilt bis Ende August.",
+              score: 0.9,
+            },
+            {
+              document_id: "web-1",
+              title: "Bundesregierung",
+              excerpt: "Öffentliche Regelung ab Januar 2026.",
+              score: 0.8,
+              origin: "web",
+              url: "https://example.org/regeln",
+            },
+          ],
+        }),
+      },
+    ];
+
+    const evidence = extractHistoryEvidence(history);
+
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toContain("Das vorläufige Ticket gilt bis Ende August.");
+    expect(evidence[0]).not.toContain("Öffentliche Regelung");
   });
 
   it("parses the shared confirmation wire event for both clients", () => {
