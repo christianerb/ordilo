@@ -74,6 +74,48 @@ describe("sanitizeWebSearchQuery", () => {
     ).toEqual({ ok: false, reason: "too_private" });
   });
 
+  it("blocks sensitive queries with one- and two-character names", () => {
+    expect(
+      sanitizeWebSearchQuery("Welche Leukämie-Behandlung bekommt Li?", [
+        "Li",
+      ]),
+    ).toEqual({ ok: false, reason: "too_private" });
+    expect(
+      sanitizeWebSearchQuery("Welche Behandlung bekommt X?", ["X"]),
+    ).toEqual({ ok: false, reason: "too_private" });
+  });
+
+  it("redacts short names from ordinary queries", () => {
+    const result = sanitizeWebSearchQuery(
+      "Deutschlandticket Regeln für Li und Al",
+      ["Li", "Al"],
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.query).toBe("Deutschlandticket Regeln für und");
+    expect(result.query).not.toMatch(/\bLi\b|\bAl\b/);
+  });
+
+  it("keeps common words that merely resemble short names", () => {
+    const sentenceInitial = sanitizeWebSearchQuery(
+      "Als was gilt das Deutschlandticket?",
+      ["Al"],
+    );
+    expect(sentenceInitial.ok).toBe(true);
+    if (sentenceInitial.ok) {
+      expect(sentenceInitial.query).toContain("Als");
+    }
+
+    const particle = sanitizeWebSearchQuery("Wie melde ich mich an?", [
+      "An",
+    ]);
+    expect(particle.ok).toBe(true);
+    if (particle.ok) {
+      expect(particle.query).toContain("an");
+    }
+  });
+
   it("blocks private medical and financial circumstances", () => {
     expect(
       sanitizeWebSearchQuery(

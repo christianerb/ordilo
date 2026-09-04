@@ -44,13 +44,24 @@ function privateNameParts(terms: string[]): string[] {
   const parts = new Set<string>();
   for (const term of terms) {
     for (const part of term.trim().split(/\s+/)) {
-      if (part.length >= 3) parts.add(part);
+      // One- and two-letter names ("Li", "Al") are private too; dropping
+      // them would leak the name and bypass the sensitive-topic block.
+      if (part) parts.add(part);
     }
   }
   return [...parts].sort((a, b) => b.length - a.length);
 }
 
 function privateTermPattern(term: string, global = false): RegExp {
+  // Short names stay case-sensitive and skip the possessive "s", otherwise
+  // common words ("als" for "Al", "an" for "An") would be redacted or block
+  // the query. Proper nouns are capitalized, particles are not.
+  if (term.length < 3) {
+    return new RegExp(
+      `(?<![\\p{L}\\p{N}_])${escapeRegExp(term)}(?![\\p{L}\\p{N}_])`,
+      global ? "gu" : "u",
+    );
+  }
   return new RegExp(
     `(?<![\\p{L}\\p{N}_])${escapeRegExp(term)}(?:s)?(?![\\p{L}\\p{N}_])`,
     global ? "giu" : "iu",
