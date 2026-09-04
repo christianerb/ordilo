@@ -2,10 +2,17 @@ import { apiJson, getApiUrl } from "./api";
 import {
   CHAT_ACTION_TOOL_NAMES,
   CHAT_TOOL_STEP_LABELS,
+  buildAssistantHistoryContext,
   formatChatActionDate,
   getChatActionContent,
+  MAX_CLIENT_CHAT_HISTORY_CONTENT,
+  MAX_CLIENT_CHAT_HISTORY_MESSAGES,
+  isChatResponseState,
   type ChatActionContent,
   type ChatActionToolName,
+  type ChatResponseState,
+  type ChatSource,
+  type ChatSuggestion,
 } from "@ordilo/chat-contract";
 import { buildWhatsAppHref, normalizePhoneForLink } from "./contacts";
 import { getSupabase } from "./supabase";
@@ -13,6 +20,9 @@ import { getSupabase } from "./supabase";
 export {
   CHAT_ACTION_TOOL_NAMES,
   type ChatActionToolName,
+  type ChatResponseState,
+  type ChatSource,
+  type ChatSuggestion,
 } from "@ordilo/chat-contract";
 
 /**
@@ -31,14 +41,6 @@ export {
 // ---------------------------------------------------------------------------
 // Types (ported from src/lib/schemas/chat.ts)
 // ---------------------------------------------------------------------------
-
-export interface ChatSource {
-  document_id: string;
-  title: string | null;
-  excerpt: string;
-  score: number;
-  origin?: "semantic" | "graph";
-}
 
 export interface AnswerCardField {
   label: string;
@@ -110,6 +112,8 @@ export type ChatStreamEvent =
   | { type: "replace"; content: string }
   | { type: "card"; card: AnswerCard }
   | { type: "sources"; sources: ChatSource[] }
+  | { type: "suggestion"; suggestion: ChatSuggestion }
+  | { type: "response_state"; state: ChatResponseState }
   | { type: "confirmation"; action: ChatAction }
   | { type: "message_saved"; messageId: string }
   | { type: "done" }
@@ -125,6 +129,8 @@ export interface ChatMessage {
   text: string;
   card: AnswerCard | null;
   sources: ChatSource[];
+  suggestion?: ChatSuggestion | null;
+  responseState?: ChatResponseState;
   actions: ChatAction[];
   toolCalls: ToolCallProgress[];
   status: "streaming" | "done" | "error" | "rate_limited";
@@ -280,6 +286,20 @@ export function parseChatStreamEvent(raw: unknown): ChatStreamEvent | null {
       return Array.isArray(data.sources)
         ? { type: "sources", sources: data.sources as ChatSource[] }
         : null;
+    case "suggestion":
+      return data.suggestion &&
+        typeof data.suggestion === "object" &&
+        typeof (data.suggestion as Record<string, unknown>).label === "string" &&
+        typeof (data.suggestion as Record<string, unknown>).prompt === "string"
+        ? {
+            type: "suggestion",
+            suggestion: data.suggestion as ChatSuggestion,
+          }
+        : null;
+    case "response_state":
+      return isChatResponseState(data.state)
+        ? { type: "response_state", state: data.state }
+        : null;
     case "confirmation_request": {
       if (!isChatActionToolName(data.tool_name)) return null;
       if (typeof data.action_id !== "string" || !data.action_id) return null;
@@ -328,6 +348,10 @@ export function applyChatEvent(
       return { ...message, card: event.card };
     case "sources":
       return { ...message, sources: event.sources };
+    case "suggestion":
+      return { ...message, suggestion: event.suggestion };
+    case "response_state":
+      return { ...message, responseState: event.state };
     case "tool": {
       const toolCalls = [...message.toolCalls];
       const openIndex = toolCalls.findIndex(
@@ -369,20 +393,22 @@ export function buildChatHistory(
         message.status === "done" ||
         (message.role === "user" && message.status !== "streaming"),
     )
+    .slice(-MAX_CLIENT_CHAT_HISTORY_MESSAGES)
     .map((message) => {
-      if (message.role === "assistant" && message.sources.length > 0) {
-        const titles = message.sources
-          .map((source) => source.title)
-          .filter(Boolean)
-          .join(", ");
-        if (titles) {
-          return {
-            role: "assistant" as const,
-            content: `${message.text}\n\n[Gefundene Dokumente: ${titles}]`,
-          };
-        }
+      if (message.role === "assistant") {
+        return {
+          role: "assistant" as const,
+          content: buildAssistantHistoryContext({
+            text: message.text,
+            sources: message.sources,
+            card: message.card,
+          }).slice(0, MAX_CLIENT_CHAT_HISTORY_CONTENT),
+        };
       }
-      return { role: message.role, content: message.text };
+      return {
+        role: message.role,
+        content: message.text.slice(0, MAX_CLIENT_CHAT_HISTORY_CONTENT),
+      };
     });
 }
 
@@ -478,6 +504,11 @@ export interface ChatRequestInput {
   familyId: string;
   history: { role: "user" | "assistant"; content: string }[];
   conversationId?: string | null;
+  repair?: {
+    messageId: string;
+    reasons: ChatFeedbackReason[];
+    comment?: string;
+  };
 }
 
 /**
@@ -511,6 +542,17 @@ export async function streamChat(
       family_id: input.familyId,
       history: input.history,
       ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
+      ...(input.repair
+        ? {
+            repair: {
+              message_id: input.repair.messageId,
+              reasons: input.repair.reasons,
+              ...(input.repair.comment
+                ? { comment: input.repair.comment }
+                : {}),
+            },
+          }
+        : {}),
     }),
   });
 

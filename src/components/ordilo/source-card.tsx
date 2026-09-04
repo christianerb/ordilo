@@ -21,6 +21,8 @@ export interface SourceCardProps {
   score: number;
   /** Click handler — when provided, the card is interactive (navigates to document). */
   onClick?: () => void;
+  /** Safe external URL. When set, the card is a real link. */
+  href?: string;
   /** Optional additional className. */
   className?: string;
   /**
@@ -78,6 +80,7 @@ export function SourceCard({
   title,
   score,
   onClick,
+  href,
   className,
   kind = DEFAULT_SOURCE_KIND,
   style,
@@ -90,16 +93,20 @@ export function SourceCard({
   const displayTitle = title?.trim() || "Unbenanntes Dokument";
 
   const Icon = kind.icon;
-  const isInteractive = !!onClick;
+  const isInteractive = !!onClick || !!href;
+  const Root = href ? "a" : "div";
 
   return (
-    <div
+    <Root
+      href={href}
+      target={href ? "_blank" : undefined}
+      rel={href ? "noopener noreferrer" : undefined}
       data-testid="source-card"
-      role={isInteractive ? "button" : undefined}
-      tabIndex={isInteractive ? 0 : undefined}
+      role={!href && isInteractive ? "button" : undefined}
+      tabIndex={!href && isInteractive ? 0 : undefined}
       onClick={isInteractive ? onClick : undefined}
       onKeyDown={
-        isInteractive
+        !href && isInteractive
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -135,6 +142,6 @@ export function SourceCard({
       >
         {`Relevanz ${percentage} Prozent`}
       </span>
-    </div>
+    </Root>
   );
 }

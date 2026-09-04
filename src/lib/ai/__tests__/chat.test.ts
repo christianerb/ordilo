@@ -40,6 +40,7 @@ import {
   ChatError,
 } from "@/lib/ai/chat";
 import {
+  FAIL_CLOSED_CITATION,
   FAIL_CLOSED_HEDGING,
   containsHedgingLanguage,
   type ChatSource,
@@ -641,7 +642,7 @@ describe("buildAgenticSystemPrompt", () => {
   it("requires the concrete document answer before source references", () => {
     expect(prompt).toContain("konkrete Frage im ERSTEN Satz");
     expect(prompt).toContain(
-      "Quellenkarten unter deiner Antwort sind nur Belege",
+      "Quellen unter der Antwort sind Belege",
     );
     expect(prompt).toContain(
       "konkret erfragte Information in mindestens einem Detailfeld",
@@ -649,8 +650,10 @@ describe("buildAgenticSystemPrompt", () => {
     expect(prompt).toContain("nur nach EINEM Fakt aus einem Dokument");
   });
 
-  it("instructs to call as few tools as possible per question", () => {
-    expect(prompt).toContain("GENAU EINS pro Frage");
+  it("lets the agent combine the few tools needed for a reliable answer", () => {
+    expect(prompt).toContain("so wenige Tools wie noetig");
+    expect(prompt).toContain("verschiedene Wissensraeume verbindet");
+    expect(prompt).toContain("voneinander unabhaengige Suchen parallel");
   });
 
   it("names the deterministic listing tool for a family member's documents", () => {
@@ -820,13 +823,17 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     );
     const lines = await readNdjsonStream(stream);
 
-    expect(lines).toHaveLength(3);
+    expect(lines).toHaveLength(4);
     expect(lines[0]).toMatchObject({
       type: "card",
       card: { type: "termin", title: "Zahnarzttermin" },
     });
     expect(lines[1]).toMatchObject({ type: "sources", sources: [] });
-    expect(lines[2]).toEqual({ type: "done" });
+    expect(lines[2]).toEqual({
+      type: "response_state",
+      state: "answered",
+    });
+    expect(lines[3]).toEqual({ type: "done" });
     // The card is a terminal action — only one round of the model is used.
     expect(mockCreate).toHaveBeenCalledTimes(1);
   });
@@ -1524,6 +1531,72 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         store: false,
       }),
     );
+  });
+
+  it("requires the public source when family and Web evidence are mixed", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([
+          { content: "Laut Hannas Ticket gelten die neuen Regeln." },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        mockResponse(
+          "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
+        ),
+      );
+    const context = makeToolContext([
+      {
+        document_id: "doc-1",
+        title: "Hannas Ticket",
+        excerpt: "Gültig bis August",
+        score: 0.9,
+        origin: "semantic",
+      },
+      {
+        document_id: "web-1",
+        title: "Bundesregierung Deutschlandticket",
+        excerpt: "Aktuelle Regeln",
+        score: 0.8,
+        origin: "web",
+        url: "https://example.org/ticket",
+      },
+    ]);
+
+    const stream = await streamAgenticAnswer("Was gilt aktuell?", [], context);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toContainEqual({
+      type: "replace",
+      content:
+        "Die neuen Regeln gelten laut Bundesregierung Deutschlandticket.",
+    });
+  });
+
+  it("fails closed when a sourced answer remains uncited", async () => {
+    mockCreate
+      .mockResolvedValueOnce(
+        fakeOpenAIStream([{ content: "Die Regel gilt ab Januar." }]),
+      )
+      .mockResolvedValueOnce(mockResponse("Sie gilt ab Januar."));
+    const context = makeToolContext([
+      {
+        document_id: "web-1",
+        title: "Bundesregierung Deutschlandticket",
+        excerpt: "Aktuelle Regeln",
+        score: 0.8,
+        origin: "web",
+        url: "https://example.org/ticket",
+      },
+    ]);
+
+    const stream = await streamAgenticAnswer("Was gilt aktuell?", [], context);
+    const lines = await readNdjsonStream(stream);
+
+    expect(lines).toContainEqual({
+      type: "replace",
+      content: FAIL_CLOSED_CITATION,
+    });
   });
 
   it("sends only the corrected answer when the first final answer hedges", async () => {

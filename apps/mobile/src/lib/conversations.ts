@@ -8,6 +8,10 @@ import {
   type ChatSource,
 } from "./chat";
 import { getSupabase } from "./supabase";
+import {
+  buildPersonalChatPrompts,
+  isChatResponseState,
+} from "@ordilo/chat-contract";
 
 /**
  * Past conversations with Ordilo. Reads go straight to Supabase under RLS
@@ -39,6 +43,8 @@ interface MessageRow {
   card: unknown;
   actions: unknown;
   feedback?: string | null;
+  response_state?: unknown;
+  suggestion?: unknown;
   created_at: string;
 }
 
@@ -73,7 +79,7 @@ export async function loadConversationMessages(
     // on chat_messages (migration 0014 declares it), and PostgREST rejects the
     // whole query for one unknown column. Restored answers start without a
     // rating; a new thumbs-up/down still posts to the API.
-    .select("id, role, content, sources, card, actions, created_at")
+    .select("id, role, content, sources, card, actions, response_state, suggestion, created_at")
     .eq("conversation_id", conversationId)
     // Newest first, then reversed for display: a long conversation must
     // reopen on its most recent turns, not on the oldest `limit` of them
@@ -112,6 +118,13 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
           title: typeof source.title === "string" ? source.title : null,
           excerpt: typeof source.excerpt === "string" ? source.excerpt : "",
           score: typeof source.score === "number" ? source.score : 0,
+          origin:
+            source.origin === "semantic" ||
+            source.origin === "graph" ||
+            source.origin === "web"
+              ? source.origin
+              : undefined,
+          url: typeof source.url === "string" ? source.url : undefined,
         }];
       })
     : [];
@@ -153,6 +166,20 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
         }];
       })
     : [];
+  const suggestionRecord = asRecord(row.suggestion);
+  const suggestion =
+    suggestionRecord &&
+    typeof suggestionRecord.label === "string" &&
+    typeof suggestionRecord.prompt === "string"
+      ? {
+          label: suggestionRecord.label,
+          prompt: suggestionRecord.prompt,
+        }
+      : null;
+  const responseState = isChatResponseState(row.response_state)
+    ? row.response_state
+    : "answered";
+
   return {
     id: `db-${row.id}`,
     createdAt: row.created_at,
@@ -161,6 +188,8 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
     text: row.content,
     card,
     sources,
+    suggestion,
+    responseState,
     actions,
     toolCalls: [],
     status: "done",
@@ -201,28 +230,8 @@ export function buildSuggestedPrompts(input: {
   recentDocumentTitle?: string | null;
   now?: Date;
 }): string[] {
-  const now = input.now ?? new Date();
-  const firstName = (name: string) => name.trim().split(/\s+/)[0] ?? "";
-  const child = input.members.find((member) =>
-    /kind|tochter|sohn/i.test(member.role ?? ""),
-  );
-  const someone = child ?? input.members.find((member) => firstName(member.name));
-  const name = someone ? firstName(someone.name) : null;
-  const genitive = name ? (/[sßxz]$/i.test(name) ? `${name}’` : `${name}s`) : null;
-  const weekend = now.getDay() === 5 || now.getDay() === 6;
-
-  const prompts: string[] = [];
-  if (input.recentDocumentTitle) {
-    prompts.push(`Was steht in „${input.recentDocumentTitle}“?`);
-  }
-  prompts.push(weekend ? "Was steht nächste Woche an?" : "Was muss ich diese Woche erledigen?");
-  prompts.push("Welche Fristen laufen bald ab?");
-  if (genitive) {
-    prompts.push(`Zeig mir ${genitive} letzte Unterlagen`);
-    prompts.push(`Wann ist ${genitive} nächster Arzttermin?`);
-  } else {
-    prompts.push("Finde die letzte Stromrechnung");
-    prompts.push("Wann ist der nächste Arzttermin?");
-  }
-  return prompts.slice(0, 4);
+  return buildPersonalChatPrompts({
+    members: input.members,
+    recentDocumentTitle: input.recentDocumentTitle,
+  });
 }

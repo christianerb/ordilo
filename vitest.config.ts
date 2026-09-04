@@ -14,6 +14,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@ordilo/chat-contract": fileURLToPath(
+        new URL("./packages/chat-contract/src/index.ts", import.meta.url),
+      ),
       // `server-only` throws when bundled for the client; Vitest never does
       // that, so resolve it to an empty stub instead of installing the pkg.
       "server-only": fileURLToPath(

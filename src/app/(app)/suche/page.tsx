@@ -140,6 +140,8 @@ export default async function SuchePage({
         content: row.content,
         sources: row.sources ?? [],
         card: row.card ?? undefined,
+        responseState: row.response_state ?? "answered",
+        suggestion: row.suggestion ?? null,
         // Pending action cards are restored as "ready" — re-confirming is
         // safe because the confirmation endpoint deduplicates on the
         // action id, and the persisted id IS the one the live card used.

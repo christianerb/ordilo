@@ -177,20 +177,18 @@ describe("SucheClient — Empty State", () => {
     expect(screen.queryByRole("textbox")).toBeNull();
   });
 
-  it("shows the four example queries in the empty state", () => {
+  it("shows three personal example queries in the empty state", () => {
     render(<SucheClient {...defaultProps} />);
     expect(
-      screen.getByText("Zeig mir alle Dokumente von Emma"),
+      screen.getByText("Was muss ich bei „Stromrechnung Juli“ beachten?"),
     ).toBeDefined();
     expect(
-      screen.getByText("Welche Fristen laufen bald ab?"),
+      screen.getByText("Was steht für Emma als Nächstes an?"),
     ).toBeDefined();
     expect(
-      screen.getByText("Finde die letzte Stromrechnung"),
+      screen.getByText("Was ist diese Woche für uns wichtig?"),
     ).toBeDefined();
-    expect(
-      screen.getByText("Was muss ich diese Woche erledigen?"),
-    ).toBeDefined();
+    expect(screen.getAllByTestId("example-query")).toHaveLength(3);
   });
 
   it("shows a warm German welcome heading in the empty state", () => {
@@ -247,8 +245,9 @@ describe("SucheClient — Chat Interaction (Streaming)", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Stromrechnung Juli")).toBeDefined();
-      expect(screen.getByText("Kita-Brief")).toBeDefined();
     });
+    fireEvent.click(screen.getByTestId("show-more-sources"));
+    expect(screen.getByText("Kita-Brief")).toBeDefined();
   });
 
   it("does not show source cards when sources is empty", async () => {
@@ -674,9 +673,9 @@ describe("SucheClient — Filter Chips", () => {
     render(<SucheClient {...defaultProps} />);
     await submitQuery("Alle");
 
-    await waitFor(() => {
-      expect(screen.getAllByTestId("source-card")).toHaveLength(3);
-    });
+    await waitFor(() => expect(screen.getByText("Stromrechnung Juli")).toBeDefined());
+    fireEvent.click(screen.getByTestId("show-more-sources"));
+    expect(screen.getAllByTestId("source-card")).toHaveLength(3);
 
     fireEvent.click(screen.getByRole("button", { name: /^Hanna$/ }));
     await waitFor(() => {
@@ -703,18 +702,18 @@ describe("SucheClient — Filter Chips", () => {
     render(<SucheClient {...defaultProps} />);
     await submitQuery("Test");
 
-    await waitFor(() => {
-      expect(screen.getAllByTestId("source-card")).toHaveLength(2);
-    });
+    await waitFor(() => expect(screen.getByText("Stromrechnung Juli")).toBeDefined());
+    fireEvent.click(screen.getByTestId("show-more-sources"));
+    expect(screen.getAllByTestId("source-card")).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: /^Hanna$/ }));
     await waitFor(() =>
       expect(screen.getAllByTestId("source-card")).toHaveLength(1),
     );
     fireEvent.click(screen.getByRole("button", { name: /^Hanna$/ }));
-    await waitFor(() =>
-      expect(screen.getAllByTestId("source-card")).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getByTestId("show-more-sources")).toBeDefined());
+    fireEvent.click(screen.getByTestId("show-more-sources"));
+    expect(screen.getAllByTestId("source-card")).toHaveLength(2);
   });
 
   it("does not render empty filter chips when result documents have no category", async () => {

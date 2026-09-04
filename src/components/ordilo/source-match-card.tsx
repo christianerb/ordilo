@@ -30,6 +30,8 @@ export interface SourceMatchCardProps {
   id?: string;
   /** Click handler — when provided, the card is interactive (navigates to document). */
   onClick?: () => void;
+  /** Safe external URL. When set, the card is a real link. */
+  href?: string;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -61,6 +63,7 @@ export function SourceMatchCard({
   citationIndex,
   id,
   onClick,
+  href,
   className,
   style,
 }: SourceMatchCardProps) {
@@ -68,21 +71,25 @@ export function SourceMatchCard({
   const displayTitle = title?.trim() || "Unbenanntes Dokument";
   const Icon = kind.icon;
   const relevanceLabel = getRelevanceLabel(clampedScore);
-  const isInteractive = !!onClick;
+  const isInteractive = !!onClick || !!href;
+  const Root = href ? "a" : "div";
   const displayExcerpt = excerpt
     ?.replace(/^(Aufgabe|Person):\s*/u, "")
     .trim();
 
   return (
-    <div
+    <Root
+      href={href}
+      target={href ? "_blank" : undefined}
+      rel={href ? "noopener noreferrer" : undefined}
       id={id}
       data-testid="source-card"
       data-relevance={relevanceLabel}
-      role={isInteractive ? "button" : undefined}
-      tabIndex={isInteractive ? 0 : undefined}
+      role={!href && isInteractive ? "button" : undefined}
+      tabIndex={!href && isInteractive ? 0 : undefined}
       onClick={isInteractive ? onClick : undefined}
       onKeyDown={
-        isInteractive
+        !href && isInteractive
           ? (e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
@@ -143,6 +150,6 @@ export function SourceMatchCard({
           <span className="sr-only">Dokument öffnen</span>
         </span>
       )}
-    </div>
+    </Root>
   );
 }

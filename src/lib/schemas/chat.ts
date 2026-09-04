@@ -1,13 +1,20 @@
 import { z } from "zod";
 import {
+  MAX_CLIENT_CHAT_HISTORY_CONTENT,
+  MAX_CLIENT_CHAT_HISTORY_MESSAGES,
   CHAT_ACTION_TOOL_NAMES,
   type ChatActionToolName,
+  type ChatSource,
 } from "@ordilo/chat-contract";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 export {
   CHAT_ACTION_TOOL_NAMES,
+  isChatResponseState,
   type ChatActionToolName,
+  type ChatResponseState,
+  type ChatSource,
+  type ChatSuggestion,
 } from "@ordilo/chat-contract";
 
 /**
@@ -48,6 +55,16 @@ const UUID_REGEX =
  */
 export const MAX_CHAT_MESSAGE_LENGTH = 4000;
 
+/** Fixed feedback reason choices, also used by controlled answer repair. */
+export const CHAT_FEEDBACK_REASONS = [
+  "falsche_antwort",
+  "falsches_dokument",
+  "unvollstaendig",
+] as const;
+export type ChatFeedbackReason = (typeof CHAT_FEEDBACK_REASONS)[number];
+export const MAX_FEEDBACK_COMMENT_LENGTH = 500;
+export const MAX_FEEDBACK_REASONS = 3;
+
 /**
  * The chat request schema.
  *
@@ -78,12 +95,28 @@ export const chatRequestSchema = z.object({
     .array(
       z.object({
         role: z.enum(["user", "assistant"]),
-        content: z.string(),
+        content: z.string().max(MAX_CLIENT_CHAT_HISTORY_CONTENT),
       }),
     )
+    .max(MAX_CLIENT_CHAT_HISTORY_MESSAGES)
     .optional()
     .default([]),
   conversation_id: z.string().trim().min(1).optional(),
+  repair: z
+    .object({
+      message_id: z.string().uuid(),
+      reasons: z
+        .array(z.enum(CHAT_FEEDBACK_REASONS))
+        .min(1)
+        .max(MAX_FEEDBACK_REASONS),
+      comment: z
+        .string()
+        .trim()
+        .min(1)
+        .max(MAX_FEEDBACK_COMMENT_LENGTH)
+        .optional(),
+    })
+    .optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;
@@ -110,14 +143,6 @@ export type ChatRequest = z.infer<typeof chatRequestSchema>;
  *   all sources are graph-derived (VAL-SEARCH-023). When unset, the
  *   source is treated as semantic for backward compatibility.
  */
-export interface ChatSource {
-  document_id: string;
-  title: string | null;
-  excerpt: string;
-  score: number;
-  origin?: 'semantic' | 'graph';
-}
-
 /**
  * Successful chat API response.
  *
@@ -234,19 +259,6 @@ export function mergeConfirmationProposal(
 export const CHAT_FEEDBACK_VALUES = ["positive", "negative"] as const;
 export type ChatFeedbackValue = (typeof CHAT_FEEDBACK_VALUES)[number];
 
-/** Fixed feedback reason choices (stored as-is). */
-export const CHAT_FEEDBACK_REASONS = [
-  "falsche_antwort",
-  "falsches_dokument",
-  "unvollstaendig",
-] as const;
-export type ChatFeedbackReason = (typeof CHAT_FEEDBACK_REASONS)[number];
-
-/** Maximum length of the optional free-text comment. */
-export const MAX_FEEDBACK_COMMENT_LENGTH = 500;
-/** Maximum number of ticked reasons stored per feedback event. */
-export const MAX_FEEDBACK_REASONS = 3;
-
 /**
  * POST /api/chat/feedback input: thumbs up/down on a chat message with
  * optional ticked reasons and free-text comment.
@@ -353,7 +365,7 @@ export const FAIL_CLOSED_HEDGING =
  * answer is never returned to the client.
  */
 export const FAIL_CLOSED_CITATION =
-  "Die generierte Antwort nennt keine Quelle und wird daher nicht angezeigt. Bitte stelle die Frage erneut.";
+  "Ich konnte diese Antwort nicht sicher mit einer Quelle belegen. Bitte versuch es noch einmal.";
 
 /**
  * Normalize text for citation comparison: lowercase, replace punctuation

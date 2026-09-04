@@ -14,9 +14,19 @@ import { useDocumentViewer } from "@/lib/scan/scan-context";
 import {
   CHAT_ACTION_TOOL_NAMES,
   type ChatAction,
+  type ChatFeedbackReason,
+  type ChatResponseState,
   type ChatSource,
+  type ChatSuggestion,
   type AnswerCard as AnswerCardData,
 } from "@/lib/schemas/chat";
+import {
+  buildAssistantHistoryContext,
+  buildPersonalChatPrompts,
+  MAX_CLIENT_CHAT_HISTORY_CONTENT,
+  MAX_CLIENT_CHAT_HISTORY_MESSAGES,
+  isChatResponseState,
+} from "@ordilo/chat-contract";
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
@@ -47,6 +57,8 @@ export interface InitialMessage {
   card?: AnswerCardData;
   actions?: ChatAction[];
   feedback?: "positive" | "negative" | null;
+  responseState?: ChatResponseState;
+  suggestion?: ChatSuggestion | null;
 }
 
 export interface ConversationSummary {
@@ -79,17 +91,6 @@ function truncateQuote(text: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const EXAMPLE_QUERIES = [
-  "Zeig mir alle Dokumente von Emma",
-  "Welche Fristen laufen bald ab?",
-  "Finde die letzte Stromrechnung",
-  "Was muss ich diese Woche erledigen?",
-] as const;
-
-// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -110,12 +111,15 @@ export function SucheClient({
   const [messages, setMessages] = useState<ChatMessage[]>(
     initialMessages.map((m) => ({
       id: m.id,
+      dbId: m.id,
       role: m.role,
       content: m.content,
       sources: m.sources,
       card: m.card,
       actions: m.actions ?? [],
       feedback: m.feedback ?? null,
+      suggestion: m.suggestion ?? null,
+      responseState: m.responseState ?? "answered",
     })),
   );
   // Read here rather than next to setActiveHandler below: handleSubmit
@@ -131,6 +135,14 @@ export function SucheClient({
   const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
   const [showChatList, setShowChatList] = useState(initialShowHistory);
   const [quotedMessage, setQuotedMessage] = useState<{ text: string } | null>(null);
+  const exampleQueries = useMemo(
+    () =>
+      buildPersonalChatPrompts({
+        members,
+        recentDocumentTitle: documents[0]?.title,
+      }),
+    [documents, members],
+  );
 
   // --- Last query for retry on error ---
   const lastQueryRef = useRef<string>("");
@@ -354,14 +366,21 @@ export function SucheClient({
   // -------------------------------------------------------------------------
 
   const handleSubmit = useCallback(
-    async (query: string) => {
+    async (
+      query: string,
+      repairRequest?: {
+        message: ChatMessage;
+        reasons: ChatFeedbackReason[];
+        comment: string;
+      },
+    ) => {
       if (!query.trim() || isLoading) return;
 
       setError(false);
       setRateLimitError(false);
       setIsLoading(true);
       setBusy(true);
-      lastQueryRef.current = query;
+      if (!repairRequest) lastQueryRef.current = query;
 
       // Consume the pending quote (if any) — it applies to this one turn.
       const quoted = quotedMessage;
@@ -373,33 +392,49 @@ export function SucheClient({
         content: query,
         sources: [],
         actions: [],
+        suggestion: null,
+        responseState: "answered",
         quotedText: quoted?.text,
       };
 
       const aiMsgId = `ai-${Date.now()}`;
       const aiMsg: ChatMessage = {
-        id: aiMsgId,
+        id: repairRequest?.message.id ?? aiMsgId,
+        dbId: repairRequest?.message.dbId ?? null,
         role: "assistant",
         content: "",
         sources: [],
         actions: [],
       };
 
-      setMessages((prev) => [...prev, userMsg, aiMsg]);
-      setStreamingId(aiMsgId);
+      if (repairRequest) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === repairRequest.message.id ? aiMsg : message,
+          ),
+        );
+      } else {
+        setMessages((prev) => [...prev, userMsg, aiMsg]);
+      }
+      setStreamingId(aiMsg.id);
 
       // Build history from messages before this query.
       // Include source context so the model knows which documents were
       // found in previous turns — enables follow-up questions like
       // "Welche davon hat Fristen?" without re-searching.
-      const history = messages.map((m) => {
+      const history = messages.slice(-MAX_CLIENT_CHAT_HISTORY_MESSAGES).map((m) => {
         const entry: { role: string; content: string } = {
           role: m.role,
           content: m.content,
         };
-        if (m.role === "assistant" && m.sources && m.sources.length > 0) {
-          entry.content = `${m.content}\n\n[Gefundene Dokumente: ${m.sources.map((s) => s.title ?? s.document_id).join(", ")}]`;
+        if (m.role === "assistant") {
+          entry.content = buildAssistantHistoryContext({
+            text: m.content,
+            sources: m.sources ?? [],
+            card: m.card,
+          });
         }
+        entry.content = entry.content.slice(0, MAX_CLIENT_CHAT_HISTORY_CONTENT);
         return entry;
       });
 
@@ -419,13 +454,32 @@ export function SucheClient({
             family_id: familyId,
             history,
             conversation_id: activeConversationId || undefined,
+            ...(repairRequest?.message.dbId
+              ? {
+                  repair: {
+                    message_id: repairRequest.message.dbId,
+                    reasons: repairRequest.reasons,
+                    ...(repairRequest.comment
+                      ? { comment: repairRequest.comment }
+                      : {}),
+                  },
+                }
+              : {}),
           }),
         });
 
         if (!res.ok) {
           // Remove the empty AI placeholder so the user doesn't see a
           // blank bubble alongside the error message.
-          setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
+          setMessages((prev) =>
+            repairRequest
+              ? prev.map((message) =>
+                  message.id === repairRequest.message.id
+                    ? repairRequest.message
+                    : message,
+                )
+              : prev.filter((message) => message.id !== aiMsg.id),
+          );
           if (res.status === 429) {
             setRateLimitError(true);
           } else {
@@ -439,6 +493,8 @@ export function SucheClient({
         const decoder = new TextDecoder();
         let buffer = "";
         let accumulatedText = "";
+        let receivedDone = false;
+        let receivedError = false;
 
         for (;;) {
           const { done, value } = await reader.read();
@@ -456,7 +512,7 @@ export function SucheClient({
                 accumulatedText += data.content;
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === aiMsgId
+                    m.id === aiMsg.id
                       ? { ...m, content: accumulatedText }
                       : m,
                   ),
@@ -469,7 +525,7 @@ export function SucheClient({
                   typeof data.content === "string" ? data.content : "";
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === aiMsgId
+                    m.id === aiMsg.id
                       ? { ...m, content: accumulatedText }
                       : m,
                   ),
@@ -481,7 +537,7 @@ export function SucheClient({
                 const state = data.state as "start" | "done" | "error";
                 setMessages((prev) =>
                   prev.map((m) => {
-                    if (m.id !== aiMsgId) return m;
+                    if (m.id !== aiMsg.id) return m;
                     const calls = [...(m.toolCalls ?? [])];
                     if (state === "start") {
                       calls.push({ toolName, state });
@@ -500,15 +556,39 @@ export function SucheClient({
               } else if (data.type === "card") {
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === aiMsgId ? { ...m, card: data.card } : m,
+                    m.id === aiMsg.id ? { ...m, card: data.card } : m,
                   ),
                 );
               } else if (data.type === "sources") {
                 setMessages((prev) =>
                   prev.map((m) =>
-                    m.id === aiMsgId
+                    m.id === aiMsg.id
                       ? { ...m, sources: data.sources as ChatSource[] }
                       : m,
+                  ),
+                );
+              } else if (
+                data.type === "suggestion" &&
+                data.suggestion &&
+                typeof data.suggestion.label === "string" &&
+                typeof data.suggestion.prompt === "string"
+              ) {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === aiMsg.id
+                      ? { ...message, suggestion: data.suggestion }
+                      : message,
+                  ),
+                );
+              } else if (
+                data.type === "response_state" &&
+                isChatResponseState(data.state)
+              ) {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === aiMsg.id
+                      ? { ...message, responseState: data.state }
+                      : message,
                   ),
                 );
               } else if (data.type === "confirmation_request") {
@@ -543,7 +623,7 @@ export function SucheClient({
                     id:
                       typeof data.action_id === "string" && data.action_id
                         ? data.action_id
-                        : `${aiMsgId}-${toolName}`,
+                        : `${aiMsg.id}-${toolName}`,
                     toolName: toolName as ChatAction["toolName"],
                     args: {
                       ...(actionArgs as Record<string, unknown>),
@@ -553,7 +633,7 @@ export function SucheClient({
                   };
                   setMessages((prev) =>
                     prev.map((m) =>
-                      m.id === aiMsgId
+                      m.id === aiMsg.id
                         ? {
                             ...m,
                             actions: m.actions.some(
@@ -583,19 +663,44 @@ export function SucheClient({
                     ]);
                   }
                 }
+              } else if (
+                data.type === "message_saved" &&
+                typeof data.message_id === "string"
+              ) {
+                setMessages((prev) =>
+                  prev.map((message) =>
+                    message.id === aiMsg.id
+                      ? { ...message, dbId: data.message_id }
+                      : message,
+                  ),
+                );
+              } else if (data.type === "done") {
+                receivedDone = true;
               } else if (data.type === "error") {
-                setError(true);
+                receivedError = true;
               }
             } catch {
               // Ignore partial/unparseable lines.
             }
           }
         }
-      } catch {
+        if (!receivedDone || receivedError) {
+          throw new Error("Chat stream incomplete");
+        }
+      } catch (streamError) {
         // Network error or stream interrupted — remove the empty AI
         // placeholder so the user doesn't see a blank bubble.
-        setMessages((prev) => prev.filter((m) => m.id !== aiMsgId));
+        setMessages((prev) =>
+          repairRequest
+            ? prev.map((message) =>
+                message.id === repairRequest.message.id
+                  ? repairRequest.message
+                  : message,
+              )
+            : prev.filter((message) => message.id !== aiMsg.id),
+        );
         setError(true);
+        if (repairRequest) throw streamError;
       } finally {
         setStreamingId(null);
         setIsLoading(false);
@@ -792,6 +897,31 @@ export function SucheClient({
     setQuotedMessage({ text: truncateQuote(messageToPlainText(message)) });
   }, []);
 
+  const handleRepairAnswer = useCallback(
+    async (
+      message: ChatMessage,
+      reasons: ChatFeedbackReason[],
+      comment: string,
+    ) => {
+      const targetIndex = messages.findIndex(
+        (candidate) => candidate.id === message.id,
+      );
+      const userMessage = messages
+        .slice(0, targetIndex)
+        .reverse()
+        .find((candidate) => candidate.role === "user");
+      if (!message.dbId || !userMessage) {
+        throw new Error("Die Antwort kann gerade nicht verbessert werden.");
+      }
+      await handleSubmit(userMessage.content, {
+        message,
+        reasons,
+        comment,
+      });
+    },
+    [handleSubmit, messages],
+  );
+
   // -------------------------------------------------------------------------
   // Example query click — submits straight away. The search bar itself now
   // lives outside this component (the global bottom composer, uniform
@@ -811,6 +941,13 @@ export function SucheClient({
   // -------------------------------------------------------------------------
 
   const hasMessages = messages.length > 0;
+  const latestRepairableMessageId = isLoading
+    ? null
+    : messages
+        .slice()
+        .reverse()
+        .find((message) => message.role === "assistant" && message.dbId)?.id ??
+      null;
   const hasFacets =
     hasResults &&
     (facets.personChips.length > 0 ||
@@ -899,7 +1036,10 @@ export function SucheClient({
           aria-label="Konversation"
         >
           {!hasMessages && !isLoading ? (
-            <EmptyState onExampleClick={handleExampleClick} />
+            <EmptyState
+              exampleQueries={exampleQueries}
+              onExampleClick={handleExampleClick}
+            />
           ) : (
             <div ref={messagesContainerRef} className="space-y-4 py-2">
               {messages.map((message) => (
@@ -910,6 +1050,12 @@ export function SucheClient({
                   passesFilters={passesFilters}
                   onSourceCardClick={handleSourceCardClick}
                   onQuote={handleQuoteMessage}
+                  onRepair={
+                    message.id === latestRepairableMessageId
+                      ? handleRepairAnswer
+                      : undefined
+                  }
+                  onSuggestionClick={(prompt) => void handleSubmit(prompt)}
                   onActionConfirm={handleActionConfirm}
                   onActionDismiss={handleActionDismiss}
                   onActionAdjust={handleActionAdjust}
@@ -1130,8 +1276,10 @@ function ChatList({
 // ---------------------------------------------------------------------------
 
 function EmptyState({
+  exampleQueries,
   onExampleClick,
 }: {
+  exampleQueries: string[];
   onExampleClick: (query: string) => void;
 }) {
   return (
@@ -1155,11 +1303,12 @@ function EmptyState({
         Wie kann ich dir helfen?
       </h2>
       <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
-        Frag Ordilo alles über deine Dokumente. Hier sind ein paar Ideen:
+        Frag Ordilo zu eurer Familie, zu allgemeinen Themen oder zu aktuellen
+        Informationen.
       </p>
 
       <div className="mt-6 grid w-full grid-cols-1 gap-2.5 stagger-children lg:grid-cols-2">
-        {EXAMPLE_QUERIES.map((query) => (
+        {exampleQueries.map((query) => (
           <button
             key={query}
             type="button"

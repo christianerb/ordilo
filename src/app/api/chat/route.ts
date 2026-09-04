@@ -18,10 +18,12 @@ import {
   loadConversationMessages,
   saveUserMessage,
   saveAssistantMessage,
+  replaceAssistantMessage,
   rowsToHistory,
   autoGenerateTitle,
   updateConversationTitle,
   type PersistedChatAction,
+  type ChatMessageRow,
 } from "@/lib/ai/chat-history";
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
 import { redactSecretsForStorage } from "@/lib/ai/pii-redact";
@@ -80,7 +82,12 @@ export async function POST(request: Request): Promise<Response> {
   });
   if (!parsed.ok) return parsed.response;
 
-  const { message, family_id: familyId, history: clientHistory } = parsed.data;
+  const {
+    message,
+    family_id: familyId,
+    history: clientHistory,
+    repair,
+  } = parsed.data;
   const conversationIdParam = parsed.data.conversation_id;
 
   // 3. Dev-only failure simulation (header-controlled)
@@ -127,6 +134,7 @@ export async function POST(request: Request): Promise<Response> {
             kind: "existing";
             conversationId: string;
             dbHistory: HistoryMessage[];
+            rows: ChatMessageRow[];
             needsTitle: boolean;
           }
         | { kind: "create" }
@@ -149,6 +157,7 @@ export async function POST(request: Request): Promise<Response> {
             kind: "existing",
             conversationId: conv.id,
             dbHistory: rowsToHistory(rows),
+            rows,
             // If the conversation has no title, we'll auto-generate one
             // from this message.
             needsTitle: !conv.title,
@@ -220,6 +229,69 @@ export async function POST(request: Request): Promise<Response> {
     dbHistory = conversation.dbHistory;
   }
 
+  let messageForAgent = message;
+  let repairHistory: HistoryMessage[] | null = null;
+  let repairMessageId: string | null = null;
+
+  if (repair) {
+    if (!conversationId || conversation.kind !== "existing") {
+      return Response.json(
+        {
+          error: "Die Antwort kann in dieser Unterhaltung nicht verbessert werden.",
+          code: "REPAIR_CONVERSATION_REQUIRED",
+        } satisfies ChatErrorResponse,
+        { status: 400 },
+      );
+    }
+
+    const rows = conversation.rows;
+    const targetIndex = rows.findIndex(
+      (row) =>
+        row.id === repair.message_id &&
+        row.role === "assistant" &&
+        row.family_id === familyId,
+    );
+    if (targetIndex < 1) {
+      return Response.json(
+        {
+          error: "Die Antwort wurde nicht gefunden.",
+          code: "REPAIR_MESSAGE_NOT_FOUND",
+        } satisfies ChatErrorResponse,
+        { status: 404 },
+      );
+    }
+
+    const questionIndex = rows
+      .slice(0, targetIndex)
+      .map((row, index) => ({ row, index }))
+      .reverse()
+      .find(({ row }) => row.role === "user")?.index;
+    if (questionIndex === undefined) {
+      return Response.json(
+        {
+          error: "Die ursprüngliche Frage wurde nicht gefunden.",
+          code: "REPAIR_QUESTION_NOT_FOUND",
+        } satisfies ChatErrorResponse,
+        { status: 400 },
+      );
+    }
+
+    const reasonLabels = repair.reasons
+      .map((reason) => {
+        if (reason === "falsche_antwort") return "Die Antwort war falsch.";
+        if (reason === "falsches_dokument") return "Die Quelle war falsch.";
+        return "Die Antwort war unvollständig.";
+      })
+      .join(" ");
+    messageForAgent =
+      `${rows[questionIndex].content}\n\n` +
+      `[Verbesserungshinweis: ${reasonLabels}${
+        repair.comment ? ` ${repair.comment}` : ""
+      } Suche wirklich neu und liefere eine bessere, direkt belegte Antwort.]`;
+    repairHistory = rowsToHistory(rows.slice(0, questionIndex));
+    repairMessageId = repair.message_id;
+  }
+
   // Everything that outlives the request is stored password-free. The
   // model still works on the message as typed — it has to, to act on it —
   // but `documents.secret` exists so that no password sits in the
@@ -228,19 +300,19 @@ export async function POST(request: Request): Promise<Response> {
 
   // Auto-generate a title for a new/untitled conversation once this is
   // its first message.
-  if (conversationId && needsTitle && dbHistory.length === 0) {
+  if (!repair && conversationId && needsTitle && dbHistory.length === 0) {
     const title = autoGenerateTitle(messageForStorage);
     void updateConversationTitle(serverClient, conversationId, title);
   }
 
   // 9. Save the user message to the conversation (best-effort)
-  if (conversationId) {
+  if (!repair && conversationId) {
     void saveUserMessage(serverClient, conversationId, familyId, messageForStorage);
   }
   void recordProductEvent(serverClient, {
     userId: user.id,
     familyId,
-    eventName: "chat_question_sent",
+    eventName: repair ? "chat_answer_repair_started" : "chat_question_sent",
   });
 
   // 10. Build tool context with speaker identity
@@ -248,19 +320,25 @@ export async function POST(request: Request): Promise<Response> {
     client: serverClient,
     familyId,
     sources: [],
+    suggestion: null,
+    searchedScopes: new Set(),
+    responseState: "answered",
     speakerName,
     userId: user.id,
   };
 
-  // 11. Merge DB history with client history (client history takes
-  //     precedence as it may include the most recent exchanges not yet
-  //     persisted). Use DB history if client history is empty.
+  // 11. Existing conversations use the RLS-verified server history as the
+  //     source of truth. Client history is only a resilience fallback when
+  //     persistence itself could not be read.
   const effectiveHistory =
-    clientHistory.length > 0 ? clientHistory : dbHistory;
+    repairHistory ??
+    (conversation.kind === "existing"
+      ? dbHistory
+      : clientHistory);
 
   try {
     const stream = await streamAgenticAnswer(
-      message,
+      messageForAgent,
       effectiveHistory,
       toolContext,
     );
@@ -286,6 +364,7 @@ export async function POST(request: Request): Promise<Response> {
         let answerCard = null;
         let streamError = false;
         let streamDone = false;
+        let repairPersistenceFailed = false;
         // Write proposals emitted this round — persisted with the message
         // so a page reload restores the action cards instead of leaving
         // answer text that points at cards that no longer exist.
@@ -294,7 +373,6 @@ export async function POST(request: Request): Promise<Response> {
         // is measurable instead of guessed (time-to-first-visible-word
         // from the user's perspective, tool calls per answer).
         let firstVisibleAt: number | null = null;
-        let toolCallCount = 0;
 
         const reader = stream.getReader();
         const decoder = new TextDecoder();
@@ -340,8 +418,6 @@ export async function POST(request: Request): Promise<Response> {
                   action_args: mergeConfirmationProposal(data),
                 });
               }
-            } else if (data.type === "tool" && data.state === "start") {
-              toolCallCount += 1;
             } else if (data.type === "error") {
               streamError = true;
             }
@@ -381,17 +457,30 @@ export async function POST(request: Request): Promise<Response> {
         //     ignores unknown event types, so this is backwards-compatible.
         if (conversationId && (fullAnswer || answerCard) && !streamError) {
           try {
-            const savedMessageId = await saveAssistantMessage(
-              serverClient,
-              conversationId,
-              familyId,
-              // The prompt forbids repeating a password; this makes a slip
-              // stop at the screen instead of entering the history.
-              redactSecretsForStorage(fullAnswer),
-              toolContext.sources,
-              answerCard,
-              pendingActions,
-            );
+            const persistedAnswer = redactSecretsForStorage(fullAnswer);
+            const savedMessageId = repairMessageId
+              ? await replaceAssistantMessage(
+                  serverClient,
+                  repairMessageId,
+                  familyId,
+                  persistedAnswer,
+                  toolContext.sources,
+                  answerCard,
+                  pendingActions,
+                  toolContext.responseState ?? "answered",
+                  toolContext.suggestion ?? null,
+                )
+              : await saveAssistantMessage(
+                  serverClient,
+                  conversationId,
+                  familyId,
+                  persistedAnswer,
+                  toolContext.sources,
+                  answerCard,
+                  pendingActions,
+                  toolContext.responseState ?? "answered",
+                  toolContext.suggestion ?? null,
+                );
             if (savedMessageId) {
               ctrl.enqueue(
                 encoder.encode(
@@ -401,14 +490,29 @@ export async function POST(request: Request): Promise<Response> {
                   }) + "\n",
                 ),
               );
+            } else if (repairMessageId) {
+              repairPersistenceFailed = true;
             }
           } catch {
-            // Persistence is best-effort. The answer has already streamed,
-            // so its response must still end normally without feedback.
+            // New answers remain best-effort. A repair is different: success
+            // means replacing the old row, so it must fail honestly.
+            if (repairMessageId) repairPersistenceFailed = true;
           }
         }
 
-        if (streamDone) {
+        if (repairPersistenceFailed) {
+          ctrl.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                type: "error",
+                error:
+                  "Die bessere Antwort konnte nicht gespeichert werden. Bitte versuch es noch einmal.",
+                code: "REPAIR_SAVE_FAILED",
+              }) + "\n",
+            ),
+          );
+          streamError = true;
+        } else if (streamDone) {
           ctrl.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
         }
 
@@ -427,8 +531,17 @@ export async function POST(request: Request): Promise<Response> {
                 ? null
                 : firstVisibleAt - requestStartedAt,
             total_ms: Date.now() - requestStartedAt,
-            tool_calls: toolCallCount,
+            tool_calls: toolContext.toolCallCount ?? 0,
             answer_type: answerCard ? "card" : "text",
+            response_state: toolContext.responseState ?? "answered",
+            knowledge_spaces: [
+              ...(toolContext.searchedScopes?.has("family")
+                ? ["family"]
+                : []),
+              ...(toolContext.searchedScopes?.has("web") ? ["web"] : []),
+              ...(toolContext.searchedScopes?.size === 0 ? ["general"] : []),
+            ],
+            repair: Boolean(repairMessageId),
             error: streamError,
           }),
         );

@@ -33,6 +33,11 @@ describe("conversations", () => {
         { action_id: "a2", tool_name: "delete_everything", action_args: {} },
       ],
       feedback: "positive",
+      response_state: "partial",
+      suggestion: {
+        label: "Weiter suchen",
+        prompt: "Suche in weiteren Unterlagen.",
+      },
       created_at: "2026-09-01T10:00:00Z",
     });
     expect(message).toMatchObject({
@@ -43,6 +48,11 @@ describe("conversations", () => {
       sources: [{ document_id: "d1", title: "Elternbrief", score: 0.8 }],
       card: { type: "termin", title: "Elternabend", fields: [{ label: "Wann", value: "08.09.2026" }] },
       actions: [{ id: "a1", toolName: "add_calendar_event", state: "ready" }],
+      responseState: "partial",
+      suggestion: {
+        label: "Weiter suchen",
+        prompt: "Suche in weiteren Unterlagen.",
+      },
     });
   });
 
@@ -79,18 +89,25 @@ describe("conversations", () => {
       now: new Date(2026, 8, 2),
     });
     expect(prompts).toEqual([
-      "Was steht in „Elternbrief Sportfest“?",
-      "Was muss ich diese Woche erledigen?",
-      "Welche Fristen laufen bald ab?",
-      "Zeig mir Emmas letzte Unterlagen",
+      "Was muss ich bei „Elternbrief Sportfest“ beachten?",
+      "Was steht für Emma als Nächstes an?",
+      "Was ist diese Woche für uns wichtig?",
     ]);
-    expect(buildSuggestedPrompts({ members: [{ name: "Max", role: "Sohn" }], now: new Date(2026, 8, 5) })).toEqual([
-      "Was steht nächste Woche an?",
-      "Welche Fristen laufen bald ab?",
-      "Zeig mir Max’ letzte Unterlagen",
-      "Wann ist Max’ nächster Arzttermin?",
+    expect(
+      buildSuggestedPrompts({
+        members: [{ name: "Max", role: "Sohn" }],
+        now: new Date(2026, 8, 5),
+      }),
+    ).toEqual([
+      "Was steht für Max als Nächstes an?",
+      "Was ist diese Woche für uns wichtig?",
+      "Erkläre mir den Unterschied zwischen Garantie und Gewährleistung.",
     ]);
-    expect(buildSuggestedPrompts({ members: [] })).toContain("Finde die letzte Stromrechnung");
+    expect(buildSuggestedPrompts({ members: [] })).toEqual([
+      "Was ist diese Woche für uns wichtig?",
+      "Erkläre mir den Unterschied zwischen Garantie und Gewährleistung.",
+      "Welche Änderungen gibt es aktuell beim Deutschlandticket?",
+    ]);
   });
 });
 

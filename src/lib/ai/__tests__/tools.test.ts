@@ -2702,3 +2702,38 @@ describe("query_calendar_events", () => {
     });
   });
 });
+
+describe("answer metadata tools", () => {
+  it("records a non-success response state without touching family data", async () => {
+    const ctx = makeCtx({ responseState: "answered" });
+
+    const result = JSON.parse(
+      await executeTool("set_response_state", { state: "conflict" }, ctx),
+    );
+
+    expect(result).toEqual({ success: true });
+    expect(ctx.responseState).toBe("conflict");
+    expect(ctx.client.from).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invented response state", async () => {
+    const ctx = makeCtx({ responseState: "answered" });
+
+    const result = JSON.parse(
+      await executeTool("set_response_state", { state: "guessing" }, ctx),
+    );
+
+    expect(result.error).toBe("Ungültiger Antwortzustand.");
+    expect(ctx.responseState).toBe("answered");
+  });
+
+  it("tracks family and Web knowledge tools centrally", async () => {
+    const searchedScopes = new Set<"family" | "web">();
+    const ctx = makeCtx({ searchedScopes });
+
+    await executeTool("list_family_members", {}, ctx);
+    await executeTool("search_web", {}, ctx);
+
+    expect([...searchedScopes].sort()).toEqual(["family", "web"]);
+  });
+});

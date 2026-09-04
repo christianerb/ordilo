@@ -42,6 +42,7 @@ import {
   FeedbackRow,
   MessageBubble,
   SourcesSection,
+  SuggestionButton,
 } from "@/src/components/chat";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
@@ -289,6 +290,8 @@ export default function SucheScreen() {
       text: "",
       card: null,
       sources: [],
+      suggestion: null,
+      responseState: "answered",
       actions: [],
       toolCalls: [],
       status: "streaming",
@@ -302,11 +305,19 @@ export default function SucheScreen() {
       question: string,
       assistantMessage: ChatMessage,
       history: { role: "user" | "assistant"; content: string }[],
+      repair?: {
+        messageId: string;
+        reasons: ChatFeedbackReason[];
+        comment?: string;
+        originalMessage: ChatMessage;
+      },
     ) => {
       if (!family) return;
       lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setBusy(true);
+      let receivedDone = false;
+      let receivedError = false;
 
       try {
         await streamChat(
@@ -315,6 +326,13 @@ export default function SucheScreen() {
             message: question,
             conversationId,
             history,
+            repair: repair
+              ? {
+                  messageId: repair.messageId,
+                  reasons: repair.reasons,
+                  comment: repair.comment,
+                }
+              : undefined,
           },
           (event) => {
             if (event.type === "conversation") {
@@ -325,28 +343,44 @@ export default function SucheScreen() {
               applyChatEvent(message, event),
             );
             if (event.type === "done") {
+              receivedDone = true;
               void Haptics.notificationAsync(
                 Haptics.NotificationFeedbackType.Success,
               );
               void refreshConversations();
+            } else if (event.type === "error") {
+              receivedError = true;
             }
           },
         );
-        // The stream may end without a terminal event (dropped connection).
-        updateMessage(assistantMessage.id, (message) => {
-          if (message.status !== "streaming") return message;
-          return message.text.trim()
-            ? { ...message, status: "done" }
-            : { ...message, text: CHAT_ERROR_MESSAGE, status: "error" };
-        });
+        if (!receivedDone || receivedError) {
+          if (repair) {
+            updateMessage(assistantMessage.id, () => repair.originalMessage);
+            throw new Error("Chat repair stream incomplete");
+          } else {
+            updateMessage(assistantMessage.id, (message) => ({
+              ...message,
+              text: CHAT_ERROR_MESSAGE,
+              status: "error",
+            }));
+          }
+        }
       } catch (error) {
         const status = httpStatusOf(error);
-        updateMessage(assistantMessage.id, (message) => ({
-          ...message,
-          text: status === 429 ? CHAT_RATE_LIMIT_MESSAGE : CHAT_ERROR_MESSAGE,
-          status: status === 429 ? "rate_limited" : "error",
-        }));
+        updateMessage(assistantMessage.id, (message) =>
+          repair
+            ? repair.originalMessage
+            : {
+                ...message,
+                text:
+                  status === 429
+                    ? CHAT_RATE_LIMIT_MESSAGE
+                    : CHAT_ERROR_MESSAGE,
+                status: status === 429 ? "rate_limited" : "error",
+              },
+        );
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (repair) throw error;
       } finally {
         setBusy(false);
       }
@@ -367,6 +401,8 @@ export default function SucheScreen() {
         text: trimmed,
         card: null,
         sources: [],
+        suggestion: null,
+        responseState: "answered",
         actions: [],
         toolCalls: [],
         status: "done",
@@ -504,6 +540,49 @@ export default function SucheScreen() {
       }));
     },
     [family, updateMessage],
+  );
+
+  const repairAnswer = useCallback(
+    async (
+      message: ChatMessage,
+      reasons: ChatFeedbackReason[],
+      comment: string,
+    ) => {
+      if (busy || !message.dbId) return;
+      const targetIndex = messages.findIndex(
+        (candidate) => candidate.id === message.id,
+      );
+      const userIndex = messages
+        .slice(0, targetIndex)
+        .map((candidate, index) => ({ candidate, index }))
+        .reverse()
+        .find(({ candidate }) => candidate.role === "user")?.index;
+      if (userIndex === undefined) return;
+
+      const userMessage = messages[userIndex];
+      const history = buildChatHistory(messages.slice(0, userIndex));
+      const replacement: ChatMessage = {
+        ...createAssistantMessage(),
+        id: message.id,
+        dbId: message.dbId,
+      };
+      const originalMessage: ChatMessage = {
+        ...message,
+        feedback: "negative",
+      };
+      setMessages((current) =>
+        current.map((candidate) =>
+          candidate.id === message.id ? replacement : candidate,
+        ),
+      );
+      await runStream(userMessage.text, replacement, history, {
+        messageId: message.dbId,
+        reasons,
+        comment: comment || undefined,
+        originalMessage,
+      });
+    },
+    [busy, createAssistantMessage, messages, runStream],
   );
 
   const startNewChat = useCallback(() => {
@@ -704,6 +783,18 @@ export default function SucheScreen() {
     };
   }, [discardVoiceRecording]);
 
+  const latestRepairableMessageId = busy
+    ? null
+    : messages
+        .slice()
+        .reverse()
+        .find(
+          (message) =>
+            message.role === "assistant" &&
+            message.status === "done" &&
+            message.dbId,
+        )?.id ?? null;
+
   return (
     // suche is a native modal, so the root BottomSheetModalProvider's
     // portal renders underneath it. The history sheet needs a host of
@@ -882,6 +973,15 @@ export default function SucheScreen() {
                                   sources={message.sources}
                                 />
                               ) : null}
+                              {message.suggestion &&
+                              message.status === "done" ? (
+                                <SuggestionButton
+                                  label={message.suggestion.label}
+                                  onPress={() =>
+                                    void send(message.suggestion!.prompt)
+                                  }
+                                />
+                              ) : null}
                               {message.actions.map((action) => (
                                 <ActionCardView
                                   action={action}
@@ -913,6 +1013,16 @@ export default function SucheScreen() {
                                       reasons,
                                       comment,
                                     )
+                                  }
+                                  onRepair={
+                                    message.id === latestRepairableMessageId
+                                      ? (reasons, comment) =>
+                                          repairAnswer(
+                                            message,
+                                            reasons,
+                                            comment,
+                                          )
+                                      : undefined
                                   }
                                 />
                               ) : null}

@@ -5,6 +5,7 @@ import {
   ChevronUp,
   Copy,
   FileText,
+  Globe2,
   Mic,
   RotateCcw,
   Send,
@@ -18,6 +19,7 @@ import * as Haptics from "expo-haptics";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   StyleSheet,
   Text,
@@ -58,6 +60,11 @@ import {
   REDUCE_MOTION,
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import {
+  CHAT_RESPONSE_STATE_LABELS,
+  isSafePublicSourceUrl,
+  isWebChatSource,
+} from "@ordilo/chat-contract";
 
 /**
  * Chat UI for „Ordilo fragen". Presentational components — the screen
@@ -238,13 +245,21 @@ export function MessageBubble({
             {messageTime}
           </Text>
         ) : null}
+        {!isUser &&
+        message.status === "done" &&
+        message.responseState &&
+        message.responseState !== "answered" ? (
+          <Text style={styles.responseState}>
+            {CHAT_RESPONSE_STATE_LABELS[message.responseState]}
+          </Text>
+        ) : null}
         {children}
       </View>
     </View>
   );
 }
 
-/** „Passende Dokumente" — top sources (score ≥ 0.5, max 4), rest toggled. */
+/** Answer-first sources: one best source, with the remainder on demand. */
 export function SourcesSection({
   sources,
   onOpenDocument,
@@ -255,27 +270,42 @@ export function SourcesSection({
   const [expanded, setExpanded] = useState(false);
   if (sources.length === 0) return null;
 
-  const top = sources.filter((source) => source.score >= 0.5).slice(0, 4);
-  const rest = sources.filter((source) => !top.includes(source));
+  const sorted = [...sources].sort((a, b) => b.score - a.score);
+  const top = sorted.slice(0, 1);
+  const rest = sorted.slice(1);
   const visible = expanded ? [...top, ...rest] : top;
 
   return (
     <View style={styles.sources}>
       <Text style={styles.sourcesHeading}>
-        {sources.length === 1
-          ? "Passendes Dokument"
-          : `Passende Dokumente (${sources.length})`}
+        {sources.length === 1 ? "Quelle" : `Quellen (${sources.length})`}
       </Text>
       {visible.map((source, index) => (
         <Pressable
-          accessibilityHint="Öffnet das Dokument"
-          accessibilityLabel={source.title || "Dokument"}
+          accessibilityHint={
+            isWebChatSource(source)
+              ? "Öffnet die Webseite"
+              : "Öffnet das Dokument"
+          }
+          accessibilityLabel={source.title || "Quelle"}
           accessibilityRole="button"
           key={`${source.document_id}-${index}`}
-          onPress={() => onOpenDocument(source.document_id)}
+          onPress={() => {
+            if (
+              isWebChatSource(source) && isSafePublicSourceUrl(source.url)
+            ) {
+              void Linking.openURL(source.url);
+            } else {
+              onOpenDocument(source.document_id);
+            }
+          }}
           style={({ pressed }) => [styles.sourceCard, pressed && styles.pressed]}
         >
-          <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
+          {isWebChatSource(source) ? (
+            <Globe2 color={colors.harborBlue} size={18} strokeWidth={1.8} />
+          ) : (
+            <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
+          )}
           <View style={styles.sourceCopy}>
             <Text numberOfLines={1} style={styles.sourceTitle}>
               {source.title || "Dokument"}
@@ -301,11 +331,37 @@ export function SourcesSection({
           <Text style={styles.sourcesToggleText}>
             {expanded
               ? "Weniger anzeigen"
-              : `${rest.length} weitere mögliche Dokumente anzeigen`}
+              : rest.length === 1
+                ? "1 weitere Quelle anzeigen"
+                : `${rest.length} weitere Quellen anzeigen`}
           </Text>
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+/** One deliberate follow-up generated from the completed answer. */
+export function SuggestionButton({
+  label,
+  onPress,
+}: {
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.suggestionButton,
+        pressed && styles.pressed,
+      ]}
+    >
+      <Text style={styles.suggestionButtonText}>{label}</Text>
+      <ChevronRight color={colors.harborBlue} size={16} />
+    </Pressable>
   );
 }
 
@@ -536,10 +592,15 @@ export function ActionCardView({
 export function FeedbackRow({
   message,
   onSend,
+  onRepair,
 }: {
   message: ChatMessage;
   onSend: (
     feedback: "positive" | "negative",
+    reasons: ChatFeedbackReason[],
+    comment: string,
+  ) => Promise<void>;
+  onRepair?: (
     reasons: ChatFeedbackReason[],
     comment: string,
   ) => Promise<void>;
@@ -561,9 +622,18 @@ export function FeedbackRow({
   }
 
   const send = async (feedback: "positive" | "negative") => {
+    if (feedback === "negative" && onRepair && reasons.length === 0) return;
     setSending(true);
     try {
-      await onSend(feedback, reasons, comment);
+      if (feedback === "negative" && onRepair) {
+        const feedbackRequest = onSend(feedback, reasons, comment).catch(
+          () => undefined,
+        );
+        await onRepair(reasons, comment.trim());
+        await feedbackRequest;
+      } else {
+        await onSend(feedback, reasons, comment);
+      }
       setThanks(true);
       setPanelOpen(false);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -648,9 +718,9 @@ export function FeedbackRow({
             value={comment}
           />
           <OrdiloButton
-            disabled={sending}
+            disabled={sending || (Boolean(onRepair) && reasons.length === 0)}
             onPress={() => void send("negative")}
-            title={sending ? "Wird gesendet …" : "Senden"}
+            title={sending ? "Suche neu …" : "Besser antworten"}
           />
         </View>
       ) : null}
@@ -1059,6 +1129,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     color: colors.warmWhite,
   },
+  responseState: {
+    color: colors.mistDark,
+    marginTop: spacing.xs,
+    ...typography.label,
+  },
   sources: { gap: spacing.xs, marginTop: spacing.xs },
   sourcesHeading: { color: colors.mistDark, ...typography.label },
   sourceCard: {
@@ -1083,6 +1158,23 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   sourcesToggleText: { color: colors.harborBlue, ...typography.label },
+  suggestionButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: "row",
+    gap: spacing.xs,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  suggestionButtonText: {
+    color: colors.harborBlue,
+    ...typography.label,
+  },
   answerCard: {
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,

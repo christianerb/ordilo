@@ -14,6 +14,7 @@ export type ProductEventName =
   | "document_upload_succeeded"
   | "document_confirmed"
   | "calendar_event_created"
+  | "chat_answer_repair_started"
   | "chat_question_sent"
   | "search_completed"
   | "task_created"

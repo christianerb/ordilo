@@ -8,8 +8,14 @@
  *     token budget so long conversations don't exceed the model's limit.
  */
 
-import type { ChatSource, AnswerCard } from "@/lib/schemas/chat";
+import type {
+  AnswerCard,
+  ChatResponseState,
+  ChatSource,
+  ChatSuggestion,
+} from "@/lib/schemas/chat";
 import type { HistoryMessage } from "@/lib/ai/chat";
+import { buildAssistantHistoryContext } from "@ordilo/chat-contract";
 
 type ServerClient = Awaited<
   ReturnType<typeof import("@/lib/supabase/server").createClient>
@@ -47,6 +53,8 @@ export interface ChatMessageRow {
   sources: ChatSource[] | null;
   card: AnswerCard | null;
   actions: PersistedChatAction[] | null;
+  response_state?: ChatResponseState | null;
+  suggestion?: ChatSuggestion | null;
   feedback: string | null;
   created_at: string;
 }
@@ -207,6 +215,8 @@ export async function saveAssistantMessage(
   sources: ChatSource[],
   card: AnswerCard | null,
   actions: PersistedChatAction[] = [],
+  responseState: ChatResponseState = "answered",
+  suggestion: ChatSuggestion | null = null,
 ): Promise<string | null> {
   const { data, error } = await client
     .from("chat_messages")
@@ -218,9 +228,53 @@ export async function saveAssistantMessage(
       sources: sources.length > 0 ? sources as unknown as Record<string, unknown>[] : null,
       card: card as unknown as Record<string, unknown> | null,
       actions: actions.length > 0 ? (actions as unknown as Record<string, unknown>[]) : null,
+      response_state: responseState,
+      suggestion: suggestion as unknown as Record<string, unknown> | null,
+      feedback: null,
     })
     .select("id")
     .single();
+  if (error) return null;
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Replaces a persisted assistant answer after an explicit user-requested
+ * repair. The original user question stays in place and no duplicate turn is
+ * inserted.
+ */
+export async function replaceAssistantMessage(
+  client: ServerClient,
+  messageId: string,
+  familyId: string,
+  content: string,
+  sources: ChatSource[],
+  card: AnswerCard | null,
+  actions: PersistedChatAction[] = [],
+  responseState: ChatResponseState = "answered",
+  suggestion: ChatSuggestion | null = null,
+): Promise<string | null> {
+  const { data, error } = await client
+    .from("chat_messages")
+    .update({
+      content,
+      sources:
+        sources.length > 0
+          ? (sources as unknown as Record<string, unknown>[])
+          : null,
+      card: card as unknown as Record<string, unknown> | null,
+      actions:
+        actions.length > 0
+          ? (actions as unknown as Record<string, unknown>[])
+          : null,
+      response_state: responseState,
+      suggestion: suggestion as unknown as Record<string, unknown> | null,
+    })
+    .eq("id", messageId)
+    .eq("family_id", familyId)
+    .eq("role", "assistant")
+    .select("id")
+    .maybeSingle();
   if (error) return null;
   return (data as { id: string } | null)?.id ?? null;
 }
@@ -241,14 +295,14 @@ export async function loadConversationMessages(
 ): Promise<ChatMessageRow[]> {
   const { data, error } = await client
     .from("chat_messages")
-    .select("id, conversation_id, family_id, role, content, sources, card, actions, created_at")
+    .select("id, conversation_id, family_id, role, content, sources, card, actions, response_state, suggestion, created_at")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) return [];
 
-  return (data ?? []) as unknown as ChatMessageRow[];
+  return ((data ?? []) as unknown as ChatMessageRow[]).slice().reverse();
 }
 
 /**
@@ -261,19 +315,20 @@ export async function loadConversationMessages(
  */
 export function rowsToHistory(rows: ChatMessageRow[]): HistoryMessage[] {
   return rows.map((row) => {
-    if (row.role === "assistant" && row.sources && row.sources.length > 0) {
-      const sourceNames = row.sources
-        .map((s) => s.title ?? s.document_id)
-        .join(", ");
+    if (row.role === "assistant") {
       return {
         role: "assistant" as const,
-        content: `${row.content}\n\n[Gefundene Dokumente: ${sourceNames}]`,
+        content: buildAssistantHistoryContext({
+          text: row.content,
+          sources: row.sources ?? [],
+          card: row.card,
+        }),
       };
     }
     return {
       role: row.role,
       content: row.content,
-    } as HistoryMessage;
+    };
   });
 }
 

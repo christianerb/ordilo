@@ -1,6 +1,8 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   estimateTokens,
+  loadConversationMessages,
+  saveAssistantMessage,
   truncateHistory,
   rowsToHistory,
   type ChatMessageRow,
@@ -121,7 +123,7 @@ describe("rowsToHistory", () => {
     expect(history[1]).toEqual({ role: "assistant", content: "Du hast 2 Aufgaben." });
   });
 
-  it("appends source names to assistant messages with sources", () => {
+  it("appends source names and answer-bearing excerpts to assistant history", () => {
     const rows: ChatMessageRow[] = [
       {
         id: "1",
@@ -142,7 +144,13 @@ describe("rowsToHistory", () => {
 
     const history = rowsToHistory(rows);
     expect(history).toHaveLength(1);
-    expect(history[0].content).toContain("[Gefundene Dokumente: Kita-Brief, Stromrechnung]");
+    expect(history[0].content).toContain("[Belege der vorherigen Antwort]");
+    expect(history[0].content).toContain(
+      "1. Familien-Unterlage: Kita-Brief — ...",
+    );
+    expect(history[0].content).toContain(
+      "2. Familien-Unterlage: Stromrechnung — ...",
+    );
   });
 
   it("does not append source annotation when sources is null", () => {
@@ -163,5 +171,67 @@ describe("rowsToHistory", () => {
 
     const history = rowsToHistory(rows);
     expect(history[0].content).toBe("Hallo!");
+  });
+});
+
+describe("chat history persistence", () => {
+  it("loads the newest rows and returns them oldest-first", async () => {
+    const rows = [
+      { id: "new", created_at: "2026-09-02T10:00:00Z" },
+      { id: "old", created_at: "2026-09-01T10:00:00Z" },
+    ];
+    const order = vi.fn().mockReturnThis();
+    const builder = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order,
+      limit: vi.fn().mockResolvedValue({ data: rows, error: null }),
+    };
+    const client = {
+      from: vi.fn(() => builder),
+    } as unknown as Parameters<typeof loadConversationMessages>[0];
+
+    const result = await loadConversationMessages(client, "conv-1", 2);
+
+    expect(order).toHaveBeenCalledWith("created_at", { ascending: false });
+    expect(result.map((row) => row.id)).toEqual(["old", "new"]);
+  });
+
+  it("persists response state and the single suggested follow-up", async () => {
+    let payload: Record<string, unknown> | null = null;
+    const builder = {
+      insert: vi.fn((value: Record<string, unknown>) => {
+        payload = value;
+        return builder;
+      }),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: "message-1" },
+        error: null,
+      }),
+    };
+    const client = {
+      from: vi.fn(() => builder),
+    } as unknown as Parameters<typeof saveAssistantMessage>[0];
+
+    await saveAssistantMessage(
+      client,
+      "conv-1",
+      "fam-1",
+      "Nur teilweise gefunden.",
+      [],
+      null,
+      [],
+      "partial",
+      { label: "Weiter suchen", prompt: "Suche in weiteren Unterlagen." },
+    );
+
+    expect(payload).toMatchObject({
+      response_state: "partial",
+      suggestion: {
+        label: "Weiter suchen",
+        prompt: "Suche in weiteren Unterlagen.",
+      },
+    });
   });
 });

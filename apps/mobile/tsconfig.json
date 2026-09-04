@@ -8,6 +8,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@ordilo/chat-contract": [
+        "../../packages/chat-contract/src/index.ts"
       ]
     }
   },
