@@ -6,6 +6,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * filenames, or email addresses are ever sent.
  */
 export type ProductEventName =
+  | "onboarding_entry_selected"
+  | "document_result_viewed"
+  | "document_next_step_selected"
   | "onboarding_started"
   | "onboarding_step_completed"
   | "onboarding_completed"

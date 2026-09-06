@@ -4,6 +4,8 @@
  * Keep this package free of React, Next.js and native dependencies so every
  * platform validates against the exact same transport limits and MIME list.
  */
+export * from "./first-value";
+
 export const ACCEPTED_DOCUMENT_MIME_TYPES = [
   "image/jpeg",
   "image/png",

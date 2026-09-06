@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { Check, FolderCheck, Pencil, Camera, AlertCircle, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
+import { DocumentNextStep } from "@/components/ordilo/document-next-step";
+import { recordDocumentValueEvent } from "@/lib/analytics/first-value";
 import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 import { LOW_CONFIDENCE_THRESHOLD } from "@/lib/schemas/extraction";
 import { formatGermanDate } from "@/lib/format";
@@ -28,6 +30,11 @@ import { vibrate } from "@/lib/haptics";
 const HIGH_CONFIDENCE_THRESHOLD = 0.85;
 
 const EMPTY_EDITS: EditState = emptyEditState();
+
+function VisibleResult({ onView }: { onView: () => void }) {
+  useMountEffect(onView);
+  return null;
+}
 
 type ScanConfidenceLevel = "high" | "medium" | "low";
 
@@ -103,7 +110,7 @@ function buildAutoActions(analysis: DocumentAnalysis): string[] {
     .sort();
   if (dueDates[0]) {
     const formatted = formatGermanDate(dueDates[0]) || dueDates[0];
-    actions.push(`Erinnerung am ${formatted}`);
+    actions.push(`Fällig am ${formatted}`);
   }
   // The dates Ordilo puts straight into the Familienplaner — the same
   // pre-checked set buildConfirmPayload sends on "Passt so", so this
@@ -158,11 +165,19 @@ export function ScanReviewStep({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [eventsCreated, setEventsCreated] = useState(0);
+  const [tasksKept, setTasksKept] = useState(0);
+  const [savedTitle, setSavedTitle] = useState("");
   const [edits, setEdits] = useState<EditState>(EMPTY_EDITS);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [originalPreviewOpen, setOriginalPreviewOpen] = useState(false);
 
   const cancelledRef = useRef(false);
+  const viewedResult = useRef<string | null>(null);
+  const recordResultView = () => {
+    if (viewedResult.current === documentId) return;
+    viewedResult.current = documentId;
+    void recordDocumentValueEvent({ name: "document_result_viewed", documentId });
+  };
   const rawConfidenceLevel = analysis ? getScanConfidenceLevel(analysis) : null;
   const hasOnlyResolvedLowConfidencePerson = Boolean(
     analysis &&
@@ -237,11 +252,6 @@ export function ScanReviewStep({
     setConfirming(true);
     setConfirmError(null);
 
-    // Optimistic: the user's own tap, not a fabricated AI result — play
-    // the success state immediately and roll back if the save fails.
-    setConfirmed(true);
-    vibrate(10);
-
     try {
       const payload = buildConfirmPayload(analysis, edits);
       const response = await postConfirm(documentId, payload);
@@ -264,6 +274,10 @@ export function ScanReviewStep({
       setEventsCreated(
         typeof body?.events_created === "number" ? body.events_created : 0,
       );
+      setTasksKept(payload.tasks.filter((_, index) => !payload.deletedTaskIndices.includes(index)).length);
+      setSavedTitle(payload.title);
+      setConfirmed(true);
+      vibrate(10);
     } catch (err) {
       setConfirmed(false);
       setConfirmError(
@@ -401,12 +415,20 @@ export function ScanReviewStep({
           )}
         </div>
         <div className="flex flex-col gap-2.5">
+          <DocumentNextStep
+            documentId={documentId}
+            title={savedTitle || analysis?.title || "Dokument"}
+            eventsCreated={eventsCreated}
+            tasksKept={tasksKept}
+            onLeave={onDone}
+          />
           <Button
             type="button"
             size="lg"
             onClick={onDone}
             className="h-12 w-full max-w-xs rounded-ordilo-md"
             data-testid="review-step-done-button"
+            variant="ghost"
           >
             <Check className="size-4" aria-hidden="true" />
             Fertig
@@ -478,7 +500,12 @@ export function ScanReviewStep({
       <ReviewCard
         documentId={documentId}
         status="analyzed"
-        onConfirmSuccess={() => setConfirmed(true)}
+        onConfirmSuccess={(outcome) => {
+          setEventsCreated(outcome?.eventsCreated ?? 0);
+          setTasksKept(outcome?.tasksKept ?? 0);
+          setSavedTitle(outcome?.title ?? "");
+          setConfirmed(true);
+        }}
         onBack={(reviewEdits) => {
           setEdits(reviewEdits);
           setMode("summary");
@@ -500,6 +527,7 @@ export function ScanReviewStep({
         )}
         data-testid="review-step-autofile"
       >
+        <VisibleResult onView={recordResultView} />
         {/* Original preview — mounted eagerly so the signed URL is
             prefetched; on mobile it stacks above the recognized fields
             (order-first) for a true side-by-side comparison, on desktop
@@ -605,6 +633,7 @@ export function ScanReviewStep({
           "lg:grid-cols-[minmax(0,26rem)_minmax(28rem,1fr)]",
       )}
     >
+      <VisibleResult onView={recordResultView} />
       <div className={cn("order-first lg:order-2", !originalPreviewOpen && "lg:hidden")}>
         <OriginalDocumentPreview
           documentId={documentId}

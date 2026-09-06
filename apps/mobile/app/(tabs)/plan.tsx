@@ -1,4 +1,4 @@
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AlertCircle,
   ArrowRight,
@@ -131,6 +131,8 @@ interface UndoState {
  * destructive action (Verwerfen) asks first.
  */
 export default function PlanScreen() {
+  const router = useRouter();
+  const { tab } = useLocalSearchParams<{ tab?: string }>();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
@@ -151,6 +153,12 @@ export default function PlanScreen() {
   const [undo, setUndo] = useState<UndoState | null>(null);
   const [view, setView] = useState<"tasks" | "calendar">("tasks");
   const [personFilter, setPersonFilter] = useState<string | null>(null);
+  useFocusEffect(useCallback(() => {
+    if (tab !== "calendar" && tab !== "tasks") return;
+    setView(tab);
+    setPersonFilter(null);
+    router.setParams({ tab: undefined });
+  }, [router, tab]));
   const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));

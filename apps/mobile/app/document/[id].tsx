@@ -41,6 +41,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import { DocumentNextStep } from "@/src/components/document-next-step";
+import { recordFirstValueEvent } from "@/src/lib/first-value";
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -133,6 +135,17 @@ export default function DocumentReviewScreen() {
   const [confirmed, setConfirmed] = useState<ConfirmDocumentResult | null>(null);
   const menuRef = useRef<OrdiloSheetHandle>(null);
   const pendingMenuRef = useRef<"original" | "edit" | "delete" | null>(null);
+  const viewedResult = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loading || !family || !document || !("summary" in document)) return;
+    if (viewedResult.current === id) return;
+    viewedResult.current = id;
+    void recordFirstValueEvent(family.id, {
+      name: "document_result_viewed",
+      documentId: id,
+    });
+  }, [document, family, id, loading]);
 
   const applyLoaded = useCallback(
     (value: DocumentReview | null) => {
@@ -489,18 +502,25 @@ export default function DocumentReviewScreen() {
           </Card>
         </Animated.View>
         <View style={styles.confirmedActions}>
+          <DocumentNextStep
+            documentId={id}
+            title={document.title ?? "Dokument"}
+            eventsCreated={confirmed.eventsCreated}
+            tasksKept={confirmed.tasksKept}
+          />
           {source === "scan" ? (
             <OrdiloButton
               onPress={() => router.replace({ pathname: "/scan", params: { auto: "1" } })}
               size="lg"
               title="Nächstes scannen"
+              variant="outline"
             />
           ) : null}
           <OrdiloButton
             onPress={() => router.replace("/(tabs)")}
             size="lg"
             title="Fertig"
-            variant={source === "scan" ? "outline" : "primary"}
+            variant="ghost"
           />
         </View>
       </Screen>

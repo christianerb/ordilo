@@ -7,6 +7,9 @@ import type { Database } from "@/types/database";
  * analytics provider.
  */
 export type ProductEventName =
+  | "onboarding_entry_selected"
+  | "document_result_viewed"
+  | "document_next_step_selected"
   | "onboarding_started"
   | "onboarding_step_completed"
   | "onboarding_completed"

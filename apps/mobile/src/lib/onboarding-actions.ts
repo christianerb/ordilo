@@ -301,15 +301,12 @@ export async function completeOnboarding(
       familyId,
       eventName: "onboarding_completed",
     }),
-    ...(startsFirstScan
-      ? [
-          recordProductEvent(supabase, {
-            userId: user.id,
-            familyId,
-            eventName: "onboarding_scan_started",
-          }),
-        ]
-      : []),
+    recordProductEvent(supabase, {
+      userId: user.id,
+      familyId,
+      eventName: "onboarding_entry_selected",
+      properties: { entry: startsFirstScan ? "scan" : "browse" },
+    }),
   ]);
 
   return { success: true, data: null };
