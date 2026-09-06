@@ -8,14 +8,14 @@ import { colors } from "@/src/theme/tokens";
  * Ordilo rises out of the page instead of sitting inside the compact
  * navigation mark, making the empty chat feel like a personal welcome.
  */
-export function OrdiloChatHero() {
+export function OrdiloChatHero({ compact = false }: { compact?: boolean }) {
   return (
     <View
       accessible={false}
       importantForAccessibility="no-hide-descendants"
-      style={styles.frame}
+      style={[styles.frame, compact && { height: 100, aspectRatio: undefined }]}
     >
-      <Svg height="100%" preserveAspectRatio="xMidYMid slice" viewBox="0 0 360 270" width="100%">
+      <Svg height="100%" preserveAspectRatio="xMidYMid meet" viewBox="0 0 360 270" width="100%">
         <Path
           d="M0 0 H360 V112 C312 91 276 102 236 86 C192 68 151 43 103 55 C60 65 31 88 0 99 Z"
           fill={colors.sand}

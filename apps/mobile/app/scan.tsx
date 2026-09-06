@@ -31,6 +31,7 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -57,10 +58,11 @@ import {
 import { ScanHeroIllustration } from "@/src/components/scan-hero-illustration";
 import { useFamily } from "@/src/lib/family-context";
 import {
-  continueScannedDocumentPipeline,
+  resumeScannedDocument,
+  recoverLegacyScanQueue,
   getScanMimeType,
   loadPersistedScanQueue,
-  persistScanQueue,
+  reconcileScanQueue,
   removeStagedScannedDocument,
   stageScannedDocument,
   type ScannedDocument,
@@ -210,13 +212,14 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  */
 export default function ScanModal() {
   const router = useRouter();
-  const { auto } = useLocalSearchParams<{ auto?: string }>();
+  const { auto, resume } = useLocalSearchParams<{ auto?: string; resume?: string }>();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
   const [sheetVisible, setSheetVisible] = useState(true);
   const [flow, setFlow] = useState<ScanFlow>({ phase: "capture" });
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [legacyAvailable, setLegacyAvailable] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -234,13 +237,18 @@ export default function ScanModal() {
 
   const updateQueue = useCallback(
     async (transform: (current: QueueItem[]) => QueueItem[]) => {
+      if (!family) throw new Error("Deine Familie wird noch geladen.");
+      const knownIds = queueRef.current.map((item) => item.id);
       const next = transform(queueRef.current);
       queueRef.current = next;
       setQueue(next);
-      await persistScanQueue(next.filter(isPersistedQueueItem));
-      return next;
+      const persisted = await reconcileScanQueue(next.filter(isPersistedQueueItem), family.id, knownIds);
+      const merged = [...next, ...persisted.filter((item) => !next.some((candidate) => candidate.id === item.id))];
+      queueRef.current = merged;
+      setQueue(merged);
+      return merged;
     },
-    [],
+    [family],
   );
 
   const markQueueFailed = useCallback(
@@ -265,8 +273,14 @@ export default function ScanModal() {
   );
 
   useEffect(() => {
+    if (!family) return;
+    let cancelled = false;
     void (async () => {
-      const stored = await loadPersistedScanQueue();
+      const stored = await loadPersistedScanQueue(family.id);
+      if (cancelled) return;
+      const hasLegacy = await loadPersistedScanQueue().then((items) => items.length > 0).catch(() => true);
+      if (cancelled) return;
+      setLegacyAvailable(hasLegacy);
       const recovered: QueueItem[] = stored.map((item): QueueItem =>
           item.state === "uploading" || item.state === "processing"
             ? {
@@ -280,10 +294,11 @@ export default function ScanModal() {
       );
       queueRef.current = recovered;
       setQueue(recovered);
-      await persistScanQueue(recovered.filter(isPersistedQueueItem));
+      if (family) await reconcileScanQueue(recovered.filter(isPersistedQueueItem), family.id, recovered.map((item) => item.id));
       setQueueHydrated(true);
-    })().catch(() => setQueueHydrated(true));
-  }, []);
+    })().catch(() => { if (!cancelled) setError("Deine gespeicherten Importe konnten nicht geladen werden. Bitte öffne die Dokumentaufnahme erneut."); });
+    return () => { cancelled = true; };
+  }, [family]);
 
   useEffect(() => {
     return () => {
@@ -300,7 +315,7 @@ export default function ScanModal() {
       return false;
     }
     try {
-      const staged = await stageScannedDocument(document);
+      const staged = await stageScannedDocument(document, family?.id);
       await updateQueue((current) => [
         ...current,
         { ...staged, state: "queued" },
@@ -313,7 +328,7 @@ export default function ScanModal() {
       void fail();
       return false;
     }
-  }, [updateQueue]);
+  }, [updateQueue, family]);
 
   const runSystemScanner = useCallback(async () => {
     if (scannerBusy) return;
@@ -442,12 +457,7 @@ export default function ScanModal() {
           );
 
           if (!result.server_pipeline) {
-            await continueScannedDocumentPipeline(
-              documentId,
-              processingStep,
-              reportClientStep,
-              controller.signal,
-            );
+            await resumeScannedDocument(documentId, reportClientStep, controller.signal);
           }
         } else {
           await updateQueue((current) =>
@@ -457,14 +467,7 @@ export default function ScanModal() {
                 : candidate,
             ),
           );
-          if (!serverPipeline) {
-            await continueScannedDocumentPipeline(
-              documentId,
-              processingStep ?? "ocr",
-              reportClientStep,
-              controller.signal,
-            );
-          }
+          await resumeScannedDocument(documentId, reportClientStep, controller.signal);
         }
 
         await waitForScannedDocumentAnalysis(documentId, async (status) => {
@@ -570,6 +573,13 @@ export default function ScanModal() {
     await startQueueItem(item);
   }, [queue, startQueueItem]);
 
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (!queueHydrated || resume !== "1" || resumedRef.current) return;
+    resumedRef.current = true;
+    void uploadQueued();
+  }, [queueHydrated, resume, uploadQueued]);
+
   const pickImages = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       allowsMultipleSelection: true,
@@ -607,10 +617,10 @@ export default function ScanModal() {
   }, [addToQueue]);
 
   const removeQueued = useCallback(async (item: QueueItem) => {
-    await Promise.allSettled([
-      updateQueue((current) => current.filter((candidate) => candidate.id !== item.id)),
-      removeStagedScannedDocument(item.uri),
-    ]);
+    try {
+      await updateQueue((current) => current.filter((candidate) => candidate.id !== item.id));
+      await removeStagedScannedDocument(item.uri);
+    } catch { setError("Die Änderung konnte nicht gespeichert werden. Bitte erneut versuchen."); }
   }, [updateQueue]);
 
   const actionableCount = queue.filter(
@@ -620,7 +630,7 @@ export default function ScanModal() {
     (item) => item.state === "uploading" || item.state === "processing",
   );
   const close = useCallback(() => setSheetVisible(false), []);
-  const finishClose = useCallback(() => router.back(), [router]);
+  const finishClose = useCallback(() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)"); }, [router]);
   const leaveProcessing = useCallback(async (
     keepRunning: boolean,
     item?: QueueItem,
@@ -630,14 +640,12 @@ export default function ScanModal() {
     processingAbortRef.current?.abort();
     await processingPromiseRef.current;
     if (keepRunning && item) {
-      await Promise.allSettled([
-        updateQueue((current) =>
-          current.filter((candidate) => candidate.id !== item.id),
-        ),
-        removeStagedScannedDocument(item.uri),
-      ]);
+      try {
+        await updateQueue((current) => current.filter((candidate) => candidate.id !== item.id));
+        await removeStagedScannedDocument(item.uri);
+      } catch { /* Keep the durable entry for recovery if checkpointing fails. */ }
     }
-    router.back();
+    if (router.canGoBack()) router.back(); else router.replace("/(tabs)");
   }, [router, updateQueue]);
 
   if (flow.phase === "processing") {
@@ -832,6 +840,17 @@ export default function ScanModal() {
           </View>
         ) : null}
 
+        {legacyAvailable ? <OrdiloButton title="Frühere Importe wiederfinden" variant="outline" onPress={() => {
+          if (!family) return;
+          Alert.alert("Frühere Importe übernehmen?", `Auf diesem Gerät liegen Dateien aus einer früheren App-Version. Gehören sie zu ${family.name}?`, [
+            { text: "Abbrechen", style: "cancel" },
+            { text: "Ja, übernehmen", onPress: () => { void recoverLegacyScanQueue(family.id).then(async () => {
+              const restored = await loadPersistedScanQueue(family.id);
+              queueRef.current = restored; setQueue(restored); setLegacyAvailable(false);
+            }).catch((caught) => setError(caught instanceof Error ? caught.message : "Der Import konnte nicht wiederhergestellt werden.")); } },
+          ]);
+        }} /> : null}
+
         {queue.length > 0 ? (
           <View style={styles.queueCard}>
             <View style={styles.rowHeader}>
@@ -931,6 +950,7 @@ export default function ScanModal() {
           </View>
         </SpringPressable>
 
+        <OrdiloButton title="Per E-Mail an Ordilo" variant="ghost" onPress={() => router.push("/posteingang")} />
         <View style={styles.secondaryActions}>
           <ScanSecondaryAction
             accessibilityLabel="Fotos auswählen"

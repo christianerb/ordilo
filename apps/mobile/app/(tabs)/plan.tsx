@@ -1,3 +1,5 @@
+import { useSession } from "@/src/lib/session";
+import { loadTaskHandoffs, acceptTaskHandoff, taskHandoffLabel, type TaskAcceptance } from "@/src/lib/task-handoffs";
 import { useFocusEffect } from "expo-router";
 import {
   AlertCircle,
@@ -24,6 +26,7 @@ import {
 } from "react";
 import {
   Alert,
+  AppState,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -133,6 +136,10 @@ interface UndoState {
 export default function PlanScreen() {
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
+  const { session } = useSession();
+  const [accepted, setAccepted] = useState<TaskAcceptance[]>([]);
+  const [ownMemberIds, setOwnMemberIds] = useState<string[]>([]);
+  const [acceptBusy, setAcceptBusy] = useState<string | null>(null);
   const [tasks, setTasks] = useState<PlannerTask[]>([]);
   const [events, setEvents] = useState<PlannerEvent[]>([]);
   const [members, setMembers] = useState<FamilyMemberOption[]>([]);
@@ -193,6 +200,11 @@ export default function PlanScreen() {
         setEvents(eventRows);
         setMembers(memberRows);
         setTodayStr(todayLocalDate());
+        if (session?.user.id) {
+          const handoffs = await loadTaskHandoffs(family.id, session.user.id);
+          setAccepted(handoffs.accepted);
+          setOwnMemberIds(handoffs.ownMemberIds);
+        }
       } catch {
         setError(FRIENDLY_ERROR);
       } finally {
@@ -200,7 +212,7 @@ export default function PlanScreen() {
         setRefreshing(false);
       }
     },
-    [family],
+    [family, session],
   );
 
   // Refetch silently whenever the tab gains focus; the full loading
@@ -210,6 +222,22 @@ export default function PlanScreen() {
       void load({ silent: true });
     }, [load]),
   );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => { if (state === "active") void load({ silent: true }); });
+    return () => subscription.remove();
+  }, [load]);
+
+  const acceptHandoff = useCallback(async (task: PlannerTask) => {
+    if (acceptBusy) return;
+    setAcceptBusy(task.id);
+    try {
+      await acceptTaskHandoff(task.id);
+      await load({ silent: true });
+      void success();
+    } catch (caught) { setError(caught instanceof Error ? caught.message : FRIENDLY_ERROR); void fail(); }
+    finally { setAcceptBusy(null); }
+  }, [acceptBusy, load]);
 
   /** Dismissed rows stay in the query result (shared OR filter) but never in the list — same rule as the web. */
   const visibleTasks = useMemo(
@@ -697,6 +725,10 @@ export default function PlanScreen() {
                     {shown.map((task) => (
                       <SwipeableTaskRow
                         key={task.id}
+                        handoff={<View>
+                          {task.status === "open" && task.assigned_to ? <Text style={[typography.timestamp, { color: colors.mistDark, paddingHorizontal: spacing.md, paddingBottom: spacing.sm }]}>{taskHandoffLabel(task.assigned_to, accepted.find((entry) => entry.task_id === task.id)?.member_id, members.find((member) => member.id === task.assigned_to)?.name)}</Text> : null}
+                          {task.status === "open" && task.assigned_to && ownMemberIds.includes(task.assigned_to) && !accepted.some((entry) => entry.task_id === task.id && entry.member_id === task.assigned_to) ? <OrdiloButton title={acceptBusy === task.id ? "Wird übernommen …" : "Ich übernehme das"} variant="outline" disabled={acceptBusy !== null} onPress={() => void acceptHandoff(task)} /> : null}
+                        </View>}
                         members={members}
                         onAssign={() => setAssignTask(task)}
                         onPress={() => openEdit(task)}
@@ -1081,6 +1113,7 @@ function PlannerEventRow({
  * appear from the first dragged pixel so the gesture teaches itself.
  */
 function SwipeableTaskRow({
+  handoff,
   members,
   onAssign,
   onPress,
@@ -1089,6 +1122,7 @@ function SwipeableTaskRow({
   task,
   todayStr,
 }: {
+  handoff?: ReactNode;
   members: FamilyMemberOption[];
   onAssign: () => void;
   onPress: () => void;
@@ -1165,6 +1199,7 @@ function SwipeableTaskRow({
           todayStr={todayStr}
         />
       </ReanimatedSwipeable>
+      {handoff}
     </Animated.View>
   );
 }
@@ -1228,7 +1263,7 @@ function TaskRow({
       <Pressable
         accessibilityHint="Ändert, wer sich kümmert"
         accessibilityLabel={
-          assignee ? `${assignee.name} kümmert sich, ändern` : "Niemand zugeteilt, jemanden auswählen"
+          assignee ? `${assignee.name} zugewiesen, ändern` : "Niemand zugeteilt, jemanden auswählen"
         }
         accessibilityRole="button"
         disabled={done}

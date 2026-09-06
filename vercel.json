@@ -11,6 +11,10 @@
     {
       "path": "/api/admin/cleanup",
       "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/notifications/run",
+      "schedule": "15 7 * * *"
     }
   ]
 }

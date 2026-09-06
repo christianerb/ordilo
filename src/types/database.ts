@@ -144,6 +144,25 @@ export type LexicalSearchRow = {
 export type Database = {
   public: {
     Tables: {
+      push_devices: {
+        Row: { id: string; user_id: string; token: string; timezone: string; updated_at: string };
+        Insert: { id: string; user_id: string; token: string; timezone?: string; updated_at?: string };
+        Update: { user_id?: string; token?: string; timezone?: string; updated_at?: string };
+        Relationships: [];
+      };
+      push_deliveries: {
+        Row: PushDelivery;
+        Insert: Pick<PushDelivery, "device_id" | "user_id" | "family_id" | "event_key" | "kind"> & Partial<PushDelivery>;
+        Update: Partial<PushDelivery>;
+        Relationships: [];
+      };
+      task_acceptances: {
+        Row: { task_id: string; family_id: string; member_id: string; user_id: string; accepted_at: string };
+        Insert: { task_id: string; family_id: string; member_id: string; user_id: string; accepted_at?: string };
+        Update: { accepted_at?: string };
+        Relationships: [];
+      };
+
       // families -----------------------------------------------------------
       families: {
         Row: {
@@ -811,6 +830,7 @@ export type Database = {
           partial_analysis: Record<string, unknown> | null;
           /** AES-256-GCM envelope (ciphertext only) for a hidden value; plaintext never stored. */
           secret: string | null;
+          upload_key: string | null;
           source_email_id: string | null;
           source_attachment_id: string | null;
           source_email_recipient: string | null;
@@ -840,6 +860,7 @@ export type Database = {
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
           secret?: string | null;
+          upload_key?: string | null;
           source_email_id?: string | null;
           source_attachment_id?: string | null;
           source_email_recipient?: string | null;
@@ -869,6 +890,7 @@ export type Database = {
           extraction_version?: number | null;
           partial_analysis?: Record<string, unknown> | null;
           secret?: string | null;
+          upload_key?: string | null;
           source_email_id?: string | null;
           source_attachment_id?: string | null;
           source_email_recipient?: string | null;
@@ -1566,6 +1588,9 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      claim_push_deliveries: { Args: { p_limit?: number }; Returns: PushDelivery[] };
+      accept_family_task: { Args: { p_task_id: string }; Returns: undefined };
+
       append_to_manual_note: {
         Args: {
           p_document_id: string;
@@ -1837,3 +1862,11 @@ export type Database = {
 };
 
 export type DatabaseSchema = Database["public"];
+
+export type PushDelivery = {
+  id: string; device_id: string; user_id: string; family_id: string; event_key: string;
+  kind: "document_ready" | "document_failed" | "task_assigned" | "task_accepted" | "daily";
+  document_id: string | null; task_id: string | null;
+  state: "pending" | "sending" | "ticket" | "sent" | "failed";
+  attempts: number; retry_at: string; receipt_id: string | null; created_at: string;
+};

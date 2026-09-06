@@ -399,7 +399,7 @@ describe("native motion wiring", () => {
     expect(search).toContain("Was möchtest du wissen?");
     // Suggestions know the family; past conversations are one tap away.
     expect(search).toContain(
-      "buildPersonalChatPrompts({",
+      "buildPersonalChatStarters({",
     );
     expect(search).toContain("upcomingTaskTitle");
     expect(search).toContain("listConversations(family.id)");

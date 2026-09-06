@@ -1,3 +1,4 @@
+import { NativeArrivals } from "@/src/components/native-arrivals";
 import {
   Figtree_400Regular,
   Figtree_500Medium,
@@ -212,6 +213,7 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={ordiloTheme}>
+      <NativeArrivals familyId={family && isOnboardingComplete(family) && !needsWelcomeIntro(family) ? family.id : null} userId={session?.user.id ?? null} />
       <Stack
         screenOptions={{
           headerShown: false,
@@ -239,6 +241,8 @@ function RootLayoutNav() {
             presentation: "modal",
           }}
         />
+        <Stack.Screen name="empfangen" />
+        <Stack.Screen name="posteingang" />
         <Stack.Screen name="familie" />
         <Stack.Screen name="einstellungen" />
         <Stack.Screen name="document/[id]" />

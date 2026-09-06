@@ -275,5 +275,5 @@ $$;
 -- user's JWT, so RLS applies) should invoke this. Supabase exposes functions
 -- to the `authenticated` and `anon` roles by default; we tighten to
 -- `authenticated` since confirm requires a session.
-revoke execute on function public.confirm_document(uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb) from public;
-grant execute on function public.confirm_document(uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb) to authenticated;
+revoke execute on function public.confirm_document(uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb) from public;
+grant execute on function public.confirm_document(uuid, uuid, text, text, text, text, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb) to authenticated;

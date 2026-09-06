@@ -1,3 +1,4 @@
+import { deliverPushNotifications } from "@/lib/push";
 import { after } from "next/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
 import { runPendingJobs } from "@/lib/jobs";
@@ -52,6 +53,7 @@ export async function POST(request: Request): Promise<Response> {
     const adminClient = createAdminClient();
     const summary = await runPendingJobs(adminClient, limit);
     after(async () => {
+      await deliverPushNotifications(adminClient);
       await deliverInboundEmailNotifications(
         process.env.APP_BASE_URL ?? new URL(request.url).origin,
       );

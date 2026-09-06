@@ -41,6 +41,7 @@ import {
   clearStoredPushToken,
   enablePushNotifications,
   getPushPermission,
+  isPushRegistered,
   type PushPermissionState,
 } from "@/src/lib/notifications";
 import { useSession } from "@/src/lib/session";
@@ -65,6 +66,8 @@ export default function EinstellungenScreen() {
   } = useAppLock();
 
   const [pushState, setPushState] = useState<PushPermissionState | null>(null);
+  const [pushRegistered, setPushRegistered] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
 
   // Re-read on focus: the user may have just come back from the iOS
@@ -72,15 +75,22 @@ export default function EinstellungenScreen() {
   useFocusEffect(
     useCallback(() => {
       void getPushPermission().then(setPushState);
+      void isPushRegistered().then(setPushRegistered).catch(() => setPushRegistered(false));
     }, []),
   );
 
   async function handlePushToggle(enable: boolean) {
+    if (pushBusy) return;
     if (enable) {
+      setPushBusy(true);
       const result = await enablePushNotifications();
       setPushState(result.state);
-      if (result.state === "granted") {
+      setPushRegistered(Boolean(result.token));
+      setPushBusy(false);
+      if (result.state === "granted" && result.token) {
         haptics.success();
+      } else if (result.state === "granted") {
+        Alert.alert("Noch nicht eingerichtet", "Die Erlaubnis ist da, aber die Verbindung zu Ordilo fehlt noch. Bitte versuch es gleich nochmal.");
       } else if (result.state === "blocked") {
         haptics.warning();
         Alert.alert(
@@ -172,16 +182,16 @@ export default function EinstellungenScreen() {
           <SettingsToggleRow
             description={
               pushState === "granted"
-                ? "Ordilo darf dich benachrichtigen."
+                ? pushRegistered ? "Aufgaben, Termine und neue Dokumente. Nachts von 20 bis 8 Uhr bleibt Ordilo still." : "Noch nicht verbunden. Tippe zum erneuten Einrichten."
                 : pushState === "blocked"
                   ? "In den iPhone-Einstellungen blockiert."
                   : "Zum Beispiel wenn jemand aus deiner Familie etwas teilt."
             }
-            disabled={pushState === null}
+            disabled={pushState === null || pushBusy}
             icon={<Bell color={colors.harborBlue} size={20} strokeWidth={1.75} />}
             onToggle={(value) => void handlePushToggle(value)}
             title="Mitteilungen"
-            value={pushState === "granted"}
+            value={pushState === "granted" && pushRegistered}
           />
         </SettingsSection>
 

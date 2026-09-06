@@ -1,5 +1,6 @@
 import {
   buildConfirmDocumentPayload,
+  confirmedDocumentOutcomes,
   calendarEligibleDateIndices,
   confirmDocumentReview,
   defaultCalendarDateIndices,
@@ -300,4 +301,16 @@ describe("calendar pre-selection", () => {
     expect([...remapCalendarSelection(new Set([0, 2]), 3)]).toEqual([0, 2]);
     expect([...remapCalendarSelection(new Set([1]), 1)]).toEqual([]);
   });
+});
+
+
+it("describes only the retained nonempty tasks and selected calendar entries", () => {
+  const result = confirmedDocumentOutcomes({ ...analysis,
+    tasks: [{ title: " ", due_date: null, confidence: 1 }, { title: "Formular abgeben", due_date: "2026-09-10", confidence: 1 }],
+    dates: [{ type: "event", label: "Ungewählt", date: "2026-09-09", confidence: 1 }, { type: "event", label: "Elternabend", date: "2026-09-11", confidence: 1 }],
+  }, { tasksKept: 1, eventsCreated: 1 }, [1]);
+  expect(result).toHaveLength(2);
+  expect(result[0]).toContain("Formular abgeben");
+  expect(result[1]).toContain("Elternabend");
+  expect(result.join()).not.toContain("Ungewählt");
 });

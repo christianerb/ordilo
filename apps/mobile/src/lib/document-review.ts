@@ -602,3 +602,13 @@ export function isImageFile(mimeType: string | null): boolean {
 export function canReviewDocument(status: string): status is "analyzed" {
   return status === "analyzed";
 }
+
+/** Only facts the confirmation actually retained are described as saved. */
+export function confirmedDocumentOutcomes(analysis: ReviewAnalysis, result: ConfirmDocumentResult, calendarDateIndices: number[]): string[] {
+  const tasks = analysis.tasks.filter((task) => task.title.trim()).slice(0, result.tasksKept).map((task) =>
+    task.due_date ? `${task.title} — bis ${formatReviewDate(task.due_date)} im Plan` : `${task.title} — in eurem Plan`,
+  );
+  const dates = calendarDateIndices.map((index) => analysis.dates[index]).filter(Boolean)
+    .slice(0, result.eventsCreated).map((date) => `${date.label} — ${formatReviewDate(date.date)} im Kalender`);
+  return [...tasks, ...dates];
+}

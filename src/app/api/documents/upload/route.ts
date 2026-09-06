@@ -1,3 +1,5 @@
+import { deliverPushNotifications } from "@/lib/push";
+import { createHash } from "node:crypto";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
@@ -26,6 +28,27 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
  * document). 50/day is generous for a family app while blocking abuse.
  */
 const DAILY_UPLOAD_LIMIT = 50;
+
+async function resumeExistingUpload(document: { id: string; status: string }, familyId: string): Promise<Response> {
+  let serverPipeline = ["ocr_processing", "analyzing", "analyzed", "confirmed"].includes(document.status);
+  if (["uploaded", "ocr_done"].includes(document.status) && process.env.PIPELINE_MODE !== "sync") {
+    try {
+      const admin = createAdminClient();
+      const { enqueueJob, runPendingJobs } = await import("@/lib/jobs");
+      serverPipeline = await enqueueJob(admin, { document_id: document.id, family_id: familyId, job_type: document.status === "ocr_done" ? "analyze" : "ocr" });
+      if (serverPipeline) {
+        const { after } = await import("next/server");
+        after(async () => {
+          for (let round = 0; round < 5; round++) {
+            if ((await runPendingJobs(admin, 3)).claimed === 0) break;
+          }
+          await deliverPushNotifications(admin);
+        });
+      }
+    } catch { serverPipeline = false; }
+  }
+  return Response.json({ document_id: document.id, status: "uploaded", server_pipeline: serverPipeline });
+}
 
 /**
  * POST /api/documents/upload
@@ -152,6 +175,17 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
+  const uploadKey = formData.get("upload_key");
+  if (uploadKey !== null && (typeof uploadKey !== "string" || !/^[a-zA-Z0-9_-]{8,120}$/.test(uploadKey))) {
+    return jsonError("Ungültiger Import. Bitte Datei erneut auswählen.", "INVALID_UPLOAD_KEY", 400);
+  }
+  if (typeof uploadKey === "string") {
+    const { data: existing, error } = await serverClient.from("documents").select("id, status")
+      .eq("family_id", familyId).eq("uploaded_by", user.id).eq("upload_key", uploadKey).maybeSingle();
+    if (error) return jsonError("Der Import konnte nicht geprüft werden.", "UPLOAD_LOOKUP_FAILED", 503);
+    if (existing) return resumeExistingUpload(existing, familyId);
+  }
+
   // 4b. Check daily upload limit ------------------------------------------
   // Count documents created today for this family to prevent cost runaway
   // from mass uploads. Each document triggers OCR + LLM extraction.
@@ -173,7 +207,9 @@ export async function POST(request: Request): Promise<Response> {
 
   // 5. Generate document ID and upload to Storage -------------------------
   const adminClient = createAdminClient();
-  const documentId = crypto.randomUUID();
+  // Deterministic only within this user/family/key, so a lost response can be retried safely.
+  const hash = typeof uploadKey === "string" ? createHash("sha256").update(`${familyId}:${user.id}:${uploadKey}`).digest("hex") : null;
+  const documentId = hash ? `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}` : crypto.randomUUID();
 
   // Build the Storage path: {family_id}/{document_id}/{filename}
   // Sanitize the filename to avoid path traversal issues.
@@ -187,7 +223,7 @@ export async function POST(request: Request): Promise<Response> {
       upsert: false,
     });
 
-  if (uploadError) {
+  if (uploadError && !(uploadKey && ("statusCode" in uploadError) && String(uploadError.statusCode) === "409")) {
     reportPipelineFailure(uploadError, {
       stage: "upload",
       code: getErrorCode(uploadError, "STORAGE_UPLOAD_FAILED"),
@@ -215,11 +251,16 @@ export async function POST(request: Request): Promise<Response> {
       file_url: storagePath,
       original_filename: file.name,
       mime_type: file.type,
+      ...(uploadKey ? { upload_key: uploadKey as string } : {}),
     })
     .select("id")
     .single();
 
   if (insertError || !docRow) {
+    if (uploadKey) {
+      const { data: existing } = await serverClient.from("documents").select("id, status").eq("id", documentId).eq("family_id", familyId).eq("uploaded_by", user.id).maybeSingle();
+      if (existing) return resumeExistingUpload(existing, familyId);
+    }
     reportPipelineFailure(
       insertError ?? new Error("Document insert returned no row."),
       {
@@ -232,7 +273,9 @@ export async function POST(request: Request): Promise<Response> {
     );
     // DB insert failed — clean up the orphaned Storage object so we don't
     // leave a file with no corresponding document row.
-    await adminClient.storage.from("documents").remove([storagePath]);
+    // A keyed upload may have committed despite a lost DB response. Keep its
+    // deterministic object for retry instead of deleting another request's file.
+    if (!uploadKey) await adminClient.storage.from("documents").remove([storagePath]);
 
     return jsonError(
       "Dokument konnte nicht gespeichert werden. Bitte erneut versuchen.",
@@ -281,6 +324,7 @@ export async function POST(request: Request): Promise<Response> {
               const summary = await runPendingJobs(adminClient, 3);
               if (summary.claimed === 0) break;
             }
+            await deliverPushNotifications(adminClient);
           } catch (err) {
             // Jobs stay pending — the retry/backoff worker and the
             // client-triggered pipeline both cover for this.
