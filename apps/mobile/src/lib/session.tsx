@@ -9,6 +9,7 @@ import {
 } from "react";
 import { AppState } from "react-native";
 
+import { unregisterPushDevice } from "./notifications";
 import { getSupabase } from "./supabase";
 
 interface SessionContextValue {
@@ -90,6 +91,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       session,
       isLoading,
       signOut: async () => {
+        await unregisterPushDevice().catch(() => {});
         await signOutSession(getSupabase().auth);
       },
     }),

@@ -45,11 +45,24 @@ export type PersistedScanQueueItem = ScannedDocument & {
 export class ScanValidationError extends Error {}
 
 const SCAN_QUEUE_DIRECTORY = `${FileSystem.documentDirectory}ordilo-scan/`;
-const SCAN_QUEUE_MANIFEST = `${SCAN_QUEUE_DIRECTORY}queue.json`;
+function queueDirectory(familyId?: string): string {
+  if (familyId && !/^[a-zA-Z0-9-]+$/.test(familyId)) throw new Error("Ungültige Familie.");
+  return familyId ? `${SCAN_QUEUE_DIRECTORY}${familyId}/` : SCAN_QUEUE_DIRECTORY;
+}
 const PIPELINE_POLL_INTERVAL_MS = 1_000;
 const PIPELINE_POLL_ATTEMPTS = 75;
 const ANALYSIS_POLL_ATTEMPTS = 200;
 let pendingQueueCheckpoint: Promise<void> = Promise.resolve();
+
+/** Inspect server state before retrying; a failed background job must restart, not just poll forever. */
+export async function resumeScannedDocument(documentId: string, onStep?: (step: ScanProcessingStep) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
+  const { data, error } = await getSupabase().from("documents").select("status, failure_stage").eq("id", documentId).maybeSingle();
+  if (error || !data) throw new Error("Das Dokument konnte nicht geladen werden. Bitte versuch es nochmal.");
+  if (data.status === "uploaded" || data.status === "failed" || data.status === "ocr_done") {
+    const step = data.status === "ocr_done" || (data.status === "failed" && data.failure_stage === "analyze") ? "analysis" : "ocr";
+    await continueScannedDocumentPipeline(documentId, step, onStep, signal);
+  }
+}
 
 async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
@@ -180,12 +193,14 @@ async function postPipelineStep(path: string, signal?: AbortSignal): Promise<voi
 
 export async function stageScannedDocument(
   document: ScannedDocument,
+  familyId?: string,
 ): Promise<ScannedDocument> {
-  await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
+  const directory = queueDirectory(familyId);
+  await FileSystem.makeDirectoryAsync(directory, {
     intermediates: true,
   });
   const safeName = document.name.replace(/[^A-Za-z0-9._-]/g, "-");
-  const uri = `${SCAN_QUEUE_DIRECTORY}${document.id}-${safeName}`;
+  const uri = `${directory}${document.id}-${safeName}`;
   await FileSystem.copyAsync({ from: document.uri, to: uri });
   const info = await FileSystem.getInfoAsync(uri);
   const staged = {
@@ -206,38 +221,64 @@ export async function removeStagedScannedDocument(uri: string): Promise<void> {
   await FileSystem.deleteAsync(uri, { idempotent: true });
 }
 
-export async function loadPersistedScanQueue(): Promise<PersistedScanQueueItem[]> {
+export async function loadPersistedScanQueue(familyId?: string): Promise<PersistedScanQueueItem[]> {
+  const manifestPath = `${queueDirectory(familyId)}queue.json`;
   try {
-    const manifest = await FileSystem.getInfoAsync(SCAN_QUEUE_MANIFEST);
+    const manifest = await FileSystem.getInfoAsync(manifestPath);
     if (!manifest.exists) return [];
-    const parsed = JSON.parse(
-      await FileSystem.readAsStringAsync(SCAN_QUEUE_MANIFEST),
-    ) as PersistedScanQueueItem[];
+    const parsed = z.array(z.object({
+      id: z.string().regex(/^[a-zA-Z0-9_-]+$/),
+      uri: z.string().refine((uri) => uri.startsWith(queueDirectory(familyId))),
+      name: z.string(), mimeType: acceptedMimeTypeSchema, size: z.number().nonnegative().optional(),
+      documentId: z.string().optional(), error: z.string().optional(),
+      processingStep: z.enum(["ocr", "analysis"]).optional(), serverPipeline: z.boolean().optional(),
+      state: z.enum(["queued", "uploading", "processing", "failed"]),
+    })).parse(JSON.parse(await FileSystem.readAsStringAsync(manifestPath)));
     const valid = await Promise.all(
       parsed.map(async (item) => {
         const info = await FileSystem.getInfoAsync(item.uri);
-        return info.exists ? item : null;
+        // The server ID still permits recovery even if the OS removed a local copy.
+        if (info.exists || item.documentId) return item;
+        throw new Error("Eine Importdatei fehlt. Bitte teile sie erneut mit Ordilo.");
       }),
     );
-    return valid.filter((item): item is PersistedScanQueueItem => item !== null);
+    return valid;
   } catch {
-    return [];
+    throw new Error("Gespeicherte Importe konnten nicht gelesen werden. Sie wurden nicht gelöscht. Bitte versuch es erneut.");
   }
 }
 
 export function persistScanQueue(
   queue: PersistedScanQueueItem[],
+  familyId?: string,
 ): Promise<void> {
+  const directory = queueDirectory(familyId);
+  const manifestPath = `${directory}queue.json`;
   const checkpoint = pendingQueueCheckpoint.then(async () => {
-    await FileSystem.makeDirectoryAsync(SCAN_QUEUE_DIRECTORY, {
+    await FileSystem.makeDirectoryAsync(directory, {
       intermediates: true,
     });
     await FileSystem.writeAsStringAsync(
-      SCAN_QUEUE_MANIFEST,
+      manifestPath,
       JSON.stringify(queue),
     );
   });
   pendingQueueCheckpoint = checkpoint.catch(() => undefined);
+  return checkpoint;
+}
+
+/** Merge new arrivals that another mounted intake screen has not seen yet. */
+export function reconcileScanQueue(queue: PersistedScanQueueItem[], familyId: string, knownIds: string[]): Promise<PersistedScanQueueItem[]> {
+  const checkpoint = pendingQueueCheckpoint.then(async () => {
+    const current = await loadPersistedScanQueue(familyId);
+    const known = new Set([...knownIds, ...queue.map((item) => item.id)]);
+    const merged = [...queue, ...current.filter((item) => !known.has(item.id))];
+    const directory = queueDirectory(familyId);
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    await FileSystem.writeAsStringAsync(`${directory}queue.json`, JSON.stringify(merged));
+    return merged;
+  });
+  pendingQueueCheckpoint = checkpoint.then(() => {}, () => {});
   return checkpoint;
 }
 
@@ -294,6 +335,7 @@ export async function uploadScannedDocument(
   const file = new File(document.uri);
   formData.append("file", file, document.name);
   formData.append("family_id", familyId);
+  formData.append("upload_key", document.id);
 
   const response = await apiFetch("/api/documents/upload", {
     method: "POST",
@@ -320,4 +362,25 @@ export async function continueScannedDocumentPipeline(
   }
   await onStep?.("analysis");
   await postPipelineStep(`/api/documents/${documentId}/analyze`, signal);
+}
+
+/** Explicit upgrade recovery: the old queue had no family scope. Never infer it. */
+export async function recoverLegacyScanQueue(familyId: string): Promise<void> {
+  const legacy = await loadPersistedScanQueue();
+  for (const item of legacy) {
+    if (item.documentId) {
+      const { data, error } = await getSupabase().from("documents").select("family_id").eq("id", item.documentId).maybeSingle();
+      if (error || !data || data.family_id !== familyId) {
+        throw new Error("Ein früherer Import gehört nicht zu dieser Familie. Er bleibt auf dem Gerät gespeichert.");
+      }
+    }
+    const info = await FileSystem.getInfoAsync(item.uri);
+    const staged = info.exists ? await stageScannedDocument(item, familyId) : { ...item, uri: `${queueDirectory(familyId)}${item.id}` };
+    await reconcileScanQueue([{ ...item, ...staged, state: "queued" }], familyId, []);
+    // Removing from the old manifest only after the new one is durable makes
+    // crashes replay-safe without losing the original file.
+    const remaining = await loadPersistedScanQueue();
+    await persistScanQueue(remaining.filter((entry) => entry.id !== item.id));
+    await removeStagedScannedDocument(item.uri);
+  }
 }

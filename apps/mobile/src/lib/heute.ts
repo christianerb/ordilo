@@ -229,7 +229,6 @@ export async function loadHeuteData(familyId: string): Promise<HeuteData> {
       .from("documents")
       .select(DOCUMENT_SELECT)
       .eq("family_id", familyId)
-      .neq("status", "failed")
       .order("created_at", { ascending: false })
       .limit(JOURNAL_DOCS_LIMIT),
     supabase
@@ -825,6 +824,8 @@ export function findMember(
 export type HeuteBriefing =
   | { kind: "task"; task: HeuteTask; due: { text: string; overdue: boolean } }
   | { kind: "review"; count: number; document: HeuteDocument }
+  | { kind: "event"; occurrence: HeuteEventOccurrence }
+  | { kind: "processing"; document: HeuteDocument }
   | { kind: "calm"; upcomingCount: number };
 
 export function getHeuteBriefing(
@@ -832,6 +833,7 @@ export function getHeuteBriefing(
   reviewDocuments: HeuteDocument[],
   upcomingCount: number,
   date = new Date(),
+  context: { todayEvents?: HeuteEventOccurrence[]; documents?: HeuteDocument[] } = {},
 ): HeuteBriefing {
   const today = toLocalDateStr(date);
   const dated = getDatedOpenTasks(tasks);
@@ -839,6 +841,8 @@ export function getHeuteBriefing(
   if (urgent) {
     return { kind: "task", task: urgent, due: formatDueLabel(urgent.dueDate, date)! };
   }
+  const nextEvent = context.todayEvents?.[0];
+  if (nextEvent) return { kind: "event", occurrence: nextEvent };
   const review = reviewDocuments.filter((document) => document.status === "analyzed");
   if (review.length > 0) {
     return { kind: "review", count: review.length, document: review[0]! };
@@ -851,6 +855,8 @@ export function getHeuteBriefing(
       due: formatDueLabel(tomorrow.dueDate, date)!,
     };
   }
+  const unfinished = context.documents?.find((document) => !["analyzed", "confirmed"].includes(document.status));
+  if (unfinished) return { kind: "processing", document: unfinished };
   return { kind: "calm", upcomingCount };
 }
 

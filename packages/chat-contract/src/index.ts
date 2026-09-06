@@ -424,6 +424,19 @@ export function buildPersonalChatPrompts(input: {
   return prompts.slice(0, 3);
 }
 
+/** Short display labels retain the complete source context in the sent prompt. */
+export function buildPersonalChatStarters(input: Parameters<typeof buildPersonalChatPrompts>[0]): Array<{ label: string; prompt: string }> {
+  return buildPersonalChatPrompts(input).map((prompt) => {
+    if (input.recentDocumentTitle && prompt.includes(`„${input.recentDocumentTitle.trim()}“`)) {
+      return { label: "Was ist am letzten Dokument wichtig?", prompt };
+    }
+    if (input.upcomingTaskTitle && prompt.includes(`„${input.upcomingTaskTitle.trim()}“`)) {
+      return { label: "Was brauche ich für die nächste Aufgabe?", prompt: `Hilf mir bei dieser Aufgabe: „${input.upcomingTaskTitle.trim()}“. Was muss ich konkret tun?` };
+    }
+    return { label: prompt, prompt };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // PII redaction for model-bound history
 // ---------------------------------------------------------------------------

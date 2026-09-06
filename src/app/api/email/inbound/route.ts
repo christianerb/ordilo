@@ -1,3 +1,4 @@
+import { deliverPushNotifications } from "@/lib/push";
 import { after } from "next/server";
 import { Resend } from "resend";
 import { createClient as createAdminClient } from "@/lib/supabase/admin";
@@ -93,6 +94,7 @@ export async function POST(request: Request): Promise<Response> {
           const summary = await runPendingJobs(admin, 3);
           if (summary.claimed === 0) break;
         }
+        await deliverPushNotifications(admin);
         await deliverInboundEmailNotifications(appUrl);
       });
     } else {

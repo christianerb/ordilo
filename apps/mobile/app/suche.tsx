@@ -82,7 +82,7 @@ import {
   loadConversationMessages,
   type ConversationSummary,
 } from "@/src/lib/conversations";
-import { buildPersonalChatPrompts } from "@ordilo/chat-contract";
+import { buildPersonalChatStarters } from "@ordilo/chat-contract";
 import { useFamily } from "@/src/lib/family-context";
 import { tap } from "@/src/lib/feedback";
 import { getSupabase } from "@/src/lib/supabase";
@@ -220,7 +220,7 @@ export default function SucheScreen() {
 
   const suggestions = useMemo(
     () =>
-      buildPersonalChatPrompts({
+      buildPersonalChatStarters({
         members,
         recentDocumentTitle,
         upcomingTaskTitle,
@@ -967,7 +967,7 @@ export default function SucheScreen() {
             >
               {messages.length === 0 ? (
                 <View style={styles.empty}>
-                  <OrdiloChatHero />
+                  <OrdiloChatHero compact={conversations.length > 0 || Boolean(recentDocumentTitle)} />
                   <View style={styles.welcomeCopy}>
                     <Text style={styles.emptyHeading}>Was möchtest du wissen?</Text>
                     <Text style={styles.emptyText}>
@@ -976,10 +976,10 @@ export default function SucheScreen() {
                     </Text>
                   </View>
                   <View style={styles.suggestions}>
-                    {suggestions.map((prompt) => (
+                    {suggestions.map(({ label, prompt }) => (
                       <Pressable
                         accessibilityHint="Stellt diese Frage an Ordilo"
-                        accessibilityLabel={prompt}
+                        accessibilityLabel={label}
                         accessibilityRole="button"
                         disabled={busy}
                         key={prompt}
@@ -992,7 +992,7 @@ export default function SucheScreen() {
                           pressed && styles.pressed,
                         ]}
                       >
-                        <Text style={styles.suggestionText}>{prompt}</Text>
+                        <Text style={styles.suggestionText}>{label}</Text>
                         <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
                       </Pressable>
                     ))}

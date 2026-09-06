@@ -2,25 +2,34 @@ name: Job Runner
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: ordilo-background-jobs
+  cancel-in-progress: false
 
 jobs:
   run:
-    name: Trigger /api/jobs/run
+    name: Process documents and notifications
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - name: Trigger job runner
+      - name: Process documents
+        env:
+          RUNNER_SECRET: ${{ secrets.JOBS_RUNNER_SECRET }}
+          APP_ORIGIN: ${{ vars.VERCEL_DEPLOYMENT_URL || 'https://ordilo-six.vercel.app' }}
         run: |
-          response=$(curl -s -w "\n%{http_code}" -X POST \
-            -H "Authorization: Bearer ${{ secrets.JOBS_RUNNER_SECRET }}" \
-            -H "Content-Type: application/json" \
-            -d '{"limit": 10}' \
-            "${{ vars.VERCEL_DEPLOYMENT_URL || 'https://ordilo-six.vercel.app' }}/api/jobs/run")
-          http_code=$(echo "$response" | tail -1)
-          body=$(echo "$response" | sed '$d')
-          echo "HTTP status: $http_code"
-          echo "Response: $body"
-          if [ "$http_code" -ge 400 ]; then
-            echo "::warning::Job runner returned HTTP $http_code"
-          fi
+          curl --fail-with-body --silent --show-error --max-time 310 \
+            -X POST -H "Authorization: Bearer $RUNNER_SECRET" \
+            -H "Content-Type: application/json" -d '{"limit": 10}' \
+            "$APP_ORIGIN/api/jobs/run"
+      - name: Process reminders and delivery receipts
+        if: ${{ always() }}
+        env:
+          RUNNER_SECRET: ${{ secrets.JOBS_RUNNER_SECRET }}
+          APP_ORIGIN: ${{ vars.VERCEL_DEPLOYMENT_URL || 'https://ordilo-six.vercel.app' }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 310 \
+            -H "Authorization: Bearer $RUNNER_SECRET" \
+            "$APP_ORIGIN/api/notifications/run"

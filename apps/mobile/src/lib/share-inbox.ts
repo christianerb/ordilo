@@ -1,0 +1,55 @@
+import { Directory, File, Paths } from "expo-file-system";
+import { Platform } from "react-native";
+import { clearSharedPayloads, getResolvedSharedPayloadsAsync, getSharedPayloads } from "expo-sharing";
+import type { ResolvedSharePayload } from "expo-sharing";
+import { z } from "zod";
+
+const attachment = z.object({
+  value: z.string(), shareType: z.enum(["file", "image"]), mimeType: z.string(),
+  contentUri: z.string(), contentType: z.enum(["file", "image"]),
+  contentMimeType: z.string(), originalName: z.string(), contentSize: z.number().positive(),
+});
+export type ShareDelivery = { id: string; payloads: ResolvedSharePayload[]; acknowledge: () => void };
+
+function inbox(): Directory | null {
+  const group = Paths.appleSharedContainers["group.com.ordilo.app"];
+  return group ? new Directory(group, "ordilo-inbox") : null;
+}
+
+/** Read only committed deliveries; acknowledging one cannot erase a newer share. */
+export async function readShareInbox(): Promise<ShareDelivery[]> {
+  if (Platform.OS !== "ios") {
+    if (!getSharedPayloads().length) return [];
+    return [{ id: "android", payloads: await getResolvedSharedPayloadsAsync(), acknowledge: clearSharedPayloads }];
+  }
+  const root = inbox();
+  if (!root?.exists) return [];
+  const deliveries: ShareDelivery[] = [];
+  for (const dir of root.list()) {
+    if (!(dir instanceof Directory)) continue;
+    const manifest = new File(dir, "ready.json");
+    if (!manifest.exists) continue;
+    const payloads = z.array(attachment).min(1).max(10).parse(JSON.parse(await manifest.text()));
+    if (payloads.some((payload) => !payload.contentUri.startsWith(`${dir.uri.replace(/\/$/, "")}/`))) {
+      throw new Error("Der Eingang konnte nicht gelesen werden. Deine Dateien bleiben gespeichert.");
+    }
+    deliveries.push({ id: dir.name, payloads, acknowledge: () => dir.delete() });
+  }
+  return deliveries;
+}
+
+export function hasIncomingShare(): boolean {
+  if (Platform.OS !== "ios") return getSharedPayloads().length > 0;
+  const root = inbox();
+  return Boolean(root?.exists && root.list().some((dir) => dir instanceof Directory && new File(dir, "ready.json").exists));
+}
+
+/** Explicit user cancellation only; staged family queues and source apps are untouched. */
+export function discardIncomingShares(): void {
+  if (Platform.OS !== "ios") { clearSharedPayloads(); return; }
+  const root = inbox();
+  if (!root?.exists) return;
+  for (const dir of root.list()) {
+    if (dir instanceof Directory && new File(dir, "ready.json").exists) dir.delete();
+  }
+}

@@ -1,4 +1,4 @@
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   CalendarDays,
   Check,
@@ -106,6 +106,7 @@ export default function HeuteScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [completedTask, setCompletedTask] = useState<HeuteTask | null>(null);
   const [mutatingTaskId, setMutatingTaskId] = useState<string | null>(null);
   const [mutatingSuggestionId, setMutatingSuggestionId] = useState<
     string | null
@@ -143,11 +144,7 @@ export default function HeuteScreen() {
     [family],
   );
 
-  useEffect(() => {
-    // The microtask boundary keeps render-to-fetch state updates out of the
-    // effect body while still loading immediately after a family resolves.
-    void Promise.resolve().then(() => load());
-  }, [load]);
+  useFocusEffect(useCallback(() => { void load(true); }, [load]));
 
   // Refresh both date-derived groups and the bounded event query after
   // midnight or returning to foreground. Recalculating occurrences alone
@@ -234,8 +231,8 @@ export default function HeuteScreen() {
     agenda.hiddenCount,
   );
   const briefing = useMemo(
-    () => getHeuteBriefing(tasks, reviewDocuments, upcomingCount, referenceDate),
-    [tasks, reviewDocuments, upcomingCount, referenceDate],
+    () => getHeuteBriefing(tasks, reviewDocuments, upcomingCount, referenceDate, { todayEvents, documents: journalDocuments }),
+    [tasks, reviewDocuments, upcomingCount, referenceDate, todayEvents, journalDocuments],
   );
   const daySummary = useMemo(
     () =>
@@ -279,7 +276,7 @@ export default function HeuteScreen() {
 
   const toggleTask = useCallback(
     async (task: HeuteTask) => {
-      if (!family || mutatingTaskId) return;
+      if (!family || mutatingTaskId) return false;
       const nextStatus = task.status === "done" ? "open" : "done";
       const previousTasks = tasks;
       setMutatingTaskId(task.id);
@@ -297,9 +294,11 @@ export default function HeuteScreen() {
         setError(result.error);
         void fail();
       } else if (nextStatus === "done") {
+        setCompletedTask(task);
         void success();
       }
       setMutatingTaskId(null);
+      return result.success;
     },
     [family, mutatingTaskId, tasks],
   );
@@ -435,7 +434,7 @@ export default function HeuteScreen() {
 
         {isFirstVisit ? (
           <FirstVisit
-            onAsk={() => router.push("/suche")}
+            onAsk={() => router.push("/posteingang")}
             onScan={() => router.push({ pathname: "/scan", params: { auto: "1" } })}
           />
         ) : (
@@ -448,6 +447,11 @@ export default function HeuteScreen() {
             taskBusy={mutatingTaskId === heroTaskId}
           />
         )}
+
+        {completedTask ? <InlineNotice message={`Erledigt: ${completedTask.title}`} actionLabel="Rückgängig" onAction={() => {
+          if (mutatingTaskId) return;
+          void toggleTask({ ...completedTask, status: "done" }).then((ok) => { if (ok) setCompletedTask(null); });
+        }} /> : null}
 
         {error ? (
           <InlineNotice
@@ -635,11 +639,24 @@ function BriefingCard({
 }: {
   briefing: HeuteBriefing;
   members: HeuteMember[];
-  onCompleteTask: (task: HeuteTask) => Promise<void>;
+  onCompleteTask: (task: HeuteTask) => Promise<boolean>;
   onOpenDocument: (documentId: string) => void;
   onOpenLibrary: () => void;
   taskBusy: boolean;
 }) {
+  if (briefing.kind === "event") {
+    return <Animated.View entering={contentEntering()} key={`event-${briefing.occurrence.id}`} style={styles.briefing}>
+      <Text style={styles.briefingLabel}>Heute im Plan</Text>
+      <TodayEventRow event={briefing.occurrence} first members={members} />
+    </Animated.View>;
+  }
+  if (briefing.kind === "processing") {
+    return <Animated.View entering={contentEntering()} key={`document-${briefing.document.id}`} style={styles.briefing}>
+      <Text style={styles.briefingTitle}>{briefing.document.status === "failed" ? "Ein Dokument braucht deine Hilfe" : "Ein Dokument wird noch gelesen"}</Text>
+      <Text style={styles.briefingText}>Noch sind nicht alle Informationen geprüft.</Text>
+      <OrdiloButton title="Dokument ansehen" onPress={() => onOpenDocument(briefing.document.id)} />
+    </Animated.View>;
+  }
   if (briefing.kind === "task") {
     const { task, due } = briefing;
     const assignee = findMember(members, task.assignedTo);
@@ -767,11 +784,11 @@ function BriefingCard({
     >
       <View style={styles.briefingRow}>
         <View style={styles.briefingCopy}>
-          <Text style={styles.briefingLabel}>Alles im grünen Bereich</Text>
-          <Text style={styles.briefingTitle}>Heute ist nichts dringend.</Text>
+          <Text style={styles.briefingLabel}>Ein ruhiger Moment</Text>
+          <Text style={styles.briefingTitle}>Keine offenen Fristen für heute.</Text>
           <Text style={styles.briefingText}>
             {briefing.upcomingCount === 0
-              ? "Keine Fristen heute oder morgen. Ordilo passt weiter auf."
+              ? "In eurem Plan sind für heute und morgen keine offenen Aufgaben mit Frist."
               : briefing.upcomingCount === 1
                 ? "Eine Sache steht in den nächsten Tagen an."
                 : `${briefing.upcomingCount} Dinge stehen in den nächsten Tagen an.`}
@@ -806,7 +823,7 @@ function FirstVisit({ onAsk, onScan }: { onAsk: () => void; onScan: () => void }
         onPress={onAsk}
         style={({ pressed }) => [styles.firstVisitLink, pressed && styles.pressed]}
       >
-        <Text style={styles.firstVisitLinkText}>Oder erst mal Ordilo etwas fragen</Text>
+        <Text style={styles.firstVisitLinkText}>Oder eine E-Mail weiterleiten</Text>
       </Pressable>
     </View>
   );
@@ -928,7 +945,7 @@ function AgendaRow({
   busy: boolean;
   entry: HeuteAgendaEntry;
   members: HeuteMember[];
-  onToggleTask: (task: HeuteTask) => Promise<void>;
+  onToggleTask: (task: HeuteTask) => Promise<boolean>;
 }) {
   if (entry.kind === "task" && entry.task) {
     const task = entry.task;
