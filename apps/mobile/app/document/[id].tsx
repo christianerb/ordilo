@@ -1,3 +1,6 @@
+import { confirmedDocumentOutcomes } from "@/src/lib/document-review";
+import { enablePushNotifications, isPushRegistered } from "@/src/lib/notifications";
+import { loadPersistedScanQueue } from "@/src/lib/scan";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import * as Linking from "expo-linking";
@@ -132,6 +135,10 @@ export default function DocumentReviewScreen() {
   const [showDocumentDetails, setShowDocumentDetails] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [calendarDates, setCalendarDates] = useState<Set<number>>(new Set());
+  const [remainingImports, setRemainingImports] = useState(0);
+  const [reminderReady, setReminderReady] = useState(false);
+  const [reminderBusy, setReminderBusy] = useState(false);
+  const [reminderError, setReminderError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<ConfirmDocumentResult | null>(null);
   const menuRef = useRef<OrdiloSheetHandle>(null);
   const pendingMenuRef = useRef<"original" | "edit" | "delete" | null>(null);
@@ -267,6 +274,8 @@ export default function DocumentReviewScreen() {
       await success();
       refreshLibraryDocuments();
       setConfirmed(result);
+      void isPushRegistered().then(setReminderReady).catch(() => setReminderReady(false));
+      if (family) void loadPersistedScanQueue(family.id).then((queue) => setRemainingImports(queue.length)).catch(() => setRemainingImports(0));
     } catch {
       await fail();
       Alert.alert("Nicht gespeichert", "Bitte prüfe deine Verbindung und versuch es nochmal.");
@@ -455,18 +464,7 @@ export default function DocumentReviewScreen() {
   }
 
   if (confirmed) {
-    const outcome = [
-      confirmed.eventsCreated === 1
-        ? "1 Termin im Kalender"
-        : confirmed.eventsCreated > 1
-          ? `${confirmed.eventsCreated} Termine im Kalender`
-          : null,
-      confirmed.tasksKept === 1
-        ? "1 Aufgabe auf der Liste"
-        : confirmed.tasksKept > 1
-          ? `${confirmed.tasksKept} Aufgaben auf der Liste`
-          : null,
-    ].filter(Boolean);
+    const outcome = "summary" in document ? confirmedDocumentOutcomes(document, confirmed, [...calendarDates].filter((index) => calendarEligible.has(index))) : [];
     return (
       <Screen
         style={[
@@ -477,6 +475,7 @@ export default function DocumentReviewScreen() {
           },
         ]}
       >
+        <ScrollView contentContainerStyle={{ flexGrow: 1 }} showsVerticalScrollIndicator={false}>
         <Animated.View
           entering={contentEntering()}
           style={styles.confirmedContent}
@@ -491,9 +490,11 @@ export default function DocumentReviewScreen() {
           <Text style={styles.confirmedHeading}>Alles sicher abgelegt</Text>
           <Text style={styles.confirmedCopy}>
             {outcome.length > 0
-              ? `Ordilo hat sich das gemerkt: ${outcome.join(" und ")}.`
+              ? "Das ist jetzt für euch festgehalten:"
               : "Deine Familie kann das Dokument jetzt jederzeit wiederfinden."}
           </Text>
+          {outcome.slice(0, 3).map((line, index) => <Text key={`${index}-${line}`} style={styles.confirmedCopy}>{line}</Text>)}
+          {outcome.length > 3 ? <Text style={styles.confirmedCopy}>Und {outcome.length - 3} weitere Einträge in eurem Plan.</Text> : null}
           <Card style={styles.confirmedDocument}>
             <FileText color={colors.harborBlue} size={22} />
             <Text numberOfLines={2} style={styles.confirmedDocumentTitle}>
@@ -507,22 +508,31 @@ export default function DocumentReviewScreen() {
             title={document.title ?? "Dokument"}
             eventsCreated={confirmed.eventsCreated}
             tasksKept={confirmed.tasksKept}
+            variant={remainingImports > 0 ? "outline" : "primary"}
           />
+          {outcome.length > 0 ? <>
+            {reminderReady ? <Text style={styles.confirmedCopy}>Mitteilungen sind eingerichtet. Wenn Aufgaben oder Termine anstehen, gibt es morgens einen Hinweis.</Text> : <OrdiloButton title={reminderBusy ? "Wird eingerichtet …" : "An Aufgaben und Termine erinnern"} variant="outline" disabled={reminderBusy} onPress={() => {
+              setReminderBusy(true); setReminderError(null);
+              void enablePushNotifications().then((result) => { setReminderReady(Boolean(result.token)); if (!result.token) setReminderError("Noch nicht eingerichtet. Prüfe die Mitteilungen in den App-Einstellungen."); }).finally(() => setReminderBusy(false));
+            }} />}
+            {reminderError ? <Text style={styles.confirmedCopy}>{reminderError}</Text> : null}
+          </> : null}
           {source === "scan" ? (
             <OrdiloButton
-              onPress={() => router.replace({ pathname: "/scan", params: { auto: "1" } })}
+              onPress={() => router.replace({ pathname: "/scan", params: remainingImports > 0 ? { resume: "1" } : { auto: "1" } })}
               size="lg"
-              title="Nächstes scannen"
-              variant="outline"
+              variant={remainingImports > 0 ? "primary" : "outline"}
+              title={remainingImports > 0 ? `Weiter mit ${remainingImports} ${remainingImports === 1 ? "Dokument" : "Dokumenten"}` : "Nächstes scannen"}
             />
           ) : null}
           <OrdiloButton
             onPress={() => router.replace("/(tabs)")}
             size="lg"
-            title="Fertig"
+            title="Für jetzt fertig"
             variant="ghost"
           />
         </View>
+        </ScrollView>
       </Screen>
     );
   }

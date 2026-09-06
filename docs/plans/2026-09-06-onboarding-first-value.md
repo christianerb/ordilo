@@ -22,21 +22,20 @@ Worktree: `.worktrees/feature/onboarding-first-value`.
 - Privacy-safe result-view and next-action events, plus an entry-choice event
   replacing the misleading new writes of `onboarding_scan_started`.
 
-## Deliberately owned by Mobile Relief Intake
+## Integrated with Mobile Relief Intake
 
-Do not duplicate its pending work: native scan-before-member-setup, durable
+The merged `main` now owns native scan-before-member-setup, durable
 upload/share intake, push registration/delivery, real saved outcome counts,
-home briefing recovery and task handoff. This branch does not claim those
-features are already integrated. It also does not remove the web family setup
+home briefing recovery and task handoff. This branch keeps those behaviors and
+adds first-value guidance around them. It does not remove the web family setup
 form yet; default-family creation and unified import entry should be integrated
 against the merged lifecycle, not implemented as a competing flow.
 
 ## Merge order
 
-1. Finish and merge Mobile Relief Intake into `main`.
-2. Fetch `origin/main`, then integrate it into this branch. If this branch has
-   been published, prefer merging `origin/main` rather than rewriting history.
-3. Resolve the small integration points deliberately:
+1. Mobile Relief Intake was merged into `main` as `7dd0211`.
+2. `origin/main` was merged into this published branch without rewriting history.
+3. The overlapping integration points preserve both sets of behavior:
    - native Home: retain Relief's first-visit/recovery logic; keep the example;
    - native onboarding: retain Relief's entry-first ordering; preserve the
      example-independent copy and the honest entry-choice measurement;
@@ -45,7 +44,7 @@ against the merged lifecycle, not implemented as a competing flow.
    - native Plan: retain Relief's agenda and accept the explicit `tab` parameter;
    - migration `0074` belongs to Relief. Reconcile any event allow-list additions
      before applying this branch's `0075`.
-4. Finish the shared first-run lifecycle: minimal family creation, scan/import
+4. A later change can finish the shared first-run lifecycle: minimal family creation, scan/import
    entry and resumed work. Check web and native together.
 5. Re-run all checks and real-device intake/push tests. Only then mark the PR
    ready to merge. Never reset the other worktree or repair its local database.
@@ -87,11 +86,12 @@ Automated tests cover example interaction and reset, zero demo writes, outcome
 routing on both platforms, allowed telemetry properties, inaccessible documents,
 analytics failures, pending/failed confirmation and legacy event compatibility.
 
-Final local checks passed: web lint, TypeScript, 2,939 tests and production
-build; native lint, TypeScript and 350 tests. The Expo fixture web export also
-succeeded. Browser interaction and screenshots covered the login example at
-375×667 and 1280×900; the desktop document width matched the viewport. Existing
-Next.js workspace-root/Edge-runtime and test-environment warnings remain.
+Final checks after integrating Mobile Relief passed: web lint, TypeScript,
+2,958 tests and production build; native lint, TypeScript and 369 tests. The
+earlier Expo fixture web export also succeeded. Browser interaction and
+screenshots covered the login example at 375×667 and 1280×900; the desktop
+document width matched the viewport. Existing Next.js workspace-root/Edge-runtime
+and test-environment warnings remain.
 
 The local migration dry run is blocked: the Supabase instance reached with
 `--local` has unrelated timestamp-based migration history, not this repository's

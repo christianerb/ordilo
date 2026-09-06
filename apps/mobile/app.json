@@ -17,7 +17,7 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
         "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst.",
-        "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist für die Scanner-Bibliothek erforderlich.",
+        "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist f\u00fcr die Scanner-Bibliothek erforderlich.",
         "NSMicrophoneUsageDescription": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
       },
       "config": {
@@ -86,7 +86,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente auswählen kannst."
+          "photosPermission": "Ordilo braucht Zugriff auf Fotos, damit du Dokumente ausw\u00e4hlen kannst."
         }
       ],
       "expo-web-browser",
@@ -96,7 +96,31 @@
           "microphonePermission": "Ordilo braucht das Mikrofon, damit du Fragen einsprechen kannst."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "activationRule": {
+              "supportsImageWithMaxCount": 10,
+              "supportsFileWithMaxCount": 10
+            }
+          },
+          "android": {
+            "enabled": true,
+            "singleShareMimeTypes": [
+              "application/pdf",
+              "image/*"
+            ],
+            "multipleShareMimeTypes": [
+              "application/pdf",
+              "image/*"
+            ]
+          }
+        }
+      ],
+      "./plugins/with-ordilo-share.cjs"
     ],
     "experiments": {
       "typedRoutes": false
@@ -109,7 +133,7 @@
     },
     "owner": "venturebotic",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/c3106304-9b79-4ddc-a508-fb50fdb1fe0c"

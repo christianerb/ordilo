@@ -5,6 +5,8 @@ import {
   getScanMimeType,
   MAX_SCAN_FILE_SIZE,
   persistScanQueue,
+  reconcileScanQueue,
+  resumeScannedDocument,
   stageScannedDocument,
   uploadScannedDocument,
   validateScannedDocument,
@@ -38,6 +40,7 @@ jest.mock("expo-file-system/legacy", () => ({
   copyAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
   makeDirectoryAsync: jest.fn().mockResolvedValue(undefined),
+  readAsStringAsync: jest.fn(),
   writeAsStringAsync: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -284,4 +287,26 @@ describe("native scan helpers", () => {
       expect.stringContaining('"serverPipeline":true'),
     );
   });
+});
+
+it("restarts failed server analysis rather than polling a terminal state", async () => {
+  mockMaybeSingle.mockResolvedValue({ data: { status: "failed", failure_stage: "analyze" }, error: null });
+  mockApiFetch.mockResolvedValue({} as Response);
+  await resumeScannedDocument("document-1");
+  expect(mockApiFetch).toHaveBeenCalledWith("/api/documents/document-1/analyze", { method: "POST" });
+  expect(mockApiFetch).not.toHaveBeenCalledWith("/api/documents/document-1/ocr", expect.anything());
+});
+it("does not restart processing or completed documents", async () => {
+  for (const status of ["ocr_processing", "analyzing", "analyzed", "confirmed"]) {
+    mockMaybeSingle.mockResolvedValue({ data: { status }, error: null });
+    await resumeScannedDocument("document-1");
+  }
+  expect(mockApiFetch).not.toHaveBeenCalled();
+});
+it("keeps an unseen share arrival when another screen removes a completed import", async () => {
+  jest.mocked(FileSystem.getInfoAsync).mockResolvedValue({ exists: true, size: 123 } as never);
+  const arrival = { id: "new-share", uri: "file:///documents/ordilo-scan/family-1/new.pdf", name: "new.pdf", mimeType: "application/pdf", state: "queued" };
+  jest.mocked(FileSystem.readAsStringAsync).mockResolvedValue(JSON.stringify([arrival]));
+  expect(await reconcileScanQueue([], "family-1", ["completed-import"])).toEqual([arrival]);
+  expect(FileSystem.writeAsStringAsync).toHaveBeenLastCalledWith("file:///documents/ordilo-scan/family-1/queue.json", JSON.stringify([arrival]));
 });

@@ -10,11 +10,13 @@ export function DocumentNextStep({
   title,
   eventsCreated,
   tasksKept,
+  variant = "primary",
 }: {
   documentId: string;
   title: string;
   eventsCreated: number;
   tasksKept: number;
+  variant?: "primary" | "outline";
 }) {
   const router = useRouter();
   const { family } = useFamily();
@@ -24,6 +26,7 @@ export function DocumentNextStep({
     <OrdiloButton
       title={next.label}
       size="lg"
+      variant={variant}
       onPress={() => {
         if (family) {
           void recordFirstValueEvent(family.id, {

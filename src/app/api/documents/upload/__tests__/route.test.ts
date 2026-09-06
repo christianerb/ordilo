@@ -29,6 +29,8 @@ function mockServerClient(options: {
   docInsert?: { id: string } | null;
   docInsertError?: unknown;
   todayUploadCount?: number;
+  existing?: { id: string; status: string } | null;
+  lookupError?: unknown;
 }) {
   const {
     user = { id: "user-1", email: "test@ordilo.test" },
@@ -55,6 +57,7 @@ function mockServerClient(options: {
   // .select("id", { count, head }) → .eq() → .gte() → Promise<{ count, data }>
   const documentsCountChain = {
     eq: vi.fn().mockReturnThis(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: options.existing ?? null, error: options.lookupError ?? null }),
     gte: vi.fn().mockResolvedValue({ count: todayUploadCount, data: null }),
   };
 
@@ -611,5 +614,37 @@ describe("POST /api/documents/upload", () => {
 
     expect(response.status).toBe(200);
     expect(body.status).toBe("uploaded");
+  });
+});
+
+
+describe("durable native upload retries", () => {
+  const familyId = "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa";
+  function keyedRequest() {
+    const data = new FormData();
+    data.append("file", createMockFile("brief.pdf", "application/pdf"));
+    data.append("family_id", familyId);
+    data.append("upload_key", "shared-stable-delivery");
+    return createMockRequest(data);
+  }
+  it("returns the existing document even after the daily limit is reached", async () => {
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({ existing: { id: "original", status: "analyzed" }, todayUploadCount: 50 }));
+    const admin = mockAdminClient({});
+    vi.mocked(createAdminClient).mockReturnValue(admin);
+    const response = await POST(keyedRequest());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ document_id: "original", server_pipeline: true });
+    expect(admin.storage.from).not.toHaveBeenCalled();
+  });
+  it("does not upload if the retry lookup is unavailable", async () => {
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({ lookupError: new Error("offline") }));
+    expect((await POST(keyedRequest())).status).toBe(503);
+  });
+  it("keeps a keyed storage object after an ambiguous database failure", async () => {
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({ docInsert: null, docInsertError: new Error("timeout") }));
+    const admin = mockAdminClient({});
+    vi.mocked(createAdminClient).mockReturnValue(admin);
+    expect((await POST(keyedRequest())).status).toBe(500);
+    expect(admin.storage.from("documents").remove).not.toHaveBeenCalled();
   });
 });

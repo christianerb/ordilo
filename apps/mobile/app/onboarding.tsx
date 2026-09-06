@@ -154,7 +154,7 @@ export default function OnboardingScreen() {
 
       setFamilyNameInput("");
       setStepDirection("forward");
-      setStepChoice("add-member");
+      setStepChoice("ready");
     } catch {
       setServerError(NETWORK_ERROR);
     } finally {
@@ -271,8 +271,8 @@ export default function OnboardingScreen() {
               <OnboardingProgress currentStep={1} />
               <MascotBubble>
                 Hallo! Ich bin Ordilo und kümmere mich um eure
-                Familienunterlagen — nichts geht verloren, keine Frist geht
-                unter. Zwei kurze Fragen, dann geht&apos;s los.
+                Familienunterlagen. Ich lese eure Briefe und helfe euch,
+                das Wichtige im Blick zu behalten. Wie darf ich euch nennen?
               </MascotBubble>
 
               <View style={styles.card}>
@@ -493,6 +493,7 @@ export default function OnboardingScreen() {
                   isSubmitting ? "Einen Moment…" : "Erstes Dokument scannen"
                 }
               />
+              <OrdiloButton title="Familie ergänzen" variant="ghost" disabled={isSubmitting} onPress={() => { setStepDirection("backward"); setStepChoice("add-member"); }} />
               <OrdiloButton
                 disabled={isSubmitting}
                 onPress={() => void finishOnboarding(false)}

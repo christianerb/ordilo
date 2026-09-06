@@ -52,4 +52,21 @@ describe("native first value", () => {
     });
     await act(async () => tree.unmount());
   });
+
+  it("steps behind a waiting durable import instead of competing as another primary action", async () => {
+    let tree;
+    await act(async () => {
+      tree = renderer.create(
+        <DocumentNextStep
+          documentId="doc-1"
+          title="Brief"
+          eventsCreated={1}
+          tasksKept={0}
+          variant="outline"
+        />,
+      );
+    });
+    expect(tree.root.findByProps({ title: "Zum Kalender" }).props.variant).toBe("outline");
+    await act(async () => tree.unmount());
+  });
 });
