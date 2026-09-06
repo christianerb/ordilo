@@ -25,12 +25,14 @@ mit dieser Änderung nicht eingeführt.
 
 Erkennbare Dokumentfragen starten die Suche vor dem ersten Modellaufruf. Die erste
 Suche spart Query-Expansion und zusätzliches Modell-Reranking; ein breiterer zweiter
-Versuch bleibt möglich. Sobald gelesene Seiten vorliegen, muss das Modell ein
-Werkzeug verwenden: eine belegte Antwort liefern oder weiter nachlesen. Die
-unbelegte Antwortkarte steht dann nicht als Abkürzung zur Verfügung. Auch ein
-separates Zustandswerkzeug entfällt: `answer_from_documents` liefert Antwort und
-Zustand gemeinsam. Damit braucht ein abgeschlossenes Suchergebnis ohne passenden
-Beleg keine weitere Modellrunde nur für die eigentliche Antwort.
+Versuch bleibt möglich. Vor einer Dokumentantwort muss das Modell die gelesenen Seiten mit
+`answer_from_documents` prüfen lassen. Die geprüften Aussagen bleiben anschließend
+für die vollständige Antwort erhalten. Weitere Web-, Aufgaben- oder Kalenderabfragen
+können folgen; erst die abschließende Formulierung beendet die Antwort. Sie muss die
+geprüften Dokumentaussagen unverändert enthalten und öffentliche Angaben weiterhin
+mit einer Webquelle verbinden. Die öffentliche Recherche behält auch nach der
+Belegprüfung Zugriff auf alle privaten Quellauszüge für ihre Datenschutzprüfung.
+Unbelegte Antwortkarten können diesen Ablauf nicht abkürzen.
 
 Servermetriken unterscheiden Retrieval, Reranking, Seitenlesen und Modellrunden.
 Die Schleife ist auf drei Werkzeugrunden plus Abschluss begrenzt; der Server bricht
@@ -151,3 +153,25 @@ zusätzlich durch Orchestrierungstests abgesicherten Werkzeugauswahl-Korrektur.
 Technische Prüfungen: 200 Web-Testsuiten mit 2.908 Tests und 34 Mobile-Testsuiten
 mit 342 Tests bestanden; Web-/Mobile-Lint und beide TypeScript-Prüfungen grün.
 Der bereinigte Produktionsbuild (`npm run build`) ist ebenfalls erfolgreich.
+
+
+## Review-Korrekturen vom 06.09.2026
+
+P1: Ein altes Dokumentthema wird nur entlang einer ununterbrochenen Kette von
+Folgefragen übernommen. Ein Themenwechsel beendet diese Kette; ein Fragewort allein
+macht „Wann ist Ostern?“ oder „Wie wird morgen das Wetter?“ nicht zur Ticketfrage.
+
+P2: Die Dokumentprüfung ist kein vorzeitiger Gesprächsabschluss mehr. Die endgültige
+Antwort kann Dokumentfakten mit Web- und Aufgabenergebnissen verbinden. Webquellen
+bleiben erhalten, während die Oberfläche geprüfte Dokumentzitate statt bloßer
+Suchauszüge zeigt. Veränderte Dokumentdaten und unbelegte öffentliche Ergänzungen
+werden auch bei der letzten Formulierung abgefangen. Regressionstests prüfen beide
+Reihenfolgen einer gemeinsamen Werkzeugrunde und spätere Aufgabenabfragen.
+
+Acht zusätzliche Live-Fälle (`chat-review-cases.json`) bestanden, darunter ein
+Themenwechsel, allgemeines Wissen plus Dokumentfakt, Aufgaben plus Dokumentfakt und
+zusammenhängende Folgefragen. Median 5.325 ms; längster Fall 14.827 ms (kombinierte
+Aufgabenfrage). Das zusätzliche abschließende Formulieren kostet eine Modellrunde;
+die früheren 50er-Latenzen sind daher kein Nachweis für diese Orchestrierungsversion.
+Die Kombination mit Webrecherche ist zusätzlich deterministisch mit kontrollierten
+öffentlichen Quellen geprüft. Es wird kein neuer breiter 50er-Lauf behauptet.

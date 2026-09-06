@@ -132,7 +132,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
     type: "function",
     function: {
       name: "answer_from_documents",
-      description: "Beendet eine Dokumentfrage mit einer belegten Antwort. Jede Aussage muss in ihrem wörtlichen Zitat aus gelesenen Seiten stehen. Prüfe Person, Bedeutung der Frist und Widersprüche. Kein bloßer Titelbezug. Für eine konkrete Zahl/Datum highlight mitgeben. Keine Berechnungen oder nicht belegten Schlussfolgerungen. Wenn eine Angabe nach dem Nachlesen fehlt: claims leer, state not_found und konkrete Lücke in gap. Bei Fehler gezielt nachlesen/korrigieren.",
+      description: "Prüft und merkt belegte Dokumentaussagen für die abschließende Antwort. Beendet das Gespräch NICHT: Bearbeite danach alle übrigen Teile der Nutzerfrage, etwa aktuelle Webinformationen oder Aufgaben. Jede Aussage muss in ihrem wörtlichen Zitat aus gelesenen Seiten stehen. Prüfe Person, Bedeutung der Frist und Widersprüche. Kein bloßer Titelbezug. Für eine konkrete Zahl/Datum highlight mitgeben. Keine Berechnungen oder nicht belegten Schlussfolgerungen. Wenn eine Angabe nach dem Nachlesen fehlt: claims leer, state not_found und konkrete Lücke in gap. Bei Fehler gezielt nachlesen/korrigieren.",
       parameters: { type: "object", properties: {
         claims: { type: "array", minItems: 0, maxItems: 5, items: {
           type: "object", properties: {
@@ -1137,8 +1137,9 @@ export async function executeTool(
       if ("error" in answer) return JSON.stringify(answer);
       ctx.documentAnswer = answer;
       ctx.responseState = answer.state;
-      ctx.sources = answer.sources;
-      return JSON.stringify({ ready: true });
+      // Keep every lookup source in context: subsequent public queries must still
+      // be checked against all private excerpts. Select display citations only at the end.
+      return JSON.stringify({ verified: true, document_answer: answer.text, instruction: "Diese geprüften Sätze unverändert in die endgültige Antwort übernehmen. Bearbeite zuerst alle noch offenen Teile der Nutzerfrage mit den passenden Werkzeugen. Antworte danach vollständig in Textform, mit Quellen für öffentliche Angaben." });
     }
     case "add_calendar_event":
       return executeAddCalendarEvent(args, ctx);
