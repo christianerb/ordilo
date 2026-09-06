@@ -397,6 +397,10 @@ describe("POST /api/chat", () => {
       .map((line) => JSON.parse(line) as { type: string });
 
     expect(events.some((event) => event.type === "message_saved")).toBe(false);
+    expect(events).toContainEqual({ type: "text", content: "Die Antwort bleibt sichtbar." });
+    expect(events).toContainEqual({ type: "answer_ready" });
+    expect(events).toContainEqual({ type: "persistence_warning" });
+    expect(events.some(event => event.type === "error" || event.type === "replace")).toBe(false);
     expect(events.at(-1)).toEqual({ type: "done" });
   });
 

@@ -25,20 +25,20 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import Animated, {
-  cancelAnimation,
-  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withRepeat,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 
 import { OrdiloMark } from "./ordilo-mark";
-import { OrdiloButton, Skeleton } from "./ui";
+import { ChatMarkdown } from "./chat-markdown";
+import { ChatEvidence } from "./chat-evidence";
+import { OrdiloButton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
 import {
   CHAT_FEEDBACK_REASONS,
@@ -54,7 +54,6 @@ import {
   type ToolCallProgress,
 } from "@/src/lib/chat";
 import {
-  contentEntering,
   feedbackEntering,
   feedbackExiting,
   REDUCE_MOTION,
@@ -73,135 +72,13 @@ import {
  * German and mirrors the web (src/app/(app)/suche).
  */
 
-const THINKING_LINE_WIDTHS = ["92%", "52%", "78%", "47%", "30%"] as const;
-const THINKING_DOTS = [0, 1, 2] as const;
-
-function ThinkingDot({
-  index,
-  progress,
-  reduceMotion,
-}: {
-  index: number;
-  progress: SharedValue<number>;
-  reduceMotion: boolean;
-}) {
-  const animatedStyle = useAnimatedStyle(() => {
-    if (reduceMotion) return { opacity: 0.7 };
-    const phase = progress.get() * Math.PI * 2 - index * ((Math.PI * 2) / 3);
-    const emphasis = (Math.sin(phase - Math.PI / 2) + 1) / 2;
-    return {
-      opacity: 0.45 + emphasis * 0.55,
-      transform: [
-        { translateY: -2 * emphasis },
-        { scale: 0.9 + emphasis * 0.1 },
-      ],
-    };
-  }, [index, reduceMotion]);
-
-  return <Animated.View style={[styles.thinkingDot, animatedStyle]} />;
-}
-
-function ThinkingDots({ reduceMotion }: { reduceMotion: boolean }) {
-  const progress = useSharedValue(0);
-
-  useEffect(() => {
-    if (reduceMotion) {
-      progress.set(0);
-      return;
-    }
-    progress.set(
-      withRepeat(
-        withTiming(1, {
-          duration: 1_200,
-          easing: Easing.linear,
-        }),
-        -1,
-        false,
-      ),
-    );
-    return () => cancelAnimation(progress);
-  }, [progress, reduceMotion]);
-
-  return (
-    <View style={styles.thinkingDotsChip}>
-      {THINKING_DOTS.map((index) => (
-        <ThinkingDot
-          index={index}
-          key={index}
-          progress={progress}
-          reduceMotion={reduceMotion}
-        />
-      ))}
-    </View>
-  );
-}
-
-/** Calm placeholder shown until Ordilo starts streaming the real answer. */
-export function ChatThinkingState({
-  toolCalls,
-}: {
-  toolCalls: ToolCallProgress[];
-}) {
+/** One honest status, occupying the same reading column as the answer. */
+export function ChatThinkingState({ toolCalls }: { toolCalls: ToolCallProgress[] }) {
   const label = getChatThinkingLabel(toolCalls);
-  const reduceMotion = useReducedMotion();
-
-  return (
-    <View
-      accessibilityLiveRegion="polite"
-      style={styles.thinking}
-    >
-      <Animated.View
-        entering={feedbackEntering(reduceMotion)}
-        exiting={feedbackExiting()}
-        style={styles.thinkingStatusRow}
-      >
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          style={styles.thinkingAvatar}
-        >
-          <OrdiloMark size={30} />
-        </View>
-        <View style={styles.thinkingStatusPill}>
-          {reduceMotion ? (
-            <View style={styles.thinkingStaticIndicator} />
-          ) : (
-            <ActivityIndicator color={colors.harborBlue} size="small" />
-          )}
-          <Animated.Text
-            entering={contentEntering()}
-            key={label}
-            style={styles.thinkingStatusText}
-          >
-            {label}
-          </Animated.Text>
-        </View>
-      </Animated.View>
-
-      <Animated.View
-        accessible={false}
-        entering={feedbackEntering(reduceMotion).delay(
-          reduceMotion ? 0 : 70,
-        )}
-        exiting={feedbackExiting()}
-        importantForAccessibility="no-hide-descendants"
-        style={styles.thinkingCard}
-      >
-        <ThinkingDots reduceMotion={reduceMotion} />
-        <View style={styles.thinkingLines}>
-          {THINKING_LINE_WIDTHS.map((width) => (
-            <Skeleton
-              height={10}
-              key={width}
-              radius={radii.pill}
-              style={styles.thinkingLine}
-              width={width}
-            />
-          ))}
-        </View>
-      </Animated.View>
-    </View>
-  );
+  return <View accessibilityLiveRegion="polite" style={styles.thinkingStatusRow}>
+    <OrdiloMark size={24} />
+    <Text style={styles.thinkingStatusText}>{label}</Text>
+  </View>;
 }
 
 /** User bubble (right, harbor blue) and assistant bubble (left). */
@@ -220,28 +97,20 @@ export function MessageBubble({
 
   return (
     <View style={[styles.bubbleRow, isUser && styles.bubbleRowUser]}>
-      {!isUser ? (
-        <View
-          accessible={false}
-          importantForAccessibility="no-hide-descendants"
-          style={styles.bubbleAvatar}
-        >
-          <OrdiloMark size={30} />
-        </View>
-      ) : null}
+
       <View
         accessibilityLiveRegion={
           !isUser && message.status === "streaming" ? "polite" : "none"
         }
         style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAi]}
       >
-        {message.text ? (
-          <Text selectable style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>
-            {message.text}
-            {message.status === "streaming" && !isUser ? " ▍" : ""}
-          </Text>
+        {!isUser && message.sources.find((source) => source.cited && source.highlight)?.highlight ? (
+          <Text selectable style={styles.answerValue}>{message.sources.find((source) => source.cited && source.highlight)!.highlight}</Text>
         ) : null}
-        {message.text ? (
+        {message.text ? (isUser
+          ? <Text selectable style={[styles.bubbleText, styles.bubbleTextUser]}>{message.text}</Text>
+          : <ChatMarkdown text={message.text} />) : null}
+        {message.text && isUser ? (
           <Text style={[styles.bubbleTime, isUser && styles.bubbleTimeUser]}>
             {messageTime}
           </Text>
@@ -254,6 +123,7 @@ export function MessageBubble({
             {CHAT_RESPONSE_STATE_LABELS[message.responseState]}
           </Text>
         ) : null}
+        {message.saveWarning && <Text accessibilityRole="alert" style={styles.responseState}>Noch nicht im Verlauf gespeichert. Kopiere die Antwort, bevor du das Gespräch schließt.</Text>}
         {children}
       </View>
     </View>
@@ -280,7 +150,9 @@ export function SourcesSection({
       <Text style={styles.sourcesHeading}>
         {sources.length === 1 ? "Quelle" : `Quellen (${sources.length})`}
       </Text>
-      {visible.map((source, index) => (
+      {visible.map((source, index) => source.cited && source.quote && !isWebChatSource(source) ? (
+        <ChatEvidence key={`${source.document_id}-${source.page_number}-${index}`} source={source} onOpenDocument={onOpenDocument} />
+      ) : (
         <Pressable
           accessibilityHint={
             isWebChatSource(source)
@@ -912,6 +784,7 @@ export function ChatComposer({
   inputRef,
   onChange,
   onSend,
+  onStop,
   onVoiceStart,
   onVoiceCancel,
   onVoiceFinish,
@@ -924,6 +797,7 @@ export function ChatComposer({
   inputRef: React.RefObject<TextInput | null>;
   onChange: (value: string) => void;
   onSend: () => void;
+  onStop?: () => void;
   onVoiceStart?: () => void;
   onVoiceCancel?: () => void;
   onVoiceFinish?: () => void;
@@ -932,6 +806,7 @@ export function ChatComposer({
   voiceLevel?: number;
   voiceStatus?: "idle" | "starting" | "recording" | "transcribing";
 }) {
+  const { fontScale } = useWindowDimensions();
   const canSend = value.trim().length > 0 && !busy;
   const recording = voiceStatus === "recording";
   const voiceWorking = voiceStatus === "starting" || voiceStatus === "transcribing";
@@ -955,7 +830,7 @@ export function ChatComposer({
             multiline
             onChangeText={onChange}
             onSubmitEditing={canSend ? onSend : undefined}
-            placeholder="Frage Ordilo …"
+            placeholder={fontScale > 1.3 ? "Frage …" : "Frage Ordilo …"}
             placeholderTextColor={colors.mistDark}
             ref={inputRef}
             returnKeyType="send"
@@ -984,26 +859,28 @@ export function ChatComposer({
               {voiceWorking ? (
                 <ActivityIndicator color={colors.warmWhite} size="small" />
               ) : (
-                <Mic color={colors.warmWhite} size={19} strokeWidth={2.2} />
+                <Mic color={colors.harborBlue} size={19} strokeWidth={2.2} />
               )}
             </Pressable>
-            {canSend ? (
+            {(
               <Pressable
-                accessibilityLabel="Frage senden"
+                accessibilityLabel={busy ? "Antwort stoppen" : "Frage senden"}
                 accessibilityRole="button"
-                onPress={onSend}
+                onPress={busy ? onStop : onSend}
+                disabled={!busy && !canSend}
                 style={({ pressed }) => [
                   styles.composerSend,
+                  !busy && !canSend && styles.composerSendDisabled,
                   pressed && styles.pressed,
                 ]}
               >
                 {busy ? (
-                  <ActivityIndicator color={colors.warmWhite} size="small" />
+                  <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
                 ) : (
                   <Send color={colors.warmWhite} size={18} strokeWidth={2} />
                 )}
               </Pressable>
-            ) : null}
+            )}
           </View>
         </View>
       )}
@@ -1116,15 +993,14 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 4,
   },
   bubbleAi: {
-    backgroundColor: colors.warmWhite,
-    borderBottomLeftRadius: 4,
-    borderColor: colors.mistLight,
-    borderWidth: 1,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    backgroundColor: "transparent",
+    maxWidth: "100%",
+    width: "100%",
+    paddingHorizontal: 0,
+    paddingVertical: 12,
+    gap: 12,
   },
+  answerValue: { fontFamily: "Figtree_600SemiBold", fontSize: 34, lineHeight: 41, color: colors.harborBlue, letterSpacing: -0.7 },
   bubbleText: { color: colors.graphite, ...typography.body },
   bubbleTextUser: { color: colors.warmWhite },
   bubbleTime: {
@@ -1302,14 +1178,9 @@ const styles = StyleSheet.create({
     borderColor: colors.mistLight,
     borderRadius: radii.md,
     borderWidth: 1,
-    elevation: 2,
     flexDirection: "row",
     gap: spacing.xs,
     padding: spacing.xs,
-    shadowColor: colors.graphite,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
   },
   composerInput: {
     color: colors.graphite,
@@ -1330,18 +1201,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.harborBlue,
     borderRadius: radii.pill,
-    height: 40,
+    height: 44,
     justifyContent: "center",
-    width: 40,
+    width: 44,
   },
   composerSendDisabled: { opacity: 0.4 },
   voiceButton: {
     alignItems: "center",
-    backgroundColor: colors.harborBlue,
+    backgroundColor: colors.sand,
     borderRadius: radii.pill,
-    height: 40,
+    height: 44,
     justifyContent: "center",
-    width: 40,
+    width: 44,
   },
   voiceRecorder: {
     alignItems: "center",

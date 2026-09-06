@@ -144,7 +144,7 @@ Keine Erklaerung, nur die Bewertungen.`;
     // Return re-ranked results with adjusted scores
     const finalResults = reranked.map((r) => ({
       ...r.result,
-      score: Math.max(r.result.score, r.llmScore / 10),
+      score: r.llmScore / 10,
     }));
 
     return [...finalResults, ...rest];

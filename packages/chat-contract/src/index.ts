@@ -18,6 +18,8 @@ export type ChatActionToolName = (typeof CHAT_ACTION_TOOL_NAMES)[number];
 export const CHAT_TOOL_STEP_LABELS: Record<string, string> = {
   search_web: "Prüft aktuelle Informationen",
   search_documents: "Durchsucht deine Dokumente",
+  read_document: "Liest die passende Stelle nach",
+  answer_from_documents: "Prüft die Fundstelle",
   list_documents: "Sieht die Dokumentenliste durch",
   list_tasks: "Prüft Aufgaben und Fristen",
   add_task: "Legt die Aufgabe an",
@@ -49,6 +51,11 @@ export interface ChatSource {
   score: number;
   origin?: "semantic" | "graph" | "web";
   url?: string;
+  page_number?: number;
+  quote?: string;
+  highlight?: string;
+  cited?: boolean;
+  has_original?: boolean;
 }
 
 export function isChatSource(value: unknown): value is ChatSource {
@@ -63,7 +70,12 @@ export function isChatSource(value: unknown): value is ChatSource {
       value.origin === "semantic" ||
       value.origin === "graph" ||
       value.origin === "web") &&
-    (value.url === undefined || typeof value.url === "string")
+    (value.url === undefined || typeof value.url === "string") &&
+    (value.page_number === undefined || (typeof value.page_number === "number" && Number.isInteger(value.page_number) && value.page_number > 0)) &&
+    (value.quote === undefined || typeof value.quote === "string") &&
+    (value.highlight === undefined || typeof value.highlight === "string") &&
+    (value.cited === undefined || typeof value.cited === "boolean") &&
+    (value.has_original === undefined || typeof value.has_original === "boolean")
   );
 }
 
@@ -149,7 +161,7 @@ export function splitChatSources(sources: ChatSource[]): {
   best: ChatSource | null;
   rest: ChatSource[];
 } {
-  const sorted = [...sources].sort((a, b) => b.score - a.score);
+  const sorted = [...sources].sort((a, b) => Number(Boolean(b.cited)) - Number(Boolean(a.cited)) || b.score - a.score);
   return { best: sorted[0] ?? null, rest: sorted.slice(1) };
 }
 
@@ -206,6 +218,8 @@ export type ChatWireEvent =
       };
     }
   | { type: "message_saved"; messageId: string }
+  | { type: "answer_ready" }
+  | { type: "persistence_warning" }
   | { type: "done" }
   | { type: "error"; error: string; code: string | null };
 
@@ -346,6 +360,10 @@ export function parseChatWireEvent(raw: unknown): ChatWireEvent | null {
       return typeof raw.message_id === "string"
         ? { type: "message_saved", messageId: raw.message_id }
         : null;
+    case "persistence_warning":
+      return { type: "persistence_warning" };
+    case "answer_ready":
+      return { type: "answer_ready" };
     case "done":
       return { type: "done" };
     case "error":

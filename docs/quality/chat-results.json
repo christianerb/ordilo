@@ -1,0 +1,2146 @@
+{
+  "date": "2026-09-05",
+  "environment": "Local Next.js development server, real hosted services, isolated synthetic family. Sequential runs, not a controlled production benchmark.",
+  "runs": [
+    {
+      "name": "baseline",
+      "description": "8 Dokumente; vor Vorab-Suche und Speicherfehlerkorrektur; Speicherung noch nicht als Kriterium erfasst.",
+      "passed": 41,
+      "total": 50,
+      "p50Ms": 5853,
+      "p95Ms": 7929,
+      "cases": [
+        {
+          "id": "ticket-hannah-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 10567,
+          "totalMs": 10661
+        },
+        {
+          "id": "ticket-hannah-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5897,
+          "totalMs": 5939
+        },
+        {
+          "id": "ticket-hannah-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6280,
+          "totalMs": 6326
+        },
+        {
+          "id": "ticket-hannah-4",
+          "passed": false,
+          "failures": [
+            "fact:0",
+            "evidence"
+          ],
+          "firstAnswerMs": null,
+          "totalMs": 3285
+        },
+        {
+          "id": "ticket-hannah-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7235,
+          "totalMs": 7272
+        },
+        {
+          "id": "ticket-emma-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6941,
+          "totalMs": 6979
+        },
+        {
+          "id": "ticket-emma-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6633,
+          "totalMs": 6681
+        },
+        {
+          "id": "ticket-emma-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5062,
+          "totalMs": 5105
+        },
+        {
+          "id": "ticket-emma-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7872,
+          "totalMs": 7918
+        },
+        {
+          "id": "ticket-emma-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5941,
+          "totalMs": 5988
+        },
+        {
+          "id": "cancel-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4844,
+          "totalMs": 4893
+        },
+        {
+          "id": "cancel-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5054,
+          "totalMs": 5093
+        },
+        {
+          "id": "cancel-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4661,
+          "totalMs": 4700
+        },
+        {
+          "id": "cancel-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4982,
+          "totalMs": 5012
+        },
+        {
+          "id": "cancel-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8684,
+          "totalMs": 8738
+        },
+        {
+          "id": "school-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7721,
+          "totalMs": 7755
+        },
+        {
+          "id": "school-2",
+          "passed": false,
+          "failures": [
+            "state",
+            "fact:0",
+            "evidence"
+          ],
+          "firstAnswerMs": 5959,
+          "totalMs": 6425
+        },
+        {
+          "id": "school-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5526,
+          "totalMs": 5556
+        },
+        {
+          "id": "school-4",
+          "passed": false,
+          "failures": [
+            "state",
+            "fact:0",
+            "evidence"
+          ],
+          "firstAnswerMs": 3772,
+          "totalMs": 4293
+        },
+        {
+          "id": "school-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5459,
+          "totalMs": 5501
+        },
+        {
+          "id": "invoice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5743,
+          "totalMs": 5783
+        },
+        {
+          "id": "invoice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5798,
+          "totalMs": 5836
+        },
+        {
+          "id": "invoice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5362,
+          "totalMs": 5394
+        },
+        {
+          "id": "invoice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5821,
+          "totalMs": 5853
+        },
+        {
+          "id": "invoice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6028,
+          "totalMs": 6064
+        },
+        {
+          "id": "insurance-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7059,
+          "totalMs": 7093
+        },
+        {
+          "id": "insurance-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6383,
+          "totalMs": 6421
+        },
+        {
+          "id": "insurance-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5824,
+          "totalMs": 5862
+        },
+        {
+          "id": "insurance-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6240,
+          "totalMs": 6284
+        },
+        {
+          "id": "insurance-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6544,
+          "totalMs": 6580
+        },
+        {
+          "id": "trip-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4501,
+          "totalMs": 4552
+        },
+        {
+          "id": "trip-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7890,
+          "totalMs": 7929
+        },
+        {
+          "id": "trip-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5942,
+          "totalMs": 5975
+        },
+        {
+          "id": "trip-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6407,
+          "totalMs": 6455
+        },
+        {
+          "id": "trip-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5709,
+          "totalMs": 5752
+        },
+        {
+          "id": "notice-1",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 2401,
+          "totalMs": 3501
+        },
+        {
+          "id": "notice-2",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 2391,
+          "totalMs": 2802
+        },
+        {
+          "id": "notice-3",
+          "passed": false,
+          "failures": [
+            "fact:0",
+            "evidence"
+          ],
+          "firstAnswerMs": null,
+          "totalMs": 2754
+        },
+        {
+          "id": "notice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5341,
+          "totalMs": 5390
+        },
+        {
+          "id": "notice-5",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 2223,
+          "totalMs": 2567
+        },
+        {
+          "id": "missing-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5966,
+          "totalMs": 5998
+        },
+        {
+          "id": "missing-2",
+          "passed": false,
+          "failures": [
+            "state"
+          ],
+          "firstAnswerMs": 5735,
+          "totalMs": 5768
+        },
+        {
+          "id": "missing-3",
+          "passed": false,
+          "failures": [
+            "state"
+          ],
+          "firstAnswerMs": 5447,
+          "totalMs": 5487
+        },
+        {
+          "id": "missing-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5421,
+          "totalMs": 5455
+        },
+        {
+          "id": "missing-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4768,
+          "totalMs": 4814
+        },
+        {
+          "id": "followup-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6681,
+          "totalMs": 6813
+        },
+        {
+          "id": "followup-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5794,
+          "totalMs": 5916
+        },
+        {
+          "id": "followup-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5935,
+          "totalMs": 5981
+        },
+        {
+          "id": "followup-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5552,
+          "totalMs": 5614
+        },
+        {
+          "id": "followup-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5834,
+          "totalMs": 5894
+        }
+      ]
+    },
+    {
+      "name": "prefetch",
+      "description": "Vorab-Suche; verbleibende Quellen-/Statusfehler; Speicherung noch nicht als Kriterium erfasst.",
+      "passed": 44,
+      "total": 50,
+      "p50Ms": 3600,
+      "p95Ms": 7479,
+      "cases": [
+        {
+          "id": "ticket-hannah-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4321,
+          "totalMs": 4363
+        },
+        {
+          "id": "ticket-hannah-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3237,
+          "totalMs": 3296
+        },
+        {
+          "id": "ticket-hannah-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3638,
+          "totalMs": 3673
+        },
+        {
+          "id": "ticket-hannah-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 19660,
+          "totalMs": 19752
+        },
+        {
+          "id": "ticket-hannah-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3169,
+          "totalMs": 3206
+        },
+        {
+          "id": "ticket-emma-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3092,
+          "totalMs": 3151
+        },
+        {
+          "id": "ticket-emma-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3127,
+          "totalMs": 3158
+        },
+        {
+          "id": "ticket-emma-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5033,
+          "totalMs": 5073
+        },
+        {
+          "id": "ticket-emma-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3146,
+          "totalMs": 3202
+        },
+        {
+          "id": "ticket-emma-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3898,
+          "totalMs": 3960
+        },
+        {
+          "id": "cancel-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3087,
+          "totalMs": 3138
+        },
+        {
+          "id": "cancel-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3816,
+          "totalMs": 3875
+        },
+        {
+          "id": "cancel-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 2978,
+          "totalMs": 3014
+        },
+        {
+          "id": "cancel-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3215,
+          "totalMs": 3263
+        },
+        {
+          "id": "cancel-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3556,
+          "totalMs": 3600
+        },
+        {
+          "id": "school-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3677,
+          "totalMs": 3726
+        },
+        {
+          "id": "school-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3702,
+          "totalMs": 3739
+        },
+        {
+          "id": "school-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3302,
+          "totalMs": 3338
+        },
+        {
+          "id": "school-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3443,
+          "totalMs": 3491
+        },
+        {
+          "id": "school-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3613,
+          "totalMs": 3651
+        },
+        {
+          "id": "invoice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7409,
+          "totalMs": 7479
+        },
+        {
+          "id": "invoice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3181,
+          "totalMs": 3211
+        },
+        {
+          "id": "invoice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3022,
+          "totalMs": 3062
+        },
+        {
+          "id": "invoice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3850,
+          "totalMs": 3879
+        },
+        {
+          "id": "invoice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5730,
+          "totalMs": 5757
+        },
+        {
+          "id": "insurance-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3133,
+          "totalMs": 3166
+        },
+        {
+          "id": "insurance-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5160,
+          "totalMs": 5189
+        },
+        {
+          "id": "insurance-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4564,
+          "totalMs": 4595
+        },
+        {
+          "id": "insurance-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3376,
+          "totalMs": 3413
+        },
+        {
+          "id": "insurance-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5199,
+          "totalMs": 5243
+        },
+        {
+          "id": "trip-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3210,
+          "totalMs": 3242
+        },
+        {
+          "id": "trip-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3338,
+          "totalMs": 3379
+        },
+        {
+          "id": "trip-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3072,
+          "totalMs": 3104
+        },
+        {
+          "id": "trip-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8676,
+          "totalMs": 8716
+        },
+        {
+          "id": "trip-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4799,
+          "totalMs": 4833
+        },
+        {
+          "id": "notice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4106,
+          "totalMs": 4136
+        },
+        {
+          "id": "notice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3333,
+          "totalMs": 3367
+        },
+        {
+          "id": "notice-3",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 2188,
+          "totalMs": 2500
+        },
+        {
+          "id": "notice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3162,
+          "totalMs": 3191
+        },
+        {
+          "id": "notice-5",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 1441,
+          "totalMs": 1704
+        },
+        {
+          "id": "missing-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 2681,
+          "totalMs": 2807
+        },
+        {
+          "id": "missing-2",
+          "passed": false,
+          "failures": [
+            "state"
+          ],
+          "firstAnswerMs": 4087,
+          "totalMs": 4119
+        },
+        {
+          "id": "missing-3",
+          "passed": false,
+          "failures": [
+            "state"
+          ],
+          "firstAnswerMs": 5748,
+          "totalMs": 5790
+        },
+        {
+          "id": "missing-4",
+          "passed": false,
+          "failures": [
+            "state"
+          ],
+          "firstAnswerMs": 3168,
+          "totalMs": 3202
+        },
+        {
+          "id": "missing-5",
+          "passed": false,
+          "failures": [
+            "state"
+          ],
+          "firstAnswerMs": 4983,
+          "totalMs": 5013
+        },
+        {
+          "id": "followup-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3516,
+          "totalMs": 3554
+        },
+        {
+          "id": "followup-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5223,
+          "totalMs": 5263
+        },
+        {
+          "id": "followup-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5326,
+          "totalMs": 5358
+        },
+        {
+          "id": "followup-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5573,
+          "totalMs": 5614
+        },
+        {
+          "id": "followup-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4836,
+          "totalMs": 4875
+        }
+      ]
+    },
+    {
+      "name": "followup-diagnosis",
+      "description": "15 Dokumente; 45/50, fünf Folgefragen beanstandet; noch ohne Speicherassertion.",
+      "passed": 45,
+      "total": 50,
+      "p50Ms": 3512,
+      "p95Ms": 7173,
+      "cases": [
+        {
+          "id": "ticket-hannah-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5515,
+          "totalMs": 5553
+        },
+        {
+          "id": "ticket-hannah-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5350,
+          "totalMs": 5396
+        },
+        {
+          "id": "ticket-hannah-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4234,
+          "totalMs": 4782
+        },
+        {
+          "id": "ticket-hannah-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3539,
+          "totalMs": 3576
+        },
+        {
+          "id": "ticket-hannah-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8730,
+          "totalMs": 8816
+        },
+        {
+          "id": "ticket-emma-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3278,
+          "totalMs": 3316
+        },
+        {
+          "id": "ticket-emma-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3143,
+          "totalMs": 3211
+        },
+        {
+          "id": "ticket-emma-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5031,
+          "totalMs": 5079
+        },
+        {
+          "id": "ticket-emma-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3281,
+          "totalMs": 3321
+        },
+        {
+          "id": "ticket-emma-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3298,
+          "totalMs": 3334
+        },
+        {
+          "id": "cancel-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3053,
+          "totalMs": 3090
+        },
+        {
+          "id": "cancel-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3164,
+          "totalMs": 3219
+        },
+        {
+          "id": "cancel-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3066,
+          "totalMs": 3113
+        },
+        {
+          "id": "cancel-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3355,
+          "totalMs": 3394
+        },
+        {
+          "id": "cancel-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3014,
+          "totalMs": 3072
+        },
+        {
+          "id": "school-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 2995,
+          "totalMs": 3034
+        },
+        {
+          "id": "school-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3060,
+          "totalMs": 3145
+        },
+        {
+          "id": "school-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3190,
+          "totalMs": 3228
+        },
+        {
+          "id": "school-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3063,
+          "totalMs": 3137
+        },
+        {
+          "id": "school-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4293,
+          "totalMs": 4329
+        },
+        {
+          "id": "invoice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3295,
+          "totalMs": 3339
+        },
+        {
+          "id": "invoice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3309,
+          "totalMs": 3356
+        },
+        {
+          "id": "invoice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3341,
+          "totalMs": 3385
+        },
+        {
+          "id": "invoice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3641,
+          "totalMs": 3684
+        },
+        {
+          "id": "invoice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6136,
+          "totalMs": 6183
+        },
+        {
+          "id": "insurance-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3173,
+          "totalMs": 3208
+        },
+        {
+          "id": "insurance-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6373,
+          "totalMs": 6412
+        },
+        {
+          "id": "insurance-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7136,
+          "totalMs": 7173
+        },
+        {
+          "id": "insurance-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5848,
+          "totalMs": 5910
+        },
+        {
+          "id": "insurance-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6693,
+          "totalMs": 6745
+        },
+        {
+          "id": "trip-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3478,
+          "totalMs": 3512
+        },
+        {
+          "id": "trip-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3521,
+          "totalMs": 3568
+        },
+        {
+          "id": "trip-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3612,
+          "totalMs": 3651
+        },
+        {
+          "id": "trip-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7519,
+          "totalMs": 7563
+        },
+        {
+          "id": "trip-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5353,
+          "totalMs": 5398
+        },
+        {
+          "id": "notice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3946,
+          "totalMs": 4149
+        },
+        {
+          "id": "notice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3866,
+          "totalMs": 3900
+        },
+        {
+          "id": "notice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6475,
+          "totalMs": 6514
+        },
+        {
+          "id": "notice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3226,
+          "totalMs": 3275
+        },
+        {
+          "id": "notice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3240,
+          "totalMs": 3292
+        },
+        {
+          "id": "missing-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3134,
+          "totalMs": 3180
+        },
+        {
+          "id": "missing-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3578,
+          "totalMs": 3621
+        },
+        {
+          "id": "missing-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6042,
+          "totalMs": 6082
+        },
+        {
+          "id": "missing-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4753,
+          "totalMs": 4797
+        },
+        {
+          "id": "missing-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3718,
+          "totalMs": 3757
+        },
+        {
+          "id": "followup-1",
+          "passed": false,
+          "failures": [
+            "fact:0"
+          ],
+          "firstAnswerMs": 5391,
+          "totalMs": 5434
+        },
+        {
+          "id": "followup-2",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 2256,
+          "totalMs": 2515
+        },
+        {
+          "id": "followup-3",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 1756,
+          "totalMs": 2101
+        },
+        {
+          "id": "followup-4",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 1717,
+          "totalMs": 1763
+        },
+        {
+          "id": "followup-5",
+          "passed": false,
+          "failures": [
+            "evidence"
+          ],
+          "firstAnswerMs": 1694,
+          "totalMs": 2073
+        }
+      ]
+    },
+    {
+      "name": "broad-regression",
+      "description": "15 Dokumente; Speicherassertion aktiv; zwei inhaltliche Fehler führten zu gezielten Korrekturen.",
+      "passed": 48,
+      "total": 50,
+      "p50Ms": 5389,
+      "p95Ms": 11837,
+      "cases": [
+        {
+          "id": "ticket-hannah-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5538,
+          "totalMs": 5584
+        },
+        {
+          "id": "ticket-hannah-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5708,
+          "totalMs": 5765
+        },
+        {
+          "id": "ticket-hannah-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4043,
+          "totalMs": 4116
+        },
+        {
+          "id": "ticket-hannah-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5690,
+          "totalMs": 5769
+        },
+        {
+          "id": "ticket-hannah-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5048,
+          "totalMs": 5137
+        },
+        {
+          "id": "ticket-emma-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7167,
+          "totalMs": 7282
+        },
+        {
+          "id": "ticket-emma-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3904,
+          "totalMs": 3954
+        },
+        {
+          "id": "ticket-emma-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7942,
+          "totalMs": 8005
+        },
+        {
+          "id": "ticket-emma-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5790,
+          "totalMs": 5849
+        },
+        {
+          "id": "ticket-emma-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3324,
+          "totalMs": 3373
+        },
+        {
+          "id": "cancel-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6665,
+          "totalMs": 6707
+        },
+        {
+          "id": "cancel-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 18604,
+          "totalMs": 18690
+        },
+        {
+          "id": "cancel-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 11799,
+          "totalMs": 11837
+        },
+        {
+          "id": "cancel-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8208,
+          "totalMs": 8250
+        },
+        {
+          "id": "cancel-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5693,
+          "totalMs": 5722
+        },
+        {
+          "id": "school-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3201,
+          "totalMs": 3241
+        },
+        {
+          "id": "school-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3009,
+          "totalMs": 3038
+        },
+        {
+          "id": "school-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3104,
+          "totalMs": 3149
+        },
+        {
+          "id": "school-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3046,
+          "totalMs": 3083
+        },
+        {
+          "id": "school-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4464,
+          "totalMs": 4510
+        },
+        {
+          "id": "invoice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5239,
+          "totalMs": 5278
+        },
+        {
+          "id": "invoice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4727,
+          "totalMs": 4753
+        },
+        {
+          "id": "invoice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3741,
+          "totalMs": 3776
+        },
+        {
+          "id": "invoice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3861,
+          "totalMs": 3903
+        },
+        {
+          "id": "invoice-5",
+          "passed": false,
+          "failures": [
+            "state",
+            "fact:0",
+            "evidence"
+          ],
+          "firstAnswerMs": 4172,
+          "totalMs": 4676
+        },
+        {
+          "id": "insurance-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6115,
+          "totalMs": 6157
+        },
+        {
+          "id": "insurance-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7659,
+          "totalMs": 7694
+        },
+        {
+          "id": "insurance-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8391,
+          "totalMs": 8442
+        },
+        {
+          "id": "insurance-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5592,
+          "totalMs": 5741
+        },
+        {
+          "id": "insurance-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 11480,
+          "totalMs": 11517
+        },
+        {
+          "id": "trip-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3397,
+          "totalMs": 3432
+        },
+        {
+          "id": "trip-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5433,
+          "totalMs": 5473
+        },
+        {
+          "id": "trip-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5592,
+          "totalMs": 5772
+        },
+        {
+          "id": "trip-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7012,
+          "totalMs": 7056
+        },
+        {
+          "id": "trip-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7031,
+          "totalMs": 7066
+        },
+        {
+          "id": "notice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5354,
+          "totalMs": 5389
+        },
+        {
+          "id": "notice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4434,
+          "totalMs": 4474
+        },
+        {
+          "id": "notice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3837,
+          "totalMs": 3882
+        },
+        {
+          "id": "notice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3049,
+          "totalMs": 3081
+        },
+        {
+          "id": "notice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4830,
+          "totalMs": 4910
+        },
+        {
+          "id": "missing-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8614,
+          "totalMs": 8657
+        },
+        {
+          "id": "missing-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5279,
+          "totalMs": 5325
+        },
+        {
+          "id": "missing-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4953,
+          "totalMs": 4987
+        },
+        {
+          "id": "missing-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4913,
+          "totalMs": 4951
+        },
+        {
+          "id": "missing-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5375,
+          "totalMs": 5422
+        },
+        {
+          "id": "followup-1",
+          "passed": false,
+          "failures": [
+            "fact:0"
+          ],
+          "firstAnswerMs": 5418,
+          "totalMs": 5462
+        },
+        {
+          "id": "followup-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5092,
+          "totalMs": 5134
+        },
+        {
+          "id": "followup-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 13041,
+          "totalMs": 13120
+        },
+        {
+          "id": "followup-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5223,
+          "totalMs": 5359
+        },
+        {
+          "id": "followup-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6138,
+          "totalMs": 6190
+        }
+      ]
+    },
+    {
+      "name": "edge",
+      "description": "Zwölf zusätzliche Relations-, Konflikt-, Verlängerungs- und OCR-Fälle, inklusive Speicherung.",
+      "passed": 12,
+      "total": 12,
+      "p50Ms": 4028,
+      "p95Ms": 9209,
+      "cases": [
+        {
+          "id": "relation-older-ticket",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6284,
+          "totalMs": 6331
+        },
+        {
+          "id": "relation-younger-ticket",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3282,
+          "totalMs": 3329
+        },
+        {
+          "id": "relation-school",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3569,
+          "totalMs": 3614
+        },
+        {
+          "id": "relation-school-name",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3593,
+          "totalMs": 3632
+        },
+        {
+          "id": "conflict-membership",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5651,
+          "totalMs": 5736
+        },
+        {
+          "id": "extension-library",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3984,
+          "totalMs": 4028
+        },
+        {
+          "id": "ocr-unreadable",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3743,
+          "totalMs": 3786
+        },
+        {
+          "id": "ocr-spacing",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3316,
+          "totalMs": 3516
+        },
+        {
+          "id": "followup-other-child",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6846,
+          "totalMs": 6903
+        },
+        {
+          "id": "no-pet-policy",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 9124,
+          "totalMs": 9209
+        },
+        {
+          "id": "cancellation-vs-validity",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5359,
+          "totalMs": 5423
+        },
+        {
+          "id": "departure-vs-meeting",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5524,
+          "totalMs": 5576
+        }
+      ]
+    },
+    {
+      "name": "release",
+      "description": "Letzter breiter Lauf nach Korrektur von Fahrrad-Suchabsicht und Zeitfrage; Werkzeugantwort bei vorhandenen Seiten verpflichtend.",
+      "passed": 50,
+      "total": 50,
+      "p50Ms": 5502,
+      "p95Ms": 7166,
+      "cases": [
+        {
+          "id": "ticket-hannah-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7424,
+          "totalMs": 7462
+        },
+        {
+          "id": "ticket-hannah-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4836,
+          "totalMs": 4868
+        },
+        {
+          "id": "ticket-hannah-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3023,
+          "totalMs": 3056
+        },
+        {
+          "id": "ticket-hannah-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8823,
+          "totalMs": 8921
+        },
+        {
+          "id": "ticket-hannah-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5669,
+          "totalMs": 5701
+        },
+        {
+          "id": "ticket-emma-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4920,
+          "totalMs": 4950
+        },
+        {
+          "id": "ticket-emma-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5945,
+          "totalMs": 5984
+        },
+        {
+          "id": "ticket-emma-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5206,
+          "totalMs": 5241
+        },
+        {
+          "id": "ticket-emma-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3123,
+          "totalMs": 3155
+        },
+        {
+          "id": "ticket-emma-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5834,
+          "totalMs": 5871
+        },
+        {
+          "id": "cancel-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5224,
+          "totalMs": 5256
+        },
+        {
+          "id": "cancel-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5207,
+          "totalMs": 5245
+        },
+        {
+          "id": "cancel-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5870,
+          "totalMs": 5904
+        },
+        {
+          "id": "cancel-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5219,
+          "totalMs": 5254
+        },
+        {
+          "id": "cancel-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5929,
+          "totalMs": 5974
+        },
+        {
+          "id": "school-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3434,
+          "totalMs": 3489
+        },
+        {
+          "id": "school-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4323,
+          "totalMs": 4356
+        },
+        {
+          "id": "school-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4495,
+          "totalMs": 4531
+        },
+        {
+          "id": "school-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 4535,
+          "totalMs": 4567
+        },
+        {
+          "id": "school-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5464,
+          "totalMs": 5502
+        },
+        {
+          "id": "invoice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5619,
+          "totalMs": 5651
+        },
+        {
+          "id": "invoice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5090,
+          "totalMs": 5253
+        },
+        {
+          "id": "invoice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3520,
+          "totalMs": 3559
+        },
+        {
+          "id": "invoice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3848,
+          "totalMs": 3888
+        },
+        {
+          "id": "invoice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6056,
+          "totalMs": 6094
+        },
+        {
+          "id": "insurance-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6012,
+          "totalMs": 6058
+        },
+        {
+          "id": "insurance-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5162,
+          "totalMs": 5230
+        },
+        {
+          "id": "insurance-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6941,
+          "totalMs": 6972
+        },
+        {
+          "id": "insurance-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6331,
+          "totalMs": 6365
+        },
+        {
+          "id": "insurance-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6658,
+          "totalMs": 6710
+        },
+        {
+          "id": "trip-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5106,
+          "totalMs": 5143
+        },
+        {
+          "id": "trip-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5244,
+          "totalMs": 5285
+        },
+        {
+          "id": "trip-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5579,
+          "totalMs": 5615
+        },
+        {
+          "id": "trip-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7134,
+          "totalMs": 7166
+        },
+        {
+          "id": "trip-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7012,
+          "totalMs": 7054
+        },
+        {
+          "id": "notice-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6536,
+          "totalMs": 6580
+        },
+        {
+          "id": "notice-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5477,
+          "totalMs": 5515
+        },
+        {
+          "id": "notice-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6419,
+          "totalMs": 6458
+        },
+        {
+          "id": "notice-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6091,
+          "totalMs": 6129
+        },
+        {
+          "id": "notice-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6780,
+          "totalMs": 6818
+        },
+        {
+          "id": "missing-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5460,
+          "totalMs": 5510
+        },
+        {
+          "id": "missing-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5062,
+          "totalMs": 5097
+        },
+        {
+          "id": "missing-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5412,
+          "totalMs": 5467
+        },
+        {
+          "id": "missing-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5400,
+          "totalMs": 5438
+        },
+        {
+          "id": "missing-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5426,
+          "totalMs": 5472
+        },
+        {
+          "id": "followup-1",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5389,
+          "totalMs": 5428
+        },
+        {
+          "id": "followup-2",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6800,
+          "totalMs": 6837
+        },
+        {
+          "id": "followup-3",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5115,
+          "totalMs": 5146
+        },
+        {
+          "id": "followup-4",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5528,
+          "totalMs": 5566
+        },
+        {
+          "id": "followup-5",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5545,
+          "totalMs": 5584
+        }
+      ]
+    },
+    {
+      "name": "edge-release",
+      "description": "Grenzfälle vor Abschlusskorrektur: ein unnötiger weiterer Modellaufruf lief in das 45-Sekunden-Limit.",
+      "passed": 11,
+      "total": 12,
+      "p50Ms": 5242,
+      "p95Ms": 45162,
+      "cases": [
+        {
+          "id": "relation-older-ticket",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5764,
+          "totalMs": 5811
+        },
+        {
+          "id": "relation-younger-ticket",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5054,
+          "totalMs": 5099
+        },
+        {
+          "id": "relation-school",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5074,
+          "totalMs": 5120
+        },
+        {
+          "id": "relation-school-name",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6603,
+          "totalMs": 6653
+        },
+        {
+          "id": "conflict-membership",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7096,
+          "totalMs": 7142
+        },
+        {
+          "id": "extension-library",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3454,
+          "totalMs": 3492
+        },
+        {
+          "id": "ocr-unreadable",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5187,
+          "totalMs": 5242
+        },
+        {
+          "id": "ocr-spacing",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3245,
+          "totalMs": 3289
+        },
+        {
+          "id": "followup-other-child",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5087,
+          "totalMs": 5144
+        },
+        {
+          "id": "no-pet-policy",
+          "passed": false,
+          "failures": [
+            "error:CHAT_FAILED",
+            "incomplete",
+            "not_saved",
+            "state",
+            "fact:0"
+          ],
+          "firstAnswerMs": null,
+          "totalMs": 45162
+        },
+        {
+          "id": "cancellation-vs-validity",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5260,
+          "totalMs": 5317
+        },
+        {
+          "id": "departure-vs-meeting",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5951,
+          "totalMs": 6003
+        }
+      ]
+    },
+    {
+      "name": "edge-terminal",
+      "description": "Nach Korrektur: answer_from_documents setzt den Zustand selbst; kein separates set_response_state bei vorhandenen Seiten.",
+      "passed": 12,
+      "total": 12,
+      "p50Ms": 5450,
+      "p95Ms": 8828,
+      "cases": [
+        {
+          "id": "relation-older-ticket",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7709,
+          "totalMs": 7770
+        },
+        {
+          "id": "relation-younger-ticket",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5340,
+          "totalMs": 5433
+        },
+        {
+          "id": "relation-school",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5350,
+          "totalMs": 5450
+        },
+        {
+          "id": "relation-school-name",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5555,
+          "totalMs": 5622
+        },
+        {
+          "id": "conflict-membership",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 8752,
+          "totalMs": 8828
+        },
+        {
+          "id": "extension-library",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 3729,
+          "totalMs": 3767
+        },
+        {
+          "id": "ocr-unreadable",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 6240,
+          "totalMs": 6310
+        },
+        {
+          "id": "ocr-spacing",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 2884,
+          "totalMs": 2919
+        },
+        {
+          "id": "followup-other-child",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5082,
+          "totalMs": 5116
+        },
+        {
+          "id": "no-pet-policy",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7548,
+          "totalMs": 7580
+        },
+        {
+          "id": "cancellation-vs-validity",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 7977,
+          "totalMs": 8054
+        },
+        {
+          "id": "departure-vs-meeting",
+          "passed": true,
+          "failures": [],
+          "firstAnswerMs": 5202,
+          "totalMs": 5241
+        }
+      ]
+    }
+  ]
+}

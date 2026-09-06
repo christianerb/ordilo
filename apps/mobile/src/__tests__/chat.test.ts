@@ -515,3 +515,29 @@ describe("German date formatting", () => {
     expect(formatChatDate(null)).toBeNull();
   });
 });
+
+
+describe("completed answer before persistence", () => {
+  it("removes the waiting state while preserving evidence and later attaching the saved id", () => {
+    const source = { document_id: "doc-1", title: "Ticket", excerpt: "Gültig bis 31.08.2027", quote: "Gültig bis 31.08.2027", page_number: 2, cited: true, highlight: "31.08.2027", score: 1 };
+    const ready = applyChatEvent({ ...baseMessage, text: "Bis 31.08.2027.", sources: [source] }, { type: "answer_ready" });
+    expect(ready.status).toBe("done");
+    const saved = applyChatEvent(ready, { type: "message_saved", messageId: "saved-1" });
+    expect(saved.sources).toEqual([source]);
+    expect(saved.dbId).toBe("saved-1");
+    expect(parseChatStreamEvent({ type: "answer_ready" })).toEqual({ type: "answer_ready" });
+  });
+});
+
+
+describe("persistence interruption", () => {
+  it("keeps a completed answer and its sources when saving or transport fails", () => {
+    const ready = applyChatEvent({ ...baseMessage, text: "Bis Ende August.", sources: [] }, { type: "answer_ready" });
+    const interrupted = applyChatEvent(ready, { type: "error", error: "Verbindung unterbrochen", code: null });
+    expect(interrupted).toMatchObject({ text: "Bis Ende August.", status: "done", saveWarning: true });
+    expect(applyChatEvent(interrupted, { type: "message_saved", messageId: "saved" })).toMatchObject({ saveWarning: false, dbId: "saved" });
+  });
+  it("still reports an incomplete model response as an error", () => {
+    expect(applyChatEvent(baseMessage, { type: "error", error: "Fehler", code: null }).status).toBe("error");
+  });
+});

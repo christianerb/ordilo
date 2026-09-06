@@ -120,6 +120,8 @@ export type ChatStreamEvent =
   | { type: "response_state"; state: ChatResponseState }
   | { type: "confirmation"; action: ChatAction }
   | { type: "message_saved"; messageId: string }
+  | { type: "answer_ready" }
+  | { type: "persistence_warning" }
   | { type: "done" }
   | { type: "error"; error: string; code: string | null };
 
@@ -135,6 +137,7 @@ export interface ChatMessage {
   sources: ChatSource[];
   suggestion?: ChatSuggestion | null;
   responseState?: ChatResponseState;
+  saveWarning?: boolean;
   actions: ChatAction[];
   toolCalls: ToolCallProgress[];
   status: "streaming" | "done" | "error" | "rate_limited";
@@ -268,11 +271,16 @@ export function applyChatEvent(
     case "confirmation":
       return { ...message, actions: [...message.actions, event.action] };
     case "message_saved":
-      return { ...message, dbId: event.messageId };
+      return { ...message, dbId: event.messageId, saveWarning: false };
+    case "persistence_warning":
+      return { ...message, saveWarning: true };
+    case "answer_ready":
     case "done":
       return { ...message, status: "done" };
     case "error":
-      return { ...message, status: "error", text: event.error };
+      return message.status === "done"
+        ? { ...message, saveWarning: true }
+        : { ...message, status: "error", text: event.error };
     case "conversation":
       return message;
   }
@@ -422,6 +430,21 @@ export interface ChatRequestInput {
 export async function streamChat(
   input: ChatRequestInput,
   onEvent: (event: ChatStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  if (signal?.aborted) cancel();
+  signal?.addEventListener("abort", cancel);
+  const timeout = setTimeout(cancel, 50_000);
+  try { await streamChatRequest(input, onEvent, controller.signal); }
+  finally { clearTimeout(timeout); signal?.removeEventListener("abort", cancel); }
+}
+
+async function streamChatRequest(
+  input: ChatRequestInput,
+  onEvent: (event: ChatStreamEvent) => void,
+  signal: AbortSignal,
 ): Promise<void> {
   const { data } = await getSupabase().auth.getSession();
   const token = data.session?.access_token;
@@ -432,6 +455,7 @@ export async function streamChat(
   const { fetch: streamingFetch } = await import("expo/fetch");
   const response = await streamingFetch(`${getApiUrl()}/api/chat`, {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,

@@ -1,0 +1,120 @@
+[
+  {
+    "id": "ticket-hannah-1",
+    "question": "Wann läuft Hannahs Deutschlandticket ab?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "topic-change",
+    "followUpTo": "ticket-hannah-1",
+    "question": "Danke, lass uns das Thema wechseln.",
+    "expectedState": "answered",
+    "facts": []
+  },
+  {
+    "id": "unrelated-question",
+    "followUpTo": "ticket-hannah-1",
+    "question": "Wie entsteht ein Regenbogen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Licht",
+        "Sonne"
+      ]
+    ],
+    "forbiddenFacts": [
+      "31.08.2027"
+    ]
+  },
+  {
+    "id": "compound-general",
+    "question": "Wie lange gilt Hannahs Ticket und was bedeutet Photosynthese?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ],
+      [
+        "Licht",
+        "Sonne"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "compound-tasks",
+    "question": "Wie lange gilt Hannahs Ticket und welche Aufgaben haben wir für Emmas Sporttag?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ],
+      [
+        "Turnschuhe"
+      ],
+      [
+        "Trinkflasche"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "trip-1",
+    "question": "Wann muss Emma für die Klassenfahrt am Treffpunkt sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "followup-1",
+    "followUpTo": "trip-1",
+    "question": "Und wann ist der Treffpunkt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "followup-2",
+    "followUpTo": "trip-1",
+    "question": "Wann muss sie da sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  }
+]

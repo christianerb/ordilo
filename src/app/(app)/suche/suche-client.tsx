@@ -320,6 +320,9 @@ export function SucheClient({
   // with React state via dependency arrays.
   // -------------------------------------------------------------------------
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const followAnswerRef = useRef(true);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  useMountEffect(() => () => chatAbortRef.current?.abort());
 
   // Auto-scroll: observe the messages container for size changes (new
   // messages, streaming text) and scroll to the bottom. Re-connect when
@@ -335,6 +338,7 @@ export function SucheClient({
       scrollObserverRef.current?.disconnect();
 
       const observer = new ResizeObserver(() => {
+        if (!followAnswerRef.current) return;
         messagesEndRef.current?.scrollIntoView({
           behavior: "smooth",
           block: "end",
@@ -383,6 +387,10 @@ export function SucheClient({
 
       setError(false);
       setRateLimitError(false);
+      followAnswerRef.current = true;
+      let receivedReady = false;
+      const chatAbort = new AbortController();
+      chatAbortRef.current = chatAbort;
       setIsLoading(true);
       setBusy(true);
       if (!repairRequest) lastQueryRef.current = query;
@@ -455,6 +463,7 @@ export function SucheClient({
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
+          signal: chatAbort.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             message: messageForModel,
@@ -642,10 +651,15 @@ export function SucheClient({
                 setMessages((prev) =>
                   prev.map((message) =>
                     message.id === aiMsg.id
-                      ? { ...message, dbId: event.messageId }
+                      ? { ...message, dbId: event.messageId, saveWarning: false }
                       : message,
                   ),
                 );
+              } else if (event.type === "persistence_warning") {
+                setMessages((prev) => prev.map((message) => message.id === aiMsg.id ? { ...message, saveWarning: true } : message));
+              } else if (event.type === "answer_ready") {
+                receivedReady = true;
+                setStreamingId(null);
               } else if (event.type === "done") {
                 receivedDone = true;
               } else if (event.type === "error") {
@@ -661,6 +675,17 @@ export function SucheClient({
           throw new Error("Chat stream incomplete");
         }
       } catch (streamError) {
+        if (receivedReady && !repairRequest) {
+          setMessages((prev) => prev.map((message) => message.id === aiMsg.id ? { ...message, saveWarning: !message.dbId } : message));
+          return;
+        }
+        if (chatAbort.signal.aborted) {
+          setMessages((prev) => prev.map((item) => item.id !== aiMsg.id ? item : repairRequest ? repairRequest.message : ({
+            ...item, content: "Antwort gestoppt.", sources: [], card: undefined, responseState: undefined,
+          })));
+          if (repairRequest) throw streamError;
+          return;
+        }
         // Network error or stream interrupted — remove the empty AI
         // placeholder so the user doesn't see a blank bubble.
         setMessages((prev) =>
@@ -675,6 +700,7 @@ export function SucheClient({
         setError(true);
         if (repairRequest) throw streamError;
       } finally {
+        if (chatAbortRef.current === chatAbort) chatAbortRef.current = null;
         setStreamingId(null);
         setIsLoading(false);
         setBusy(false);
@@ -1013,6 +1039,10 @@ export function SucheClient({
           className="min-h-0 flex-1 overflow-y-auto"
           aria-live="polite"
           aria-label="Konversation"
+          onScroll={(event) => {
+            const element = event.currentTarget;
+            followAnswerRef.current = element.scrollHeight - element.clientHeight - element.scrollTop < 80;
+          }}
         >
           {!hasMessages && !isLoading ? (
             <EmptyState
@@ -1112,6 +1142,7 @@ export function SucheClient({
                 </div>
               )}
 
+              {isLoading && <button type="button" className="sticky bottom-2 mx-auto block min-h-11 rounded-full border border-border bg-background px-5 text-sm text-foreground focus-ring" onClick={() => chatAbortRef.current?.abort()}>Antwort stoppen</button>}
               <div ref={messagesEndRef} />
             </div>
           )}
@@ -1179,7 +1210,7 @@ function ChatList({
         <div className="flex flex-col gap-2">
           {groups.map((group) => (
             <div key={group.label}>
-              <p className="px-2 py-1 text-[10px] font-medium text-muted-foreground">
+              <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
                 {group.label}
               </p>
               <div className="flex flex-col">

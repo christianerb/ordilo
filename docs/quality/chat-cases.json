@@ -1,0 +1,677 @@
+[
+  {
+    "id": "ticket-hannah-1",
+    "question": "Wann läuft Hannahs Deutschlandticket ab?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "ticket-hannah-2",
+    "question": "Wie lange gilt das Bahnticket von Hannah?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "ticket-hannah-3",
+    "question": "Das Bahndings von Hannah, bis wann geht das?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "ticket-hannah-4",
+    "question": "Wann ist bei Hannah mit dem Deutschland-Ticket Schluss?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "ticket-hannah-5",
+    "question": "hannah ticket gültig bis wann",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ]
+  },
+  {
+    "id": "ticket-emma-1",
+    "question": "Wann läuft Emmas Deutschlandticket ab?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ]
+  },
+  {
+    "id": "ticket-emma-2",
+    "question": "Wie lange kann Emma mit ihrem Ticket fahren?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ]
+  },
+  {
+    "id": "ticket-emma-3",
+    "question": "Emma Bahnkarte wie lang",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ]
+  },
+  {
+    "id": "ticket-emma-4",
+    "question": "Bis zu welchem Datum gilt Emmas Fahrkarte?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ]
+  },
+  {
+    "id": "ticket-emma-5",
+    "question": "Welches Gültigkeitsende steht auf Emmas Ticket?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ]
+  },
+  {
+    "id": "cancel-1",
+    "question": "Wann endet unser Stromvertrag?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ]
+  },
+  {
+    "id": "cancel-2",
+    "question": "Strom gekündigt, wann ist Schluss?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ]
+  },
+  {
+    "id": "cancel-3",
+    "question": "Bis wann läuft der Strom noch?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ]
+  },
+  {
+    "id": "cancel-4",
+    "question": "Welches Vertragsende hat unser Stromanbieter bestätigt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ]
+  },
+  {
+    "id": "cancel-5",
+    "question": "Ist beim Strom der Eingang oder das Vertragsende entscheidend, wann endet er?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "31.12.2027",
+        "31. Dezember 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Kündigungsbestätigung Strom"
+    ]
+  },
+  {
+    "id": "school-1",
+    "question": "Wann beginnt Hannahs Elternabend?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ]
+  },
+  {
+    "id": "school-2",
+    "question": "Um wie viel Uhr müssen wir zum Elternabend von Hannah?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ]
+  },
+  {
+    "id": "school-3",
+    "question": "Hannah Schule Elternabend Uhrzeit?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ]
+  },
+  {
+    "id": "school-4",
+    "question": "Wann geht der Elternabend bei Hannah los?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ]
+  },
+  {
+    "id": "school-5",
+    "question": "Welche Anfangszeit nennt die Einladung für Hannah?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "19:30"
+      ]
+    ],
+    "sourceTitles": [
+      "Elternabend Hannah"
+    ]
+  },
+  {
+    "id": "invoice-1",
+    "question": "Was hat Emmas Fahrradreparatur gekostet?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "84,50"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad Emma"
+    ]
+  },
+  {
+    "id": "invoice-2",
+    "question": "Wie teuer war Emmas Reparatur am Rad?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "84,50"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad Emma"
+    ]
+  },
+  {
+    "id": "invoice-3",
+    "question": "Emma Fahrrad Rechnung Betrag?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "84,50"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad Emma"
+    ]
+  },
+  {
+    "id": "invoice-4",
+    "question": "Was steht als Rechnungsbetrag bei Emmas Rad?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "84,50"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad Emma"
+    ]
+  },
+  {
+    "id": "invoice-5",
+    "question": "Wieviel mussten wir für Emmas kaputtes Fahrrad zahlen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "84,50"
+      ]
+    ],
+    "sourceTitles": [
+      "Rechnung Fahrrad Emma"
+    ]
+  },
+  {
+    "id": "insurance-1",
+    "question": "Wie hoch ist Hannahs Selbstbeteiligung fürs Fahrrad?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "150"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad Hannah"
+    ]
+  },
+  {
+    "id": "insurance-2",
+    "question": "Was müssen wir bei Hannahs Fahrraddiebstahl selbst zahlen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "150"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad Hannah"
+    ]
+  },
+  {
+    "id": "insurance-3",
+    "question": "Hannah Rad versichert Eigenanteil?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "150"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad Hannah"
+    ]
+  },
+  {
+    "id": "insurance-4",
+    "question": "Welcher Selbstbehalt gilt für Hannahs Fahrrad?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "150"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad Hannah"
+    ]
+  },
+  {
+    "id": "insurance-5",
+    "question": "Wie viel bleibt bei Diebstahl von Hannahs Rad bei uns?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "150"
+      ]
+    ],
+    "sourceTitles": [
+      "Versicherung Fahrrad Hannah"
+    ]
+  },
+  {
+    "id": "trip-1",
+    "question": "Wann muss Emma für die Klassenfahrt am Treffpunkt sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "trip-2",
+    "question": "Emma Klassenfahrt wann da sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "trip-3",
+    "question": "Welche Uhrzeit ist der Treffpunkt für Emmas Klassenfahrt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "trip-4",
+    "question": "Wann treffen sich die Kinder für Emmas Fahrt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "trip-5",
+    "question": "Nicht die Abfahrt: wann muss Emma schon am Bahnhof sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "notice-1",
+    "question": "Was sollen wir zu Hannahs Schulfest mitbringen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Obst"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ]
+  },
+  {
+    "id": "notice-2",
+    "question": "Hannah Schulfest Buffet was war das?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Obst"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ]
+  },
+  {
+    "id": "notice-3",
+    "question": "Was brauchen wir fürs Buffet in Hannahs Schule?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Obst"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ]
+  },
+  {
+    "id": "notice-4",
+    "question": "Was steht in Hannahs Einladung zum Mitbringen?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Obst"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ]
+  },
+  {
+    "id": "notice-5",
+    "question": "Was soll für Hannahs Fest eingepackt werden?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "Obst"
+      ]
+    ],
+    "sourceTitles": [
+      "Schulfest Hannah"
+    ]
+  },
+  {
+    "id": "missing-1",
+    "question": "Wie spät beginnt Hannahs Schulfest?",
+    "expectedState": "not_found",
+    "facts": [
+      [
+        "nicht",
+        "keine",
+        "noch offen"
+      ]
+    ]
+  },
+  {
+    "id": "missing-2",
+    "question": "Hannah Schulfest Anfangszeit?",
+    "expectedState": "not_found",
+    "facts": [
+      [
+        "nicht",
+        "keine",
+        "noch offen"
+      ]
+    ]
+  },
+  {
+    "id": "missing-3",
+    "question": "Wann geht das Fest in Hannahs Schule los?",
+    "expectedState": "not_found",
+    "facts": [
+      [
+        "nicht",
+        "keine",
+        "noch offen"
+      ]
+    ]
+  },
+  {
+    "id": "missing-4",
+    "question": "Um welche Uhrzeit sollen wir beim Schulfest sein?",
+    "expectedState": "not_found",
+    "facts": [
+      [
+        "nicht",
+        "keine",
+        "noch offen"
+      ]
+    ]
+  },
+  {
+    "id": "missing-5",
+    "question": "Welche Startzeit steht in Hannahs Schulfest-Einladung?",
+    "expectedState": "not_found",
+    "facts": [
+      [
+        "nicht",
+        "keine",
+        "noch offen"
+      ]
+    ]
+  },
+  {
+    "id": "followup-1",
+    "followUpTo": "trip-1",
+    "question": "Und wann ist der Treffpunkt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "followup-2",
+    "followUpTo": "trip-1",
+    "question": "Wann muss sie da sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "followup-3",
+    "followUpTo": "trip-1",
+    "question": "Und wann sollen wir am Bahnhof sein?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "followup-4",
+    "followUpTo": "trip-1",
+    "question": "Welche Zeit ist fürs Treffen angegeben?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  },
+  {
+    "id": "followup-5",
+    "followUpTo": "trip-1",
+    "question": "Wann dort sein, also vor der Abfahrt?",
+    "expectedState": "answered",
+    "facts": [
+      [
+        "08:15",
+        "8:15"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ]
+  }
+]

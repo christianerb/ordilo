@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { SourceCard, type SourceCardKind } from "@/components/ordilo/source-card";
 import { SourceMatchCard } from "@/components/ordilo/source-match-card";
+import { ChatEvidence } from "@/components/ordilo/chat-evidence";
 import { AnswerCard } from "@/components/ordilo/answer-card";
 import { cn } from "@/lib/utils";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
@@ -72,6 +73,7 @@ export interface ChatMessage {
   feedback?: "positive" | "negative" | null;
   suggestion?: ChatSuggestion | null;
   responseState?: ChatResponseState;
+  saveWarning?: boolean;
   /** An excerpt of an earlier message the user quoted before asking this one. */
   quotedText?: string;
   /** Writes proposed by Ordilo that each need an explicit family-member choice. */
@@ -193,7 +195,7 @@ export const MessageBubble = memo(function MessageBubble({
 
   return (
     <div className="flex flex-col items-start gap-2 animate-message-in">
-      <div className="flex items-start gap-2">
+      <div className="flex w-full items-start gap-2">
         <div className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border bg-[var(--sand-light)]">
           <OrdiloMark
             size={27}
@@ -202,7 +204,8 @@ export const MessageBubble = memo(function MessageBubble({
           />
         </div>
 
-        <div className="max-w-[85%] rounded-ordilo-md rounded-tl-sm bg-card px-4 py-3 shadow-card lg:max-w-full">
+        <div className="min-w-0 flex-1 py-2">
+          {best?.cited && best.highlight && <p className="mb-3 text-3xl font-semibold leading-tight tracking-tight text-[var(--petrol)] sm:text-4xl">{best.highlight}</p>}
           {showLoading ? (
             <ProcessingChecklist toolCalls={message.toolCalls} />
           ) : message.card ? (
@@ -228,6 +231,7 @@ export const MessageBubble = memo(function MessageBubble({
         </div>
       </div>
 
+      {message.saveWarning && <p role="alert" className="mt-3 text-sm text-muted-foreground">Noch nicht im Verlauf gespeichert. Kopiere die Antwort, bevor du das Gespräch schließt.</p>}
       {responseStateLabel && !isStreaming && (
         <p className="ml-10 text-xs font-medium text-muted-foreground">
           {responseStateLabel}
@@ -256,7 +260,7 @@ export const MessageBubble = memo(function MessageBubble({
               Quellen
             </span>
             <span
-              className="text-[11px] text-muted-foreground"
+              className="text-xs text-muted-foreground"
               data-testid="source-count-badge"
             >
               {visibleSources.length}
@@ -265,7 +269,9 @@ export const MessageBubble = memo(function MessageBubble({
           <div className="divide-y divide-border overflow-hidden rounded-ordilo-sm border border-border bg-[var(--surface-story)]">
             {topSources.map((source, i) => {
               const href = sourceHref(source);
-              return (
+              return source.cited && source.quote ? (
+                <ChatEvidence key={`${source.document_id}-${source.page_number}`} id={citationSourceId(message.id, i + 1)} source={source} onOpenDocument={onSourceCardClick} />
+              ) : (
                 <SourceMatchCard
                   key={source.document_id}
                   id={citationSourceId(message.id, i + 1)}
@@ -360,9 +366,11 @@ function RestSources({
     <div className="space-y-0.5 pt-0.5">
       {sources.map((source, i) => {
         const href = getSourceHref(source);
-        return (
+        return source.cited && source.quote ? (
+          <ChatEvidence key={`${source.document_id}-${source.page_number}-${i}`} source={source} onOpenDocument={() => onSourceClick(source)} />
+        ) : (
           <SourceCard
-            key={source.document_id}
+            key={`${source.document_id}-${i}`}
             documentId={source.document_id}
             title={source.title}
             score={source.score}

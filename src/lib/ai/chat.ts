@@ -1,4 +1,6 @@
 import OpenAI from "openai";
+import { normalizeEvidence } from "./document-evidence";
+import { documentPrefetchQuery } from "./document-intent";
 import type { SearchResult } from "@/lib/schemas/search";
 import { findMentionedPeople, isTaskQuery } from "@/lib/schemas/search";
 import {
@@ -108,7 +110,26 @@ function requiredCitationSources(toolContext: ToolContext): ChatSource[] {
   const webSources = toolContext.sources.filter(
     (source) => source.origin === "web",
   );
-  return webSources.length > 0 ? webSources : toolContext.sources;
+  return webSources.length > 0 || toolContext.documentAnswer ? webSources : toolContext.sources;
+}
+
+function documentResponseSources(context: ToolContext): ChatSource[] {
+  if (!context.documentAnswer) return context.sources;
+  const readDocuments = new Set(context.documentEvidence?.map(page => page.documentId));
+  return [...context.documentAnswer.sources, ...context.sources.filter(source =>
+    source.origin === "web" || !readDocuments.has(source.document_id))];
+}
+
+function includesVerifiedDocumentAnswer(text: string, context: ToolContext): boolean {
+  const normalize = (value: string) => normalizeEvidence(value.replace(/[*_`]/g, ""));
+  return !context.documentAnswer || context.documentAnswer.text.split(/\n\s*\n/).every(sentence => normalize(text).includes(normalize(sentence)));
+}
+
+function incompleteDocumentAnswer(context: ToolContext): string {
+  context.responseState = "partial";
+  return context.documentAnswer
+    ? `${context.documentAnswer.text}\n\nDen weiteren Teil deiner Frage konnte ich noch nicht verlässlich beantworten.`
+    : "Ich habe passende Unterlagen gefunden. Die gesuchte Angabe konnte ich darin noch nicht eindeutig zuordnen. Hier kannst du die Fundstelle öffnen.";
 }
 
 // ---------------------------------------------------------------------------
@@ -247,7 +268,7 @@ function getOpenAIClient(): OpenAI {
       "OPENAI_NOT_CONFIGURED",
     );
   }
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey, timeout: 25_000, maxRetries: 0 });
 }
 
 // ---------------------------------------------------------------------------
@@ -396,6 +417,15 @@ export function buildAgenticSystemPrompt(
 
 Heute ist ${currentDate.long} (${currentDate.iso}), ${currentDate.time} Uhr (Zeitzone Europe/Berlin).${contextSection}
 
+DOKUMENTFRAGEN UND ZUSAMMENHAENGE:
+- Verstehe auch ungenaue, umgangssprachliche Fragen, Tippfehler und Bezüge wie "das von unserer Großen" oder "und von Emma?". Nutze Sprecher, Familienrollen, Beziehungen und den Verlauf, um die wahrscheinlich gemeinte Frage zu erschließen. Bewahre Person und Thema in Suchanfragen. Erfinde keine Beziehung. Sind mehrere Deutungen wirklich gleich plausibel, stelle genau eine konkrete Rückfrage mit den gefundenen Möglichkeiten.
+- graph_query und list_family_members helfen, Personen, Organisationen und Beziehungen zu finden. search_documents sucht den Inhalt; die besten Treffer enthalten bereits gelesene Originalseiten (pages). Bei fehlendem Kontext lies mit read_document gezielt nach. Bei schwachem Treffer einmal sinnvoll umformulieren, nicht dieselbe Suche wiederholen.
+- Beantworte konkrete Fakten aus Unterlagen IMMER mit answer_from_documents: kurze claims mit wörtlichem Zitat und page_number aus pages. Dieses Werkzeug prüft und merkt die Dokumentaussagen, beendet aber NICHT die Antwort. Bearbeite anschließend ALLE weiteren Teile der Nutzerfrage mit den passenden Werkzeugen, auch aktuelle öffentliche Preise oder Aufgaben. Übernimm die geprüften Sätze unverändert in deine vollständige Textantwort und ergänze die Ergebnisse der anderen Werkzeuge mit deren Quellen. Jede Aussage muss durch IHR Zitat gedeckt sein: richtige Person, richtige Unterlage, richtige Bedeutung. Ticketgültigkeit ist weder Kündigungsfrist noch Abolaufzeit. Bei genau einem Datum/Betrag gib highlight mit. Lies bei einem Validierungsfehler die richtige Stelle nach oder korrigiere den claim.
+- Keine Rechenaufgaben in answer_from_documents: nutze query_payments für Summen; kennzeichne andere Ableitungen ausdrücklich. Unterscheide Originalfakten und Interpretation. Ein späterer Upload beweist nicht, dass ein älterer Vertrag ungültig ist.
+- Wenn eine Unterlage ausdrücklich sagt, dass die gesuchte Angabe noch nicht feststeht, zitiere genau diesen Satz als claim und verwende state not_found. Ohne gegenteiligen Beleg keine Uhrzeit/Frist erfinden. Ein leerer Kalender bedeutet nicht, dass es keine Einladung oder Dokumentangabe gibt. Suche dann in den Unterlagen.
+- Wenn der Beleg fehlt, sage konkret, welche Information du gefunden hast und welche fehlt. Bitte den Nutzer NIEMALS, seine Frage erneut zu stellen oder eine Quelle zu zitieren, nur weil deine eigene Prüfung gescheitert ist.
+- Familienbeziehungen und persönliche Laufzeiten kommen aus Familienwerkzeugen. Öffentliches Wissen ersetzt keinen privaten Vertrag. Lerne bestätigte Fakten und Beziehungen über vorhandene, bestätigungspflichtige Aktionen; schreibe keine Vermutungen still in das Familienwissen.
+
 Du hast folgende Werkzeuge zur Verfuegung:
 - graph_query: Durchsucht den Knowledge Graph nach verwandten Entitaeten. Bevorzugt fuer relationale Fragen wie "Was muss Emma tun?", "Welche Dokumente von der Kita haben Fristen?", "Zeig mir alles von Emmas Arzt". Gibt Dokumente + Aufgaben + Fristen in einer Antwort.
 - search_web: Sucht aktuelle oder oeffentliche Informationen im Web. Verwende dies fuer aktuelle Regeln, Preise, Oeffnungszeiten, Nachrichten und Wissen, das sich geaendert haben kann. Die Anfrage muss allgemein und frei von privaten Angaben sein.
@@ -424,7 +454,7 @@ PERSOENLICHKEIT:
 
 STRENGE REGELN:
 1. Antworte IMMER auf Deutsch.
-2. Verwende VERBOTENE Formulierungen: ${forbiddenList}. Formuliere bestimmt und direkt.
+2. Formuliere klar und direkt. Begründe Unsicherheit konkret mit einer fehlenden oder widersprüchlichen Angabe. Eine bloße Wortwahl ist kein Beweis für Richtigkeit. Vermeide leere Floskeln wie ${forbiddenList}.
 3. Verwende NIEMALS interne Fachbegriffe: "Knowledge Graph", "pgvector", "embedding", "HNSW", "Vektor", "Vektordatenbank", "Knoten", "Kanten".
 4. Waehle frei den passenden Wissensraum: Familienwerkzeuge fuer private Angaben, dein stabiles Allgemeinwissen fuer zeitlose Erklaerungen und search_web fuer aktuelle oder veraenderliche Informationen. Verbinde mehrere Wissensraeume, wenn die Frage es braucht.
 4a. Beantworte die konkrete Frage im ERSTEN Satz. Wenn du Dokumente durchsucht hast, beziehe dich dabei auf die Unterlage (z.B. "Laut dem Kita-Brief ist das Fest am Freitag."). Nenne niemals nur passende Dokumente, wenn deren Inhalt die Frage beantwortet. Quellen unter der Antwort sind Belege und niemals ein Ersatz fuer die Antwort.
@@ -433,7 +463,7 @@ STRENGE REGELN:
 4d. Aktuelle Aussagen duerfen nur aus search_web stammen. Nenne die oeffentliche Quelle kurz in der Antwort. Verwende in Web-Suchanfragen niemals Familiennamen, Dokumenttext, Adressen, Kontaktdaten, Kennnummern, Gesundheits- oder Finanzdaten. Formuliere die Anfrage stattdessen allgemein.
 5. Wenn du Aufgaben auflistest, nenne Titel und Frist (falls vorhanden).
 6. Bei Begruessung, Dank, Smalltalk und zeitlosem Allgemeinwissen antworte natuerlich und freundlich, ohne Tools aufzurufen.
-6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach etwas, das in diesem Gespraech schon gefunden wurde.
+6a. Beantworte Fragen DIREKT ohne Tool-Aufruf, wenn die Antwort bereits im AKTUELLEN KONTEXT oben oder im bisherigen Gespraechsverlauf steht — z.B. Fragen zu Familienmitgliedern oder anstehenden Aufgaben, deren Daten bereits gelistet sind, oder Nachfragen zu deinen eigenen vorherigen Antworten. Suche NICHT erneut nach bereits bekannten Profil- oder Aufgabendaten. Ausnahme Dokumentfragen: Auch bei kurzen Folgefragen muss answer_from_documents die aktuelle Antwort mit einer gelesenen Originalstelle belegen; fehlt diese im Werkzeugkontext, lies das Dokument erneut. Beantworte die aktuelle Frage genau: Bei "wann" nenne die Zeit, bei "wo" den Ort; ein Treffpunkt-Ort beantwortet keine Frage nach der Treffzeit.
 6b. Rufe so wenige Tools wie noetig auf. Mehrere Tools sind sinnvoll, wenn die Frage verschiedene Wissensraeume verbindet oder eine erste Fundstelle geprueft werden muss. Fuehre voneinander unabhaengige Suchen parallel aus.
 6c. Bei einer Frage nach Dokumenten zu, von oder ueber genau einem bekannten Familienmitglied verwende list_documents mit dessen person_name. Verwende dafuer NICHT graph_query oder search_documents.
 7. Wenn der Nutzer eine mutierende Aktion verlangt (add_task, add_contact, update_task, mark_task_done, add_family_member, create_collection, create_note, update_note, move_document_to_collection, add_document_tags, save_document_fact, add_calendar_event), rufe fuer JEDES verlangte Ziel genau einen passenden Tool-Aufruf mit confirmed=false auf. Bei zwei zu aendernden Notizen sind das also zwei update_note-Aufrufe und zwei getrennte Aktionskarten. Wenn das Tool eine Bestaetigung anfordert, frage den Nutzer freundlich danach und nenne dabei IMMER die konkrete Formulierung, die du anlegen oder aendern willst. Die App zeigt dem Nutzer dazu je eine Aktionskarte mit einem "Uebernehmen"-Button — die Bestaetigung und Ausfuehrung laeuft NUR ueber diese Karte. Rufe das Tool NIEMALS mit confirmed=true auf, auch nicht wenn der Nutzer im Chat mit "Ja" antwortet; verweise dann freundlich auf die Karten.
@@ -740,7 +770,7 @@ function streamNamedMemberDocumentList(
           type: "text",
           content: formatNamedMemberDocumentList(personName, listing),
         });
-        send({ type: "sources", sources: toolContext.sources });
+        send({ type: "sources", sources: documentResponseSources(toolContext) });
         send({ type: "done" });
       } catch {
         send({ type: "tool", tool: "list_documents", state: "error" });
@@ -764,6 +794,7 @@ export async function streamAgenticAnswer(
   // Truncate history to fit within the token budget (context-window
   // management). Keeps the most recent messages, dropping older ones.
   const truncatedHistory = truncateHistory(history);
+  toolContext.documentQuestion = query;
 
   // Load family context for the system prompt (members, upcoming tasks,
   // document count, speaker identity). This lets the model answer
@@ -774,6 +805,7 @@ export async function streamAgenticAnswer(
     ...familyContext.members.map((member) => member.name),
   ].filter((name): name is string => Boolean(name));
   toolContext.webPrivacyReady = familyContext.privateNamesAvailable;
+  toolContext.preloadedFamilyMembers = familyContext.members;
   const namedMember = namedMemberDocumentListIntent(query, familyContext.members);
   if (namedMember) {
     return streamNamedMemberDocumentList(namedMember, toolContext);
@@ -792,7 +824,9 @@ export async function streamAgenticAnswer(
 
   const encoder = new TextEncoder();
 
+  let cancelled = false;
   function send(obj: unknown): void {
+    if (cancelled) return;
     controller.enqueue(encoder.encode(JSON.stringify(obj) + "\n"));
   }
 
@@ -810,7 +844,25 @@ export async function streamAgenticAnswer(
       let answerTextVisible = false;
 
       try {
+        const prefetchQuery = familyContext.documentCount > 0 ? documentPrefetchQuery(query, truncatedHistory) : null;
+        if (prefetchQuery) {
+          toolContext.timings ??= [];
+          const callId = `prefetch_${crypto.randomUUID()}`;
+          const args = { query: prefetchQuery };
+          send({ type: "tool", tool: "search_documents", state: "start" });
+          try {
+            const output = await executeTool("search_documents", args, toolContext);
+            input.push({ type: "function_call", call_id: callId, name: "search_documents", arguments: JSON.stringify(args) },
+              { type: "function_call_output", call_id: callId, output });
+            toolContext.toolCallCount = (toolContext.toolCallCount ?? 0) + 1;
+            send({ type: "tool", tool: "search_documents", state: "done" });
+          } catch {
+            send({ type: "tool", tool: "search_documents", state: "error" });
+          }
+        }
         for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+          toolContext.signal?.throwIfAborted();
+          const modelStarted = performance.now();
           const openaiStream = await client.responses.create({
             model: CHAT_MODEL,
             instructions: systemPrompt,
@@ -818,7 +870,10 @@ export async function streamAgenticAnswer(
             // After three tool rounds, the agent gets one final synthesis
             // round without tools. This bounds latency without ending in a
             // technical "max rounds" error after successful searches.
-            tools: round < MAX_TOOL_ROUNDS ? TOOL_DEFINITIONS : [],
+            tools: round < MAX_TOOL_ROUNDS ? (toolContext.documentEvidence?.length
+              ? TOOL_DEFINITIONS.filter(tool => tool.name !== "present_answer_card" && (tool.name !== "set_response_state" || toolContext.documentAnswer)) : TOOL_DEFINITIONS) :
+              (toolContext.documentEvidence?.length && !toolContext.documentAnswer ? TOOL_DEFINITIONS.filter((tool) => tool.name === "answer_from_documents") : []),
+            tool_choice: toolContext.documentEvidence?.length && !toolContext.documentAnswer ? "required" : "auto",
             stream: true,
             reasoning: { effort: CHAT_REASONING_EFFORT },
             // Family documents and conversations must not be retained by
@@ -826,7 +881,7 @@ export async function streamAgenticAnswer(
             // be returned with the next tool output in this stateless loop.
             store: false,
             include: ["reasoning.encrypted_content"],
-          });
+          }, { signal: toolContext.signal });
 
           const contentChunks: string[] = [];
           let responseOutput: OpenAI.Responses.ResponseOutputItem[] = [];
@@ -848,7 +903,7 @@ export async function streamAgenticAnswer(
           // accumulate while tools run, so the requirement is stable for
           // the whole round.
           const bufferAnswerText =
-            requiredCitationSources(toolContext).length > 0;
+            Boolean(toolContext.documentAnswer) || requiredCitationSources(toolContext).length > 0;
 
           for await (const event of openaiStream) {
             if (event.type === "error") {
@@ -909,6 +964,7 @@ export async function streamAgenticAnswer(
             }
           }
 
+          (toolContext.timings ??= []).push({ phase: `model_round_${round + 1}`, ms: Math.round(performance.now() - modelStarted) });
           const toolCalls = responseOutput.filter(
             (
               item,
@@ -1072,6 +1128,14 @@ export async function streamAgenticAnswer(
                     }
                   }
 
+                  if (card.type !== "kontakt" && sourceDocument?.document_type !== "credentials" && card.type !== "zugangsdaten" && (toolContext.documentEvidence?.length || (toolContext.sources.length > 0 && !toolContext.searchedScopes?.has("family")))) {
+                    results[i] = JSON.stringify({ error: "Nutze answer_from_documents mit der gelesenen Originalstelle, damit die Antwort und ihr Beleg gemeinsam angezeigt werden." });
+                    continue;
+                  }
+                  if (card.type === "zugangsdaten" && sourceDocument?.document_type !== "credentials") {
+                    results[i] = JSON.stringify({ error: "Suche zuerst den tatsächlichen Zugang mit search_documents. Eine Zugangskarte braucht ein geprüftes Zugangsdokument." });
+                    continue;
+                  }
                   const isCredentialsCard =
                     card.type === "zugangsdaten" ||
                     sourceDocument?.document_type === "credentials";
@@ -1182,7 +1246,7 @@ export async function streamAgenticAnswer(
               });
             }
 
-            if (cardToSend) {
+            if (cardToSend && !toolContext.documentAnswer) {
               // Whether a password can be revealed is a fact about the
               // database, not something the model may assert — it never
               // sees `documents.secret` in any tool result. Look it up
@@ -1230,7 +1294,7 @@ export async function streamAgenticAnswer(
                 send({ type: "text", content: cardLeadIn });
               }
               send({ type: "card", card: cardToSend });
-              send({ type: "sources", sources: toolContext.sources });
+              send({ type: "sources", sources: documentResponseSources(toolContext) });
               send({
                 type: "response_state",
                 state: toolContext.responseState ?? "answered",
@@ -1252,7 +1316,7 @@ export async function streamAgenticAnswer(
               `${contentChunks.join("")}${pendingRelease}`.trim();
             const citationSources = requiredCitationSources(toolContext);
             if (
-              onlySidebandTools &&
+              onlySidebandTools && !toolContext.documentEvidence?.length && !toolContext.documentAnswer &&
               sidebandDraft &&
               !containsHedgingLanguage(sidebandDraft) &&
               (citationSources.length === 0 ||
@@ -1271,7 +1335,7 @@ export async function streamAgenticAnswer(
               if (unreleased) {
                 send({ type: "text", content: unreleased });
               }
-              send({ type: "sources", sources: toolContext.sources });
+              send({ type: "sources", sources: documentResponseSources(toolContext) });
               send({
                 type: "response_state",
                 state: toolContext.responseState ?? "answered",
@@ -1319,6 +1383,12 @@ export async function streamAgenticAnswer(
           // check catches every phrase the moment its last character
           // arrives).
           let fullAnswer = contentChunks.join("").trim();
+          if (toolContext.documentEvidence?.length && !toolContext.documentAnswer) {
+            // A prose draft cannot bypass page verification. Keep the model in the
+            // loop so verification never discards the other parts of the request.
+            input.push({ role: "developer", content: "Prüfe die Dokumentaussagen zuerst mit answer_from_documents. Danach beantworte die gesamte Nutzerfrage, einschließlich aller weiteren Wissensbereiche." });
+            continue;
+          }
           // Do not replace a blocked hedged draft with the generic empty
           // fallback before the one allowed correction attempt runs.
           if (!fullAnswer && !hedgingDetected) {
@@ -1332,6 +1402,7 @@ export async function streamAgenticAnswer(
           // If public research contributed, naming only a family document
           // is not enough to substantiate a current claim.
           const citationSources = requiredCitationSources(toolContext);
+          const documentClaimsMissing = !includesVerifiedDocumentAnswer(fullAnswer, toolContext);
           const citationMissing =
             citationSources.length > 0 &&
             !answerCitesSources(fullAnswer, citationSources);
@@ -1339,14 +1410,16 @@ export async function streamAgenticAnswer(
           if (
             hedgingDetected ||
             containsHedgingLanguage(fullAnswer) ||
-            citationMissing
+            citationMissing || documentClaimsMissing
           ) {
             // A hedged or uncited answer gets exactly one non-streaming
             // correction. If part of the draft already reached the client,
             // the verified answer replaces it rather than appearing as a
             // second, contradictory message.
             const correction =
-              citationMissing
+              documentClaimsMissing
+                ? `Übernimm diese geprüften Dokumentaussagen unverändert und beantworte auch alle übrigen Teile der Nutzerfrage: ${toolContext.documentAnswer!.text}`
+                : citationMissing
                 ? "Deine Antwort war nicht klar mit den gefundenen Belegen verbunden. Nenne die passende Unterlage oder öffentliche Quelle kurz und beantworte die Frage direkt."
                 : "Deine Antwort enthielt verbotene Formulierungen. Formuliere unbedingt, direkt und bestimmt. Verwende keine unsicheren Ausdrücke.";
             const retryResponse = await client.responses.create({
@@ -1357,18 +1430,21 @@ export async function streamAgenticAnswer(
               input,
               reasoning: { effort: CHAT_REASONING_EFFORT },
               store: false,
-            });
+            }, { signal: toolContext.signal });
 
             const retryContent = retryResponse.output_text.trim();
             const retryHasHedging =
               !retryContent || containsHedgingLanguage(retryContent);
+            const retryMissingDocument = !includesVerifiedDocumentAnswer(retryContent, toolContext);
             const retryMissingCitation =
               citationSources.length > 0 &&
               !answerCitesSources(retryContent, citationSources);
             const finalText =
-              !retryHasHedging && !retryMissingCitation
+              !retryHasHedging && !retryMissingCitation && !retryMissingDocument
                 ? retryContent
-                : retryMissingCitation
+                : toolContext.documentAnswer
+                  ? incompleteDocumentAnswer(toolContext)
+                  : retryMissingCitation
                   ? FAIL_CLOSED_CITATION
                   : FAIL_CLOSED_HEDGING;
 
@@ -1386,7 +1462,7 @@ export async function streamAgenticAnswer(
           // Otherwise the clean answer has already streamed piece by piece.
 
           // Send accumulated sources and done signal.
-          send({ type: "sources", sources: toolContext.sources });
+          send({ type: "sources", sources: documentResponseSources(toolContext) });
           send({
             type: "response_state",
             state: toolContext.responseState ?? "answered",
@@ -1399,7 +1475,17 @@ export async function streamAgenticAnswer(
           return;
         }
 
-        // Exhausted all rounds.
+        // Preserve usable evidence when the bounded correction budget is exhausted.
+        if (toolContext.documentEvidence?.length) {
+          toolContext.responseState = "partial";
+          send({ type: answerTextVisible ? "replace" : "text", content: incompleteDocumentAnswer(toolContext) });
+          send({ type: "sources", sources: documentResponseSources(toolContext) });
+          send({ type: "response_state", state: "partial" });
+          send({ type: "done" });
+          controller.close();
+          return;
+        }
+        // Exhausted all rounds without document evidence.
         send({
           type: "error",
           error: "Maximale Anzahl an Tool-Aufrufen erreicht.",
@@ -1422,9 +1508,10 @@ export async function streamAgenticAnswer(
             code: "CHAT_FAILED",
           });
         }
-        controller.close();
+        if (!cancelled) controller.close();
       }
     },
+    cancel() { cancelled = true; },
   });
 
   return stream;
