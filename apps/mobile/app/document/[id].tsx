@@ -44,6 +44,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated from "react-native-reanimated";
 
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
+import { DocumentNextStep } from "@/src/components/document-next-step";
+import { recordFirstValueEvent } from "@/src/lib/first-value";
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -140,6 +142,17 @@ export default function DocumentReviewScreen() {
   const [confirmed, setConfirmed] = useState<ConfirmDocumentResult | null>(null);
   const menuRef = useRef<OrdiloSheetHandle>(null);
   const pendingMenuRef = useRef<"original" | "edit" | "delete" | null>(null);
+  const viewedResult = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (loading || !family || !document || !("summary" in document)) return;
+    if (viewedResult.current === id) return;
+    viewedResult.current = id;
+    void recordFirstValueEvent(family.id, {
+      name: "document_result_viewed",
+      documentId: id,
+    });
+  }, [document, family, id, loading]);
 
   const applyLoaded = useCallback(
     (value: DocumentReview | null) => {
@@ -490,15 +503,20 @@ export default function DocumentReviewScreen() {
           </Card>
         </Animated.View>
         <View style={styles.confirmedActions}>
+          <DocumentNextStep
+            documentId={id}
+            title={document.title ?? "Dokument"}
+            eventsCreated={confirmed.eventsCreated}
+            tasksKept={confirmed.tasksKept}
+            variant={remainingImports > 0 ? "outline" : "primary"}
+          />
           {outcome.length > 0 ? <>
             {reminderReady ? <Text style={styles.confirmedCopy}>Mitteilungen sind eingerichtet. Wenn Aufgaben oder Termine anstehen, gibt es morgens einen Hinweis.</Text> : <OrdiloButton title={reminderBusy ? "Wird eingerichtet …" : "An Aufgaben und Termine erinnern"} variant="outline" disabled={reminderBusy} onPress={() => {
               setReminderBusy(true); setReminderError(null);
               void enablePushNotifications().then((result) => { setReminderReady(Boolean(result.token)); if (!result.token) setReminderError("Noch nicht eingerichtet. Prüfe die Mitteilungen in den App-Einstellungen."); }).finally(() => setReminderBusy(false));
             }} />}
             {reminderError ? <Text style={styles.confirmedCopy}>{reminderError}</Text> : null}
-            <OrdiloButton title="Im Familienplan ansehen" variant="ghost" onPress={() => router.replace("/(tabs)/plan")} />
-          </> : <OrdiloButton title="Ordilo dazu fragen" variant="ghost" onPress={() => router.push({ pathname: "/suche", params: { q: `Was ist an meinem Dokument „${document.title}“ wichtig?` } })} />}
-
+          </> : null}
           {source === "scan" ? (
             <OrdiloButton
               onPress={() => router.replace({ pathname: "/scan", params: remainingImports > 0 ? { resume: "1" } : { auto: "1" } })}
@@ -511,7 +529,7 @@ export default function DocumentReviewScreen() {
             onPress={() => router.replace("/(tabs)")}
             size="lg"
             title="Für jetzt fertig"
-            variant={remainingImports > 0 ? "outline" : "primary"}
+            variant="ghost"
           />
         </View>
         </ScrollView>

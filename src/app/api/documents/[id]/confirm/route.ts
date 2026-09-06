@@ -369,6 +369,7 @@ export async function POST(
     userId: auth.user.id,
     familyId,
     eventName: "document_confirmed",
+    properties: { document_id: documentId },
   });
 
   const body: ConfirmSuccessResponse = {

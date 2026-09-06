@@ -4,6 +4,7 @@ import {
   createFamily,
   listMembers,
 } from "../lib/onboarding-actions";
+import { recordProductEvent } from "../lib/analytics";
 
 /**
  * Behavioral tests for the onboarding actions against a scripted Supabase
@@ -255,6 +256,24 @@ describe("listMembers", () => {
 });
 
 describe("completeOnboarding", () => {
+  it.each([true, false])("records the entry choice, not a claimed capture (%s)", async (startsScan) => {
+    mockFromHandler = scriptedFrom(
+      makeQuery({ data: { id: "fam-1" } }),
+      makeQuery({}),
+      makeQuery({ count: 3 }),
+    );
+    await completeOnboarding("fam-1", startsScan);
+    expect(recordProductEvent).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventName: "onboarding_entry_selected",
+        properties: { entry: startsScan ? "scan" : "browse" },
+      }),
+    );
+    expect(recordProductEvent).not.toHaveBeenCalledWith(
+      expect.anything(), expect.objectContaining({ eventName: "onboarding_scan_started" }),
+    );
+  });
   it("sets the completion marker and seeds the five default collections", async () => {
     const family = makeQuery({ data: { id: "fam-1" } });
     const update = makeQuery({});

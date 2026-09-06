@@ -29,6 +29,7 @@ import {
 import Animated from "react-native-reanimated";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
+import { FirstValueExample } from "@/src/components/first-value-example";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloCharacter } from "@/src/components/ordilo-character";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
@@ -817,6 +818,7 @@ function FirstVisit({ onAsk, onScan }: { onAsk: () => void; onScan: () => void }
         size="lg"
         title="Ersten Brief scannen"
       />
+      <FirstValueExample onContinue={onScan} />
       <Pressable
         accessibilityRole="button"
         hitSlop={8}

@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { PersonCard } from "@/components/ordilo/person-card";
 import { OrdiloMascot } from "@/components/ordilo/mascot";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
+import { FirstValueExample } from "@/components/ordilo/first-value-example";
 import { RoleChipGroup } from "@/components/ordilo/role-chips";
 import { createFamily, addMember, completeOnboarding } from "./actions";
 
@@ -271,10 +272,10 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
               <>
               <OnboardingProgress currentStep={1} />
               <MascotBubble>
-                Hallo! Ich bin Ordilo und kümmere mich um eure
-                Familienunterlagen — nichts geht verloren, keine Frist geht
-                unter. Zwei kurze Fragen, dann geht&apos;s los.
+                Hallo! Ich bin Ordilo. Ich lese eure Briefe und zeige euch,
+                was wichtig ist. Du entscheidest, was übernommen wird.
               </MascotBubble>
+              <FirstValueExample />
 
               <div className="rounded-ordilo-md border border-border bg-card p-4 shadow-card">
                 <form onSubmit={handleFamilySubmit} className="space-y-4" noValidate>
@@ -455,8 +456,8 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                   {familyName ? `${familyName} ist startklar!` : "Alles startklar!"}
                 </h1>
                 <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">
-                  Hol dir einen Brief vom Stapel — ich lese ihn, merke mir
-                  alles Wichtige, und du kannst mich einfach danach fragen.
+                  Ein Brief, ein Foto oder ein PDF reicht. Ich zeige dir,
+                  was wichtig ist. Du entscheidest, was übernommen wird.
                 </p>
               </div>
 
@@ -494,6 +495,7 @@ export function OnboardingFlow({ initialState }: { initialState: OnboardingState
                 >
                   Erstmal umschauen
                 </Button>
+                <FirstValueExample />
               </div>
               </>
             )}

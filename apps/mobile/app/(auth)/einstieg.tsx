@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AmbientFields } from "@/src/components/ambient-fields";
 import { AuthHeroIllustration } from "@/src/components/auth-hero-illustration";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
+import { FirstValueExample } from "@/src/components/first-value-example";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
@@ -54,11 +55,11 @@ export default function IntroScreen() {
               Ordilo
             </Text>
             <Text style={[styles.tagline, compact && styles.taglineCompact]}>
-              Alles Wichtige für deine Familie. An einem Ort.
+              Ein Brief weniger im Kopf.
             </Text>
             <Text style={[styles.intro, compact && styles.introCompact]}>
-              Ordilo hilft euch, eure Familienorganisation einfach, sicher
-              und entspannt zu meistern.
+              Gib Ordilo einen Brief. Sieh, was wichtig ist, und übernimm
+              passende Aufgaben und Termine mit einem Tippen.
             </Text>
           </View>
 
@@ -113,6 +114,7 @@ export default function IntroScreen() {
             size="lg"
             title="Loslegen"
           />
+          <FirstValueExample onContinue={goToLogin} />
 
           <Pressable
             accessibilityRole="button"

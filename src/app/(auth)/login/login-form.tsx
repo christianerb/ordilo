@@ -1,5 +1,7 @@
 "use client";
 
+import { FirstValueExample } from "@/components/ordilo/first-value-example";
+
 import Link from "next/link";
 import { useCallback, useRef, useState } from "react";
 import {
@@ -471,6 +473,8 @@ export function LoginForm() {
             )}
           </Button>
         </form>
+
+        <FirstValueExample onContinue={() => document.getElementById("email")?.focus()} />
 
         <div className="rounded-ordilo-sm bg-[var(--auth-sage)]/55 px-4 py-3.5">
           <div className="flex gap-3">

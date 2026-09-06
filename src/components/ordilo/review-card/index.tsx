@@ -69,7 +69,11 @@ export interface ReviewCardProps {
   /** Machine-readable failure code for diagnostics. */
   failureCode?: string | null;
   /** Called after a successful confirm to notify the parent to refresh. */
-  onConfirmSuccess?: () => void;
+  onConfirmSuccess?: (outcome?: {
+    eventsCreated: number;
+    tasksKept: number;
+    title: string;
+  }) => void;
   /** Called after a successful re-analyze to notify the parent to refresh. */
   onReanalyzeSuccess?: () => void;
   /** Called after a retry to notify the parent to refresh. */
@@ -482,12 +486,6 @@ export function ReviewCard({
     setConfirming(true);
     setConfirmError(null);
 
-    // Optimistic: this is the user's own explicit action (not fabricated
-    // AI output), so the celebration plays immediately instead of after a
-    // round trip. Rolled back below if the request actually fails.
-    setConfirmed(true);
-    vibrate(10);
-
     try {
       // Build the edited payload.
       const payload = buildConfirmPayload(
@@ -518,16 +516,21 @@ export function ReviewCard({
       setEventsCreated(
         typeof body?.events_created === "number" ? body.events_created : 0,
       );
+      setConfirmed(true);
+      vibrate(10);
 
       onDirtyChange?.(false);
-      onConfirmSuccess?.();
+      onConfirmSuccess?.({
+        eventsCreated: typeof body?.events_created === "number" ? body.events_created : 0,
+        tasksKept: payload.tasks.filter((_, index) => !payload.deletedTaskIndices.includes(index)).length,
+        title: payload.title,
+      });
 
       // Re-fetch the analysis so the confirmed success state shows the
       // actually-persisted (edited) data rather than the pre-edit values
       // still held in local state.
       await loadAnalysis();
     } catch (err) {
-      // Roll back the optimistic transition so the user can retry.
       setConfirmed(false);
       setConfirmError(
         err instanceof Error

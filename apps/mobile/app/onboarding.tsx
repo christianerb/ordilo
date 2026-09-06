@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import { FirstValueExample } from "@/src/components/first-value-example";
 import {
   ArrowRight,
   Camera,
@@ -476,8 +477,8 @@ export default function OnboardingScreen() {
                     : "Alles startklar!"}
                 </Text>
                 <Text style={[typography.timestamp, styles.readyText]}>
-                  Hol dir einen Brief vom Stapel — ich lese ihn, merke mir
-                  alles Wichtige, und du kannst mich einfach danach fragen.
+                  Ein Brief, ein Foto oder ein PDF reicht. Ich zeige dir,
+                  was wichtig ist. Du entscheidest, was übernommen wird.
                 </Text>
               </View>
 
@@ -500,6 +501,7 @@ export default function OnboardingScreen() {
                 title="Erstmal umschauen"
                 variant="ghost"
               />
+              <FirstValueExample />
             </Animated.View>
           )}
         </ScrollView>

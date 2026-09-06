@@ -7,6 +7,8 @@ import type { DocumentAnalysis } from "@/lib/schemas/extraction";
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+vi.mock("@/lib/analytics/first-value", () => ({ recordDocumentValueEvent: vi.fn() }));
 
 vi.mock("@/lib/analysis", () => ({
   fetchDocumentAnalysis: vi.fn(),
@@ -367,6 +369,21 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
     fetchSpy.mockRestore();
   });
 
+  it("does not expose success or next actions before saving has succeeded", async () => {
+    let finish!: (response: Response) => void;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { finish = resolve; }),
+    );
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId("autofile-done-button"));
+    expect(screen.queryByTestId("review-step-confirmed")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Ordilo dazu fragen" })).not.toBeInTheDocument();
+    finish(new Response(JSON.stringify({ error: "Bitte nochmal versuchen." }), { status: 500 }));
+    expect(await screen.findByText("Bitte nochmal versuchen.")).toBeVisible();
+    expect(screen.queryByTestId("review-step-confirmed")).not.toBeInTheDocument();
+    fetchSpy.mockRestore();
+  });
+
   it("'Bearbeiten' opens the full Review Card without confirming", async () => {
     const fetchSpy = vi
       .spyOn(globalThis, "fetch")
@@ -380,6 +397,21 @@ describe("ScanReviewStep — ready to save (clean analysis)", () => {
       (args) => String(args[0]).includes("/confirm"),
     );
     expect(confirmCalls).toHaveLength(0);
+    fetchSpy.mockRestore();
+  });
+
+  it("also waits for a real save after editing, before showing success", async () => {
+    let finish!: (response: Response) => void;
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { finish = resolve; }),
+    );
+    render(<ScanReviewStep documentId="doc-1" onDone={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId("autofile-edit-button"));
+    fireEvent.click(await screen.findByTestId("confirm-button"));
+    expect(screen.queryByTestId("review-card-confirmed")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("review-step-confirmed")).not.toBeInTheDocument();
+    finish(new Response(JSON.stringify({ events_created: 1 }), { status: 200 }));
+    expect(await screen.findByRole("button", { name: "Zum Kalender" })).toBeVisible();
     fetchSpy.mockRestore();
   });
 
