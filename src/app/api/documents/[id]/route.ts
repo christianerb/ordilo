@@ -14,6 +14,7 @@ import {
 import { dedupeDates, dedupeAmounts } from "@/lib/analysis-cleanup";
 import { canonicalizeCategoryForFamily } from "@/lib/categories-server";
 import { buildEntityRows } from "@/lib/pipeline/entity-rows";
+import { normalizeFactValue } from "@/lib/schemas/extraction";
 import { PIPELINE_VERSION } from "@/lib/ai/models";
 import { EmbeddingError } from "@/lib/ai/embeddings";
 import {
@@ -139,9 +140,11 @@ export async function DELETE(
  *      its knowledge graph, its embeddings, and its extracted entities in
  *      one transaction
  *
- * Deliberately untouched: `confirmed_at` and `status` (the document was
- * added once), tasks, and facts — both have their own edit surfaces, and
- * rewriting tasks here would reset their status and assignee.
+ * `confirmed_at` and `status` remain unchanged. Legacy metadata requests
+ * leave tasks/facts alone. A `corrections` payload uses a revision-checked
+ * transaction to update their stable rows, preserving task status and assignee,
+ * and synchronizes still-matching calendar events. Chat reads the current
+ * corrected metadata separately from original document evidence.
  *
  * A failed update never marks the document failed: it stays confirmed and
  * readable with its previous values, and the user can simply try again.
@@ -253,9 +256,7 @@ export async function PATCH(
   const labelEmbeddings: ConfirmRpcLabelEmbedding[] =
     await buildLabelEmbeddings(payload);
 
-  const { data: rpcResult, error: rpcError } = await serverClient.rpc(
-    "update_confirmed_document",
-    {
+  const updateArguments = {
       p_document_id: documentId,
       p_family_id: familyId,
       p_title: payload.title,
@@ -279,9 +280,20 @@ export async function PATCH(
       // carry today's pipeline version — the reindex job must not treat
       // them as stale.
       p_pipeline_version: PIPELINE_VERSION,
-    },
-  );
+    };
+  const { data: rpcResult, error: rpcError } = payload.corrections
+    ? await serverClient.rpc("correct_confirmed_document", {
+        p_update: updateArguments,
+        p_corrections: {
+          ...payload.corrections,
+          facts: payload.corrections.facts.map((fact) => ({ ...fact, normalized_value: normalizeFactValue(fact.value) })),
+        },
+      })
+    : await serverClient.rpc("update_confirmed_document", updateArguments);
 
+  if (rpcError?.code === "40001") {
+    return jsonError("Jemand hat das Dokument inzwischen geändert. Bitte neu laden und deine Korrektur erneut prüfen.", "EDIT_CONFLICT", 409);
+  }
   if (rpcError) {
     console.error(`[documents] Update failed for ${documentId}:`, rpcError);
     return jsonError(

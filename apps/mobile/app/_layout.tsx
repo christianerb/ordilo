@@ -151,7 +151,7 @@ function RootLayoutNav() {
       return;
     }
 
-    if (onInvite) return;
+    if (onInvite || first === "offline") return;
 
     if (!family || !isOnboardingComplete(family)) {
       if (!onOnboarding) router.replace("/onboarding");
@@ -175,14 +175,14 @@ function RootLayoutNav() {
   ]);
 
   // No protected content flashes while session or family state loads.
-  if (sessionLoading || (session && familyLoading)) {
+  if (sessionLoading || (session && familyLoading && segments[0] !== "offline")) {
     return null;
   }
 
   // Family lookup failed: surface the error with a retry instead of
   // routing anywhere. Invite links keep their own flow (they re-resolve
   // everything they need themselves).
-  if (session && familyError && segments[0] !== "invite") {
+  if (session && familyError && segments[0] !== "invite" && segments[0] !== "offline") {
     return (
       <ThemeProvider value={ordiloTheme}>
         <Screen style={gateStyles.errorScreen}>
@@ -200,6 +200,7 @@ function RootLayoutNav() {
             size="lg"
             title="Erneut versuchen"
           />
+          <OrdiloButton onPress={() => router.push("/offline")} title="Meine Offline-Kopien" variant="outline" />
           <OrdiloButton
             onPress={() => void signOut()}
             size="lg"

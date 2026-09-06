@@ -14,6 +14,8 @@ import {
   resolveUserFamily,
   type ResolvedFamily,
 } from "./family";
+import { AppState } from "react-native";
+import { retainOfflineFamily } from "./offline-documents";
 import { getSupabase } from "./supabase";
 import { useSession } from "./session";
 
@@ -50,39 +52,47 @@ const FamilyContext = createContext<FamilyContextValue>({
 export function FamilyProvider({ children }: { children: ReactNode }) {
   const { session } = useSession();
   const userId = session?.user?.id ?? null;
-  const [family, setFamily] = useState<ResolvedFamily | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  // Monotonic fetch id — only the latest request may write state. An
-  // auto-load that started before an invite accept committed must not
-  // overwrite the fresher refresh() that can already see the membership.
+  const [state, setState] = useState<{ userId: string | null; family: ResolvedFamily | null; isLoading: boolean; error: string | null }>({ userId: null, family: null, isLoading: true, error: null });
+  // A response can only update the account and request that started it.
   const fetchSeqRef = useRef(0);
 
-  const fetchFamily = useCallback(async (uid: string | null) => {
+  const fetchFamily = useCallback(async (uid: string | null, background = false) => {
     const seq = ++fetchSeqRef.current;
     if (!uid) {
-      setFamily(null);
-      setError(null);
-      setIsLoading(false);
+      setState({ userId: null, family: null, error: null, isLoading: false });
       return;
     }
-    setIsLoading(true);
-    const result = await resolveUserFamily(getSupabase() as SupabaseClient, uid);
-    if (seq !== fetchSeqRef.current) return; // superseded by a newer fetch
-    setFamily(result.data);
-    setError(result.error);
-    setIsLoading(false);
+    if (!background) setState((current) => ({ userId: uid, family: current.userId === uid ? current.family : null, error: null, isLoading: true }));
+    try {
+      const result = await resolveUserFamily(getSupabase() as SupabaseClient, uid);
+      if (seq !== fetchSeqRef.current) return;
+      if (!result.error) {
+        // Runs on every successful lookup, including cold start, so saved
+        // copies from a former family cannot reappear after an app restart.
+        await retainOfflineFamily(uid, result.data?.id ?? null).catch(() => {});
+      }
+      if (seq !== fetchSeqRef.current) return;
+      setState((current) => background && result.error && current.userId === uid && current.family
+        ? { ...current, isLoading: false }
+        : { userId: uid, family: result.data, error: result.error, isLoading: false });
+    } catch {
+      if (seq !== fetchSeqRef.current) return;
+      setState((current) => background && current.userId === uid && current.family
+        ? { ...current, isLoading: false }
+        : { userId: uid, family: null, error: "Deine Familie konnte nicht geladen werden. Bitte versuch es nochmal.", isLoading: false });
+    }
   }, []);
 
-  // Load once per signed-in user. The microtask hop keeps the synchronous
-  // setState out of the effect body (react-hooks/set-state-in-effect).
   useEffect(() => {
     let cancelled = false;
-    void Promise.resolve().then(() => {
-      if (!cancelled) void fetchFamily(userId);
+    void Promise.resolve().then(() => { if (!cancelled) void fetchFamily(userId); });
+    const listener = AppState.addEventListener("change", (next) => {
+      if (next === "active" && !cancelled) void fetchFamily(userId, true);
     });
     return () => {
       cancelled = true;
+      fetchSeqRef.current += 1;
+      listener.remove();
     };
   }, [userId, fetchFamily]);
 
@@ -100,11 +110,15 @@ export function FamilyProvider({ children }: { children: ReactNode }) {
   }, [fetchFamily]);
 
   const markIntroSeenLocally = useCallback(() => {
-    setFamily((current) =>
-      current ? { ...current, introSeenAt: new Date().toISOString() } : current,
-    );
-  }, []);
+    setState((current) => current.userId === userId && current.family
+      ? { ...current, family: { ...current.family, introSeenAt: new Date().toISOString() } }
+      : current);
+  }, [userId]);
 
+  // Hide a previous account synchronously, before the new lookup effect runs.
+  const family = state.userId === userId ? state.family : null;
+  const isLoading = state.userId === userId ? state.isLoading : true;
+  const error = state.userId === userId ? state.error : null;
   const value = useMemo<FamilyContextValue>(
     () => ({ family, isLoading, error, refresh, markIntroSeenLocally }),
     [family, isLoading, error, refresh, markIntroSeenLocally],

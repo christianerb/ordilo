@@ -1,13 +1,11 @@
 appId: com.ordilo.app
 ---
-# Login-Validierung: ungültige Adresse → deutsche Fehlermeldung,
-# kein Netzwerk-Request, Fokus bleibt im Formular.
-- launchApp:
-    clearState: true
-- tapOn:
-    id: "E-Mail-Adresse"
-    optional: true
-- tapOn: "du@beispiel.de"
+# The shared flow starts at the signed-out introduction and opens login.
+- runFlow: 01-app-gate.yaml
+- tapOn: "E-Mail-Adresse"
 - inputText: "keine-email"
-- tapOn: "Loslegen — ohne Passwort"
+- hideKeyboard
+- scrollUntilVisible:
+    element: "Loslegen ohne Passwort"
+- tapOn: "Loslegen ohne Passwort"
 - assertVisible: "Bitte gültige E-Mail-Adresse eingeben"

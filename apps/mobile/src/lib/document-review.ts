@@ -44,10 +44,10 @@ export type ReviewAnalysis = {
   family_members: { person_id: string | null; name: string; confidence: number }[];
   organizations: { name: string; type: string; confidence: number }[];
   contacts: { name: string; organization: string; role: string; phone: string; email: string; confidence: number }[];
-  dates: { date: string; type: string; label: string; confidence: number }[];
+  dates: { id?: string; date: string; type: string; label: string; confidence: number }[];
   amounts: { amount: string; currency: string; label: string; kind: "total" | "paid" | "outstanding" | "per_person" | "recurring" | "other"; value_date: string | null; confidence: number }[];
-  tasks: { title: string; due_date: string | null; confidence: number }[];
-  facts: { fact_type: string; label: string; value: string; confidence: number }[];
+  tasks: { id?: string; title: string; due_date: string | null; confidence: number }[];
+  facts: { id?: string; fact_type: string; label: string; value: string; confidence: number }[];
   suggested_category: string;
   tags: string[];
   needs_user_review: boolean;
@@ -201,6 +201,7 @@ export function reconstructStoredEntities(rawEntities: unknown[]) {
     })),
     contacts,
     dates: ofType("date").map((entity) => ({
+      id: text(entity.id) || undefined,
       date: text(entity.entity_value),
       type: "date",
       label: text(entity.label),
@@ -274,11 +275,11 @@ export async function loadDocumentReview(documentId: string): Promise<DocumentRe
     amounts: reconstructed.amounts,
     tasks: (tasks ?? []).map((task) => {
       const entry = asRecord(task);
-      return { title: text(entry.title), due_date: text(entry.due_date) || null, confidence: confidence(entry.confidence) };
+      return { id: text(entry.id) || undefined, title: text(entry.title), due_date: text(entry.due_date) || null, confidence: confidence(entry.confidence) };
     }),
     facts: (facts ?? []).map((fact) => {
       const entry = asRecord(fact);
-      return { fact_type: text(entry.fact_type) || "identifier", label: text(entry.label), value: text(entry.value), confidence: confidence(entry.confidence) };
+      return { id: text(entry.id) || undefined, fact_type: text(entry.fact_type) || "identifier", label: text(entry.label), value: text(entry.value), confidence: confidence(entry.confidence) };
     }),
     suggested_category: text(category?.entity_value) || row.category || "Sonstiges",
     tags: row.tags ?? ofType("tag").map((entity) => text(entity.entity_value)).filter(Boolean),

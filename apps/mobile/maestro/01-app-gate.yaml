@@ -1,9 +1,12 @@
 appId: com.ordilo.app
 ---
-# App-Gate: ohne Session darf kein geschützter Inhalt aufblitzen —
-# der Login ist der einzige sichtbare Einstieg.
-- launchApp:
-    clearState: true
-- assertVisible: "Schön, dass du da bist"
-- assertVisible: "Melde dich mit deiner E-Mail-Adresse an. Ein Passwort brauchst du nicht."
-- assertVisible: "Loslegen — ohne Passwort"
+# Precondition: signed out through the app, or a dedicated clean simulator.
+# clearState alone cannot guarantee that an iOS Keychain session is removed.
+- launchApp
+- assertVisible: "Ein Brief weniger im Kopf."
+- assertVisible: "Deine Familie. Gut organisiert."
+- scrollUntilVisible:
+    element: "Loslegen"
+- tapOn: "Loslegen"
+- assertVisible: "Schön, dass du da bist."
+- assertVisible: "Loslegen ohne Passwort"

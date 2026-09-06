@@ -341,14 +341,7 @@ describe("native motion wiring", () => {
     expect(library).toContain("groupLibraryDocuments(");
   });
 
-  it("lets a confirmed document be renamed through the protected update route", () => {
-    const document = source("app/document/[id].tsx");
-
-    expect(document).toContain("confirmedTitleDraft");
-    expect(document).toContain("updateConfirmedDocument");
-    expect(document).toContain("buildDocumentUpdatePayload");
-    expect(document).toContain('title={saving ? "Wird gespeichert …" : "Titel speichern"}');
-  });
+  // Confirmed editing is covered by document-corrections-rendering.test.js.
 
   it("uses one shared compact picker sheet", () => {
     const pickerSheet = source("src/components/picker-sheet.tsx");

@@ -62,7 +62,7 @@ export async function readDocumentEvidence(
   client: Client, familyId: string, documentId: string, query: string, page?: number,
 ): Promise<DocumentEvidence[]> {
   const { data: doc, error } = await client.from("documents")
-    .select("id, title, ocr_text, document_type, source, file_url")
+    .select("id, title, ocr_text, document_type, source, file_url, corrections_text")
     .eq("id", documentId).eq("family_id", familyId).eq("status", "confirmed").maybeSingle();
   if (error || !doc) return [];
   if (doc.document_type === "credentials" && !/\b(?:deutschlandticket|ticket|fahrkarte)\b/i.test(doc.title ?? "")) return [];
@@ -74,18 +74,26 @@ export async function readDocumentEvidence(
   if (page !== undefined) pagesQuery = pagesQuery.eq("page_number", page);
   const { data: pages, error: pagesError } = await pagesQuery.limit(100);
   if (pagesError) throw new Error("Die Dokumentseiten konnten nicht gelesen werden.");
+  const correctionResult = doc.corrections_text && doc.document_type !== "credentials"
+    ? await client.rpc("document_correction_evidence", { p_document_id: doc.id }) : null;
+  if (correctionResult?.error) throw new Error("Die Familienkorrektur konnte nicht gelesen werden.");
+  const corrections: DocumentEvidence[] = correctionResult?.data ? [{
+    documentId: doc.id, title: `Familienkorrektur: ${doc.title ?? "Dokument"}`,
+    page: null, hasOriginal: false,
+    text: redactPII(selectEvidenceWindow(correctionResult.data, query)),
+  }] : [];
   const words = normalizeEvidence(query).match(/[\p{L}\p{N}]{3,}/gu) ?? [];
   const readable = (pages ?? []).map((row) => ({ ...row, ocr_markdown: safeText(row.ocr_markdown ?? "") })).filter((row) => row.ocr_markdown.trim());
   const selected = readable.map((row) => ({ row, score: words.reduce((score, word) =>
     score + Number(normalizeEvidence(row.ocr_markdown!).includes(word)), 0) }))
     .sort((a, b) => b.score - a.score || a.row.page_number - b.row.page_number).slice(0, 4);
-  if (selected.length) return selected.map(({ row }) => ({
+  if (selected.length) return [...corrections, ...selected.map(({ row }) => ({
     documentId: doc.id, title: doc.title, page: row.page_number, hasOriginal: Boolean(doc.file_url),
     text: redactPII(selectEvidenceWindow(row.ocr_markdown!, query)),
-  }));
+  }))];
   // A legacy combined OCR field has no trustworthy page attribution.
-  if (page !== undefined || !safeText(doc.ocr_text ?? "").trim()) return [];
-  return [{ documentId: doc.id, title: doc.title, page: null, hasOriginal: Boolean(doc.file_url),
+  if (page !== undefined || !safeText(doc.ocr_text ?? "").trim()) return corrections;
+  return [...corrections, { documentId: doc.id, title: doc.title, page: null, hasOriginal: Boolean(doc.file_url),
     text: redactPII(selectEvidenceWindow(safeText(doc.ocr_text!), query)) }];
 }
 

@@ -154,6 +154,8 @@ export default function EinstellungenScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <OrdiloButton title="Meine Offline-Kopien" variant="outline" onPress={() => router.push("/offline")} />
+        <OrdiloButton title="Ordilo mit Beispiel ausprobieren" variant="ghost" onPress={() => router.push("/beispiel")} />
         <SettingsSection title="Sicherheit">
           <SettingsToggleRow
             description={

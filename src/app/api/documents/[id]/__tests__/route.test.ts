@@ -290,3 +290,34 @@ describe("PATCH /api/documents/[id]", () => {
     expect(client.from).not.toHaveBeenCalledWith("documents_failed");
   });
 });
+
+describe("atomic document corrections", () => {
+  const corrections = { revision: "a".repeat(32), tasks: [], facts: [{ label: "Nummer", value: "AB-123" }], date_changes: [] };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(buildDocumentEmbeddings).mockResolvedValue([REBUILT_EMBEDDING]);
+  });
+  it("uses the atomic wrapper and normalizes corrected identifiers", async () => {
+    const { client, rpcCalls } = mockServerClient();
+    vi.mocked(createServerClient).mockResolvedValue(client as never);
+    vi.mocked(createAdminClient).mockReturnValue(mockAdminClient() as never);
+    expect((await PATCH(request(validPayload({ corrections })), params())).status).toBe(200);
+    expect(rpcCalls).toHaveLength(1);
+    expect(rpcCalls[0]).toMatchObject({ fnName: "correct_confirmed_document", params: { p_corrections: { facts: [{ value: "AB-123", normalized_value: "ab123" }] } } });
+  });
+  it("reports a concurrent edit as a recoverable conflict", async () => {
+    const { client } = mockServerClient({ rpcError: { code: "40001" } });
+    vi.mocked(createServerClient).mockResolvedValue(client as never);
+    vi.mocked(createAdminClient).mockReturnValue(mockAdminClient() as never);
+    const response = await PATCH(request(validPayload({ corrections })), params());
+    expect(response.status).toBe(409);
+    expect((await response.json()).code).toBe("EDIT_CONFLICT");
+  });
+  it("rejects malformed calendar corrections before writing", async () => {
+    const { client, rpcCalls } = mockServerClient();
+    vi.mocked(createServerClient).mockResolvedValue(client as never);
+    const response = await PATCH(request(validPayload({ corrections: { ...corrections, date_changes: [{ previous_date: "2026-10-01", previous_label: "Termin", date: "2026-02-30", label: "Termin" }] } })), params());
+    expect(response.status).toBe(400);
+    expect(rpcCalls).toHaveLength(0);
+  });
+});

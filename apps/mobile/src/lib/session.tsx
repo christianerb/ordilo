@@ -9,6 +9,7 @@ import {
 } from "react";
 import { AppState } from "react-native";
 
+import { clearOfflineDocuments, clearOfflineExports } from "./offline-documents";
 import { unregisterPushDevice } from "./notifications";
 import { getSupabase } from "./supabase";
 
@@ -28,8 +29,10 @@ const SessionContext = createContext<SessionContextValue>({
 type SignOutAuth = Pick<ReturnType<typeof getSupabase>["auth"], "signOut">;
 
 export async function signOutSession(auth: SignOutAuth): Promise<void> {
+  await clearOfflineDocuments().catch(() => {});
   try {
-    await auth.signOut();
+    const result = await auth.signOut();
+    if (result.error) await auth.signOut({ scope: "local" });
   } catch {
     // Account deletion can remove the server-side auth user before this
     // call. Clear the persisted native session even when remote revocation
@@ -49,10 +52,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const supabase = getSupabase();
+    try { clearOfflineExports(); } catch { /* Retry cleanup on the next launch. */ }
+    let authEventSeen = false;
+    let disposed = false;
+    let previousUserId: string | null = null;
 
     supabase.auth
       .getSession()
       .then(({ data }) => {
+        if (disposed || authEventSeen) return;
+        previousUserId = data.session?.user.id ?? null;
+        if (!data.session) void clearOfflineDocuments().catch(() => {});
         setSession(data.session);
       })
       .catch(() => {
@@ -60,12 +70,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // app as logged out, but never leave isLoading stuck on true.
       })
       .finally(() => {
-        setIsLoading(false);
+        if (!disposed) setIsLoading(false);
       });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (disposed) return;
+      authEventSeen = true;
+      if (!nextSession || (previousUserId && previousUserId !== nextSession.user.id)) void clearOfflineDocuments().catch(() => {});
+      previousUserId = nextSession?.user.id ?? null;
       setSession(nextSession);
       setIsLoading(false);
     });
@@ -80,6 +94,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     supabase.auth.startAutoRefresh();
 
     return () => {
+      disposed = true;
       subscription.unsubscribe();
       appState.remove();
       supabase.auth.stopAutoRefresh();

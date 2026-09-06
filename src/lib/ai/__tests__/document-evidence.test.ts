@@ -111,3 +111,20 @@ it("rejects an address-only answer to a meeting-time question", () => {
   expect(verifyDocumentAnswer({state:"answered",claims:[claim]},pages,[],"Wo ist der Treffpunkt?")).toMatchObject({state:"answered"});
   expect(verifyDocumentAnswer({state:"answered",claims:[{...claim,text:"Der Treffpunkt ist um 08:15 Uhr."}]},pages,[],"Und wann ist der Treffpunkt?")).toMatchObject({state:"answered"});
 });
+
+it("reads current family corrections separately from unchanged original evidence", async () => {
+  const db = database({ id, title: "Ausflug", document_type: "school", corrections_text: "Familienkorrektur", file_url: "original.pdf" }, [{ page_number: 1, ocr_markdown: "Der Ausflug findet am 01.10.2026 statt." }]);
+  const correction = "Aktueller gespeicherter Stand nach Familienkorrektur: Ausflug\nTermin: 2026-10-02";
+  const rpc = vi.fn().mockResolvedValue({ data: correction, error: null });
+  const result = await readDocumentEvidence({ ...db.client, rpc } as never, "family-a", id, "Ausflug");
+  expect(rpc).toHaveBeenCalledWith("document_correction_evidence", { p_document_id: id });
+  expect(result).toMatchObject([
+    { title: "Familienkorrektur: Ausflug", text: correction, page: null, hasOriginal: false },
+    { title: "Ausflug", page: 1, hasOriginal: true, text: "Der Ausflug findet am 01.10.2026 statt." },
+  ]);
+  expect(verifyDocumentAnswer({ state: "answered", claims: [{ document_id: id, page_number: null, quote: correction, text: "Die Familienkorrektur nennt den 02.10.2026." }] }, result)).toMatchObject({ sources: [{ title: "Familienkorrektur: Ausflug", has_original: false }] });
+});
+it("fails rather than silently serving old OCR when corrections cannot load", async () => {
+  const db = database({ id, title: "Brief", document_type: "letter", corrections_text: "Familienkorrektur" }, []);
+  await expect(readDocumentEvidence({ ...db.client, rpc: vi.fn().mockResolvedValue({ data: null, error: new Error("offline") }) } as never, "family", id, "Brief")).rejects.toThrow("Familienkorrektur");
+});

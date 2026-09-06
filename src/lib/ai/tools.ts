@@ -1530,7 +1530,7 @@ function rememberEvidence(ctx: ToolContext, pages: DocumentEvidence[]): void {
     if (existing < 0) ctx.documentEvidence.push(page);
     if (!ctx.sources.some((source) => source.document_id === page.documentId)) {
       ctx.sources.push({ document_id: page.documentId, title: page.title,
-        excerpt: page.text.slice(0, 2_000), score: 0.8, origin: "semantic", page_number: page.page ?? undefined });
+        excerpt: page.text.slice(0, 2_000), score: 0.8, origin: "semantic", has_original: page.hasOriginal, page_number: page.page ?? undefined });
     }
   }
   // Bound tool context; newest reads take priority for corrections.

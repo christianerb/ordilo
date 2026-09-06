@@ -1,39 +1,53 @@
-# Maestro E2E-Smoke-Tests (iOS)
+# Mobile smoke tests
 
-Grundgerüst für die E2E-Spalte der Paritäts-Matrix (`docs/MOBILE_PARITY.md`).
-Die Flows hier brauchen **kein** Testkonto: sie prüfen den App-Gate und den
-Login-Flow bis zur Code-Eingabe. Authentifizierte Flows (Scan, Review,
-Ablage, …) folgen, sobald ein Testkonto-/Seed-Vertrag mit Agent D abgestimmt
-ist — echte Supabase-Sessions lassen sich in Maestro nicht ohne Backend-
-Vorbereitung herstellen.
+These flows target a native development build (`com.ordilo.app`), not Expo Go.
+Use an isolated simulator or a dedicated QA device. See
+[`mobile-prelaunch.md`](../../../docs/quality/mobile-prelaunch.md) for the fixture
+contract and remaining device acceptance.
 
-## Voraussetzungen
+## Signed-out checks
+
+Sign out through the app before each command. A cleared app container on iOS does
+not guarantee a cleared Keychain session. These flows deliberately never clear the
+entire device Keychain.
 
 ```bash
-brew install maestro
 cd apps/mobile
-npx expo run:ios          # Dev-Build auf Simulator oder Gerät
+maestro test maestro/01-app-gate.yaml
+# Sign out / return to the signed-out entry before the next command.
+maestro test maestro/02-login-validation.yaml
 ```
 
-Die Flows erwarten die Bundle-ID `com.ordilo.app` und eine frisch
-installierte App (kein bestehender Login im Keychain).
+The entry smoke follows the current introduction's “Loslegen” button to the email
+screen. The validation smoke checks the actual accessibility label and German
+validation error without sending an email.
 
-## Ausführen
+## Authenticated checks
+
+Prepare the synthetic fixture and sign in normally as described in the acceptance
+document. Keep that session; do not run signed-out checks in the same batch.
 
 ```bash
-maestro test maestro/
+cd apps/mobile
+maestro test maestro/authenticated/03-demo-and-intake.yaml
+maestro test maestro/authenticated/04-library-and-evidence.yaml
 ```
 
-## Flows
-
-| Flow | Nachweis für Matrix-Zeile |
+| Flow | Coverage |
 | --- | --- |
-| `01-app-gate.yaml` | Fundament: ohne Session landet man auf dem Login |
-| `02-login-validation.yaml` | Fundament: E-Mail-Validierung mit deutscher Fehlermeldung |
+| `01-app-gate.yaml` | Signed-out introduction → real login screen |
+| `02-login-validation.yaml` | Invalid email, German feedback, no email sent |
+| `authenticated/03-demo-and-intake.yaml` | Fictional demo, answer/source interaction, intake chooser, session after restart |
+| `authenticated/04-library-and-evidence.yaml` | Seeded library search, document detail, real chat answer → source → document |
 
-## Hinweise
+Do **not** run `maestro test maestro/` as a batch: the groups require different
+session states. The authenticated flows do not receive passwords or OTPs as
+arguments and do not install sessions through a test-only app path.
 
-- Auf echten Geräten läuft der Flow identisch (`maestro test --device <id>`).
-- Der Code-Eingabe-Schritt (OTP) ist absichtlich nicht automatisiert: er
-  braucht ein abgreifbares Test-Postfach. Bis dahin bleibt die
-  Real-iPhone-Spalte manuell.
+Prerequisites: Maestro with a working Java runtime, native build on an available
+iOS simulator/device, reachable API and Supabase project matching the build.
+The chat smoke needs a working AI backend and may consume quota. A timeout,
+missing source, or wrong source is a failure; there is no optional-pass fallback.
+
+Command references: [launchApp](https://docs.maestro.dev/reference/commands-available/launchapp),
+[scrollUntilVisible](https://docs.maestro.dev/reference/commands-available/scrolluntilvisible).
