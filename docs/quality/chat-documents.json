@@ -1,0 +1,62 @@
+[
+  {
+    "title": "Deutschlandticket Hannah",
+    "content": "Fahrgast: Hannah. Gültig vom 01.08.2027 bis 31.08.2027. Kündigung bis 10.08.2027."
+  },
+  {
+    "title": "Deutschlandticket Emma",
+    "content": "Fahrgast: Emma. Gültig vom 01.09.2027 bis 30.09.2027."
+  },
+  {
+    "title": "Kündigungsbestätigung Strom",
+    "content": "Stromvertrag der Familie. Vertragsende: 31.12.2027. Kündigung eingegangen am 05.08.2027."
+  },
+  {
+    "title": "Elternabend Hannah",
+    "content": "Hannahs Klasse: Elternabend am 15.09.2027 um 19:30 Uhr im Raum B12."
+  },
+  {
+    "title": "Rechnung Fahrrad Emma",
+    "content": "Reparatur von Emmas Fahrrad. Rechnungsbetrag 84,50 Euro. Bezahlt am 04.08.2027."
+  },
+  {
+    "title": "Versicherung Fahrrad Hannah",
+    "content": "Versichertes Fahrrad: Hannahs Rad. Selbstbeteiligung bei Diebstahl: 150 Euro."
+  },
+  {
+    "title": "Klassenfahrt Emma",
+    "content": "Emmas Klassenfahrt: Treffpunkt Hauptbahnhof, Gleis 7, am 12.10.2027 um 08:15 Uhr. Abfahrt 08:40 Uhr."
+  },
+  {
+    "title": "Schulfest Hannah",
+    "content": "Hannahs Schulfest findet im Schulgarten statt. Für das Buffet bitte Obst mitbringen. Eine Anfangszeit wurde noch nicht festgelegt."
+  },
+  {
+    "title": "Vereinsbestätigung Jonas A",
+    "content": "Mitglied: Jonas. Jahreskarte Schwimmverein, Saison 2027. Gültig bis 31.10.2027. Ausgestellt am 01.03.2027."
+  },
+  {
+    "title": "Vereinsbestätigung Jonas B",
+    "content": "Mitglied: Jonas. Jahreskarte Schwimmverein, Saison 2027. Gültig bis 30.11.2027. Ausgestellt am 01.03.2027. Ein Hinweis, welche Bestätigung die andere ersetzt, fehlt."
+  },
+  {
+    "title": "Bibliotheksausweis Mira ursprünglich",
+    "content": "Miras Bibliotheksausweis war ursprünglich gültig bis 31.07.2027."
+  },
+  {
+    "title": "Verlängerung Bibliotheksausweis Mira",
+    "content": "Verlängerungsbestätigung für Miras Bibliotheksausweis. Das bisherige Ende 31.07.2027 wird durch die Verlängerung ersetzt. Neuer Gültigkeitszeitraum: 01.08.2027 bis 31.07.2028."
+  },
+  {
+    "title": "Sporttag Emma Grundschule am Park",
+    "content": "Grundschule am Park. Schülerin: Emma. Sporttag am 22.09.2027. Emma muss Turnschuhe und eine Trinkflasche mitbringen. Kontakt zum Sporttag: Sekretariat der Grundschule am Park."
+  },
+  {
+    "title": "Abholschein Theo mit OCR-Lücke",
+    "content": "Abholschein für Theo. Abholung bis 3?.10.2027. Die zweite Ziffer des Tages ist im Scan unleserlich. Das genaue Datum ist nicht sicher erkennbar."
+  },
+  {
+    "title": "Lesbarer Abholschein Lina",
+    "content": "Abholschein für Lina.\nAbhoIung\nbis 18. 10. 2027.\nBitte Ausweis mitbringen."
+  }
+]

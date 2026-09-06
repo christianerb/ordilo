@@ -242,7 +242,7 @@ function assistantMessageValues(payload: AssistantMessagePayload) {
         : null,
     response_state: responseState,
     suggestion: suggestion as unknown as Record<string, unknown> | null,
-    feedback: null,
+    // Ratings live in chat_feedback_events; production has no legacy feedback column.
   };
 }
 

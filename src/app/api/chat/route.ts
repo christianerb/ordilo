@@ -326,6 +326,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // 10. Build tool context with speaker identity
   const toolContext: ToolContext = {
+    signal: AbortSignal.any([request.signal, AbortSignal.timeout(45_000)]),
     client: serverClient,
     familyId,
     sources: [],
@@ -439,6 +440,7 @@ export async function POST(request: Request): Promise<Response> {
             // answers can receive feedback immediately.
             if (event.type === "done") {
               streamDone = true;
+              if (!repairMessageId) ctrl.enqueue(encoder.encode(JSON.stringify({ type: "answer_ready" }) + "\n"));
               return;
             }
 
@@ -546,11 +548,14 @@ export async function POST(request: Request): Promise<Response> {
               );
             } else if (repairMessageId) {
               repairPersistenceFailed = true;
+            } else {
+              ctrl.enqueue(encoder.encode(JSON.stringify({ type: "persistence_warning" }) + "\n"));
             }
           } catch {
             // New answers remain best-effort. A repair is different: success
             // means replacing the old row, so it must fail honestly.
             if (repairMessageId) repairPersistenceFailed = true;
+            else ctrl.enqueue(encoder.encode(JSON.stringify({ type: "persistence_warning" }) + "\n"));
           }
         }
 
@@ -586,6 +591,7 @@ export async function POST(request: Request): Promise<Response> {
                 : firstVisibleAt - requestStartedAt,
             total_ms: Date.now() - requestStartedAt,
             tool_calls: toolContext.toolCallCount ?? 0,
+            timings: toolContext.timings ?? [],
             answer_type: answerCard ? "card" : "text",
             response_state: toolContext.responseState ?? "answered",
             knowledge_spaces: [

@@ -760,11 +760,9 @@ describe("streamAgenticAnswer — named member document listings", () => {
     );
     const lines = await readNdjsonStream(stream);
 
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    expect(lines).toContainEqual({
-      type: "text",
-      content: "Im Kita-Brief steht, dass das Sommerfest am Freitag ist.",
-    });
+    expect(mockCreate).toHaveBeenCalled();
+    expect(lines).toContainEqual({ type: "tool", tool: "search_documents", state: "start" });
+    expect(lines).not.toContainEqual({ type: "tool", tool: "list_documents", state: "start" });
   });
 
   it.each([
@@ -780,9 +778,10 @@ describe("streamAgenticAnswer — named member document listings", () => {
       [],
       makeNamedMemberDocumentContext(),
     );
-    await readNdjsonStream(stream);
+    const lines = await readNdjsonStream(stream);
 
-    expect(mockCreate).toHaveBeenCalledTimes(1);
+    expect(mockCreate).toHaveBeenCalled();
+    expect(lines).not.toContainEqual({ type: "tool", tool: "list_documents", state: "start" });
   });
 });
 
@@ -791,6 +790,11 @@ describe("streamAgenticAnswer — named member document listings", () => {
 // ---------------------------------------------------------------------------
 
 describe("streamAgenticAnswer — present_answer_card", () => {
+  // These legacy card tests start after a completed family lookup without page evidence.
+  function makeSearchedContext(...args: Parameters<typeof makeToolContext>): ToolContext {
+    return { ...makeToolContext(...args), searchedScopes: new Set(["family"]) };
+  }
+
   beforeEach(() => {
     setApiKey();
     mockCreate.mockReset();
@@ -815,7 +819,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext();
+    const toolContext = makeSearchedContext();
     const stream = await streamAgenticAnswer(
       "Wann ist der Zahnarzttermin?",
       [],
@@ -863,7 +867,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext([
+    const toolContext = makeSearchedContext([
       {
         document_id: "doc-1",
         title: "Stromrechnung",
@@ -905,7 +909,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext([
+    const toolContext = makeSearchedContext([
       {
         document_id: "doc-1",
         title: "Stromrechnung",
@@ -951,7 +955,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext([
+    const toolContext = makeSearchedContext([
       { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
     ]);
     const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
@@ -983,9 +987,10 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     );
 
     // The document carries an encrypted secret; the model never sees it.
-    const toolContext = makeToolContext(
+    const toolContext = makeSearchedContext(
       [{ document_id: "doc-1", title: "Netflix", excerpt: "Login", score: 0.9 }],
       "encrypted-envelope",
+      "credentials",
     );
 
     const stream = await streamAgenticAnswer("Zugangsdaten Netflix?", [], toolContext);
@@ -1018,7 +1023,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext(
+    const toolContext = makeSearchedContext(
       [{ document_id: "doc-1", title: "Netflix", excerpt: "Familienaccount", score: 0.9 }],
       "encrypted-envelope",
       "credentials",
@@ -1059,7 +1064,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext(
+    const toolContext = makeSearchedContext(
       [{ document_id: "doc-1", title: "WLAN", excerpt: "Zettel am Router", score: 0.9 }],
       "encrypted-envelope",
       "credentials",
@@ -1096,7 +1101,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext(
+    const toolContext = makeSearchedContext(
       [{ document_id: "doc-1", title: "Netflix", excerpt: "Login", score: 0.9 }],
       "encrypted-envelope",
       "credentials",
@@ -1132,7 +1137,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext(
+    const toolContext = makeSearchedContext(
       [{ document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 }],
       null,
       "invoice",
@@ -1162,9 +1167,9 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext([
+    const toolContext = makeSearchedContext([
       { document_id: "doc-1", title: "Netflix", excerpt: "Login", score: 0.9 },
-    ]);
+    ], null, "credentials");
     const stream = await streamAgenticAnswer("Zugangsdaten Netflix?", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
@@ -1193,7 +1198,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       ]),
     );
 
-    const toolContext = makeToolContext([
+    const toolContext = makeSearchedContext([
       { document_id: "doc-1", title: "Stromrechnung", excerpt: "45 EUR", score: 0.9 },
     ]);
     const stream = await streamAgenticAnswer("Zeig mir die Rechnungsdetails.", [], toolContext);
@@ -1228,7 +1233,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const stream = await streamAgenticAnswer(
       "Was muss ich diese Woche erledigen?",
       [],
-      makeToolContext(),
+      makeSearchedContext(),
     );
     const lines = await readNdjsonStream(stream);
 
@@ -1248,7 +1253,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
       fakeOpenAIStream([{ content: "Hallo! Wie kann ich helfen?" }]),
     );
 
-    const stream = await streamAgenticAnswer("Hallo", [], makeToolContext());
+    const stream = await streamAgenticAnswer("Hallo", [], makeSearchedContext());
     const lines = await readNdjsonStream(stream);
 
     expect(lines.filter((l) => l.type === "tool")).toHaveLength(0);
@@ -1276,7 +1281,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
         fakeOpenAIStream([{ content: "Der Termin ist am 12.08.2026." }]),
       );
 
-    const toolContext = makeToolContext();
+    const toolContext = makeSearchedContext();
     const stream = await streamAgenticAnswer("Wann?", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
@@ -1327,7 +1332,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const stream = await streamAgenticAnswer(
       "Wie lange ist das Deutschland-Ticket von Hanna gültig?",
       [],
-      makeToolContext([source]),
+      makeSearchedContext([source]),
     );
     const lines = await readNdjsonStream(stream);
 
@@ -1378,7 +1383,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
     const stream = await streamAgenticAnswer(
       "Wie hoch ist der Abschlag?",
       [],
-      makeToolContext([source]),
+      makeSearchedContext([source]),
     );
     const lines = await readNdjsonStream(stream);
 
@@ -1413,7 +1418,7 @@ describe("streamAgenticAnswer — present_answer_card", () => {
         fakeOpenAIStream([{ content: "Der Termin ist am 12.08.2026." }]),
       );
 
-    const toolContext = makeToolContext();
+    const toolContext = makeSearchedContext();
     const stream = await streamAgenticAnswer("Wann?", [], toolContext);
     const lines = await readNdjsonStream(stream);
 
@@ -1674,6 +1679,7 @@ describe("streamAgenticAnswer — text buffering and hedging guardrail", () => {
         reasoning: { effort: "low" },
         store: false,
       }),
+      { signal: undefined },
     );
   });
 

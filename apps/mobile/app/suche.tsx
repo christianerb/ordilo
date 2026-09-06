@@ -21,18 +21,16 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   AppState,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import Animated from "react-native-reanimated";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
   ActionCardView,
@@ -44,6 +42,7 @@ import {
   SourcesSection,
   SuggestionButton,
 } from "@/src/components/chat";
+import { ChatKeyboardFrame } from "@/src/components/chat-keyboard-frame";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -120,7 +119,6 @@ type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
 
 export default function SucheScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { family } = useFamily();
   const { q } = useLocalSearchParams<{ q?: string }>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -140,6 +138,9 @@ export default function SucheScreen() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const inputRef = useRef<TextInput>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const followAnswer = useRef(true);
+  const chatAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => chatAbortRef.current?.abort(), []);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
   const voiceIntent = useRef(false);
@@ -340,7 +341,11 @@ export default function SucheScreen() {
       lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setBusy(true);
+      followAnswer.current = true;
+      const abort = new AbortController();
+      chatAbortRef.current = abort;
       let receivedDone = false;
+      let receivedReady = false;
       let receivedError = false;
       let pendingText = "";
       let textFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -386,6 +391,7 @@ export default function SucheScreen() {
             updateMessage(assistantMessage.id, (message) =>
               applyChatEvent(message, event),
             );
+            if (event.type === "answer_ready") receivedReady = true;
             if (event.type === "done") {
               receivedDone = true;
               void Haptics.notificationAsync(
@@ -396,9 +402,12 @@ export default function SucheScreen() {
               receivedError = true;
             }
           },
+          abort.signal,
         );
         flushPendingText();
-        if (!receivedDone || receivedError) {
+        if ((!receivedDone || receivedError) && receivedReady && !repair) {
+          updateMessage(assistantMessage.id, (message) => ({ ...message, saveWarning: !message.dbId }));
+        } else if (!receivedDone || receivedError) {
           if (repair) {
             updateMessage(assistantMessage.id, () => repair.originalMessage);
             throw new Error("Chat repair stream incomplete");
@@ -416,6 +425,18 @@ export default function SucheScreen() {
           textFlushTimer = null;
         }
         pendingText = "";
+        if (receivedReady && !repair) {
+          updateMessage(assistantMessage.id, (message) => ({ ...message, saveWarning: !message.dbId }));
+          return;
+        }
+        if (abort.signal.aborted) {
+          updateMessage(assistantMessage.id, (message) => repair ? repair.originalMessage : ({
+            ...message, text: message.status === "done" ? message.text : "Antwort gestoppt.",
+            status: "done", responseState: undefined,
+          }));
+          if (repair) throw error;
+          return;
+        }
         const status = httpStatusOf(error);
         updateMessage(assistantMessage.id, (message) =>
           repair
@@ -433,6 +454,7 @@ export default function SucheScreen() {
         if (repair) throw error;
       } finally {
         flushPendingText();
+        if (chatAbortRef.current === abort) chatAbortRef.current = null;
         setBusy(false);
       }
     },
@@ -836,6 +858,8 @@ export default function SucheScreen() {
     };
   }, [discardVoiceRecording]);
 
+  const { fontScale } = useWindowDimensions();
+
   const latestRepairableMessageId = busy
     ? null
     : messages
@@ -873,7 +897,7 @@ export default function SucheScreen() {
               <OrdiloMark size={32} />
             </View>
             <View style={styles.topCopy}>
-              <Text numberOfLines={1} style={styles.topTitle}>
+              <Text numberOfLines={1} style={styles.topTitle} maxFontSizeMultiplier={1.4}>
                 {activeConversation ? getConversationTitle(activeConversation) : "Ordilo fragen"}
               </Text>
               {activeConversation ? (
@@ -901,10 +925,27 @@ export default function SucheScreen() {
             />
           </View>
 
-          <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-            style={styles.flex}
-          >
+          <ChatKeyboardFrame footerStyle={styles.composerSafeArea} composer={<>
+              {voiceError ? (
+                <Text accessibilityRole="alert" style={styles.voiceError}>
+                  {voiceError}
+                </Text>
+              ) : null}
+              <ChatComposer
+                busy={busy}
+                inputRef={inputRef}
+                onChange={setInput}
+                onSend={() => void send(input)}
+                onStop={() => chatAbortRef.current?.abort()}
+                onVoiceStart={() => void startVoice()}
+                onVoiceCancel={() => void discardVoiceRecording()}
+                onVoiceFinish={() => void finishVoice()}
+                value={input}
+                voiceDurationMillis={recorderState.durationMillis}
+                voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
+                voiceStatus={voiceStatus}
+              />
+          </>}>
             <ScrollView
               contentContainerStyle={styles.content}
               keyboardDismissMode="interactive"
@@ -913,10 +954,14 @@ export default function SucheScreen() {
               // starts at the top so the hero and heading stay fully visible
               // on short screens instead of being scrolled past.
               onContentSizeChange={() => {
-                if (messages.length > 0) {
-                  scrollRef.current?.scrollToEnd({ animated: true });
+                if (messages.length > 0 && followAnswer.current) {
+                  scrollRef.current?.scrollToEnd({ animated: false });
                 }
               }}
+              onScroll={({ nativeEvent }) => {
+                followAnswer.current = nativeEvent.contentSize.height - nativeEvent.layoutMeasurement.height - nativeEvent.contentOffset.y < 80;
+              }}
+              scrollEventThrottle={32}
               ref={scrollRef}
               showsVerticalScrollIndicator={false}
             >
@@ -964,7 +1009,7 @@ export default function SucheScreen() {
                               }
                             : undefined
                         }
-                        title="Zuletzt gefragt"
+                        title={fontScale > 1.3 ? "Verlauf" : "Zuletzt gefragt"}
                       />
                       <ListGroup>
                         {conversations.slice(0, 3).map((conversation, index) => (
@@ -1006,13 +1051,13 @@ export default function SucheScreen() {
                     ) : (
                       <View key={message.id} style={styles.assistantBlock}>
                         {message.status === "streaming" &&
-                        !message.text &&
+                        !message.text && !message.card &&
                         message.actions.length === 0 ? (
                           <ChatThinkingState toolCalls={message.toolCalls} />
                         ) : (
                           <Animated.View entering={CHAT_ANSWER_ENTERING}>
                             <MessageBubble message={message}>
-                              {message.card && message.status === "done" ? (
+                              {message.card ? (
                                 <AnswerCardView
                                   card={message.card}
                                   onOpenContact={openContact}
@@ -1103,32 +1148,7 @@ export default function SucheScreen() {
               )}
             </ScrollView>
 
-            <View
-              style={[
-                styles.composerSafeArea,
-                { paddingBottom: Math.max(insets.bottom, spacing.sm) },
-              ]}
-            >
-              {voiceError ? (
-                <Text accessibilityRole="alert" style={styles.voiceError}>
-                  {voiceError}
-                </Text>
-              ) : null}
-              <ChatComposer
-                busy={busy}
-                inputRef={inputRef}
-                onChange={setInput}
-                onSend={() => void send(input)}
-                onVoiceStart={() => void startVoice()}
-                onVoiceCancel={() => void discardVoiceRecording()}
-                onVoiceFinish={() => void finishVoice()}
-                value={input}
-                voiceDurationMillis={recorderState.durationMillis}
-                voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
-                voiceStatus={voiceStatus}
-              />
-            </View>
-          </KeyboardAvoidingView>
+          </ChatKeyboardFrame>
 
           <OrdiloSheet
             accessibilityLabel="Frühere Gespräche"

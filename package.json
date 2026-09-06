@@ -21,7 +21,8 @@
     "dev:mobile": "npm run start --workspace @ordilo/mobile",
     "lint:mobile": "npm run lint --workspace @ordilo/mobile",
     "typecheck:mobile": "npm run typecheck --workspace @ordilo/mobile",
-    "test:mobile": "npm run test --workspace @ordilo/mobile"
+    "test:mobile": "npm run test --workspace @ordilo/mobile",
+    "eval:chat:model": "node --experimental-strip-types scripts/model-chat-eval.ts"
   },
   "dependencies": {
     "@ai-sdk/openai": "4.0.7",

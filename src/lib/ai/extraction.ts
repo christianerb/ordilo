@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { correctTravelDocumentType } from "./document-type";
 import {
   documentAnalysisSchema,
   documentAnalysisJsonSchema,
@@ -117,7 +118,7 @@ export function buildSystemPrompt(familyContext: FamilyContext): string {
   // Extraction instructions.
   parts.push(`
 Aufgaben:
-1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, credentials, note, other). "credentials" für Zugangsdaten (Benutzername/Passwort, PIN, Zugangscode). "note" für handschriftliche oder freie Notizen.
+1. Bestimme den Dokumenttyp (invoice, letter, contract, medical, school, insurance, tax, credentials, note, other). "credentials" für Zugangsdaten (Benutzername/Passwort, PIN, Zugangscode). "note" für handschriftliche oder freie Notizen. Fahrkarten, Deutschlandtickets und Eintrittskarten sind "other", bei einem Abovertrag "contract". Ein QR-Code, Barcode oder eine Ticketnummer macht eine Fahrkarte NICHT zu Zugangsdaten.
 2. Erstelle einen kurzen, aussagekräftigen Titel.
 3. Fasse den Inhalt in 1-3 Sätzen zusammen. Nenne DABEI KONKRETE Werte aus dem Dokument: Uhrzeiten, Daten, Betraege, Namen, Orte, Flugnummern, Verspätungen. Nicht nur "es gibt Zeiten" sondern "Abflug 19:25, Ankunft 20:55". Nicht nur "ein Betrag" sondern "45,30 EUR". Diese Details sind fuer die Suchfunktion entscheidend.
 4. Identifiziere erwähnte Familienmitglieder und ordne sie zu.
@@ -198,7 +199,7 @@ function toExtractionError(err: unknown): ExtractionError {
 }
 
 /** Parses and Zod-validates the final (complete) extraction JSON. */
-function parseAndValidate(content: string): DocumentAnalysis {
+function parseAndValidate(content: string, ocr: string): DocumentAnalysis {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -221,7 +222,7 @@ function parseAndValidate(content: string): DocumentAnalysis {
     );
   }
 
-  return result.data;
+  return { ...result.data, document_type: correctTravelDocumentType(result.data.document_type, ocr) };
 }
 
 /**
@@ -283,7 +284,7 @@ export async function runExtraction(
         "OPENAI_EMPTY_RESPONSE",
       );
     }
-    return parseAndValidate(content);
+    return parseAndValidate(content, ocrMarkdown);
   }
 
   // --- Streaming path: same call, incrementally previewed. ---
@@ -330,5 +331,5 @@ export async function runExtraction(
       "OPENAI_EMPTY_RESPONSE",
     );
   }
-  return parseAndValidate(buffer);
+  return parseAndValidate(buffer, ocrMarkdown);
 }

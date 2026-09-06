@@ -118,6 +118,11 @@ export function rowToChatMessage(row: MessageRow): ChatMessage {
               ? source.origin
               : undefined,
           url: typeof source.url === "string" ? source.url : undefined,
+          page_number: typeof source.page_number === "number" && Number.isInteger(source.page_number) && source.page_number > 0 ? source.page_number : undefined,
+          quote: typeof source.quote === "string" ? source.quote : undefined,
+          highlight: typeof source.highlight === "string" ? source.highlight : undefined,
+          cited: source.cited === true,
+          has_original: typeof source.has_original === "boolean" ? source.has_original : undefined,
         }];
       })
     : [];

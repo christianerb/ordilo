@@ -179,12 +179,15 @@ export async function semanticSearch(
   serverClient: ServerClient,
   query: string,
   familyId: string,
+  options: { expand?: boolean } = {},
 ): Promise<SearchResult[]> {
   // 1. Generate query variants + HyDE via LLM (time-boxed).
-  const variants = await generateSearchQueries(query);
+  const [variants, queryEmbedding] = await Promise.all([
+    options.expand === false ? Promise.resolve([]) : generateSearchQueries(query),
+    getQueryEmbedding(query),
+  ]);
 
   // 2. Embed the original query + all variants in one batched call.
-  const queryEmbedding = await getQueryEmbedding(query); // cached original
   const variantEmbeddings = await generateEmbeddings(
     variants.map((v, i) => ({ text: v, index: i })),
   );
@@ -801,9 +804,10 @@ export async function hybridSearch(
   serverClient: ServerClient,
   query: string,
   familyId: string,
+  options: { expand?: boolean } = {},
 ): Promise<SearchResult[]> {
   const [semanticResult, lexicalResult, factResult] = await Promise.allSettled([
-    semanticSearch(serverClient, query, familyId),
+    semanticSearch(serverClient, query, familyId, options),
     lexicalSearch(serverClient, query, familyId),
     factSearch(serverClient, query, familyId),
   ]);

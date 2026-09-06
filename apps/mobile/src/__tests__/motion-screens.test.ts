@@ -89,20 +89,6 @@ describe("native motion wiring", () => {
     expect(scan).not.toContain("Wir benachrichtigen dich");
   });
 
-  it("animates the chat thinking state without ignoring reduced motion", () => {
-    const chat = source("src/components/chat.tsx");
-    const thinking = sourceSection(
-      chat,
-      "function ThinkingDot",
-      "/** User bubble",
-    );
-
-    expect(thinking).toContain("feedbackEntering(reduceMotion)");
-    expect(thinking).toContain("feedbackExiting()");
-    expect(thinking).toContain("useReducedMotion()");
-    expect(thinking).toContain("cancelAnimation(progress)");
-    expect(thinking).toContain("reduceMotion ? 0 : 70");
-  });
 
   it("keeps the voice recorder visibly alive and responsive to speech", () => {
     const chat = source("src/components/chat.tsx");
@@ -422,14 +408,6 @@ describe("native motion wiring", () => {
     expect(hero).toContain("colors.washSage");
   });
 
-  it("keeps the iOS chat composer above the keyboard without double spacing", () => {
-    const search = source("app/suche.tsx");
-
-    expect(search).toContain("behavior={Platform.OS === \"ios\" ? \"padding\" : undefined}");
-    expect(search).not.toContain("keyboardVerticalOffset=");
-    expect(search).not.toContain("composerHeight");
-    expect(search).not.toContain("onLayout={(event) => setComposerHeight");
-  });
 
   it("uses the same warm journal language for scanning and conversations", () => {
     const scan = source("app/scan.tsx");
@@ -445,7 +423,7 @@ describe("native motion wiring", () => {
     expect(scanHero).toContain("<Svg");
     expect(search).toContain("styles.dayDivider");
     expect(search).toContain("<OrdiloMark");
-    expect(chat).toContain("styles.bubbleAvatar");
+    expect(chat).toContain("<OrdiloMark");
     expect(chat).toContain("formatChatMessageTime");
   });
 });

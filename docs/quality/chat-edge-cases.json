@@ -1,0 +1,182 @@
+[
+  {
+    "id": "relation-older-ticket",
+    "question": "Wie lange gilt das Deutschlandticket von unserer Großen?",
+    "facts": [
+      [
+        "31.08.2027",
+        "31. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "relation-younger-ticket",
+    "question": "Wann läuft das Ticket von unserer jüngeren Tochter ab?",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "relation-school",
+    "question": "Was braucht unsere Kleine für den Sporttag ihrer Schule?",
+    "facts": [
+      [
+        "Turnschuhe"
+      ],
+      [
+        "Trinkflasche"
+      ]
+    ],
+    "sourceTitles": [
+      "Sporttag Emma Grundschule am Park"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "relation-school-name",
+    "question": "Welche Schule hat Emma zum Sporttag eingeladen?",
+    "facts": [
+      [
+        "Grundschule am Park"
+      ]
+    ],
+    "sourceTitles": [
+      "Sporttag Emma Grundschule am Park"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "conflict-membership",
+    "question": "Bis wann ist Jonas Jahreskarte im Schwimmverein gültig? Prüfe alle Bestätigungen.",
+    "facts": [
+      [
+        "31.10.2027",
+        "31. Oktober 2027"
+      ],
+      [
+        "30.11.2027",
+        "30. November 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Vereinsbestätigung Jonas A",
+      "Vereinsbestätigung Jonas B"
+    ],
+    "expectedState": "conflict"
+  },
+  {
+    "id": "extension-library",
+    "question": "Wann läuft Miras Bibliotheksausweis aktuell ab?",
+    "facts": [
+      [
+        "31.07.2028",
+        "31. Juli 2028"
+      ]
+    ],
+    "sourceTitles": [
+      "Verlängerung Bibliotheksausweis Mira"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "ocr-unreadable",
+    "question": "An welchem genauen Datum muss Theo seine Sache abholen?",
+    "facts": [
+      [
+        "unleserlich",
+        "nicht sicher",
+        "nicht eindeutig",
+        "nicht lesbar"
+      ]
+    ],
+    "forbiddenFacts": [
+      "30.10.2027",
+      "31.10.2027"
+    ],
+    "expectedState": "partial",
+    "expectedStates": [
+      "partial",
+      "not_found"
+    ]
+  },
+  {
+    "id": "ocr-spacing",
+    "question": "Bis wann muss Lina ihre Sache abholen?",
+    "facts": [
+      [
+        "18.10.2027",
+        "18. Oktober 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Lesbarer Abholschein Lina"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "followup-other-child",
+    "question": "Und von Emma?",
+    "followUpTo": "relation-older-ticket",
+    "facts": [
+      [
+        "30.09.2027",
+        "30. September 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Emma"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "no-pet-policy",
+    "question": "Welche Versicherung haben wir für unseren Hund abgeschlossen?",
+    "facts": [
+      [
+        "kein",
+        "nicht",
+        "fehlt"
+      ]
+    ],
+    "expectedState": "not_found"
+  },
+  {
+    "id": "cancellation-vs-validity",
+    "question": "Bis wann muss Hannah ihr Deutschlandticket kündigen, nicht wie lange es gilt?",
+    "facts": [
+      [
+        "10.08.2027",
+        "10. August 2027"
+      ]
+    ],
+    "sourceTitles": [
+      "Deutschlandticket Hannah"
+    ],
+    "expectedState": "answered"
+  },
+  {
+    "id": "departure-vs-meeting",
+    "question": "Wann fährt Emmas Zug zur Klassenfahrt ab? Nicht der Treffpunkt.",
+    "facts": [
+      [
+        "08:40",
+        "8:40"
+      ]
+    ],
+    "sourceTitles": [
+      "Klassenfahrt Emma"
+    ],
+    "expectedState": "answered"
+  }
+]

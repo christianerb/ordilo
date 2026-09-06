@@ -255,7 +255,7 @@ describe("chat history persistence", () => {
     });
   });
 
-  it("clears the old rating when an answer is replaced", async () => {
+  it("does not write the absent legacy rating column when an answer is replaced", async () => {
     let payload: Record<string, unknown> | null = null;
     const builder = {
       update: vi.fn((value: Record<string, unknown>) => {
@@ -281,7 +281,7 @@ describe("chat history persistence", () => {
       card: null,
     });
 
-    expect(payload).toMatchObject({ feedback: null });
+    expect(payload).not.toHaveProperty("feedback");
   });
 });
 
