@@ -386,6 +386,94 @@ export type ChatActionContent = {
   details: Array<{ label: string; value: string }>;
 };
 
+// ---------------------------------------------------------------------------
+// Where a confirmed action leads
+// ---------------------------------------------------------------------------
+
+/**
+ * What a confirmed chat action actually produced, so the card can offer
+ * to open it. Without this, "Termin angelegt" ends in a dead end: close
+ * the chat, find the planner, find the day, find the appointment. The
+ * shape is platform-neutral — Web and iOS each turn it into their own
+ * route.
+ */
+export type ChatActionTarget =
+  | { kind: "event"; id: string }
+  | { kind: "task"; id: string }
+  | { kind: "document"; id: string }
+  | { kind: "note"; id: string }
+  | { kind: "collection"; id: string }
+  | { kind: "contact"; id: string }
+  | { kind: "member" };
+
+/** "Termin öffnen" — the follow-up button's label for each target. */
+export const CHAT_ACTION_TARGET_LABELS: Record<
+  ChatActionTarget["kind"],
+  string
+> = {
+  event: "Termin öffnen",
+  task: "Aufgabe öffnen",
+  document: "Dokument öffnen",
+  note: "Notiz öffnen",
+  collection: "Sammlung öffnen",
+  contact: "Kontakt öffnen",
+  member: "Familie öffnen",
+};
+
+function resultId(
+  result: unknown,
+  key: string,
+): string | null {
+  if (!isRecord(result)) return null;
+  const value = result[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+/**
+ * Reads the created row's id out of a tool result. Every writing tool
+ * already returns one (add_calendar_event → event_id, add_task →
+ * task_id, …); an older result without one simply has no follow-up.
+ */
+export function getChatActionTarget(
+  toolName: ChatActionToolName,
+  result: unknown,
+): ChatActionTarget | null {
+  const id = (key: string) => resultId(result, key);
+  switch (toolName) {
+    case "add_calendar_event": {
+      const eventId = id("event_id");
+      return eventId ? { kind: "event", id: eventId } : null;
+    }
+    case "add_task":
+    case "update_task":
+    case "mark_task_done": {
+      const taskId = id("task_id");
+      return taskId ? { kind: "task", id: taskId } : null;
+    }
+    case "create_note":
+    case "update_note": {
+      const documentId = id("document_id");
+      return documentId ? { kind: "note", id: documentId } : null;
+    }
+    case "move_document_to_collection":
+    case "add_document_tags":
+    case "save_document_fact": {
+      const documentId = id("document_id");
+      return documentId ? { kind: "document", id: documentId } : null;
+    }
+    case "create_collection": {
+      const collectionId = id("collection_id");
+      return collectionId ? { kind: "collection", id: collectionId } : null;
+    }
+    case "add_contact": {
+      const contactId = id("contact_id");
+      return contactId ? { kind: "contact", id: contactId } : null;
+    }
+    case "add_family_member":
+      return id("member_id") ? { kind: "member" } : null;
+  }
+}
+
 function firstName(name: string): string {
   return name.trim().split(/\s+/)[0] ?? "";
 }

@@ -5,6 +5,8 @@ import {
   formatChatDate,
   formatChatMessageTime,
   getActionContent,
+  getChatActionRoute,
+  getChatActionTarget,
   getChatThinkingLabel,
   getSuggestedContactAction,
   getToolStepLabel,
@@ -452,6 +454,55 @@ describe("undo for confirmed actions", () => {
         {},
       ),
     ).toBeUndefined();
+  });
+});
+
+describe("where a confirmed action leads", () => {
+  it("routes a created appointment to its own detail sheet", () => {
+    const target = getChatActionTarget("add_calendar_event", {
+      event_id: "e-9",
+    });
+    expect(target).toEqual({ kind: "event", id: "e-9" });
+    expect(getChatActionRoute(target!)).toEqual({
+      label: "Termin öffnen",
+      pathname: "/(tabs)/plan",
+      params: { tab: "calendar", event: "e-9" },
+    });
+  });
+
+  it("routes a created task to the list, opened on that task", () => {
+    expect(getChatActionRoute({ kind: "task", id: "t-3" })).toEqual({
+      label: "Aufgabe öffnen",
+      pathname: "/(tabs)/plan",
+      params: { tab: "list", task: "t-3" },
+    });
+  });
+
+  it("routes notes, documents, collections, contacts and people", () => {
+    expect(getChatActionRoute({ kind: "note", id: "d-1" })).toEqual({
+      label: "Notiz öffnen",
+      pathname: "/note/d-1",
+    });
+    expect(getChatActionRoute({ kind: "document", id: "d-2" })).toEqual({
+      label: "Dokument öffnen",
+      pathname: "/document/d-2",
+    });
+    expect(getChatActionRoute({ kind: "collection", id: "c-1" })).toEqual({
+      label: "Sammlung öffnen",
+      pathname: "/sammlungen/c-1",
+    });
+    expect(getChatActionRoute({ kind: "contact", id: "k-1" })).toEqual({
+      label: "Kontakt öffnen",
+      pathname: "/contacts/k-1",
+    });
+    expect(getChatActionRoute({ kind: "member" })).toEqual({
+      label: "Familie öffnen",
+      pathname: "/familie",
+    });
+  });
+
+  it("promises nothing when the result carries no id", () => {
+    expect(getChatActionTarget("add_calendar_event", { success: true })).toBeNull();
   });
 });
 

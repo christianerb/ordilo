@@ -67,6 +67,8 @@ import {
   CHAT_ERROR_MESSAGE,
   CHAT_RATE_LIMIT_MESSAGE,
   confirmChatAction,
+  getChatActionRoute,
+  getChatActionTarget,
   getActionContent,
   sendChatFeedback,
   streamChat,
@@ -537,9 +539,13 @@ export default function SucheScreen() {
           throw new Error(response.error ?? "Aktion fehlgeschlagen");
         }
         const undo = buildMarkTaskDoneUndo(action, response.result);
+        // Remember what was created so the card can offer to open it.
+        const target =
+          getChatActionTarget(action.toolName, response.result) ?? undefined;
         updateAction(messageId, action.id, (current) => ({
           ...current,
           state: "confirmed",
+          target,
           undo,
         }));
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -554,6 +560,27 @@ export default function SucheScreen() {
       }
     },
     [family, updateAction],
+  );
+
+  /**
+   * "Termin öffnen" — leaves the chat modal for the thing that was just
+   * created, so a confirmed action ends somewhere instead of nowhere.
+   */
+  const openActionTarget = useCallback(
+    (action: ChatAction) => {
+      if (!action.target) return;
+      const route = getChatActionRoute(action.target);
+      void Haptics.selectionAsync();
+      // dismissTo, not replace: the chat is a modal, and the planner is
+      // already behind it — popping to it keeps the tab bar and applies
+      // the deep-link params in one move.
+      router.dismissTo(
+        route.params
+          ? { pathname: route.pathname, params: route.params }
+          : route.pathname,
+      );
+    },
+    [router],
   );
 
   const undoAction = useCallback(
@@ -1101,6 +1128,11 @@ export default function SucheScreen() {
                                         state: "dismissed",
                                       }),
                                     )
+                                  }
+                                  onOpenTarget={
+                                    action.target
+                                      ? () => openActionTarget(action)
+                                      : undefined
                                   }
                                   onUndo={() => void undoAction(message.id, action)}
                                 />

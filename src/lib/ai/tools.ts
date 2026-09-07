@@ -1258,7 +1258,9 @@ async function executeAddContact(
     return JSON.stringify({ error: "Kontakt konnte nicht angelegt werden." });
   }
 
-  const { error } = await ctx.client
+  // The id comes back so the confirmed action card can offer to open the
+  // contact instead of leaving the person to go looking for it.
+  const { data: created, error } = await ctx.client
     .from("contacts")
     .insert({
       family_id: ctx.familyId,
@@ -1269,14 +1271,17 @@ async function executeAddContact(
       email: contact.email.toLowerCase() || null,
       status: "confirmed",
       created_by: ctx.userId,
-    });
+    })
+    .select("id")
+    .single();
 
-  if (error) {
+  if (error || !created) {
     return JSON.stringify({ error: "Kontakt konnte nicht angelegt werden." });
   }
 
   return JSON.stringify({
     success: true,
+    contact_id: created.id,
     name: contact.name,
     message: `Der Kontakt '${contact.name}' wurde angelegt.`,
   });

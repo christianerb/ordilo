@@ -138,7 +138,18 @@ function makeContactCtx({
     return {
       insert: vi.fn((payload: Record<string, unknown>) => {
         capturedInsert = payload;
-        return Promise.resolve({ data: null, error: insertError });
+        // The tool reads the new row's id back so the confirmed action
+        // card can offer to open the contact.
+        return {
+          select: vi.fn(() => ({
+            single: vi.fn(() =>
+              Promise.resolve({
+                data: insertError ? null : { id: "contact-1" },
+                error: insertError,
+              }),
+            ),
+          })),
+        };
       }),
     };
   });
@@ -395,6 +406,7 @@ describe("add_contact confirmation gate", () => {
     });
     expect(parsed).toMatchObject({
       success: true,
+      contact_id: "contact-1",
       name: "Hein Blöd",
     });
   });

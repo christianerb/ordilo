@@ -5,6 +5,7 @@ import {
   CHAT_ACTION_TOOL_NAMES,
   CHAT_FEEDBACK_REASONS,
   FORBIDDEN_HEDGING_PHRASES,
+  type ChatActionTarget,
   type ChatActionToolName,
   type ChatFeedbackReason,
   type ChatSource,
@@ -15,6 +16,7 @@ export {
   CHAT_ACTION_TOOL_NAMES,
   isChatResponseState,
   mergeConfirmationProposal,
+  type ChatActionTarget,
   type ChatActionToolName,
   type ChatResponseState,
   type ChatSource,
@@ -207,6 +209,12 @@ export interface ChatAction {
     toolName: ChatActionToolName;
     args: Record<string, unknown>;
   };
+  /**
+   * What the confirmed write produced, so the card can link to it. Without
+   * it "Termin angelegt" is a dead end the reader has to navigate out of
+   * by hand.
+   */
+  target?: ChatActionTarget;
 }
 
 export const chatActionConfirmationSchema = z.object({

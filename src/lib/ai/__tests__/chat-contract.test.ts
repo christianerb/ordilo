@@ -3,7 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   buildAssistantHistoryContext,
   buildPersonalChatPrompts,
+  CHAT_ACTION_TARGET_LABELS,
   extractHistoryEvidence,
+  getChatActionTarget,
   isSafePublicSourceUrl,
   parseChatWireEvent,
   splitChatNdjsonChunk,
@@ -240,5 +242,57 @@ describe("shared chat contract", () => {
     ]);
     expect(ranked.best?.document_id).toBe("high");
     expect(ranked.rest.map((source) => source.document_id)).toEqual(["low"]);
+  });
+
+  it("points a confirmed action at what it created", () => {
+    expect(
+      getChatActionTarget("add_calendar_event", {
+        success: true,
+        event_id: "event-1",
+      }),
+    ).toEqual({ kind: "event", id: "event-1" });
+    expect(
+      getChatActionTarget("add_task", { success: true, task_id: "task-1" }),
+    ).toEqual({ kind: "task", id: "task-1" });
+    expect(
+      getChatActionTarget("mark_task_done", { task_id: "task-1" }),
+    ).toEqual({ kind: "task", id: "task-1" });
+    // A note opens as a note, an enriched document as a document.
+    expect(
+      getChatActionTarget("create_note", { document_id: "doc-1" }),
+    ).toEqual({ kind: "note", id: "doc-1" });
+    expect(
+      getChatActionTarget("add_document_tags", { document_id: "doc-1" }),
+    ).toEqual({ kind: "document", id: "doc-1" });
+    expect(
+      getChatActionTarget("create_collection", { collection_id: "col-1" }),
+    ).toEqual({ kind: "collection", id: "col-1" });
+    expect(
+      getChatActionTarget("add_contact", { contact_id: "contact-1" }),
+    ).toEqual({ kind: "contact", id: "contact-1" });
+    expect(
+      getChatActionTarget("add_family_member", { member_id: "member-1" }),
+    ).toEqual({ kind: "member" });
+  });
+
+  it("offers no follow-up when a result carries no id", () => {
+    // Older persisted results predate the ids; the card must simply not
+    // promise a destination rather than link somewhere wrong.
+    expect(getChatActionTarget("add_calendar_event", { success: true })).toBeNull();
+    expect(getChatActionTarget("add_task", { task_id: "" })).toBeNull();
+    expect(getChatActionTarget("add_contact", undefined)).toBeNull();
+    expect(getChatActionTarget("update_task", "not-an-object")).toBeNull();
+  });
+
+  it("labels every follow-up in the family's own words", () => {
+    expect(Object.values(CHAT_ACTION_TARGET_LABELS)).toEqual([
+      "Termin öffnen",
+      "Aufgabe öffnen",
+      "Dokument öffnen",
+      "Notiz öffnen",
+      "Sammlung öffnen",
+      "Kontakt öffnen",
+      "Familie öffnen",
+    ]);
   });
 });

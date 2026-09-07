@@ -119,12 +119,15 @@ export function CalendarClient({
   familyId,
   currentUserId = null,
   members,
+  openEventId,
 }: {
   initialEvents: CalendarEvent[];
   initialSuggestions?: CalendarSuggestion[];
   familyId: string | null;
   currentUserId?: string | null;
   members: AssigneeOption[];
+  /** Deep link (?event=<id>): show and open that appointment on arrival. */
+  openEventId?: string;
 }) {
   const supabase = createClient();
   const today = new Date();
@@ -399,6 +402,18 @@ export function CalendarClient({
     },
     [markEventsSeen],
   );
+
+  // Deep link: land on the appointment's day with its sheet open, so
+  // "Termin öffnen" from a chat action ends at the appointment itself.
+  useMountEffect(() => {
+    if (!openEventId) return;
+    const match = initialEvents.find((event) => event.id === openEventId);
+    if (!match) return;
+    const day = new Date(`${match.starts_on}T12:00:00`);
+    setSelectedDate(day);
+    setActiveMonth(monthStart(day));
+    openEdit(match);
+  });
 
   /** Remember a handled suggestion so it never comes back. */
   const recordDismissal = useCallback(

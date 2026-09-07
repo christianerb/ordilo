@@ -116,6 +116,7 @@ export const MessageBubble = memo(function MessageBubble({
   onActionDismiss,
   onActionAdjust,
   onActionUndo,
+  onActionOpenTarget,
 }: {
   message: ChatMessage;
   isStreaming?: boolean;
@@ -133,6 +134,8 @@ export const MessageBubble = memo(function MessageBubble({
   onActionDismiss?: (messageId: string, actionId: string) => void;
   onActionAdjust?: (message: ChatMessage, action: ChatAction) => void;
   onActionUndo?: (messageId: string, actionId: string) => void;
+  /** Opens whatever a confirmed action created — event, task, document …. */
+  onActionOpenTarget?: (action: ChatAction) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -247,6 +250,11 @@ export const MessageBubble = memo(function MessageBubble({
               onConfirm={() => onActionConfirm?.(message.id, action.id)}
               onDismiss={() => onActionDismiss?.(message.id, action.id)}
               onAdjust={() => onActionAdjust?.(message, action)}
+              onOpenTarget={
+                action.target && onActionOpenTarget
+                  ? () => onActionOpenTarget(action)
+                  : undefined
+              }
               onUndo={() => onActionUndo?.(message.id, action.id)}
             />
           ))}

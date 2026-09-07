@@ -1,17 +1,28 @@
 import {
+  ArrowUpRight,
+  CalendarPlus,
   Check,
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  CircleCheck,
+  Contact,
   Copy,
+  FilePen,
   FileText,
+  FolderPlus,
   Globe2,
+  KeyRound,
+  ListPlus,
   Mic,
+  Pencil,
   RotateCcw,
   Send,
   Square,
+  Tag,
   ThumbsDown,
   ThumbsUp,
+  UserPlus,
   X,
 } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
@@ -49,6 +60,7 @@ import {
   getSuggestedContactAction,
   type AnswerCard,
   type ChatAction,
+  type ChatActionToolName,
   type ChatFeedbackReason,
   type ChatMessage,
   type ChatSource,
@@ -61,6 +73,7 @@ import {
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import {
+  CHAT_ACTION_TARGET_LABELS,
   CHAT_RESPONSE_STATE_LABELS,
   isSafePublicSourceUrl,
   isWebChatSource,
@@ -357,28 +370,60 @@ export function AnswerCardView({
   );
 }
 
+/** The tool's own symbol, so a proposal is recognisable before reading it. */
+const ACTION_ICONS: Record<ChatActionToolName, typeof FileText> = {
+  add_calendar_event: CalendarPlus,
+  add_contact: Contact,
+  add_document_tags: Tag,
+  add_family_member: UserPlus,
+  add_task: ListPlus,
+  create_collection: FolderPlus,
+  create_note: FilePen,
+  update_note: FilePen,
+  mark_task_done: CircleCheck,
+  move_document_to_collection: FolderPlus,
+  save_document_fact: FilePen,
+  update_task: Pencil,
+};
+
 /**
  * Proposed write with explicit confirmation. „Übernehmen" is the only
  * path that writes; „Ändern" hands the proposal back to the composer;
  * the X discards. Undo (where supported) re-opens a finished task.
+ *
+ * Once it is done the card does not stop at „Übernommen": it offers to
+ * open what was just created, because the alternative is closing the
+ * chat and going to look for it.
  */
 export function ActionCardView({
   action,
   onConfirm,
   onDismiss,
   onAdjust,
+  onOpenTarget,
   onUndo,
 }: {
   action: ChatAction;
   onConfirm: () => void;
   onDismiss: () => void;
   onAdjust: () => void;
+  /** Opens the created entry; absent while nothing has been created. */
+  onOpenTarget?: () => void;
   onUndo: () => void;
 }) {
   const content = getActionContent(action);
+  const ActionIcon =
+    action.toolName === "create_note" &&
+    action.args.document_type === "credentials"
+      ? KeyRound
+      : ACTION_ICONS[action.toolName];
   const working = action.state === "confirming" || action.state === "undoing";
   const resolved =
     action.state === "confirmed" || action.state === "undone";
+  const openLabel =
+    action.state === "confirmed" && action.target && onOpenTarget
+      ? CHAT_ACTION_TARGET_LABELS[action.target.kind]
+      : null;
 
   if (action.state === "dismissed") {
     return (
@@ -403,7 +448,7 @@ export function ActionCardView({
           {resolved ? (
             <Check color={colors.harborBlue} size={18} strokeWidth={2} />
           ) : (
-            <FileText color={colors.harborBlue} size={18} strokeWidth={1.8} />
+            <ActionIcon color={colors.harborBlue} size={18} strokeWidth={1.8} />
           )}
         </View>
         <View style={styles.actionHeaderCopy}>
@@ -474,16 +519,33 @@ export function ActionCardView({
         </>
       ) : null}
 
-      {action.state === "confirmed" && action.undo ? (
-        <Pressable
-          accessibilityLabel="Rückgängig machen"
-          accessibilityRole="button"
-          onPress={onUndo}
-          style={({ pressed }) => [styles.undoButton, pressed && styles.pressed]}
-        >
-          <RotateCcw color={colors.harborBlue} size={16} />
-          <Text style={styles.undoText}>Rückgängig</Text>
-        </Pressable>
+      {openLabel || (action.state === "confirmed" && action.undo) ? (
+        <View style={styles.actionResolvedRow}>
+          {openLabel ? (
+            <OrdiloButton
+              icon={
+                <ArrowUpRight
+                  color={colors.warmWhite}
+                  size={17}
+                  strokeWidth={2.2}
+                />
+              }
+              onPress={() => onOpenTarget?.()}
+              title={openLabel}
+            />
+          ) : null}
+          {action.state === "confirmed" && action.undo ? (
+            <Pressable
+              accessibilityLabel="Rückgängig machen"
+              accessibilityRole="button"
+              onPress={onUndo}
+              style={({ pressed }) => [styles.undoButton, pressed && styles.pressed]}
+            >
+              <RotateCcw color={colors.harborBlue} size={16} />
+              <Text style={styles.undoText}>Rückgängig</Text>
+            </Pressable>
+          ) : null}
+        </View>
       ) : null}
     </View>
   );
@@ -1107,6 +1169,12 @@ const styles = StyleSheet.create({
   actionHint: { color: colors.mistDark, ...typography.label },
   actionButtons: { flexDirection: "row", gap: spacing.sm, alignItems: "center" },
   actionWorking: { alignItems: "center", flexDirection: "row", gap: spacing.sm },
+  actionResolvedRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm,
+  },
   actionWorkingText: { color: colors.mistDark, ...typography.timestamp },
   actionError: { color: colors.destructive, ...typography.timestamp },
   undoButton: {
