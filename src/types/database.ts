@@ -814,6 +814,7 @@ export type Database = {
           original_filename: string | null;
           mime_type: string | null;
           page_count: number | null;
+          corrections_text?: string | null;
           ocr_text: string | null;
           summary: string | null;
           error_message: string | null;
@@ -847,6 +848,7 @@ export type Database = {
           original_filename?: string | null;
           mime_type?: string | null;
           page_count?: number | null;
+          corrections_text?: string | null;
           ocr_text?: string | null;
           summary?: string | null;
           error_message?: string | null;
@@ -877,6 +879,7 @@ export type Database = {
           original_filename?: string | null;
           mime_type?: string | null;
           page_count?: number | null;
+          corrections_text?: string | null;
           ocr_text?: string | null;
           summary?: string | null;
           error_message?: string | null;
@@ -1588,6 +1591,12 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      document_correction_evidence: { Args: { p_document_id: string }; Returns: string | null };
+      document_correction_revision: { Args: { p_document_id: string }; Returns: string | null };
+      correct_confirmed_document: {
+        Args: { p_update: Database["public"]["Functions"]["update_confirmed_document"]["Args"]; p_corrections: NonNullable<import("@/lib/schemas/document-update").DocumentUpdatePayload["corrections"]> };
+        Returns: UpdateDocumentRpcResult;
+      };
       claim_push_deliveries: { Args: { p_limit?: number }; Returns: PushDelivery[] };
       accept_family_task: { Args: { p_task_id: string }; Returns: undefined };
 

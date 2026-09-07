@@ -24,6 +24,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { FamilyAccessPanel } from "@/src/components/family-access-panel";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { AvatarStack, PersonAvatar } from "@/src/components/person";
 import {
@@ -73,6 +74,8 @@ export default function FamilieScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [memberError, setMemberError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [inviteConfirmOpen, setInviteConfirmOpen] = useState(false);
+  const [accessRevision, setAccessRevision] = useState(0);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -94,7 +97,7 @@ export default function FamilieScreen() {
       setLoading(false);
       return;
     }
-    if (refresh) setRefreshing(true);
+    if (refresh) { setRefreshing(true); setAccessRevision((value) => value + 1); }
     else if (!silent) setLoading(true);
     setMemberError(null);
     const result = await listMembers(family.id);
@@ -139,6 +142,7 @@ export default function FamilieScreen() {
 
     const url = `${getApiUrl()}/invite/${result.token}`;
     setInviteUrl(url);
+    setAccessRevision((value) => value + 1);
     await shareInvite(url);
   }, [creating, family, shareInvite]);
 
@@ -243,8 +247,8 @@ export default function FamilieScreen() {
                       )}
                     </IconTile>
                   }
-                  onPress={() => void handleInvite()}
-                  subtitle="Partner:in, Oma oder wer mithelfen soll"
+                  onPress={() => setInviteConfirmOpen(true)}
+                  subtitle="Zugriff auf alle Familienunterlagen geben"
                   title={creating ? "Einladung wird erstellt …" : "Person einladen"}
                 />
               ) : null}
@@ -273,6 +277,14 @@ export default function FamilieScreen() {
             ) : null}
           </View>
         )}
+
+        {family ? <FamilyAccessPanel
+          key={family.id}
+          familyId={family.id}
+          isOwner={family.isOwner}
+          revision={accessRevision}
+          onRevoked={() => { setInviteUrl(null); setCopied(false); }}
+        /> : null}
 
         <View style={styles.section}>
           <SectionHeader title="App" />
@@ -304,6 +316,14 @@ export default function FamilieScreen() {
         </View>
       </ScrollView>
 
+      <ConfirmDialog
+        visible={inviteConfirmOpen}
+        title="Alle Familienunterlagen teilen?"
+        message="Wer den Link erhält und sich anmeldet, kann alle Dokumente, Aufgaben und Termine sehen, bearbeiten und löschen. Der Link ist 14 Tage gültig und kann mehrfach genutzt werden. Unter „Wer Zugriff hat“ kannst du den Zugriff später beenden."
+        confirmLabel="Link erstellen"
+        onCancel={() => setInviteConfirmOpen(false)}
+        onConfirm={() => { setInviteConfirmOpen(false); void handleInvite(); }}
+      />
       <MemberEditSheet
         member={editingMember}
         onClose={() => setEditingMember(null)}

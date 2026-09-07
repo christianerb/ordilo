@@ -1,0 +1,30 @@
+appId: com.ordilo.app
+---
+# Precondition: manually signed in to the disposable fixture; onboarding complete.
+# No credentials enter Maestro output, screenshots, or flow variables.
+- launchApp
+- openLink: "ordilo://beispiel"
+- tapOn: "Ohne eigenen Brief ausprobieren"
+- assertVisible: "Vorbereitetes Beispiel. Es wird nichts gespeichert."
+- scrollUntilVisible:
+    element: 'Was muss ich mitgeben\?'
+- tapOn: 'Was muss ich mitgeben\?'
+- scrollUntilVisible:
+    element: "Die Fundstelle im Beispielbrief"
+- assertVisible: "Eine Trinkflasche und eine Regenjacke."
+- assertVisible: "Die Fundstelle im Beispielbrief"
+- scrollUntilVisible:
+    element: "Zur App"
+- tapOn: "Zur App"
+- tapOn: "Dokument hinzufügen"
+- assertVisible: "Etwas hinzufügen"
+- assertVisible: "Dokument scannen"
+- assertVisible: "Fotos auswählen"
+- assertVisible: "Datei auswählen"
+- tapOn: "Scanner schließen"
+- assertVisible: "Dokument hinzufügen"
+# Restart must preserve the real session without clearing secure storage.
+- stopApp
+- launchApp
+- assertVisible: "Dokument hinzufügen"
+- assertNotVisible: "Loslegen ohne Passwort"

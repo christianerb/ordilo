@@ -1,3 +1,8 @@
+import { OriginalTextHint } from "@/src/components/original-text-hint";
+import { OfflineDocumentButton } from "@/src/components/offline-document-button";
+import { useSession } from "@/src/lib/session";
+import { ApiError } from "@/src/lib/api";
+import { loadCorrectionBaseline, saveDocumentCorrections, type CorrectionBaseline } from "@/src/lib/document-corrections";
 import { confirmedDocumentOutcomes } from "@/src/lib/document-review";
 import { enablePushNotifications, isPushRegistered } from "@/src/lib/notifications";
 import { loadPersistedScanQueue } from "@/src/lib/scan";
@@ -91,10 +96,6 @@ import {
   refreshLibraryDocuments,
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
-import {
-  buildDocumentUpdatePayload,
-  updateConfirmedDocument,
-} from "@/src/lib/notes";
 import { resolveDocumentPeople, type Person } from "@/src/lib/people";
 import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { contentEntering } from "@/src/theme/motion";
@@ -114,6 +115,7 @@ export default function DocumentReviewScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { family } = useFamily();
+  const { session } = useSession();
   const { id, source } = useLocalSearchParams<{
     id: string;
     source?: string;
@@ -131,7 +133,8 @@ export default function DocumentReviewScreen() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
-  const [confirmedTitleDraft, setConfirmedTitleDraft] = useState("");
+  const baselineRef = useRef<CorrectionBaseline | null>(null);
+  const [loadingEditor, setLoadingEditor] = useState(false);
   const [showDocumentDetails, setShowDocumentDetails] = useState(false);
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [calendarDates, setCalendarDates] = useState<Set<number>>(new Set());
@@ -252,11 +255,28 @@ export default function DocumentReviewScreen() {
     setDocument((current) => current && "summary" in current ? updater(current) : current);
   };
 
-  const beginEditing = () => {
+  const beginEditing = async () => {
+    if (loadingEditor || saving) return;
     if (document && "summary" in document && document.status === "confirmed") {
-      setConfirmedTitleDraft(document.title);
+      setLoadingEditor(true);
+      try {
+        const baseline = await loadCorrectionBaseline(id);
+        baselineRef.current = baseline;
+        setDocument(baseline.document);
+      } catch {
+        Alert.alert("Nicht bereit", "Das Dokument konnte nicht zum Bearbeiten geladen werden. Bitte versuch es nochmal.");
+        return;
+      } finally { setLoadingEditor(false); }
     }
+    setTagDraft("");
     setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    if (saving) return;
+    if (baselineRef.current) setDocument(baselineRef.current.document);
+    setTagDraft("");
+    setEditing(false);
   };
 
   const confirm = async () => {
@@ -284,56 +304,31 @@ export default function DocumentReviewScreen() {
     }
   };
 
-  const saveConfirmedTitle = async () => {
-    if (
-      !document ||
-      !("summary" in document) ||
-      document.status !== "confirmed" ||
-      !id
-    ) {
-      return;
-    }
-    if (!confirmedTitleDraft.trim()) {
-      Alert.alert(
-        "Titel fehlt",
-        "Gib dem Dokument einen kurzen Namen, damit ihr es später wiederfindet.",
-      );
+  const saveCorrections = async () => {
+    if (!document || !("summary" in document) || !baselineRef.current || saving) return;
+    if (!document.title.trim()) {
+      Alert.alert("Titel fehlt", "Gib dem Dokument einen kurzen Namen.");
       return;
     }
     setSaving(true);
     try {
-      // The update contract replaces extracted metadata as one atomic set.
-      // Reload first so a title-only change never writes an old snapshot
-      // over corrections another family member made while this view was open.
-      const latest = await loadDocumentReview(id);
-      if (
-        !latest ||
-        !("summary" in latest) ||
-        latest.status !== "confirmed"
-      ) {
-        throw new Error("Confirmed document could not be reloaded.");
-      }
-      await updateConfirmedDocument(
-        id,
-        buildDocumentUpdatePayload(latest, {
-          title: confirmedTitleDraft,
-          summary: latest.summary,
-          document_type: latest.document_type,
-        }),
-      );
+      await saveDocumentCorrections(id, baselineRef.current, document);
       await success();
       refreshLibraryDocuments();
-      setDocument({ ...latest, title: confirmedTitleDraft.trim() });
+      baselineRef.current = null;
       setEditing(false);
-    } catch {
+      await load();
+    } catch (cause) {
       await fail();
-      Alert.alert(
-        "Titel nicht gespeichert",
-        "Bitte prüfe dein Internet und versuch es nochmal.",
-      );
-    } finally {
-      setSaving(false);
-    }
+      if (cause instanceof ApiError && cause.status === 409) {
+        Alert.alert("Inzwischen geändert", "Jemand hat das Dokument oder seinen Plan inzwischen geändert. Deine Eingaben bleiben sichtbar. Lade den aktuellen Stand, bevor du erneut korrigierst.", [
+          { text: "Eingaben behalten", style: "cancel" },
+          { text: "Aktuellen Stand laden", onPress: () => { baselineRef.current = null; setEditing(false); void load(); } },
+        ]);
+      } else {
+        Alert.alert("Nicht gespeichert", "Bitte prüfe deine Angaben und die Verbindung. Deine Änderungen bleiben erhalten.");
+      }
+    } finally { setSaving(false); }
   };
 
   const requestDelete = () => {
@@ -394,7 +389,7 @@ export default function DocumentReviewScreen() {
     const choice = pendingMenuRef.current;
     pendingMenuRef.current = null;
     if (choice === "original") void viewOriginal();
-    if (choice === "edit") beginEditing();
+    if (choice === "edit") void beginEditing();
     if (choice === "delete") requestDelete();
   };
 
@@ -572,13 +567,13 @@ export default function DocumentReviewScreen() {
   return (
     <Screen style={styles.screen}>
       <DetailTopBar
-        onBack={() => router.back()}
+        onBack={() => editing ? cancelEditing() : router.back()}
         subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)}`}
         title={
           editing
             ? editable
               ? "Angaben prüfen"
-              : "Titel ändern"
+              : "Angaben ändern"
             : kind.label
         }
         trailing={
@@ -593,6 +588,7 @@ export default function DocumentReviewScreen() {
         }
       />
       <ScrollView
+        pointerEvents={saving ? "none" : "auto"}
         contentContainerStyle={[
           styles.content,
           { paddingBottom: (editing ? spacing.lg : 96) + insets.bottom },
@@ -621,16 +617,16 @@ export default function DocumentReviewScreen() {
               <Text style={styles.heroTitle}>{document.title}</Text>
               {isReadOnly ? (
                 <Pressable
-                  accessibilityLabel="Titel ändern"
+                  accessibilityLabel="Angaben ändern"
                   accessibilityRole="button"
-                  onPress={beginEditing}
+                  onPress={() => void beginEditing()}
                   style={({ pressed }) => [
                     styles.titleEditLink,
                     pressed && styles.pressed,
                   ]}
                 >
                   <Pencil color={colors.harborBlue} size={15} strokeWidth={2} />
-                  <Text style={styles.titleEditLinkText}>Titel ändern</Text>
+                  <Text style={styles.titleEditLinkText}>{loadingEditor ? "Wird geladen …" : "Angaben ändern"}</Text>
                 </Pressable>
               ) : null}
               {document.summary ? (
@@ -780,6 +776,11 @@ export default function DocumentReviewScreen() {
               </ListGroup>
             </View>
 
+            {isReadOnly && family && session && document.mime_type && document.document_type !== "credentials" ? (
+              <OfflineDocumentButton userId={session.user.id} familyId={family.id}
+                snapshot={{ id, title: document.title, mimeType: document.mime_type, summary: document.summary, ocrText: document.ocr_text ?? null }}
+                getDownloadUrl={async () => (await loadOriginalFile(id)).url} />
+            ) : null}
             {editable ? (
               <View style={styles.aiNotice}>
                 <View
@@ -799,10 +800,11 @@ export default function DocumentReviewScreen() {
         ) : (
           <>
             <View style={styles.editIntro}>
+              <OrdiloButton title={openingOriginal ? "Original wird geöffnet …" : "Mit Original vergleichen"} variant="outline" onPress={() => void viewOriginal()} disabled={openingOriginal} />
               <Text style={styles.editHelp}>
                 {editable
                   ? "Ändere nur, was nicht stimmt. Danach speicherst du das Dokument mit „Passt so“."
-                  : "Gib dem Dokument einen Namen, unter dem ihr es schnell wiederfindet."}
+                  : "Korrigiere, was nicht stimmt. Aufgaben und Nummern werden mitgespeichert. Passende Kalendereinträge folgen geänderten Terminen; separat bearbeitete Termine bleiben bestehen. Entfernte Datumsangaben löschen keine Kalendereinträge."}
               </Text>
             </View>
 
@@ -813,17 +815,13 @@ export default function DocumentReviewScreen() {
                 <TextInput
                   accessibilityLabel="Name des Dokuments"
                   maxLength={200}
-                  onChangeText={(title) =>
-                    isReadOnly
-                      ? setConfirmedTitleDraft(title)
-                      : updateAnalysis((current) => ({ ...current, title }))
-                  }
+                  onChangeText={(title) => updateAnalysis((current) => ({ ...current, title }))}
                   style={styles.input}
-                  value={isReadOnly ? confirmedTitleDraft : document.title}
+                  value={document.title}
                 />
               ) : <ReadValue value={document.title} />}
               <FieldLabel text="Worum geht's?" />
-              {editable ? (
+              {editable || isReadOnly ? (
                 <TextInput
                   accessibilityLabel="Zusammenfassung"
                   multiline
@@ -836,7 +834,7 @@ export default function DocumentReviewScreen() {
             </Card>
 
             <Section icon={Tag} title="Ablage">
-              {editable ? (
+              {editable || isReadOnly ? (
                 <>
                   <FieldLabel text="Kategorie" />
                   <TextInput
@@ -882,11 +880,11 @@ export default function DocumentReviewScreen() {
               )}
             </Section>
 
-            <PeopleSection analysis={document} editable={editable} onChange={updateAnalysis} />
-            <DatesSection analysis={document} editable={editable} onChange={updateAnalysis} onRemoveDate={removeDateAt} />
-            <TasksSection analysis={document} editable={editable} onChange={updateAnalysis} />
-            <AmountsSection analysis={document} editable={editable} onChange={updateAnalysis} />
-            <FactsSection analysis={document} editable={editable} onChange={updateAnalysis} />
+            <PeopleSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
+            <DatesSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} onRemoveDate={removeDateAt} />
+            <TasksSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
+            <AmountsSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
+            <FactsSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
 
             {isReadOnly && document.organizations.length > 0 ? (
               <Section icon={FileText} title="Organisationen">
@@ -900,7 +898,7 @@ export default function DocumentReviewScreen() {
               {isReadOnly ? (
                 <>
                   <OrdiloButton
-                    disabled={saving || !confirmedTitleDraft.trim()}
+                    disabled={saving || !document.title.trim()}
                     icon={
                       saving ? (
                         <ActivityIndicator color={colors.warmWhite} />
@@ -908,13 +906,13 @@ export default function DocumentReviewScreen() {
                         <Check color={colors.warmWhite} size={19} />
                       )
                     }
-                    onPress={() => void saveConfirmedTitle()}
+                    onPress={() => void saveCorrections()}
                     size="lg"
-                    title={saving ? "Wird gespeichert …" : "Titel speichern"}
+                    title={saving ? "Wird gespeichert …" : "Änderungen speichern"}
                   />
                   <OrdiloButton
                     title="Abbrechen"
-                    onPress={() => setEditing(false)}
+                    onPress={cancelEditing}
                     variant="ghost"
                   />
                 </>
@@ -927,7 +925,7 @@ export default function DocumentReviewScreen() {
                     size="lg"
                     title={saving ? "Wird gespeichert …" : "Passt so"}
                   />
-                  <OrdiloButton title="Zurück zur Übersicht" variant="ghost" onPress={() => setEditing(false)} />
+                  <OrdiloButton title="Zurück zur Übersicht" variant="ghost" onPress={cancelEditing} />
                 </>
               )}
             </View>
@@ -1002,12 +1000,12 @@ export default function DocumentReviewScreen() {
             tint: "blue",
           },
           {
-            accessibilityLabel: editable ? "Angaben ändern" : "Titel ändern",
+            accessibilityLabel: "Angaben ändern",
             description: editable
               ? "Namen, Termine, Beträge korrigieren"
-              : "Dokument umbenennen",
+              : "Fristen, Personen, Beträge und Nummern korrigieren",
             icon: Pencil,
-            label: editable ? "Angaben ändern" : "Titel ändern",
+            label: "Angaben ändern",
             onPress: () => chooseMenu("edit"),
             tint: "sage",
           },
@@ -1415,8 +1413,9 @@ function PeopleSection({ analysis, editable, onChange }: SectionProps) {
       {analysis.family_members.map((person, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("family_members", index, onChange)}>
           <FieldLabel text="Name" />
-          <TextInput accessibilityLabel={`Person ${index + 1}`} onChangeText={(name) => updateAt("family_members", index, { name }, onChange)} style={styles.input} value={person.name} />
+          <TextInput accessibilityLabel={`Person ${index + 1}`} onChangeText={(name) => updateAt("family_members", index, { name, person_id: null, confidence: 1 }, onChange)} style={styles.input} value={person.name} />
           <Confidence confidence={person.confidence} />
+          <OriginalTextHint text={analysis.ocr_text} value={person.name} />
         </EditableRow>
       ) : <ReadValue key={index} value={person.name} />)}
     </Section>
@@ -1447,6 +1446,7 @@ function DatesSection({
           <FieldLabel text="Datum" />
           <TextInput accessibilityHint="Format Jahr Monat Tag, zum Beispiel 2025-08-10" accessibilityLabel={`Datum Termin ${index + 1}`} autoCapitalize="none" onChangeText={(dateValue) => updateAt("dates", index, { date: dateValue }, onChange)} placeholder="JJJJ-MM-TT" placeholderTextColor={colors.mistDark} style={styles.input} value={date.date} />
           <Confidence confidence={date.confidence} />
+          <OriginalTextHint text={analysis.ocr_text} value={date.date} />
         </EditableRow>
       ) : <ReadValue key={index} value={[date.label, date.date].filter(Boolean).join(" · ")} />)}
     </Section>
@@ -1483,6 +1483,7 @@ function AmountsSection({ analysis, editable, onChange }: SectionProps) {
             <View style={styles.half}><FieldLabel text="Währung" /><TextInput accessibilityLabel={`Währung Betrag ${index + 1}`} autoCapitalize="characters" maxLength={3} onChangeText={(currency) => updateAt("amounts", index, { currency }, onChange)} style={styles.input} value={amount.currency} /></View>
           </View>
           <Confidence confidence={amount.confidence} />
+          <OriginalTextHint text={analysis.ocr_text} value={amount.amount} />
         </EditableRow>
       ) : <ReadValue key={index} value={[amount.label || "Betrag", amount.amount, amount.currency].filter(Boolean).join(" · ")} />)}
     </Section>
@@ -1500,6 +1501,7 @@ function FactsSection({ analysis, editable, onChange }: SectionProps) {
           <FieldLabel text="Nummer" />
           <TextInput accessibilityLabel={`Kennung ${index + 1}`} onChangeText={(value) => updateAt("facts", index, { value }, onChange)} style={styles.input} value={fact.value} />
           <Confidence confidence={fact.confidence} />
+          <OriginalTextHint text={analysis.ocr_text} value={fact.value} />
         </EditableRow>
       ) : <ReadValue key={index} value={`${fact.label}: ${fact.value}`} />)}
     </Section>

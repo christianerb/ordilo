@@ -1,0 +1,28 @@
+appId: com.ordilo.app
+---
+# Fixture: docs/quality/chat-documents.json, analyzed/confirmed by existing runner.
+# This flow creates a real chat in the disposable family and consumes AI quota.
+- launchApp
+- openLink: "ordilo://ablage"
+- tapOn: "Unterlagen durchsuchen"
+- inputText: "Elternabend Hannah"
+- hideKeyboard
+- extendedWaitUntil:
+    visible: "Elternabend Hannah, .*"
+    timeout: 30000
+- tapOn: "Elternabend Hannah, .*"
+- assertVisible: "Elternabend Hannah"
+- tapOn: "Zurück"
+- tapOn: "Ordilo fragen"
+- tapOn: "Frage an Ordilo"
+- inputText: "In welchem Raum findet Hannahs Elternabend statt?"
+- tapOn: "Frage senden"
+- extendedWaitUntil:
+    visible: "Fundstelle öffnen: Elternabend Hannah.*"
+    timeout: 120000
+- tapOn: "Fundstelle öffnen: Elternabend Hannah.*"
+- assertVisible: "Die Fundstelle"
+- assertVisible: ".*B12.*"
+- assertVisible: "Originaltext.*"
+- tapOn: "Zur Dokumentübersicht"
+- assertVisible: "Elternabend Hannah"

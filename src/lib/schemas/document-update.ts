@@ -3,24 +3,20 @@ import { documentAnalysisSchema } from "@/lib/schemas/extraction";
 import type { ApiErrorResponse } from "@/lib/schemas/api";
 
 /**
- * Payload for editing a document that is already in the family book
- * (PATCH /api/documents/[id]).
- *
- * It is the confirm payload minus the two groups an edit deliberately
- * leaves alone:
- *
- *   - `tasks` — they live on their own, get completed and assigned, and
- *     have their own detail sheet. Rewriting them from a document edit
- *     would reset that state.
- *   - `facts` — "Nummern & Kennungen" are edited row by row through
- *     /api/documents/[id]/facts, which writes them immediately.
- *
- * Everything the user can see and change in the document sheet is here:
- * title, summary, type, persons, organizations, dates, amounts, the
- * collection (category), and tags.
+ * Confirmed metadata edits retain the existing web contract. Native callers
+ * may additionally submit corrections with a revision and stable task/fact
+ * IDs; the wrapper updates them atomically without resetting task progress.
  */
 export const documentUpdatePayloadSchema = documentAnalysisSchema
   .omit({ tasks: true, facts: true, needs_user_review: true })
+  .extend({
+    corrections: z.object({
+      revision: z.string().regex(/^[a-f0-9]{32}$/),
+      tasks: z.array(z.object({ id: z.string().uuid().optional(), title: z.string().trim().min(1).max(200), due_date: z.iso.date().nullable() })).max(100),
+      facts: z.array(z.object({ id: z.string().uuid().optional(), label: z.string().trim().min(1).max(200), value: z.string().trim().min(1).max(1000) })).max(100),
+      date_changes: z.array(z.object({ previous_date: z.iso.date(), previous_label: z.string(), date: z.iso.date(), label: z.string().trim().min(1).max(160) })).max(100),
+    }).strict().optional(),
+  })
   .strict();
 
 export type DocumentUpdatePayload = z.infer<typeof documentUpdatePayloadSchema>;
