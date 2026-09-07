@@ -75,9 +75,26 @@ begin
     all_day = p_all_day,
     starts_time = case when p_all_day then null else p_starts_time end,
     ends_time = case when p_all_day then null else p_ends_time end,
-    location = nullif(p_location, '')
+    location = nullif(p_location, ''),
+    -- Moving a series moves its whole window: the end travels with the
+    -- start by the same number of days, and never lands before the new
+    -- start. Otherwise an edit made on a phone — which shows the date but
+    -- not the recurrence end — could push the start past the end and the
+    -- appointment would occur on no day at all, disappearing everywhere
+    -- with no way back from that phone.
+    recurrence_until = case
+      when recurrence_until is null then null
+      else greatest(
+        recurrence_until + (p_date - starts_on),
+        p_date + coalesce(v_duration, 0)
+      )
+    end
   where id = p_event_id
   returning * into v_event;
+
+  if not found then
+    raise exception 'not_found';
+  end if;
 
   delete from public.calendar_event_attendees
   where event_id = p_event_id
@@ -138,6 +155,13 @@ begin
   where id = p_event_id
   returning * into v_event;
 
+  -- to_jsonb of an unset rowtype is a non-null object of nulls, which a
+  -- client cannot tell from a real row: an event deleted in the meantime
+  -- would report success and leave the day on screen.
+  if not found then
+    raise exception 'not_found';
+  end if;
+
   return to_jsonb(v_event);
 end;
 $$;
@@ -167,6 +191,10 @@ begin
   set recurrence_exceptions = array_remove(recurrence_exceptions, p_date)
   where id = p_event_id
   returning * into v_event;
+
+  if not found then
+    raise exception 'not_found';
+  end if;
 
   return to_jsonb(v_event);
 end;

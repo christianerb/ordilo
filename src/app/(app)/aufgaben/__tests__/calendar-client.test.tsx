@@ -18,6 +18,7 @@ const mockUpdateSingle = vi.fn();
 const mockUpdateSelect = vi.fn(() => ({ single: mockUpdateSingle }));
 const mockUpdateEq = vi.fn(() => ({ select: mockUpdateSelect }));
 const mockUpdate = vi.fn(() => ({ eq: mockUpdateEq }));
+const mockRpc = vi.fn();
 const mockDeleteEq = vi.fn();
 const mockDelete = vi.fn(() => ({ eq: mockDeleteEq }));
 const mockAttendeeInsert = vi.fn();
@@ -37,7 +38,7 @@ const mockFrom = vi.fn((table: string) => {
 });
 
 vi.mock("@/lib/supabase/client", () => ({
-  createClient: () => ({ from: mockFrom }),
+  createClient: () => ({ from: mockFrom, rpc: mockRpc }),
 }));
 
 import { CalendarClient } from "@/app/(app)/aufgaben/calendar-client";
@@ -95,6 +96,15 @@ beforeEach(() => {
   mockAttendeeInsert.mockResolvedValue({ error: null });
   mockAttendeeDeleteIn.mockResolvedValue({ error: null });
   mockDismissalInsert.mockResolvedValue({ error: null });
+  mockRpc.mockImplementation((_name, args) =>
+    Promise.resolve({
+      data: {
+        ...makeEvent(),
+        recurrence_exceptions: [args.p_date as string],
+      },
+      error: null,
+    }),
+  );
 });
 
 describe("CalendarClient", () => {
@@ -351,12 +361,15 @@ describe("CalendarClient", () => {
       within(confirmSheet).getByTestId("confirm-delete-single-button"),
     );
 
+    // Appended by the database, not written back as a whole array read
+    // earlier, so a day skipped elsewhere in the meantime survives.
     await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledWith({
-        recurrence_exceptions: [today],
+      expect(mockRpc).toHaveBeenCalledWith("skip_calendar_event_occurrence", {
+        p_date: today,
+        p_event_id: "event-1",
       });
-      expect(mockUpdateEq).toHaveBeenCalledWith("id", "event-1");
     });
+    expect(mockUpdate).not.toHaveBeenCalled();
     // The series itself is NOT deleted.
     expect(mockDelete).not.toHaveBeenCalled();
   });

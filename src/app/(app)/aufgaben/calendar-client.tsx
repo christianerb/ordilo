@@ -507,17 +507,21 @@ export function CalendarClient({
       setDeleting(true);
       try {
         if (scope === "single") {
+          // Appended by the database (0080), never written back as a whole
+          // array read earlier: two people skipping different days of the
+          // same series must not undo each other, and the native app
+          // appends through the same function.
           const date = toCalendarDate(selectedDate);
-          const exceptions = [...deleteTarget.recurrence_exceptions, date];
-          const { error } = await supabase
-            .from("calendar_events")
-            .update({ recurrence_exceptions: exceptions })
-            .eq("id", deleteTarget.id);
+          const { data, error } = await supabase.rpc(
+            "skip_calendar_event_occurrence",
+            { p_date: date, p_event_id: deleteTarget.id },
+          );
 
-          if (error) {
+          if (error || !data) {
             toast.error("Löschen hat nicht geklappt.");
             return;
           }
+          const exceptions = data.recurrence_exceptions ?? [];
           setEvents((current) =>
             current.map((event) =>
               event.id === deleteTarget.id
