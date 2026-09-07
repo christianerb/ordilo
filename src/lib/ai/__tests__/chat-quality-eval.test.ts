@@ -23,6 +23,20 @@ describe(`${CHAT_EVAL_VERSION} deterministic scoring contract`, () => {
     expect(results.every((result) => result.score >= 0.9)).toBe(true);
   });
 
+  it("fails a correct answer that reads like a field read-out", () => {
+    // Every fact and source is right; only the voice is missing. This is the
+    // answer the family actually got, and it is not good enough.
+    const result = scoreChatAnswer(
+      CHAT_QUALITY_CASES_V1[0],
+      "Hannas Deutschlandticket ist bis zum 31. August 2027 gültig. Quelle: Deutschlandticket.",
+      "answered",
+    );
+
+    expect(result.failures).toContain("tone:source-tag");
+    expect(result.failures.some((failure) => failure.startsWith("terse:"))).toBe(true);
+    expect(result.score).toBeLessThan(0.9);
+  });
+
   it("fails a vague answer that omits the requested fact and source", () => {
     const result = scoreChatAnswer(
       CHAT_QUALITY_CASES_V1[0],

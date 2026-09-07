@@ -136,7 +136,7 @@ const CHAT_COMPLETION_TOOL_DEFINITIONS: OpenAI.Chat.Completions.ChatCompletionTo
       parameters: { type: "object", properties: {
         claims: { type: "array", minItems: 0, maxItems: 5, items: {
           type: "object", properties: {
-            text: { type: "string", description: "Kurzer deutscher Antwortsatz, mit der konkreten Antwort beginnen." },
+            text: { type: "string", description: "Ein vollstaendiger, natuerlicher deutscher Antwortsatz, der mit der konkreten Antwort beginnt. Nur Belegtes: keine Zahl, die nicht im Zitat steht, und keine Beruhigung oder Einordnung — die kommt erst in der Endantwort." },
             document_id: { type: "string" }, page_number: { type: ["integer", "null"] },
             quote: { type: "string", description: "Wörtlicher Originaltext inklusive Kontext, der Person und Aussage belegt." },
             highlight: { type: "string", description: "Optional: zentraler Wert, der im Antwortsatz und Zitat steht, z.B. 31.08.2027." },
@@ -1139,7 +1139,7 @@ export async function executeTool(
       ctx.responseState = answer.state;
       // Keep every lookup source in context: subsequent public queries must still
       // be checked against all private excerpts. Select display citations only at the end.
-      return JSON.stringify({ verified: true, document_answer: answer.text, instruction: "Diese geprüften Sätze unverändert in die endgültige Antwort übernehmen. Bearbeite zuerst alle noch offenen Teile der Nutzerfrage mit den passenden Werkzeugen. Antworte danach vollständig in Textform, mit Quellen für öffentliche Angaben." });
+      return JSON.stringify({ verified: true, document_answer: answer.text, instruction: "Diese geprüften Sätze wortgleich in die endgültige Antwort übernehmen. Bearbeite zuerst alle noch offenen Teile der Nutzerfrage mit den passenden Werkzeugen. Antworte danach vollständig in Textform im Ordilo-Ton (verbundene Sätze, Unterlage im Satz genannt, kein \"Quelle:\"-Etikett), mit Quellen für öffentliche Angaben. Der Text um die geprüften Sätze herum darf keinen neuen Fakt enthalten." });
     }
     case "add_calendar_event":
       return executeAddCalendarEvent(args, ctx);

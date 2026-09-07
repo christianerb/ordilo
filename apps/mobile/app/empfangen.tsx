@@ -29,20 +29,28 @@ export default function EmpfangenScreen() {
     } finally { busy.current = false; }
   }, [family, router]);
   useEffect(() => { void Promise.resolve().then(receive); }, [receive]);
+  const discard = useCallback(() => Alert.alert(
+    "Offenen Eingang verwerfen?", "Noch nicht übernommene Dateien werden aus diesem Eingang entfernt. Bereits übernommene Dokumente und die Originale in anderen Apps bleiben erhalten.",
+    [{ text: "Behalten", style: "cancel" }, { text: "Verwerfen", style: "destructive", onPress: () => {
+      try { discardIncomingShares(); router.replace("/scan"); }
+      catch { setError("Der Eingang konnte nicht entfernt werden. Bitte versuch es nochmal."); }
+    } }],
+  ), [router]);
+  // One state at a time: while the import runs the screen only reassures, and
+  // the failure case leads with a single retry instead of three equal options.
   return <Screen>
-    <ScreenHeader title="Deine Post ist da" />
+    <ScreenHeader title={error ? "Das hat nicht geklappt" : "Deine Post ist da"} />
     <View style={{ gap: spacing.lg, alignItems: "center" }}>
       <OrdiloCharacter size={96} animated={!error} />
-      <Text style={typography.body}>{error ? "Bereits übernommene Dateien bleiben in deiner Dokumentaufnahme." : `Ordilo bereitet den Import für ${family?.name ?? "eure Familie"} vor.`}</Text>
-      {error ? <InlineNotice message={error} actionLabel="Erneut versuchen" onAction={() => void receive()} /> : null}
-      {error ? <OrdiloButton title="Zur Dokumentaufnahme" variant="outline" onPress={() => { router.replace("/scan"); }} /> : null}
-      {error ? <OrdiloButton title="Offenen Eingang verwerfen" variant="ghost" onPress={() => Alert.alert(
-        "Offenen Eingang verwerfen?", "Noch nicht übernommene Dateien werden aus diesem Eingang entfernt. Bereits übernommene Dokumente und die Originale in anderen Apps bleiben erhalten.",
-        [{ text: "Behalten", style: "cancel" }, { text: "Verwerfen", style: "destructive", onPress: () => {
-          try { discardIncomingShares(); router.replace("/scan"); }
-          catch { setError("Der Eingang konnte nicht entfernt werden. Bitte versuch es nochmal."); }
-        } }],
-      )} /> : null}
+      {error ? <>
+        <InlineNotice message={error} />
+        <View style={{ alignSelf: "stretch", gap: spacing.sm }}>
+          <OrdiloButton title="Erneut versuchen" onPress={() => void receive()} />
+          <OrdiloButton title="Zur Dokumentaufnahme" variant="outline" onPress={() => { router.replace("/scan"); }} />
+        </View>
+        <Text style={[typography.timestamp, { textAlign: "center" }]}>Bereits übernommene Dateien liegen sicher in deiner Dokumentaufnahme.</Text>
+        <OrdiloButton title="Offenen Eingang verwerfen" variant="ghost" onPress={discard} />
+      </> : <Text style={typography.body}>{`Ordilo bereitet den Import für ${family?.name ?? "eure Familie"} vor.`}</Text>}
     </View>
   </Screen>;
 }

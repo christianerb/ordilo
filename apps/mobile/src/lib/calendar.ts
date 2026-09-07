@@ -54,6 +54,21 @@ export function toCalendarDate(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+const germanDate = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" });
+
+/**
+ * "3. September 2026" — the one German long form for a stored date, whether it
+ * arrives as a plain day or a full timestamp. Returns "" for anything that is
+ * not a date, so a caller can fall back to the raw value instead of printing
+ * "Invalid Date".
+ */
+export function formatGermanDate(value: string): string {
+  if (!value) return "";
+  // A bare day carries no zone; anchoring it to local noon keeps it on its day.
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value);
+  return Number.isNaN(parsed.getTime()) ? "" : germanDate.format(parsed);
+}
+
 /** Human-readable form value for an ISO calendar date. */
 export function formatEventDateInput(value: string): string {
   if (!DATE_PATTERN.test(value)) return value;

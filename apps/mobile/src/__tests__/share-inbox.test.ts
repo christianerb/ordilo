@@ -47,9 +47,34 @@ it("keeps malformed committed input for recovery rather than silently clearing i
   await expect(readShareInbox()).rejects.toThrow();
   expect(hasIncomingShare()).toBe(true);
 });
-it("refuses manifests that point outside their delivery directory", async () => {
+it("refuses manifests that name a file the delivery does not contain", async () => {
   commit("first");
+  mockFiles.set("file:///group/ordilo-inbox/other/geheim.pdf", "pdf");
+  const key = "file:///group/ordilo-inbox/first/ready.json";
+  mockFiles.set(key, mockFiles.get(key)!.replaceAll("first/brief.pdf", "other/geheim.pdf"));
+  await expect(readShareInbox()).rejects.toThrow("Eingang");
+});
+it("resolves attachments inside the delivery, so a path outside it cannot be reached", async () => {
+  commit("first");
+  mockFiles.set("file:///group/ordilo-inbox/other/brief.pdf", "fremd");
   const key = "file:///group/ordilo-inbox/first/ready.json";
   mockFiles.set(key, mockFiles.get(key)!.replaceAll("first/brief.pdf", "other/brief.pdf"));
+  const [delivery] = await readShareInbox();
+  expect(delivery.payloads[0].contentUri).toBe("file:///group/ordilo-inbox/first/brief.pdf");
+});
+it("accepts the extension's own spelling of the same file", async () => {
+  commit("first");
+  const key = "file:///group/ordilo-inbox/first/ready.json";
+  // The share extension reports /private/var while the app sees /var, and
+  // percent-encodes what it writes. Both name the very same file.
+  mockFiles.set(key, mockFiles.get(key)!.replaceAll("file:///group/ordilo-inbox/first/brief.pdf", "file:///private/var/group/ordilo-inbox/first/brief%2Epdf"));
+  const [delivery] = await readShareInbox();
+  expect(delivery.payloads[0].contentUri).toBe("file:///group/ordilo-inbox/first/brief.pdf");
+  expect(delivery.payloads[0].value).toBe("file:///group/ordilo-inbox/first/brief.pdf");
+});
+it("refuses a manifest that points at the commit marker itself", async () => {
+  commit("first");
+  const key = "file:///group/ordilo-inbox/first/ready.json";
+  mockFiles.set(key, mockFiles.get(key)!.replaceAll("first/brief.pdf", "first/ready.json"));
   await expect(readShareInbox()).rejects.toThrow("Eingang");
 });

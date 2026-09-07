@@ -97,6 +97,8 @@ import {
   removeLibraryDocumentOptimistically,
 } from "@/src/lib/library";
 import { resolveDocumentPeople, type Person } from "@/src/lib/people";
+import { DateValueField, PersonValueField } from "@/src/components/value-pickers";
+import { formatGermanDate } from "@/src/lib/calendar";
 import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
@@ -568,7 +570,7 @@ export default function DocumentReviewScreen() {
     <Screen style={styles.screen}>
       <DetailTopBar
         onBack={() => editing ? cancelEditing() : router.back()}
-        subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)}`}
+        subtitle={`Hinzugefügt am ${formatGermanDate(document.created_at)}`}
         title={
           editing
             ? editable
@@ -880,7 +882,7 @@ export default function DocumentReviewScreen() {
               )}
             </Section>
 
-            <PeopleSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
+            <PeopleSection analysis={document} editable={editable || isReadOnly} members={members} onChange={updateAnalysis} />
             <DatesSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} onRemoveDate={removeDateAt} />
             <TasksSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
             <AmountsSection analysis={document} editable={editable || isReadOnly} onChange={updateAnalysis} />
@@ -1115,7 +1117,7 @@ function ConsequenceRow({
             <Wallet color="#9A4A12" size={20} strokeWidth={1.9} />
           </IconTile>
         }
-        subtitle={entry.date ? `Zum ${formatDetailDate(`${entry.date}T12:00:00`)}` : null}
+        subtitle={entry.date ? `Zum ${formatGermanDate(entry.date)}` : null}
         title={entry.label}
         trailing={<Text style={styles.amountValue}>{entry.value}</Text>}
       />
@@ -1226,8 +1228,8 @@ function DocumentMetadata({ document }: { document: DocumentReview }) {
     { label: "Datei", value: document.original_filename },
     { label: "Format", value: document.mime_type?.replace(/^application\//, "").toUpperCase() ?? null },
     { label: "Seiten", value: document.page_count ? `${document.page_count}` : null },
-    { label: "Hinzugefügt", value: formatDetailDate(document.created_at) },
-    ...(document.confirmed_at ? [{ label: "Gespeichert", value: formatDetailDate(document.confirmed_at) }] : []),
+    { label: "Hinzugefügt", value: formatGermanDate(document.created_at) },
+    ...(document.confirmed_at ? [{ label: "Gespeichert", value: formatGermanDate(document.confirmed_at) }] : []),
   ].filter((row): row is { label: string; value: string } => Boolean(row.value));
 
   return (
@@ -1396,24 +1398,20 @@ function SecretReveal({ documentId }: { documentId: string }) {
   );
 }
 
-function formatDetailDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
-function PeopleSection({ analysis, editable, onChange }: SectionProps) {
+function PeopleSection({ analysis, editable, members, onChange }: SectionProps & { members: FamilyMemberOption[] }) {
   return (
     <Section icon={UserRound} title="Personen" onAdd={editable ? () => onChange((current) => ({ ...current, family_members: [...current.family_members, { name: "", person_id: null, confidence: 1 }] })) : undefined}>
       {analysis.family_members.length === 0 ? <EmptyRows text="Keine Person erkannt." /> : null}
       {analysis.family_members.map((person, index) => editable ? (
         <EditableRow key={index} onDelete={() => removeAt("family_members", index, onChange)}>
           <FieldLabel text="Name" />
-          <TextInput accessibilityLabel={`Person ${index + 1}`} onChangeText={(name) => updateAt("family_members", index, { name, person_id: null, confidence: 1 }, onChange)} style={styles.input} value={person.name} />
+          <PersonValueField
+            accessibilityLabel={`Person ${index + 1}`}
+            name={person.name}
+            onChange={({ name, personId }) => updateAt("family_members", index, { name, person_id: personId, confidence: 1 }, onChange)}
+            people={members}
+            personId={person.person_id}
+          />
           <Confidence confidence={person.confidence} />
           <OriginalTextHint text={analysis.ocr_text} value={person.name} />
         </EditableRow>
@@ -1444,11 +1442,16 @@ function DatesSection({
           <FieldLabel text="Worum geht's?" />
           <TextInput accessibilityLabel={`Bezeichnung Termin ${index + 1}`} onChangeText={(label) => updateAt("dates", index, { label }, onChange)} placeholder="Zum Beispiel: Elternabend" placeholderTextColor={colors.mistDark} style={styles.input} value={date.label} />
           <FieldLabel text="Datum" />
-          <TextInput accessibilityHint="Format Jahr Monat Tag, zum Beispiel 2025-08-10" accessibilityLabel={`Datum Termin ${index + 1}`} autoCapitalize="none" onChangeText={(dateValue) => updateAt("dates", index, { date: dateValue }, onChange)} placeholder="JJJJ-MM-TT" placeholderTextColor={colors.mistDark} style={styles.input} value={date.date} />
+          <DateValueField
+            accessibilityLabel={`Datum Termin ${index + 1}`}
+            onChange={(dateValue) => updateAt("dates", index, { date: dateValue }, onChange)}
+            title="Termin wählen"
+            value={date.date}
+          />
           <Confidence confidence={date.confidence} />
           <OriginalTextHint text={analysis.ocr_text} value={date.date} />
         </EditableRow>
-      ) : <ReadValue key={index} value={[date.label, date.date].filter(Boolean).join(" · ")} />)}
+      ) : <ReadValue key={index} value={[date.label, formatGermanDate(date.date) || date.date].filter(Boolean).join(" · ")} />)}
     </Section>
   );
 }
@@ -1462,10 +1465,16 @@ function TasksSection({ analysis, editable, onChange }: SectionProps) {
           <FieldLabel text="Aufgabe" />
           <TextInput accessibilityLabel={`Aufgabe ${index + 1}`} onChangeText={(title) => updateAt("tasks", index, { title }, onChange)} style={styles.input} value={task.title} />
           <FieldLabel text="Fällig am" />
-          <TextInput accessibilityHint="Leer lassen, wenn es kein Datum gibt" accessibilityLabel={`Fälligkeitsdatum Aufgabe ${index + 1}`} autoCapitalize="none" onChangeText={(dueDate) => updateAt("tasks", index, { due_date: dueDate || null }, onChange)} placeholder="JJJJ-MM-TT" placeholderTextColor={colors.mistDark} style={styles.input} value={task.due_date ?? ""} />
+          <DateValueField
+            accessibilityLabel={`Fälligkeitsdatum Aufgabe ${index + 1}`}
+            clearLabel="Kein Datum"
+            onChange={(dueDate) => updateAt("tasks", index, { due_date: dueDate || null }, onChange)}
+            title="Fällig am"
+            value={task.due_date ?? ""}
+          />
           <Confidence confidence={task.confidence} />
         </EditableRow>
-      ) : <ReadValue key={index} value={task.due_date ? `${task.title} · ${task.due_date}` : task.title} />)}
+      ) : <ReadValue key={index} value={task.due_date ? `${task.title} · ${formatGermanDate(task.due_date) || task.due_date}` : task.title} />)}
     </Section>
   );
 }
