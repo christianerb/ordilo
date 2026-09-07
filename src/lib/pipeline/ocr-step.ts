@@ -71,6 +71,7 @@ export async function performOcrStep(
   const ocrResult = await runOcr(
     fileData,
     document.original_filename || "document",
+    document.id,
   );
 
   // 3. Store results immediately (Datalab evicts after 1 hour) ---------------

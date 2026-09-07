@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { correctTravelDocumentType } from "./document-type";
 import {
@@ -160,7 +161,7 @@ function getOpenAIClient(): OpenAI {
       "OPENAI_NOT_CONFIGURED",
     );
   }
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
 }
 
 // ---------------------------------------------------------------------------

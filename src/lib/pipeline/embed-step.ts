@@ -1,3 +1,4 @@
+import { withUsageScope } from "@/lib/analytics/api-usage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ConfirmRpcEmbedding, Database } from "@/types/database";
 import {
@@ -42,6 +43,10 @@ export async function buildDocumentEmbeddings(
   client: Client,
   documentId: string,
 ): Promise<ConfirmRpcEmbedding[]> {
+  return withUsageScope({ operation: "document_embeddings", documentId }, () => buildMeteredDocumentEmbeddings(client, documentId));
+}
+
+async function buildMeteredDocumentEmbeddings(client: Client, documentId: string): Promise<ConfirmRpcEmbedding[]> {
   // 1. Load the document + pages --------------------------------------------
   const { data: document, error: docError } = await client
     .from("documents")

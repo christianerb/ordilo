@@ -144,6 +144,22 @@ export type LexicalSearchRow = {
 export type Database = {
   public: {
     Tables: {
+      api_usage: {
+        Row: {
+          id: string; operation_id: string; operation: string; user_id: string | null;
+          document_id: string | null; provider: string; provider_request_id: string | null;
+          model: string | null; provider_units: number | null; input_tokens: number | null; cached_input_tokens: number | null;
+          cache_write_tokens: number | null; output_tokens: number | null; cost_usd: number | null; occurred_at: string;
+        };
+        Insert: {
+          id?: string; operation_id: string; operation: string; user_id?: string | null;
+          document_id?: string | null; provider: string; provider_request_id?: string | null;
+          model?: string | null; provider_units?: number | null; input_tokens?: number | null; cached_input_tokens?: number | null;
+          cache_write_tokens?: number | null; output_tokens?: number | null; cost_usd?: number | null; occurred_at?: string;
+        };
+        Update: { cost_usd?: number | null };
+        Relationships: [];
+      };
       push_devices: {
         Row: { id: string; user_id: string; token: string; timezone: string; updated_at: string };
         Insert: { id: string; user_id: string; token: string; timezone?: string; updated_at?: string };

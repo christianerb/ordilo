@@ -3,6 +3,8 @@ import { getCodeEligibleAdmin, getVerifiedAdmin } from "@/lib/admin/access";
 import { getPlatformOverview } from "@/lib/admin/platform-data";
 import { formatGermanDateTime } from "@/lib/format";
 import { AdminLogoutButton } from "./admin-logout-button";
+import { getBetaOverview } from "@/lib/admin/beta-data";
+import { getUsageOverview } from "@/lib/admin/usage-data";
 
 export const metadata = {
   title: "Plattformübersicht | Ordilo",
@@ -10,6 +12,10 @@ export const metadata = {
 };
 
 const PAGE_SIZE = 50;
+const OPERATION_LABELS: Record<string, string> = {
+  document_total: "Dokument (OCR, Analyse, Embeddings)", chat: "Chatfrage", search: "Suchanfrage",
+  voice_transcription: "Spracheingabe", browser_voice: "Browser-Sprachsitzung (Verbrauch offen)", email_analysis: "E-Mail-Analyse",
+};
 
 function parseDays(value: string | string[] | undefined): 7 | 30 | 90 {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -40,6 +46,9 @@ export default async function AdminDashboardPage({
   const days = parseDays(params.days);
   const requestedPage = parsePage(params.page);
   const overview = await getPlatformOverview(days);
+  const beta = await getBetaOverview(days);
+  const usage = await getUsageOverview();
+  const accountEmails = new Map(overview.accounts.map((account) => [account.id, account.email]));
   const pages = Math.max(1, Math.ceil(overview.accounts.length / PAGE_SIZE));
   const page = Math.min(requestedPage, pages);
   const visibleAccounts = overview.accounts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -79,6 +88,50 @@ export default async function AdminDashboardPage({
           </div>
           <AdminLogoutButton />
         </header>
+
+        <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
+          <h2 className="text-lg font-semibold">Beta: vom Einstieg zur Nutzung</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Letzte {days} Tage, Tagesgrenzen in UTC. Einstiegskohorte: Personen mit Onboarding-Start im Zeitraum; spätere Abschlüsse und erste Uploads derselben Personen. Ein Login allein zählt hier nicht als Produktaktivität.</p>
+          <dl className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+            {[
+              ["Onboarding gestartet", beta.started],
+              ["Onboarding abgeschlossen", beta.completed],
+              ["Abschlussquote", beta.completionRate === null ? "Noch keine Starts" : `${Math.round(beta.completionRate * 100)} %`],
+              ["Personen mit erstem Upload", beta.firstUpload],
+              ["Aktive Personen", beta.activeUsers],
+              ["Dokumente angelegt (noch vorhanden)", beta.documents],
+              ["Suchanfragen abgeschlossen", beta.searches],
+              ["Chatfragen gesendet", beta.questions],
+              ["Dokumente in Verarbeitung", beta.processing],
+              ["Dokumente zur Prüfung", beta.awaitingReview],
+              ["Dokumente fehlgeschlagen", beta.failed],
+            ].map(([label, value]) => <div key={label}><dt className="text-sm text-muted-foreground">{label}</dt><dd className="mt-1 text-xl font-semibold">{value}</dd></div>)}
+          </dl>
+          <p className="mt-4 text-sm text-muted-foreground">Fehler nach Verarbeitungsschritt: {beta.failureStages.map(({ stage, count }) => `${({ upload: "Upload", ocr: "Texterkennung", analyze: "Analyse", embed: "Suchindex" } as Record<string, string>)[stage]} ${count}`).join(" · ")}. Noch nicht hochgeladene lokale Dateien sind hier nicht sichtbar.</p>
+          <details className="mt-5">
+            <summary className="cursor-pointer text-sm font-medium">Wo stehen die neuen Nutzer?</summary>
+            <p className="mt-2 text-sm text-muted-foreground">Letzter belegter Einstiegsschritt; kein automatisch behaupteter Abbruch.</p>
+            <table className="mt-3 w-full text-left text-sm"><thead><tr><th>Nutzer</th><th>Letzter Schritt</th><th>Zeitpunkt</th></tr></thead><tbody>{beta.lastSteps.map((row) => <tr key={row.userId}><td className="py-2">{accountEmails.get(row.userId) ?? row.userId}</td><td>{row.step}</td><td>{formatGermanDateTime(row.at)}</td></tr>)}</tbody></table>
+          </details>
+          <details className="mt-5">
+            <summary className="cursor-pointer text-sm font-medium">Täglich aktive Personen (Produktnutzung)</summary>
+            {beta.daily.length ? <table className="mt-3 w-full text-left text-sm"><thead><tr><th>Tag (UTC)</th><th>Personen</th></tr></thead><tbody>{beta.daily.map(({ day, users }) => <tr key={day}><td className="py-1">{day}</td><td>{users}</td></tr>)}</tbody></table> : <p className="mt-2 text-sm text-muted-foreground">Noch keine Produktaktivität erfasst.</p>}
+          </details>
+        </section>
+
+        <section className="overflow-x-auto rounded-ordilo-md border border-border bg-card p-5 shadow-card">
+          <h2 className="text-lg font-semibold">API-Verbrauch und variable Kosten</h2>
+          <p className="mt-2 text-sm text-muted-foreground">Ab Beginn der Erfassung, maximal 12 Monate, unabhängig vom Zeitraumfilter. USD-Schätzung ohne Fixkosten. Tokens enthalten Eingabe und Ausgabe; Cache-Tokens sind bereits in der Eingabe enthalten. Fehlende Preise und Versuche ohne Endabrechnung bleiben unbekannt. Erfasst: Dokumentanalyse, Embeddings, Chat, Suche, E-Mail-Analyse und OCR-Abrechnung. Native Spracheingabe wird erfasst, ist noch nicht bepreist; Browser-Realtime fehlt noch. Diese Ansicht ersetzt keine Anbieterrechnung.</p>
+          {!usage.available ? <p className="mt-3">Verbrauchsdaten nicht verfügbar. Migration 0079 und Datenbankzugriff prüfen.</p> : <>
+            <table className="mt-4 w-full text-left text-sm"><thead><tr><th>Nutzer</th><th>Monat (UTC)</th><th>API-Aufrufe</th><th>Erfasste Tokens</th><th>Bekannte Kosten (USD)</th><th>Aufrufe ohne Preis</th></tr></thead><tbody>
+              {usage.accounts.map((row) => <tr key={`${row.userId}:${row.month}`}><td className="py-2">{row.userId ? accountEmails.get(row.userId) ?? row.userId : "Nicht zugeordnet"}</td><td>{row.month}</td><td>{row.calls}</td><td>{formatNumber(row.tokens)}</td><td>{row.knownUsd.toFixed(5)}</td><td>{row.unknownCosts}</td></tr>)}
+            </tbody></table>
+            {!usage.accounts.length && <p className="mt-3 text-sm text-muted-foreground">Noch kein API-Verbrauch erfasst. Frühere Kosten werden nicht rückwirkend geschätzt.</p>}
+            <table className="mt-5 w-full text-left text-sm"><thead><tr><th>Vorgang</th><th>Dokumente / Anfragen</th><th>API-Aufrufe</th><th>Ø bekannte vollständige Kosten (USD)</th></tr></thead><tbody>
+              {usage.operations.map((row) => <tr key={row.operation}><td className="py-2">{OPERATION_LABELS[row.operation] ?? row.operation}</td><td>{row.units}</td><td>{row.calls}</td><td>{row.averageUsd === null ? "Unvollständig" : row.averageUsd.toFixed(5)}</td></tr>)}
+            </tbody></table>
+          </>}
+        </section>
 
         <nav className="flex gap-2" aria-label="Zeitraum auswählen">
           {([7, 30, 90] as const).map((option) => (

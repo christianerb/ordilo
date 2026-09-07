@@ -1,15 +1,49 @@
-import { useCallback, useEffect, useRef } from "react";
-import { AppState } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, Pressable, Text } from "react-native";
 import { useRouter, useSegments } from "expo-router";
 import * as Notifications from "expo-notifications";
 import { notificationDestination, syncPushRegistration } from "@/src/lib/notifications";
+import { drainIntake } from "@/src/lib/intake-worker";
+import { loadPersistedScanQueue } from "@/src/lib/scan";
+import { colors, spacing, typography } from "@/src/theme/tokens";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 /** Wait for auth/onboarding before resolving external arrivals; no payload is discarded by login. */
 export function NativeArrivals({ familyId, userId }: { familyId: string | null; userId: string | null }) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const segments = useSegments();
   const handled = useRef<string | null>(null);
   const currentRoute = segments[0];
+  const [intakeStatus, setIntakeStatus] = useState<{ familyId: string; message: string } | null>(null);
+  useEffect(() => {
+    if (!familyId || !userId) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const items = await loadPersistedScanQueue(familyId);
+        const needsHelp = items.some((item) => item.state === "failed");
+        const waiting = items.every((item) => item.state === "queued");
+        const progress = waiting ? "Der Upload wartet und startet automatisch." : "Der Import läuft. Du kannst Ordilo weiter nutzen.";
+        if (!cancelled) setIntakeStatus(items.length ? { familyId, message: needsHelp ? "Ein Import braucht deine Hilfe. Eingang öffnen" : `${items.length} ${items.length === 1 ? "Dokument" : "Dokumente"}: ${progress}` } : null);
+      } catch {
+        if (!cancelled) setIntakeStatus({ familyId, message: "Eingang konnte nicht gelesen werden. Erneut öffnen" });
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => { if (AppState.currentState === "active") void refresh(); }, 2000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [familyId, userId]);
+  useEffect(() => {
+    if (!familyId || !userId || currentRoute === "scan" || currentRoute === "empfangen") return;
+    let cancelled = false;
+    const isCurrent = () => !cancelled && AppState.currentState === "active";
+    const drain = () => { if (isCurrent()) void drainIntake(familyId, isCurrent).catch(() => {}); };
+    drain();
+    const timer = setInterval(drain, 15_000);
+    const foreground = AppState.addEventListener("change", (state) => { if (state === "active") drain(); });
+    return () => { cancelled = true; clearInterval(timer); foreground.remove(); };
+  }, [familyId, userId, currentRoute]);
   const openNotification = useCallback((response: Notifications.NotificationResponse) => {
     if (!familyId) return;
     const id = response.notification.request.identifier;
@@ -50,5 +84,8 @@ export function NativeArrivals({ familyId, userId }: { familyId: string | null; 
     const foreground = AppState.addEventListener("change", (state) => { if (state === "active") check(); });
     return () => { cancelled = true; foreground.remove(); };
   }, [familyId, userId, currentRoute, router]);
-  return null;
+  if (!userId || intakeStatus?.familyId !== familyId || currentRoute === "scan" || currentRoute === "empfangen") return null;
+  return <Pressable accessibilityRole="button" onPress={() => router.push("/scan")} style={{ backgroundColor: colors.sand, padding: spacing.md, paddingTop: insets.top + spacing.sm, minHeight: 44 }}>
+    <Text style={typography.timestamp}>{intakeStatus.message}</Text>
+  </Pressable>;
 }

@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import {
   EMBEDDINGS_MODEL,
@@ -302,7 +303,7 @@ function getOpenAIClient(): OpenAI {
       "OPENAI_NOT_CONFIGURED",
     );
   }
-  return new OpenAI({ apiKey });
+  return new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
 }
 
 // ---------------------------------------------------------------------------

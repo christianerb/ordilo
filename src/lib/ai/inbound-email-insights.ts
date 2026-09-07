@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import {
   EMAIL_INSIGHT_MODEL,
@@ -68,7 +69,7 @@ export async function extractEmailSuggestions(
     throw new Error("OpenAI API key is not configured.");
   }
 
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
   const userInput = [
     `Von: ${input.from}`,
     `Betreff: ${input.subject}`,

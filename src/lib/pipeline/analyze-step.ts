@@ -1,3 +1,4 @@
+import { withUsageScope } from "@/lib/analytics/api-usage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { runExtraction } from "@/lib/ai/extraction";
@@ -272,6 +273,10 @@ export async function performAnalyzeStep(
   client: Client,
   document: AnalyzeStepDocument,
 ): Promise<DocumentAnalysis> {
+  return withUsageScope({ operation: "document_analysis", documentId: document.id }, () => performMeteredAnalyzeStep(client, document));
+}
+
+async function performMeteredAnalyzeStep(client: Client, document: AnalyzeStepDocument): Promise<DocumentAnalysis> {
   const rawOcrText = await loadOcrText(client, document);
   // A login's URL and user name never travel to the LLM: they would come
   // back in the summary and the tags, and from there into every place a

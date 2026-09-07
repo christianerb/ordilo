@@ -1,3 +1,4 @@
+import { attributeUsageUser, withUsageScope } from "@/lib/analytics/api-usage";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { EmbeddingError } from "@/lib/ai/embeddings";
@@ -60,6 +61,10 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
 export async function POST(
   request: Request,
 ): Promise<Response> {
+  return withUsageScope({ operation: "search" }, () => handleSearch(request));
+}
+
+async function handleSearch(request: Request): Promise<Response> {
   // 1. Authenticate --------------------------------------------------------
   const auth = await requireUser();
   if (auth.status) {
@@ -67,6 +72,7 @@ export async function POST(
     return Response.json(body, { status: auth.status });
   }
 
+  attributeUsageUser(auth.user.id);
   // 2. Parse & validate the request body -----------------------------------
   const parsed = await parseJsonBody(request, searchRequestSchema, {
     invalidPayload:

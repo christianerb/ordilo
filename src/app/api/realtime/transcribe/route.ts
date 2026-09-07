@@ -1,3 +1,4 @@
+import { attributeUsageUser, meteredOpenAIFetch, withUsageScope } from "@/lib/analytics/api-usage";
 import { requireUser } from "@/lib/auth/require-user";
 import { reserveVoiceTranscription } from "@/lib/ai/voice-rate-limit";
 import { getM4aDurationMillis } from "@/lib/audio-duration";
@@ -13,8 +14,13 @@ const ACCEPTED_AUDIO_TYPES = new Set([
 ]);
 
 export async function POST(request: Request): Promise<Response> {
+  return withUsageScope({ operation: "voice_transcription" }, () => handleTranscription(request));
+}
+
+async function handleTranscription(request: Request): Promise<Response> {
   const auth = await requireUser();
   if (auth.status) return Response.json(auth.json, { status: auth.status });
+  attributeUsageUser(auth.user.id);
 
   const form = await request.formData().catch(() => null);
   const audio = form?.get("audio");
@@ -95,7 +101,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let response: Response;
   try {
-    response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    response = await meteredOpenAIFetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
       body,

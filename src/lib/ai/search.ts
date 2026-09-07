@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import {
   generateQueryEmbedding,
   generateEmbeddings,
@@ -280,7 +281,7 @@ async function generateSearchQueries(query: string): Promise<string[]> {
     if (!apiKey) return [];
 
     const OpenAI = (await import("openai")).default;
-    const client = new OpenAI({ apiKey });
+    const client = new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
 
     const prompt = `Suchanfrage: "${trimmed}"
 

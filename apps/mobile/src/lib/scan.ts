@@ -1,6 +1,5 @@
-import { ApiError, apiFetch } from "./api";
+import { ApiError, apiFetch, getApiUrl } from "./api";
 import { getSupabase } from "./supabase";
-import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
@@ -53,6 +52,19 @@ const PIPELINE_POLL_INTERVAL_MS = 1_000;
 const PIPELINE_POLL_ATTEMPTS = 75;
 const ANALYSIS_POLL_ATTEMPTS = 200;
 let pendingQueueCheckpoint: Promise<void> = Promise.resolve();
+
+/** Serialize read/modify/write, including arrivals from another screen. */
+export function mutateScanQueue(familyId: string, transform: (queue: PersistedScanQueueItem[]) => PersistedScanQueueItem[]): Promise<PersistedScanQueueItem[]> {
+  const checkpoint = pendingQueueCheckpoint.then(async () => {
+    const next = transform(await loadPersistedScanQueue(familyId));
+    const directory = queueDirectory(familyId);
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    await FileSystem.writeAsStringAsync(`${directory}queue.json`, JSON.stringify(next));
+    return next;
+  });
+  pendingQueueCheckpoint = checkpoint.then(() => {}, () => {});
+  return checkpoint;
+}
 
 /** Inspect server state before retrying; a failed background job must restart, not just poll forever. */
 export async function resumeScannedDocument(documentId: string, onStep?: (step: ScanProcessingStep) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
@@ -326,22 +338,35 @@ export function validateScannedDocument(
   return result.success ? null : result.error.issues[0]?.message;
 }
 
-/** Streams the staged native file as a real multipart Blob. */
+/** Native background transfer keeps an already-started iOS upload alive across app switches. */
 export async function uploadScannedDocument(
   document: ScannedDocument,
   familyId: string,
 ): Promise<ScanUploadResponse> {
-  const formData = new FormData();
-  const file = new File(document.uri);
-  formData.append("file", file, document.name);
-  formData.append("family_id", familyId);
-  formData.append("upload_key", document.id);
-
-  const response = await apiFetch("/api/documents/upload", {
-    method: "POST",
-    body: formData,
-  });
-  return (await response.json()) as ScanUploadResponse;
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new ApiError("Bitte melde dich erneut an.", 401);
+  let response: FileSystem.FileSystemUploadResult;
+  try {
+    response = await FileSystem.uploadAsync(`${getApiUrl()}/api/documents/upload`, document.uri, {
+      httpMethod: "POST",
+      sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: document.mimeType,
+      parameters: { family_id: familyId, upload_key: document.id },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0);
+  }
+  if (response.status < 200 || response.status >= 300) throw new ApiError("Der Upload konnte nicht abgeschlossen werden.", response.status);
+  try {
+    return z.object({ document_id: z.string().min(1), status: z.literal("uploaded"), server_pipeline: z.boolean() }).parse(JSON.parse(response.body));
+  } catch {
+    // Retry the same key after an uncertain response, never generate a new upload.
+    throw new ApiError("Der Upload konnte noch nicht bestätigt werden.", 503);
+  }
 }
 
 /**

@@ -14,13 +14,15 @@ export async function purgeExpiredAdminAnalytics(): Promise<void> {
     Date.now() - ACCESS_ATTEMPT_RETENTION_DAYS * 24 * 60 * 60 * 1000,
   ).toISOString();
 
-  const [events, attempts] = await Promise.all([
+  const [events, attempts, usage] = await Promise.all([
     admin.from("product_events").delete().lt("occurred_at", activityCutoff),
     admin
       .from("admin_access_attempts")
       .delete()
       .lt("attempted_at", attemptCutoff),
+    admin.from("api_usage").delete().lt("occurred_at", activityCutoff),
   ]);
   if (events.error) throw events.error;
   if (attempts.error) throw attempts.error;
+  if (usage.error) throw usage.error;
 }

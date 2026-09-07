@@ -16,6 +16,7 @@ import {
 jest.mock("../lib/api", () => ({
   ...jest.requireActual("../lib/api"),
   apiFetch: jest.fn(),
+  getApiUrl: () => "https://ordilo.test",
 }));
 
 const mockApiFetch = jest.mocked(apiFetch);
@@ -30,12 +31,15 @@ jest.mock("../lib/supabase", () => ({
     };
     query.select.mockReturnValue(query);
     query.eq.mockReturnValue(query);
-    return { from: jest.fn(() => query) };
+    return { from: jest.fn(() => query), auth: { getSession: jest.fn(async () => ({ data: { session: { access_token: "test-token" } } })) } };
   },
 }));
 
 jest.mock("expo-file-system/legacy", () => ({
   documentDirectory: "file:///documents/",
+  uploadAsync: jest.fn(),
+  FileSystemSessionType: { BACKGROUND: 0 },
+  FileSystemUploadType: { MULTIPART: 1 },
   getInfoAsync: jest.fn(),
   copyAsync: jest.fn().mockResolvedValue(undefined),
   deleteAsync: jest.fn().mockResolvedValue(undefined),
@@ -117,14 +121,25 @@ describe("native scan helpers", () => {
     expect(steps).toEqual(["ocr", "analysis"]);
   });
 
-  it("sends the staged file as a real multipart Blob", async () => {
-    mockApiFetch.mockResolvedValue({
-      json: async () => ({
+  it.each([400, 413, 503])("preserves HTTP %s for durable-worker retry decisions", async (status) => {
+    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({ status, headers: {}, mimeType: "application/json", body: "{}" });
+    await expect(uploadScannedDocument({ id: "scan-1", uri: "file:///scan.pdf", name: "scan.pdf", mimeType: "application/pdf" }, "family-1")).rejects.toMatchObject({ status });
+  });
+
+  it("treats an unconfirmed successful response as retryable", async () => {
+    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({ status: 200, headers: {}, mimeType: "text/html", body: "not-json" });
+    await expect(uploadScannedDocument({ id: "scan-1", uri: "file:///scan.pdf", name: "scan.pdf", mimeType: "application/pdf" }, "family-1")).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("uses an authenticated native background multipart transfer with a stable retry key", async () => {
+    jest.mocked(FileSystem.uploadAsync).mockResolvedValue({
+      status: 200, headers: {}, mimeType: "application/json",
+      body: JSON.stringify({
         document_id: "document-1",
         server_pipeline: true,
         status: "uploaded",
       }),
-    } as Response);
+    });
 
     await uploadScannedDocument(
       {
@@ -136,8 +151,11 @@ describe("native scan helpers", () => {
       "family-1",
     );
 
-    const [, options] = mockApiFetch.mock.calls[0];
-    expect(options?.body).toBeInstanceOf(FormData);
+    expect(FileSystem.uploadAsync).toHaveBeenCalledWith("https://ordilo.test/api/documents/upload", "file:///documents/ordilo-scan/scan-1.jpg", expect.objectContaining({
+      sessionType: 0, uploadType: 1, fieldName: "file", mimeType: "image/jpeg",
+      parameters: { family_id: "family-1", upload_key: "scan-1" },
+      headers: { Authorization: "Bearer test-token" },
+    }));
   });
 
   it("resumes an analysis retry without repeating OCR", async () => {

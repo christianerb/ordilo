@@ -107,6 +107,7 @@ export async function POST(request: Request): Promise<Response> {
       // OpenAI, Resend, or database failure must return 500 so Resend can
       // retry the message, rather than being lost in a detached callback.
       await recordInboundEmailInsights({
+        ownerId: family.created_by,
         emailId: event.data.email_id,
         familyId: alias.family_id,
         resend,
