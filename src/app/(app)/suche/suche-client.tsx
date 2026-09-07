@@ -886,7 +886,7 @@ export function SucheClient({
           router.push(`/sammlungen/${target.id}`);
           return;
         case "contact":
-          router.push("/dokumente?tab=kontakte");
+          router.push(`/dokumente?tab=kontakte&kontakt=${target.id}`);
           return;
         case "member":
           router.push("/familie");

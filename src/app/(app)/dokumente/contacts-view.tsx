@@ -41,14 +41,24 @@ export function ContactsView({
   initialContacts,
   onOpenSource,
   createRequest = 0,
+  openContactId,
 }: {
   initialContacts: ContactRow[];
   onOpenSource: (documentId: string) => void;
   createRequest?: number;
+  /**
+   * Deep link (/dokumente?tab=kontakte&kontakt=<id>): open this contact's
+   * drawer on arrival. Without it "Kontakt öffnen" from a confirmed chat
+   * action would still leave the reader searching the list for the name
+   * they just created.
+   */
+  openContactId?: string;
 }) {
   const [contacts, setContacts] = useState(initialContacts);
   const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<ContactRow | null>(null);
+  const [selected, setSelected] = useState<ContactRow | null>(
+    () => initialContacts.find((contact) => contact.id === openContactId) ?? null,
+  );
   const [deleteTarget, setDeleteTarget] = useState<ContactRow | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -59,6 +69,14 @@ export function ContactsView({
     setHandledCreateRequest(createRequest);
     setEditing(null);
     setFormOpen(true);
+  }
+  // A later deep link to a contact already in the list does not remount this
+  // view, so reconcile it the same way the Ablage tabs do.
+  const [handledOpenId, setHandledOpenId] = useState(openContactId);
+  if (openContactId !== handledOpenId) {
+    setHandledOpenId(openContactId);
+    const match = contacts.find((contact) => contact.id === openContactId);
+    if (match) setSelected(match);
   }
 
   const suggestions = contacts.filter((contact) => contact.status === "suggested");

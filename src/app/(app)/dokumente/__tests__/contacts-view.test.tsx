@@ -66,3 +66,35 @@ describe("ContactsView deletion", () => {
     });
   });
 });
+
+describe("ContactsView deep link", () => {
+  it("opens the linked contact on arrival, so a chat action ends at it", () => {
+    render(
+      <ContactsView
+        initialContacts={[CONTACT]}
+        onOpenSource={vi.fn()}
+        openContactId={CONTACT.id}
+      />,
+    );
+
+    // The drawer is open without anyone clicking a row.
+    expect(
+      screen.getByRole("button", { name: "Kontakt löschen" }),
+    ).toBeDefined();
+    expect(screen.getByText("Hausarztpraxis")).toBeDefined();
+  });
+
+  it("leaves the list alone for an id it does not hold", () => {
+    render(
+      <ContactsView
+        initialContacts={[CONTACT]}
+        onOpenSource={vi.fn()}
+        openContactId="contact-missing"
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Kontakt löschen" }),
+    ).toBeNull();
+  });
+});
