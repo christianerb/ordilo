@@ -352,13 +352,16 @@ vocabulary, with three deliberate differences that come from the phone:
   the family has to maintain.
 - **Corrections are choices.** Where a value has a known set — a person,
   a date — correcting it is a pick, not typing: the family from the
-  picker sheet (with their avatar, and "Andere Person eintragen" for
-  someone outside it) and the system calendar for dates, shown back in
+  picker sheet, the system calendar for dates. A date is shown back in
   German long form ("3. September 2026") while the stored value stays
-  ISO. Free text remains only where the set genuinely is open, or where
-  the app knows no people yet. The control looks like an input — same
-  border, radius and 44pt target — with a leading icon and a chevron so
-  it reads as openable.
+  ISO. A person is one control in two states inside the same input frame
+  (border, radius, 44pt target): linked to a family member it shows
+  their avatar, their name and a chevron and reopens the picker on tap;
+  anyone else stays a plain name field with the family one tap away
+  behind a trailing icon. A name Ordilo read but could not link is
+  therefore editable at once — no detour through a menu to fix a
+  spelling — and picking a member stores the link, not a fourth spelling
+  of the name.
 
 ### Signature: Document Conversation
 
@@ -368,6 +371,7 @@ vocabulary, with three deliberate differences that come from the phone:
 - **Evidence as paper:** Show the best source first and reveal additional sources on demand. A cited document quotation sits in a Sand panel with a 12px radius, document title, and page reference when available. Warm Apricot Light marks only the matching factual phrase within the quotation. This is a local evidence annotation, an exception to the general apricot scarcity guidance; it does not become another action color.
 - **Reading surface:** Tapping the quotation opens “Die Fundstelle” in a native reading sheet, retaining the title, page reference, and highlighted original passage. “Original öffnen” is the Harbor Blue action; hide it for sources explicitly marked as having no original file, such as notes. “Zur Dokumentübersicht” remains secondary. Native image originals appear inside the sheet; other originals open through the system, with a page fragment when available. The web counterpart uses a scrollable dialog and exposes an original-file link after loading it. Loading and failure states use plain German copy.
 - **Status and composer:** The native waiting state occupies the answer column it is about to fill: one Ordilo mark with one human-readable status, the steps already finished listed beneath it in Mist with a small Harbor Blue check (the running step stays in the status line and is never repeated below), and the standard pulsing Sand placeholder in the shape of the coming answer. The pulse is the only animation — never a second animated device such as bouncing dots. The composer has a Warm White surface, a fine Mist Light border, and a 20px radius. Send changes to stop while a response runs. The native keyboard frame measures the sheet's origin and adjusts the footer for keyboard visibility and safe-area space so the composer remains reachable.
+- **The answer sounds like a person:** A correct fact delivered as a field read-out ("Der Vertrag endet am 30. September 2027. Quelle: Vertrag.") is not a finished answer. Ordilo writes two to four connected sentences: the fact in the first one, the document named inside the sentence rather than as a "Quelle:" label, and one closing beat that follows from the evidence — reassurance when there is time, a gentle nudge when it is close. That beat never carries a new fact, a calculated number, or a guess; the warmth is in the wording only. The verified document sentences are carried into the answer word for word, and the prose is built around them. Enforced by the `chat-quality-v1` rubric (a length floor and a ban on the "Quelle:" tag), not by hope.
 - **Empty state, one lead:** The first screen invites a question and then, quietly, offers the way back into an old one. The example prompts carry the Harbor Blue tint, a leading spark and no chevron — they ask, they do not navigate. „Zuletzt gefragt“ sits below a short hairline as a normal list section with its own header. Two blocks of equal weight, both chevroned, read as two menus and neither leads.
 - **Large text:** Keep answer and quotation text responsive to the system text size. Above a font scale of 1.3, shorten the composer placeholder to “Frage …” and reduce the reading-sheet headings to an 18/24pt base that still scales. The compact navigation title has a maximum font-size multiplier of 1.4; this limit does not apply to the reading body.
 - **Preserve the answer:** If saving the conversation fails, keep the answer and its copy action visible. Show a plain German warning that it is not yet saved and should be copied before closing.

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
-import { CalendarDays, ChevronDown, UserRound } from "lucide-react-native";
+import { CalendarDays, ChevronDown, UserRound, Users } from "lucide-react-native";
 import {
   Platform,
   Pressable,
@@ -15,7 +15,7 @@ import {
 import { OrdiloNestedSheet, OrdiloSheetHeader } from "./sheet";
 import { OrdiloPickerSheet, type OrdiloPickerOption } from "./picker-sheet";
 import { PersonAvatar } from "./person";
-import { toCalendarDate } from "@/src/lib/calendar";
+import { formatGermanDate, toCalendarDate } from "@/src/lib/calendar";
 import { todayLocalDate } from "@/src/lib/tasks";
 import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 
@@ -27,14 +27,6 @@ import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
  * text stays reachable for a person outside the family, because a
  * document may well name one.
  */
-
-/** "3. September 2026", or "" when the value is not a date we can show. */
-export function formatGermanDate(value: string): string {
-  if (!value) return "";
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" }).format(parsed);
-}
 
 export function DateValueField({
   accessibilityLabel,
@@ -70,7 +62,7 @@ export function DateValueField({
     <>
       <Pressable
         accessibilityHint="Öffnet den Kalender"
-        accessibilityLabel={`${accessibilityLabel}: ${formatted || "kein Datum"}`}
+        accessibilityLabel={`${accessibilityLabel}: ${formatted || value || "kein Datum"}`}
         accessibilityRole="button"
         onPress={() => setOpen(true)}
         style={({ pressed }) => [styles.control, pressed && styles.controlPressed]}
@@ -140,79 +132,86 @@ export function PersonValueField({
   personId: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  // A name nobody in the family is linked to stays editable as text, so
-  // fixing a spelling never costs a detour through the picker.
-  const [freeText, setFreeText] = useState(() => Boolean(name) && !personId);
-  const known = people.find((person) => person.id === personId)
-    ?? people.find((person) => person.name.trim().toLocaleLowerCase("de") === name.trim().toLocaleLowerCase("de"));
+  // Only a live link counts. A person_id whose member is gone behaves like a
+  // plain name, so the row stays editable instead of showing a dead avatar.
+  const linked = people.find((person) => person.id === personId) ?? null;
 
   const options: OrdiloPickerOption[] = [
     ...people.map((person) => ({
       key: person.id,
       label: person.name,
       leading: <PersonAvatar person={{ name: person.name, color: person.avatar_color ?? null }} size={sizes.avatar} />,
-      onPress: () => { setFreeText(false); onChange({ name: person.name, personId: person.id }); setOpen(false); },
-      selected: known?.id === person.id && !freeText,
+      onPress: () => { onChange({ name: person.name, personId: person.id }); setOpen(false); },
+      selected: linked?.id === person.id,
     })),
     {
       key: "__other__",
-      hint: "Jemand, der nicht zur Familie gehört",
+      hint: "Den Namen selbst eintippen",
       label: "Andere Person eintragen",
       leading: <View style={styles.otherAvatar}><UserRound color={colors.mistDark} size={17} strokeWidth={1.9} /></View>,
-      onPress: () => { setFreeText(true); onChange({ name: known && !freeText ? "" : name, personId: null }); setOpen(false); },
-      selected: freeText,
+      // Unlinking clears the member's name; an already free name is kept, so
+      // reopening the picker cannot wipe what someone just typed.
+      onPress: () => { if (linked) onChange({ name: "", personId: null }); setOpen(false); },
+      selected: !linked,
     },
   ];
 
-  // Nothing to pick from means no picker: an empty list would be a menu
-  // with a single "someone else" entry in it.
-  if (people.length === 0) {
+  const picker = people.length > 0 ? (
+    <OrdiloPickerSheet
+      accessibilityLabel={accessibilityLabel}
+      onClose={() => setOpen(false)}
+      options={options}
+      title="Wer ist gemeint?"
+      visible={open}
+    />
+  ) : null;
+
+  // One control either way: a linked person is a tap that reopens the choice,
+  // anyone else is a normal name field with the family one tap away.
+  if (linked) {
     return (
-      <TextInput
-        accessibilityLabel={accessibilityLabel}
-        onChangeText={(value) => onChange({ name: value, personId: null })}
-        placeholder="Vor- und Nachname"
-        placeholderTextColor={colors.mistDark}
-        style={styles.input}
-        value={name}
-      />
+      <>
+        <Pressable
+          accessibilityHint="Öffnet die Personenauswahl"
+          accessibilityLabel={`${accessibilityLabel}: ${linked.name}`}
+          accessibilityRole="button"
+          onPress={() => setOpen(true)}
+          style={({ pressed }) => [styles.control, pressed && styles.controlPressed]}
+        >
+          <PersonAvatar person={{ name: linked.name, color: linked.avatar_color ?? null }} size={sizes.avatarSmall} />
+          <Text numberOfLines={1} style={styles.controlValue}>{linked.name}</Text>
+          <ChevronDown color={colors.mist} size={18} />
+        </Pressable>
+        {picker}
+      </>
     );
   }
 
   return (
     <>
-      <Pressable
-        accessibilityHint="Öffnet die Personenauswahl"
-        accessibilityLabel={`${accessibilityLabel}: ${name || "keine Person"}`}
-        accessibilityRole="button"
-        onPress={() => setOpen(true)}
-        style={({ pressed }) => [styles.control, pressed && styles.controlPressed]}
-      >
-        {known && !freeText
-          ? <PersonAvatar person={{ name: known.name, color: known.avatar_color ?? null }} size={sizes.avatarSmall} />
-          : <UserRound color={colors.mistDark} size={18} strokeWidth={1.9} />}
-        <Text numberOfLines={1} style={[styles.controlValue, !name && styles.controlPlaceholder]}>
-          {freeText && !name ? "Andere Person" : name || "Person wählen"}
-        </Text>
-        <ChevronDown color={colors.mist} size={18} />
-      </Pressable>
-      {freeText ? (
+      <View style={styles.control}>
         <TextInput
-          accessibilityLabel={`${accessibilityLabel}, Name`}
+          accessibilityLabel={accessibilityLabel}
           onChangeText={(value) => onChange({ name: value, personId: null })}
           placeholder="Vor- und Nachname"
           placeholderTextColor={colors.mistDark}
-          style={styles.input}
+          style={styles.controlInput}
           value={name}
         />
-      ) : null}
-      <OrdiloPickerSheet
-        accessibilityLabel={accessibilityLabel}
-        onClose={() => setOpen(false)}
-        options={options}
-        title="Wer ist gemeint?"
-        visible={open}
-      />
+        {people.length > 0 ? (
+          <Pressable
+            accessibilityHint="Wählt jemanden aus eurer Familie"
+            accessibilityLabel={`${accessibilityLabel} aus der Familie wählen`}
+            accessibilityRole="button"
+            hitSlop={6}
+            onPress={() => setOpen(true)}
+            style={styles.controlAction}
+          >
+            <Users color={colors.harborBlue} size={19} strokeWidth={1.9} />
+          </Pressable>
+        ) : null}
+      </View>
+      {picker}
     </>
   );
 }
@@ -232,15 +231,19 @@ const styles = StyleSheet.create({
   controlPressed: { backgroundColor: colors.sandWarm },
   controlValue: { color: colors.graphite, flex: 1, minWidth: 0, ...typography.body },
   controlPlaceholder: { color: colors.mistDark },
-  input: {
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.base,
-    borderWidth: 1,
+  controlInput: {
     color: colors.graphite,
+    flex: 1,
     minHeight: sizes.touch,
-    paddingHorizontal: spacing.sm,
+    minWidth: 0,
     ...typography.body,
+  },
+  controlAction: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: -spacing.xs,
+    minHeight: sizes.touch,
+    width: sizes.touch,
   },
   otherAvatar: {
     alignItems: "center",

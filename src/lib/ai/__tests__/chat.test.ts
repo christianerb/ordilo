@@ -650,6 +650,28 @@ describe("buildAgenticSystemPrompt", () => {
     expect(prompt).toContain("nur nach EINEM Fakt aus einem Dokument");
   });
 
+  it("asks for the family-journal voice, not a field read-out", () => {
+    expect(prompt).toContain("STIMME");
+    expect(prompt).toContain("Familientagebuch, kein Aktenschrank");
+    // The source is named inside the sentence; the citations are listed below.
+    expect(prompt).toContain('Schreibe niemals "Quelle: …"');
+    expect(prompt).toContain("zwei bis vier Saetze");
+    // Warmth must never smuggle in an unproven fact.
+    expect(prompt).toContain("bringt NIE einen neuen Fakt");
+    // A worked pair beats an adjective: both the wrong and the right shape.
+    expect(prompt).toContain("Falsch (Datenfeld)");
+    expect(prompt).toContain("Richtig (Ordilo)");
+    // The sample answer is copied verbatim, so it must not teach the prompt's
+    // own ASCII transliteration back to the family.
+    expect(prompt).toContain("läuft noch bis zum");
+    expect(prompt).not.toMatch(/Richtig \(Ordilo\).*(laeuft|gueltig|muesst)/);
+  });
+
+  it("keeps the verified document sentences verbatim inside that voice", () => {
+    expect(prompt).toContain("geprüften Sätze wortgleich");
+    expect(prompt).toContain("keinen neuen Fakt und keine gerechnete Zahl");
+  });
+
   it("lets the agent combine the few tools needed for a reliable answer", () => {
     expect(prompt).toContain("so wenige Tools wie noetig");
     expect(prompt).toContain("verschiedene Wissensraeume verbindet");

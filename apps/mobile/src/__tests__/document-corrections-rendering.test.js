@@ -43,7 +43,13 @@ jest.mock("../lib/scan", () => ({}));
 jest.mock("../lib/feedback", () => ({ success: jest.fn(), fail: jest.fn(), select: jest.fn(), tap: jest.fn() }));
 jest.mock("../lib/library", () => ({ refreshLibraryDocuments: jest.fn() }));
 jest.mock("../lib/people", () => ({ resolveDocumentPeople: () => [] }));
-jest.mock("../lib/calendar", () => ({ toCalendarDate: (date) => date.toISOString().slice(0, 10) }));
+jest.mock("../lib/calendar", () => ({
+  toCalendarDate: (date) => date.toISOString().slice(0, 10),
+  formatGermanDate: (value) => value
+    ? new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" })
+      .format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value))
+    : "",
+}));
 jest.mock("../lib/tasks", () => ({
   todayLocalDate: () => "2026-09-07",
   fetchFamilyMembers: async () => [
@@ -108,7 +114,7 @@ describe("confirmed document corrections", () => {
     change("Zusammenfassung", "Korrigierter Schulbrief");
     change("Kategorie", "Familie");
     pickPerson("Person 1", "Andere Person eintragen");
-    change("Person 1, Name", "Hannah");
+    change("Person 1", "Hannah");
     pickDate("Datum Termin 1", "2026-10-02");
     change("Bezeichnung Termin 1", "Tierparkbesuch");
     change("Aufgabe 1", "Erlaubnis mitgeben");
@@ -141,11 +147,28 @@ describe("confirmed document corrections", () => {
     await openEditor();
     pickPerson("Person 1", "Leon");
     expect(control("Person 1").props.accessibilityLabel).toBe("Person 1: Leon");
-    expect(field("Person 1, Name")).toBeUndefined();
+    expect(field("Person 1")).toBeUndefined();
     saveDocumentCorrections.mockImplementation(async (_id, _baseline, draft) => { loadDocumentReview.mockResolvedValue(draft); });
     await act(async () => button("Änderungen speichern").props.onPress());
     const [, , draft] = saveDocumentCorrections.mock.calls[0];
     expect(draft.family_members).toEqual([{ name: "Leon", person_id: "person-2", confidence: 1 }]);
+  });
+
+  it("keeps a name that belongs to nobody editable, with the family one tap away", async () => {
+    await openEditor();
+    pickPerson("Person 1", "Andere Person eintragen");
+    change("Person 1", "Hanna Erb");
+    expect(field("Person 1").props.value).toBe("Hanna Erb");
+    // Reopening the picker must not wipe what was just typed.
+    act(() => tree.root.findAll((node) => node.props.accessibilityLabel === "Person 1 aus der Familie wählen")[0].props.onPress());
+    let sheet = tree.root.findAllByType("OrdiloPickerSheet").find((node) => node.props.visible);
+    act(() => sheet.props.options.find((option) => option.label === "Andere Person eintragen").onPress());
+    expect(field("Person 1").props.value).toBe("Hanna Erb");
+    // And the family is still reachable from the same row.
+    act(() => tree.root.findAll((node) => node.props.accessibilityLabel === "Person 1 aus der Familie wählen")[0].props.onPress());
+    sheet = tree.root.findAllByType("OrdiloPickerSheet").find((node) => node.props.visible);
+    act(() => sheet.props.options.find((option) => option.label === "Emma").onPress());
+    expect(control("Person 1").props.accessibilityLabel).toBe("Person 1: Emma");
   });
 
   it("keeps dates in the stored format when they are picked from the calendar", async () => {

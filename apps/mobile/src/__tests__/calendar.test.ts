@@ -5,6 +5,7 @@ import {
   eventsForDay,
   formatEventDateInput,
   formatEventPeople,
+  formatGermanDate,
   parseEventDateInput,
   toCalendarDate,
   upcomingPlannerEvents,
@@ -45,6 +46,16 @@ describe("native calendar", () => {
     expect(days).toHaveLength(42);
     expect(toCalendarDate(days[0])).toBe("2026-07-27");
     expect(toCalendarDate(days.at(-1)!)).toBe("2026-09-06");
+  });
+
+  it("says a date the German way, from a plain day or a full timestamp", () => {
+    expect(formatGermanDate("2026-09-03")).toBe("3. September 2026");
+    expect(formatGermanDate("2026-09-01T12:00:00Z")).toBe("1. September 2026");
+    // A bare day must not slip into the day before in a negative-offset zone.
+    expect(formatGermanDate("2026-01-01")).toBe("1. Januar 2026");
+    // Anything unreadable stays empty so the caller can show the raw value.
+    expect(formatGermanDate("")).toBe("");
+    expect(formatGermanDate("demnächst")).toBe("");
   });
 
   it("expands recurring events and respects skipped occurrences", () => {

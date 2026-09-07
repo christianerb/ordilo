@@ -98,6 +98,7 @@ import {
 } from "@/src/lib/library";
 import { resolveDocumentPeople, type Person } from "@/src/lib/people";
 import { DateValueField, PersonValueField } from "@/src/components/value-pickers";
+import { formatGermanDate } from "@/src/lib/calendar";
 import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
 import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
@@ -569,7 +570,7 @@ export default function DocumentReviewScreen() {
     <Screen style={styles.screen}>
       <DetailTopBar
         onBack={() => editing ? cancelEditing() : router.back()}
-        subtitle={`Hinzugefügt am ${formatDetailDate(document.created_at)}`}
+        subtitle={`Hinzugefügt am ${formatGermanDate(document.created_at)}`}
         title={
           editing
             ? editable
@@ -1116,7 +1117,7 @@ function ConsequenceRow({
             <Wallet color="#9A4A12" size={20} strokeWidth={1.9} />
           </IconTile>
         }
-        subtitle={entry.date ? `Zum ${formatDetailDate(`${entry.date}T12:00:00`)}` : null}
+        subtitle={entry.date ? `Zum ${formatGermanDate(entry.date)}` : null}
         title={entry.label}
         trailing={<Text style={styles.amountValue}>{entry.value}</Text>}
       />
@@ -1227,8 +1228,8 @@ function DocumentMetadata({ document }: { document: DocumentReview }) {
     { label: "Datei", value: document.original_filename },
     { label: "Format", value: document.mime_type?.replace(/^application\//, "").toUpperCase() ?? null },
     { label: "Seiten", value: document.page_count ? `${document.page_count}` : null },
-    { label: "Hinzugefügt", value: formatDetailDate(document.created_at) },
-    ...(document.confirmed_at ? [{ label: "Gespeichert", value: formatDetailDate(document.confirmed_at) }] : []),
+    { label: "Hinzugefügt", value: formatGermanDate(document.created_at) },
+    ...(document.confirmed_at ? [{ label: "Gespeichert", value: formatGermanDate(document.confirmed_at) }] : []),
   ].filter((row): row is { label: string; value: string } => Boolean(row.value));
 
   return (
@@ -1397,16 +1398,6 @@ function SecretReveal({ documentId }: { documentId: string }) {
   );
 }
 
-function formatDetailDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("de-DE", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
-}
-
 function PeopleSection({ analysis, editable, members, onChange }: SectionProps & { members: FamilyMemberOption[] }) {
   return (
     <Section icon={UserRound} title="Personen" onAdd={editable ? () => onChange((current) => ({ ...current, family_members: [...current.family_members, { name: "", person_id: null, confidence: 1 }] })) : undefined}>
@@ -1460,7 +1451,7 @@ function DatesSection({
           <Confidence confidence={date.confidence} />
           <OriginalTextHint text={analysis.ocr_text} value={date.date} />
         </EditableRow>
-      ) : <ReadValue key={index} value={[date.label, formatDetailDate(date.date) || date.date].filter(Boolean).join(" · ")} />)}
+      ) : <ReadValue key={index} value={[date.label, formatGermanDate(date.date) || date.date].filter(Boolean).join(" · ")} />)}
     </Section>
   );
 }
@@ -1483,7 +1474,7 @@ function TasksSection({ analysis, editable, onChange }: SectionProps) {
           />
           <Confidence confidence={task.confidence} />
         </EditableRow>
-      ) : <ReadValue key={index} value={task.due_date ? `${task.title} · ${formatDetailDate(task.due_date) || task.due_date}` : task.title} />)}
+      ) : <ReadValue key={index} value={task.due_date ? `${task.title} · ${formatGermanDate(task.due_date) || task.due_date}` : task.title} />)}
     </Section>
   );
 }

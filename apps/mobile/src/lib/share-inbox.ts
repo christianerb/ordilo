@@ -21,11 +21,12 @@ function inbox(): Directory | null {
 }
 
 /**
- * The share extension writes absolute file URLs, and the same file can spell
- * itself differently there than here (`/private/var` vs `/var`, percent-encoding).
- * Comparing those strings rejected perfectly good deliveries, so take only the
- * file name from the manifest and resolve it inside this delivery directory: an
- * attachment can then never point outside its own share, by construction.
+ * The manifest carries absolute file URLs written by the share extension, in a
+ * different process. A prefix check against the app's own URL for that same
+ * file rejected every real delivery, so do not compare those strings at all:
+ * take the file name and resolve it inside this delivery directory — the very
+ * directory the manifest was just read from. An attachment then cannot point
+ * outside its own share, by construction, whatever either side spells.
  */
 function resolveAttachment(dir: Directory, payload: Attachment): Attachment | null {
   const segment = payload.contentUri.split(/[/\\]/).pop() ?? "";
