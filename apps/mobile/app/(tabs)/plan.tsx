@@ -74,6 +74,7 @@ import {
   shiftMonth,
   skipPlannerEventOccurrence,
   toCalendarDate,
+  upcomingPlannerEvents,
   updatePlannerEvent,
   type PlannerEventInput,
   type PlannerEvent,
@@ -87,6 +88,7 @@ import {
   planDayMark,
   planEntriesForDay,
   planEntryCounts,
+  planEntryForEvent,
   planEntryKey,
   planEntryMemberIds,
   type PlanEntry,
@@ -622,16 +624,16 @@ export default function PlanScreen() {
         void success();
         setEventDelete(null);
         showUndo("Tag aus der Serie gestrichen", async () => {
-          setEvents((current) =>
-            current.map((item) => (item.id === target.id ? target : item)),
-          );
           const undone = await restorePlannerEventOccurrence(target, date);
-          if (!undone) {
-            setEvents((current) =>
-              current.map((item) => (item.id === saved.id ? saved : item)),
-            );
+          if (!undone.success) {
             notifyUndoFailed();
+            return;
           }
+          setEvents((current) =>
+            current.map((item) =>
+              item.id === undone.event.id ? undone.event : item,
+            ),
+          );
         });
         return;
       }
@@ -736,16 +738,14 @@ export default function PlanScreen() {
     const match = events.find((item) => item.id === request.id);
     if (!match) return;
     focusRef.current = null;
-    const occursOn = new Date(`${match.starts_on}T12:00:00`);
+    // A series lands on its next occurrence, a one-off on its own day.
+    const day =
+      upcomingPlannerEvents([match], todayStr)[0]?.starts_on ?? match.starts_on;
+    const occursOn = new Date(`${day}T12:00:00`);
     setSelectedDate(occursOn);
     setActiveMonth(monthStart(occursOn));
-    openDetail({
-      kind: "event",
-      id: match.id,
-      date: match.starts_on,
-      event: match,
-    });
-  }, [events, openDetail, tasks]);
+    openDetail(planEntryForEvent(match, day));
+  }, [events, openDetail, tasks, todayStr]);
 
   const headerSubtitle =
     loading && tasks.length === 0

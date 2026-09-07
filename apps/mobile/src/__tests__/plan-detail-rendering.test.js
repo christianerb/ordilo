@@ -52,6 +52,7 @@ const eventEntry = {
   kind: "event",
   id: "event-1",
   date: TODAY,
+  occurrenceStart: TODAY,
   event: {
     id: "event-1",
     title: "Test",
@@ -133,6 +134,7 @@ describe("the shared plan detail sheet", () => {
     const series = {
       ...eventEntry,
       date: "2026-09-15",
+      occurrenceStart: "2026-09-15",
       event: { ...eventEntry.event, recurrence: "weekly" },
     };
     await act(async () => {
@@ -156,6 +158,34 @@ describe("the shared plan detail sheet", () => {
       "Nur diesen Tag streichen",
       "Ganze Serie löschen",
     ]);
+    await act(async () => tree.unmount());
+  });
+
+  it("dates a multi-day appointment from its start, not the day tapped", async () => {
+    let tree;
+    await act(async () => {
+      tree = renderer.create(
+        <PlanDetailSheet
+          entry={{
+            ...eventEntry,
+            date: "2026-09-21",
+            occurrenceStart: "2026-09-20",
+            event: {
+              ...eventEntry.event,
+              starts_on: "2026-09-20",
+              ends_on: "2026-09-22",
+            },
+          }}
+          members={members}
+          onAction={() => {}}
+          onClose={() => {}}
+          todayStr={TODAY}
+          visible
+        />,
+      );
+    });
+
+    expect(texts(tree)).toContain("20. September 2026 bis 22. September 2026");
     await act(async () => tree.unmount());
   });
 

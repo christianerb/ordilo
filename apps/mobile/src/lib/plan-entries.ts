@@ -1,4 +1,5 @@
 import {
+  eventOccurrenceStart,
   eventOccursOn,
   eventsForDay,
   formatEventPeople,
@@ -28,7 +29,39 @@ import {
  */
 export type PlanEntry =
   | { kind: "task"; id: string; date: string | null; task: PlannerTask }
-  | { kind: "event"; id: string; date: string; event: PlannerEvent };
+  | {
+      kind: "event";
+      id: string;
+      /** The day this row sits on — what it is grouped by and, for a
+       *  series, the day "nur diesen Tag streichen" removes. */
+      date: string;
+      /** First day of the occurrence covering `date`, so a multi-day
+       *  appointment never claims to start on the day you opened it. */
+      occurrenceStart: string;
+      /**
+       * The stored row, never an occurrence-shifted copy: editing must
+       * write back the series as it really is, not move its start to
+       * whichever occurrence happened to be on screen.
+       */
+      event: PlannerEvent;
+    };
+
+/**
+ * The one way to build an event entry, so `occurrenceStart` is never
+ * guessed at a call site and `event` is always the stored row.
+ */
+export function planEntryForEvent(
+  event: PlannerEvent,
+  date: string,
+): Extract<PlanEntry, { kind: "event" }> {
+  return {
+    kind: "event",
+    id: event.id,
+    date,
+    occurrenceStart: eventOccurrenceStart(event, date) ?? event.starts_on,
+    event,
+  };
+}
 
 /** Stable key for a list row — an event occurrence repeats its id per day. */
 export function planEntryKey(entry: PlanEntry): string {
@@ -100,13 +133,14 @@ export function groupPlanEntries(
     sections[getPlanEntrySection(entry, todayStr)].push(entry);
   }
 
-  for (const event of upcomingPlannerEvents(events, todayStr)) {
-    const entry: PlanEntry = {
-      kind: "event",
-      id: event.id,
-      date: event.starts_on,
-      event,
-    };
+  // upcomingPlannerEvents resolves each series to its next occurrence and
+  // returns a shifted copy. Only its date is wanted here — the entry keeps
+  // the stored row so an edit or a delete addresses the real series.
+  const storedById = new Map(events.map((event) => [event.id, event]));
+  for (const occurrence of upcomingPlannerEvents(events, todayStr)) {
+    const stored = storedById.get(occurrence.id);
+    if (!stored) continue;
+    const entry = planEntryForEvent(stored, occurrence.starts_on);
     sections[getPlanEntrySection(entry, todayStr)].push(entry);
   }
 
@@ -127,12 +161,9 @@ export function planEntriesForDay(
   date: Date,
 ): PlanEntry[] {
   const iso = toCalendarDate(date);
-  const entries: PlanEntry[] = eventsForDay(events, date).map((event) => ({
-    kind: "event",
-    id: event.id,
-    date: iso,
-    event,
-  }));
+  const entries: PlanEntry[] = eventsForDay(events, date).map((event) =>
+    planEntryForEvent(event, iso),
+  );
   for (const task of tasks) {
     if (task.status === "dismissed" || task.due_date !== iso) continue;
     entries.push({ kind: "task", id: task.id, date: iso, task });

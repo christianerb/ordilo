@@ -284,7 +284,7 @@ function PlanDetailStatus({
 function formatEventDateRange(
   entry: Extract<PlanEntry, { kind: "event" }>,
 ): string {
-  const start = entry.date;
+  const start = entry.occurrenceStart;
   const spanDays = Math.max(0, isoDayDelta(entry.event.starts_on, entry.event.ends_on));
   if (spanDays === 0) return formatGermanDate(start);
   return `${formatGermanDate(start)} bis ${formatGermanDate(shiftIsoDay(start, spanDays))}`;

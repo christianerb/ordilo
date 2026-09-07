@@ -8,6 +8,7 @@ import {
   planDayMark,
   planEntriesForDay,
   planEntryCounts,
+  planEntryForEvent,
   planEntryKey,
   planEntryMemberIds,
   type PlanEntry,
@@ -131,14 +132,14 @@ describe("plan entries", () => {
 
   it("never files an appointment as undated or done", () => {
     expect(
-      getPlanEntrySection(
-        { kind: "event", id: "e", date: TODAY, event: event() },
-        TODAY,
-      ),
+      getPlanEntrySection(planEntryForEvent(event(), TODAY), TODAY),
     ).toBe("now");
     expect(
       getPlanEntrySection(
-        { kind: "event", id: "e", date: "2026-12-24", event: event() },
+        planEntryForEvent(
+          event({ starts_on: "2026-12-24", ends_on: "2026-12-24" }),
+          "2026-12-24",
+        ),
         TODAY,
       ),
     ).toBe("next");
@@ -187,12 +188,7 @@ describe("plan entries", () => {
   });
 
   it("reads the same 'when' for both kinds", () => {
-    const timed: PlanEntry = {
-      kind: "event",
-      id: "e",
-      date: TODAY,
-      event: event({ all_day: false, starts_time: "09:00", ends_time: "10:30" }),
-    };
+    const timed: PlanEntry = planEntryForEvent(event({ all_day: false, starts_time: "09:00", ends_time: "10:30" }), TODAY);
     expect(formatPlanEntryWhen(timed, TODAY)).toBe("Heute · 09:00–10:30 Uhr");
     expect(
       formatPlanEntryWhen(
@@ -227,12 +223,7 @@ describe("plan entries", () => {
     // An appointment in the past is simply over, not overdue.
     expect(
       isPlanEntryOverdue(
-        {
-          kind: "event",
-          id: "e",
-          date: "2026-08-01",
-          event: event({ starts_on: "2026-08-01", ends_on: "2026-08-01" }),
-        },
+        planEntryForEvent(event({ starts_on: "2026-08-01", ends_on: "2026-08-01" }), "2026-08-01"),
         TODAY,
       ),
     ).toBe(false);
@@ -241,12 +232,7 @@ describe("plan entries", () => {
   it("names the people on a row in plain language", () => {
     expect(
       formatPlanEntryPeople(
-        {
-          kind: "event",
-          id: "e",
-          date: TODAY,
-          event: event({ attendee_ids: ["m-karina"] }),
-        },
+        planEntryForEvent(event({ attendee_ids: ["m-karina"] }), TODAY),
         members,
       ),
     ).toBe("Für Karina");
@@ -271,15 +257,10 @@ describe("plan entries", () => {
 
   it("collects the faces a row should show, without repeating one", () => {
     expect(
-      planEntryMemberIds({
-        kind: "event",
-        id: "e",
-        date: TODAY,
-        event: event({
+      planEntryMemberIds(planEntryForEvent(event({
           attendee_ids: ["m-karina"],
           responsible_member_id: "m-karina",
-        }),
-      }),
+        }), TODAY)),
     ).toEqual(["m-karina"]);
     expect(
       planEntryMemberIds({
@@ -294,15 +275,71 @@ describe("plan entries", () => {
   it("keys a repeating appointment per occurrence, not per series", () => {
     const series = event({ recurrence: "weekly" });
     expect(
-      planEntryKey({ kind: "event", id: series.id, date: "2026-09-15", event: series }),
+      planEntryKey(planEntryForEvent(series, "2026-09-15")),
     ).toBe("event-event-1-2026-09-15");
     expect(
-      planEntryKey({ kind: "event", id: series.id, date: "2026-09-22", event: series }),
-    ).not.toBe(
-      planEntryKey({ kind: "event", id: series.id, date: "2026-09-15", event: series }),
-    );
+      planEntryKey(planEntryForEvent(series, "2026-09-22")),
+    ).not.toBe(planEntryKey(planEntryForEvent(series, "2026-09-15")));
     expect(planEntryKey({ kind: "task", id: "t", date: null, task: task() })).toBe(
       "task-t",
     );
+  });
+
+  it("keeps the stored series on a row, not its shifted occurrence", () => {
+    // upcomingPlannerEvents remaps a series to its next occurrence. If that
+    // copy reached the row, editing the appointment would rewrite the
+    // series start to whichever occurrence was on screen and every earlier
+    // one would vanish.
+    // A weekly series that began on Wednesday 5 August; today is Tuesday
+    // 8 September, so the row belongs on Wednesday 9 September.
+    const series = event({
+      id: "e-weekly",
+      recurrence: "weekly",
+      starts_on: "2026-08-05",
+      ends_on: "2026-08-05",
+    });
+    const [entry] = groupPlanEntries([], [series], TODAY).next;
+
+    if (entry.kind !== "event") throw new Error("expected an appointment");
+    expect(entry.event).toBe(series);
+    expect(entry.event.starts_on).toBe("2026-08-05");
+    expect(entry.date).toBe("2026-09-09");
+    expect(entry.occurrenceStart).toBe("2026-09-09");
+  });
+
+  it("dates a multi-day appointment from its occurrence, not the day tapped", () => {
+    const trip = event({
+      id: "e-trip",
+      starts_on: "2026-09-20",
+      ends_on: "2026-09-22",
+    });
+    const [middle] = planEntriesForDay(
+      [],
+      [trip],
+      new Date("2026-09-21T12:00:00"),
+    );
+
+    if (middle.kind !== "event") throw new Error("expected an appointment");
+    expect(middle.date).toBe("2026-09-21");
+    expect(middle.occurrenceStart).toBe("2026-09-20");
+  });
+
+  it("finds the occurrence start of a repeating multi-day appointment", () => {
+    const series = event({
+      id: "e-weekend",
+      recurrence: "weekly",
+      starts_on: "2026-09-05",
+      ends_on: "2026-09-06",
+    });
+    const [second] = planEntriesForDay(
+      [],
+      [series],
+      new Date("2026-09-13T12:00:00"),
+    );
+
+    if (second.kind !== "event") throw new Error("expected an appointment");
+    expect(second.date).toBe("2026-09-13");
+    expect(second.occurrenceStart).toBe("2026-09-12");
+    expect(second.event).toBe(series);
   });
 });

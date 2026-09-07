@@ -2,6 +2,8 @@ import {
   calendarDays,
   createPlannerEvent,
   deletePlannerEvent,
+  eventDurationDays,
+  eventOccurrenceStart,
   eventOccursOn,
   eventsForDay,
   formatEventDateInput,
@@ -19,16 +21,12 @@ import {
 
 const mockRpc = jest.fn();
 const mockDelete = jest.fn();
-const mockUpdate = jest.fn();
 const mockEq = jest.fn();
 
 jest.mock("../lib/supabase", () => ({
   getSupabase: () => ({
     rpc: mockRpc,
-    from: () => ({
-      delete: mockDelete,
-      update: mockUpdate,
-    }),
+    from: () => ({ delete: mockDelete }),
   }),
 }));
 
@@ -313,34 +311,82 @@ describe("native calendar", () => {
   });
 
   it("drops one day out of a series and can put it back", async () => {
-    mockEq.mockResolvedValue({ error: null });
-    mockUpdate.mockReturnValue({ eq: mockEq });
     const series: PlannerEvent = { ...event, recurrence: "weekly" };
+    // The database changes the exception list in place and hands back the
+    // whole row, so a day somebody else skipped meanwhile survives.
+    mockRpc.mockResolvedValue({
+      data: {
+        ...series,
+        recurrence_exceptions: ["2026-08-10", "2026-08-17"],
+        created_at: "2026-08-01T12:00:00Z",
+        created_by: "user-1",
+        family_id: "family-1",
+      },
+      error: null,
+    });
 
     await expect(
       skipPlannerEventOccurrence(series, "2026-08-17"),
-    ).resolves.toEqual({
+    ).resolves.toMatchObject({
       success: true,
-      event: { ...series, recurrence_exceptions: ["2026-08-17"] },
+      event: {
+        attendee_ids: ["member-1"],
+        recurrence_exceptions: ["2026-08-10", "2026-08-17"],
+      },
     });
-    expect(mockUpdate).toHaveBeenCalledWith({
-      recurrence_exceptions: ["2026-08-17"],
+    expect(mockRpc).toHaveBeenCalledWith("skip_calendar_event_occurrence", {
+      p_date: "2026-08-17",
+      p_event_id: "event-1",
     });
 
-    const skipped: PlannerEvent = {
-      ...series,
-      recurrence_exceptions: ["2026-08-17"],
+    mockRpc.mockResolvedValue({
+      data: {
+        ...series,
+        recurrence_exceptions: ["2026-08-10"],
+        created_at: "2026-08-01T12:00:00Z",
+        created_by: "user-1",
+        family_id: "family-1",
+      },
+      error: null,
+    });
+    await expect(
+      restorePlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toMatchObject({
+      success: true,
+      event: { recurrence_exceptions: ["2026-08-10"] },
+    });
+    expect(mockRpc).toHaveBeenCalledWith("restore_calendar_event_occurrence", {
+      p_date: "2026-08-17",
+      p_event_id: "event-1",
+    });
+  });
+
+  it("keeps a failed skip or restore from claiming success", async () => {
+    const series: PlannerEvent = { ...event, recurrence: "weekly" };
+    mockRpc.mockResolvedValue({ data: null, error: { message: "nope" } });
+    await expect(
+      skipPlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toEqual({
+      success: false,
+      error: "Der Tag konnte nicht entfernt werden.",
+    });
+    await expect(
+      restorePlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toEqual({ success: false });
+  });
+
+  it("finds the first day of the occurrence covering a date", () => {
+    const trip: PlannerEvent = {
+      ...event,
+      starts_on: "2026-08-03",
+      ends_on: "2026-08-05",
+      recurrence: "none",
     };
-    // Skipping the same day twice is a no-op, never a second write.
-    mockUpdate.mockClear();
-    await expect(
-      skipPlannerEventOccurrence(skipped, "2026-08-17"),
-    ).resolves.toEqual({ success: true, event: skipped });
-    expect(mockUpdate).not.toHaveBeenCalled();
+    expect(eventOccurrenceStart(trip, "2026-08-04")).toBe("2026-08-03");
+    expect(eventOccurrenceStart(trip, "2026-08-06")).toBeNull();
 
-    await expect(
-      restorePlannerEventOccurrence(skipped, "2026-08-17"),
-    ).resolves.toBe(true);
-    expect(mockUpdate).toHaveBeenCalledWith({ recurrence_exceptions: [] });
+    const weekly: PlannerEvent = { ...trip, recurrence: "weekly" };
+    expect(eventOccurrenceStart(weekly, "2026-08-11")).toBe("2026-08-10");
+    expect(eventDurationDays(weekly)).toBe(2);
   });
 });

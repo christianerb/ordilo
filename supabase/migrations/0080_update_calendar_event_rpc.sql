@@ -1,10 +1,16 @@
--- Update a planner event and replace its attendee list in one transaction.
+-- Write paths a planner event needed but did not have: change it, and
+-- drop or restore a single day of a repeating series.
 --
--- The native app can now edit an appointment, not only create one. Doing
--- that with two client calls (update the row, then replace the attendees)
--- can leave an event whose people no longer match what the family saw, so
--- the write goes through one transactional RPC — the mirror image of
+-- The native app could only create an appointment. Editing one with two
+-- client calls (update the row, then replace the attendees) can leave an
+-- event whose people no longer match what the family saw, so the write
+-- goes through one transactional RPC — the mirror image of
 -- create_calendar_event_with_attendees (0070).
+--
+-- Skipping a day is its own function for a different reason: the client
+-- must never send a whole recurrence_exceptions array it read earlier.
+-- Two family members skipping different days at once would then silently
+-- undo each other. The array is changed in place instead.
 
 create or replace function public.update_calendar_event_with_attendees(
   p_event_id uuid,
@@ -95,3 +101,83 @@ revoke all on function public.update_calendar_event_with_attendees(
 grant execute on function public.update_calendar_event_with_attendees(
   uuid, text, text, date, boolean, time, time, text, uuid[]
 ) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- One day out of a repeating series, and back in
+-- ---------------------------------------------------------------------------
+
+create or replace function public.skip_calendar_event_occurrence(
+  p_event_id uuid,
+  p_date date
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_family_id uuid;
+  v_event public.calendar_events%rowtype;
+begin
+  select family_id into v_family_id
+  from public.calendar_events
+  where id = p_event_id;
+
+  if v_family_id is null or not public.user_belongs_to_family(v_family_id) then
+    raise exception 'not_authorized';
+  end if;
+
+  -- Appended in place, so a day skipped elsewhere in the meantime stays
+  -- skipped. Idempotent: skipping the same day twice changes nothing.
+  update public.calendar_events
+  set recurrence_exceptions =
+    case
+      when p_date = any (recurrence_exceptions) then recurrence_exceptions
+      else array_append(recurrence_exceptions, p_date)
+    end
+  where id = p_event_id
+  returning * into v_event;
+
+  return to_jsonb(v_event);
+end;
+$$;
+
+create or replace function public.restore_calendar_event_occurrence(
+  p_event_id uuid,
+  p_date date
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_family_id uuid;
+  v_event public.calendar_events%rowtype;
+begin
+  select family_id into v_family_id
+  from public.calendar_events
+  where id = p_event_id;
+
+  if v_family_id is null or not public.user_belongs_to_family(v_family_id) then
+    raise exception 'not_authorized';
+  end if;
+
+  update public.calendar_events
+  set recurrence_exceptions = array_remove(recurrence_exceptions, p_date)
+  where id = p_event_id
+  returning * into v_event;
+
+  return to_jsonb(v_event);
+end;
+$$;
+
+revoke all on function public.skip_calendar_event_occurrence(uuid, date)
+  from public;
+revoke all on function public.restore_calendar_event_occurrence(uuid, date)
+  from public;
+
+grant execute on function public.skip_calendar_event_occurrence(uuid, date)
+  to authenticated;
+grant execute on function public.restore_calendar_event_occurrence(uuid, date)
+  to authenticated;
