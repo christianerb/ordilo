@@ -377,6 +377,47 @@ describe("native motion wiring", () => {
     expect(taskForm).not.toContain("styles.saveButton");
   });
 
+  it("shows tasks and appointments through one row and one detail sheet", () => {
+    const plan = source("app/(tabs)/plan.tsx");
+    // Two lenses on the same entries: neither view owns a kind of thing.
+    expect(plan).toContain('label: "Liste"');
+    expect(plan).toContain('label: "Kalender"');
+    expect(plan).toContain("groupPlanEntries(");
+    expect(plan).toContain("planEntriesForDay(");
+    // The Aufgaben tab no longer repeats an appointments block below the
+    // list while the calendar hides every task.
+    expect(plan).not.toContain('<Text style={styles.sectionTitle}>Termine</Text>');
+    expect(plan).not.toContain("<PlannerEventRow");
+    // Every row, either kind, either view, opens the same sheet.
+    expect(plan.match(/<PlanRow/g)).toHaveLength(2);
+    expect(plan).toContain("<PlanDetailSheet");
+    const detail = source("src/components/plan-detail-sheet.tsx");
+    expect(detail).toContain('title={isTask ? "Aufgabe" : "Termin"}');
+    expect(detail).toContain("Nur diesen Tag streichen");
+  });
+
+  it("gives the document screen its own bottom-sheet host", () => {
+    // Reached from the scan flow the screen sits inside a native modal
+    // presentation, where the root portal renders underneath it.
+    const document = source("app/document/[id].tsx");
+    expect(document).toContain("<BottomSheetModalProvider>");
+    expect(document).toContain("<GestureHandlerRootView");
+    expect(source("app/suche.tsx")).toContain("<BottomSheetModalProvider>");
+  });
+
+  it("gives documents on their way in a banner with a state, not a grey strip", () => {
+    const arrivals = source("src/components/native-arrivals.tsx");
+    expect(arrivals).toContain("<IntakeBanner");
+    expect(arrivals).not.toContain("backgroundColor: colors.sand,");
+    const banner = source("src/components/intake-banner.tsx");
+    // Ordilo itself carries the working state; a still track under Reduce
+    // Motion keeps the meaning without the movement.
+    expect(banner).toContain("<OrdiloMark");
+    expect(banner).toContain("useReducedMotion()");
+    expect(banner).toContain("styles.trackRest");
+    expect(banner).toContain('accessibilityLiveRegion="polite"');
+  });
+
   it("groups the mobile plan into warm journal sections", () => {
     const plan = source("app/(tabs)/plan.tsx");
     expect(plan).toContain("styles.taskSection");

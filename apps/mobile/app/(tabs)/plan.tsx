@@ -1946,25 +1946,6 @@ const styles = StyleSheet.create({
   eventList: {
     gap: spacing.sm,
   },
-  eventTime: {
-    minWidth: 76,
-  },
-  eventTimeLabel: {
-    color: colors.harborBlue,
-    ...typography.label,
-  },
-  eventBody: {
-    flex: 1,
-    gap: 2,
-  },
-  eventTitle: {
-    color: colors.graphite,
-    ...typography.title,
-  },
-  eventMeta: {
-    color: colors.mistDark,
-    ...typography.timestamp,
-  },
   section: {
     marginBottom: spacing.lg,
     marginTop: spacing.sm,
@@ -2020,9 +2001,6 @@ const styles = StyleSheet.create({
   },
   sectionHeaderSpacer: {
     flex: 1,
-  },
-  sectionBody: {
-    gap: spacing.sm,
   },
   taskSectionBody: {
     gap: spacing.sm,

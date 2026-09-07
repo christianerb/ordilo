@@ -459,11 +459,13 @@ function QuietAction({
 }
 
 const styles = StyleSheet.create({
-  bodyScroll: { flexGrow: 0 },
+  // Yields to the footer instead of pushing it off a long note, the same
+  // rhythm the shared form body uses.
+  bodyScroll: { flexShrink: 1 },
   body: {
     gap: spacing.md,
     paddingBottom: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
   },
   hero: {
     alignItems: "center",
@@ -541,7 +543,6 @@ const styles = StyleSheet.create({
     borderTopColor: colors.sandLight,
     borderTopWidth: 1,
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
   },
   footerRow: { flexDirection: "row", gap: spacing.sm },
