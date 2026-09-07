@@ -50,7 +50,14 @@ jest.mock("../lib/people", () => ({ resolveDocumentPeople: () => [] }));
 jest.mock("../lib/calendar", () => {
   const german = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" });
   return {
-    toCalendarDate: (date) => date.toISOString().slice(0, 10),
+    // Mirror the real helper: local parts, never toISOString, which would
+    // report the previous day east of UTC and hide a zone bug rather than
+    // catch one.
+    toCalendarDate: (date) => [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-"),
     formatGermanDate: (value) => value
       ? german.format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value))
       : "",
@@ -90,7 +97,9 @@ const control = (label) => tree.root.findAll((node) =>
 function pickDate(label, isoDate) {
   act(() => control(label).props.onPress());
   const picker = tree.root.findAllByType("DateTimePicker").at(-1);
-  act(() => picker.props.onChange({ type: "set" }, new Date(`${isoDate}T12:00:00Z`)));
+  // The OS hands over the day the user tapped in their own zone, so build a
+  // local Date here — a UTC instant would be a different day east of UTC.
+  act(() => picker.props.onChange({ type: "set" }, new Date(`${isoDate}T12:00:00`)));
 }
 /** Open a person picker and choose the entry with this label. */
 function pickPerson(label, optionLabel) {
@@ -188,6 +197,31 @@ describe("confirmed document corrections", () => {
     await act(async () => button("Änderungen speichern").props.onPress());
     const [, , draft] = saveDocumentCorrections.mock.calls[0];
     expect(draft.dates[0]).toMatchObject({ id: "date-1", date: "2026-12-24" });
+  });
+
+  it("takes the day the calendar already shows when Fertig is pressed", async () => {
+    await openEditor();
+    const label = "Fälligkeitsdatum Aufgabe 1";
+    act(() => control(label).props.onPress());
+    act(() => tree.root.findAll((node) => node.props.accessibilityLabel === "Kein Datum")[0].props.onPress());
+    expect(control(label).props.accessibilityLabel).toBe(`${label}: kein Datum`);
+    // Reopened on an empty field the picker highlights today. Accepting that
+    // day fires no change event, so Fertig has to commit it.
+    act(() => control(label).props.onPress());
+    act(() => tree.root.findAll((node) => node.props.accessibilityLabel === "Datum übernehmen")[0].props.onPress());
+    expect(control(label).props.accessibilityLabel).toBe(`${label}: 7. September 2026`);
+    saveDocumentCorrections.mockImplementation(async (_id, _baseline, draft) => { loadDocumentReview.mockResolvedValue(draft); });
+    await act(async () => button("Änderungen speichern").props.onPress());
+    const [, , draft] = saveDocumentCorrections.mock.calls[0];
+    expect(draft.tasks[0].due_date).toBe("2026-09-07");
+  });
+
+  it("leaves a date alone when Fertig only closes a field that already has one", async () => {
+    await openEditor();
+    const label = "Datum Termin 1";
+    act(() => control(label).props.onPress());
+    act(() => tree.root.findAll((node) => node.props.accessibilityLabel === "Datum übernehmen")[0].props.onPress());
+    expect(control(label).props.accessibilityLabel).toBe(`${label}: 1. Oktober 2026`);
   });
 
   it("cancels all local metadata changes without saving", async () => {

@@ -98,7 +98,13 @@ export function DateValueField({
               <Pressable
                 accessibilityLabel="Datum übernehmen"
                 accessibilityRole="button"
-                onPress={() => setOpen(false)}
+                // The inline picker always shows a day as selected — today,
+                // when the field holds nothing readable. Tapping a different
+                // day fires onChange, but accepting the one already shown
+                // fires nothing, so "Fertig" commits it. Otherwise the field
+                // stays empty while the screen claims a date, and the save
+                // fails validation later for a reason nobody can see.
+                onPress={() => { if (!formatted) onChange(toCalendarDate(pickerDate)); setOpen(false); }}
                 style={styles.doneButton}
               >
                 <Text style={styles.doneLabel}>Fertig</Text>
