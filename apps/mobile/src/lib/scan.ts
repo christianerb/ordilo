@@ -1,6 +1,5 @@
-import { ApiError, apiFetch } from "./api";
+import { ApiError, apiFetch, getApiUrl } from "./api";
 import { getSupabase } from "./supabase";
-import { File } from "expo-file-system";
 import * as FileSystem from "expo-file-system/legacy";
 import {
   ACCEPTED_DOCUMENT_MIME_TYPES,
@@ -54,10 +53,22 @@ const PIPELINE_POLL_ATTEMPTS = 75;
 const ANALYSIS_POLL_ATTEMPTS = 200;
 let pendingQueueCheckpoint: Promise<void> = Promise.resolve();
 
+/** Serialize read/modify/write, including arrivals from another screen. */
+export function mutateScanQueue(familyId: string, transform: (queue: PersistedScanQueueItem[]) => PersistedScanQueueItem[]): Promise<PersistedScanQueueItem[]> {
+  const checkpoint = pendingQueueCheckpoint.then(async () => {
+    const next = transform(await loadPersistedScanQueue(familyId));
+    const directory = queueDirectory(familyId);
+    await FileSystem.makeDirectoryAsync(directory, { intermediates: true });
+    await FileSystem.writeAsStringAsync(`${directory}queue.json`, JSON.stringify(next));
+    return next;
+  });
+  pendingQueueCheckpoint = checkpoint.then(() => {}, () => {});
+  return checkpoint;
+}
+
 /** Inspect server state before retrying; a failed background job must restart, not just poll forever. */
 export async function resumeScannedDocument(documentId: string, onStep?: (step: ScanProcessingStep) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
-  const { data, error } = await getSupabase().from("documents").select("status, failure_stage").eq("id", documentId).maybeSingle();
-  if (error || !data) throw new Error("Das Dokument konnte nicht geladen werden. Bitte versuch es nochmal.");
+  const data = await getDocumentProcessingState(documentId);
   if (data.status === "uploaded" || data.status === "failed" || data.status === "ocr_done") {
     const step = data.status === "ocr_done" || (data.status === "failed" && data.failure_stage === "analyze") ? "analysis" : "ocr";
     await continueScannedDocumentPipeline(documentId, step, onStep, signal);
@@ -79,16 +90,20 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function getDocumentStatus(documentId: string): Promise<string> {
-  const { data, error } = await getSupabase()
-    .from("documents")
-    .select("status")
-    .eq("id", documentId)
-    .maybeSingle();
-  if (error || !data) {
-    throw new Error("Der Verarbeitungsstatus konnte nicht geladen werden.");
+async function getDocumentProcessingState(documentId: string) {
+  try {
+    const { data, error, status } = await getSupabase()
+      .from("documents")
+      .select("status, failure_stage")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (error) throw new ApiError("Der Verarbeitungsstatus konnte nicht geladen werden.", status || 503);
+    if (!data) throw new ApiError("Das Dokument wurde nicht gefunden oder ist nicht mehr zugänglich.", 404);
+    return data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("Keine Verbindung. Der Import wird erneut versucht.", 0);
   }
-  return data.status;
 }
 
 async function waitForDocumentStatus(
@@ -108,7 +123,7 @@ async function waitForDocumentStatus(
     if (options.signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const status = await getDocumentStatus(documentId) as DocumentPipelineStatus;
+    const { status } = await getDocumentProcessingState(documentId);
     if (status === "failed") {
       throw new Error(options.failureMessage);
     }
@@ -119,7 +134,7 @@ async function waitForDocumentStatus(
     if (expected.has(status)) return status;
     await delay(options.intervalMs, options.signal);
   }
-  throw new Error(options.timeoutMessage);
+  throw new ApiError(options.timeoutMessage, 408);
 }
 
 /**
@@ -326,22 +341,35 @@ export function validateScannedDocument(
   return result.success ? null : result.error.issues[0]?.message;
 }
 
-/** Streams the staged native file as a real multipart Blob. */
+/** Native background transfer keeps an already-started iOS upload alive across app switches. */
 export async function uploadScannedDocument(
   document: ScannedDocument,
   familyId: string,
 ): Promise<ScanUploadResponse> {
-  const formData = new FormData();
-  const file = new File(document.uri);
-  formData.append("file", file, document.name);
-  formData.append("family_id", familyId);
-  formData.append("upload_key", document.id);
-
-  const response = await apiFetch("/api/documents/upload", {
-    method: "POST",
-    body: formData,
-  });
-  return (await response.json()) as ScanUploadResponse;
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new ApiError("Bitte melde dich erneut an.", 401);
+  let response: FileSystem.FileSystemUploadResult;
+  try {
+    response = await FileSystem.uploadAsync(`${getApiUrl()}/api/documents/upload`, document.uri, {
+      httpMethod: "POST",
+      sessionType: FileSystem.FileSystemSessionType.BACKGROUND,
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: "file",
+      mimeType: document.mimeType,
+      parameters: { family_id: familyId, upload_key: document.id },
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    throw new ApiError("Keine Verbindung. Dein Dokument bleibt gespeichert.", 0);
+  }
+  if (response.status < 200 || response.status >= 300) throw new ApiError("Der Upload konnte nicht abgeschlossen werden.", response.status);
+  try {
+    return z.object({ document_id: z.string().min(1), status: z.literal("uploaded"), server_pipeline: z.boolean() }).parse(JSON.parse(response.body));
+  } catch {
+    // Retry the same key after an uncertain response, never generate a new upload.
+    throw new ApiError("Der Upload konnte noch nicht bestätigt werden.", 503);
+  }
 }
 
 /**

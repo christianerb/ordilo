@@ -79,6 +79,8 @@ import {
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { success, fail } from "@/src/lib/feedback";
+import { waitForIntake } from "@/src/lib/intake-worker";
+import { mutateScanQueue } from "@/src/lib/scan";
 
 type UploadState = ScanQueueState | "done";
 type QueueItem = Omit<PersistedScanQueueItem, "state"> & {
@@ -276,6 +278,7 @@ export default function ScanModal() {
     if (!family) return;
     let cancelled = false;
     void (async () => {
+      await waitForIntake(family.id);
       const stored = await loadPersistedScanQueue(family.id);
       if (cancelled) return;
       const hasLegacy = await loadPersistedScanQueue().then((items) => items.length > 0).catch(() => true);
@@ -347,6 +350,7 @@ export default function ScanModal() {
       );
       if (await addToQueue(await combinePages(pages))) {
         void success();
+        router.replace("/(tabs)/ablage");
       }
     } catch {
       setError(
@@ -356,7 +360,7 @@ export default function ScanModal() {
     } finally {
       setScannerBusy(false);
     }
-  }, [addToQueue, scannerBusy]);
+  }, [addToQueue, scannerBusy, router]);
 
   useEffect(() => {
     if (!queueHydrated || !autoLaunchRef.current) return;
@@ -565,13 +569,10 @@ export default function ScanModal() {
   }, [processQueueItem]);
 
   const uploadQueued = useCallback(async () => {
-    const item = queue.find(
-      (candidate) =>
-        candidate.state === "queued" || candidate.state === "failed",
-    );
-    if (!item) return;
-    await startQueueItem(item);
-  }, [queue, startQueueItem]);
+    if (!family) return;
+    await mutateScanQueue(family.id, (items) => items.map((item) => ({ ...item, state: item.documentId ? "processing" : "queued", error: undefined })));
+    router.replace("/(tabs)/ablage");
+  }, [family, router]);
 
   const resumedRef = useRef(false);
   useEffect(() => {
@@ -593,12 +594,14 @@ export default function ScanModal() {
           prepareImage(asset.uri, asset.fileName ?? `Foto-${index + 1}.jpg`),
         ),
       );
-      for (const image of images) await addToQueue(image);
+      let added = true;
+      for (const image of images) if (!(await addToQueue(image))) added = false;
+      if (added) router.replace("/(tabs)/ablage");
     } catch {
       setError("Das Foto konnte nicht vorbereitet werden. Bitte versuch es nochmal.");
       void fail();
     }
-  }, [addToQueue]);
+  }, [addToQueue, router]);
 
   const pickFile = useCallback(async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -607,14 +610,15 @@ export default function ScanModal() {
     });
     if (result.canceled) return;
     const asset = result.assets[0];
-    await addToQueue({
+    const added = await addToQueue({
       id: createDocumentId(),
       uri: asset.uri,
       name: asset.name,
       mimeType: getScanMimeType(asset.mimeType, asset.name),
       size: asset.size,
     });
-  }, [addToQueue]);
+    if (added) router.replace("/(tabs)/ablage");
+  }, [addToQueue, router]);
 
   const removeQueued = useCallback(async (item: QueueItem) => {
     try {

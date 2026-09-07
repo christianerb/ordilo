@@ -1,3 +1,4 @@
+import { attributeUsageUser, withUsageScope } from "@/lib/analytics/api-usage";
 import { requireUser } from "@/lib/auth/require-user";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { parseJsonBody } from "@/lib/api/parse-json";
@@ -67,6 +68,10 @@ import { recordProductEvent } from "@/lib/analytics/product-events";
  */
 
 export async function POST(request: Request): Promise<Response> {
+  return withUsageScope({ operation: "chat" }, () => handleChat(request));
+}
+
+async function handleChat(request: Request): Promise<Response> {
   // Wall-clock start for the chat_metrics log — time-to-first-word is
   // measured from the user's perspective, auth and validation included.
   const requestStartedAt = Date.now();
@@ -78,6 +83,7 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json(body, { status: auth.status });
   }
   const user = auth.user;
+  attributeUsageUser(user.id);
 
   // 2. Parse & validate (Zod: non-empty message capped at
   //    MAX_CHAT_MESSAGE_LENGTH, UUID family_id, optional history and

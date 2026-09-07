@@ -1,3 +1,4 @@
+import { withUsageScope } from "@/lib/analytics/api-usage";
 import type { Resend } from "resend";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { extractEmailSuggestions } from "@/lib/ai/inbound-email-insights";
@@ -61,6 +62,7 @@ export interface RecordInsightsResult {
 }
 
 export async function recordInboundEmailInsights(params: {
+  ownerId?: string;
   emailId: string;
   familyId: string;
   resend: Resend;
@@ -119,13 +121,13 @@ export async function recordInboundEmailInsights(params: {
     .eq("family_id", params.familyId);
   if (memberError) throw memberError;
 
-  const suggestions = await extractEmailSuggestions({
+  const suggestions = await withUsageScope({ operation: "email_analysis", userId: params.ownerId }, () => extractEmailSuggestions({
     subject: received.subject ?? "",
     from: received.from,
     bodyText,
     today: berlinToday(),
     memberNames: (memberRows ?? []).map((member) => member.name),
-  });
+  }));
   if (suggestions.length === 0) return { suggestionCount: 0 };
 
   const { data: emailRow, error: emailError } = await admin

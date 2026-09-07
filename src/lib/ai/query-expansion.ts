@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { SEARCH_AUGMENTATION_MODEL } from "@/lib/ai/models";
 
@@ -53,7 +54,7 @@ export async function expandQuery(query: string): Promise<ExpandedQuery> {
       return { original: trimmed, expansions: [], allTerms: [trimmed] };
     }
 
-    const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
 
     const prompt = `Erstelle Synonyme und verwandte Begriffe fuer eine Dokumentensuche.
 Suchanfrage: "${trimmed}"

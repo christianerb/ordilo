@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import { createHash } from "node:crypto";
 import OpenAI from "openai";
 import {
@@ -198,7 +199,7 @@ export async function searchPublicWeb(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) throw new Error("OpenAI API key is not configured.");
 
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
   const response = await client.responses.create({
     model: GENERAL_MODEL,
     input:

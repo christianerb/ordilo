@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import { normalizeEvidence } from "./document-evidence";
 import { documentPrefetchQuery } from "./document-intent";
@@ -268,7 +269,7 @@ function getOpenAIClient(): OpenAI {
       "OPENAI_NOT_CONFIGURED",
     );
   }
-  return new OpenAI({ apiKey, timeout: 25_000, maxRetries: 0 });
+  return new OpenAI({ apiKey, fetch: meteredOpenAIFetch, timeout: 25_000, maxRetries: 0 });
 }
 
 // ---------------------------------------------------------------------------

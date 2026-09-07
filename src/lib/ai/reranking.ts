@@ -1,3 +1,4 @@
+import { meteredOpenAIFetch } from "@/lib/analytics/api-usage";
 import OpenAI from "openai";
 import {
   RERANK_REASONING_EFFORT,
@@ -72,7 +73,7 @@ export async function rerankResults(
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) return results;
 
-    const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey, fetch: meteredOpenAIFetch });
 
     // Build the prompt with numbered results
     const resultTexts = toRerank.map((r, i) => {

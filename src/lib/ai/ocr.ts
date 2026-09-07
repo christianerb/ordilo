@@ -1,3 +1,4 @@
+import { recordOcrUsage } from "@/lib/analytics/api-usage";
 /**
  * Datalab OCR client (Chandra OCR 2).
  *
@@ -593,12 +594,16 @@ export function buildPages(
 export async function runOcr(
   file: Blob,
   filename: string,
+  documentId?: string,
 ): Promise<OcrResult> {
   // 1. Submit the file for conversion.
   const requestId = await submitConversion(file, filename);
+  const usageId = crypto.randomUUID();
+  if (documentId) await recordOcrUsage(documentId, requestId, null, null, usageId);
 
   // 2. Poll until complete.
   const result = await pollConversion(requestId);
+  if (documentId) await recordOcrUsage(documentId, requestId, result.page_count ?? null, result.cost_breakdown, usageId);
 
   // 3. Extract markdown, JSON layout data, and page count.
   const markdown = result.markdown || "";

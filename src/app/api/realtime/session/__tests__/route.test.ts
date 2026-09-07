@@ -13,6 +13,14 @@ vi.mock("@/lib/auth/require-user", () => ({
   requireUser: () => mocks.requireUser(),
 }));
 
+// Keep the real metered transport, but isolate its database checkpoint from
+// the OpenAI fetch mock. CI supplies Supabase credentials unlike local tests.
+vi.mock("@/lib/supabase/admin", () => ({
+  createClient: () => ({
+    from: () => ({ insert: vi.fn().mockResolvedValue({ error: null }) }),
+  }),
+}));
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
     from: vi.fn((table: string) => {
@@ -127,6 +135,7 @@ describe("POST /api/realtime/session", () => {
     expect(response.status).toBe(200);
     expect(body.client_secret).toBe("secret-1");
     expect(body.expires_at).toBe(123);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
     expect(mockFetch).toHaveBeenCalledWith(
       "https://api.openai.com/v1/realtime/client_secrets",
       expect.objectContaining({ method: "POST" }),

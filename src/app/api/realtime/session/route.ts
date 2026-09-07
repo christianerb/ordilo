@@ -1,3 +1,4 @@
+import { attributeUsageUser, meteredOpenAIFetch, withUsageScope } from "@/lib/analytics/api-usage";
 import { createHash } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
 import { requireUser } from "@/lib/auth/require-user";
@@ -85,6 +86,10 @@ function sessionFailed(reason: string): Response {
  * Errors: 503 (no API key configured), 502 (OpenAI session failed).
  */
 export async function POST(): Promise<Response> {
+  return withUsageScope({ operation: "browser_voice" }, handleRealtimeSession);
+}
+
+async function handleRealtimeSession(): Promise<Response> {
   const auth = await requireUser();
   if (auth.status) {
     // Prime suspect for an installed PWA specifically: the middleware
@@ -96,6 +101,7 @@ export async function POST(): Promise<Response> {
     return Response.json(auth.json, { status: auth.status });
   }
 
+  attributeUsageUser(auth.user.id);
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return sessionUnavailable();
@@ -137,7 +143,7 @@ export async function POST(): Promise<Response> {
     .digest("hex");
 
   try {
-    const response = await fetch(
+    const response = await meteredOpenAIFetch(
       "https://api.openai.com/v1/realtime/client_secrets",
       {
         method: "POST",
