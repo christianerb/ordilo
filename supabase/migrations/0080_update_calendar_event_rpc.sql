@@ -39,7 +39,14 @@ begin
   from public.calendar_events
   where id = p_event_id;
 
-  if v_family_id is null or not public.user_belongs_to_family(v_family_id) then
+  -- Told apart on purpose: a caller can act on "already gone" (say so and
+  -- stop) but not on "no access" (a bug or an attack). Collapsing both
+  -- into one error left the client asking for a retry that cannot work.
+  if v_family_id is null then
+    raise exception 'not_found';
+  end if;
+
+  if not public.user_belongs_to_family(v_family_id) then
     raise exception 'not_authorized';
   end if;
 
@@ -140,7 +147,11 @@ begin
   from public.calendar_events
   where id = p_event_id;
 
-  if v_family_id is null or not public.user_belongs_to_family(v_family_id) then
+  if v_family_id is null then
+    raise exception 'not_found';
+  end if;
+
+  if not public.user_belongs_to_family(v_family_id) then
     raise exception 'not_authorized';
   end if;
 
@@ -183,7 +194,11 @@ begin
   from public.calendar_events
   where id = p_event_id;
 
-  if v_family_id is null or not public.user_belongs_to_family(v_family_id) then
+  if v_family_id is null then
+    raise exception 'not_found';
+  end if;
+
+  if not public.user_belongs_to_family(v_family_id) then
     raise exception 'not_authorized';
   end if;
 
