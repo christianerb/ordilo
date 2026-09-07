@@ -1,4 +1,8 @@
 /* global jest, describe, it, expect, beforeEach, afterEach */
+// This suite mounts the entire document screen and re-renders it through every
+// edit. That is comfortably under a second on a warm machine and over Jest's
+// 5s default on a loaded CI runner, so give the file a budget that measures a
+// hang rather than a slow box.
 import React from "react";
 import renderer, { act } from "react-test-renderer";
 import { Alert, TextInput } from "react-native";
@@ -43,13 +47,15 @@ jest.mock("../lib/scan", () => ({}));
 jest.mock("../lib/feedback", () => ({ success: jest.fn(), fail: jest.fn(), select: jest.fn(), tap: jest.fn() }));
 jest.mock("../lib/library", () => ({ refreshLibraryDocuments: jest.fn() }));
 jest.mock("../lib/people", () => ({ resolveDocumentPeople: () => [] }));
-jest.mock("../lib/calendar", () => ({
-  toCalendarDate: (date) => date.toISOString().slice(0, 10),
-  formatGermanDate: (value) => value
-    ? new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" })
-      .format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value))
-    : "",
-}));
+jest.mock("../lib/calendar", () => {
+  const german = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", year: "numeric" });
+  return {
+    toCalendarDate: (date) => date.toISOString().slice(0, 10),
+    formatGermanDate: (value) => value
+      ? german.format(new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value))
+      : "",
+  };
+});
 jest.mock("../lib/tasks", () => ({
   todayLocalDate: () => "2026-09-07",
   fetchFamilyMembers: async () => [
@@ -71,6 +77,8 @@ function baseline() {
     facts: [{ id: "fact-1", fact_type: "identifier", label: "Klasse", value: "3a", confidence: 1 }],
   } };
 }
+
+jest.setTimeout(30_000);
 
 let tree;
 let original;
