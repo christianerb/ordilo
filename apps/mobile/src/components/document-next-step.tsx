@@ -43,7 +43,7 @@ export function DocumentNextStep({
         } else {
           router.replace({
             pathname: "/(tabs)/plan",
-            params: { tab: next.kind === "calendar" ? "calendar" : "tasks" },
+            params: { tab: next.kind === "calendar" ? "calendar" : "list" },
           });
         }
       }}

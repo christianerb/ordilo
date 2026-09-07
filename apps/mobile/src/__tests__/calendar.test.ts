@@ -1,22 +1,33 @@
 import {
   calendarDays,
   createPlannerEvent,
+  deletePlannerEvent,
+  eventDurationDays,
+  eventOccurrenceStart,
   eventOccursOn,
   eventsForDay,
   formatEventDateInput,
   formatEventPeople,
   formatGermanDate,
   parseEventDateInput,
+  restorePlannerEventOccurrence,
+  skipPlannerEventOccurrence,
   toCalendarDate,
+  updatePlannerEvent,
   upcomingPlannerEvents,
   validatePlannerEventInput,
   type PlannerEvent,
 } from "../lib/calendar";
 
 const mockRpc = jest.fn();
+const mockDelete = jest.fn();
+const mockEq = jest.fn();
 
 jest.mock("../lib/supabase", () => ({
-  getSupabase: () => ({ rpc: mockRpc }),
+  getSupabase: () => ({
+    rpc: mockRpc,
+    from: () => ({ delete: mockDelete }),
+  }),
 }));
 
 beforeEach(() => {
@@ -37,6 +48,7 @@ const event: PlannerEvent = {
   recurrence_exceptions: [],
   location: null,
   responsible_member_id: "member-2",
+  document_id: null,
   attendee_ids: ["member-1"],
 };
 
@@ -193,5 +205,215 @@ describe("native calendar", () => {
         p_title: "Elternabend",
       },
     );
+  });
+
+  it("updates an event and its attendees through the mirroring RPC", async () => {
+    mockRpc.mockResolvedValue({
+      data: {
+        ...event,
+        title: "Elternabend",
+        all_day: false,
+        starts_time: "18:00",
+        ends_time: "19:00",
+        created_at: "2026-08-28T12:00:00Z",
+        created_by: "user-1",
+        document_id: null,
+        family_id: "family-1",
+        recurrence: "none",
+      },
+      error: null,
+    });
+
+    await expect(
+      updatePlannerEvent("event-1", {
+        title: "Elternabend",
+        date: "2026-08-28",
+        allDay: false,
+        startsTime: "18:00",
+        endsTime: "19:00",
+        location: "Schule",
+        note: "Raum 2",
+        attendeeIds: ["member-2"],
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      event: { attendee_ids: ["member-2"], title: "Elternabend" },
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith(
+      "update_calendar_event_with_attendees",
+      {
+        p_all_day: false,
+        p_attendee_ids: ["member-2"],
+        p_date: "2026-08-28",
+        p_ends_time: "19:00",
+        p_event_id: "event-1",
+        p_location: "Schule",
+        p_note: "Raum 2",
+        p_starts_time: "18:00",
+        p_title: "Elternabend",
+      },
+    );
+  });
+
+  it("refuses to save an invalid edit before it reaches the database", async () => {
+    await expect(
+      updatePlannerEvent("event-1", {
+        title: "",
+        date: "2026-08-28",
+        allDay: true,
+        startsTime: "09:00",
+        endsTime: "10:00",
+        location: "",
+        note: "",
+        attendeeIds: [],
+      }),
+    ).resolves.toEqual({
+      success: false,
+      error: "Bitte gib einen Titel ein.",
+    });
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("reports a failed edit in the family's own words", async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: "boom" } });
+    await expect(
+      updatePlannerEvent("event-1", {
+        title: "Elternabend",
+        date: "2026-08-28",
+        allDay: true,
+        startsTime: "09:00",
+        endsTime: "10:00",
+        location: "",
+        note: "",
+        attendeeIds: [],
+      }),
+    ).resolves.toEqual({
+      success: false,
+      error:
+        "Die Änderung konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+    });
+  });
+
+  it("deletes an event, and says so plainly when it cannot", async () => {
+    mockEq.mockResolvedValue({ error: null });
+    mockDelete.mockReturnValue({ eq: mockEq });
+    await expect(deletePlannerEvent("event-1")).resolves.toEqual({
+      success: true,
+    });
+    expect(mockEq).toHaveBeenCalledWith("id", "event-1");
+
+    mockEq.mockResolvedValue({ error: { message: "nope" } });
+    await expect(deletePlannerEvent("event-1")).resolves.toEqual({
+      success: false,
+      error: "Der Termin konnte nicht gelöscht werden.",
+    });
+  });
+
+  it("drops one day out of a series and can put it back", async () => {
+    const series: PlannerEvent = { ...event, recurrence: "weekly" };
+    // The database changes the exception list in place and hands back the
+    // whole row, so a day somebody else skipped meanwhile survives.
+    mockRpc.mockResolvedValue({
+      data: {
+        ...series,
+        recurrence_exceptions: ["2026-08-10", "2026-08-17"],
+        created_at: "2026-08-01T12:00:00Z",
+        created_by: "user-1",
+        family_id: "family-1",
+      },
+      error: null,
+    });
+
+    await expect(
+      skipPlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toMatchObject({
+      success: true,
+      event: {
+        attendee_ids: ["member-1"],
+        recurrence_exceptions: ["2026-08-10", "2026-08-17"],
+      },
+    });
+    expect(mockRpc).toHaveBeenCalledWith("skip_calendar_event_occurrence", {
+      p_date: "2026-08-17",
+      p_event_id: "event-1",
+    });
+
+    mockRpc.mockResolvedValue({
+      data: {
+        ...series,
+        recurrence_exceptions: ["2026-08-10"],
+        created_at: "2026-08-01T12:00:00Z",
+        created_by: "user-1",
+        family_id: "family-1",
+      },
+      error: null,
+    });
+    await expect(
+      restorePlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toMatchObject({
+      success: true,
+      event: { recurrence_exceptions: ["2026-08-10"] },
+    });
+    expect(mockRpc).toHaveBeenCalledWith("restore_calendar_event_occurrence", {
+      p_date: "2026-08-17",
+      p_event_id: "event-1",
+    });
+  });
+
+  it("says an appointment is gone rather than asking for a retry", async () => {
+    // The RPC raises not_found when somebody else deleted it meanwhile.
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: 'unexpected raise: not_found' },
+    });
+    const gone =
+      "Diesen Termin gibt es nicht mehr — jemand aus deiner Familie hat ihn inzwischen gelöscht.";
+
+    await expect(
+      updatePlannerEvent("event-1", {
+        title: "Elternabend",
+        date: "2026-08-28",
+        allDay: true,
+        startsTime: "09:00",
+        endsTime: "10:00",
+        location: "",
+        note: "",
+        attendeeIds: [],
+      }),
+    ).resolves.toEqual({ success: false, error: gone });
+
+    await expect(
+      skipPlannerEventOccurrence({ ...event, recurrence: "weekly" }, "2026-08-17"),
+    ).resolves.toEqual({ success: false, error: gone });
+  });
+
+  it("keeps a failed skip or restore from claiming success", async () => {
+    const series: PlannerEvent = { ...event, recurrence: "weekly" };
+    mockRpc.mockResolvedValue({ data: null, error: { message: "nope" } });
+    await expect(
+      skipPlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toEqual({
+      success: false,
+      error: "Der Tag konnte nicht entfernt werden.",
+    });
+    await expect(
+      restorePlannerEventOccurrence(series, "2026-08-17"),
+    ).resolves.toEqual({ success: false });
+  });
+
+  it("finds the first day of the occurrence covering a date", () => {
+    const trip: PlannerEvent = {
+      ...event,
+      starts_on: "2026-08-03",
+      ends_on: "2026-08-05",
+      recurrence: "none",
+    };
+    expect(eventOccurrenceStart(trip, "2026-08-04")).toBe("2026-08-03");
+    expect(eventOccurrenceStart(trip, "2026-08-06")).toBeNull();
+
+    const weekly: PlannerEvent = { ...trip, recurrence: "weekly" };
+    expect(eventOccurrenceStart(weekly, "2026-08-11")).toBe("2026-08-10");
+    expect(eventDurationDays(weekly)).toBe(2);
   });
 });

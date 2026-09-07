@@ -22,6 +22,7 @@ import {
 import {
   buildAssistantHistoryContext,
   buildPersonalChatPrompts,
+  getChatActionTarget,
   MAX_CLIENT_CHAT_HISTORY_CONTENT,
   MAX_CLIENT_CHAT_HISTORY_MESSAGES,
   parseChatWireEvent,
@@ -815,6 +816,9 @@ export function SucheClient({
           return {
             ...current,
             state: "confirmed",
+            // What was created, so the card can link straight to it.
+            target:
+              getChatActionTarget(current.toolName, body.result) ?? undefined,
             undo: taskId
               ? {
                   id: `${current.id}-undo`,
@@ -856,6 +860,40 @@ export function SucheClient({
       if (action?.undo) void runAction(messageId, action, "undo");
     },
     [runAction],
+  );
+
+  /**
+   * Where a confirmed action leads. A document or note opens in the
+   * viewer right here — no reason to leave the conversation for it;
+   * everything else is a real place in the app.
+   */
+  const handleActionOpenTarget = useCallback(
+    (action: ChatAction) => {
+      const target = action.target;
+      if (!target) return;
+      switch (target.kind) {
+        case "event":
+          router.push(`/aufgaben?tab=planer&event=${target.id}`);
+          return;
+        case "task":
+          router.push(`/aufgaben?task=${target.id}`);
+          return;
+        case "document":
+        case "note":
+          void openDocument(target.id);
+          return;
+        case "collection":
+          router.push(`/sammlungen/${target.id}`);
+          return;
+        case "contact":
+          router.push(`/dokumente?tab=kontakte&kontakt=${target.id}`);
+          return;
+        case "member":
+          router.push("/familie");
+          return;
+      }
+    },
+    [openDocument, router],
   );
 
   const handleActionDismiss = useCallback(
@@ -1069,6 +1107,7 @@ export function SucheClient({
                   onActionDismiss={handleActionDismiss}
                   onActionAdjust={handleActionAdjust}
                   onActionUndo={handleActionUndo}
+                  onActionOpenTarget={handleActionOpenTarget}
                 />
               ))}
 

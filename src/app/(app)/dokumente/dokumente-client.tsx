@@ -117,7 +117,9 @@ export function DokumenteClient({
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [contactCreateRequest, setContactCreateRequest] = useState(0);
   const router = useRouter();
-  const routeView = getFilingView(useSearchParams().get("tab"));
+  const routeParams = useSearchParams();
+  const routeView = getFilingView(routeParams.get("tab"));
+  const openContactId = routeParams.get("kontakt") ?? undefined;
   const [view, setView] = useState<FilingView>(routeView);
   const [renderedRouteView, setRenderedRouteView] = useState(routeView);
   // Browser back/forward and deep links still own the URL. A tab click updates
@@ -245,6 +247,7 @@ export function DokumenteClient({
           initialContacts={initialContacts}
           onOpenSource={(documentId) => void openDocument(documentId)}
           createRequest={contactCreateRequest}
+          openContactId={openContactId}
         />
       ) : view === "notizen" ? (
         <NotesView

@@ -24,11 +24,13 @@ export interface PlannerEvent {
   recurrence_exceptions: string[];
   location: string | null;
   responsible_member_id: string | null;
+  /** The document this appointment was read out of, if any. */
+  document_id: string | null;
   attendee_ids: string[];
 }
 
 const eventSelect =
-  "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id";
+  "id, title, note, starts_on, ends_on, all_day, starts_time, ends_time, recurrence, recurrence_until, recurrence_exceptions, location, responsible_member_id, document_id";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
@@ -42,6 +44,7 @@ function normalizePlannerEvent(
     ...event,
     recurrence: event.recurrence as CalendarRecurrence,
     recurrence_exceptions: event.recurrence_exceptions ?? [],
+    document_id: event.document_id ?? null,
     attendee_ids: attendeeIds,
   };
 }
@@ -209,14 +212,7 @@ export function upcomingPlannerEvents(
 
     const nextDate = nextEventOccurrence(event, today);
     if (!nextDate) return [];
-    const durationDays = Math.max(
-      0,
-      Math.round(
-        (new Date(`${event.ends_on}T12:00:00`).getTime() -
-          new Date(`${event.starts_on}T12:00:00`).getTime()) /
-          86_400_000,
-      ),
-    );
+    const durationDays = eventDurationDays(event);
     return [{
       ...event,
       starts_on: nextDate,
@@ -239,30 +235,46 @@ function shiftIsoDate(value: string, days: number): string {
   return toCalendarDate(date);
 }
 
+/** Whole days an appointment spans, so an occurrence keeps its length. */
+export function eventDurationDays(event: PlannerEvent): number {
+  return Math.max(
+    0,
+    Math.round(
+      (new Date(`${event.ends_on}T12:00:00`).getTime() -
+        new Date(`${event.starts_on}T12:00:00`).getTime()) /
+        86_400_000,
+    ),
+  );
+}
+
+/**
+ * The first day of the occurrence that covers `date`, or null when the
+ * appointment does not reach that day at all.
+ *
+ * A multi-day appointment must not read as if it began on the day you
+ * happened to open it — "20. bis 22. September" opened on the 21st still
+ * says the 20th.
+ */
+export function eventOccurrenceStart(
+  event: PlannerEvent,
+  date: string,
+): string | null {
+  if (!eventOccursOn(event, date)) return null;
+  const durationDays = eventDurationDays(event);
+  let start = date;
+  for (let offset = 0; offset < durationDays; offset += 1) {
+    const previous = shiftIsoDate(start, -1);
+    if (previous < event.starts_on || !eventOccursOn(event, previous)) break;
+    start = previous;
+  }
+  return start;
+}
+
 function nextEventOccurrence(
   event: PlannerEvent,
   today: string,
 ): string | null {
-  const occurrenceStart = (date: string): string | null => {
-    if (!eventOccursOn(event, date)) return null;
-    const durationDays = Math.max(
-      0,
-      Math.round(
-        (new Date(`${event.ends_on}T12:00:00`).getTime() -
-          new Date(`${event.starts_on}T12:00:00`).getTime()) /
-          86_400_000,
-      ),
-    );
-    let start = date;
-    for (let offset = 0; offset < durationDays; offset += 1) {
-      const previous = shiftIsoDate(start, -1);
-      if (previous < event.starts_on || !eventOccursOn(event, previous)) break;
-      start = previous;
-    }
-    return start;
-  };
-
-  const currentOccurrence = occurrenceStart(today);
+  const currentOccurrence = eventOccurrenceStart(event, today);
   if (currentOccurrence) return currentOccurrence;
 
   let candidate = event.starts_on > today
@@ -270,12 +282,21 @@ function nextEventOccurrence(
     : shiftIsoDate(today, 1);
   const searchLimit = event.recurrence_until ?? shiftIsoDate(today, 740);
   while (candidate <= searchLimit) {
-    const start = occurrenceStart(candidate);
+    const start = eventOccurrenceStart(event, candidate);
     if (start) return start;
     candidate = shiftIsoDate(candidate, 1);
   }
   return null;
 }
+
+/** German labels for a repeating appointment — same wording as the web. */
+export const RECURRENCE_LABELS: Record<CalendarRecurrence, string> = {
+  none: "Einmalig",
+  weekly: "Jede Woche",
+  biweekly: "Alle zwei Wochen",
+  monthly: "Jeden Monat",
+  yearly: "Jedes Jahr",
+};
 
 export function formatEventWhen(event: PlannerEvent): string {
   if (event.all_day) return "Ganztägig";
@@ -428,5 +449,126 @@ export async function createPlannerEvent(
   return {
     success: true,
     event: normalizePlannerEvent(event, value.attendeeIds),
+  };
+}
+
+/**
+ * The RPCs in 0080 raise `not_found` when the appointment is already gone
+ * — somebody else deleted it while this screen was open. Retrying cannot
+ * help, so the copy says what actually happened instead of asking for it.
+ */
+const EVENT_GONE =
+  "Diesen Termin gibt es nicht mehr — jemand aus deiner Familie hat ihn inzwischen gelöscht.";
+
+function isEventGone(error: { message?: string } | null): boolean {
+  return Boolean(error?.message?.includes("not_found"));
+}
+
+/**
+ * Update an existing appointment and replace its attendee list. One RPC,
+ * one transaction (0080) — a half-applied edit would show the family an
+ * event whose people no longer match what they just confirmed.
+ */
+export async function updatePlannerEvent(
+  eventId: string,
+  input: PlannerEventInput,
+): Promise<{ success: true; event: PlannerEvent } | { success: false; error: string }> {
+  const validation = validatePlannerEventInput(input);
+  if (!validation.success) return validation;
+
+  const value = validation.data;
+  const { data, error } = await getSupabase().rpc(
+    "update_calendar_event_with_attendees",
+    {
+      p_all_day: value.allDay,
+      p_attendee_ids: value.attendeeIds,
+      p_date: value.date,
+      p_ends_time: value.allDay ? null : value.endsTime,
+      p_event_id: eventId,
+      p_location: value.location,
+      p_note: value.note,
+      p_starts_time: value.allDay ? null : value.startsTime,
+      p_title: value.title,
+    },
+  );
+
+  if (error || !data) {
+    return {
+      success: false,
+      error: isEventGone(error)
+        ? EVENT_GONE
+        : "Die Änderung konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+    };
+  }
+
+  const event = data as Omit<PlannerEvent, "attendee_ids">;
+  return {
+    success: true,
+    event: normalizePlannerEvent(event, value.attendeeIds),
+  };
+}
+
+/** Remove an appointment for the whole family. Attendees cascade. */
+export async function deletePlannerEvent(
+  eventId: string,
+): Promise<{ success: true } | { success: false; error: string }> {
+  const { error } = await getSupabase()
+    .from("calendar_events")
+    .delete()
+    .eq("id", eventId);
+  return error
+    ? { success: false, error: "Der Termin konnte nicht gelöscht werden." }
+    : { success: true };
+}
+
+/**
+ * Drop a single day out of a repeating appointment by recording it as an
+ * exception, so the rest of the series survives. Mirrors the web planner.
+ *
+ * The exception list is changed in place by the database (0080), never
+ * written back from the copy this client read earlier: two family members
+ * skipping different days at once must not undo each other.
+ */
+export async function skipPlannerEventOccurrence(
+  event: PlannerEvent,
+  date: string,
+): Promise<{ success: true; event: PlannerEvent } | { success: false; error: string }> {
+  const { data, error } = await getSupabase().rpc(
+    "skip_calendar_event_occurrence",
+    { p_date: date, p_event_id: event.id },
+  );
+  if (error || !data) {
+    return {
+      success: false,
+      error: isEventGone(error)
+        ? EVENT_GONE
+        : "Der Tag konnte nicht entfernt werden.",
+    };
+  }
+  return {
+    success: true,
+    event: normalizePlannerEvent(
+      data as Omit<PlannerEvent, "attendee_ids">,
+      event.attendee_ids,
+    ),
+  };
+}
+
+/** Undo for skipPlannerEventOccurrence: put the day back into the series. */
+export async function restorePlannerEventOccurrence(
+  event: PlannerEvent,
+  date: string,
+): Promise<{ success: true; event: PlannerEvent } | { success: false }> {
+  const { data, error } = await getSupabase().rpc(
+    "restore_calendar_event_occurrence",
+    { p_date: date, p_event_id: event.id },
+  );
+  if (error || !data) return { success: false };
+  return {
+    success: true,
+    event: normalizePlannerEvent(
+      data as Omit<PlannerEvent, "attendee_ids">,
+      event.attendee_ids,
+    ),
   };
 }

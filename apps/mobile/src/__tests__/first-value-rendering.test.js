@@ -29,16 +29,19 @@ describe("native first value", () => {
     await act(async () => tree.unmount());
   });
 
+  // The planner tab is named "list" since tasks and appointments share it;
+  // the analytics dimension keeps its original value so the funnel stays
+  // comparable across the rename.
   it.each([
-    [1, 0, "Zum Kalender", "calendar"],
-    [0, 2, "Zu den Aufgaben", "tasks"],
-  ])("opens the correct planner tab for saved outcomes", async (eventsCreated, tasksKept, label, tab) => {
+    [1, 0, "Zum Kalender", "calendar", "calendar"],
+    [0, 2, "Zu den Aufgaben", "list", "tasks"],
+  ])("opens the correct planner tab for saved outcomes", async (eventsCreated, tasksKept, label, tab, destination) => {
     let tree;
     await act(async () => { tree = renderer.create(<DocumentNextStep documentId="doc-1" title="Brief" eventsCreated={eventsCreated} tasksKept={tasksKept} />); });
     await act(async () => tree.root.findByProps({ title: label }).props.onPress());
     expect(mockReplace).toHaveBeenCalledWith({ pathname: "/(tabs)/plan", params: { tab } });
     expect(recordFirstValueEvent).toHaveBeenCalledWith("family-1", {
-      name: "document_next_step_selected", documentId: "doc-1", destination: tab,
+      name: "document_next_step_selected", documentId: "doc-1", destination,
     });
     await act(async () => tree.unmount());
   });

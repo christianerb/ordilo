@@ -23,6 +23,10 @@ jest.mock("../components/ui", () => Object.fromEntries(["Card", "DetailTopBar", 
 jest.mock("../components/offline-document-button", () => ({ OfflineDocumentButton: "OfflineDocumentButton" }));
 jest.mock("../components/confirm-dialog", () => ({ ConfirmDialog: "ConfirmDialog" }));
 jest.mock("../components/create-choice-sheet", () => ({ CreateChoiceSheet: "CreateChoiceSheet" }));
+// The screen hosts its own bottom-sheet portal so the "…" menu works inside
+// the scan flow's modal presentation; neither host needs to be real here.
+jest.mock("@gorhom/bottom-sheet", () => ({ BottomSheetModalProvider: ({ children }) => children }));
+jest.mock("react-native-gesture-handler", () => ({ GestureHandlerRootView: "GestureHandlerRootView" }));
 jest.mock("../components/ordilo-character", () => ({ OrdiloCharacter: "OrdiloCharacter" }));
 jest.mock("../components/ordilo-mark", () => ({ OrdiloMark: "OrdiloMark" }));
 jest.mock("../components/person", () => ({ PersonAvatar: "PersonAvatar", PersonChip: "PersonChip" }));
@@ -109,7 +113,9 @@ function pickPerson(label, optionLabel) {
 }
 async function openEditor() {
   await act(async () => { tree = renderer.create(<DocumentReviewScreen />); });
-  await act(async () => { tree.root.findAllByProps({ accessibilityLabel: "Angaben ändern" })[0].props.onPress(); });
+  // Correcting a saved document is a bottom-bar action, not a "…" entry:
+  // the bar holds what you need now, the menu the file and Löschen.
+  await act(async () => { tree.root.findAllByProps({ title: "Angaben ändern" })[0].props.onPress(); });
   expect(loadCorrectionBaseline).toHaveBeenCalledWith("doc-1");
 }
 function change(label, value) { act(() => field(label).props.onChangeText(value)); }
@@ -235,7 +241,7 @@ describe("confirmed document corrections", () => {
     const titles = tree.root.findAllByType(require("react-native").Text).map((node) => node.props.children);
     expect(titles).toContain("Ausflug");
     expect(titles).not.toContain("Nicht speichern");
-    await act(async () => tree.root.findAllByProps({ accessibilityLabel: "Angaben ändern" })[0].props.onPress());
+    await act(async () => tree.root.findAllByProps({ title: "Angaben ändern" })[0].props.onPress());
     expect(field("Betrag 1").props.value).toBe("8");
     expect(control("Person 1").props.accessibilityLabel).toBe("Person 1: Emma");
   });

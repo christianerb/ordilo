@@ -119,12 +119,15 @@ export function CalendarClient({
   familyId,
   currentUserId = null,
   members,
+  openEventId,
 }: {
   initialEvents: CalendarEvent[];
   initialSuggestions?: CalendarSuggestion[];
   familyId: string | null;
   currentUserId?: string | null;
   members: AssigneeOption[];
+  /** Deep link (?event=<id>): show and open that appointment on arrival. */
+  openEventId?: string;
 }) {
   const supabase = createClient();
   const today = new Date();
@@ -400,6 +403,18 @@ export function CalendarClient({
     [markEventsSeen],
   );
 
+  // Deep link: land on the appointment's day with its sheet open, so
+  // "Termin öffnen" from a chat action ends at the appointment itself.
+  useMountEffect(() => {
+    if (!openEventId) return;
+    const match = initialEvents.find((event) => event.id === openEventId);
+    if (!match) return;
+    const day = new Date(`${match.starts_on}T12:00:00`);
+    setSelectedDate(day);
+    setActiveMonth(monthStart(day));
+    openEdit(match);
+  });
+
   /** Remember a handled suggestion so it never comes back. */
   const recordDismissal = useCallback(
     async (entityId: string) => {
@@ -492,17 +507,21 @@ export function CalendarClient({
       setDeleting(true);
       try {
         if (scope === "single") {
+          // Appended by the database (0080), never written back as a whole
+          // array read earlier: two people skipping different days of the
+          // same series must not undo each other, and the native app
+          // appends through the same function.
           const date = toCalendarDate(selectedDate);
-          const exceptions = [...deleteTarget.recurrence_exceptions, date];
-          const { error } = await supabase
-            .from("calendar_events")
-            .update({ recurrence_exceptions: exceptions })
-            .eq("id", deleteTarget.id);
+          const { data, error } = await supabase.rpc(
+            "skip_calendar_event_occurrence",
+            { p_date: date, p_event_id: deleteTarget.id },
+          );
 
-          if (error) {
+          if (error || !data) {
             toast.error("Löschen hat nicht geklappt.");
             return;
           }
+          const exceptions = data.recurrence_exceptions ?? [];
           setEvents((current) =>
             current.map((event) =>
               event.id === deleteTarget.id

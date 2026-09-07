@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowUpRight,
   CalendarPlus,
   Check,
   CircleCheck,
@@ -17,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  CHAT_ACTION_TARGET_LABELS,
   getChatActionContent,
   type ChatActionToolName,
 } from "@ordilo/chat-contract";
@@ -50,18 +52,25 @@ export function OrdiloActionCard({
   onConfirm,
   onDismiss,
   onAdjust,
+  onOpenTarget,
   onUndo,
 }: {
   action: ChatAction;
   onConfirm: () => void;
   onDismiss: () => void;
   onAdjust: () => void;
+  /** Opens what the confirmed action created; absent until there is one. */
+  onOpenTarget?: () => void;
   onUndo?: () => void;
 }) {
   const Icon = getActionIcon(action);
   const { eyebrow, title, details } = getChatActionContent(action);
   const isWorking = action.state === "confirming" || action.state === "undoing";
   const isResolved = action.state === "confirmed" || action.state === "undone";
+  const openLabel =
+    action.state === "confirmed" && action.target && onOpenTarget
+      ? CHAT_ACTION_TARGET_LABELS[action.target.kind]
+      : null;
 
   return (
     <section
@@ -162,18 +171,34 @@ export function OrdiloActionCard({
         </div>
       )}
 
-      {action.state === "confirmed" && action.undo && onUndo && (
-        <div className="flex items-center justify-between gap-3 border-t border-border bg-card/55 px-3 py-2.5">
-          <span className="text-xs text-[var(--mist-dark)]">Die Änderung ist gespeichert.</span>
-          <button
-            type="button"
-            onClick={onUndo}
-            className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
-            data-testid="action-card-undo"
-          >
-            <RotateCcw className="size-3.5" aria-hidden="true" />
-            Rückgängig
-          </button>
+      {action.state === "confirmed" && (openLabel || (action.undo && onUndo)) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-card/55 px-3 py-2.5">
+          {openLabel ? (
+            <button
+              type="button"
+              onClick={onOpenTarget}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm bg-[var(--petrol)] px-3.5 text-sm font-medium text-white transition-colors hover:bg-[var(--petrol-dark)] focus-ring"
+              data-testid="action-card-open"
+            >
+              {openLabel}
+              <ArrowUpRight className="size-4" aria-hidden="true" />
+            </button>
+          ) : (
+            <span className="text-xs text-[var(--mist-dark)]">
+              Die Änderung ist gespeichert.
+            </span>
+          )}
+          {action.undo && onUndo ? (
+            <button
+              type="button"
+              onClick={onUndo}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-sm font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 focus-ring"
+              data-testid="action-card-undo"
+            >
+              <RotateCcw className="size-3.5" aria-hidden="true" />
+              Rückgängig
+            </button>
+          ) : null}
         </div>
       )}
     </section>

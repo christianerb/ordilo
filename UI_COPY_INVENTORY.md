@@ -102,6 +102,7 @@ Legend: `→` = context.
 | 2.56 | `"Neue Person"` | `src/components/ordilo/person-picker.tsx` | Chip opening the inline free-text create form |
 | 2.57 | `"Anlegen"` | `src/components/ordilo/person-picker.tsx` | Inline create-form submit button |
 | 2.58 | `"{name} anlegen"` (template) | `src/components/ordilo/person-picker.tsx` | One-tap create chip for an extracted-but-unknown person |
+| 2.59 | `"Termin öffnen"` / `"Aufgabe öffnen"` / `"Dokument öffnen"` / `"Notiz öffnen"` / `"Sammlung öffnen"` / `"Kontakt öffnen"` / `"Familie öffnen"` | `packages/chat-contract/src/index.ts` (CHAT_ACTION_TARGET_LABELS), rendered by `src/app/(app)/suche/ordilo-action-card.tsx` | Follow-up button on a confirmed action card, opening what it created |
 
 ---
 

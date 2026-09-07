@@ -1,15 +1,18 @@
 import { apiJson, getApiUrl } from "./api";
 import {
+  CHAT_ACTION_TARGET_LABELS,
   CHAT_TOOL_STEP_LABELS,
   buildAssistantHistoryContext,
   formatChatActionDate,
   getChatActionContent,
+  getChatActionTarget,
   MAX_CLIENT_CHAT_HISTORY_CONTENT,
   MAX_CLIENT_CHAT_HISTORY_MESSAGES,
   mergeConfirmationProposal,
   parseChatWireEvent,
   splitChatNdjsonChunk,
   type ChatActionContent,
+  type ChatActionTarget,
   type ChatActionToolName,
   type ChatFeedbackReason,
   type ChatResponseState,
@@ -100,6 +103,11 @@ export interface ChatAction {
     toolName: ChatActionToolName;
     args: Record<string, unknown>;
   };
+  /**
+   * What the confirmed write produced, so the card can offer to open it
+   * rather than making the person leave the chat and go looking.
+   */
+  target?: ChatActionTarget;
 }
 
 export type ToolCallState = "start" | "done" | "error";
@@ -349,6 +357,33 @@ export function buildChatHistory(
 }
 
 /**
+ * The route a confirmed action leads to, plus its button label. This is
+ * the answer to "Termin angelegt — und jetzt?": one tap opens the thing
+ * that was just created instead of closing the chat and hunting for it.
+ */
+export function getChatActionRoute(
+  target: ChatActionTarget,
+): { label: string; pathname: string; params?: Record<string, string> } {
+  const label = CHAT_ACTION_TARGET_LABELS[target.kind];
+  switch (target.kind) {
+    case "event":
+      return { label, pathname: "/(tabs)/plan", params: { tab: "calendar", event: target.id } };
+    case "task":
+      return { label, pathname: "/(tabs)/plan", params: { tab: "list", task: target.id } };
+    case "note":
+      return { label, pathname: `/note/${target.id}` };
+    case "document":
+      return { label, pathname: `/document/${target.id}` };
+    case "collection":
+      return { label, pathname: `/sammlungen/${target.id}` };
+    case "contact":
+      return { label, pathname: `/contacts/${target.id}` };
+    case "member":
+      return { label, pathname: "/familie" };
+  }
+}
+
+/**
  * Undo is client-modeled (same as the web): only mark_task_done has a
  * safe inverse — re-open the task through the same confirmed endpoint.
  */
@@ -370,6 +405,9 @@ export function buildMarkTaskDoneUndo(
 }
 
 // ---------------------------------------------------------------------------
+/** Re-exported so the chat screen keeps one import surface. */
+export { getChatActionTarget, type ChatActionTarget };
+
 // Action card content (ported from ordilo-action-card.tsx)
 // ---------------------------------------------------------------------------
 

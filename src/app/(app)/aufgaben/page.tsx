@@ -321,11 +321,13 @@ async function loadInitialData(): Promise<{
 export default async function AufgabenPage({
   searchParams,
 }: {
-  searchParams: Promise<{ task?: string }>;
+  searchParams: Promise<{ task?: string; event?: string }>;
 }) {
-  // Deep link from the /home hero: /aufgaben?task=<id> opens that task's
-  // detail sheet directly instead of just showing the board.
-  const { task: openTaskId } = await searchParams;
+  // Deep links: /aufgaben?task=<id> from the /home hero and from a
+  // confirmed chat action, /aufgaben?tab=planer&event=<id> from a chat
+  // action that created an appointment. Both open the thing itself
+  // instead of leaving the reader on the board to go looking.
+  const { task: openTaskId, event: openEventId } = await searchParams;
   const {
     tasks: initialTasks,
     members,
@@ -364,6 +366,7 @@ export default async function AufgabenPage({
             familyId={familyId}
             currentUserId={currentUserId}
             members={members}
+            openEventId={openEventId}
           />
         }
       />
