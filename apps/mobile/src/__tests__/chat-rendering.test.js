@@ -7,7 +7,7 @@ import { ChatMarkdown } from "../components/chat-markdown";
 jest.mock("react-native-reanimated", () => ({ __esModule: true, default: { View: require("react-native").View, Text: require("react-native").Text }, useReducedMotion: () => true }));
 jest.mock("../theme/motion", () => ({ feedbackEntering: () => undefined, feedbackExiting: () => undefined }));
 jest.mock("lucide-react-native", () => new Proxy({}, { get: (_target, name) => name === "__esModule" ? true : String(name) }));
-jest.mock("../components/ui", () => ({ OrdiloButton: "OrdiloButton" }));
+jest.mock("../components/ui", () => ({ OrdiloButton: "OrdiloButton", Skeleton: "Skeleton" }));
 jest.mock("../components/contacts", () => ({ ContactActionGrid: "ContactActionGrid", openContactHref: jest.fn() }));
 jest.mock("../components/chat-evidence", () => ({ ChatEvidence: "ChatEvidence" }));
 
@@ -37,6 +37,21 @@ describe("native conversation rendering", () => {
     const output = JSON.stringify(tree.toJSON());
     expect(output).toContain("Liest die passende Stelle nach");
     expect(output).not.toContain("ActivityIndicator");
+    // The pulsing placeholder is the one animated device in the wait.
+    expect(tree.root.findAllByType("Skeleton").length).toBeGreaterThan(0);
+    await act(async () => tree.unmount());
+  });
+  it("shows the finished steps behind the current one, and never the current one twice", async () => {
+    let tree;
+    await act(async () => { tree = renderer.create(<ChatThinkingState toolCalls={[
+      { toolName: "search_documents", state: "start" },
+      { toolName: "search_documents", state: "done" },
+      { toolName: "read_document", state: "start" },
+    ]} />); });
+    const labels = tree.root.findAllByType(require("react-native").Text).map((node) => node.props.children);
+    expect(labels).toContain("Durchsucht deine Dokumente");
+    expect(labels.filter((label) => label === "Liest die passende Stelle nach …")).toHaveLength(1);
+    expect(labels).not.toContain("Liest die passende Stelle nach");
     await act(async () => tree.unmount());
   });
 });

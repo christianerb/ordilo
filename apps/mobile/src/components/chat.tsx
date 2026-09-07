@@ -38,13 +38,14 @@ import Animated, {
 import { OrdiloMark } from "./ordilo-mark";
 import { ChatMarkdown } from "./chat-markdown";
 import { ChatEvidence } from "./chat-evidence";
-import { OrdiloButton } from "./ui";
+import { OrdiloButton, Skeleton } from "./ui";
 import { ContactActionGrid, openContactHref } from "./contacts";
 import {
   CHAT_FEEDBACK_REASONS,
   formatChatMessageTime,
   getActionContent,
   getChatThinkingLabel,
+  getChatThinkingSteps,
   getSuggestedContactAction,
   type AnswerCard,
   type ChatAction,
@@ -72,12 +73,40 @@ import {
  * German and mirrors the web (src/app/(app)/suche).
  */
 
-/** One honest status, occupying the same reading column as the answer. */
+/**
+ * The wait, in the shape of the answer that is coming: the current status,
+ * the steps already behind it, and a placeholder occupying the same reading
+ * column the text will fill. A single status line on an empty screen made a
+ * normal wait look like nothing was happening.
+ */
 export function ChatThinkingState({ toolCalls }: { toolCalls: ToolCallProgress[] }) {
   const label = getChatThinkingLabel(toolCalls);
-  return <View accessibilityLiveRegion="polite" style={styles.thinkingStatusRow}>
-    <OrdiloMark size={24} />
-    <Text style={styles.thinkingStatusText}>{label}</Text>
+  const steps = useMemo(() => getChatThinkingSteps(toolCalls), [toolCalls]);
+  // Only the steps that are behind us — the current one is already the
+  // status line above, and repeating it would read as two answers pending.
+  const finished = steps.filter((step) => step.state !== "active");
+  return <View accessibilityLiveRegion="polite" style={styles.thinking}>
+    <View style={styles.thinkingStatusRow}>
+      <OrdiloMark size={24} />
+      <Text style={styles.thinkingStatusText}>{label}</Text>
+    </View>
+    {finished.length > 0 ? (
+      <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.thinkingSteps}>
+        {finished.map((step) => (
+          <View key={step.label} style={styles.thinkingStep}>
+            {step.state === "error"
+              ? <X color={colors.warmApricot} size={13} strokeWidth={2.4} />
+              : <Check color={colors.harborBlue} size={13} strokeWidth={2.4} />}
+            <Text numberOfLines={1} style={styles.thinkingStepText}>{step.label}</Text>
+          </View>
+        ))}
+      </View>
+    ) : null}
+    <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.thinkingPlaceholder}>
+      <Skeleton height={13} width="94%" />
+      <Skeleton height={13} width="80%" />
+      <Skeleton height={13} width="56%" />
+    </View>
   </View>;
 }
 
@@ -897,73 +926,36 @@ const styles = StyleSheet.create({
   thinking: {
     gap: 12,
     paddingHorizontal: spacing.xs,
+    paddingVertical: 12,
   },
   thinkingStatusRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm,
   },
-  thinkingAvatar: {
-    alignItems: "center",
-    backgroundColor: colors.washSageSoft,
-    borderRadius: radii.pill,
-    height: 40,
-    justifyContent: "center",
-    width: 40,
-  },
-  thinkingStatusPill: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 40,
-    paddingHorizontal: 12,
-  },
   thinkingStatusText: {
     color: colors.mistDark,
     flexShrink: 1,
     ...typography.timestamp,
   },
-  thinkingStaticIndicator: {
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.pill,
-    height: 8,
-    width: 8,
+  thinkingSteps: {
+    gap: spacing.xs,
+    paddingLeft: 32,
   },
-  thinkingCard: {
-    backgroundColor: colors.warmWhite,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    gap: spacing.md,
-    marginLeft: 48,
-    padding: spacing.md,
-    width: "82%",
-  },
-  thinkingDotsChip: {
+  thinkingStep: {
     alignItems: "center",
-    alignSelf: "flex-start",
-    backgroundColor: colors.washApricot,
-    borderRadius: radii.base,
     flexDirection: "row",
     gap: spacing.xs,
-    height: 32,
-    justifyContent: "center",
-    paddingHorizontal: 12,
   },
-  thinkingDot: {
-    backgroundColor: colors.warmApricotLight,
-    borderRadius: radii.pill,
-    height: 5,
-    width: 5,
+  thinkingStepText: {
+    color: colors.mist,
+    flexShrink: 1,
+    ...typography.caption,
   },
-  thinkingLines: { gap: 12 },
-  thinkingLine: {
-    backgroundColor: colors.washSageSoft,
+  thinkingPlaceholder: {
+    gap: spacing.sm,
+    paddingLeft: 32,
+    paddingTop: spacing.xs,
   },
   bubbleRow: {
     alignItems: "flex-start",

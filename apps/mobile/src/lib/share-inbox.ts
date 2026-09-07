@@ -9,11 +9,32 @@ const attachment = z.object({
   contentUri: z.string(), contentType: z.enum(["file", "image"]),
   contentMimeType: z.string(), originalName: z.string(), contentSize: z.number().positive(),
 });
+type Attachment = z.infer<typeof attachment>;
 export type ShareDelivery = { id: string; payloads: ResolvedSharePayload[]; acknowledge: () => void };
+
+const MANIFEST = "ready.json";
+const UNREADABLE = "Der Eingang konnte nicht gelesen werden. Deine Dateien bleiben gespeichert.";
 
 function inbox(): Directory | null {
   const group = Paths.appleSharedContainers["group.com.ordilo.app"];
   return group ? new Directory(group, "ordilo-inbox") : null;
+}
+
+/**
+ * The share extension writes absolute file URLs, and the same file can spell
+ * itself differently there than here (`/private/var` vs `/var`, percent-encoding).
+ * Comparing those strings rejected perfectly good deliveries, so take only the
+ * file name from the manifest and resolve it inside this delivery directory: an
+ * attachment can then never point outside its own share, by construction.
+ */
+function resolveAttachment(dir: Directory, payload: Attachment): Attachment | null {
+  const segment = payload.contentUri.split(/[/\\]/).pop() ?? "";
+  let name = segment;
+  try { name = decodeURIComponent(segment); } catch { /* a malformed escape stays literal */ }
+  if (!name || name === "." || name === ".." || name === MANIFEST || /[/\\]/.test(name)) return null;
+  const file = new File(dir, name);
+  if (!file.exists) return null;
+  return { ...payload, value: file.uri, contentUri: file.uri };
 }
 
 /** Read only committed deliveries; acknowledging one cannot erase a newer share. */
@@ -27,11 +48,14 @@ export async function readShareInbox(): Promise<ShareDelivery[]> {
   const deliveries: ShareDelivery[] = [];
   for (const dir of root.list()) {
     if (!(dir instanceof Directory)) continue;
-    const manifest = new File(dir, "ready.json");
+    const manifest = new File(dir, MANIFEST);
     if (!manifest.exists) continue;
-    const payloads = z.array(attachment).min(1).max(10).parse(JSON.parse(await manifest.text()));
-    if (payloads.some((payload) => !payload.contentUri.startsWith(`${dir.uri.replace(/\/$/, "")}/`))) {
-      throw new Error("Der Eingang konnte nicht gelesen werden. Deine Dateien bleiben gespeichert.");
+    const parsed = z.array(attachment).min(1).max(10).parse(JSON.parse(await manifest.text()));
+    const payloads: Attachment[] = [];
+    for (const payload of parsed) {
+      const resolved = resolveAttachment(dir, payload);
+      if (!resolved) throw new Error(UNREADABLE);
+      payloads.push(resolved);
     }
     deliveries.push({ id: dir.name, payloads, acknowledge: () => dir.delete() });
   }
@@ -41,7 +65,7 @@ export async function readShareInbox(): Promise<ShareDelivery[]> {
 export function hasIncomingShare(): boolean {
   if (Platform.OS !== "ios") return getSharedPayloads().length > 0;
   const root = inbox();
-  return Boolean(root?.exists && root.list().some((dir) => dir instanceof Directory && new File(dir, "ready.json").exists));
+  return Boolean(root?.exists && root.list().some((dir) => dir instanceof Directory && new File(dir, MANIFEST).exists));
 }
 
 /** Explicit user cancellation only; staged family queues and source apps are untouched. */
@@ -50,6 +74,6 @@ export function discardIncomingShares(): void {
   const root = inbox();
   if (!root?.exists) return;
   for (const dir of root.list()) {
-    if (dir instanceof Directory && new File(dir, "ready.json").exists) dir.delete();
+    if (dir instanceof Directory && new File(dir, MANIFEST).exists) dir.delete();
   }
 }

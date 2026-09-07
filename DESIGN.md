@@ -350,6 +350,15 @@ vocabulary, with three deliberate differences that come from the phone:
   of the family members they concern (PersonAvatar / AvatarStack, 26–34pt).
   An empty dashed seat marks unowned work. Names never become form fields
   the family has to maintain.
+- **Corrections are choices.** Where a value has a known set — a person,
+  a date — correcting it is a pick, not typing: the family from the
+  picker sheet (with their avatar, and "Andere Person eintragen" for
+  someone outside it) and the system calendar for dates, shown back in
+  German long form ("3. September 2026") while the stored value stays
+  ISO. Free text remains only where the set genuinely is open, or where
+  the app knows no people yet. The control looks like an input — same
+  border, radius and 44pt target — with a leading icon and a chevron so
+  it reads as openable.
 
 ### Signature: Document Conversation
 
@@ -358,7 +367,8 @@ vocabulary, with three deliberate differences that come from the phone:
 - **Answer first:** A cited source's factual highlight, when supplied, leads the native answer in Harbor Blue, Figtree 600 at 34/41pt. Supporting prose uses the regular body style with 25pt line height; headings, emphasis, lists, and horizontally scrollable tables retain Figtree. Do not invent a prominent fact when no cited highlight exists.
 - **Evidence as paper:** Show the best source first and reveal additional sources on demand. A cited document quotation sits in a Sand panel with a 12px radius, document title, and page reference when available. Warm Apricot Light marks only the matching factual phrase within the quotation. This is a local evidence annotation, an exception to the general apricot scarcity guidance; it does not become another action color.
 - **Reading surface:** Tapping the quotation opens “Die Fundstelle” in a native reading sheet, retaining the title, page reference, and highlighted original passage. “Original öffnen” is the Harbor Blue action; hide it for sources explicitly marked as having no original file, such as notes. “Zur Dokumentübersicht” remains secondary. Native image originals appear inside the sheet; other originals open through the system, with a page fragment when available. The web counterpart uses a scrollable dialog and exposes an original-file link after loading it. Loading and failure states use plain German copy.
-- **Status and composer:** Native waiting state uses one Ordilo mark and one human-readable status in the answer column. The composer has a Warm White surface, a fine Mist Light border, and a 20px radius. Send changes to stop while a response runs. The native keyboard frame measures the sheet's origin and adjusts the footer for keyboard visibility and safe-area space so the composer remains reachable.
+- **Status and composer:** The native waiting state occupies the answer column it is about to fill: one Ordilo mark with one human-readable status, the steps already finished listed beneath it in Mist with a small Harbor Blue check (the running step stays in the status line and is never repeated below), and the standard pulsing Sand placeholder in the shape of the coming answer. The pulse is the only animation — never a second animated device such as bouncing dots. The composer has a Warm White surface, a fine Mist Light border, and a 20px radius. Send changes to stop while a response runs. The native keyboard frame measures the sheet's origin and adjusts the footer for keyboard visibility and safe-area space so the composer remains reachable.
+- **Empty state, one lead:** The first screen invites a question and then, quietly, offers the way back into an old one. The example prompts carry the Harbor Blue tint, a leading spark and no chevron — they ask, they do not navigate. „Zuletzt gefragt“ sits below a short hairline as a normal list section with its own header. Two blocks of equal weight, both chevroned, read as two menus and neither leads.
 - **Large text:** Keep answer and quotation text responsive to the system text size. Above a font scale of 1.3, shorten the composer placeholder to “Frage …” and reduce the reading-sheet headings to an 18/24pt base that still scales. The compact navigation title has a maximum font-size multiplier of 1.4; this limit does not apply to the reading body.
 - **Preserve the answer:** If saving the conversation fails, keep the answer and its copy action visible. Show a plain German warning that it is not yet saved and should be copied before closing.
 - **Review scope (2026-09-05):** The independent final visual review cleared saved answers and source sheets on the iPhone SE simulator at standard and accessibility-large text sizes for this limited surface scope. The keyboard-open capture predates the final navigation-title and composer-placeholder refinements. Physical-device behavior, Android, and web visual rendering are not certified by that review.

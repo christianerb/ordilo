@@ -21,7 +21,10 @@ jest.mock("../components/confirm-dialog", () => ({ ConfirmDialog: "ConfirmDialog
 jest.mock("../components/create-choice-sheet", () => ({ CreateChoiceSheet: "CreateChoiceSheet" }));
 jest.mock("../components/ordilo-character", () => ({ OrdiloCharacter: "OrdiloCharacter" }));
 jest.mock("../components/ordilo-mark", () => ({ OrdiloMark: "OrdiloMark" }));
-jest.mock("../components/person", () => ({ PersonChip: "PersonChip" }));
+jest.mock("../components/person", () => ({ PersonAvatar: "PersonAvatar", PersonChip: "PersonChip" }));
+jest.mock("../components/sheet", () => ({ OrdiloNestedSheet: "OrdiloNestedSheet", OrdiloSheetHeader: "OrdiloSheetHeader" }));
+jest.mock("../components/picker-sheet", () => ({ OrdiloPickerSheet: "OrdiloPickerSheet" }));
+jest.mock("@react-native-community/datetimepicker", () => ({ __esModule: true, default: "DateTimePicker" }));
 jest.mock("../components/swipe-image-preview", () => ({ SwipeImagePreview: "SwipeImagePreview" }));
 jest.mock("../lib/session", () => ({ useSession: () => ({ session: null }) }));
 jest.mock("../lib/family-context", () => {
@@ -40,7 +43,14 @@ jest.mock("../lib/scan", () => ({}));
 jest.mock("../lib/feedback", () => ({ success: jest.fn(), fail: jest.fn(), select: jest.fn(), tap: jest.fn() }));
 jest.mock("../lib/library", () => ({ refreshLibraryDocuments: jest.fn() }));
 jest.mock("../lib/people", () => ({ resolveDocumentPeople: () => [] }));
-jest.mock("../lib/tasks", () => ({ fetchFamilyMembers: async () => [] }));
+jest.mock("../lib/calendar", () => ({ toCalendarDate: (date) => date.toISOString().slice(0, 10) }));
+jest.mock("../lib/tasks", () => ({
+  todayLocalDate: () => "2026-09-07",
+  fetchFamilyMembers: async () => [
+    { id: "person-1", name: "Emma", role: "child", avatar_color: null },
+    { id: "person-2", name: "Leon", role: "child", avatar_color: null },
+  ],
+}));
 
 function baseline() {
   return { revision: "revision-1", document: {
@@ -60,6 +70,20 @@ let tree;
 let original;
 const field = (label) => tree.root.findAllByType(TextInput).find((node) => node.props.accessibilityLabel === label);
 const button = (title) => tree.root.findByProps({ title });
+const control = (label) => tree.root.findAll((node) =>
+  typeof node.props.accessibilityLabel === "string" && node.props.accessibilityLabel.startsWith(`${label}: `))[0];
+/** Open the calendar behind a date field and pick a day, as a tap would. */
+function pickDate(label, isoDate) {
+  act(() => control(label).props.onPress());
+  const picker = tree.root.findAllByType("DateTimePicker").at(-1);
+  act(() => picker.props.onChange({ type: "set" }, new Date(`${isoDate}T12:00:00Z`)));
+}
+/** Open a person picker and choose the entry with this label. */
+function pickPerson(label, optionLabel) {
+  act(() => control(label).props.onPress());
+  const sheet = tree.root.findAllByType("OrdiloPickerSheet").find((node) => node.props.visible);
+  act(() => sheet.props.options.find((option) => option.label === optionLabel).onPress());
+}
 async function openEditor() {
   await act(async () => { tree = renderer.create(<DocumentReviewScreen />); });
   await act(async () => { tree.root.findAllByProps({ accessibilityLabel: "Angaben ändern" })[0].props.onPress(); });
@@ -83,11 +107,12 @@ describe("confirmed document corrections", () => {
     change("Name des Dokuments", "Tierpark");
     change("Zusammenfassung", "Korrigierter Schulbrief");
     change("Kategorie", "Familie");
-    change("Person 1", "Hannah");
-    change("Datum Termin 1", "2026-10-02");
+    pickPerson("Person 1", "Andere Person eintragen");
+    change("Person 1, Name", "Hannah");
+    pickDate("Datum Termin 1", "2026-10-02");
     change("Bezeichnung Termin 1", "Tierparkbesuch");
     change("Aufgabe 1", "Erlaubnis mitgeben");
-    change("Fälligkeitsdatum Aufgabe 1", "2026-10-01");
+    pickDate("Fälligkeitsdatum Aufgabe 1", "2026-10-01");
     change("Betrag 1", "12,50");
     change("Währung Betrag 1", "CHF");
     change("Kennung 1", "4b");
@@ -112,11 +137,33 @@ describe("confirmed document corrections", () => {
     expect(field("Name des Dokuments")).toBeUndefined();
   });
 
+  it("links a picked family member instead of storing a fourth spelling of the name", async () => {
+    await openEditor();
+    pickPerson("Person 1", "Leon");
+    expect(control("Person 1").props.accessibilityLabel).toBe("Person 1: Leon");
+    expect(field("Person 1, Name")).toBeUndefined();
+    saveDocumentCorrections.mockImplementation(async (_id, _baseline, draft) => { loadDocumentReview.mockResolvedValue(draft); });
+    await act(async () => button("Änderungen speichern").props.onPress());
+    const [, , draft] = saveDocumentCorrections.mock.calls[0];
+    expect(draft.family_members).toEqual([{ name: "Leon", person_id: "person-2", confidence: 1 }]);
+  });
+
+  it("keeps dates in the stored format when they are picked from the calendar", async () => {
+    await openEditor();
+    expect(control("Datum Termin 1").props.accessibilityLabel).toBe("Datum Termin 1: 1. Oktober 2026");
+    pickDate("Datum Termin 1", "2026-12-24");
+    expect(control("Datum Termin 1").props.accessibilityLabel).toBe("Datum Termin 1: 24. Dezember 2026");
+    saveDocumentCorrections.mockImplementation(async (_id, _baseline, draft) => { loadDocumentReview.mockResolvedValue(draft); });
+    await act(async () => button("Änderungen speichern").props.onPress());
+    const [, , draft] = saveDocumentCorrections.mock.calls[0];
+    expect(draft.dates[0]).toMatchObject({ id: "date-1", date: "2026-12-24" });
+  });
+
   it("cancels all local metadata changes without saving", async () => {
     await openEditor();
     change("Name des Dokuments", "Nicht speichern");
     change("Betrag 1", "99");
-    change("Person 1", "Andere Person");
+    pickPerson("Person 1", "Leon");
     await act(async () => button("Abbrechen").props.onPress());
     expect(saveDocumentCorrections).not.toHaveBeenCalled();
     expect(field("Name des Dokuments")).toBeUndefined();
@@ -125,7 +172,7 @@ describe("confirmed document corrections", () => {
     expect(titles).not.toContain("Nicht speichern");
     await act(async () => tree.root.findAllByProps({ accessibilityLabel: "Angaben ändern" })[0].props.onPress());
     expect(field("Betrag 1").props.value).toBe("8");
-    expect(field("Person 1").props.value).toBe("Emma");
+    expect(control("Person 1").props.accessibilityLabel).toBe("Person 1: Emma");
   });
 
   it("retains the entire draft after a conflict until the user explicitly reloads", async () => {

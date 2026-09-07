@@ -10,10 +10,10 @@ import {
 } from "expo-audio";
 import {
   ChevronDown,
-  ChevronRight,
   History,
   MessageCircle,
   Plus,
+  Sparkles,
   Trash2,
 } from "lucide-react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -975,6 +975,9 @@ export default function SucheScreen() {
                       antwortet mit Quelle.
                     </Text>
                   </View>
+                  {/* Asking leads: the prompts wear the harbor tint of an
+                      action and a spark, so they cannot be mistaken for the
+                      chevroned history rows sitting quietly below them. */}
                   <View style={styles.suggestions}>
                     {suggestions.map(({ label, prompt }) => (
                       <Pressable
@@ -992,13 +995,14 @@ export default function SucheScreen() {
                           pressed && styles.pressed,
                         ]}
                       >
+                        <Sparkles color={colors.harborBlue} size={17} strokeWidth={1.9} />
                         <Text style={styles.suggestionText}>{label}</Text>
-                        <ChevronRight color={colors.mist} size={18} strokeWidth={2} />
                       </Pressable>
                     ))}
                   </View>
                   {conversations.length > 0 ? (
                     <View style={styles.recentBlock}>
+                      <View style={styles.recentDivider} />
                       <SectionHeader
                         action={
                           conversations.length > 3
@@ -1291,8 +1295,8 @@ const styles = StyleSheet.create({
   },
   suggestion: {
     alignItems: "center",
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
+    backgroundColor: colors.harborTint,
+    borderColor: colors.harborLine,
     borderRadius: radii.md,
     borderWidth: 1,
     flexDirection: "row",
@@ -1301,11 +1305,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: 12,
   },
-  suggestionText: { color: colors.graphite, flex: 1, ...typography.body },
+  suggestionText: { color: colors.harborBlueDarker, flex: 1, ...typography.title },
   recentBlock: {
     gap: spacing.sm,
     marginTop: spacing.xl,
     width: "100%",
+  },
+  recentDivider: {
+    alignSelf: "center",
+    backgroundColor: colors.mistLight,
+    height: StyleSheet.hairlineWidth,
+    marginBottom: spacing.xs,
+    width: "45%",
   },
   historySheet: {
     paddingBottom: spacing.md,
