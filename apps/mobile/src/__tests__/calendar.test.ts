@@ -361,6 +361,33 @@ describe("native calendar", () => {
     });
   });
 
+  it("says an appointment is gone rather than asking for a retry", async () => {
+    // The RPC raises not_found when somebody else deleted it meanwhile.
+    mockRpc.mockResolvedValue({
+      data: null,
+      error: { message: 'unexpected raise: not_found' },
+    });
+    const gone =
+      "Diesen Termin gibt es nicht mehr — jemand aus deiner Familie hat ihn inzwischen gelöscht.";
+
+    await expect(
+      updatePlannerEvent("event-1", {
+        title: "Elternabend",
+        date: "2026-08-28",
+        allDay: true,
+        startsTime: "09:00",
+        endsTime: "10:00",
+        location: "",
+        note: "",
+        attendeeIds: [],
+      }),
+    ).resolves.toEqual({ success: false, error: gone });
+
+    await expect(
+      skipPlannerEventOccurrence({ ...event, recurrence: "weekly" }, "2026-08-17"),
+    ).resolves.toEqual({ success: false, error: gone });
+  });
+
   it("keeps a failed skip or restore from claiming success", async () => {
     const series: PlannerEvent = { ...event, recurrence: "weekly" };
     mockRpc.mockResolvedValue({ data: null, error: { message: "nope" } });

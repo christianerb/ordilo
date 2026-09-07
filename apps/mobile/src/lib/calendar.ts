@@ -453,6 +453,18 @@ export async function createPlannerEvent(
 }
 
 /**
+ * The RPCs in 0080 raise `not_found` when the appointment is already gone
+ * — somebody else deleted it while this screen was open. Retrying cannot
+ * help, so the copy says what actually happened instead of asking for it.
+ */
+const EVENT_GONE =
+  "Diesen Termin gibt es nicht mehr — jemand aus deiner Familie hat ihn inzwischen gelöscht.";
+
+function isEventGone(error: { message?: string } | null): boolean {
+  return Boolean(error?.message?.includes("not_found"));
+}
+
+/**
  * Update an existing appointment and replace its attendee list. One RPC,
  * one transaction (0080) — a half-applied edit would show the family an
  * event whose people no longer match what they just confirmed.
@@ -483,7 +495,9 @@ export async function updatePlannerEvent(
   if (error || !data) {
     return {
       success: false,
-      error: "Die Änderung konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+      error: isEventGone(error)
+        ? EVENT_GONE
+        : "Die Änderung konnte nicht gespeichert werden. Bitte versuch es nochmal.",
     };
   }
 
@@ -524,7 +538,12 @@ export async function skipPlannerEventOccurrence(
     { p_date: date, p_event_id: event.id },
   );
   if (error || !data) {
-    return { success: false, error: "Der Tag konnte nicht entfernt werden." };
+    return {
+      success: false,
+      error: isEventGone(error)
+        ? EVENT_GONE
+        : "Der Tag konnte nicht entfernt werden.",
+    };
   }
   return {
     success: true,
