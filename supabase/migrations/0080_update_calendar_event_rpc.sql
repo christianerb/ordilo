@@ -1,0 +1,97 @@
+-- Update a planner event and replace its attendee list in one transaction.
+--
+-- The native app can now edit an appointment, not only create one. Doing
+-- that with two client calls (update the row, then replace the attendees)
+-- can leave an event whose people no longer match what the family saw, so
+-- the write goes through one transactional RPC — the mirror image of
+-- create_calendar_event_with_attendees (0070).
+
+create or replace function public.update_calendar_event_with_attendees(
+  p_event_id uuid,
+  p_title text,
+  p_note text,
+  p_date date,
+  p_all_day boolean,
+  p_starts_time time,
+  p_ends_time time,
+  p_location text,
+  p_attendee_ids uuid[] default '{}'
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public
+as $$
+declare
+  v_family_id uuid;
+  v_event public.calendar_events%rowtype;
+  v_attendee_id uuid;
+  v_duration integer;
+begin
+  select family_id, (ends_on - starts_on)
+    into v_family_id, v_duration
+  from public.calendar_events
+  where id = p_event_id;
+
+  if v_family_id is null or not public.user_belongs_to_family(v_family_id) then
+    raise exception 'not_authorized';
+  end if;
+
+  if not p_all_day and (
+    p_starts_time is null
+    or p_ends_time is null
+    or p_ends_time <= p_starts_time
+  ) then
+    raise exception 'invalid_time_range';
+  end if;
+
+  if exists (
+    select 1
+    from unnest(coalesce(p_attendee_ids, '{}'::uuid[]))
+      as attendee(attendee_id)
+    where not exists (
+      select 1
+      from public.family_members
+      where family_members.id = attendee.attendee_id
+        and family_members.family_id = v_family_id
+    )
+  ) then
+    raise exception 'invalid_attendee';
+  end if;
+
+  update public.calendar_events
+  set
+    title = p_title,
+    note = nullif(p_note, ''),
+    starts_on = p_date,
+    -- A multi-day event keeps the span it had; moving it moves both ends.
+    ends_on = p_date + coalesce(v_duration, 0),
+    all_day = p_all_day,
+    starts_time = case when p_all_day then null else p_starts_time end,
+    ends_time = case when p_all_day then null else p_ends_time end,
+    location = nullif(p_location, '')
+  where id = p_event_id
+  returning * into v_event;
+
+  delete from public.calendar_event_attendees
+  where event_id = p_event_id
+    and family_member_id <> all (coalesce(p_attendee_ids, '{}'::uuid[]));
+
+  foreach v_attendee_id in array coalesce(p_attendee_ids, '{}'::uuid[])
+  loop
+    insert into public.calendar_event_attendees (event_id, family_member_id)
+    values (p_event_id, v_attendee_id)
+    on conflict (event_id, family_member_id) do nothing;
+  end loop;
+
+  return to_jsonb(v_event);
+end;
+$$;
+
+revoke all on function public.update_calendar_event_with_attendees(
+  uuid, text, text, date, boolean, time, time, text, uuid[]
+) from public;
+
+grant execute on function public.update_calendar_event_with_attendees(
+  uuid, text, text, date, boolean, time, time, text, uuid[]
+) to authenticated;

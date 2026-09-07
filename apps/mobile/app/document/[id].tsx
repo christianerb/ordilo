@@ -3,6 +3,9 @@ import { OfflineDocumentButton } from "@/src/components/offline-document-button"
 import { useSession } from "@/src/lib/session";
 import { ApiError } from "@/src/lib/api";
 import { loadCorrectionBaseline, saveDocumentCorrections, type CorrectionBaseline } from "@/src/lib/document-corrections";
+import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+
 import { confirmedDocumentOutcomes } from "@/src/lib/document-review";
 import { enablePushNotifications, isPushRegistered } from "@/src/lib/notifications";
 import { loadPersistedScanQueue } from "@/src/lib/scan";
@@ -146,7 +149,7 @@ export default function DocumentReviewScreen() {
   const [reminderError, setReminderError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<ConfirmDocumentResult | null>(null);
   const menuRef = useRef<OrdiloSheetHandle>(null);
-  const pendingMenuRef = useRef<"original" | "edit" | "delete" | null>(null);
+  const pendingMenuRef = useRef<"original" | "delete" | null>(null);
   const viewedResult = useRef<string | null>(null);
 
   useEffect(() => {
@@ -383,7 +386,11 @@ export default function DocumentReviewScreen() {
     }
   };
 
-  const chooseMenu = (choice: "original" | "edit" | "delete") => {
+  /**
+   * The sheet must be fully gone before the next layer opens, so the
+   * choice is remembered and acted on in onDismiss.
+   */
+  const chooseMenu = (choice: "original" | "delete") => {
     pendingMenuRef.current = choice;
     menuRef.current?.dismiss();
   };
@@ -391,7 +398,6 @@ export default function DocumentReviewScreen() {
     const choice = pendingMenuRef.current;
     pendingMenuRef.current = null;
     if (choice === "original") void viewOriginal();
-    if (choice === "edit") void beginEditing();
     if (choice === "delete") requestDelete();
   };
 
@@ -567,6 +573,12 @@ export default function DocumentReviewScreen() {
   const summaryLong = document.summary.length > 180;
 
   return (
+    // Reached straight from the scan flow this screen sits inside a native
+    // modal presentation, so the root BottomSheetModalProvider's portal
+    // renders underneath it and the "…" menu never appeared. Same fix as
+    // suche.tsx: give the sheet a host inside this screen.
+    <GestureHandlerRootView style={styles.flex}>
+      <BottomSheetModalProvider>
     <Screen style={styles.screen}>
       <DetailTopBar
         onBack={() => editing ? cancelEditing() : router.back()}
@@ -617,20 +629,6 @@ export default function DocumentReviewScreen() {
                 </View>
               ) : null}
               <Text style={styles.heroTitle}>{document.title}</Text>
-              {isReadOnly ? (
-                <Pressable
-                  accessibilityLabel="Angaben ändern"
-                  accessibilityRole="button"
-                  onPress={() => void beginEditing()}
-                  style={({ pressed }) => [
-                    styles.titleEditLink,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Pencil color={colors.harborBlue} size={15} strokeWidth={2} />
-                  <Text style={styles.titleEditLinkText}>{loadingEditor ? "Wird geladen …" : "Angaben ändern"}</Text>
-                </Pressable>
-              ) : null}
               {document.summary ? (
                 <Pressable
                   accessibilityRole={summaryLong ? "button" : undefined}
@@ -963,10 +961,11 @@ export default function DocumentReviewScreen() {
             <>
               <View style={styles.bottomSecondary}>
                 <OrdiloButton
-                  icon={<Eye color={colors.graphite} size={17} strokeWidth={2} />}
-                  onPress={() => void viewOriginal()}
+                  disabled={loadingEditor}
+                  icon={<Pencil color={colors.graphite} size={17} strokeWidth={2} />}
+                  onPress={() => void beginEditing()}
                   size="lg"
-                  title="Original"
+                  title={loadingEditor ? "Wird geladen …" : "Angaben ändern"}
                   variant="outline"
                 />
               </View>
@@ -1002,18 +1001,10 @@ export default function DocumentReviewScreen() {
             tint: "blue",
           },
           {
-            accessibilityLabel: "Angaben ändern",
-            description: editable
-              ? "Namen, Termine, Beträge korrigieren"
-              : "Fristen, Personen, Beträge und Nummern korrigieren",
-            icon: Pencil,
-            label: "Angaben ändern",
-            onPress: () => chooseMenu("edit"),
-            tint: "sage",
-          },
-          {
             accessibilityLabel: "Dokument löschen",
-            description: "Aus der Ablage entfernen",
+            description: editable
+              ? "Wieder wegräumen, ohne es zu behalten"
+              : "Aus eurer Ablage entfernen",
             icon: Trash2,
             label: "Löschen",
             onPress: () => chooseMenu("delete"),
@@ -1030,6 +1021,8 @@ export default function DocumentReviewScreen() {
 
       <OriginalImagePreview imageUrl={imageUrl} onClose={() => setImageUrl(null)} />
     </Screen>
+      </BottomSheetModalProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1601,6 +1594,7 @@ function addTag(
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   screen: { paddingHorizontal: 0 },
   confirmedScreen: { justifyContent: "space-between", paddingHorizontal: spacing.md },
   confirmedContent: {
@@ -1665,17 +1659,6 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   heroTitle: { color: colors.graphite, ...typography.heading },
-  titleEditLink: {
-    alignItems: "center",
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 44,
-  },
-  titleEditLinkText: {
-    color: colors.harborBlue,
-    ...typography.label,
-  },
   heroSummary: { color: colors.graphite, ...typography.body },
   heroMore: { color: colors.harborBlue, marginTop: spacing.xs, ...typography.caption },
   peopleRow: {

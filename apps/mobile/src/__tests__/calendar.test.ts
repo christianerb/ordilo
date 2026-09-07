@@ -37,6 +37,7 @@ const event: PlannerEvent = {
   recurrence_exceptions: [],
   location: null,
   responsible_member_id: "member-2",
+  document_id: null,
   attendee_ids: ["member-1"],
 };
 

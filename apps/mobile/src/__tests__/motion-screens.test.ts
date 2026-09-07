@@ -377,10 +377,10 @@ describe("native motion wiring", () => {
     expect(taskForm).not.toContain("styles.saveButton");
   });
 
-  it("groups the mobile task overview into warm journal sections", () => {
+  it("groups the mobile plan into warm journal sections", () => {
     const plan = source("app/(tabs)/plan.tsx");
     expect(plan).toContain("styles.taskSection");
-    expect(plan).toContain("Alle {sectionTasks.length} anzeigen");
+    expect(plan).toContain("Alle {sectionEntries.length} anzeigen");
     expect(plan).toContain("styles.taskSectionIcon");
     expect(plan).toContain("<SwipeableTaskRow");
   });

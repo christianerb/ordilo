@@ -39,8 +39,13 @@ import ReanimatedSwipeable, {
 } from "react-native-gesture-handler/ReanimatedSwipeable";
 import Animated, { useReducedMotion } from "react-native-reanimated";
 
+import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
 import { EventFormSheet } from "@/src/components/event-form-sheet";
+import {
+  PlanDetailSheet,
+  type PlanDetailAction,
+} from "@/src/components/plan-detail-sheet";
 import { AvatarStack, EmptyPersonSeat, PersonAvatar, PersonChip } from "@/src/components/person";
 import { TaskCheck } from "@/src/components/task-check";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
@@ -60,32 +65,42 @@ import { memberToPerson } from "@/src/lib/people";
 import {
   calendarDays,
   createPlannerEvent,
-  eventsForDay,
+  deletePlannerEvent,
   fetchPlannerEvents,
-  formatEventPeople,
   formatEventWhen,
+  formatGermanDate,
   monthStart,
+  restorePlannerEventOccurrence,
   shiftMonth,
+  skipPlannerEventOccurrence,
   toCalendarDate,
-  upcomingPlannerEvents,
+  updatePlannerEvent,
   type PlannerEventInput,
   type PlannerEvent,
 } from "@/src/lib/calendar";
+import {
+  formatPlanDayMark,
+  formatPlanEntryPeople,
+  formatPlanEntryWhen,
+  groupPlanEntries,
+  isPlanEntryOverdue,
+  planDayMark,
+  planEntriesForDay,
+  planEntryCounts,
+  planEntryKey,
+  planEntryMemberIds,
+  type PlanEntry,
+} from "@/src/lib/plan-entries";
 import { useFamily } from "@/src/lib/family-context";
 import { fail, select, success } from "@/src/lib/feedback";
 import {
   createTask,
   fetchFamilyMembers,
   fetchPlannerTasks,
-  formatOverdueLabel,
   formatPlanHeaderSubtitle,
   formatTaskDayHint,
-  formatTaskDueLabel,
-  getTaskSection,
   patchTask,
   resolveSchedulePreset,
-  sortTasksByCompletion,
-  sortTasksByDate,
   TASK_SCHEDULE_PRESET_LABELS,
   TASK_SCHEDULE_PRESETS,
   TASK_SECTIONS,
@@ -104,6 +119,20 @@ import {
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
 const UNDO_BANNER_MS = 6000;
+
+/**
+ * The two lenses on one plan: "Liste" groups by urgency, "Kalender"
+ * groups by day. Both show the same entries — Aufgaben und Termine —
+ * so neither view can hide a whole class of thing from the other.
+ */
+type PlanViewId = "list" | "calendar";
+
+/** Deep links keep working: ?tab=tasks is the old name for the list. */
+function parsePlanTab(value: string | undefined): PlanViewId | null {
+  if (value === "calendar") return "calendar";
+  if (value === "list" || value === "tasks") return "list";
+  return null;
+}
 
 /**
  * An undo write can itself fail (connectivity inside the banner window).
@@ -135,7 +164,13 @@ interface UndoState {
  */
 export default function PlanScreen() {
   const router = useRouter();
-  const { tab } = useLocalSearchParams<{ tab?: string }>();
+  const { tab, task, event } = useLocalSearchParams<{
+    tab?: string;
+    /** Deep link: open this task's detail sheet (used by chat actions). */
+    task?: string;
+    /** Deep link: open this appointment's detail sheet. */
+    event?: string;
+  }>();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
   const { session } = useSession();
@@ -158,14 +193,31 @@ export default function PlanScreen() {
   const [editingTask, setEditingTask] = useState<PlannerTask | null>(null);
   const [rescheduleTask, setRescheduleTask] = useState<PlannerTask | null>(null);
   const [undo, setUndo] = useState<UndoState | null>(null);
-  const [view, setView] = useState<"tasks" | "calendar">("tasks");
+  const [view, setView] = useState<PlanViewId>("list");
   const [personFilter, setPersonFilter] = useState<string | null>(null);
+  const [detailEntry, setDetailEntry] = useState<PlanEntry | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<PlannerEvent | null>(null);
+  const [eventDelete, setEventDelete] = useState<
+    { event: PlannerEvent; date: string; scope: "single" | "series" } | null
+  >(null);
+  const [eventDeleting, setEventDeleting] = useState(false);
+  const [eventDeleteError, setEventDeleteError] = useState<string | null>(null);
+  /** Runs once the detail sheet has finished closing (see PlanDetailAction). */
+  const pendingDetailRef = useRef<(() => void) | null>(null);
+  /** A deep link ("?event=…") waiting for its row to arrive from the server. */
+  const focusRef = useRef<{ kind: "task" | "event"; id: string } | null>(null);
   useFocusEffect(useCallback(() => {
-    if (tab !== "calendar" && tab !== "tasks") return;
-    setView(tab);
+    const requested = parsePlanTab(tab);
+    const focusTask = typeof task === "string" ? task : null;
+    const focusEvent = typeof event === "string" ? event : null;
+    if (!requested && !focusTask && !focusEvent) return;
+    setView(requested ?? (focusEvent ? "calendar" : "list"));
     setPersonFilter(null);
-    router.setParams({ tab: undefined });
-  }, [router, tab]));
+    if (focusTask) focusRef.current = { kind: "task", id: focusTask };
+    if (focusEvent) focusRef.current = { kind: "event", id: focusEvent };
+    router.setParams({ tab: undefined, task: undefined, event: undefined });
+  }, [event, router, tab, task]));
   const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
@@ -268,34 +320,29 @@ export default function PlanScreen() {
           ),
     [events, personFilter],
   );
-  const visibleEvents = useMemo(
-    () => upcomingPlannerEvents(personEvents, todayStr),
-    [personEvents, todayStr],
-  );
-  const selectedEvents = useMemo(
-    () => eventsForDay(personEvents, selectedDate),
-    [personEvents, selectedDate],
-  );
   const filterPerson = useMemo(
     () => members.find((member) => member.id === personFilter) ?? null,
     [members, personFilter],
   );
 
-  const grouped = useMemo(() => {
-    const bySection: Record<TaskSectionId, PlannerTask[]> = {
-      now: [],
-      next: [],
-      undated: [],
-      done: [],
-    };
-    for (const task of visibleTasks) {
-      bySection[getTaskSection(task, todayStr)].push(task);
-    }
-    bySection.now = sortTasksByDate(bySection.now);
-    bySection.next = sortTasksByDate(bySection.next);
-    bySection.done = sortTasksByCompletion(bySection.done);
-    return bySection;
-  }, [todayStr, visibleTasks]);
+  /** Tasks and appointments in one grouped list — the Liste view. */
+  const grouped = useMemo(
+    () => groupPlanEntries(visibleTasks, personEvents, todayStr),
+    [personEvents, todayStr, visibleTasks],
+  );
+  /** The selected day in the Kalender view: its appointments and its tasks. */
+  const dayEntries = useMemo(
+    () => planEntriesForDay(visibleTasks, personEvents, selectedDate),
+    [personEvents, selectedDate, visibleTasks],
+  );
+  const entryCount = useMemo(
+    () =>
+      TASK_SECTIONS.reduce(
+        (total, section) => total + grouped[section.id].length,
+        0,
+      ),
+    [grouped],
+  );
 
   const replaceTask = useCallback((updated: PlannerTask) => {
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -487,6 +534,10 @@ export default function PlanScreen() {
     if (type === "event") setEventFormOpen(true);
   }, [openTaskCreate]);
 
+  /**
+   * One submit path for both directions: an appointment being changed
+   * goes through the transactional update RPC, a new one through create.
+   */
   const submitEvent = useCallback(
     async (values: PlannerEventInput) => {
       if (!family) {
@@ -495,16 +546,29 @@ export default function PlanScreen() {
           error: "Deine Familie konnte nicht geladen werden.",
         };
       }
+      const target = new Date(`${values.date}T12:00:00`);
+      if (editingEvent) {
+        const result = await updatePlannerEvent(editingEvent.id, values);
+        if (!result.success) return result;
+        const saved = result.event;
+        setEvents((current) =>
+          current.map((item) => (item.id === saved.id ? saved : item)),
+        );
+        setSelectedDate(target);
+        setActiveMonth(monthStart(target));
+        void success();
+        return { success: true };
+      }
       const result = await createPlannerEvent(family.id, values);
       if (!result.success) return result;
       setEvents((current) => [...current, result.event]);
-      setSelectedDate(new Date(`${values.date}T12:00:00`));
-      setActiveMonth(monthStart(new Date(`${values.date}T12:00:00`)));
+      setSelectedDate(target);
+      setActiveMonth(monthStart(target));
       setView("calendar");
       void success();
       return { success: true };
     },
-    [family],
+    [editingEvent, family],
   );
 
   const openEdit = useCallback((task: PlannerTask) => {
@@ -512,14 +576,182 @@ export default function PlanScreen() {
     setFormOpen(true);
   }, []);
 
+  // ---------------------------------------------------------------------
+  // Detail sheet — the one place a task or an appointment opens into
+  // ---------------------------------------------------------------------
+
+  const openDetail = useCallback((entry: PlanEntry) => {
+    select();
+    setDetailEntry(entry);
+    setDetailOpen(true);
+  }, []);
+
+  /**
+   * Every follow-up (a form, a picker, a confirmation) is its own modal
+   * layer, and two of those on screen at once fight on iOS. So the detail
+   * sheet closes first and the queued step runs once it is gone.
+   */
+  const runAfterDetail = useCallback((step: () => void) => {
+    pendingDetailRef.current = step;
+    setDetailOpen(false);
+  }, []);
+
+  const finishDetail = useCallback(() => {
+    const step = pendingDetailRef.current;
+    pendingDetailRef.current = null;
+    setDetailEntry(null);
+    step?.();
+  }, []);
+
+  const deleteEvent = useCallback(async () => {
+    if (!eventDelete) return;
+    setEventDeleting(true);
+    setEventDeleteError(null);
+    const { event: target, date, scope } = eventDelete;
+    try {
+      if (scope === "single") {
+        const result = await skipPlannerEventOccurrence(target, date);
+        if (!result.success) {
+          setEventDeleteError(result.error);
+          return;
+        }
+        const saved = result.event;
+        setEvents((current) =>
+          current.map((item) => (item.id === saved.id ? saved : item)),
+        );
+        void success();
+        setEventDelete(null);
+        showUndo("Tag aus der Serie gestrichen", async () => {
+          setEvents((current) =>
+            current.map((item) => (item.id === target.id ? target : item)),
+          );
+          const undone = await restorePlannerEventOccurrence(target, date);
+          if (!undone) {
+            setEvents((current) =>
+              current.map((item) => (item.id === saved.id ? saved : item)),
+            );
+            notifyUndoFailed();
+          }
+        });
+        return;
+      }
+      const result = await deletePlannerEvent(target.id);
+      if (!result.success) {
+        setEventDeleteError(result.error);
+        return;
+      }
+      setEvents((current) => current.filter((item) => item.id !== target.id));
+      void success();
+      setEventDelete(null);
+    } catch {
+      setEventDeleteError(FRIENDLY_ERROR);
+    } finally {
+      setEventDeleting(false);
+    }
+  }, [eventDelete, showUndo]);
+
+  const handleDetailAction = useCallback(
+    (action: PlanDetailAction) => {
+      const entry = detailEntry;
+      if (!entry) return;
+      switch (action.type) {
+        case "toggle-done":
+          if (entry.kind !== "task") return;
+          runAfterDetail(() => void toggleDone(entry.task));
+          return;
+        case "reschedule":
+          if (entry.kind !== "task") return;
+          runAfterDetail(() => setRescheduleTask(entry.task));
+          return;
+        case "assign":
+          if (entry.kind !== "task") return;
+          runAfterDetail(() => setAssignTask(entry.task));
+          return;
+        case "dismiss":
+          if (entry.kind !== "task") return;
+          runAfterDetail(() => void dismiss(entry.task));
+          return;
+        case "edit":
+          runAfterDetail(() => {
+            if (entry.kind === "task") {
+              openEdit(entry.task);
+              return;
+            }
+            setEditingEvent(entry.event);
+            setEventFormOpen(true);
+          });
+          return;
+        case "skip-occurrence":
+          if (entry.kind !== "event") return;
+          runAfterDetail(() => {
+            setEventDeleteError(null);
+            setEventDelete({
+              event: entry.event,
+              date: entry.date,
+              scope: "single",
+            });
+          });
+          return;
+        case "delete":
+          if (entry.kind !== "event") return;
+          runAfterDetail(() => {
+            setEventDeleteError(null);
+            setEventDelete({
+              event: entry.event,
+              date: entry.date,
+              scope: "series",
+            });
+          });
+          return;
+        case "open-document":
+          runAfterDetail(() =>
+            router.push(`/document/${action.documentId}`),
+          );
+          return;
+      }
+    },
+    [detailEntry, dismiss, openEdit, router, runAfterDetail, toggleDone],
+  );
+
+  /**
+   * A deep link ("Termin öffnen" from a chat action) can land before the
+   * row it points at has loaded. The request waits here until its entry
+   * shows up, then opens the same detail sheet a tap would.
+   */
+  useEffect(() => {
+    const request = focusRef.current;
+    if (!request) return;
+    if (request.kind === "task") {
+      const match = tasks.find((item) => item.id === request.id);
+      if (!match) return;
+      focusRef.current = null;
+      openDetail({
+        kind: "task",
+        id: match.id,
+        date: match.due_date,
+        task: match,
+      });
+      return;
+    }
+    const match = events.find((item) => item.id === request.id);
+    if (!match) return;
+    focusRef.current = null;
+    const occursOn = new Date(`${match.starts_on}T12:00:00`);
+    setSelectedDate(occursOn);
+    setActiveMonth(monthStart(occursOn));
+    openDetail({
+      kind: "event",
+      id: match.id,
+      date: match.starts_on,
+      event: match,
+    });
+  }, [events, openDetail, tasks]);
+
   const headerSubtitle =
     loading && tasks.length === 0
       ? "Wird geladen …"
       : formatPlanHeaderSubtitle({
-          now: grouped.now.length,
-          next: grouped.next.length,
-          undated: grouped.undated.length,
-          events: visibleEvents.length,
+          ...planEntryCounts(grouped),
           filterName: filterPerson?.name ?? null,
         });
 
@@ -583,18 +815,18 @@ export default function PlanScreen() {
 
   const tabItems = [
     {
-      icon: Check,
-      label: "Aufgaben",
+      icon: List,
+      label: "Liste",
       onPress: () => {
-        if (view === "tasks") return;
+        if (view === "list") return;
         select();
-        setView("tasks");
+        setView("list");
       },
-      selected: view === "tasks",
+      selected: view === "list",
     },
     {
       icon: CalendarDays,
-      label: "Termine",
+      label: "Kalender",
       onPress: () => {
         if (view === "calendar") return;
         select();
@@ -609,8 +841,8 @@ export default function PlanScreen() {
       {view === "calendar" ? (
         <CalendarView
           activeMonth={activeMonth}
-          allEvents={events}
-          events={selectedEvents}
+          entries={dayEntries}
+          events={personEvents}
           header={
             <>
               <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
@@ -619,9 +851,15 @@ export default function PlanScreen() {
             </>
           }
           members={members}
+          onAssign={setAssignTask}
           onChangeMonth={setActiveMonth}
+          onCreate={family ? openCreateMenu : undefined}
+          onOpenEntry={openDetail}
           onSelectDate={setSelectedDate}
+          onToggleTask={(item) => void toggleDone(item)}
           selectedDate={selectedDate}
+          tasks={visibleTasks}
+          todayStr={todayStr}
         />
       ) : (
         <ScrollView
@@ -639,7 +877,7 @@ export default function PlanScreen() {
           <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
           <SegmentedControl items={tabItems} style={styles.viewTabs} />
           {personFilterRow}
-          {visibleTasks.length === 0 && visibleEvents.length === 0 ? (
+          {entryCount === 0 ? (
             filterPerson ? (
               <EmptyState
                 description={`Für ${filterPerson.name} ist gerade nichts offen. Neue Aufgaben kannst du direkt zuteilen.`}
@@ -650,17 +888,17 @@ export default function PlanScreen() {
               </EmptyState>
             ) : (
               <EmptyState
-                description="Lege die erste Aufgabe an. Fristen aus euren Dokumenten landen hier von selbst."
+                description="Leg die erste Aufgabe oder den ersten Termin an. Fristen aus euren Dokumenten landen hier von selbst."
                 heading="Noch nichts geplant"
                 icon={CalendarDays}
               >
-                <OrdiloButton onPress={openTaskCreate} size="lg" title="Neue Aufgabe" />
+                <OrdiloButton onPress={openCreateMenu} size="lg" title="Etwas anlegen" />
               </EmptyState>
             )
           ) : null}
           {TASK_SECTIONS.map((section) => {
-            const sectionTasks = grouped[section.id];
-            if (sectionTasks.length === 0) return null;
+            const sectionEntries = grouped[section.id];
+            if (sectionEntries.length === 0) return null;
             const isExpanded = expanded[section.id] ?? false;
             const isOpen = section.collapsible
               ? (sectionOpen[section.id] ?? false)
@@ -668,9 +906,9 @@ export default function PlanScreen() {
             const shown = !isOpen
               ? []
               : section.id === "done" || isExpanded
-                ? sectionTasks
-                : sectionTasks.slice(0, section.peek ?? sectionTasks.length);
-            const hiddenCount = sectionTasks.length - shown.length;
+                ? sectionEntries
+                : sectionEntries.slice(0, section.peek ?? sectionEntries.length);
+            const hiddenCount = sectionEntries.length - shown.length;
             const SectionIcon =
               section.id === "now"
                 ? Clock3
@@ -718,7 +956,7 @@ export default function PlanScreen() {
                     />
                   </View>
                   <Text style={styles.sectionTitle}>{section.label}</Text>
-                  <Text style={styles.sectionCount}>{sectionTasks.length}</Text>
+                  <Text style={styles.sectionCount}>{sectionEntries.length}</Text>
                   <View style={styles.sectionHeaderSpacer} />
                   {section.collapsible ? (
                     isOpen ? (
@@ -730,19 +968,27 @@ export default function PlanScreen() {
                 </Pressable>
                 {shown.length > 0 ? (
                   <View style={styles.taskSectionBody}>
-                    {shown.map((task) => (
-                      <SwipeableTaskRow
-                        key={task.id}
-                        handoff={<View>
-                          {task.status === "open" && task.assigned_to ? <Text style={[typography.timestamp, { color: colors.mistDark, paddingHorizontal: spacing.md, paddingBottom: spacing.sm }]}>{taskHandoffLabel(task.assigned_to, accepted.find((entry) => entry.task_id === task.id)?.member_id, members.find((member) => member.id === task.assigned_to)?.name)}</Text> : null}
-                          {task.status === "open" && task.assigned_to && ownMemberIds.includes(task.assigned_to) && !accepted.some((entry) => entry.task_id === task.id && entry.member_id === task.assigned_to) ? <OrdiloButton title={acceptBusy === task.id ? "Wird übernommen …" : "Ich übernehme das"} variant="outline" disabled={acceptBusy !== null} onPress={() => void acceptHandoff(task)} /> : null}
-                        </View>}
+                    {shown.map((entry) => (
+                      <PlanRow
+                        entry={entry}
+                        handoff={
+                          entry.kind === "task" ? (
+                            <TaskHandoff
+                              acceptBusy={acceptBusy}
+                              accepted={accepted}
+                              members={members}
+                              onAccept={() => void acceptHandoff(entry.task)}
+                              ownMemberIds={ownMemberIds}
+                              task={entry.task}
+                            />
+                          ) : null
+                        }
+                        key={planEntryKey(entry)}
                         members={members}
-                        onAssign={() => setAssignTask(task)}
-                        onPress={() => openEdit(task)}
-                        onReschedule={() => setRescheduleTask(task)}
-                        onToggle={() => void toggleDone(task)}
-                        task={task}
+                        onAssign={setAssignTask}
+                        onOpen={openDetail}
+                        onReschedule={setRescheduleTask}
+                        onToggle={(item) => void toggleDone(item)}
                         todayStr={todayStr}
                       />
                     ))}
@@ -762,30 +1008,13 @@ export default function PlanScreen() {
                       strokeWidth={1.9}
                     />
                     <Text style={styles.moreLabel}>
-                      Alle {sectionTasks.length} anzeigen
+                      Alle {sectionEntries.length} anzeigen
                     </Text>
                   </Pressable>
                 ) : null}
               </View>
             );
           })}
-          {visibleEvents.length > 0 ? (
-            <View style={styles.section}>
-              <View accessibilityRole="header" style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Termine</Text>
-                <Text style={styles.sectionCount}>{visibleEvents.length}</Text>
-              </View>
-              <View style={styles.sectionBody}>
-                {visibleEvents.map((event) => (
-                  <PlannerEventRow
-                    event={event}
-                    key={event.id}
-                    members={members}
-                  />
-                ))}
-              </View>
-            </View>
-          ) : null}
           <View style={styles.listBottomSpacer} />
         </ScrollView>
       )}
@@ -806,10 +1035,52 @@ export default function PlanScreen() {
         defaultDate={toCalendarDate(
           view === "calendar" ? selectedDate : new Date(),
         )}
+        event={editingEvent}
+        key={editingEvent ? `event-${editingEvent.id}` : "event-new"}
         members={members}
-        onClose={() => setEventFormOpen(false)}
+        onClose={() => {
+          setEventFormOpen(false);
+          setEditingEvent(null);
+        }}
         onSubmit={submitEvent}
         visible={eventFormOpen}
+      />
+
+      <PlanDetailSheet
+        entry={detailEntry}
+        members={members}
+        onAction={handleDetailAction}
+        onClose={() => setDetailOpen(false)}
+        onDismissed={finishDetail}
+        todayStr={todayStr}
+        visible={detailOpen}
+      />
+
+      <ConfirmDialog
+        confirmLabel={
+          eventDelete?.scope === "single" ? "Tag streichen" : "Löschen"
+        }
+        error={eventDeleteError}
+        loading={eventDeleting}
+        loadingLabel="Wird entfernt …"
+        message={
+          eventDelete
+            ? eventDelete.scope === "single"
+              ? `„${eventDelete.event.title}“ fällt am ${formatGermanDate(eventDelete.date)} aus. Alle anderen Termine der Serie bleiben.`
+              : `„${eventDelete.event.title}“ wird für die ganze Familie entfernt.${eventDelete.event.recurrence !== "none" ? " Das gilt für alle Termine der Serie." : ""}`
+            : ""
+        }
+        onCancel={() => {
+          setEventDelete(null);
+          setEventDeleteError(null);
+        }}
+        onConfirm={() => void deleteEvent()}
+        title={
+          eventDelete?.scope === "single"
+            ? "Diesen Tag streichen?"
+            : "Termin löschen?"
+        }
+        visible={eventDelete !== null}
       />
 
       <CreateChoiceSheet
@@ -927,32 +1198,46 @@ function PlanHeader({ onCreate, subtitle }: { onCreate: () => void; subtitle: st
   );
 }
 
-/** One tab of the Aufgaben/Termine switcher — icon plus label, the active one filled in harbor blue. */
 /**
- * Month calendar with day selection: the grid marks days that carry
- * events (apricot dot), and below it the selected day's events read as
- * a simple list. Paging months moves the selection along so the list
- * always answers the visible month.
+ * Month calendar with day selection.
+ *
+ * The grid marks what a day carries — apricot for appointments, harbor
+ * blue for tasks — and the list below shows both for the selected day.
+ * That symmetry is the point: the Liste view groups the same entries by
+ * urgency, so neither view hides a kind of thing the other one shows.
  */
 function CalendarView({
   activeMonth,
-  allEvents,
+  entries,
   events,
   header,
   members,
+  onAssign,
   onChangeMonth,
+  onCreate,
+  onOpenEntry,
   onSelectDate,
+  onToggleTask,
   selectedDate,
+  tasks,
+  todayStr,
 }: {
   activeMonth: Date;
-  allEvents: PlannerEvent[];
+  /** The selected day's appointments and tasks, already in order. */
+  entries: PlanEntry[];
   events: PlannerEvent[];
   /** Screen header and view tabs, scrolled away with the content. */
   header?: ReactNode;
   members: FamilyMemberOption[];
+  onAssign: (task: PlannerTask) => void;
   onChangeMonth: (date: Date) => void;
+  onCreate?: () => void;
+  onOpenEntry: (entry: PlanEntry) => void;
   onSelectDate: (date: Date) => void;
+  onToggleTask: (task: PlannerTask) => void;
   selectedDate: Date;
+  tasks: PlannerTask[];
+  todayStr: string;
 }) {
   const days = useMemo(() => calendarDays(activeMonth), [activeMonth]);
   const monthTitle = activeMonth.toLocaleDateString("de-DE", {
@@ -964,6 +1249,18 @@ function CalendarView({
     day: "numeric",
     month: "long",
   });
+  const selectedIso = toCalendarDate(selectedDate);
+  const showToday =
+    selectedIso !== todayStr ||
+    activeMonth.getMonth() !== new Date().getMonth() ||
+    activeMonth.getFullYear() !== new Date().getFullYear();
+
+  const goToToday = useCallback(() => {
+    select();
+    const now = new Date();
+    onChangeMonth(monthStart(now));
+    onSelectDate(now);
+  }, [onChangeMonth, onSelectDate]);
 
   return (
     <ScrollView
@@ -1010,15 +1307,21 @@ function CalendarView({
         <View style={styles.monthGrid}>
           {days.map((day) => {
             const inMonth = day.getMonth() === activeMonth.getMonth();
-            const selected = toCalendarDate(day) === toCalendarDate(selectedDate);
-            const hasEvents = eventsForDay(allEvents, day).length > 0;
+            const iso = toCalendarDate(day);
+            const selected = iso === selectedIso;
+            const isToday = iso === todayStr;
+            const mark = planDayMark(tasks, events, day);
+            const marked = formatPlanDayMark(mark);
             return (
               <Pressable
-                accessibilityLabel={`${day.getDate()}. ${monthTitle}`}
+                accessibilityLabel={`${day.getDate()}. ${monthTitle}${marked ? `, ${marked}` : ""}`}
                 accessibilityRole="button"
                 accessibilityState={{ selected }}
-                key={toCalendarDate(day)}
-                onPress={() => onSelectDate(day)}
+                key={iso}
+                onPress={() => {
+                  select();
+                  onSelectDate(day);
+                }}
                 style={[
                   styles.dayButton,
                   !inMonth && styles.dayButtonOutside,
@@ -1028,78 +1331,197 @@ function CalendarView({
                 <Text style={[styles.dayLabel, !inMonth && styles.dayLabelOutside, selected && styles.dayLabelSelected]}>
                   {day.getDate()}
                 </Text>
-                {hasEvents ? <View style={[styles.eventDot, selected && styles.eventDotSelected]} /> : null}
+                {isToday && !selected ? (
+                  <View style={styles.dayTodayRing} />
+                ) : null}
+                <View style={styles.dayMarks}>
+                  {mark.events > 0 ? (
+                    <View
+                      style={[styles.eventDot, selected && styles.dotOnSelected]}
+                    />
+                  ) : null}
+                  {mark.tasks > 0 ? (
+                    <View
+                      style={[styles.taskDot, selected && styles.dotOnSelected]}
+                    />
+                  ) : null}
+                </View>
               </Pressable>
             );
           })}
         </View>
+        <View style={styles.calendarLegend}>
+          <View style={styles.legendItem}>
+            <View style={styles.eventDot} />
+            <Text style={styles.legendLabel}>Termin</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <View style={styles.taskDot} />
+            <Text style={styles.legendLabel}>Aufgabe</Text>
+          </View>
+          {showToday ? (
+            <Pressable
+              accessibilityLabel="Zu heute springen"
+              accessibilityRole="button"
+              hitSlop={6}
+              onPress={goToToday}
+              style={({ pressed }) => [
+                styles.todayButton,
+                pressed && styles.todayButtonPressed,
+              ]}
+            >
+              <Text style={styles.todayButtonLabel}>Heute</Text>
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.dayEventsHeader}>
-        <Text style={styles.dayEventsTitle}>{selectedTitle}</Text>
-        <Text style={styles.dayEventsCount}>{events.length}</Text>
+        <Text style={styles.dayEventsTitle}>
+          {selectedIso === todayStr ? `Heute · ${selectedTitle}` : selectedTitle}
+        </Text>
+        <Text style={styles.dayEventsCount}>{entries.length}</Text>
       </View>
-      {events.length === 0 ? (
-        <Text style={styles.calendarEmpty}>Für diesen Tag ist noch kein Termin geplant.</Text>
+      {entries.length === 0 ? (
+        <View style={styles.calendarEmptyCard}>
+          <Text style={styles.calendarEmptyTitle}>Dieser Tag ist noch frei.</Text>
+          <Text style={styles.calendarEmpty}>
+            Trag einen Termin ein oder plan eine Aufgabe, wenn ihr soweit seid.
+          </Text>
+          {onCreate ? (
+            <OrdiloButton
+              icon={<Plus color={colors.graphite} size={17} strokeWidth={2} />}
+              onPress={onCreate}
+              title="Etwas anlegen"
+              variant="outline"
+            />
+          ) : null}
+        </View>
       ) : (
         <View style={styles.eventList}>
-          {events.map((event) => {
-            const people = formatEventPeople(event, members);
-            return (
-              <View key={event.id} style={styles.eventRow}>
-                <View style={styles.eventTime}>
-                  <Text style={styles.eventTimeLabel}>{formatEventWhen(event)}</Text>
-                </View>
-                <View style={styles.eventBody}>
-                  <Text style={styles.eventTitle}>{event.title}</Text>
-                  {event.location ? <Text style={styles.eventMeta}>{event.location}</Text> : null}
-                  {people ? <Text style={styles.eventMeta}>{people}</Text> : null}
-                </View>
-              </View>
-            );
-          })}
+          {entries.map((entry) => (
+            <PlanRow
+              entry={entry}
+              key={planEntryKey(entry)}
+              members={members}
+              onAssign={onAssign}
+              onOpen={onOpenEntry}
+              onToggle={onToggleTask}
+              showDay={false}
+              todayStr={todayStr}
+            />
+          ))}
         </View>
       )}
     </ScrollView>
   );
 }
 
-function PlannerEventRow({
-  event,
+/**
+ * One entry in the plan, whichever kind it is. A task keeps its two
+ * named gestures; an appointment has nothing to swipe, so it is a plain
+ * row — but both open the same detail sheet on tap, which is what makes
+ * the two views feel like one product instead of two lists.
+ */
+function PlanRow({
+  entry,
+  handoff,
   members,
+  onAssign,
+  onOpen,
+  onReschedule,
+  onToggle,
+  showDay = true,
+  todayStr,
 }: {
-  event: PlannerEvent;
+  entry: PlanEntry;
+  handoff?: ReactNode;
   members: FamilyMemberOption[];
+  onAssign: (task: PlannerTask) => void;
+  onOpen: (entry: PlanEntry) => void;
+  onReschedule?: (task: PlannerTask) => void;
+  onToggle: (task: PlannerTask) => void;
+  showDay?: boolean;
+  todayStr: string;
 }) {
-  const date = new Date(`${event.starts_on}T12:00:00`);
-  const dateLabel = Number.isNaN(date.getTime())
-    ? event.starts_on
-    : date.toLocaleDateString("de-DE", {
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-  const people = formatEventPeople(event, members);
+  if (entry.kind === "task") {
+    return (
+      <SwipeableTaskRow
+        handoff={handoff}
+        members={members}
+        onAssign={() => onAssign(entry.task)}
+        onPress={() => onOpen(entry)}
+        onReschedule={() => onReschedule?.(entry.task)}
+        onToggle={() => onToggle(entry.task)}
+        rescheduleEnabled={Boolean(onReschedule)}
+        showDay={showDay}
+        task={entry.task}
+        todayStr={todayStr}
+      />
+    );
+  }
+
+  return (
+    <Animated.View layout={listLayout()}>
+      <EventRow
+        entry={entry}
+        members={members}
+        onPress={() => onOpen(entry)}
+        showDay={showDay}
+        todayStr={todayStr}
+      />
+    </Animated.View>
+  );
+}
+
+/**
+ * One appointment row: the calendar tile says what kind of entry this
+ * is (where a task shows its checkbox), then title, when, and who is
+ * involved. The whole row opens the detail sheet.
+ */
+function EventRow({
+  entry,
+  members,
+  onPress,
+  showDay,
+  todayStr,
+}: {
+  entry: Extract<PlanEntry, { kind: "event" }>;
+  members: FamilyMemberOption[];
+  onPress: () => void;
+  showDay: boolean;
+  todayStr: string;
+}) {
+  const when = showDay
+    ? formatPlanEntryWhen(entry, todayStr)
+    : formatEventWhen(entry.event);
+  const people = formatPlanEntryPeople(entry, members);
+  const memberIds = planEntryMemberIds(entry);
   const faces = members
-    .filter(
-      (member) =>
-        event.attendee_ids.includes(member.id) ||
-        member.id === event.responsible_member_id,
-    )
+    .filter((member) => memberIds.includes(member.id))
     .map(memberToPerson);
 
   return (
-    <View style={styles.eventRow}>
+    <Pressable
+      accessibilityHint="Öffnet den Termin"
+      accessibilityLabel={`Termin ${entry.event.title}${when ? `, ${when}` : ""}`}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [styles.planRow, pressed && styles.planRowPressed]}
+    >
       <View style={styles.eventIcon}>
         <CalendarDays color={colors.harborBlue} size={18} strokeWidth={2} />
       </View>
       <View style={styles.taskBody}>
         <Text numberOfLines={2} style={styles.taskTitle}>
-          {event.title}
+          {entry.event.title}
         </Text>
-        <Text style={styles.taskDue}>
-          {dateLabel} · {formatEventWhen(event)}
-        </Text>
+        {entry.event.location ? (
+          <Text numberOfLines={1} style={styles.taskNote}>
+            {entry.event.location}
+          </Text>
+        ) : null}
+        {when ? <Text style={styles.taskDue}>{when}</Text> : null}
         {people ? (
           <Text numberOfLines={1} style={styles.taskNote}>
             {people}
@@ -1107,6 +1529,52 @@ function PlannerEventRow({
         ) : null}
       </View>
       {faces.length > 0 ? <AvatarStack people={faces} size={26} /> : null}
+    </Pressable>
+  );
+}
+
+/**
+ * "Christian hat übernommen" plus the one-tap handover — only shown for
+ * an open task that is assigned to somebody in this household.
+ */
+function TaskHandoff({
+  acceptBusy,
+  accepted,
+  members,
+  onAccept,
+  ownMemberIds,
+  task,
+}: {
+  acceptBusy: string | null;
+  accepted: TaskAcceptance[];
+  members: FamilyMemberOption[];
+  onAccept: () => void;
+  ownMemberIds: string[];
+  task: PlannerTask;
+}) {
+  if (task.status !== "open" || !task.assigned_to) return null;
+  const assignedTo = task.assigned_to;
+  const acceptedBy = accepted.find((entry) => entry.task_id === task.id)?.member_id;
+  const canAccept =
+    ownMemberIds.includes(assignedTo) && acceptedBy !== assignedTo;
+
+  return (
+    <View>
+      <Text style={styles.handoffLabel}>
+        {taskHandoffLabel(
+          assignedTo,
+          acceptedBy,
+          members.find((member) => member.id === assignedTo)?.name,
+        )}
+      </Text>
+      {canAccept ? (
+        <OrdiloButton
+          disabled={acceptBusy !== null}
+          onPress={onAccept}
+          title={acceptBusy === task.id ? "Wird übernommen …" : "Ich übernehme das"}
+          variant="outline"
+        />
+      ) : null}
     </View>
   );
 }
@@ -1127,6 +1595,8 @@ function SwipeableTaskRow({
   onPress,
   onReschedule,
   onToggle,
+  rescheduleEnabled = true,
+  showDay = true,
   task,
   todayStr,
 }: {
@@ -1136,6 +1606,10 @@ function SwipeableTaskRow({
   onPress: () => void;
   onReschedule: () => void;
   onToggle: () => void;
+  /** Honest Panel Rule: no "Wann?" promise where nothing handles it. */
+  rescheduleEnabled?: boolean;
+  /** The calendar day list already names the day, so the row omits it. */
+  showDay?: boolean;
   task: PlannerTask;
   todayStr: string;
 }) {
@@ -1182,7 +1656,7 @@ function SwipeableTaskRow({
         )}
         renderRightActions={
           // Honest Panel Rule: no "Wann?" promise on a finished task.
-          done
+          done || !rescheduleEnabled
             ? undefined
             : () => (
                 <Pressable
@@ -1203,6 +1677,7 @@ function SwipeableTaskRow({
           onAssign={onAssign}
           onPress={onPress}
           onToggle={onToggle}
+          showDay={showDay}
           task={task}
           todayStr={todayStr}
         />
@@ -1223,6 +1698,7 @@ function TaskRow({
   onAssign,
   onPress,
   onToggle,
+  showDay = true,
   task,
   todayStr,
 }: {
@@ -1230,23 +1706,31 @@ function TaskRow({
   onAssign: () => void;
   onPress: () => void;
   onToggle: () => void;
+  showDay?: boolean;
   task: PlannerTask;
   todayStr: string;
 }) {
   const done = task.status === "done";
-  const overdue = done ? null : formatOverdueLabel(task.due_date, todayStr);
-  const dueLabel = overdue ?? formatTaskDueLabel(task.due_date, todayStr);
+  const entry: PlanEntry = {
+    kind: "task",
+    id: task.id,
+    date: task.due_date,
+    task,
+  };
+  const overdue = isPlanEntryOverdue(entry, todayStr);
+  const dueLabel = showDay ? formatPlanEntryWhen(entry, todayStr) : null;
   const assignee = members.find((member) => member.id === task.assigned_to) ?? null;
 
   return (
-    <View style={styles.taskRow}>
+    <View style={styles.planRow}>
       <TaskCheck
         accessibilityLabel={done ? `${task.title} wieder öffnen` : `${task.title} erledigen`}
         done={done}
         onToggle={onToggle}
       />
       <Pressable
-        accessibilityLabel={`${task.title} bearbeiten`}
+        accessibilityHint="Öffnet die Aufgabe"
+        accessibilityLabel={`Aufgabe ${task.title}${dueLabel ? `, ${dueLabel}` : ""}`}
         accessibilityRole="button"
         onPress={onPress}
         style={styles.taskBody}
@@ -1369,17 +1853,60 @@ const styles = StyleSheet.create({
     color: colors.warmWhite,
     ...typography.title,
   },
+  dayTodayRing: {
+    borderColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    borderWidth: 1.5,
+    height: 34,
+    position: "absolute",
+    top: 4,
+    width: 34,
+  },
+  dayMarks: {
+    bottom: 5,
+    flexDirection: "row",
+    gap: 3,
+    position: "absolute",
+  },
   eventDot: {
     backgroundColor: colors.warmApricot,
     borderRadius: radii.pill,
-    bottom: 5,
-    height: 4,
-    position: "absolute",
-    width: 4,
+    height: 5,
+    width: 5,
   },
-  eventDotSelected: {
+  taskDot: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 5,
+    width: 5,
+  },
+  dotOnSelected: { backgroundColor: colors.warmWhite },
+  calendarLegend: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    paddingHorizontal: spacing.xs,
+    paddingTop: spacing.sm,
+  },
+  legendItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 5,
+  },
+  legendLabel: { color: colors.mistDark, ...typography.label },
+  todayButton: {
+    alignItems: "center",
     backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    justifyContent: "center",
+    marginLeft: "auto",
+    minHeight: 32,
+    paddingHorizontal: 12,
   },
+  todayButtonPressed: { backgroundColor: colors.sandWarm },
+  todayButtonLabel: { color: colors.harborBlue, ...typography.label },
   dayEventsHeader: {
     alignItems: "center",
     flexDirection: "row",
@@ -1402,6 +1929,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
     ...typography.timestamp,
   },
+  calendarEmptyCard: {
+    alignItems: "flex-start",
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+  },
+  calendarEmptyTitle: { color: colors.graphite, ...typography.title },
   calendarEmpty: {
     color: colors.mistDark,
     ...typography.timestamp,
@@ -1510,7 +2047,8 @@ const styles = StyleSheet.create({
   listBottomSpacer: {
     height: MOBILE_DOCK_CONTENT_INSET,
   },
-  taskRow: {
+  /** One row shell for both kinds — the leading slot says which it is. */
+  planRow: {
     alignItems: "center",
     backgroundColor: colors.warmWhite,
     borderColor: colors.mistLight,
@@ -1522,22 +2060,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 8,
   },
-  eventRow: {
-    alignItems: "center",
-    backgroundColor: colors.sand,
-    borderColor: colors.mistLight,
-    borderRadius: radii.sm,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 10,
-    padding: 12,
+  planRowPressed: { backgroundColor: colors.sandLight },
+  handoffLabel: {
+    color: colors.mistDark,
+    paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    ...typography.timestamp,
   },
   eventIcon: {
     alignItems: "center",
-    backgroundColor: colors.blueSoft,
+    backgroundColor: colors.washBlue,
     borderRadius: radii.pill,
     height: 36,
     justifyContent: "center",
+    marginHorizontal: 4,
     width: 36,
   },
   assignee: {

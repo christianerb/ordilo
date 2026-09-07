@@ -27,20 +27,33 @@ import { OrdiloButton } from "./ui";
 import {
   formatEventDateInput,
   parseEventDateInput,
+  RECURRENCE_LABELS,
   validatePlannerEventInput,
+  type PlannerEvent,
   type PlannerEventInput,
 } from "@/src/lib/calendar";
 import type { FamilyMemberOption } from "@/src/lib/tasks";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 
+/** Stable empty list so a new event's attendee state keeps its identity. */
+const NO_ATTENDEES: string[] = [];
+
+/**
+ * Create and edit share one sheet: the same fields, the same validation,
+ * only the copy and the primary button change. An edit starts from the
+ * event's own values, so "Ändern" never means "type it all again".
+ */
 export function EventFormSheet({
   defaultDate,
+  event = null,
   members,
   onClose,
   onSubmit,
   visible,
 }: {
   defaultDate: string;
+  /** The appointment being changed, or null to create a new one. */
+  event?: PlannerEvent | null;
   members: FamilyMemberOption[];
   onClose: () => void;
   onSubmit: (
@@ -48,14 +61,27 @@ export function EventFormSheet({
   ) => Promise<{ success: boolean; error?: string }>;
   visible: boolean;
 }) {
-  const [title, setTitle] = useState("");
-  const [dateInput, setDateInput] = useState(formatEventDateInput(defaultDate));
-  const [allDay, setAllDay] = useState(true);
-  const [startsTime, setStartsTime] = useState("09:00");
-  const [endsTime, setEndsTime] = useState("10:00");
-  const [location, setLocation] = useState("");
-  const [note, setNote] = useState("");
-  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  // Kept as plain values, not one object: the whole set is read again by
+  // the reopen reset below and by the dirty check.
+  const initialTitle = event ? event.title : "";
+  const initialDateInput = formatEventDateInput(
+    event ? event.starts_on : defaultDate,
+  );
+  const initialAllDay = event ? event.all_day : true;
+  const initialStartsTime = event?.starts_time?.slice(0, 5) || "09:00";
+  const initialEndsTime = event?.ends_time?.slice(0, 5) || "10:00";
+  const initialLocation = event?.location ?? "";
+  const initialNote = event?.note ?? "";
+  const initialAttendeeIds = event ? event.attendee_ids : NO_ATTENDEES;
+
+  const [title, setTitle] = useState(initialTitle);
+  const [dateInput, setDateInput] = useState(initialDateInput);
+  const [allDay, setAllDay] = useState(initialAllDay);
+  const [startsTime, setStartsTime] = useState(initialStartsTime);
+  const [endsTime, setEndsTime] = useState(initialEndsTime);
+  const [location, setLocation] = useState(initialLocation);
+  const [note, setNote] = useState(initialNote);
+  const [attendeeIds, setAttendeeIds] = useState<string[]>(initialAttendeeIds);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
@@ -64,14 +90,14 @@ export function EventFormSheet({
   if (visible !== wasVisible) {
     setWasVisible(visible);
     if (visible) {
-      setTitle("");
-      setDateInput(formatEventDateInput(defaultDate));
-      setAllDay(true);
-      setStartsTime("09:00");
-      setEndsTime("10:00");
-      setLocation("");
-      setNote("");
-      setAttendeeIds([]);
+      setTitle(initialTitle);
+      setDateInput(initialDateInput);
+      setAllDay(initialAllDay);
+      setStartsTime(initialStartsTime);
+      setEndsTime(initialEndsTime);
+      setLocation(initialLocation);
+      setNote(initialNote);
+      setAttendeeIds(initialAttendeeIds);
       setError(null);
       setSubmitting(false);
       setDiscardDraftOpen(false);
@@ -79,12 +105,15 @@ export function EventFormSheet({
   }
 
   const isDirty =
-    title.trim() !== "" ||
-    dateInput !== formatEventDateInput(defaultDate) ||
-    !allDay ||
-    location.trim() !== "" ||
-    note.trim() !== "" ||
-    attendeeIds.length > 0;
+    title.trim() !== initialTitle.trim() ||
+    dateInput !== initialDateInput ||
+    allDay !== initialAllDay ||
+    (!allDay &&
+      (startsTime !== initialStartsTime || endsTime !== initialEndsTime)) ||
+    location.trim() !== initialLocation.trim() ||
+    note.trim() !== initialNote.trim() ||
+    attendeeIds.length !== initialAttendeeIds.length ||
+    attendeeIds.some((id) => !initialAttendeeIds.includes(id));
 
   const requestClose = useCallback(() => {
     if (submitting) return;
@@ -154,7 +183,8 @@ export function EventFormSheet({
       dismissDisabled={submitting}
       keyboardAvoiding
       onClose={requestClose}
-      title="Neuer Termin"
+      subtitle={event ? "Ändere, was nicht mehr stimmt." : undefined}
+      title={event ? "Termin ändern" : "Neuer Termin"}
       visible={visible}
     >
       <OrdiloFormBody>
@@ -174,7 +204,14 @@ export function EventFormSheet({
           />
         </OrdiloFormField>
 
-        <OrdiloFormField label="Datum">
+        <OrdiloFormField
+          helper={
+            event && event.recurrence !== "none"
+              ? `Dieser Termin wiederholt sich (${RECURRENCE_LABELS[event.recurrence].toLowerCase()}). Deine Änderung gilt für die ganze Serie.`
+              : undefined
+          }
+          label="Datum"
+        >
           <OrdiloFormInput
             accessibilityLabel="Datum des Termins"
             keyboardType="numbers-and-punctuation"
@@ -315,7 +352,13 @@ export function EventFormSheet({
           }
           onPress={() => void submit()}
           size="lg"
-          title={submitting ? "Wird gespeichert …" : "Termin anlegen"}
+          title={
+            submitting
+              ? "Wird gespeichert …"
+              : event
+                ? "Änderungen speichern"
+                : "Termin anlegen"
+          }
         />}
       />
       <ConfirmDialog
