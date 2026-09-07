@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -21,6 +24,17 @@ describe(`${CHAT_EVAL_VERSION} deterministic scoring contract`, () => {
       new Set(["family", "general", "web", "mixed"]),
     );
     expect(results.every((result) => result.score >= 0.9)).toBe(true);
+  });
+
+  it("asks the model for the voice it is then scored on", () => {
+    // The rubric rejects a one-line answer and a bare source tag. The live
+    // model eval is scored by that same rubric, so the prompt it sends has
+    // to ask for the same thing — otherwise it penalises the model for
+    // obeying and stops measuring production behaviour.
+    const script = readFileSync(resolve(process.cwd(), "scripts/model-chat-eval.ts"), "utf8");
+    expect(script).toContain("zwei bis vier");
+    expect(script).toContain("Etikett");
+    expect(script).not.toContain("Antworte kurz und direkt");
   });
 
   it("fails a correct answer that reads like a field read-out", () => {

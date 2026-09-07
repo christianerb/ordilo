@@ -6,6 +6,7 @@ import {
   formatChatMessageTime,
   getActionContent,
   getChatThinkingLabel,
+  getChatThinkingSteps,
   getSuggestedContactAction,
   getToolStepLabel,
   mergeConfirmationProposal,
@@ -60,6 +61,39 @@ describe("chat thinking status", () => {
         { toolName: "list_documents", state: "done" },
       ]),
     ).toBe("Durchsucht deine Dokumente …");
+  });
+});
+
+describe("chat thinking steps", () => {
+  it("keeps one row per tool, in order, taking the newer state", () => {
+    expect(getChatThinkingSteps([
+      { toolName: "search_documents", state: "start" },
+      { toolName: "search_documents", state: "done" },
+      { toolName: "read_document", state: "start" },
+    ])).toEqual([
+      { toolName: "search_documents", label: "Durchsucht deine Dokumente", state: "done" },
+      { toolName: "read_document", label: "Liest die passende Stelle nach", state: "active" },
+    ]);
+  });
+
+  it("does not merge two different tools that share the fallback label", () => {
+    // Neither tool has an entry in CHAT_TOOL_STEP_LABELS, so both read
+    // "Arbeitet". Keyed by label, the finished first step would vanish.
+    const steps = getChatThinkingSteps([
+      { toolName: "query_calendar_events", state: "start" },
+      { toolName: "query_calendar_events", state: "done" },
+      { toolName: "query_payments", state: "start" },
+    ]);
+    expect(steps.map((step) => step.label)).toEqual(["Arbeitet", "Arbeitet"]);
+    expect(steps.map((step) => [step.toolName, step.state])).toEqual([
+      ["query_calendar_events", "done"],
+      ["query_payments", "active"],
+    ]);
+  });
+
+  it("carries a failed step through as an error", () => {
+    expect(getChatThinkingSteps([{ toolName: "search_web", state: "error" }]))
+      .toEqual([{ toolName: "search_web", label: "Prüft aktuelle Informationen", state: "error" }]);
   });
 });
 

@@ -181,6 +181,8 @@ export function getToolStepLabel(toolName: string): string {
 }
 
 export interface ChatThinkingStep {
+  /** Identity of the step — several tools share the "Arbeitet" label. */
+  toolName: string;
   label: string;
   /** "done" once the step finished, "active" while it runs. */
   state: "active" | "done" | "error";
@@ -190,20 +192,22 @@ export interface ChatThinkingStep {
  * The steps worth showing while an answer is being prepared: one row per
  * tool, in the order they started, so the wait reads as progress rather
  * than as a single line that never changes. A tool that runs twice keeps
- * one row and takes the newer state.
+ * one row and takes the newer state — keyed by the tool, never by its
+ * label, because every tool without an entry in CHAT_TOOL_STEP_LABELS
+ * falls back to the same "Arbeitet" and would otherwise swallow the step
+ * before it.
  */
 export function getChatThinkingSteps(
   toolCalls: ToolCallProgress[],
 ): ChatThinkingStep[] {
   const steps: ChatThinkingStep[] = [];
-  const byLabel = new Map<string, ChatThinkingStep>();
+  const byTool = new Map<string, ChatThinkingStep>();
   for (const call of toolCalls) {
-    const label = getToolStepLabel(call.toolName);
-    const existing = byLabel.get(label);
+    const existing = byTool.get(call.toolName);
     const state = call.state === "start" ? "active" : call.state === "error" ? "error" : "done";
     if (existing) { existing.state = state; continue; }
-    const step: ChatThinkingStep = { label, state };
-    byLabel.set(label, step);
+    const step: ChatThinkingStep = { toolName: call.toolName, label: getToolStepLabel(call.toolName), state };
+    byTool.set(call.toolName, step);
     steps.push(step);
   }
   return steps;

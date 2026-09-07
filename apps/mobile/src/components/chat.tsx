@@ -93,7 +93,7 @@ export function ChatThinkingState({ toolCalls }: { toolCalls: ToolCallProgress[]
     {finished.length > 0 ? (
       <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.thinkingSteps}>
         {finished.map((step) => (
-          <View key={step.label} style={styles.thinkingStep}>
+          <View key={step.toolName} style={styles.thinkingStep}>
             {step.state === "error"
               ? <X color={colors.warmApricot} size={13} strokeWidth={2.4} />
               : <Check color={colors.harborBlue} size={13} strokeWidth={2.4} />}
