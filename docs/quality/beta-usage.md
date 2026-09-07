@@ -14,6 +14,8 @@ Migration `0079_api_usage.sql` creates a server-only usage ledger. Client roles 
 
 OpenAI metering observes the JSON/SSE transport without storing prompts or responses. The ledger stores only identifiers, model and token counts. Recorded output tokens already contain reasoning tokens; cached reads and writes are subsets of input, not extra tokens. Unknown models, service tiers or incomplete usage remain unpriced. Standard direct-API estimates use the rates verified on 2026-09-07:
 
+Each telemetry checkpoint has a 200 ms wait budget, including attempt inserts, uploader lookup, JSON parsing and final JSON/SSE/OCR usage writes. A stalled analytics service cannot indefinitely hold up provider requests or response delivery. Timed-out work may finish later; telemetry can remain incomplete during outages.
+
 | Model | Input / 1M | Cached read / 1M | Output / 1M |
 | --- | --- | --- | --- |
 | gpt-5.6-terra | $2 | $0.20 | $12 |

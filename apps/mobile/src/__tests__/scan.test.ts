@@ -68,6 +68,20 @@ beforeEach(() => {
 });
 
 describe("native scan helpers", () => {
+  it.each([0, 503, 401, 403])("preserves status-query failure %s for retry classification", async (status) => {
+    mockMaybeSingle.mockResolvedValue({ data: null, error: { message: "unavailable" }, status });
+    await expect(resumeScannedDocument("document-1")).rejects.toMatchObject({ status: status || 503 });
+  });
+
+  it("classifies thrown network failures as retryable", async () => {
+    mockMaybeSingle.mockRejectedValueOnce(new TypeError("Network request failed"));
+    await expect(resumeScannedDocument("document-1")).rejects.toMatchObject({ status: 0 });
+  });
+
+  it("does not retry a missing or inaccessible document indefinitely", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null, status: 200 });
+    await expect(resumeScannedDocument("document-1")).rejects.toMatchObject({ status: 404 });
+  });
   it("falls back to an accepted MIME type from a picked filename", () => {
     expect(getScanMimeType(null, "brief.PDF")).toBe("application/pdf");
     expect(getScanMimeType(null, "rechnung.jpeg")).toBe("image/jpeg");

@@ -1,6 +1,6 @@
 import { drainIntake } from "../lib/intake-worker";
 import { ApiError } from "../lib/api";
-import { uploadScannedDocument, type PersistedScanQueueItem } from "../lib/scan";
+import { resumeScannedDocument, uploadScannedDocument, type PersistedScanQueueItem } from "../lib/scan";
 
 let mockQueue: PersistedScanQueueItem[] = [];
 jest.mock("../lib/api", () => ({ ApiError: class extends Error { status: number; constructor(message: string, code: number) { super(message); this.status = code; } } }));
@@ -47,6 +47,17 @@ it("does not reupload a checkpointed server handoff", async () => {
   await drainIntake("family", () => true);
   expect(upload).not.toHaveBeenCalled();
   expect(mockQueue).toEqual([]);
+});
+
+it("automatically resumes a checkpoint after a transient status failure without reuploading", async () => {
+  mockQueue = [{ ...mockQueue[0], documentId: "server-id", serverPipeline: false, state: "processing" }];
+  jest.mocked(resumeScannedDocument).mockRejectedValueOnce(new ApiError("offline", 503));
+  await drainIntake("family", () => true);
+  expect(mockQueue[0]).toMatchObject({ state: "processing", documentId: "server-id" });
+  await drainIntake("family", () => true);
+  expect(mockQueue).toEqual([]);
+  expect(upload).not.toHaveBeenCalled();
+  expect(resumeScannedDocument).toHaveBeenCalledTimes(2);
 });
 
 it("does not start work after the account or route changes", async () => {

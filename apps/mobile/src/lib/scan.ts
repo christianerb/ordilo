@@ -68,8 +68,7 @@ export function mutateScanQueue(familyId: string, transform: (queue: PersistedSc
 
 /** Inspect server state before retrying; a failed background job must restart, not just poll forever. */
 export async function resumeScannedDocument(documentId: string, onStep?: (step: ScanProcessingStep) => void | Promise<void>, signal?: AbortSignal): Promise<void> {
-  const { data, error } = await getSupabase().from("documents").select("status, failure_stage").eq("id", documentId).maybeSingle();
-  if (error || !data) throw new Error("Das Dokument konnte nicht geladen werden. Bitte versuch es nochmal.");
+  const data = await getDocumentProcessingState(documentId);
   if (data.status === "uploaded" || data.status === "failed" || data.status === "ocr_done") {
     const step = data.status === "ocr_done" || (data.status === "failed" && data.failure_stage === "analyze") ? "analysis" : "ocr";
     await continueScannedDocumentPipeline(documentId, step, onStep, signal);
@@ -91,16 +90,20 @@ async function delay(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
-async function getDocumentStatus(documentId: string): Promise<string> {
-  const { data, error } = await getSupabase()
-    .from("documents")
-    .select("status")
-    .eq("id", documentId)
-    .maybeSingle();
-  if (error || !data) {
-    throw new Error("Der Verarbeitungsstatus konnte nicht geladen werden.");
+async function getDocumentProcessingState(documentId: string) {
+  try {
+    const { data, error, status } = await getSupabase()
+      .from("documents")
+      .select("status, failure_stage")
+      .eq("id", documentId)
+      .maybeSingle();
+    if (error) throw new ApiError("Der Verarbeitungsstatus konnte nicht geladen werden.", status || 503);
+    if (!data) throw new ApiError("Das Dokument wurde nicht gefunden oder ist nicht mehr zugänglich.", 404);
+    return data;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError("Keine Verbindung. Der Import wird erneut versucht.", 0);
   }
-  return data.status;
 }
 
 async function waitForDocumentStatus(
@@ -120,7 +123,7 @@ async function waitForDocumentStatus(
     if (options.signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
-    const status = await getDocumentStatus(documentId) as DocumentPipelineStatus;
+    const { status } = await getDocumentProcessingState(documentId);
     if (status === "failed") {
       throw new Error(options.failureMessage);
     }
@@ -131,7 +134,7 @@ async function waitForDocumentStatus(
     if (expected.has(status)) return status;
     await delay(options.intervalMs, options.signal);
   }
-  throw new Error(options.timeoutMessage);
+  throw new ApiError(options.timeoutMessage, 408);
 }
 
 /**

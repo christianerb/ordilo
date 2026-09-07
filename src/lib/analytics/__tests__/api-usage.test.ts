@@ -3,9 +3,27 @@ import { meteredOpenAIFetch, tokenCost, withUsageScope } from "../api-usage";
 
 const insert = vi.hoisted(() => vi.fn().mockResolvedValue({ error: null }));
 vi.mock("@/lib/supabase/admin", () => ({ createClient: () => ({ from: () => ({ insert, upsert: insert }) }) }));
-afterEach(() => { vi.unstubAllGlobals(); insert.mockClear(); });
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); insert.mockReset().mockResolvedValue({ error: null }); });
 
 describe("API metering", () => {
+  it.each([false, true])("bounds stalled attempt and response checkpoints (stream=%s)", async (stream) => {
+    vi.useFakeTimers();
+    insert.mockImplementation(() => new Promise(() => {}));
+    const body = { model: "text-embedding-3-large", usage: { prompt_tokens: 10 } };
+    const wire = `data: ${JSON.stringify({ type: "response.completed", response: body })}\n\n`;
+    const provider = vi.fn(async () => stream
+      ? new Response(wire, { headers: { "content-type": "text/event-stream" } })
+      : Response.json(body));
+    vi.stubGlobal("fetch", provider);
+    const request = withUsageScope({ operation: "search", userId: "user-test" }, () => meteredOpenAIFetch("https://api.openai.com/v1/responses"));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(provider).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(200);
+    const response = await request;
+    const text = response.text();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(await text).toBe(stream ? wire : JSON.stringify(body));
+  });
   it("accounts for cache reads and writes without counting tokens twice", () => {
     expect(tokenCost("gpt-5.6-terra", 1000, 200, 100, undefined, 400)).toBeCloseTo(0.00304);
     expect(tokenCost("unknown", 1000, 0, 100, undefined)).toBeNull();

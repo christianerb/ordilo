@@ -4,7 +4,21 @@ import { z } from "zod";
 
 type Scope = { operationId: string; operation: string; userId?: string; documentId?: string };
 const scopes = new AsyncLocalStorage<Scope>();
+// Telemetry may be incomplete during an outage, but must not stall product work.
+const USAGE_WAIT_MS = 200;
+async function boundedUsage(work: () => Promise<void>): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      Promise.resolve().then(work).catch(() => { console.warn("Usage checkpoint unavailable"); }),
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, USAGE_WAIT_MS); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
 export async function recordOcrUsage(documentId: string, requestId: string, pages: number | null, costBreakdown: unknown, usageId: string): Promise<void> {
+  return boundedUsage(() => recordOcrUsageUnchecked(documentId, requestId, pages, costBreakdown, usageId));
+}
+async function recordOcrUsageUnchecked(documentId: string, requestId: string, pages: number | null, costBreakdown: unknown, usageId: string): Promise<void> {
   try {
     const client = createClient();
     const { data } = await client.from("documents").select("uploaded_by").eq("id", documentId).maybeSingle();
@@ -55,6 +69,9 @@ export function tokenCost(model: string | undefined, input: number | null, cache
 }
 
 async function record(body: unknown, requestId: string | null, scope: Scope | undefined, usageId: string) {
+  return boundedUsage(() => recordUnchecked(body, requestId, scope, usageId));
+}
+async function recordUnchecked(body: unknown, requestId: string | null, scope: Scope | undefined, usageId: string) {
   const result = usageSchema.safeParse(body);
   if (!result.success || !scope) return;
   const { usage, model, id } = result.data;
@@ -89,6 +106,7 @@ export const meteredOpenAIFetch: typeof fetch = async (input, init) => {
   const usageId = crypto.randomUUID();
   // An interrupted/failed stream still has a visible, unpriced attempt.
   if (scope) {
+    await boundedUsage(async () => {
     try {
       const client = createClient();
       let userId = scope.userId;
@@ -99,12 +117,15 @@ export const meteredOpenAIFetch: typeof fetch = async (input, init) => {
       const { error } = await client.from("api_usage").insert({ id: usageId, operation_id: scope.operationId, operation: scope.operation, user_id: userId, document_id: scope.documentId, provider: "openai" });
       if (error) console.warn("API usage attempt checkpoint failed", { code: error.code });
     } catch { console.warn("API usage attempt checkpoint unavailable"); }
+    });
   }
   const response = await fetch(input, init);
   if (!scope || !response.ok) return response;
   const requestId = response.headers.get("x-request-id");
   if (!response.headers.get("content-type")?.includes("text/event-stream")) {
-    try { await record(await response.clone().json(), requestId, scope, usageId); } catch { /* Preserve provider response. */ }
+    await boundedUsage(async () => {
+      try { await recordUnchecked(await response.clone().json(), requestId, scope, usageId); } catch { /* Preserve provider response. */ }
+    });
     return response;
   }
   if (!response.body) return response;
