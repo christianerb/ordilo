@@ -43,3 +43,62 @@ export function classifyAccountActivity(
   if (daysSince <= 30) return "inaktiv";
   return "lange_nicht_da";
 }
+
+type AccountTimestamps = {
+  createdAt: string;
+  lastSignInAt: string | null;
+  lastActivityAt: string | null;
+};
+
+function lastUseTime(account: AccountTimestamps): number | null {
+  const times = [account.lastSignInAt, account.lastActivityAt]
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter((time) => !Number.isNaN(time));
+  return times.length ? Math.max(...times) : null;
+}
+
+/**
+ * Wiederkehr-Quote: of all accounts old enough to have left (signed up
+ * more than 7 days ago), how many used the product in the last 7 days.
+ */
+export function summarizeRetention(
+  accounts: AccountTimestamps[],
+  now: Date = new Date(),
+): { eligible: number; returned: number; rate: number | null } {
+  const eligible = accounts.filter(
+    (account) => now.getTime() - new Date(account.createdAt).getTime() > 7 * DAY_MS,
+  );
+  const returned = eligible.filter((account) => {
+    const lastUse = lastUseTime(account);
+    return lastUse !== null && now.getTime() - lastUse <= 7 * DAY_MS;
+  });
+  return {
+    eligible: eligible.length,
+    returned: returned.length,
+    rate: eligible.length === 0 ? null : returned.length / eligible.length,
+  };
+}
+
+/**
+ * Stickiness: average daily active accounts over the chart window as a
+ * share of accounts active in the last 30 days (DAU/MAU-style).
+ */
+export function summarizeStickiness(
+  accounts: AccountTimestamps[],
+  dailyActive: number[],
+  now: Date = new Date(),
+): { averageDailyActive: number; active30Days: number; ratio: number | null } {
+  const active30Days = accounts.filter((account) => {
+    const lastUse = lastUseTime(account);
+    return lastUse !== null && now.getTime() - lastUse <= 30 * DAY_MS;
+  }).length;
+  const averageDailyActive = dailyActive.length
+    ? dailyActive.reduce((sum, value) => sum + value, 0) / dailyActive.length
+    : 0;
+  return {
+    averageDailyActive,
+    active30Days,
+    ratio: active30Days === 0 ? null : averageDailyActive / active30Days,
+  };
+}

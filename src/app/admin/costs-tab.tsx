@@ -86,6 +86,30 @@ export async function AdminCostsTab() {
         </p>
 
         <h3 className="mt-6 text-base font-semibold">Verlauf nach Monat</h3>
+        {usage.monthly.length > 1 && (
+          <div className="mt-4">
+            <div
+              className="grid h-32 items-end gap-2"
+              style={{ gridTemplateColumns: `repeat(${usage.monthly.length}, minmax(0, 1fr))` }}
+            >
+              {[...usage.monthly].reverse().map((entry) => (
+                <div key={entry.month} className="flex h-full min-w-0 flex-col justify-end">
+                  <div
+                    className="rounded-t bg-primary/60"
+                    style={{
+                      height: `${Math.max(4, (entry.knownUsd / Math.max(0.0001, ...usage.monthly.map((month) => month.knownUsd))) * 100)}%`,
+                    }}
+                    title={`${formatMonthLabel(entry.month)}: ${formatUsd(entry.knownUsd)}, ${entry.calls} Aufrufe`}
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between text-xs text-muted-foreground">
+              <span>{formatMonthLabel(usage.monthly.at(-1)?.month ?? "")}</span>
+              <span>{formatMonthLabel(usage.monthly[0]?.month ?? "")}</span>
+            </div>
+          </div>
+        )}
         {usage.monthly.length ? (
           <table className="mt-3 w-full text-left text-sm">
             <thead>
