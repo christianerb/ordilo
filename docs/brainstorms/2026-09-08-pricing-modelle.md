@@ -44,16 +44,16 @@ mehrseitige Verträge ab.
 | Wenig | 5 Dokumente, 10 Chatfragen, 15 Suchen | **~$0,60** |
 | Typisch | 20 Dokumente, 30 Chatfragen, 50 Suchen | **~$2,00** |
 | Power | 80 Dokumente, 120 Chatfragen, 150 Suchen, Sprache | **~$8–9** |
-| **Free-Plan, realistisch** | ~5 Dokumente, ~15 KI-Fragen, ~20 Suchen | **~$0,70** |
-| **Free-Plan, am Anschlag** | 10 Dokumente, 30 KI-Fragen, 30 Suchen | **~$1,50** (10 × $0,05 + 30 × $0,03 + Suchen) |
+| **Free-Plan, realistisch** | ~10 Dokumente, ~5 KI-Fragen, ~20 Suchen | **~$0,65** |
+| **Free-Plan, am Anschlag** | 25 Dokumente, 10 KI-Fragen, Suchen frei | **~$1,55** (25 × $0,05 + 10 × $0,03) |
 | Anschlag heute (alle Tageslimits × 30) | 1.500 Dokumente, 1.500 Chats | **~$120** — zeigt, warum Limits bleiben müssen |
 
-Selbst ein Free-Nutzer, der jeden Monat beide Limits voll ausreizt,
-kostet also ~1,50 $ — weniger als der Zahlungsgebühren-Anteil eines
-einzigen Plus-Monats. 100 Free-Familien am Anschlag ≈ 150 $/Monat:
-das ist das tatsächliche Budget, das der Free-Plan als Marketing
-kostet. Speicher und Datenbank fallen nicht ins Gewicht (10 Dokumente
-à wenige MB; Bruchteile von Cents).
+Selbst eine Free-Familie, die jeden Monat beide Limits voll ausreizt,
+kostet also ~1,55 $ — weniger als der Zahlungsgebühren-Anteil von zwei
+Plus-Monaten. 100 Free-Familien am Anschlag ≈ 155 $/Monat: das ist
+das tatsächliche Budget, das der Free-Plan als Marketing kostet.
+Speicher und Datenbank fallen nicht ins Gewicht (wenige MB pro
+Dokument; Bruchteile von Cents).
 
 Fixkosten dazu: Vercel Pro, Supabase Pro, Resend — grob 50–80 €/Monat,
 bei wenigen hundert Familien vernachlässigbar pro Familie.
@@ -66,13 +66,23 @@ Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
 
 ### Vorschlag A — Freemium
 
-- **Free:** 10 Dokumente/Monat, 30 KI-Fragen/Monat (≈1/Tag), 2
-  Familienmitglieder, kein E-Mail-Import. Bemessung am Markt: fileee
-  Free gibt 10 Dokumente/Monat, Trustworthy Free nur 10 KI-Antworten/
-  Monat — Free soll das „Aha" liefern (erster Brief durch, erste Frage
-  beantwortet), nicht den Alltag einer typischen Familie (~20 Dokumente/
-  Monat) abdecken. 25 Dokumente + 10 Fragen/Tag (erster Entwurf) war
-  damit zu großzügig.
+- **Free:** 25 Dokumente/Monat, 10 KI-Fragen/Monat, 2 Familienmitglieder,
+  kein E-Mail-Import. **Suchen werden nicht gemessen** — unter einem
+  halben Cent pro Anfrage, das ist Messrauschen, und ein dritter Zähler
+  macht das Modell nur komplizierter.
+- **Warum Dokumente großzügig und Fragen knapp (nicht umgekehrt):**
+  Ein Dokument kostet einmalig ~5 ct (OCR ~2 ct, Analyse ~3 ct,
+  Embeddings ≈ 0) und liegt danach praktisch kostenlos im Archiv.
+  Jedes Dokument erhöht den Wert und die Wechselkosten — ein Archiv mit
+  200 Dokumenten ersetzt keine Konkurrenz-App mehr. Eine KI-Frage
+  kostet ~3 ct, **wiederholt sich aber ewig** und baut keinerlei
+  Bindung auf. Dokumente sind außerdem natürlich begrenzt (niemand
+  bekommt 500 Briefe im Monat), Chat skaliert mit Spielfreude und ist
+  die Missbrauchsfläche. Free-Dokumente sind also eine Investition in
+  Unersetzbarkeit, Free-Fragen sind laufender Verbrauch. Anker:
+  Trustworthy gibt free 10 KI-Antworten/Monat, fileee 10 Dokumente —
+  wir drehen das Verhältnis bewusst um, weil unsere Stückkosten und
+  unsere Lock-in-Logik das Gegenteil nahelegen.
 - **Familie Plus:** 5,99 €/Monat oder 59 €/Jahr: großzügige Fair-Use-
   Limits (200 Dokumente/Monat, 50 Chats/Tag), E-Mail-Import, Sprache,
   beliebig viele Mitglieder.
@@ -314,10 +324,11 @@ Archiv-Produkt mit echten laufenden KI-Kosten pro Familie.
    Ablage oder Speicher.
 3. **Free-Kontingent ab Launch, nicht optional:** Der Benchmark zeigt,
    dass Freemium in dieser Kategorie Erwartung ist, nicht Zugeständnis.
-   Kleines Kontingent (10 Dokumente/Monat, 30 KI-Fragen/Monat — s.
-   Bemessung in Vorschlag A) als Top-of-Funnel — technisch dasselbe
+   Kontingent (25 Dokumente/Monat, 10 KI-Fragen/Monat, Suchen frei —
+   Begründung in Vorschlag A) als Top-of-Funnel — technisch dasselbe
    Entitlement-System, nur ein weiterer Plan. Variable Kosten einer
-   Free-Familie (~0,60–2 €/Monat) sind das Marketing-Budget.
+   Free-Familie (≈$0,65 realistisch, ≈$1,55 am Anschlag) sind das
+   Marketing-Budget.
 4. **Pay-per-Use (B) verworfen** aus Produkt- und Markengründen.
 
 Bei ~2 € variablen Kosten je typischer Familie bleiben bei 4,99 € über
