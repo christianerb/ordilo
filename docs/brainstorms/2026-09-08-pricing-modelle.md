@@ -57,8 +57,13 @@ Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
 
 ### Vorschlag A — Freemium
 
-- **Free:** 25 Dokumente/Monat, 10 Chatfragen/Tag, 2 Familienmitglieder,
-  kein E-Mail-Import.
+- **Free:** 10 Dokumente/Monat, 30 KI-Fragen/Monat (≈1/Tag), 2
+  Familienmitglieder, kein E-Mail-Import. Bemessung am Markt: fileee
+  Free gibt 10 Dokumente/Monat, Trustworthy Free nur 10 KI-Antworten/
+  Monat — Free soll das „Aha" liefern (erster Brief durch, erste Frage
+  beantwortet), nicht den Alltag einer typischen Familie (~20 Dokumente/
+  Monat) abdecken. 25 Dokumente + 10 Fragen/Tag (erster Entwurf) war
+  damit zu großzügig.
 - **Familie Plus:** 5,99 €/Monat oder 59 €/Jahr: großzügige Fair-Use-
   Limits (200 Dokumente/Monat, 50 Chats/Tag), E-Mail-Import, Sprache,
   beliebig viele Mitglieder.
@@ -300,10 +305,10 @@ Archiv-Produkt mit echten laufenden KI-Kosten pro Familie.
    Ablage oder Speicher.
 3. **Free-Kontingent ab Launch, nicht optional:** Der Benchmark zeigt,
    dass Freemium in dieser Kategorie Erwartung ist, nicht Zugeständnis.
-   Kleines Kontingent (25 Dokumente/Monat, 10 Chats/Tag) als Top-of-
-   Funnel — technisch dasselbe Entitlement-System, nur ein weiterer Plan.
-   Variable Kosten einer Free-Familie (~0,60–2 €/Monat) sind das
-   Marketing-Budget.
+   Kleines Kontingent (10 Dokumente/Monat, 30 KI-Fragen/Monat — s.
+   Bemessung in Vorschlag A) als Top-of-Funnel — technisch dasselbe
+   Entitlement-System, nur ein weiterer Plan. Variable Kosten einer
+   Free-Familie (~0,60–2 €/Monat) sind das Marketing-Budget.
 4. **Pay-per-Use (B) verworfen** aus Produkt- und Markengründen.
 
 Bei ~2 € variablen Kosten je typischer Familie bleiben bei 4,99 € über
@@ -350,3 +355,11 @@ immer noch kostendeckend.
 - Metering-Achse: KI-Fragen pro Monat staffeln (Trustworthy-Vorbild:
   10/25/unbegrenzt) statt oder zusätzlich zu Dokumenten? Chat-Nutzung
   wird schon pro Familie gezählt — Umsetzung wäre klein.
+- Werbung im Free-Plan: **erwogen und verworfen.** Ad-Erlöse liegen bei
+  Cents pro Nutzer und Monat und brauchen Millionen DAU (Cozi-Skala);
+  Werbung in einer App mit Schulbriefen, Rechnungen und Arztberichten
+  widerspricht dem Vertrauensversprechen (Trustworthy wirbt mit „never
+  shared, sold, or monetized") und der Markenlinie (DESIGN.md: keine
+  Upsell-/Scanner-Muster). DSGVO-Consent und Ad-SDKs kämen obendrauf.
+  Der Free-Plan ist das Marketing — über den Partner-Invite, nicht über
+  Banner.
