@@ -100,18 +100,71 @@ Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
   (Landing Page, Trial); Trial-Missbrauch muss adressiert werden
   (E-Mail-Verifizierung, ggf. Zahlungsdaten bei Trial-Start).
 
+## 4b. Competitor-Benchmark (Listenpreise, Stand 09/2026)
+
+| Produkt | Kategorie | Modell | Preis |
+| --- | --- | --- | --- |
+| FamilyWall Premium | Familien-Organizer (Kalender, Listen, Dokumente) | Freemium + Jahresabo | $44,99/Jahr (~$3,75/Monat) |
+| Cozi Gold | Familien-Kalender | Freemium (mit Werbung) + Jahresabo | $39/Jahr, kein Monatsabo |
+| TimeTree Premium | Geteilter Kalender | Freemium + Abo | $4,49/Monat oder $44,99/Jahr |
+| SwiftScan | Dokumenten-Scanner | Freemium + Abo / Lifetime-Deals | Lifetime-Angebote ~$40 (reg. $199,99); Abo-Historie öffentlich als „Abo-Monster" kritisiert |
+| Evernote | Notizen/Dokumente | Freemium + Abo | deutlich zweistellig pro Monat; Preiserhöhung 2026 mit massivem Community-Backlash |
+| Volders | Vertragsassistent (DE) | Kostenlos, Monetarisierung über Kündigungs-/Wechselservices | 0 € |
+| Google One | Speicher | Abo | 100 GB für €19,99/Jahr |
+
+**Was der Markt uns sagt:**
+
+1. **Der Preisanker für Familien-Organizer ist ~40–50 €/Jahr.** Cozi,
+   FamilyWall und TimeTree sitzen alle in diesem Korridor. Unsere
+   Empfehlung (49 €/Jahr, 4,99 €/Monat) liegt damit genau im
+   etablierten Rahmen — nicht mutig, nicht billig. Founding-Preis
+   29 €/Jahr liegt glaubwürdig darunter.
+2. **Freemium ist die Markt-Norm in dieser Kategorie.** Alle drei
+   Organizer-Konkurrenten haben ein brauchbares Free-Kontingent. Ein
+   reines „30 Tage Trial, danach zahlen" (Vorschlag C pur) ist dort die
+   Ausnahme. Das schwächt das Argument gegen Vorschlag A: Ein kleines
+   Free-Kontingent ist kein Nice-to-have, sondern die Erwartung.
+3. **Scanner-Apps leiden unter Abo-Müdigkeit.** SwiftScan wird für
+   Abo-Umbauten öffentlich kritisiert, Lifetime-Deals verkaufen sich.
+   Bestätigt die Ablehnung von Pay-per-Use/Credits (B) — und erklärt,
+   warum ein Founding-Angebot mit Bestandsgarantie funktionieren kann.
+4. **Preiserhöhungen bei Bestandskunden sind der Backlash-Fall**
+   (Evernote 2026). Ein Founding-Versprechen („2,99 € auf Lebenszeit")
+   muss gehalten werden, sonst zerstört es genau das Vertrauen, das die
+   Marke aufbaut.
+5. **Dokumentenverwaltung allein ist in Deutschland ein Gratis-
+   Angebot** (Volders, Google One: 100 GB für ~1,67 €/Monat). Der Preis
+   von Ordilo muss am KI-Assistenten und am Familien-Nutzen hängen,
+   nicht an „wir scannen eure Briefe".
+6. **Kein Wettbewerber verbindet Familien-Organizer mit einem KI-
+   Dokumenten-Assistenten.** FamilyWall hat Dokumente als Ablage, aber
+   keine Extraktion, keine Fristen, keine Fragen ans Archiv. Ordilo
+   sitzt preislich im Korridor der Organizer und funktional darüber.
+
+**Konsequenz für die Vorschläge:** Die saubere Trennung „A oder C" war
+zu scharf. Der Markt zeigt: Free-Kontingent (A) als Eintritt +
+Flatrate-Abo (C) als Hauptprodukt + Founding-Angebot als Prelaunch-
+Motor. Genau diese Kombination wird in Abschnitt 5 empfohlen.
+
 ## 5. Empfehlung
 
 **C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
 
 1. **Prelaunch (jetzt):** Founding-Preis 2,99 €/Monat oder 29 €/Jahr,
    30 Tage kostenlos. Wer zahlt, validiert den Preis besser als jede
-   Umfrage.
+   Umfrage. Das Lifetime-Versprechen ist bindend — der Evernote-Backlash
+   2026 zeigt, was passiert, wenn Bestandspreise nachträglich kippen.
 2. **Launch:** 4,99 €/Monat / 49 €/Jahr, ein Plan, Fair-Use-Limits an die
    heutigen Tageslimits angelehnt (50/Tag ≈ weit über Power-Profil).
-3. **Später optional:** kleines Free-Kontingent (A) als Top-of-Funnel,
-   wenn organisches Wachstum es braucht — technisch dasselbe Entitlement-
-   System, nur ein weiterer Plan.
+   Preisanker bewusst im Organizer-Korridor (Cozi/FamilyWall/TimeTree:
+   39–45 $/Jahr), Rechtfertigung über den KI-Assistenten, nicht über
+   Ablage oder Speicher.
+3. **Free-Kontingent ab Launch, nicht optional:** Der Benchmark zeigt,
+   dass Freemium in dieser Kategorie Erwartung ist, nicht Zugeständnis.
+   Kleines Kontingent (25 Dokumente/Monat, 10 Chats/Tag) als Top-of-
+   Funnel — technisch dasselbe Entitlement-System, nur ein weiterer Plan.
+   Variable Kosten einer Free-Familie (~0,60–2 €/Monat) sind das
+   Marketing-Budget.
 4. **Pay-per-Use (B) verworfen** aus Produkt- und Markengründen.
 
 Bei ~2 € variablen Kosten je typischer Familie bleiben bei 4,99 € über
