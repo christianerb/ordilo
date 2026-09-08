@@ -224,14 +224,75 @@ zu scharf. Der Markt zeigt: Free-Kontingent (A) als Eintritt +
 Flatrate-Abo (C) als Hauptprodukt + Founding-Angebot als Prelaunch-
 Motor. Genau diese Kombination wird in Abschnitt 5 empfohlen.
 
+## 4c. Einordnung: Indie-App-Pricing-Erfahrung (Video-Transkript, 09/2026)
+
+Praxisbericht eines Indie-Entwicklers ($200 → $4.000 MRR im Portfolio):
+Lifetime $19,99 + monatlich $3,99 mit 7-Tage-Trial, kein Jahresabo,
+harte Paywall statt Freemium, Preis-Lokalisierung nach Kaufkraft. Was
+davon auf Ordilo überträgt — und was nicht:
+
+**Überträgt sich:**
+
+1. **Lifetime ist ein legitimer Prelaunch-Hebel — mit Rechenpflicht.**
+   Sein Kernargument („KI-Kosten sind Cents pro Nutzer und Monat") ist
+   auch unsere Rechnung: ~2 €/Monat für eine typische Familie. Ein
+   Lifetime-Deal bei 149 € deckt also ~6 Jahre typischer Nutzung. Aber
+   Vorsicht: Sein zweites Argument („Nutzer hören eh nach ein paar
+   Wochen auf") gilt für Water-Tracker, nicht für ein Familienarchiv.
+   Ordilo wird mit jedem Dokument wertvoller — Retention ist hier das
+   Feature, nicht das Risiko. Eine Power-Familie (~9 €/Monat) macht
+   Lifetime ab ~1,5 Jahren verlustig. **Fazit: Lifetime nur als
+   begrenztes Founding-Angebot** (z. B. 100 Familien, 149 € einmalig,
+   Fair-Use-Limits bleiben), nicht als Daueroption. Cash im Prelaunch,
+   Validierung, Testimonials — ohne dauerhaftes Kostenrisiko.
+2. **Zwei Optionen, keine drei.** Sein „No-Brainer-Choice"-Prinzip
+   stützt Vorschlag C (ein Plan, ein Preis). Jahresabo als dritte
+   Option nennt er verwirrend — für unsere Kategorie (FamilyWall,
+   TimeTree, fileee zeigen alle Monat + Jahr mit ~20 % Rabatt) ist der
+   Jahrespreis aber Markt-Standard und passt zum Familien-Rhythmus.
+   Kompromiss: Free + ein Paid-Plan, dargestellt als „monatlich oder
+   jährlich", nicht als zwei Tarife.
+3. **Keine Dark Patterns im Paywall** (Timer, Fake-Deals, versteckte
+   Paywalls) — deckt sich zu 100 % mit der Markenlinie (DESIGN.md
+   lehnt Upsell-Banner explizit ab) und mit dem Apple-Review-Risiko.
+4. **Preis aus Sicht der Zielgruppe, nicht der eigenen Marge.**
+   Deutsche Familien mit klammer Kassenlage sind Teil der Zielgruppe —
+   4,99 € ist ein No-Brainer, 19,99 € nicht. Stützt den Preis-Korridor.
+
+**Überträgt sich nicht bzw. widerspricht:**
+
+5. **„Harte Paywall statt Freemium" — für Ordilo falsch.** Sein
+   Argument: Freemium lohnt sich nur für Top-1-%-Apps mit organischem
+   Sharing. Genau das hat eine Familien-App aber eingebaut: Der Partner-
+   Invite ist ein natürlicher Viral-Loop, den ein Wasser-Tracker nicht
+   hat. Dazu ist Free in dieser Kategorie Markt-Norm (alle Organizer,
+   fileee, Trustworthy, Ohai). Und Trustworthy zeigt die harte Variante
+   bereits im Markt — deren Free-Plan ist bewusst kastriert. Unsere
+   Position dazwischen: großzügiges Free in den Mengen, kein Kastrieren
+   von Grundfunktionen.
+6. **7-Tage-Trial ist für Wochen-Rhythmen zu kurz.** Seine Apps liefern
+   Wert beim ersten Öffnen. Ordilo liefert Wert, wenn der nächste Brief
+   kommt — das kann 10 Tage dauern. 30 Tage Trial bleibt; die
+   Trial-Länge (7/14/30) ist trotzdem eine offene Messfrage.
+7. **Wochen-Abo und aggressive Preis-Lokalisierung:** irrelevant für
+   den DE-first Launch (Lokalisierung notieren für spätere Märkte).
+
+Seine eigene Warnung gilt auch hier: Was für eine Vibe-coded Tracker-
+App mit null Serverkosten funktioniert, ist keine Blaupause für ein
+Archiv-Produkt mit echten laufenden KI-Kosten pro Familie.
+
 ## 5. Empfehlung
 
 **C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
 
-1. **Prelaunch (jetzt):** Founding-Preis 2,99 €/Monat oder 29 €/Jahr,
-   30 Tage kostenlos. Wer zahlt, validiert den Preis besser als jede
-   Umfrage. Das Lifetime-Versprechen ist bindend — der Evernote-Backlash
-   2026 zeigt, was passiert, wenn Bestandspreise nachträglich kippen.
+1. **Prelaunch (jetzt):** Founding-Angebot, zwei Varianten zur Wahl
+   stellen: 2,99 €/Monat auf Lebenszeit **oder** 149 € einmalig
+   (Lifetime, auf ~100 Familien begrenzt). Lifetime deckt bei ~2 €
+   Monatskosten ~6 Jahre typischer Nutzung und bringt sofort Cash;
+   die Begrenzung hält das Risiko klein (s. 4c). 30 Tage kostenlos
+   testen. Wer zahlt, validiert den Preis besser als jede Umfrage. Alle
+   Founding-Versprechen sind bindend — der Evernote-Backlash 2026
+   zeigt, was passiert, wenn Bestandspreise nachträglich kippen.
 2. **Launch:** 4,99 €/Monat / 49 €/Jahr, ein Plan, Fair-Use-Limits an die
    heutigen Tageslimits angelehnt (50/Tag ≈ weit über Power-Profil).
    Preisanker bewusst im Organizer-Korridor (Cozi/FamilyWall/TimeTree:
@@ -272,7 +333,11 @@ immer noch kostendeckend.
 ## 7. Offene Entscheidungen
 
 - Founding-Kontingent: feste Anzahl (z. B. 100 Familien) oder Zeitfenster
-  (z. B. bis Launch)?
+  (z. B. bis Launch)? Und: Lifetime-Variante (149 € einmalig) neben dem
+  2,99-€-Dauerpreis anbieten oder nur eine Variante?
+- Trial-Länge: 30 Tage (Familien-Rhythmus, Briefe kommen nicht täglich)
+  oder kürzer (7–14 Tage, Indie-Erfahrung sagt: kürzer konvertiert
+  besser)? Messbar per A/B, sobald der Fake-Door steht.
 - Trial mit oder ohne Zahlungsdaten bei Start?
 - Jahresabo-Rabatt: 2 Monate geschenkt (17 %) oder aggressiver?
 - Preisanker auf der Landing Page testen: 4,99 € vs. 5,99 €.
