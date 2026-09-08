@@ -102,15 +102,42 @@ Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
 
 ## 4b. Competitor-Benchmark (Listenpreise, Stand 09/2026)
 
-| Produkt | Kategorie | Modell | Preis |
+Quellenlage: ✓ = auf der offiziellen Anbieterseite verifiziert, ~ = aus
+Zweitquelle (Review/Preisblog, teils von Wettbewerbern betrieben — mit
+Vorsicht). SEO-Preisblogs wie usecalendara.com gehören selbst
+Konkurrenzprodukten und sind keine neutralen Quellen.
+
+**Familien-Organizer (Kalender/Listen, teils Dokumentenablage):**
+
+| Produkt | Modell | Preis | Quelle |
 | --- | --- | --- | --- |
-| FamilyWall Premium | Familien-Organizer (Kalender, Listen, Dokumente) | Freemium + Jahresabo | $44,99/Jahr (~$3,75/Monat) |
-| Cozi Gold | Familien-Kalender | Freemium (mit Werbung) + Jahresabo | $39/Jahr, kein Monatsabo |
-| TimeTree Premium | Geteilter Kalender | Freemium + Abo | $4,49/Monat oder $44,99/Jahr |
-| SwiftScan | Dokumenten-Scanner | Freemium + Abo / Lifetime-Deals | Lifetime-Angebote ~$40 (reg. $199,99); Abo-Historie öffentlich als „Abo-Monster" kritisiert |
-| Evernote | Notizen/Dokumente | Freemium + Abo | deutlich zweistellig pro Monat; Preiserhöhung 2026 mit massivem Community-Backlash |
-| Volders | Vertragsassistent (DE) | Kostenlos, Monetarisierung über Kündigungs-/Wechselservices | 0 € |
-| Google One | Speicher | Abo | 100 GB für €19,99/Jahr |
+| FamilyWall Premium | Freemium + Abo, 30 Tage Trial | $4,99/Monat, $44,99/Jahr | ✓ |
+| Cozi Gold | Freemium (Werbung) + Jahresabo | $39/Jahr, kein Monatsabo | ✓ |
+| TimeTree Premium | Freemium + Abo | $4,49/Monat, $44,99/Jahr | ✓ |
+| Maple | Freemium + Abo | Preis nicht öffentlich sauber belegt | ~ |
+| Skylight Calendar | Hardware + optionales Plus-Abo | ~$300 Gerät + $79/Jahr | ~ |
+| Hearth Display | Hardware + Membership | $699 Gerät + Membership | ~ |
+
+**Dokumenten-/Vertrags-Apps (DE-nah):**
+
+| Produkt | Modell | Preis | Quelle |
+| --- | --- | --- | --- |
+| fileee Free | Freemium-Stufe | 0 €, 10 Dokumente/Monat, werbefrei | ✓ |
+| fileee Basic | Abo | €4,99/Monat (€3,99 im Jahresabo), 50 Dok/Monat | ✓ |
+| fileee Smart | Abo + Overage | €9,99/Monat (€7,99 im Jahresabo), 100 Dok/Monat, danach €0,10/Dokument | ✓ |
+| Volders | Kostenlos, Monetarisierung über Kündigungs-/Wechselservices | 0 € | ✓ |
+| SwiftScan | Freemium + Abo/Lifetime | Lifetime-Deals ~$40; Abo-Historie öffentlich als „Abo-Monster" kritisiert | ~ |
+| Evernote | Freemium + Abo | zweistellig/Monat; Preiserhöhung 2026 mit massivem Backlash | ~ |
+| Google One | Abo | 100 GB für €19,99/Jahr | ✓ |
+
+**KI-Familienassistenten (die eigentliche neue Kategorie):**
+
+| Produkt | Modell | Preis | Quelle |
+| --- | --- | --- | --- |
+| Ohai.ai (US) | Freemium + Premium | Free-Version + Premium ab $9,99/Monat; KI + menschliche Assistenten dahinter | ✓ |
+| Duckbill (US) | Membership, 3 Stufen | $99/Monat Individual, $169 Family, $449 VIP — KI + Menschen, „Execution statt Dashboards" | ~ (CNET) |
+| Yohana (Panasonic) | High-Touch-Concierge | nicht mehr als eigenständiges Produkt — in PanasonicWELL aufgegangen | ✓ (Panasonic) |
+| FamilyOS (familyos.systems) | On-Device, privacy-first | neu, unklar | ~ |
 
 **Was der Markt uns sagt:**
 
@@ -138,8 +165,26 @@ Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
    nicht an „wir scannen eure Briefe".
 6. **Kein Wettbewerber verbindet Familien-Organizer mit einem KI-
    Dokumenten-Assistenten.** FamilyWall hat Dokumente als Ablage, aber
-   keine Extraktion, keine Fristen, keine Fragen ans Archiv. Ordilo
-   sitzt preislich im Korridor der Organizer und funktional darüber.
+   keine Extraktion, keine Fristen, keine Fragen ans Archiv. fileee hat
+   Extraktion, aber keinen Familienplan (die eigene FAQ bewirbt ihn als
+   „kommt noch") und keinen dialogfähigen Assistenten. Ohai hat den
+   Assistenten, aber kein deutsches Dokumentenarchiv mit OCR-Intake.
+7. **fileee belegt: Quoten-Freemium funktioniert im deutschen
+   Dokumentenmarkt.** 10 Dokumente gratis, 50/100 in den Paid-Stufen,
+   €0,10 Overage pro Dokument nur als Nebenmechanik im teuersten Plan.
+   Unser Free-Kontingent (25/Monat) ist großzügiger als fileees — bei
+   unseren ~5 ct Stückkosten vertretbar, aber die Obergrenze sollte beim
+   Launch geprüft werden.
+8. **Ohai zeigt Preis-Kopfraum nach oben.** $9,99/Monat (mit Menschen
+   im Loop) für genau unser Kernversprechen — Foto vom Schulbrief →
+   Termine und Aufgaben. Wer den Assistenten in den Vordergrund stellt,
+   kann mehr als €4,99 verlangen; die Organizer-Positionierung
+   (Kalender + Listen) deckelt bei ~$45/Jahr.
+9. **Duckbill und Yohana markieren Decke und Warnsignal.** Menschen-
+   gestützter Concierge für $99–449/Monat ist ein anderes Marktsegment;
+   Yohana ist als eigenständiges Produkt in PanasonicWELL aufgegangen —
+   High-Touch skaliert nicht in den Familien-Massenmarkt. Ordilos Lücke
+   liegt dazwischen: reine Software, Assistenten-Qualität, ~5 €.
 
 **Konsequenz für die Vorschläge:** Die saubere Trennung „A oder C" war
 zu scharf. Der Markt zeigt: Free-Kontingent (A) als Eintritt +
@@ -198,3 +243,9 @@ immer noch kostendeckend.
 - Trial mit oder ohne Zahlungsdaten bei Start?
 - Jahresabo-Rabatt: 2 Monate geschenkt (17 %) oder aggressiver?
 - Preisanker auf der Landing Page testen: 4,99 € vs. 5,99 €.
+- Free-Kontingent: 25 Dokumente/Monat (großzügig) oder fileee-nah
+  10/Monat (schnellerer Upgrade-Druck)? Erst Fake-Door-Messung, dann
+  festlegen.
+- Positionierung testen: „Organizer-Preis" (4,99 €, Korridor-Konform)
+  vs. „Assistenten-Preis" (7,99–9,99 €, Ohai-nah) — der Fake-Door kann
+  beide Preise gegenüberstellen.
