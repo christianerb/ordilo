@@ -44,15 +44,16 @@ mehrseitige Verträge ab.
 | Wenig | 5 Dokumente, 10 Chatfragen, 15 Suchen | **~$0,60** |
 | Typisch | 20 Dokumente, 30 Chatfragen, 50 Suchen | **~$2,00** |
 | Power | 80 Dokumente, 120 Chatfragen, 150 Suchen, Sprache | **~$8–9** |
-| **Free-Plan, realistisch** | ~10 Dokumente, ~5 KI-Fragen, ~20 Suchen | **~$0,65** |
-| **Free-Plan, am Anschlag** | 25 Dokumente, 10 KI-Fragen, Suchen frei | **~$1,55** (25 × $0,05 + 10 × $0,03) |
+| **Free-Plan, realistisch** | ~8 Dokumente, ~5 KI-Fragen, ~20 Suchen | **~$0,55** |
+| **Free-Plan, am Anschlag** | 10 Dokumente, 10 KI-Fragen, Suchen frei | **~$0,80/Monat** + einmalig ~$2,50 Start-Kontingent (50 Dok.) |
 | Anschlag heute (alle Tageslimits × 30) | 1.500 Dokumente, 1.500 Chats | **~$120** — zeigt, warum Limits bleiben müssen |
 
 Selbst eine Free-Familie, die jeden Monat beide Limits voll ausreizt,
-kostet also ~1,55 $ — weniger als der Zahlungsgebühren-Anteil von zwei
-Plus-Monaten. 100 Free-Familien am Anschlag ≈ 155 $/Monat: das ist
-das tatsächliche Budget, das der Free-Plan als Marketing kostet.
-Speicher und Datenbank fallen nicht ins Gewicht (wenige MB pro
+kostet nach dem Startmonat ~0,80 $ — weniger als der
+Zahlungsgebühren-Anteil eines einzigen Plus-Monats. 100 Free-Familien
+am Anschlag ≈ 80 $/Monat laufend plus einmalig ~250 $ Start-Kontingente:
+das ist das tatsächliche Budget, das der Free-Plan als Marketing
+kostet. Speicher und Datenbank fallen nicht ins Gewicht (wenige MB pro
 Dokument; Bruchteile von Cents).
 
 Fixkosten dazu: Vercel Pro, Supabase Pro, Resend — grob 50–80 €/Monat,
@@ -66,10 +67,11 @@ Preis ab ~5 €/Monat trägt die Kosten mit deutlicher Marge
 
 ### Vorschlag A — Freemium
 
-- **Free:** 25 Dokumente/Monat, 10 KI-Fragen/Monat, 2 Familienmitglieder,
-  kein E-Mail-Import. **Suchen werden nicht gemessen** — unter einem
-  halben Cent pro Anfrage, das ist Messrauschen, und ein dritter Zähler
-  macht das Modell nur komplizierter.
+- **Free:** 50 Start-Dokumente in den ersten 30 Tagen, danach
+  10 Dokumente/Monat, 10 KI-Fragen/Monat, 2 Familienmitglieder, kein
+  E-Mail-Import (Synthese 4g). **Suchen werden nicht gemessen** — unter
+  einem halben Cent pro Anfrage, das ist Messrauschen, und ein dritter
+  Zähler macht das Modell nur komplizierter.
 - **Warum Dokumente großzügig und Fragen knapp (nicht umgekehrt):**
   Ein Dokument kostet einmalig ~5 ct (OCR ~2 ct, Analyse ~3 ct,
   Embeddings ≈ 0) und liegt danach praktisch kostenlos im Archiv.
@@ -439,9 +441,9 @@ aktivitätsgewichtet eher **0,10–0,20 €/Monat**.
    Benchmark-Band. Erreichbar.
 2. **Wenn Free-Nutzer das Kontingent regelmäßig ausreizen, ist Free nie
    selbsttragend** (15–28 % Conversion braucht niemand in dieser
-   Kategorie). Die Quoten (25 Dokumente, 10 KI-Fragen) sind damit nicht
-   Großzügigkeit, sondern **die Bedingung, unter der die Rechnung
-   überhaupt funktioniert.**
+   Kategorie). Die Quoten (Start-Kontingent + 10 Dokumente/Monat, 10
+   KI-Fragen) sind damit nicht Großzügigkeit, sondern **die Bedingung,
+   unter der die Rechnung überhaupt funktioniert.**
 3. **Der gefährlichste Fall ist der teure Inaktive nicht — es gibt ihn
    kaum.** Dokumente kosten nur bei Verarbeitung; ein toter Account
    kostet Speicher-Bruchteile. Der teure Fall ist die aktive Dauer-Free-
@@ -468,6 +470,51 @@ Aktivierung) — jeder Prozentpunkt halbiert fast die nötige Familienzahl;
 (3) **Free-Kosten klein halten** (Quoten, keine teuren Features im
 Free-Plan — Realtime-Sprache bleibt Plus).
 
+## 4g. Synthese: Vier Nachjustierungen nach der Gesamtrechnung
+
+**1. fileees bester Trick: Start-Kontingent statt Dauer-Generosität.**
+fileee gibt Free-Nutzern 50 Start-Dokumente (nur im ersten Monat) +
+danach 10/Monat. Das löst unseren Widerspruch zwischen „Dokumente
+bauen Lock-in, also großzügig" und „am Anfang knauserig testen, weil
+Lockerungen leichter sind als Kürzungen": **Die Großzügigkeit gehört in
+den Einstieg, die Knauserigkeit in den Dauerbetrieb.** Neuer Free-
+Vorschlag: **50 Start-Dokumente in den ersten 30 Tagen, danach
+10/Monat, 10 KI-Fragen/Monat.** Kosten: einmalig ~2,50 $ (das ist
+Akquise-Investition in Lock-in), danach max. ~0,80 $/Monat — billiger
+als der alte Entwurf UND psychologisch besser: Nach 30 Tagen ist das
+Archiv gefüllt, die Familie hängt drin, und genau dann greift die
+Kappe.
+
+**2. Limits nach Konversions-Psychologie setzen, nicht nach
+Kostenangst.** Modellpreise fallen historisch ~10× alle ~18 Monate;
+unsere ~2 €/Monat werden von allein zu ~0,50 €. Dazu kommt **Model-
+Routing** als Engineering-Hebel: einfache Fragen auf luna (10×
+billiger), nur komplexe auf terra — senkt Chatkosten voraussichtlich
+40–60 %. Wer Limits auf die Kosten von heute zugeschnitten festzurrt,
+verschenkt Spielraum, den er morgen gratis bekommt. Deshalb: Limits
+als Konfiguration (nicht Konstanten), Startwerte bewusst leicht UNTER
+dem Zielwert — eine spätere Erhöhung ist ein Geschenk („Wir haben die
+Limits erhöht"), eine Kürzung ist ein Vertrauensbruch.
+
+**3. Preis-Disziplin gilt nur für Neukunden.** 7,99 €/79 € gilt ab
+Launch für Neukunden; die Founding-Kohorte (2,99 €/Lifetime oder
+149 € einmalig, ~100 Familien) bleibt grandfathered. Preiserhöhungen
+später immer nur für Neukunden (Evernote-Lektion). So ist „erst
+knauserig, dann großzügig" auf der Preisachse genauso umkehrsicher wie
+auf der Limit-Achse.
+
+**4. Ads: klein testbar, aber nur unter drei Bedingungen.** CAC-Decke
+bei 7,99 € ist ~20 € (4f). Paid-Tests (Apple Search Ads auf Kategorie-
+Keywords wie „Dokumente scannen App", „Familienkalender") sind drin,
+wenn: Conversion ≥5 % belegt ist, der Jahresabo-Anteil ≥50 % liegt und
+die Kanäle einzeln gegen die 20-€-Decke gemessen werden. Vorher ist
+jeder Ad-Euro geraten. Der Invite-Loop bleibt Kanal Nr. 1 — er hat CAC
+0 und die höchste Intention.
+
+**Unverändert bestätigt:** Free als Mengen- statt Feature-Kastration;
+KI-Fragen als primäre Metering-Achse; Suchen frei; E-Mail-Import und
+Realtime-Sprache als Plus-Features; kein Pay-per-Use, keine Werbung.
+
 ## 5. Empfehlung
 
 **C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
@@ -491,10 +538,11 @@ Free-Plan — Realtime-Sprache bleibt Plus).
    echten Klicks.
 3. **Free-Kontingent ab Launch, nicht optional:** Der Benchmark zeigt,
    dass Freemium in dieser Kategorie Erwartung ist, nicht Zugeständnis.
-   Kontingent (25 Dokumente/Monat, 10 KI-Fragen/Monat, Suchen frei —
-   Begründung in Vorschlag A) als Top-of-Funnel — technisch dasselbe
-   Entitlement-System, nur ein weiterer Plan. Variable Kosten einer
-   Free-Familie (≈$0,65 realistisch, ≈$1,55 am Anschlag) sind das
+   Kontingent (50 Start-Dokumente/30 Tage, danach 10 Dokumente +
+   10 KI-Fragen/Monat, Suchen frei — Begründung in A und 4g) als
+   Top-of-Funnel — technisch dasselbe Entitlement-System, nur ein
+   weiterer Plan. Variable Kosten einer Free-Familie (≈$0,55
+   realistisch, ≈$0,80 am Anschlag, einmalig $2,50 Start) sind das
    Marketing-Budget.
 4. **Pay-per-Use (B) verworfen** aus Produkt- und Markengründen.
 
