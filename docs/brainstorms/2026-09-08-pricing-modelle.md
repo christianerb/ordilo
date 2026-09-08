@@ -305,6 +305,60 @@ Seine eigene Warnung gilt auch hier: Was für eine Vibe-coded Tracker-
 App mit null Serverkosten funktioniert, ist keine Blaupause für ein
 Archiv-Produkt mit echten laufenden KI-Kosten pro Familie.
 
+## 4d. Einheitsökonomie: Was von 4,99 € wirklich übrig bleibt
+
+Der Listenpreis ist nicht der Umsatz. Reihenfolge der Abzüge pro
+Monatsabo (4,99 €, inkl. 19 % MwSt.):
+
+| Kanal | Brutto | − MwSt. (19 %) | − Gebühr | = Netto |
+| --- | --- | --- | --- | --- |
+| Web (Stripe, EU-Karte ~1,4 % + 0,25 €) | 4,99 € | 4,19 € | −0,31 € | **~3,88 €** |
+| iOS (App Store, Small Business 15 %) | 4,99 € | 4,19 € | −0,63 € | **~3,56 €** |
+| iOS ohne Small Business (30 %) | 4,99 € | 4,19 € | −1,26 € | **~2,93 €** |
+| Jahresabo 49 € (Web, pro Monat gerechnet) | 4,08 € | 3,43 € | −0,08 €* | **~3,35 €** |
+
+\* eine Stripe-Gebühr pro Jahr statt zwölf. Jahresabo glättet zusätzlich
+Cashflow und Churn-Messung.
+
+Dagegen die variablen Kosten (Abschnitt 3):
+
+| Familien-Profil | Kosten/Monat | Marge Web (3,88 €) | Marge iOS (3,56 €) |
+| --- | --- | --- | --- |
+| Typisch (~2 $) | ~1,85 € | **~2,00 € (52 %)** | ~1,70 € (48 %) |
+| Engagiert (~5 $) | ~4,60 € | **−0,70 €** | −1,00 € |
+| Power am Fair-Use-Anschlag (~9 $) | ~8,30 € | **−4,40 €** | −4,70 € |
+
+**Ehrliche Antwort: Ja, bei voller Ausnutzung ist 4,99 € Casino.** Das
+Modell trägt sich nur unter drei Bedingungen:
+
+1. **Die Verteilung rettet uns, nicht der Preis.** Familien-Apps zeigen
+   starke Saisonalität (Schulanfang, Versicherungswechsel) und danach
+   ruhige Monate. Erwartbarer Mittelwert über zahlende Familien:
+   1,50–2,50 € Kosten. Die Power-Familie mit 8 €+ ist die Ausnahme —
+   aber genau deshalb braucht Plus **Fair-Use-Kappen** (z. B. 100
+   KI-Fragen/Monat, 100 Dokumente/Monat), die den p99 unter ~3 € halten.
+   Die heutigen Tageslimits (50/Tag!) sind als Obergrenze für ein
+   5-€-Abo viel zu hoch.
+2. **Bei ~1,70–2,00 € Deckungsbeitrag ist CAC der Engpass, nicht die
+   Marge.** Faustformel: 6 % Monats-Churn (Consumer-typisch) → ~16
+   Monate Lebensdauer → ~28 € Deckungsbeitrag auf Lebenszeit. CAC darf
+   also nur ~10 € betragen — klassische Paid Ads sind damit praktisch
+   unbezahlbar. **Konsequenz: Akquise muss über Invite-Loop, ASO und
+   Content laufen, nicht über Ads.** Das ist eine Strategie-Entscheidung,
+   keine Marketing-Feinheit.
+3. **7,99 € ändern die Welt mehr als jede Optimierung.** Bei 7,99 €
+   (Web ~6,20 €, iOS ~5,70 € netto) verdoppelt sich der Deckungsbeitrag
+   auf ~4 €/Monat, CAC-Decke steigt auf ~20 €, und selbst engagierte
+   Familien bleiben profitabel. Trustworthy ($10–20) und Ohai ($9,99)
+   belegen die Zahlungsbereitschaft. **Empfehlung daher: Fake-Door
+   testet 4,99 € gegen 7,99 € — nicht als Feinheit, sondern weil die
+   Einheitsökonomie bei 4,99 € von Disziplin abhängt und bei 7,99 €
+   robust ist.**
+
+Fixkosten-Einordnung: Vercel/Supabase/Resend ~60 €/Monat → ~35 zahlende
+Familien decken die Infrastruktur. Gründerzeit ist hier bewusst nicht
+eingerechnet.
+
 ## 5. Empfehlung
 
 **C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
