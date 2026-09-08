@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCodeEligibleAdmin, getVerifiedAdmin } from "@/lib/admin/access";
-import { getGreeting } from "@/components/ordilo/app-shell-shared";
+import { getGreeting } from "@/lib/greeting";
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { AdminLogoutButton } from "./admin-logout-button";
 import { AdminOverviewTab } from "./overview-tab";
