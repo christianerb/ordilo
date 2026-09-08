@@ -98,7 +98,9 @@ export async function AdminCostsTab() {
                   <div
                     className="animate-bar-grow-in rounded-t bg-primary/60"
                     style={{
-                      height: `${Math.max(4, (entry.knownUsd / Math.max(0.0001, ...usage.monthly.map((month) => month.knownUsd))) * 100)}%`,
+                      height: entry.knownUsd > 0
+                        ? `${Math.max(4, (entry.knownUsd / Math.max(0.0001, ...usage.monthly.map((month) => month.knownUsd))) * 100)}%`
+                        : "0%",
                       "--bar-delay": `${index * 40}ms`,
                     } as React.CSSProperties}
                     title={`${formatMonthLabel(entry.month)}: ${formatUsd(entry.knownUsd)}, ${entry.calls} Aufrufe`}

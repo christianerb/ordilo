@@ -257,16 +257,6 @@
     from { transform: scaleX(0.05); }
     to { transform: scaleX(1); }
   }
-  .animate-bar-grow-in {
-    transform-origin: bottom;
-    animation: bar-grow-in 0.3s var(--ease-out-expo) backwards;
-    animation-delay: var(--bar-delay, 0ms);
-  }
-  .animate-bar-grow-in-x {
-    transform-origin: left;
-    animation: bar-grow-in-x 0.3s var(--ease-out-expo) backwards;
-    animation-delay: var(--bar-delay, 0ms);
-  }
   /* Card list item entrance — fade + slide up, used with stagger delays */
   @keyframes card-in {
     from {
@@ -768,6 +758,17 @@
    --------------------------------------------------------------------------- */
 
 @layer utilities {
+  .animate-bar-grow-in {
+    transform-origin: bottom;
+    animation: bar-grow-in 0.3s var(--ease-out-expo) backwards;
+    animation-delay: var(--bar-delay, 0ms);
+  }
+  .animate-bar-grow-in-x {
+    transform-origin: left;
+    animation: bar-grow-in-x 0.3s var(--ease-out-expo) backwards;
+    animation-delay: var(--bar-delay, 0ms);
+  }
+
   .shadow-card {
     box-shadow: var(--shadow-card);
   }

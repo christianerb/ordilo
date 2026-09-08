@@ -3,14 +3,6 @@
  * Pure module so the counting stays testable without a database.
  */
 
-export type FeedbackRow = {
-  rating: string;
-  reasons: string[];
-  comment: string | null;
-  query_kind: string;
-  created_at: string;
-};
-
 export type FeedbackCounts = {
   positive: number;
   negative: number;
@@ -38,9 +30,7 @@ export const QUERY_KIND_LABELS: Record<string, string> = {
   suche: "Suche",
 };
 
-function countRatings(rows: FeedbackRow[]): FeedbackCounts {
-  const positive = rows.filter((row) => row.rating === "positive").length;
-  const negative = rows.filter((row) => row.rating === "negative").length;
+export function countsFromVotes(positive: number, negative: number): FeedbackCounts {
   const total = positive + negative;
   return {
     positive,
@@ -49,36 +39,33 @@ function countRatings(rows: FeedbackRow[]): FeedbackCounts {
   };
 }
 
-/**
- * @param windowStart ISO timestamp; rows at or after it count as "recent".
- */
-export function summarizeFeedback(rows: FeedbackRow[], windowStart: string) {
+/** Ranks the ticked reasons of negative ratings, most frequent first. */
+export function summarizeReasons(rows: Array<{ reasons: string[] }>) {
   const reasonCounts = new Map<string, number>();
   for (const row of rows) {
-    if (row.rating !== "negative") continue;
     for (const reason of row.reasons) {
       reasonCounts.set(reason, (reasonCounts.get(reason) ?? 0) + 1);
     }
   }
+  return [...reasonCounts.entries()]
+    .map(([reason, count]) => ({
+      reason,
+      label: FEEDBACK_REASON_LABELS[reason] ?? reason,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
 
+export function toFeedbackComment(row: {
+  rating: string;
+  comment: string;
+  query_kind: string;
+  created_at: string;
+}): FeedbackComment {
   return {
-    total: countRatings(rows),
-    window: countRatings(rows.filter((row) => row.created_at >= windowStart)),
-    topReasons: [...reasonCounts.entries()]
-      .map(([reason, count]) => ({
-        reason,
-        label: FEEDBACK_REASON_LABELS[reason] ?? reason,
-        count,
-      }))
-      .sort((a, b) => b.count - a.count),
-    recentComments: rows
-      .filter((row) => row.comment)
-      .map((row) => ({
-        rating: row.rating,
-        comment: row.comment as string,
-        queryKind: QUERY_KIND_LABELS[row.query_kind] ?? row.query_kind,
-        createdAt: row.created_at,
-      }))
-      .slice(0, 5),
+    rating: row.rating,
+    comment: row.comment,
+    queryKind: QUERY_KIND_LABELS[row.query_kind] ?? row.query_kind,
+    createdAt: row.created_at,
   };
 }

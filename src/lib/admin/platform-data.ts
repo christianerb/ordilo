@@ -107,7 +107,8 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
       admin.from("family_members").select("id", { count: "exact", head: true }),
       admin.from("family_memberships").select("user_id"),
       admin.from("documents").select("id", { count: "exact", head: true }),
-      // Uploads pro Tag fuer das 30-Tage-Chart.
+      // Uploads pro Tag fuer das 30-Tage-Chart. Manuell angelegte Notizen
+      // (source = "manual") haben keine hochgeladene Datei und zaehlen nicht.
       (async () => {
         const chartStart = startOfDay(new Date(now.getTime() - 29 * DAY_MS)).toISOString();
         const rows: Array<{ created_at: string }> = [];
@@ -116,6 +117,7 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
             .from("documents")
             .select("created_at")
             .gte("created_at", chartStart)
+            .neq("source", "manual")
             .order("id")
             .range(offset, offset + 999);
           if (error) throw error;

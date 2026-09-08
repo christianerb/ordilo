@@ -41,7 +41,9 @@ function DailyBars({
             <div
               className={`animate-bar-grow-in rounded-t ${barClass}`}
               style={{
-                height: `${Math.max(4, (value(metric) / max) * 100)}%`,
+                // Zero stays zero — a minimum-height sliver would report
+                // activity that did not happen.
+                height: value(metric) > 0 ? `${Math.max(4, (value(metric) / max) * 100)}%` : "0%",
                 "--bar-delay": `${index * 8}ms`,
               } as React.CSSProperties}
               title={title(metric)}
@@ -148,7 +150,7 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     },
     {
       label: "Scans",
-      hint: "Hochgeladene Dokumente am Tag; Scans, Fotos und Dateien zählen gleich",
+      hint: "Hochgeladene Dokumente am Tag; manuell geschriebene Notizen zählen nicht",
       value: (metric: DailyMetric) => metric.uploads,
       max: Math.max(1, ...overview.dailyMetrics.map((metric) => metric.uploads)),
       barClass: "bg-primary/45",
@@ -205,7 +207,7 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
         </dl>
         {feedback.topReasons.length > 0 && (
           <p className="mt-4 text-sm text-muted-foreground">
-            Häufigste Gründe für Daumen runter: {feedback.topReasons.map((reason) => `${reason.label} (${reason.count})`).join(" · ")}.
+            Häufigste Gründe für Daumen runter in 30 Tagen: {feedback.topReasons.map((reason) => `${reason.label} (${reason.count})`).join(" · ")}.
           </p>
         )}
         {feedback.recentComments.length > 0 && (
