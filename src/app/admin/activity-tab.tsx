@@ -76,15 +76,18 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
             { label: "Onboarding gestartet", value: beta.started },
             { label: "Onboarding abgeschlossen", value: beta.completed },
             { label: "Erster Upload", value: beta.firstUpload },
-          ].map((step) => {
+          ].map((step, index) => {
             const base = Math.max(1, beta.started);
             return (
               <div key={step.label} className="flex items-center gap-3">
                 <span className="w-44 shrink-0 text-sm text-muted-foreground">{step.label}</span>
                 <div className="h-6 flex-1 overflow-hidden rounded-ordilo-sm bg-secondary">
                   <div
-                    className="h-full rounded-ordilo-sm bg-primary/75"
-                    style={{ width: `${Math.max(step.value > 0 ? 4 : 0, (step.value / base) * 100)}%` }}
+                    className="animate-bar-grow-in-x h-full rounded-ordilo-sm bg-primary/75"
+                    style={{
+                      width: `${Math.max(step.value > 0 ? 4 : 0, (step.value / base) * 100)}%`,
+                      "--bar-delay": `${index * 70}ms`,
+                    } as React.CSSProperties}
                   />
                 </div>
                 <span className="w-20 shrink-0 text-right text-sm font-medium">

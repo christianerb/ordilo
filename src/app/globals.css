@@ -247,6 +247,26 @@
     to { opacity: 1; }
   }
 
+  /* Chart bars grow from their own axis on first render — a mount-only
+     state cue, staggered via --bar-delay. Never retriggered. */
+  @keyframes bar-grow-in {
+    from { transform: scaleY(0.05); }
+    to { transform: scaleY(1); }
+  }
+  @keyframes bar-grow-in-x {
+    from { transform: scaleX(0.05); }
+    to { transform: scaleX(1); }
+  }
+  .animate-bar-grow-in {
+    transform-origin: bottom;
+    animation: bar-grow-in 0.3s var(--ease-out-expo) backwards;
+    animation-delay: var(--bar-delay, 0ms);
+  }
+  .animate-bar-grow-in-x {
+    transform-origin: left;
+    animation: bar-grow-in-x 0.3s var(--ease-out-expo) backwards;
+    animation-delay: var(--bar-delay, 0ms);
+  }
   /* Card list item entrance — fade + slide up, used with stagger delays */
   @keyframes card-in {
     from {
@@ -1212,6 +1232,8 @@
   }
 
   .animate-page-fade-in,
+  .animate-bar-grow-in,
+  .animate-bar-grow-in-x,
   .animate-card-in,
   .animate-check-pop,
   .animate-error-shake,

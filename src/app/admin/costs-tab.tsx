@@ -92,13 +92,14 @@ export async function AdminCostsTab() {
               className="grid h-32 items-end gap-2"
               style={{ gridTemplateColumns: `repeat(${usage.monthly.length}, minmax(0, 1fr))` }}
             >
-              {[...usage.monthly].reverse().map((entry) => (
+              {[...usage.monthly].reverse().map((entry, index) => (
                 <div key={entry.month} className="flex h-full min-w-0 flex-col justify-end">
                   <div
-                    className="rounded-t bg-primary/60"
+                    className="animate-bar-grow-in rounded-t bg-primary/60"
                     style={{
                       height: `${Math.max(4, (entry.knownUsd / Math.max(0.0001, ...usage.monthly.map((month) => month.knownUsd))) * 100)}%`,
-                    }}
+                      "--bar-delay": `${index * 40}ms`,
+                    } as React.CSSProperties}
                     title={`${formatMonthLabel(entry.month)}: ${formatUsd(entry.knownUsd)}, ${entry.calls} Aufrufe`}
                   />
                 </div>

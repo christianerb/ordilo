@@ -36,11 +36,14 @@ function DailyBars({
       <p className="text-sm font-medium text-foreground">{label}</p>
       <p className="text-xs text-muted-foreground">{hint}</p>
       <div className="mt-3 grid h-24 grid-cols-[repeat(30,minmax(0,1fr))] items-end gap-1">
-        {metrics.map((metric) => (
+        {metrics.map((metric, index) => (
           <div key={metric.date} className="flex h-full min-w-0 flex-col justify-end">
             <div
-              className={`rounded-t ${barClass}`}
-              style={{ height: `${Math.max(4, (value(metric) / max) * 100)}%` }}
+              className={`animate-bar-grow-in rounded-t ${barClass}`}
+              style={{
+                height: `${Math.max(4, (value(metric) / max) * 100)}%`,
+                "--bar-delay": `${index * 8}ms`,
+              } as React.CSSProperties}
               title={title(metric)}
             />
           </div>
