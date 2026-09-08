@@ -143,23 +143,9 @@ export function getTimeOfDay(date: Date): TimeOfDay {
   return "night";
 }
 
-export function getGreeting(date: Date, timeZone?: string): string {
-  // Server components render in the host's timezone (UTC on Vercel), so
-  // callers there pass the family's timezone explicitly.
-  const hour = timeZone
-    ? Number(
-        new Intl.DateTimeFormat("en-GB", {
-          hour: "2-digit",
-          hourCycle: "h23",
-          timeZone,
-        }).format(date),
-      )
-    : date.getHours();
-  if (hour >= 5 && hour < 11) return "Guten Morgen";
-  if (hour >= 11 && hour < 18) return "Guten Tag";
-  if (hour >= 18 && hour < 22) return "Guten Abend";
-  return "Gute Nacht";
-}
+// getGreeting lives in @/lib/greeting (a server-safe module) and is
+// re-exported so existing client imports keep working.
+export { getGreeting } from "@/lib/greeting";
 
 export const TIME_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
