@@ -112,7 +112,7 @@ Konkurrenzprodukten und sind keine neutralen Quellen.
 | Produkt | Modell | Preis | Quelle |
 | --- | --- | --- | --- |
 | FamilyWall Premium | Freemium + Abo, 30 Tage Trial | $4,99/Monat, $44,99/Jahr | ✓ |
-| Cozi Gold | Freemium (Werbung) + Jahresabo | $39/Jahr, kein Monatsabo | ✓ |
+| Cozi Gold | Freemium (Werbung) + Jahresabo; ein Kauf gilt für die ganze Familie auf allen Geräten | $39/Jahr, kein Monatsabo | ✓ |
 | TimeTree Premium | Freemium + Abo | $4,49/Monat, $44,99/Jahr | ✓ |
 | Maple | Freemium + Abo | Preis nicht öffentlich sauber belegt | ~ |
 | Skylight Calendar | Hardware + optionales Plus-Abo | ~$300 Gerät + $79/Jahr | ~ |
@@ -134,10 +134,28 @@ Konkurrenzprodukten und sind keine neutralen Quellen.
 
 | Produkt | Modell | Preis | Quelle |
 | --- | --- | --- | --- |
+| **Trustworthy (US) — „The Family Operating System®"** | Freemium, 4 Stufen, Jahresabo | s. Detailtabelle unten | ✓ |
 | Ohai.ai (US) | Freemium + Premium | Free-Version + Premium ab $9,99/Monat; KI + menschliche Assistenten dahinter | ✓ |
 | Duckbill (US) | Membership, 3 Stufen | $99/Monat Individual, $169 Family, $449 VIP — KI + Menschen, „Execution statt Dashboards" | ~ (CNET) |
 | Yohana (Panasonic) | High-Touch-Concierge | nicht mehr als eigenständiges Produkt — in PanasonicWELL aufgegangen | ✓ (Panasonic) |
 | FamilyOS (familyos.systems) | On-Device, privacy-first | neu, unklar | ~ |
+
+**Trustworthy im Detail** (offizielle Pricing-Seite, 09/2026) — das
+nächstliegende Produkt zu Ordilo: Dokumente reinwerfen, automatische
+Organisation, Erinnerungen, Chat-Antworten aus dem Archiv, E-Mail-
+Import („Inbox Autopilot"). Preise jeweils bei jährlicher Zahlung:
+
+| Stufe | Preis/Monat | Mitglieder | KI-Antworten | Speicher | Bemerkenswert |
+| --- | --- | --- | --- | --- | --- |
+| Free | $0 (für immer) | 1 | 10/Monat | 2 GB | **keine Erinnerungen**, kein Teilen |
+| Silver | $10 | 5 | 25/Monat | 10 GB | Erinnerungen, SecureLinks |
+| Gold | $20 | 10 | unbegrenzt | 100 GB | alle Berechtigungen |
+| Platinum | $40 | unbegrenzt | unbegrenzt | unbegrenzt | dedizierter Concierge (3 h inkl.) |
+
+Dazu: 50 % Dauerrabatt für Militär, Lehrer, Pflege etc. Die Stufen
+metern exakt zwei Dinge: **Mitgliederanzahl** und **KI-Antworten pro
+Monat** — beides Entitlements, die wir bereits technisch abbilden
+könnten (`chat_usage` zählt Nachrichten pro Familie schon heute).
 
 **Was der Markt uns sagt:**
 
@@ -185,6 +203,21 @@ Konkurrenzprodukten und sind keine neutralen Quellen.
    Yohana ist als eigenständiges Produkt in PanasonicWELL aufgegangen —
    High-Touch skaliert nicht in den Familien-Massenmarkt. Ordilos Lücke
    liegt dazwischen: reine Software, Assistenten-Qualität, ~5 €.
+10. **Trustworthy beweist, dass Familien für genau dieses Produkt
+    $10–20/Monat zahlen.** Automatische Organisation, Erinnerungen,
+    KI-Antworten, E-Mail-Import — das ist Ordilos Feature-Set, zum 2–4-
+    fachen unseres Zielpreises (US-Markt, USD). Ihre Metrik — KI-
+    Antworten pro Monat und Mitgliederanzahl — ist die sauberste
+    Entitlement-Achse im Markt und bei uns technisch schon gezählt
+    (`chat_usage`, Familienmitglieder). Zwei Lehren: (a) Unser 4,99-€-
+    Vorschlag ist eher konservativ; 7,99 €/Monat ist durch Trustworthy
+    und Ohai gedeckt. (b) Ihr Free-Plan ist hart kastriert (keine
+    Erinnerungen, kein Teilen) — für eine warme Familienmarke die
+    falsche Stelle zum Sparen; lieber Mengen (Dokumente, KI-Fragen)
+    begrenzen als Grundfunktionen sperren.
+11. **Ein Kauf gilt für die ganze Familie** (Cozi explizit, Trustworthy
+    über Mitgliederanzahl) — niemand verkauft Familien-Abos pro Person.
+    Bestätigt: Preis pro Familie, nicht pro Nutzer.
 
 **Konsequenz für die Vorschläge:** Die saubere Trennung „A oder C" war
 zu scharf. Der Markt zeigt: Free-Kontingent (A) als Eintritt +
@@ -247,5 +280,8 @@ immer noch kostendeckend.
   10/Monat (schnellerer Upgrade-Druck)? Erst Fake-Door-Messung, dann
   festlegen.
 - Positionierung testen: „Organizer-Preis" (4,99 €, Korridor-Konform)
-  vs. „Assistenten-Preis" (7,99–9,99 €, Ohai-nah) — der Fake-Door kann
-  beide Preise gegenüberstellen.
+  vs. „Assistenten-Preis" (7,99–9,99 €, Ohai-/Trustworthy-nah) — der
+  Fake-Door kann beide Preise gegenüberstellen.
+- Metering-Achse: KI-Fragen pro Monat staffeln (Trustworthy-Vorbild:
+  10/25/unbegrenzt) statt oder zusätzlich zu Dokumenten? Chat-Nutzung
+  wird schon pro Familie gezählt — Umsetzung wäre klein.
