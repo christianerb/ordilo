@@ -359,6 +359,55 @@ Fixkosten-Einordnung: Vercel/Supabase/Resend ~60 €/Monat → ~35 zahlende
 Familien decken die Infrastruktur. Gründerzeit ist hier bewusst nicht
 eingerechnet.
 
+## 4e. Marktgröße und Wirtschaftlichkeit (DE/DACH)
+
+**Markt (Destatis/Mikrozensus):** ~8,2 Mio Familien mit minderjährigen
+Kindern in Deutschland (dabei 1,62 Mio Alleinerziehende), DACH grob
+~10 Mio. Unser Kernsegment: Eltern, die den „Papierkram-Haushalt"
+digital führen — konservativ 15–20 % zahlen grundsätzlich für Apps →
+**SAM ~1,5–2 Mio Familien**. Realistischer 3–5-Jahre-Anteil: 0,5–2 %
+davon = **10.000–40.000 zahlende Familien** (SOM).
+
+**Benchmarks (RevenueCat State of Subscription Apps 2026, 115k Apps):**
+
+| Kennzahl | Wert | Was es für uns heißt |
+| --- | --- | --- |
+| Freemium Download→Paid (Tag 35) | 2,1 % | Free konvertiert langsam — Geduld einplanen |
+| Hard Paywall Download→Paid | 10,7 % (5×) | Der Indie aus 4c hat datenseitig recht; unser Free bleibt trotzdem wegen Invite-Loop und Kategorie-Norm |
+| Trial→Paid, 17–32 Tage | 42,5 % | Unser 30-Tage-Trial ist der starke Hebel |
+| Trial→Paid, <4 Tage | 25,5 % | Kurze Trials opfern Conversion für schnelles Cash |
+| Jahresabo: Kündigung Auto-Renewal in Monat 1 | 35 % | Jahr 2 muss ab Woche 1 verdient werden |
+| Jahresabo: Erneuerung nach Jahr 1 | ~28 % | Jahresabo ≈ „1 Jahr sicher, danach neu gewinnen" |
+| KI-Apps: LTV-Premium Jahr 1 | +41 % ($30,16 vs. $21,37) | KI verkauft sich |
+| KI-Apps: Churn | 36 % schneller | KI-Novellety allein hält nicht — unser Archiv-Lock-in ist genau das Gegenmittel |
+| Median-Jahres-Retention (Jahresabo, Freemium) | 28 % | konsistent mit oben |
+| CAC Mobile (Benchmark) | $1–5 pro Install, $20–80 pro zahlendem Nutzer | Paid UA bei 5–8 €-Preisen nur organisch schönrechnbar |
+
+**Wirtschaftlichkeit bei 7,99 €/Monat (netto ~6,20 € Web / ~5,70 € iOS):**
+
+- Deckungsbeitrag pro typischer Familie: **~4 €/Monat** (nach ~2 €
+  KI-Kosten).
+- LTV-Deckungsbeitrag bei 6 % Monats-Churn (~16 Monate): **~65–70 €**
+  → CAC-Decke (3:1): **~20 €**. Paid Ads liegen bei $20–80 pro zahlen-
+  dem Nutzer: grenzwertig — der Invite-Loop bleibt der Hauptkanal.
+
+**Szenarien (50/50 Web/iOS-Mix, Jahresanteil 60 %):**
+
+| Zahlende Familien | Netto-Umsatz/Monat | − KI-Kosten | − Free-Kosten* | Deckungsbeitrag/Monat |
+| --- | --- | --- | --- | --- |
+| 1.000 | ~5.900 € | ~2.000 € | ~700 € | **~3.200 €** |
+| 5.000 | ~29.500 € | ~10.000 € | ~3.500 € | **~16.000 €** |
+| 20.000 | ~118.000 € | ~40.000 € | ~14.000 € | **~64.000 €** |
+
+\* angenommen: 10 Free-Familien pro zahlender Familie à 0,70 €.
+Fixkosten (~60 €/Monat Infrastruktur) sind hier vernachlässigbar;
+Gründergehälter sind es nicht — ~5.000 zahlende Familien tragen ca.
+zwei Vollzeitgehälter.
+
+**Einordnung:** Das ist ein gesundes Kleinunternehmen bei 5–20k
+Familien, kein Venture-Case. Der Hebel nach oben ist DACH → EU
+(Lokalisierung) und der Assistenten-Preis, nicht das Dokumentenvolumen.
+
 ## 5. Empfehlung
 
 **C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
@@ -371,11 +420,15 @@ eingerechnet.
    testen. Wer zahlt, validiert den Preis besser als jede Umfrage. Alle
    Founding-Versprechen sind bindend — der Evernote-Backlash 2026
    zeigt, was passiert, wenn Bestandspreise nachträglich kippen.
-2. **Launch:** 4,99 €/Monat / 49 €/Jahr, ein Plan, Fair-Use-Limits an die
-   heutigen Tageslimits angelehnt (50/Tag ≈ weit über Power-Profil).
-   Preisanker bewusst im Organizer-Korridor (Cozi/FamilyWall/TimeTree:
-   39–45 $/Jahr), Rechtfertigung über den KI-Assistenten, nicht über
-   Ablage oder Speicher.
+2. **Launch:** **7,99 €/Monat, 79 €/Jahr** („2 Monate geschenkt",
+   ~17 % Rabatt; die 20-%-Variante wäre 76,70 € — 79 € ist die
+   sauberere Zahl). Begründung in 4d: 4,99 € hängt an Disziplin,
+   7,99 € ist robust — und Trustworthy ($10–20) sowie Ohai ($9,99)
+   belegen die Zahlungsbereitschaft über dem Organizer-Korridor. Ein
+   Plan, zwei Laufzeiten, Fair-Use-Kappen (z. B. 100 Dokumente, 100
+   KI-Fragen/Monat) statt der heutigen 50/Tag-Limits. Vor dem Launch
+   per Fake-Door gegen 4,99 € testen — kostet nichts, entscheidet mit
+   echten Klicks.
 3. **Free-Kontingent ab Launch, nicht optional:** Der Benchmark zeigt,
    dass Freemium in dieser Kategorie Erwartung ist, nicht Zugeständnis.
    Kontingent (25 Dokumente/Monat, 10 KI-Fragen/Monat, Suchen frei —
