@@ -1,20 +1,53 @@
 import { getPlatformOverview } from "@/lib/admin/platform-data";
 import { getHappinessOverview } from "@/lib/admin/happiness-data";
 import {
-  ACCOUNT_STATUS_LABELS,
-  classifyAccountActivity,
   summarizeRetention,
   summarizeStickiness,
-  type AccountActivityStatus,
 } from "@/lib/admin/account-status";
 import { formatGermanDateTime, formatRelativeTime } from "@/lib/format";
 import { AdminPeriodNav, formatAdminNumber } from "./period-nav";
 
-const STATUS_ORDER: AccountActivityStatus[] = ["aktiv", "inaktiv", "lange_nicht_da"];
-
 function formatPercent(rate: number | null): string {
   if (rate === null) return "Noch keine Daten";
   return `${Math.round(rate * 100)} %`;
+}
+
+type DailyMetric = { date: string; registrations: number; activeAccounts: number; uploads: number };
+
+function DailyBars({
+  label,
+  hint,
+  metrics,
+  value,
+  max,
+  barClass,
+  title,
+}: {
+  label: string;
+  hint: string;
+  metrics: DailyMetric[];
+  value: (metric: DailyMetric) => number;
+  max: number;
+  barClass: string;
+  title: (metric: DailyMetric) => string;
+}) {
+  return (
+    <div className="border-t border-border pt-4 first:border-t-0 first:pt-0">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
+      <div className="mt-3 grid h-24 grid-cols-[repeat(30,minmax(0,1fr))] items-end gap-1">
+        {metrics.map((metric) => (
+          <div key={metric.date} className="flex h-full min-w-0 flex-col justify-end">
+            <div
+              className={`rounded-t ${barClass}`}
+              style={{ height: `${Math.max(4, (value(metric) / max) * 100)}%` }}
+              title={title(metric)}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
@@ -22,27 +55,6 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     getPlatformOverview(days),
     getHappinessOverview(),
   ]);
-  const maxDailyActivity = Math.max(
-    1,
-    ...overview.dailyMetrics.map((metric) => metric.activeAccounts),
-  );
-  const maxDailyUploads = Math.max(
-    1,
-    ...overview.dailyMetrics.map((metric) => metric.uploads),
-  );
-  const maxDailyRegistrations = Math.max(
-    1,
-    ...overview.dailyMetrics.map((metric) => metric.registrations),
-  );
-
-  const statusCounts: Record<AccountActivityStatus, number> = {
-    aktiv: 0,
-    inaktiv: 0,
-    lange_nicht_da: 0,
-  };
-  for (const account of overview.accounts) {
-    statusCounts[classifyAccountActivity(account)] += 1;
-  }
 
   const retention = summarizeRetention(overview.accounts);
   const stickiness = summarizeStickiness(
@@ -56,10 +68,35 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     0,
   );
   let runningTotal = overview.accountsTotal - registrationsInWindow;
-  const growth = overview.dailyMetrics.map((metric) => {
-    runningTotal += metric.registrations;
-    return { ...metric, total: runningTotal };
-  });
+  const totalsByDate = new Map(
+    overview.dailyMetrics.map((metric) => {
+      runningTotal += metric.registrations;
+      return [metric.date, runningTotal];
+    }),
+  );
+
+  const metrics = [
+    {
+      label: "Konten gesamt",
+      value: formatAdminNumber(overview.accountsTotal),
+      detail: `${formatAdminNumber(overview.accountsNew)} neu in ${days} Tagen`,
+    },
+    {
+      label: `Aktive Konten (${days} Tage)`,
+      value: formatAdminNumber(overview.accountsActive),
+      detail: "Login oder Nutzung im Zeitraum",
+    },
+    {
+      label: "Familien",
+      value: formatAdminNumber(overview.familiesTotal),
+      detail: `Ø ${formatAdminNumber(overview.averageAccountsPerFamily)} Konten · ${formatAdminNumber(overview.averageMembersPerFamily)} Mitglieder`,
+    },
+    {
+      label: "Dokumente gesamt",
+      value: formatAdminNumber(overview.documentsTotal),
+      detail: "Scans, Fotos und Dateien zusammen",
+    },
+  ];
 
   const feedback = happiness.feedback;
   const healthMetrics = [
@@ -85,51 +122,62 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     },
   ];
 
-  const metrics = [
-    { label: "Konten gesamt", value: formatAdminNumber(overview.accountsTotal) },
-    { label: `Neue Konten (${days} Tage)`, value: formatAdminNumber(overview.accountsNew) },
-    { label: `Aktive Konten (${days} Tage)`, value: formatAdminNumber(overview.accountsActive) },
-    { label: "Familien", value: formatAdminNumber(overview.familiesTotal) },
-    { label: "Konten je Familie", value: formatAdminNumber(overview.averageAccountsPerFamily) },
-    { label: "Mitglieder je Familie", value: formatAdminNumber(overview.averageMembersPerFamily) },
-    { label: "Dokumente gesamt", value: formatAdminNumber(overview.documentsTotal) },
-    ...STATUS_ORDER.map((status) => ({
-      label: `Konten: ${ACCOUNT_STATUS_LABELS[status]}`,
-      value: formatAdminNumber(statusCounts[status]),
-    })),
+  const charts = [
+    {
+      label: "Aktive Konten",
+      hint: "Konten mit Login oder Nutzung am Tag",
+      value: (metric: DailyMetric) => metric.activeAccounts,
+      max: Math.max(1, ...overview.dailyMetrics.map((metric) => metric.activeAccounts)),
+      barClass: "bg-primary/75",
+      title: (metric: DailyMetric) => `${metric.date}: ${metric.activeAccounts} aktiv`,
+    },
+    {
+      label: "Neue Anmeldungen",
+      hint: "Registrierungen am Tag, Tooltip zeigt den kumulierten Stand",
+      value: (metric: DailyMetric) => metric.registrations,
+      max: Math.max(1, ...overview.dailyMetrics.map((metric) => metric.registrations)),
+      barClass: "bg-primary/60",
+      title: (metric: DailyMetric) =>
+        `${metric.date}: ${metric.registrations} neu, ${totalsByDate.get(metric.date)} Konten insgesamt`,
+    },
+    {
+      label: "Scans",
+      hint: "Hochgeladene Dokumente am Tag; Scans, Fotos und Dateien zählen gleich",
+      value: (metric: DailyMetric) => metric.uploads,
+      max: Math.max(1, ...overview.dailyMetrics.map((metric) => metric.uploads)),
+      barClass: "bg-primary/45",
+      title: (metric: DailyMetric) => `${metric.date}: ${metric.uploads} Dokumente hochgeladen`,
+    },
   ];
 
   return (
     <>
       <AdminPeriodNav tab="uebersicht" days={days} />
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Kennzahlen">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Kennzahlen">
         {metrics.map((metric) => (
           <article key={metric.label} className="rounded-ordilo-sm border border-border bg-card p-4 shadow-card">
             <p className="text-sm text-muted-foreground">{metric.label}</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{metric.value}</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">{metric.detail}</p>
           </article>
         ))}
       </section>
 
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Aktive Konten, letzte 30 Tage</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Balken zeigen aktive Konten, die Zahlen im Tooltip neue Anmeldungen.
-          </p>
-        </div>
-        <div className="mt-6 grid h-36 grid-cols-[repeat(30,minmax(0,1fr))] items-end gap-1">
-          {overview.dailyMetrics.map((metric) => (
-            <div key={metric.date} className="flex h-full min-w-0 flex-col justify-end">
-              <div
-                className="rounded-t bg-primary/75"
-                style={{
-                  height: `${Math.max(4, (metric.activeAccounts / maxDailyActivity) * 100)}%`,
-                }}
-                title={`${metric.date}: ${metric.activeAccounts} aktiv, ${metric.registrations} neu`}
-              />
-            </div>
+        <h2 className="text-base font-semibold text-foreground">Letzte 30 Tage</h2>
+        <div className="mt-4 space-y-4">
+          {charts.map((chart) => (
+            <DailyBars
+              key={chart.label}
+              label={chart.label}
+              hint={chart.hint}
+              metrics={overview.dailyMetrics}
+              value={chart.value}
+              max={chart.max}
+              barClass={chart.barClass}
+              title={chart.title}
+            />
           ))}
         </div>
         <div className="mt-2 flex justify-between text-xs text-muted-foreground">
@@ -139,38 +187,7 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
       </section>
 
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Wachstum, letzte 30 Tage</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Neue Anmeldungen pro Tag, der Tooltip zeigt den kumulierten Kontostand.
-          </p>
-        </div>
-        <div className="mt-6 grid h-36 grid-cols-[repeat(30,minmax(0,1fr))] items-end gap-1">
-          {growth.map((metric) => (
-            <div key={metric.date} className="flex h-full min-w-0 flex-col justify-end">
-              <div
-                className="rounded-t bg-primary/60"
-                style={{
-                  height: `${Math.max(4, (metric.registrations / maxDailyRegistrations) * 100)}%`,
-                }}
-                title={`${metric.date}: ${metric.registrations} neu, ${metric.total} Konten insgesamt`}
-              />
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-          <span>{growth[0]?.date}</span>
-          <span>{growth.at(-1)?.date}</span>
-        </div>
-      </section>
-
-      <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Gesundheit und Zufriedenheit</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Wie es Ordilo gerade geht: kommen Leute wieder, klappt die Verarbeitung, und wie bewerten sie die Antworten.
-          </p>
-        </div>
+        <h2 className="text-base font-semibold text-foreground">Gesundheit und Zufriedenheit</h2>
         <dl className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {healthMetrics.map((metric) => (
             <div key={metric.label} className="rounded-ordilo-sm border border-border bg-secondary/40 p-4">
@@ -207,32 +224,6 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
             </table>
           </details>
         )}
-      </section>
-
-      <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
-        <div>
-          <h2 className="text-base font-semibold text-foreground">Scans pro Tag, letzte 30 Tage</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Hochgeladene Dokumente je Tag. Scans, Fotos und Dateien zählen gleich.
-          </p>
-        </div>
-        <div className="mt-6 grid h-36 grid-cols-[repeat(30,minmax(0,1fr))] items-end gap-1">
-          {overview.dailyMetrics.map((metric) => (
-            <div key={metric.date} className="flex h-full min-w-0 flex-col justify-end">
-              <div
-                className="rounded-t bg-primary/45"
-                style={{
-                  height: `${Math.max(4, (metric.uploads / maxDailyUploads) * 100)}%`,
-                }}
-                title={`${metric.date}: ${metric.uploads} Dokumente hochgeladen`}
-              />
-            </div>
-          ))}
-        </div>
-        <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-          <span>{overview.dailyMetrics[0]?.date}</span>
-          <span>{overview.dailyMetrics.at(-1)?.date}</span>
-        </div>
       </section>
     </>
   );

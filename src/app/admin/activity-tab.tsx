@@ -20,17 +20,10 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
   ]);
 
   const betaMetrics: Array<[string, string | number]> = [
-    ["Onboarding gestartet", beta.started],
-    ["Onboarding abgeschlossen", beta.completed],
-    ["Abschlussquote", beta.completionRate === null ? "Noch keine Starts" : `${Math.round(beta.completionRate * 100)} %`],
-    ["Personen mit erstem Upload", beta.firstUpload],
     ["Aktive Personen", beta.activeUsers],
     ["Dokumente angelegt (noch vorhanden)", beta.documents],
     ["Suchanfragen abgeschlossen", beta.searches],
     ["Chatfragen gesendet", beta.questions],
-    ["Dokumente in Verarbeitung", beta.processing],
-    ["Dokumente zur Prüfung", beta.awaitingReview],
-    ["Dokumente fehlgeschlagen", beta.failed],
   ];
 
   return (
@@ -76,7 +69,7 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
       <section className="rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-lg font-semibold">Beta: vom Einstieg zur Nutzung</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Letzte {days} Tage, Tagesgrenzen in UTC. Einstiegskohorte: Personen mit Onboarding-Start im Zeitraum; spätere Abschlüsse und erste Uploads derselben Personen. Ein Login allein zählt hier nicht als Produktaktivität.
+          Letzte {days} Tage (UTC). Kohorte: Onboarding-Start im Zeitraum, Abschlüsse und erste Uploads zählen auch später. Ein Login allein ist keine Produktaktivität.
         </p>
         <div className="mt-5 space-y-3" aria-label="Onboarding-Trichter">
           {[
@@ -110,7 +103,9 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
           ))}
         </dl>
         <p className="mt-4 text-sm text-muted-foreground">
-          Fehler nach Verarbeitungsschritt: {beta.failureStages.map(({ stage, count }) => `${FAILURE_STAGE_LABELS[stage] ?? stage} ${count}`).join(" · ")}. Noch nicht hochgeladene lokale Dateien sind hier nicht sichtbar.
+          Verarbeitung: {beta.processing} in Arbeit · {beta.awaitingReview} zur Prüfung · {beta.failed} fehlgeschlagen
+          ({beta.failureStages.map(({ stage, count }) => `${FAILURE_STAGE_LABELS[stage] ?? stage} ${count}`).join(" · ")}).
+          Noch nicht hochgeladene lokale Dateien sind hier nicht sichtbar.
         </p>
         <details className="mt-5">
           <summary className="cursor-pointer text-sm font-medium">Wo stehen die neuen Nutzer?</summary>

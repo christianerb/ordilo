@@ -22,12 +22,21 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
   const page = Math.min(requestedPage, pages);
   const visibleAccounts = overview.accounts.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
+  const statusCounts: Record<AccountActivityStatus, number> = {
+    aktiv: 0,
+    inaktiv: 0,
+    lange_nicht_da: 0,
+  };
+  for (const account of overview.accounts) {
+    statusCounts[classifyAccountActivity(account)] += 1;
+  }
+
   return (
     <section className="overflow-hidden rounded-ordilo-md border border-border bg-card shadow-card">
       <div className="border-b border-border p-5">
         <h2 className="text-base font-semibold text-foreground">Konten für Support</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {overview.accountsTotal} Konten insgesamt. Status: Aktiv heißt Nutzung in den letzten 7 Tagen, Inaktiv 8 bis 30 Tage, Lange nicht da über 30 Tage.
+          {overview.accountsTotal} Konten: {statusCounts.aktiv} aktiv (7 Tage) · {statusCounts.inaktiv} inaktiv (8–30 Tage) · {statusCounts.lange_nicht_da} lange nicht da.
         </p>
       </div>
       <div className="overflow-x-auto">

@@ -82,7 +82,7 @@ export async function AdminCostsTab() {
       <section className="overflow-x-auto rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-lg font-semibold">API-Verbrauch und variable Kosten</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          Ab Beginn der Erfassung, maximal 12 Monate. USD-Schätzung ohne Fixkosten. Tokens enthalten Eingabe und Ausgabe; Cache-Tokens sind bereits in der Eingabe enthalten. Fehlende Preise und Versuche ohne Endabrechnung bleiben unbekannt. Erfasst: Dokumentanalyse, Embeddings, Chat, Suche, E-Mail-Analyse und OCR-Abrechnung. Native Spracheingabe wird erfasst, ist noch nicht bepreist; Browser-Realtime fehlt noch. Diese Ansicht ersetzt keine Anbieterrechnung.
+          USD-Schätzung ohne Fixkosten, maximal 12 Monate; ersetzt keine Anbieterrechnung. Browser-Sprachsitzungen fehlen noch in der Bepreisung.
         </p>
 
         <h3 className="mt-6 text-base font-semibold">Verlauf nach Monat</h3>
@@ -110,24 +110,7 @@ export async function AdminCostsTab() {
             </div>
           </div>
         )}
-        {usage.monthly.length ? (
-          <table className="mt-3 w-full text-left text-sm">
-            <thead>
-              <tr><th>Monat (UTC)</th><th>API-Aufrufe</th><th>Erfasste Tokens</th><th>Bekannte Kosten (USD)</th><th>Aufrufe ohne Preis</th></tr>
-            </thead>
-            <tbody>
-              {usage.monthly.map((row) => (
-                <tr key={row.month}>
-                  <td className="py-2">{formatMonthLabel(row.month)}</td>
-                  <td>{formatAdminNumber(row.calls)}</td>
-                  <td>{formatAdminNumber(row.tokens)}</td>
-                  <td>{formatUsd(row.knownUsd)}</td>
-                  <td>{row.unknownCosts}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
+        {!usage.monthly.length && (
           <p className="mt-3 text-sm text-muted-foreground">
             Noch kein API-Verbrauch erfasst. Frühere Kosten werden nicht rückwirkend geschätzt.
           </p>

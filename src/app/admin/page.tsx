@@ -61,8 +61,7 @@ export default async function AdminDashboardPage({
               Plattformübersicht
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Nutzungsdaten ohne Dokumente, Chats oder Suchbegriffe. Aktiv heißt:
-              Login oder Produktnutzung im gewählten Zeitraum.
+              Nutzungsdaten ohne Dokumentinhalte oder Suchbegriffe.
             </p>
           </div>
           <AdminLogoutButton />
