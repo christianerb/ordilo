@@ -1,7 +1,18 @@
 import { getPlatformOverview } from "@/lib/admin/platform-data";
+import {
+  ACCOUNT_STATUS_LABELS,
+  classifyAccountActivity,
+  type AccountActivityStatus,
+} from "@/lib/admin/account-status";
 import { formatGermanDateTime } from "@/lib/format";
 
 const PAGE_SIZE = 50;
+
+const STATUS_BADGE_CLASSES: Record<AccountActivityStatus, string> = {
+  aktiv: "bg-primary/10 text-primary",
+  inaktiv: "bg-secondary text-muted-foreground",
+  lange_nicht_da: "bg-destructive/10 text-destructive",
+};
 
 export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
   // The accounts list does not depend on the metric window; 30 keeps the
@@ -16,14 +27,15 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
       <div className="border-b border-border p-5">
         <h2 className="text-base font-semibold text-foreground">Konten für Support</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {overview.accountsTotal} Konten insgesamt. E-Mail, Anmelde- und Aktivitätszeitpunkt sowie Familienzuordnung.
+          {overview.accountsTotal} Konten insgesamt. Status: Aktiv heißt Nutzung in den letzten 7 Tagen, Inaktiv 8 bis 30 Tage, Lange nicht da über 30 Tage.
         </p>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-secondary/70 text-muted-foreground">
             <tr>
               <th className="px-5 py-3 font-medium">E-Mail</th>
+              <th className="px-5 py-3 font-medium">Status</th>
               <th className="px-5 py-3 font-medium">Angemeldet</th>
               <th className="px-5 py-3 font-medium">Letzter Login</th>
               <th className="px-5 py-3 font-medium">Letzte Nutzung</th>
@@ -31,18 +43,26 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
             </tr>
           </thead>
           <tbody>
-            {visibleAccounts.map((account) => (
-              <tr key={account.id} className="border-t border-border">
-                <td className="px-5 py-3 font-medium text-foreground">{account.email}</td>
-                <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.createdAt)}</td>
-                <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastSignInAt)}</td>
-                <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastActivityAt)}</td>
-                <td className="px-5 py-3 text-muted-foreground">{account.familyCount}</td>
-              </tr>
-            ))}
+            {visibleAccounts.map((account) => {
+              const status = classifyAccountActivity(account);
+              return (
+                <tr key={account.id} className="border-t border-border">
+                  <td className="px-5 py-3 font-medium text-foreground">{account.email}</td>
+                  <td className="px-5 py-3">
+                    <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASSES[status]}`}>
+                      {ACCOUNT_STATUS_LABELS[status]}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.createdAt)}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastSignInAt)}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{formatGermanDateTime(account.lastActivityAt)}</td>
+                  <td className="px-5 py-3 text-muted-foreground">{account.familyCount}</td>
+                </tr>
+              );
+            })}
             {visibleAccounts.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-8 text-center text-muted-foreground">
+                <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">
                   Noch keine Konten vorhanden.
                 </td>
               </tr>

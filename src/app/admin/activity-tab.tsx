@@ -78,7 +78,30 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Letzte {days} Tage, Tagesgrenzen in UTC. Einstiegskohorte: Personen mit Onboarding-Start im Zeitraum; spätere Abschlüsse und erste Uploads derselben Personen. Ein Login allein zählt hier nicht als Produktaktivität.
         </p>
-        <dl className="mt-4 grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="mt-5 space-y-3" aria-label="Onboarding-Trichter">
+          {[
+            { label: "Onboarding gestartet", value: beta.started },
+            { label: "Onboarding abgeschlossen", value: beta.completed },
+            { label: "Erster Upload", value: beta.firstUpload },
+          ].map((step) => {
+            const base = Math.max(1, beta.started);
+            return (
+              <div key={step.label} className="flex items-center gap-3">
+                <span className="w-44 shrink-0 text-sm text-muted-foreground">{step.label}</span>
+                <div className="h-6 flex-1 overflow-hidden rounded-ordilo-sm bg-secondary">
+                  <div
+                    className="h-full rounded-ordilo-sm bg-primary/75"
+                    style={{ width: `${Math.max(step.value > 0 ? 4 : 0, (step.value / base) * 100)}%` }}
+                  />
+                </div>
+                <span className="w-20 shrink-0 text-right text-sm font-medium">
+                  {step.value} · {beta.started ? Math.round((step.value / beta.started) * 100) : 0} %
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <dl className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           {betaMetrics.map(([label, value]) => (
             <div key={label}>
               <dt className="text-sm text-muted-foreground">{label}</dt>

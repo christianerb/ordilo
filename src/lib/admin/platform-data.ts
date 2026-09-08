@@ -20,6 +20,7 @@ export type DailyPlatformMetric = {
   date: string;
   registrations: number;
   activeAccounts: number;
+  uploads: number;
 };
 
 export type PlatformOverview = {
@@ -29,6 +30,7 @@ export type PlatformOverview = {
   familiesTotal: number;
   averageAccountsPerFamily: number;
   averageMembersPerFamily: number;
+  documentsTotal: number;
   accounts: PlatformAccount[];
   dailyMetrics: DailyPlatformMetric[];
 };
@@ -97,18 +99,36 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
   const windowStart = startOfDay(new Date(now.getTime() - (windowDays - 1) * DAY_MS));
   const retentionStart = new Date(now.getTime() - EVENT_RETENTION_DAYS * DAY_MS).toISOString();
 
-  const [users, activityRows, familiesResult, memberCountResult, membershipsResult] =
+  const [users, activityRows, familiesResult, memberCountResult, membershipsResult, documentCountResult, recentDocuments] =
     await Promise.all([
       listAllUsers(),
       listProductActivitySince(retentionStart),
       admin.from("families").select("id", { count: "exact", head: true }),
       admin.from("family_members").select("id", { count: "exact", head: true }),
       admin.from("family_memberships").select("user_id"),
+      admin.from("documents").select("id", { count: "exact", head: true }),
+      // Uploads pro Tag fuer das 30-Tage-Chart.
+      (async () => {
+        const chartStart = startOfDay(new Date(now.getTime() - 29 * DAY_MS)).toISOString();
+        const rows: Array<{ created_at: string }> = [];
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await admin
+            .from("documents")
+            .select("created_at")
+            .gte("created_at", chartStart)
+            .order("id")
+            .range(offset, offset + 999);
+          if (error) throw error;
+          rows.push(...data);
+          if (data.length < 1000) return rows;
+        }
+      })(),
     ]);
 
   if (familiesResult.error) throw familiesResult.error;
   if (memberCountResult.error) throw memberCountResult.error;
   if (membershipsResult.error) throw membershipsResult.error;
+  if (documentCountResult.error) throw documentCountResult.error;
 
   const familyCountByUser = new Map<string, number>();
   for (const membership of membershipsResult.data ?? []) {
@@ -153,10 +173,10 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
   }
 
   const days = 30;
-  const metricsByDate = new Map<string, { registrations: number; active: Set<string> }>();
+  const metricsByDate = new Map<string, { registrations: number; active: Set<string>; uploads: number }>();
   for (let offset = days - 1; offset >= 0; offset -= 1) {
     const day = startOfDay(new Date(now.getTime() - offset * DAY_MS));
-    metricsByDate.set(dateKey(day), { registrations: 0, active: new Set() });
+    metricsByDate.set(dateKey(day), { registrations: 0, active: new Set(), uploads: 0 });
   }
   for (const account of accounts) {
     const bucket = metricsByDate.get(dateKey(new Date(account.createdAt)));
@@ -169,6 +189,10 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
   for (const activity of activityRows) {
     const bucket = metricsByDate.get(dateKey(new Date(activity.occurred_at)));
     bucket?.active.add(activity.user_id);
+  }
+  for (const document of recentDocuments) {
+    const bucket = metricsByDate.get(dateKey(new Date(document.created_at)));
+    if (bucket) bucket.uploads += 1;
   }
 
   const familiesTotal = familiesResult.count ?? 0;
@@ -185,11 +209,13 @@ export async function getPlatformOverview(windowDays: 7 | 30 | 90): Promise<Plat
       familiesTotal === 0
         ? 0
         : Math.round(((memberCountResult.count ?? 0) / familiesTotal) * 10) / 10,
+    documentsTotal: documentCountResult.count ?? 0,
     accounts,
     dailyMetrics: [...metricsByDate.entries()].map(([date, metric]) => ({
       date,
       registrations: metric.registrations,
       activeAccounts: metric.active.size,
+      uploads: metric.uploads,
     })),
   };
 }
