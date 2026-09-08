@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCodeEligibleAdmin, getVerifiedAdmin } from "@/lib/admin/access";
+import { getGreeting } from "@/components/ordilo/app-shell-shared";
+import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
 import { AdminLogoutButton } from "./admin-logout-button";
 import { AdminOverviewTab } from "./overview-tab";
 import { AdminUsersTab } from "./users-tab";
@@ -55,14 +57,17 @@ export default async function AdminDashboardPage({
     <main className="min-h-dvh bg-[var(--canvas-warm)] p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <header className="flex flex-col gap-4 rounded-ordilo-md border border-border bg-card p-5 shadow-card sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">Ordilo intern</p>
-            <h1 className="mt-1 text-xl font-semibold text-foreground">
-              Plattformübersicht
-            </h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Nutzungsdaten ohne Dokumentinhalte oder Suchbegriffe.
-            </p>
+          <div className="flex items-start gap-3">
+            <OrdiloMark size={36} animate={false} className="mt-0.5 shrink-0 text-primary" />
+            <div>
+              <h1 className="text-xl font-semibold text-foreground">
+                Plattformübersicht
+              </h1>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                {getGreeting(new Date(), "Europe/Berlin")}. Interner Bereich:
+                Nutzungsdaten ohne Dokumentinhalte oder Suchbegriffe.
+              </p>
+            </div>
           </div>
           <AdminLogoutButton />
         </header>
@@ -78,8 +83,8 @@ export default async function AdminDashboardPage({
               aria-current={tab === item.key ? "page" : undefined}
               className={
                 tab === item.key
-                  ? "rounded-full bg-primary px-4 py-2 text-sm font-medium whitespace-nowrap text-primary-foreground"
-                  : "rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground hover:text-foreground"
+                  ? "focus-ring rounded-full bg-primary px-4 py-2 text-sm font-medium whitespace-nowrap text-primary-foreground"
+                  : "focus-ring rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground hover:text-foreground"
               }
             >
               {item.label}

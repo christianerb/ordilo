@@ -16,8 +16,8 @@ export function AdminPeriodNav({ tab, days }: { tab: string; days: number }) {
           href={`/admin?tab=${tab}&days=${option}`}
           className={
             days === option
-              ? "rounded-ordilo-sm bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
-              : "rounded-ordilo-sm border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-secondary"
+              ? "focus-ring rounded-ordilo-sm bg-primary px-3 py-2 text-sm font-medium text-primary-foreground"
+              : "focus-ring rounded-ordilo-sm border border-border bg-card px-3 py-2 text-sm text-foreground hover:bg-secondary"
           }
         >
           {option} Tage

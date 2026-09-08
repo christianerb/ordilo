@@ -5,6 +5,7 @@ import {
   type AccountActivityStatus,
 } from "@/lib/admin/account-status";
 import { formatGermanDateTime } from "@/lib/format";
+import { AdminEmptyNote } from "./empty-note";
 
 const PAGE_SIZE = 50;
 
@@ -71,8 +72,10 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
             })}
             {visibleAccounts.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-5 py-8 text-center text-muted-foreground">
-                  Noch keine Konten vorhanden.
+                <td colSpan={6}>
+                  <AdminEmptyNote>
+                    Noch keine Konten vorhanden. Die erste Anmeldung taucht hier auf.
+                  </AdminEmptyNote>
                 </td>
               </tr>
             )}
@@ -82,7 +85,7 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
       {pages > 1 && (
         <nav className="flex items-center justify-between border-t border-border p-4 text-sm" aria-label="Kontenseiten">
           {page > 1 ? (
-            <a className="text-primary hover:underline" href={`/admin?tab=nutzer&page=${page - 1}`}>
+            <a className="focus-ring rounded-sm text-primary hover:underline" href={`/admin?tab=nutzer&page=${page - 1}`}>
               Zurück
             </a>
           ) : (
@@ -92,7 +95,7 @@ export async function AdminUsersTab({ page: requestedPage }: { page: number }) {
             Seite {page} von {pages}
           </span>
           {page < pages ? (
-            <a className="text-primary hover:underline" href={`/admin?tab=nutzer&page=${page + 1}`}>
+            <a className="focus-ring rounded-sm text-primary hover:underline" href={`/admin?tab=nutzer&page=${page + 1}`}>
               Weiter
             </a>
           ) : (

@@ -4,6 +4,7 @@ import { describeActivityEvent } from "@/lib/admin/activity-labels";
 import { listAccountEmailMap } from "@/lib/admin/platform-data";
 import { formatGermanDateTime, formatRelativeTime } from "@/lib/format";
 import { AdminPeriodNav } from "./period-nav";
+import { AdminEmptyNote } from "./empty-note";
 
 const FAILURE_STAGE_LABELS: Record<string, string> = {
   upload: "Upload",
@@ -62,7 +63,9 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
             </table>
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted-foreground">Noch keine Ereignisse erfasst.</p>
+          <AdminEmptyNote>
+            Noch keine Ereignisse erfasst. Sobald Familien Ordilo nutzen, erscheint hier der Strom.
+          </AdminEmptyNote>
         )}
       </section>
 
@@ -111,7 +114,7 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
           Noch nicht hochgeladene lokale Dateien sind hier nicht sichtbar.
         </p>
         <details className="mt-5">
-          <summary className="cursor-pointer text-sm font-medium">Wo stehen die neuen Nutzer?</summary>
+          <summary className="focus-ring cursor-pointer rounded-sm text-sm font-medium">Wo stehen die neuen Nutzer?</summary>
           <p className="mt-2 text-sm text-muted-foreground">Letzter belegter Einstiegsschritt; kein automatisch behaupteter Abbruch.</p>
           <table className="mt-3 w-full text-left text-sm">
             <thead>
@@ -129,7 +132,7 @@ export async function AdminActivityTab({ days }: { days: 7 | 30 | 90 }) {
           </table>
         </details>
         <details className="mt-5">
-          <summary className="cursor-pointer text-sm font-medium">Täglich aktive Personen (Produktnutzung)</summary>
+          <summary className="focus-ring cursor-pointer rounded-sm text-sm font-medium">Täglich aktive Personen (Produktnutzung)</summary>
           {beta.daily.length ? (
             <table className="mt-3 w-full text-left text-sm">
               <thead>

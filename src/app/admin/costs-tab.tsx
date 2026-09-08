@@ -1,6 +1,7 @@
 import { getUsageOverview } from "@/lib/admin/usage-data";
 import { listAccountEmailMap } from "@/lib/admin/platform-data";
 import { formatAdminNumber } from "./period-nav";
+import { AdminEmptyNote } from "./empty-note";
 
 const OPERATION_LABELS: Record<string, string> = {
   document_total: "Dokument (OCR, Analyse, Embeddings)",
@@ -112,9 +113,9 @@ export async function AdminCostsTab() {
           </div>
         )}
         {!usage.monthly.length && (
-          <p className="mt-3 text-sm text-muted-foreground">
+          <AdminEmptyNote>
             Noch kein API-Verbrauch erfasst. Frühere Kosten werden nicht rückwirkend geschätzt.
-          </p>
+          </AdminEmptyNote>
         )}
 
         <h3 className="mt-6 text-base font-semibold">Verbrauch je Nutzer und Monat</h3>

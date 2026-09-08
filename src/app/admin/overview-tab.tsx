@@ -121,7 +121,10 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
     {
       label: "Dokumente fehlgeschlagen",
       value: formatAdminNumber(happiness.failedDocuments.total),
-      detail: `${happiness.failedDocuments.last30Days} davon in den letzten 30 Tagen`,
+      detail:
+        happiness.failedDocuments.total === 0
+          ? "Alles sauber verarbeitet."
+          : `${happiness.failedDocuments.last30Days} davon in den letzten 30 Tagen`,
     },
   ];
 
@@ -207,7 +210,7 @@ export async function AdminOverviewTab({ days }: { days: 7 | 30 | 90 }) {
         )}
         {feedback.recentComments.length > 0 && (
           <details className="mt-4">
-            <summary className="cursor-pointer text-sm font-medium">Neueste Feedback-Kommentare</summary>
+            <summary className="focus-ring cursor-pointer rounded-sm text-sm font-medium">Neueste Feedback-Kommentare</summary>
             <table className="mt-3 w-full text-left text-sm">
               <thead>
                 <tr><th>Zeitpunkt</th><th>Bewertung</th><th>Art der Frage</th><th>Kommentar</th></tr>
