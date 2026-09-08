@@ -408,6 +408,66 @@ zwei Vollzeitgehälter.
 Familien, kein Venture-Case. Der Hebel nach oben ist DACH → EU
 (Lokalisierung) und der Assistenten-Preis, nicht das Dokumentenvolumen.
 
+## 4f. Rückwärtsrechnung: Ab welcher Conversion trägt Free sich selbst?
+
+**Frage:** Wie viele zahlende Familien brauchen wir, damit deren
+Deckungsbeitrag die Free-Nutzer mitfinanziert?
+
+**Eingangswerte:** Deckungsbeitrag pro zahlender Familie ~4 €/Monat
+(7,99 € netto nach MwSt./Gebühr im Web-iOS-Mix ~5,95 €, minus ~2 €
+KI-Kosten). Free-Kosten pro Familie hängen an der Aktivität:
+realistisch aktiv 0,70 €/Monat, am Anschlag 1,55 € — aber die Mehrheit
+registrierter Free-Accounts ist inaktiv und kostet praktisch nichts;
+aktivitätsgewichtet eher **0,10–0,20 €/Monat**.
+
+**Formel:** Bei Free→Paid-Conversion c gibt es pro zahlender Familie
+(1−c)/c Free-Familien. Break-even: c × 4 € = (1−c) × f, also
+**c* = f / (4 € + f)**.
+
+| Free-Kosten f (pro Familie/Monat) | Break-even-Conversion c* |
+| --- | --- |
+| 0,10 € (viele Inaktive) | **2,4 %** |
+| 0,20 € | **4,8 %** |
+| 0,70 € (alle realistisch aktiv) | 14,9 % |
+| 1,55 € (alle am Anschlag) | 28,0 % — unerreichbar |
+
+**Einordnung an den Benchmarks:** Freemium Download→Paid liegt bei
+2,1 % nach 35 Tagen und wächst über Monate Richtung ~5 %. Heißt:
+
+1. **Wenn Free-Nutzer überwiegend leicht bleiben (f ≈ 0,10–0,20 €),
+   finanziert sich Free ab ~3–5 % Conversion selbst** — genau im
+   Benchmark-Band. Erreichbar.
+2. **Wenn Free-Nutzer das Kontingent regelmäßig ausreizen, ist Free nie
+   selbsttragend** (15–28 % Conversion braucht niemand in dieser
+   Kategorie). Die Quoten (25 Dokumente, 10 KI-Fragen) sind damit nicht
+   Großzügigkeit, sondern **die Bedingung, unter der die Rechnung
+   überhaupt funktioniert.**
+3. **Der gefährlichste Fall ist der teure Inaktive nicht — es gibt ihn
+   kaum.** Dokumente kosten nur bei Verarbeitung; ein toter Account
+   kostet Speicher-Bruchteile. Der teure Fall ist die aktive Dauer-Free-
+   Familie am Limit: ~1,55 €/Monat auf ewig. Deshalb bleibt die
+   Upgrade-Kommunikation am Limit wichtig (warm, nicht nervig — aber
+   sichtbar).
+
+**Absolute Meilensteine (bei c = 5 %, f = 0,15 €):** Pro zahlender
+Familie bleiben nach Free-Quersubvention ~4 € − 19 × 0,15 € ≈ **1,15 €
+netto übrig**. Daraus folgt:
+
+| Ziel | Benötigte zahlende Familien | Gesamt-Familien (bei 5 %) |
+| --- | --- | --- |
+| Infrastruktur (~60 €/Monat) | ~50 | ~1.000 |
+| 1 Gründergehalt (~4.000 € netto) | ~3.500 | ~70.000 |
+| 2 Gehälter + Puffer (~10.000 €) | ~8.700 | ~175.000 |
+
+**Harte Konsequenz:** Bei 5 % Conversion und realistischen Free-Kosten
+ist das ein Volumen-Spiel mit dünnem Beitrag pro Familie. Die drei
+Stellhebel in Reihenfolge ihrer Wirkung: (1) **Conversion über 5 %
+drücken** (Trial-Qualität, Paywall-Timing am Limit-Moment, Invite-
+Aktivierung) — jeder Prozentpunkt halbiert fast die nötige Familienzahl;
+(2) **Jahresabo-Anteil erhöhen** (Cashflow + Churn-Messung);
+(3) **Free-Kosten klein halten** (Quoten, keine teuren Features im
+Free-Plan — Realtime-Sprache bleibt Plus).
+
 ## 5. Empfehlung
 
 **C als Zielbild, A-Mechanik als Sicherheitsnetz darunter.** Konkret:
