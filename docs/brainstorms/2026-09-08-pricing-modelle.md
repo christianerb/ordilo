@@ -44,7 +44,16 @@ mehrseitige Verträge ab.
 | Wenig | 5 Dokumente, 10 Chatfragen, 15 Suchen | **~$0,60** |
 | Typisch | 20 Dokumente, 30 Chatfragen, 50 Suchen | **~$2,00** |
 | Power | 80 Dokumente, 120 Chatfragen, 150 Suchen, Sprache | **~$8–9** |
+| **Free-Plan, realistisch** | ~5 Dokumente, ~15 KI-Fragen, ~20 Suchen | **~$0,70** |
+| **Free-Plan, am Anschlag** | 10 Dokumente, 30 KI-Fragen, 30 Suchen | **~$1,50** (10 × $0,05 + 30 × $0,03 + Suchen) |
 | Anschlag heute (alle Tageslimits × 30) | 1.500 Dokumente, 1.500 Chats | **~$120** — zeigt, warum Limits bleiben müssen |
+
+Selbst ein Free-Nutzer, der jeden Monat beide Limits voll ausreizt,
+kostet also ~1,50 $ — weniger als der Zahlungsgebühren-Anteil eines
+einzigen Plus-Monats. 100 Free-Familien am Anschlag ≈ 150 $/Monat:
+das ist das tatsächliche Budget, das der Free-Plan als Marketing
+kostet. Speicher und Datenbank fallen nicht ins Gewicht (10 Dokumente
+à wenige MB; Bruchteile von Cents).
 
 Fixkosten dazu: Vercel Pro, Supabase Pro, Resend — grob 50–80 €/Monat,
 bei wenigen hundert Familien vernachlässigbar pro Familie.
