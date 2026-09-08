@@ -61,6 +61,15 @@ async function listAllUsers(): Promise<User[]> {
   }
 }
 
+/**
+ * Maps auth user IDs to their email address for admin views that only
+ * need the lookup (activity feed, cost tab) without the full overview.
+ */
+export async function listAccountEmailMap(): Promise<Map<string, string>> {
+  const users = await listAllUsers();
+  return new Map(users.map((user) => [user.id, user.email ?? "Ohne E-Mail"]));
+}
+
 async function listProductActivitySince(since: string) {
   const admin = createAdminClient();
   const rows: Array<{ user_id: string; occurred_at: string }> = [];
