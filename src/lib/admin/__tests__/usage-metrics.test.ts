@@ -18,3 +18,16 @@ it("aggregates multiple analysis stages into one document cost", () => {
   ]);
   expect(result.operations).toEqual([{ operation: "document_total", calls: 2, units: 1, knownUsd: 0.02, unknownCosts: 0, averageUsd: 0.02 }]);
 });
+
+it("sums totals and months across users for the cost summary cards", () => {
+  const result = summarizeUsage([
+    row({ user_id: "user-a", cost_usd: 0.01 }),
+    row({ user_id: "user-b", operation_id: "op-2", cost_usd: 0.02, output_tokens: 30 }),
+    row({ user_id: "user-a", operation_id: "op-3", occurred_at: "2026-08-15T10:00:00Z", cost_usd: null }),
+  ]);
+  expect(result.totals).toEqual({ calls: 3, tokens: 350, knownUsd: 0.03, unknownCosts: 1 });
+  expect(result.monthly).toEqual([
+    { month: "2026-09", calls: 2, tokens: 240, knownUsd: 0.03, unknownCosts: 0 },
+    { month: "2026-08", calls: 1, tokens: 110, knownUsd: 0, unknownCosts: 1 },
+  ]);
+});
