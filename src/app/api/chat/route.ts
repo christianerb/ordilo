@@ -35,6 +35,11 @@ import {
 import { checkRateLimit, recordUsage } from "@/lib/ai/rate-limit";
 import { redactSecretsForStorage } from "@/lib/ai/pii-redact";
 import { recordProductEvent } from "@/lib/analytics/product-events";
+import {
+  billingEntitlementsEnabled,
+  releaseMonthlyUsage,
+  reserveMonthlyUsage,
+} from "@/lib/billing/quota";
 
 /**
  * POST /api/chat — Agentic chat with OpenAI function calling (streaming).
@@ -102,6 +107,7 @@ async function handleChat(request: Request): Promise<Response> {
     history: clientHistory,
     repair,
   } = parsed.data;
+  const operationId = parsed.data.operation_id ?? crypto.randomUUID();
   const supportsWebSourceUrls = capabilities.includes("web_source_urls");
   const conversationIdParam = parsed.data.conversation_id;
 
@@ -307,6 +313,53 @@ async function handleChat(request: Request): Promise<Response> {
     repairMessageId = repair.message_id;
   }
 
+  let monthlyQuotaReserved = false;
+  const releaseFailedOperation = async () => {
+    if (!monthlyQuotaReserved) return;
+    try {
+      await releaseMonthlyUsage({
+        familyId,
+        metric: "chat_answer",
+        operationKey: operationId,
+      });
+      monthlyQuotaReserved = false;
+    } catch {
+      // The reservation remains visible for reconciliation. Never conceal
+      // the original provider/stream error with a quota-release error.
+      console.warn("Chat quota release failed");
+    }
+  };
+
+  if (billingEntitlementsEnabled()) {
+    try {
+      const reservation = await reserveMonthlyUsage({
+        familyId,
+        metric: "chat_answer",
+        operationKey: operationId,
+      });
+      if (!reservation.allowed) {
+        return Response.json(
+          {
+            error:
+              "Dein Monatslimit für Fragen ist erreicht. Im nächsten Monat kannst du wieder fragen.",
+            code: "MONTHLY_CHAT_QUOTA_EXCEEDED",
+          } satisfies ChatErrorResponse,
+          { status: 429 },
+        );
+      }
+      monthlyQuotaReserved = true;
+    } catch {
+      return Response.json(
+        {
+          error:
+            "Dein Fragen-Limit konnte gerade nicht geprüft werden. Bitte versuch es gleich noch einmal.",
+          code: "ENTITLEMENT_CHECK_UNAVAILABLE",
+        } satisfies ChatErrorResponse,
+        { status: 503 },
+      );
+    }
+  }
+
   // Everything that outlives the request is stored password-free. The
   // model still works on the message as typed — it has to, to act on it —
   // but `documents.secret` exists so that no password sits in the
@@ -504,8 +557,17 @@ async function handleChat(request: Request): Promise<Response> {
           if (buffer.trim()) {
             forwardLine(buffer);
           }
+        } catch (error) {
+          await releaseFailedOperation();
+          ctrl.error(error);
+          return;
         } finally {
           reader.releaseLock();
+        }
+
+        const providerSucceeded = streamDone && !streamError;
+        if (!providerSucceeded) {
+          await releaseFailedOperation();
         }
 
         // 12. Persist the assistant message (best-effort). The persisted
@@ -513,7 +575,11 @@ async function handleChat(request: Request): Promise<Response> {
         //     without server-rendered history (mobile) can attach feedback
         //     to the answer they just watched stream in. The web client
         //     ignores unknown event types, so this is backwards-compatible.
-        if (conversationId && (fullAnswer || answerCard) && !streamError) {
+        if (
+          conversationId &&
+          (fullAnswer || answerCard) &&
+          providerSucceeded
+        ) {
           try {
             const persistedAnswer = redactSecretsForStorage(fullAnswer);
             const savedMessageId = repairMessageId
@@ -624,6 +690,7 @@ async function handleChat(request: Request): Promise<Response> {
       },
     });
   } catch (err) {
+    await releaseFailedOperation();
     if (err instanceof ChatError) {
       const body: ChatErrorResponse = {
         error: err.message,

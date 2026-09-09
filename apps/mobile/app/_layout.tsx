@@ -1,4 +1,5 @@
 import { NativeArrivals } from "@/src/components/native-arrivals";
+import * as Sentry from "@sentry/react-native";
 import {
   Figtree_400Regular,
   Figtree_500Medium,
@@ -37,6 +38,17 @@ export const unstable_settings = {
   initialRouteName: "(tabs)",
 };
 
+const sentryDsn = process.env.EXPO_PUBLIC_SENTRY_DSN;
+
+Sentry.init({
+  dsn: sentryDsn,
+  enabled: Boolean(sentryDsn),
+  environment: __DEV__ ? "development" : "production",
+  sendDefaultPii: false,
+  tracesSampleRate: __DEV__ ? 0 : 0.05,
+  integrations: [Sentry.expoRouterIntegration()],
+});
+
 // Prevent the splash screen from auto-hiding before fonts are ready.
 void SplashScreen.preventAutoHideAsync();
 
@@ -59,7 +71,7 @@ const ordiloTheme = {
   },
 };
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Figtree_400Regular,
     Figtree_500Medium,
@@ -98,6 +110,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);
 
 function RootLayoutNav() {
   const { session, isLoading: sessionLoading, signOut } = useSession();

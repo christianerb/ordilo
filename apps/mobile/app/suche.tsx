@@ -142,6 +142,7 @@ export default function SucheScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const followAnswer = useRef(true);
   const chatAbortRef = useRef<AbortController | null>(null);
+  const chatOperationIds = useRef(new Map<string, string>());
   useEffect(() => () => chatAbortRef.current?.abort(), []);
   const counter = useRef(0);
   const lastQuestion = useRef<string | null>(null);
@@ -338,8 +339,11 @@ export default function SucheScreen() {
         comment?: string;
         originalMessage: ChatMessage;
       },
+      retryOperationId?: string,
     ) => {
       if (!family) return;
+      const operationId = retryOperationId ?? crypto.randomUUID();
+      chatOperationIds.current.set(assistantMessage.id, operationId);
       lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setBusy(true);
@@ -369,6 +373,7 @@ export default function SucheScreen() {
           {
             familyId: family.id,
             message: question,
+            operationId,
             conversationId,
             history,
             repair: repair
@@ -396,6 +401,7 @@ export default function SucheScreen() {
             if (event.type === "answer_ready") receivedReady = true;
             if (event.type === "done") {
               receivedDone = true;
+              chatOperationIds.current.delete(assistantMessage.id);
               void Haptics.notificationAsync(
                 Haptics.NotificationFeedbackType.Success,
               );
@@ -447,7 +453,9 @@ export default function SucheScreen() {
                 ...message,
                 text:
                   status === 429
-                    ? CHAT_RATE_LIMIT_MESSAGE
+                    ? error instanceof Error
+                      ? error.message
+                      : CHAT_RATE_LIMIT_MESSAGE
                     : CHAT_ERROR_MESSAGE,
                 status: status === 429 ? "rate_limited" : "error",
               },
@@ -515,11 +523,19 @@ export default function SucheScreen() {
         ),
       );
       const assistantMessage = createAssistantMessage();
+      const operationId = chatOperationIds.current.get(failedMessageId);
+      chatOperationIds.current.delete(failedMessageId);
       setMessages((current) => [
         ...current.filter((message) => message.id !== failedMessageId),
         assistantMessage,
       ]);
-      void runStream(userMessage.text, assistantMessage, history);
+      void runStream(
+        userMessage.text,
+        assistantMessage,
+        history,
+        undefined,
+        operationId,
+      );
     },
     [busy, createAssistantMessage, family, messages, runStream],
   );

@@ -23,6 +23,7 @@ export function uploadFile(
   file: File,
   familyId: string,
   onProgress?: (percent: number) => void,
+  uploadKey: string = crypto.randomUUID(),
 ): Promise<UploadSuccessResponse> {
   return new Promise((resolve, reject) => {
     // Pre-flight size check: reject before opening a connection so the
@@ -40,6 +41,7 @@ export function uploadFile(
     const formData = new FormData();
     formData.append("file", file);
     formData.append("family_id", familyId);
+    formData.append("upload_key", uploadKey);
 
     // Track upload progress.
     xhr.upload.addEventListener("progress", (event) => {

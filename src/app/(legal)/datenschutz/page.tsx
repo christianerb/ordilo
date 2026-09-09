@@ -50,7 +50,8 @@ export default function DatenschutzPage() {
         <ul className="list-disc space-y-1 pl-5">
           <li>
             <strong>Konto-Daten:</strong> deine E-Mail-Adresse (Anmeldung
-            per Magic-Link, ohne Passwort).
+            mit einem Einmalcode per E-Mail oder, bei bestehenden Konten,
+            mit einem Passwort).
           </li>
           <li>
             <strong>Inhalte, die du hochlädst:</strong> gescannte Dokumente,
@@ -157,18 +158,24 @@ export default function DatenschutzPage() {
           </li>
         </ul>
         <p className="text-muted-foreground">
-          Mit allen Auftragsverarbeitern bestehen bzw. werden vor Launch
-          Verträge zur Auftragsverarbeitung (Art. 28 DSGVO) geschlossen.
+          Soweit ein Anbieter Auftragsverarbeiter ist, ist ein Vertrag nach
+          Art. 28 DSGVO erforderlich. Ob die aktuell gebuchten Verträge und
+          Einstellungen dies für jeden genannten Anbieter vollständig
+          abdecken, muss vor der Veröffentlichung rechtlich und anhand der
+          Vertragsunterlagen geprüft werden.
         </p>
       </Section>
 
       <Section title="6. Übermittlung in Drittländer">
         <p>
           Einige unserer Dienstleister sitzen in den USA (OpenAI, Datalab,
-          Resend, Vercel, Sentry). Die Übermittlung personenbezogener Daten
-          erfolgt auf Grundlage von Standardvertragsklauseln (Art. 46 Abs. 2
-          lit. c DSGVO) beziehungsweise des EU-US Data Privacy Framework,
-          soweit der jeweilige Anbieter zertifiziert ist.
+          Resend, Vercel, Sentry). Dabei können personenbezogene Daten in die
+          USA übermittelt werden. Welche Übermittlungsgrundlage im Einzelfall
+          gilt — etwa ein Angemessenheitsbeschluss einschließlich EU-US Data
+          Privacy Framework oder Standardvertragsklauseln — hängt vom
+          jeweiligen Anbieter und Vertrag ab. Diese Zuordnung muss vor der
+          Veröffentlichung für jeden Dienst geprüft werden; eine bestimmte
+          Grundlage wird hier noch nicht behauptet.
         </p>
       </Section>
 
@@ -215,7 +222,7 @@ export default function DatenschutzPage() {
       </Section>
 
       <p className="text-xs text-muted-foreground">
-        Stand: August 2026
+        Stand: September 2026
       </p>
     </article>
   );
