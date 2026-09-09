@@ -536,6 +536,37 @@ describe("POST /api/documents/upload", () => {
     expect(adminClient.storage.from).not.toHaveBeenCalled();
   });
 
+  it("rejects a duplicate operation without touching Storage", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+      allowed: true,
+      duplicate: true,
+      plan: "free",
+      metric: "document_processing",
+      used: 1,
+      limit: 10,
+      period_start: "2026-09-01",
+      period_end: "2026-10-01",
+    });
+    const adminClient = mockAdminClient({});
+    vi.mocked(createServerClient).mockResolvedValue(mockServerClient({}));
+    vi.mocked(createAdminClient).mockReturnValue(adminClient);
+
+    const response = await POST(
+      createUploadRequest(
+        createMockFile("test.pdf", "application/pdf"),
+        "550e8400-e29b-41d4-a716-446655440000",
+      ),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "DUPLICATE_UPLOAD_OPERATION",
+    });
+    expect(adminClient.storage.from).not.toHaveBeenCalled();
+    expect(releaseMonthlyUsage).not.toHaveBeenCalled();
+  });
+
   it("fails closed when document quota cannot be checked", async () => {
     vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
     vi.mocked(reserveMonthlyUsage).mockRejectedValue(new Error("database"));

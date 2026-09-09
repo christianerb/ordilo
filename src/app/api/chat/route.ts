@@ -347,6 +347,16 @@ async function handleChat(request: Request): Promise<Response> {
           { status: 429 },
         );
       }
+      if (reservation.duplicate) {
+        return Response.json(
+          {
+            error:
+              "Diese Frage wurde bereits verarbeitet. Bitte stelle sie neu.",
+            code: "DUPLICATE_CHAT_OPERATION",
+          } satisfies ChatErrorResponse,
+          { status: 409 },
+        );
+      }
       monthlyQuotaReserved = true;
     } catch {
       return Response.json(

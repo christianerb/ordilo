@@ -246,6 +246,13 @@ export async function POST(request: Request): Promise<Response> {
           429,
         );
       }
+      if (reservation.duplicate) {
+        return jsonError(
+          "Dieser Import wird bereits verarbeitet. Bitte warte kurz.",
+          "DUPLICATE_UPLOAD_OPERATION",
+          409,
+        );
+      }
       monthlyQuotaReserved = true;
     } catch {
       return jsonError(

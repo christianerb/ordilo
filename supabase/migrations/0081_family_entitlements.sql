@@ -379,23 +379,41 @@ begin
     where family_id = p_family_id
       and metric_code = p_metric_code
       and period_start = v_period_start
-      and operation_key = p_operation_key;
+      and operation_key = p_operation_key
+    for update;
 
     if v_reservation.amount <> p_amount then
       raise exception 'operation key was already used with a different amount'
         using errcode = '22023';
     end if;
 
-    return jsonb_build_object(
-      'allowed', v_reservation.allowed,
-      'duplicate', true,
-      'plan', v_reservation.plan_code,
-      'metric', p_metric_code,
-      'used', v_reservation.used_after,
-      'limit', v_reservation.limit_at_reservation,
-      'period_start', v_reservation.period_start,
-      'period_end', (v_reservation.period_start + interval '1 month')::date
-    );
+    if v_reservation.allowed then
+      return jsonb_build_object(
+        'allowed', true,
+        'duplicate', true,
+        'plan', v_reservation.plan_code,
+        'metric', p_metric_code,
+        'used', v_reservation.used_after,
+        'limit', v_reservation.limit_at_reservation,
+        'period_start', v_reservation.period_start,
+        'period_end', (v_reservation.period_start + interval '1 month')::date
+      );
+    end if;
+
+    -- A rejected operation produced no billable work. Reevaluate it against
+    -- current usage and entitlements so a later upgrade or released
+    -- reservation can unblock a durable retry with the same operation key.
+    delete from public.family_usage_reservations
+    where id = v_reservation.id;
+
+    insert into public.family_usage_reservations (
+      family_id, metric_code, plan_code, operation_key, amount, period_start
+    )
+    values (
+      p_family_id, p_metric_code, v_plan, p_operation_key, p_amount,
+      v_period_start
+    )
+    returning * into v_reservation;
   end if;
 
   insert into public.family_usage_periods (
@@ -414,8 +432,10 @@ begin
   for update;
 
   if v_limit is not null and v_used + p_amount > v_limit then
-    update public.family_usage_reservations
-    set allowed = false, used_after = v_used, limit_at_reservation = v_limit
+    -- A rejected operation did not produce billable work. Do not persist its
+    -- outcome, so the same durable key can be reevaluated after an upgrade or
+    -- after another failed operation releases quota.
+    delete from public.family_usage_reservations
     where id = v_reservation.id;
 
     return jsonb_build_object(

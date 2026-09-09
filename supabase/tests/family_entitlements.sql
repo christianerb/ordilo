@@ -197,6 +197,27 @@ begin
     and not (result->>'duplicate')::boolean,
     'released operation could not reserve again';
 
+  -- Rejected reservations are reevaluated after an entitlement change.
+  assert not exists (
+    select 1 from public.family_usage_reservations
+    where family_id = fam and metric_code = 'chat_answer'
+      and period_start = '2026-09-01' and operation_key = 'chat-11'
+  ), 'rejected operation was persisted';
+  update public.family_entitlements
+  set plan_code = 'plus', status = 'trialing',
+      trial_ends_at = '2026-10-01 00:00:00+00'
+  where family_id = fam;
+  result := public.reserve_family_usage(
+    fam, 'chat_answer', 1, 'chat-11', '2026-09-08 12:00:00+00'
+  );
+  assert (result->>'allowed')::boolean
+    and not (result->>'duplicate')::boolean
+    and result->>'plan' = 'plus',
+    'upgrade did not unblock a previously rejected operation';
+  update public.family_entitlements
+  set plan_code = 'free', status = 'free', trial_ends_at = null
+  where family_id = fam;
+
   -- UTC calendar-month periods reset independently. A key denied in one
   -- month is a new reservation in the next month.
   result := public.reserve_family_usage(
