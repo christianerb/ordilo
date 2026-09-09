@@ -54,6 +54,23 @@ describe("chatRequestSchema", () => {
     }
   });
 
+  it("accepts an optional UUID operation_id and rejects malformed values", () => {
+    expect(
+      chatRequestSchema.safeParse({
+        message: "Welche Frist gilt?",
+        family_id: VALID_FAMILY_ID,
+        operation_id: "550e8400-e29b-41d4-a716-446655440000",
+      }).success,
+    ).toBe(true);
+    expect(
+      chatRequestSchema.safeParse({
+        message: "Welche Frist gilt?",
+        family_id: VALID_FAMILY_ID,
+        operation_id: "retry-1",
+      }).success,
+    ).toBe(false);
+  });
+
   it("rejects a missing message", () => {
     const result = chatRequestSchema.safeParse({
       family_id: VALID_FAMILY_ID,

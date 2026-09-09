@@ -101,22 +101,48 @@ for these device observations.
   update automatically. PDFs use the explicit system open/share sheet.
 - The `/beispiel` shortcut reuses the shared first-value example already on main;
   no second example or duplicate onboarding path is introduced.
+- Account deletion now reports an auth-user deletion failure instead of showing
+  success. Invited users keep their family membership until auth deletion
+  succeeds; an owner whose family data was already removed can retry the final
+  auth deletion.
+- Mobile settings can request the authenticated `/api/me/export` endpoint and
+  share a temporary JSON file. The API uses caller-scoped RLS reads and omits
+  storage paths, signed URLs, tokens, encrypted secrets and internal processing
+  data. Original files stay available as individual document downloads and are
+  not bundled into the JSON export. The temporary mobile file is deleted after
+  the share sheet closes or fails.
+- Public German Nutzungsbedingungen are linked from login, landing and mobile
+  settings. The privacy page now covers email code and password login and
+  explicitly leaves processor contracts and third-country transfer grounds for
+  legal verification instead of promising future completion.
+- Native Sentry crash reporting is wired through the Expo plugin and Sentry
+  Metro config. It is fully disabled without `EXPO_PUBLIC_SENTRY_DSN`, does not
+  send default PII, and uses a 5% production trace sample. A fresh EAS build
+  with source-map secrets and a synthetic TestFlight event still needs proof.
+- The app and package versions are aligned at 1.0.0. CI now exports a
+  production iOS JavaScript bundle in addition to lint, type and unit checks.
+- Migration `0081_family_entitlements.sql` adds provider-neutral family plans,
+  trial/subscription states, server-only billing events and atomic monthly
+  quotas. Enforcement is deliberately off until the migration is verified,
+  existing families are assigned consciously and the server-only flag
+  `BILLING_ENTITLEMENTS_ENABLED=1` is set.
 
 ### Migrations and validation boundaries
 
-Apply `0077_document_corrections.sql` and `0078_family_access_management.sql`
-before deploying the dependent app/API. Both are idempotent. No linked Supabase
-schema was modified by this work. The linked-project dry run lacked a CLI access
-token; a dry run against the disposable local PostgreSQL instance succeeded.
-It lists migrations and does not replace executing them.
+Apply `0077_document_corrections.sql`, `0078_family_access_management.sql` and
+`0081_family_entitlements.sql` before deploying their dependent app/API code.
+All three are idempotent. No linked Supabase schema was modified by this work.
+The linked-project dry run still requires valid CLI access. Local disposable
+PostgreSQL contracts do not replace a linked-project dry run and controlled
+deployment.
 
-`supabase/tests/document_corrections.sql` and `family_access.sql` execute in an
-isolated PostgreSQL transaction and roll back. They cover authorization, RLS,
-idempotency, conflicts, rollback, task-state preservation, date synchronization,
-current correction evidence and revoked invitation handling. The existing
-pgvector/graph update RPC is stubbed in this focused database fixture; these
-checks do not certify the complete deployed database. CI runs these contracts in
-a disposable PostgreSQL service.
+`supabase/tests/document_corrections.sql`, `family_access.sql`,
+`family_entitlements.sql` and `family_entitlements_concurrency.sql` cover
+authorization, RLS, idempotency, conflicts, rollback, task-state preservation,
+date synchronization, revoked invitations, plan resolution, month boundaries,
+release/retry behavior and real two-connection quota races. The focused fixtures
+do not certify the complete deployed database. CI runs them in a disposable
+PostgreSQL service.
 
 Web and mobile lint/type checks and unit tests pass; the production web build and
 fresh iOS simulator build pass. The simulator build was installed after the old

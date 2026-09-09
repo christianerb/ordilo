@@ -123,5 +123,17 @@ describe("uploadFile", () => {
       status: "uploaded",
       server_pipeline: true,
     });
+    const sent = xhr.send.mock.calls[0]?.[0] as FormData;
+    expect(sent.get("upload_key")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+  });
+
+  it("preserves an explicit upload key for retries", () => {
+    const { xhr } = installMock();
+    const file = new File(["x"], "test.pdf", { type: "application/pdf" });
+    void uploadFile(file, "family-id", undefined, "stable-upload-key");
+    const sent = xhr.send.mock.calls[0]?.[0] as FormData;
+    expect(sent.get("upload_key")).toBe("stable-upload-key");
   });
 });

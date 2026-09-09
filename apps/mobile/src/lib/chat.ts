@@ -476,6 +476,7 @@ export function getSuggestedContactAction(
 export interface ChatRequestInput {
   message: string;
   familyId: string;
+  operationId: string;
   history: { role: "user" | "assistant"; content: string }[];
   conversationId?: string | null;
   repair?: {
@@ -530,6 +531,7 @@ async function streamChatRequest(
     body: JSON.stringify({
       message: input.message,
       family_id: input.familyId,
+      operation_id: input.operationId,
       history: input.history,
       capabilities: ["web_source_urls"],
       ...(input.conversationId ? { conversation_id: input.conversationId } : {}),
@@ -548,10 +550,23 @@ async function streamChatRequest(
   });
 
   if (!response.ok) {
-    const error = new Error("Chat request failed") as Error & {
+    let body: { error?: string; code?: string } | null = null;
+    try {
+      body = JSON.parse(await response.text()) as {
+        error?: string;
+        code?: string;
+      };
+    } catch {
+      // A proxy may return HTML; keep the stable fallback below.
+    }
+    const error = new Error(
+      body?.error ?? "Die Frage konnte nicht gesendet werden.",
+    ) as Error & {
       status: number;
+      code?: string;
     };
     error.status = response.status;
+    error.code = body?.code;
     throw error;
   }
 

@@ -20,6 +20,11 @@ import {
   sanitizeFilename,
 } from "@/lib/api/storage";
 import { recordProductEvent } from "@/lib/analytics/product-events";
+import {
+  billingEntitlementsEnabled,
+  releaseMonthlyUsage,
+  reserveMonthlyUsage,
+} from "@/lib/billing/quota";
 
 /**
  * Maximum document uploads per family per day.
@@ -206,24 +211,78 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // 5. Generate document ID and upload to Storage -------------------------
-  const adminClient = createAdminClient();
+  const operationKey =
+    typeof uploadKey === "string" ? uploadKey : crypto.randomUUID();
   // Deterministic only within this user/family/key, so a lost response can be retried safely.
   const hash = typeof uploadKey === "string" ? createHash("sha256").update(`${familyId}:${user.id}:${uploadKey}`).digest("hex") : null;
   const documentId = hash ? `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}` : crypto.randomUUID();
 
+  let monthlyQuotaReserved = false;
+  const releaseFailedUpload = async () => {
+    if (!monthlyQuotaReserved) return;
+    try {
+      await releaseMonthlyUsage({
+        familyId,
+        metric: "document_processing",
+        operationKey,
+      });
+      monthlyQuotaReserved = false;
+    } catch {
+      console.warn("Document quota release failed");
+    }
+  };
+
+  if (billingEntitlementsEnabled()) {
+    try {
+      const reservation = await reserveMonthlyUsage({
+        familyId,
+        metric: "document_processing",
+        operationKey,
+      });
+      if (!reservation.allowed) {
+        return jsonError(
+          "Dein Monatslimit für neue Dokumente ist erreicht. Im nächsten Monat kannst du wieder Dokumente hinzufügen.",
+          "MONTHLY_DOCUMENT_QUOTA_EXCEEDED",
+          429,
+        );
+      }
+      if (reservation.duplicate) {
+        return jsonError(
+          "Dieser Import wird bereits verarbeitet. Bitte warte kurz.",
+          "DUPLICATE_UPLOAD_OPERATION",
+          409,
+        );
+      }
+      monthlyQuotaReserved = true;
+    } catch {
+      return jsonError(
+        "Dein Dokument-Limit konnte gerade nicht geprüft werden. Bitte versuch es gleich noch einmal.",
+        "ENTITLEMENT_CHECK_UNAVAILABLE",
+        503,
+      );
+    }
+  }
+
+  const adminClient = createAdminClient();
   // Build the Storage path: {family_id}/{document_id}/{filename}
   // Sanitize the filename to avoid path traversal issues.
   const safeFilename = sanitizeFilename(file.name, "document");
   const storagePath = buildStoragePath(familyId, documentId, safeFilename);
 
-  const { error: uploadError } = await adminClient.storage
-    .from("documents")
-    .upload(storagePath, file, {
-      contentType: file.type,
-      upsert: false,
-    });
+  let uploadError: unknown = null;
+  try {
+    const result = await adminClient.storage
+      .from("documents")
+      .upload(storagePath, file, {
+        contentType: file.type,
+        upsert: false,
+      });
+    uploadError = result.error;
+  } catch (error) {
+    uploadError = error;
+  }
 
-  if (uploadError && !(uploadKey && ("statusCode" in uploadError) && String(uploadError.statusCode) === "409")) {
+  if (uploadError && !(uploadKey && typeof uploadError === "object" && ("statusCode" in uploadError) && String(uploadError.statusCode) === "409")) {
     reportPipelineFailure(uploadError, {
       stage: "upload",
       code: getErrorCode(uploadError, "STORAGE_UPLOAD_FAILED"),
@@ -232,6 +291,7 @@ export async function POST(request: Request): Promise<Response> {
       source: "api",
     });
     // Storage upload failed — do NOT create a documents row (no orphaned rows).
+    await releaseFailedUpload();
     return jsonError(
       "Upload fehlgeschlagen. Bitte erneut versuchen.",
       "STORAGE_UPLOAD_FAILED",
@@ -276,6 +336,7 @@ export async function POST(request: Request): Promise<Response> {
     // A keyed upload may have committed despite a lost DB response. Keep its
     // deterministic object for retry instead of deleting another request's file.
     if (!uploadKey) await adminClient.storage.from("documents").remove([storagePath]);
+    await releaseFailedUpload();
 
     return jsonError(
       "Dokument konnte nicht gespeichert werden. Bitte erneut versuchen.",

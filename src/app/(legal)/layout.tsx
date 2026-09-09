@@ -3,7 +3,7 @@ import { ArrowLeft } from "lucide-react";
 import { OrdiloWordmark } from "@/components/ordilo/ordilo-wordmark";
 
 /**
- * Legal pages layout (Impressum, Datenschutz) — public, minimal chrome:
+ * Legal pages layout (Impressum, Datenschutz, Nutzungsbedingungen) — public, minimal chrome:
  * a small header back to the landing page and a readable text column.
  */
 export default function LegalLayout({

@@ -134,7 +134,7 @@ export function SucheClient({
 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [rateLimitError, setRateLimitError] = useState(false);
+  const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [activeConversationId, setActiveConversationId] = useState(initialConversationId);
   const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
@@ -152,6 +152,7 @@ export function SucheClient({
 
   // --- Last query for retry on error ---
   const lastQueryRef = useRef<string>("");
+  const lastOperationIdRef = useRef<string>("");
 
   // --- Filter state ---
   const [activeFilters, setActiveFilters] = useState<ActiveFilter[]>([]);
@@ -288,7 +289,7 @@ export function SucheClient({
     setMessages([]);
     setActiveConversationId("");
     setError(false);
-    setRateLimitError(false);
+    setRateLimitError(null);
     setStreamingId(null);
     setActiveFilters([]);
     // Clear the URL so the server also knows we're on a new chat
@@ -383,18 +384,23 @@ export function SucheClient({
         reasons: ChatFeedbackReason[];
         comment: string;
       },
+      retryOperationId?: string,
     ) => {
       if (!query.trim() || isLoading) return;
 
       setError(false);
-      setRateLimitError(false);
+      setRateLimitError(null);
       followAnswerRef.current = true;
       let receivedReady = false;
       const chatAbort = new AbortController();
       chatAbortRef.current = chatAbort;
       setIsLoading(true);
       setBusy(true);
-      if (!repairRequest) lastQueryRef.current = query;
+      const operationId = retryOperationId ?? crypto.randomUUID();
+      if (!repairRequest) {
+        lastQueryRef.current = query;
+        lastOperationIdRef.current = operationId;
+      }
 
       // Consume the pending quote (if any) — it applies to this one turn.
       const quoted = quotedMessage;
@@ -471,6 +477,7 @@ export function SucheClient({
             display_message: query,
             capabilities: ["web_source_urls"],
             family_id: familyId,
+            operation_id: operationId,
             history,
             conversation_id: activeConversationId || undefined,
             ...(repairRequest?.message.dbId
@@ -488,6 +495,9 @@ export function SucheClient({
         });
 
         if (!res.ok) {
+          const errorBody = (await res.json().catch(() => null)) as {
+            error?: string;
+          } | null;
           // Remove the empty AI placeholder so the user doesn't see a
           // blank bubble alongside the error message.
           setMessages((prev) =>
@@ -500,7 +510,10 @@ export function SucheClient({
               : prev.filter((message) => message.id !== aiMsg.id),
           );
           if (res.status === 429) {
-            setRateLimitError(true);
+            setRateLimitError(
+              errorBody?.error ??
+                "Du hast heute viele Fragen gestellt. Das Tageslimit ist erreicht — bitte morgen weiter.",
+            );
           } else {
             setError(true);
           }
@@ -1128,7 +1141,11 @@ export function SucheClient({
                         type="button"
                         onClick={() => {
                           if (lastQueryRef.current) {
-                            void handleSubmitRef.current(lastQueryRef.current);
+                            void handleSubmitRef.current(
+                              lastQueryRef.current,
+                              undefined,
+                              lastOperationIdRef.current || undefined,
+                            );
                           }
                         }}
                         className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--petrol)] transition-colors hover:bg-[var(--petrol)]/10 rounded-ordilo-sm px-2 py-1"
@@ -1153,7 +1170,7 @@ export function SucheClient({
                     </div>
                     <div className="max-w-[85%] rounded-ordilo-md rounded-tl-sm border border-border bg-card px-4 py-3 shadow-card lg:max-w-full">
                       <p className="text-sm leading-relaxed text-muted-foreground">
-                        Du hast heute viele Fragen gestellt. Das Tageslimit ist erreicht — bitte morgen weiter.
+                        {rateLimitError}
                       </p>
                     </div>
                   </div>

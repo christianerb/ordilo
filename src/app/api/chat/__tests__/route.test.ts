@@ -14,12 +14,22 @@ vi.mock("@/lib/ai/chat", async (importOriginal) => {
     streamAgenticAnswer: vi.fn(),
   };
 });
+vi.mock("@/lib/billing/quota", () => ({
+  billingEntitlementsEnabled: vi.fn(() => false),
+  reserveMonthlyUsage: vi.fn(),
+  releaseMonthlyUsage: vi.fn(),
+}));
 
 import { POST, GET } from "@/app/api/chat/route";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { streamAgenticAnswer, ChatError } from "@/lib/ai/chat";
 import { MAX_CHAT_MESSAGE_LENGTH } from "@/lib/schemas/chat";
 import { DAILY_MESSAGE_LIMIT } from "@/lib/ai/rate-limit";
+import {
+  billingEntitlementsEnabled,
+  releaseMonthlyUsage,
+  reserveMonthlyUsage,
+} from "@/lib/billing/quota";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -189,6 +199,18 @@ beforeEach(() => {
   // Default: no usage row → 0 messages used today (under the limit).
   chatUsageResult = { data: null, error: null };
   assistantMessageSaveRejects = false;
+  vi.mocked(billingEntitlementsEnabled).mockReturnValue(false);
+  vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+    allowed: true,
+    duplicate: false,
+    plan: "free",
+    metric: "chat_answer",
+    used: 1,
+    limit: 10,
+    period_start: "2026-09-01",
+    period_end: "2026-10-01",
+  });
+  vi.mocked(releaseMonthlyUsage).mockResolvedValue(true);
   mockServerClient();
 });
 
@@ -281,6 +303,70 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.code).toBe("FAMILY_ACCESS_DENIED");
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+  });
+
+  it("returns a distinct monthly quota 429 before provider work", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+      allowed: false,
+      duplicate: false,
+      plan: "free",
+      metric: "chat_answer",
+      used: 10,
+      limit: 10,
+      period_start: "2026-09-01",
+      period_end: "2026-10-01",
+    });
+
+    const response = await POST(
+      createRequest(
+        validBody({ operation_id: "550e8400-e29b-41d4-a716-446655440000" }),
+      ),
+    );
+    expect(response.status).toBe(429);
+    expect(await response.json()).toMatchObject({
+      code: "MONTHLY_CHAT_QUOTA_EXCEEDED",
+    });
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+  });
+
+  it("rejects a duplicate operation before starting provider work", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockResolvedValue({
+      allowed: true,
+      duplicate: true,
+      plan: "free",
+      metric: "chat_answer",
+      used: 1,
+      limit: 10,
+      period_start: "2026-09-01",
+      period_end: "2026-10-01",
+    });
+
+    const response = await POST(
+      createRequest(
+        validBody({ operation_id: "550e8400-e29b-41d4-a716-446655440000" }),
+      ),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "DUPLICATE_CHAT_OPERATION",
+    });
+    expect(streamAgenticAnswer).not.toHaveBeenCalled();
+    expect(releaseMonthlyUsage).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when monthly quota cannot be checked", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(reserveMonthlyUsage).mockRejectedValue(new Error("database"));
+
+    const response = await POST(createRequest(validBody()));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "ENTITLEMENT_CHECK_UNAVAILABLE",
+    });
     expect(streamAgenticAnswer).not.toHaveBeenCalled();
   });
 
@@ -404,6 +490,61 @@ describe("POST /api/chat", () => {
     expect(events.at(-1)).toEqual({ type: "done" });
   });
 
+  it("keeps successful answers counted when persistence fails", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    assistantMessageSaveRejects = true;
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(
+      ndjsonStream([
+        { type: "text", content: "Die Antwort ist fertig." },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(
+      createRequest(
+        validBody({ operation_id: "550e8400-e29b-41d4-a716-446655440000" }),
+      ),
+    );
+    await response.text();
+    expect(releaseMonthlyUsage).not.toHaveBeenCalled();
+  });
+
+  it("releases quota when the provider stream reports failure", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(
+      ndjsonStream([
+        { type: "error", error: "Fehler", code: "OPENAI_API_ERROR" },
+        { type: "done" },
+      ]),
+    );
+
+    const response = await POST(
+      createRequest(
+        validBody({ operation_id: "550e8400-e29b-41d4-a716-446655440000" }),
+      ),
+    );
+    await response.text();
+    expect(releaseMonthlyUsage).toHaveBeenCalledWith({
+      familyId: FAMILY_ID,
+      metric: "chat_answer",
+      operationKey: "550e8400-e29b-41d4-a716-446655440000",
+    });
+  });
+
+  it("releases quota when the provider stream disconnects", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
+    const brokenStream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.error(new Error("stream disconnected"));
+      },
+    });
+    vi.mocked(streamAgenticAnswer).mockResolvedValue(brokenStream);
+
+    const response = await POST(createRequest(validBody()));
+    await expect(response.text()).rejects.toThrow("stream disconnected");
+    expect(releaseMonthlyUsage).toHaveBeenCalled();
+  });
+
   it("passes conversation history to streamAgenticAnswer", async () => {
     (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockResolvedValue(
       ndjsonStream([{ type: "done" }]),
@@ -457,6 +598,7 @@ describe("POST /api/chat", () => {
   });
 
   it("returns 500 on ChatError (before stream starts)", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
     (streamAgenticAnswer as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ChatError("OpenAI: API-Fehler.", "OPENAI_API_ERROR", 500),
     );
@@ -465,6 +607,13 @@ describe("POST /api/chat", () => {
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body.code).toBe("OPENAI_API_ERROR");
+    expect(releaseMonthlyUsage).toHaveBeenCalledWith({
+      familyId: FAMILY_ID,
+      metric: "chat_answer",
+      operationKey: expect.stringMatching(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      ),
+    });
   });
 
   it("returns 500 on generic error", async () => {
@@ -490,6 +639,7 @@ describe("POST /api/chat", () => {
   });
 
   it("returns 429 and creates no conversation when the daily limit is reached", async () => {
+    vi.mocked(billingEntitlementsEnabled).mockReturnValue(true);
     chatUsageResult = {
       data: { message_count: DAILY_MESSAGE_LIMIT },
       error: null,
@@ -500,6 +650,7 @@ describe("POST /api/chat", () => {
     const body = await response.json();
     expect(body.code).toBe("RATE_LIMIT_EXCEEDED");
     expect(streamAgenticAnswer).not.toHaveBeenCalled();
+    expect(reserveMonthlyUsage).not.toHaveBeenCalled();
 
     // The rejected request must not leave an empty conversation behind —
     // creation is deferred until after membership + rate-limit approval.

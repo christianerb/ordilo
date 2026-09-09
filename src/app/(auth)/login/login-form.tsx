@@ -485,7 +485,14 @@ export function LoginForm() {
             <p className="text-xs leading-relaxed text-[var(--petrol-darker)]">
               <span className="font-semibold">Anmelden und Registrieren sind dasselbe.</span>{" "}
               Gibt es dein Konto noch nicht, legen wir es einfach an. Mit der
-              Anmeldung stimmst du den Nutzungsbedingungen zu.
+              Anmeldung stimmst du den{" "}
+              <Link
+                href="/nutzungsbedingungen"
+                className="rounded-ordilo-sm underline underline-offset-2 focus-ring"
+              >
+                Nutzungsbedingungen
+              </Link>{" "}
+              zu.
             </p>
           </div>
         </div>
@@ -494,6 +501,12 @@ export function LoginForm() {
           className="flex items-center justify-center gap-4 text-xs text-muted-foreground"
           aria-label="Rechtliches"
         >
+          <Link
+            href="/nutzungsbedingungen"
+            className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring"
+          >
+            Bedingungen
+          </Link>
           <Link
             href="/impressum"
             className="rounded-ordilo-sm transition-colors hover:text-foreground focus-ring"

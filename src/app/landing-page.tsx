@@ -38,7 +38,7 @@ const faqItems = [
   {
     question: "Was kostet Ordilo?",
     answer:
-      "Der Einstieg ist kostenlos und bleibt kostenlos. Für größere Familienarchive kommt später ein faires Abo dazu. Bevor sich daran etwas ändert, sagen wir klar Bescheid.",
+      "In der Beta kannst du Ordilo kostenlos nutzen. Danach bleibt Ordilo Gratis mit 10 neuen Dokumenten und 10 KI-Antworten pro Monat. Familie Plus ist nach der Beta für geplant 7,99 € im Monat oder 79 € im Jahr erhältlich. Das Abo gilt für die ganze Familie und ist noch nicht buchbar.",
   },
 ] as const;
 
@@ -295,6 +295,125 @@ export function LandingPage() {
           </div>
         </section>
 
+        <section
+          className="px-5 pb-14 sm:px-4 sm:pb-20 lg:pb-24"
+          aria-labelledby="pricing-heading"
+        >
+          <div className="mx-auto max-w-5xl">
+            <div className="grid gap-5 lg:grid-cols-[0.72fr_1.28fr] lg:items-end">
+              <div>
+                <p className="text-sm font-semibold text-[var(--petrol)]">
+                  Ein Preis für die ganze Familie
+                </p>
+                <h2
+                  id="pricing-heading"
+                  className="mt-3 text-3xl font-semibold leading-tight tracking-[-0.03em] sm:text-5xl"
+                >
+                  Kostenlos anfangen. Später nur zahlen, wenn ihr mehr braucht.
+                </h2>
+              </div>
+              <p className="max-w-xl text-base leading-relaxed text-muted-foreground lg:justify-self-end">
+                Während der Beta nutzt du Ordilo kostenlos. Danach bleibt der
+                Einstieg gratis. Familie Plus kommt für größere Archive und
+                mehr Fragen dazu.
+              </p>
+            </div>
+
+            <div className="mt-9 overflow-hidden rounded-ordilo-md border border-border bg-border shadow-card">
+              <div className="grid gap-px lg:grid-cols-2">
+                <article className="flex flex-col bg-[var(--surface-box)] p-6 sm:p-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--petrol)]">
+                        Ordilo Gratis
+                      </p>
+                      <p className="mt-4 text-4xl font-semibold tracking-[-0.04em]">
+                        0 €
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        für die ganze Familie
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-[var(--auth-sage)] px-3 py-1.5 text-xs font-medium text-[var(--petrol-darker)]">
+                      Bleibt kostenlos
+                    </span>
+                  </div>
+
+                  <ul className="mt-7 space-y-3 text-sm">
+                    {[
+                      "Nach der Beta: 10 neue Dokumente pro Monat",
+                      "Nach der Beta: 10 KI-Antworten pro Monat",
+                      "Familienbereich, Fundstellen und Datenexport",
+                    ].map((feature) => (
+                      <li key={feature} className="flex items-start gap-3">
+                        <Check
+                          className="mt-0.5 size-4 shrink-0 text-[var(--petrol)]"
+                          aria-hidden="true"
+                        />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <Link
+                    href="/login"
+                    className="focus-ring press-scale mt-8 inline-flex min-h-12 items-center justify-center gap-2 rounded-ordilo-sm bg-[var(--petrol)] px-6 text-sm font-semibold text-[var(--warm-white)] transition-colors hover:bg-[var(--petrol-dark)] lg:mt-auto"
+                    data-testid="landing-cta-pricing"
+                  >
+                    Kostenlos starten
+                    <ArrowRight className="size-4" aria-hidden="true" />
+                  </Link>
+                </article>
+
+                <article className="flex flex-col bg-[var(--auth-story-surface)] p-6 sm:p-8">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-semibold text-[var(--petrol)]">
+                        Familie Plus
+                      </p>
+                      <p className="mt-4 text-4xl font-semibold tracking-[-0.04em]">
+                        7,99 €
+                      </p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        pro Monat oder 79 € im Jahr
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-[var(--mist-light)] bg-[var(--warm-white)] px-3 py-1.5 text-xs font-medium text-[var(--mist-dark)]">
+                      Nach der Beta
+                    </span>
+                  </div>
+
+                  <ul className="mt-7 space-y-3 text-sm">
+                    {[
+                      "Alles aus Ordilo Gratis",
+                      "Mehr Dokumente und KI-Antworten",
+                      "Ein Abo, kein Preis pro Familienmitglied",
+                    ].map((feature) => (
+                      <li key={feature} className="flex items-start gap-3">
+                        <Check
+                          className="mt-0.5 size-4 shrink-0 text-[var(--petrol)]"
+                          aria-hidden="true"
+                        />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="mt-8 border-t border-border pt-4 text-sm leading-relaxed text-muted-foreground lg:mt-auto">
+                    Noch nicht buchbar. Die genauen Nutzungsgrenzen legen wir
+                    nach der Beta anhand der echten Nutzung fest.
+                  </p>
+                </article>
+              </div>
+            </div>
+
+            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+              Geplante Preise inklusive Umsatzsteuer. Bevor ein kostenpflichtiges
+              Abo startet, informieren wir dich klar und rechtzeitig.
+            </p>
+          </div>
+        </section>
+
         <section className="mx-4 overflow-hidden rounded-ordilo-md bg-[var(--petrol-darker)] text-white sm:mx-0">
           <div className="grid lg:grid-cols-[1fr_0.9fr]">
             <div className="p-6 sm:p-10 lg:p-12">
@@ -386,6 +505,9 @@ export function LandingPage() {
             </a>
             <Link href="/impressum" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
               Impressum
+            </Link>
+            <Link href="/nutzungsbedingungen" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
+              Nutzungsbedingungen
             </Link>
             <Link href="/datenschutz" className="focus-ring inline-flex min-h-11 items-center rounded-ordilo-sm px-3 transition-colors hover:text-foreground">
               Datenschutz

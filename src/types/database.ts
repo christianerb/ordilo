@@ -160,6 +160,163 @@ export type Database = {
         Update: { cost_usd?: number | null };
         Relationships: [];
       };
+      billing_plans: {
+        Row: {
+          code: "free" | "founding" | "plus";
+          display_name: string;
+          is_paid: boolean;
+          created_at: string;
+        };
+        Insert: {
+          code: "free" | "founding" | "plus";
+          display_name: string;
+          is_paid: boolean;
+          created_at?: string;
+        };
+        Update: {
+          display_name?: string;
+          is_paid?: boolean;
+        };
+        Relationships: [];
+      };
+      billing_metrics: {
+        Row: { code: string; description: string; period: "month" };
+        Insert: { code: string; description: string; period?: "month" };
+        Update: { description?: string; period?: "month" };
+        Relationships: [];
+      };
+      billing_plan_limits: {
+        Row: {
+          plan_code: "free" | "founding" | "plus";
+          metric_code: string;
+          monthly_limit: number | null;
+          updated_at: string;
+        };
+        Insert: {
+          plan_code: "free" | "founding" | "plus";
+          metric_code: string;
+          monthly_limit?: number | null;
+          updated_at?: string;
+        };
+        Update: { monthly_limit?: number | null; updated_at?: string };
+        Relationships: [];
+      };
+      billing_events: {
+        Row: {
+          id: string;
+          provider: string;
+          provider_event_id: string;
+          event_type: string;
+          family_id: string | null;
+          payload_sha256: string | null;
+          occurred_at: string | null;
+          received_at: string;
+          processed_at: string | null;
+          processing_error: string | null;
+        };
+        Insert: {
+          id?: string;
+          provider: string;
+          provider_event_id: string;
+          event_type: string;
+          family_id?: string | null;
+          payload_sha256?: string | null;
+          occurred_at?: string | null;
+          received_at?: string;
+          processed_at?: string | null;
+          processing_error?: string | null;
+        };
+        Update: {
+          family_id?: string | null;
+          processed_at?: string | null;
+          processing_error?: string | null;
+        };
+        Relationships: [];
+      };
+      family_entitlements: {
+        Row: {
+          family_id: string;
+          plan_code: "free" | "founding" | "plus";
+          status: "free" | "trialing" | "active" | "past_due" | "canceled" | "expired";
+          trial_ends_at: string | null;
+          current_period_ends_at: string | null;
+          grace_ends_at: string | null;
+          cancel_at_period_end: boolean;
+          provider: string | null;
+          provider_customer_id: string | null;
+          provider_subscription_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          family_id: string;
+          plan_code?: "free" | "founding" | "plus";
+          status?: "free" | "trialing" | "active" | "past_due" | "canceled" | "expired";
+          trial_ends_at?: string | null;
+          current_period_ends_at?: string | null;
+          grace_ends_at?: string | null;
+          cancel_at_period_end?: boolean;
+          provider?: string | null;
+          provider_customer_id?: string | null;
+          provider_subscription_id?: string | null;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["family_entitlements"]["Insert"]>;
+        Relationships: [];
+      };
+      family_usage_periods: {
+        Row: {
+          family_id: string;
+          metric_code: string;
+          period_start: string;
+          period_end: string;
+          used: number;
+          updated_at: string;
+        };
+        Insert: {
+          family_id: string;
+          metric_code: string;
+          period_start: string;
+          period_end: string;
+          used?: number;
+          updated_at?: string;
+        };
+        Update: { used?: number; updated_at?: string };
+        Relationships: [];
+      };
+      family_usage_reservations: {
+        Row: {
+          id: string;
+          family_id: string;
+          metric_code: string;
+          plan_code: "free" | "founding" | "plus";
+          operation_key: string;
+          amount: number;
+          period_start: string;
+          allowed: boolean;
+          used_after: number | null;
+          limit_at_reservation: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          family_id: string;
+          metric_code: string;
+          plan_code: "free" | "founding" | "plus";
+          operation_key: string;
+          amount: number;
+          period_start: string;
+          allowed?: boolean;
+          used_after?: number | null;
+          limit_at_reservation?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          allowed?: boolean;
+          used_after?: number | null;
+          limit_at_reservation?: number | null;
+        };
+        Relationships: [];
+      };
       push_devices: {
         Row: { id: string; user_id: string; token: string; timezone: string; updated_at: string };
         Insert: { id: string; user_id: string; token: string; timezone?: string; updated_at?: string };
@@ -1607,6 +1764,73 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      get_family_entitlement: {
+        Args: { p_family_id: string; p_at?: string };
+        Returns: {
+          family_id: string;
+          plan: "free" | "founding" | "plus";
+          status: "free" | "trialing" | "active" | "past_due" | "canceled" | "expired";
+          access_ends_at: string | null;
+          limits: Record<string, number | null>;
+        } | null;
+      };
+      get_family_entitlement_admin: {
+        Args: { p_family_id: string; p_at?: string };
+        Returns: {
+          family_id: string;
+          plan: "free" | "founding" | "plus";
+          status: "free" | "trialing" | "active" | "past_due" | "canceled" | "expired";
+          access_ends_at: string | null;
+          limits: Record<string, number | null>;
+        } | null;
+      };
+      resolve_family_entitlement: {
+        Args: { p_family_id: string; p_at?: string };
+        Returns: {
+          effective_plan_code: "free" | "founding" | "plus";
+          entitlement_status: string;
+          access_ends_at: string | null;
+        }[];
+      };
+      reserve_family_usage: {
+        Args: {
+          p_family_id: string;
+          p_metric_code: string;
+          p_amount: number;
+          p_operation_key: string;
+          p_at?: string;
+        };
+        Returns: {
+          allowed: boolean;
+          duplicate: boolean;
+          plan: "free" | "founding" | "plus";
+          metric: string;
+          used: number;
+          limit: number | null;
+          period_start: string;
+          period_end: string;
+        };
+      };
+      release_family_usage: {
+        Args: {
+          p_family_id: string;
+          p_metric_code: string;
+          p_operation_key: string;
+          p_at?: string;
+        };
+        Returns: boolean;
+      };
+      record_billing_event: {
+        Args: {
+          p_provider: string;
+          p_provider_event_id: string;
+          p_event_type: string;
+          p_family_id?: string | null;
+          p_payload_sha256?: string | null;
+          p_occurred_at?: string | null;
+        };
+        Returns: boolean;
+      };
       document_correction_evidence: { Args: { p_document_id: string }; Returns: string | null };
       document_correction_revision: { Args: { p_document_id: string }; Returns: string | null };
       correct_confirmed_document: {
