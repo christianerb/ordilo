@@ -71,6 +71,7 @@ export function useLiveConversation({
   const limitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const delegationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setupAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const turnRunningRef = useRef(false);
   const pendingTurnRef = useRef<PendingTurn | null>(null);
@@ -120,6 +121,8 @@ export function useLiveConversation({
     limitTimerRef.current = null;
     closeTimerRef.current = null;
     delegationTimerRef.current = null;
+    setupAbortRef.current?.abort();
+    setupAbortRef.current = null;
     dcRef.current?.close();
     dcRef.current = null;
     pcRef.current?.close();
@@ -314,9 +317,12 @@ export function useLiveConversation({
       await waitForIceGathering(pc);
       const sdp = pc.localDescription?.sdp;
       if (!sdp) throw new Error("Missing SDP");
+      const setupAbort = new AbortController();
+      setupAbortRef.current = setupAbort;
       const response = await fetch("/api/realtime/live/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: setupAbort.signal,
         body: JSON.stringify({
           family_id: familyId,
           operation_id: operationId,
@@ -326,9 +332,13 @@ export function useLiveConversation({
       const session = (await response.json().catch(() => null)) as
         | LiveSessionResponse
         | null;
+      if (setupAbortRef.current === setupAbort) {
+        setupAbortRef.current = null;
+      }
       // The user may have stopped while the setup request was in flight;
       // cleanup() closed the peer and bumped the generation. Never install a
-      // session or report an error for a stop that already happened.
+      // session or report an error for a stop that already happened. Aborting
+      // the setup fetch also tells the server to hang up an accepted session.
       if (generation !== generationRef.current) return;
       if (
         !response.ok ||

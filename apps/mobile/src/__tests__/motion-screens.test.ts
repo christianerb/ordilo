@@ -96,6 +96,17 @@ describe("native motion wiring", () => {
     expect(bar).not.toContain("withRepeat");
   });
 
+  it("aborts native setup so the server can close an accepted stale session", () => {
+    const live = source("src/lib/live-conversation.ts");
+
+    expect(live).toContain("const setupAbort = new AbortController()");
+    expect(live).toContain("signal: setupAbort.signal");
+    expect(live).toContain("setupAbortRef.current?.abort()");
+    expect(live.indexOf("setupAbortRef.current?.abort()")).toBeLessThan(
+      live.indexOf("peerRef.current?.close()"),
+    );
+  });
+
   it("explains background processing without promising notifications", () => {
     const scan = source("app/scan.tsx");
 

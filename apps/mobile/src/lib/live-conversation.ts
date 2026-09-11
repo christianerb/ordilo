@@ -84,6 +84,7 @@ export function useNativeLiveConversation({
   const limitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const delegationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const setupAbortRef = useRef<AbortController | null>(null);
   const generationRef = useRef(0);
   const turnRunningRef = useRef(false);
   const pendingTurnRef = useRef<PendingTurn | null>(null);
@@ -145,6 +146,8 @@ export function useNativeLiveConversation({
     limitTimerRef.current = null;
     closeTimerRef.current = null;
     delegationTimerRef.current = null;
+    setupAbortRef.current?.abort();
+    setupAbortRef.current = null;
     dataChannelRef.current?.close();
     dataChannelRef.current = null;
     peerRef.current?.close();
@@ -343,6 +346,8 @@ export function useNativeLiveConversation({
       const operationId = crypto.randomUUID();
       stopReasonRef.current = null;
       providerSecondsRef.current = 0;
+      const setupAbort = new AbortController();
+      setupAbortRef.current = setupAbort;
       const response = await fetch(
         `${getApiUrl()}/api/realtime/live/session`,
         {
@@ -351,6 +356,7 @@ export function useNativeLiveConversation({
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
+          signal: setupAbort.signal,
           body: JSON.stringify({
             family_id: familyId,
             operation_id: operationId,
@@ -361,8 +367,13 @@ export function useNativeLiveConversation({
       const session = (await response.json().catch(() => null)) as
         | LiveSessionResponse
         | null;
+      if (setupAbortRef.current === setupAbort) {
+        setupAbortRef.current = null;
+      }
       // Stop during the in-flight setup request closed the peer and bumped
       // the generation; never install a session or fail after that stop.
+      // Aborting the setup fetch also tells the server to hang up an accepted
+      // provider session and return the reservation.
       if (generation !== generationRef.current) return;
       if (
         !response.ok ||

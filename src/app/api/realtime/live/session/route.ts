@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import * as Sentry from "@sentry/nextjs";
+import { after } from "next/server";
 import { z } from "zod";
 
 import {
@@ -16,9 +17,11 @@ import {
   isLiveConversationPreview,
   LIVE_CONVERSATION_MAX_DURATION_MS,
 } from "@/lib/billing/live-conversation";
+import { enforceLiveSessionLimit } from "@/lib/realtime/live-session-control";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 
 const LIVE_MODEL = "gpt-live-1";
+export const maxDuration = 300;
 
 const requestSchema = z.object({
   family_id: z.string().uuid(),
@@ -152,11 +155,29 @@ async function handleLiveSession(request: Request): Promise<Response> {
         body: JSON.stringify({
           session: {
             model: LIVE_MODEL,
+            // Structure follows the official GPT-Live prompting guide:
+            // personality, the labeled behavior policies, and only the
+            // capabilities the backend actually has. Detailed procedures and
+            // tool execution stay in the Ordilo chat backend.
             instructions:
-              "Du bist die ruhige Stimme von Ordilo. Antworte auf Deutsch, warm und knapp. " +
-              "Delegiere jede Frage zu Familie, Dokumenten, Terminen oder Aufgaben an den Client. " +
-              "Sage bei Bedarf kurz, dass du nachschaust. Sobald der Client das Ergebnis sendet, sprich es direkt aus. " +
-              "Fakten dazu stammen ausschließlich aus der Antwort des Ordilo-Backends. " +
+              "Du bist Ordilo, ein ruhiger, warmer Sprachassistent für Familien. " +
+              "Sprich auf Deutsch, klar und in entspanntem Tempo. " +
+              "Wenn jemand frustriert klingt, bestätige das kurz und konzentriere dich auf den nächsten hilfreichen Schritt.\n\n" +
+              "Backchannel policy: Use moderate backchannels. Acknowledge naturally without competing with the main response.\n\n" +
+              "Interruption policy: Stop speaking when the user interrupts. Listen to what they say.\n\n" +
+              "Delegation policy:\n" +
+              "Backend tools:\n" +
+              "- Ordilo-Backend: beantwortet Fragen zu Dokumenten, Terminen und Aufgaben der Familie und schlägt Änderungen daran vor.\n\n" +
+              "Delegate to the backend when:\n" +
+              "- Die Anfrage eine Backend-Fähigkeit oder sorgfältiges Nachdenken braucht.\n" +
+              "- Eine Korrektur bereits angefragte Arbeit ändert.\n\n" +
+              "Do not delegate to the backend when:\n" +
+              "- Du direkt aus der Unterhaltung antworten kannst, etwa bei einer Begrüßung oder einer Wiederholung des letzten Ergebnisses.\n" +
+              "- Eine kurze Rückfrage nötig ist, um die Anfrage zu verstehen.\n\n" +
+              "Delegiere, bevor du eine Antwort gibst, die von Backend-Arbeit abhängt. " +
+              "Sage beim Delegieren kurz, dass du nachschaust. " +
+              "Rate das Ergebnis nicht, während du wartest.\n\n" +
+              "Fakten zu Familie, Dokumenten, Terminen und Aufgaben stammen ausschließlich aus der Antwort des Ordilo-Backends. " +
               "Gib diese Fakten vollständig und ohne Ergänzungen wieder. " +
               "Behaupte nie, dass eine Aufgabe, Notiz oder ein Termin gespeichert wurde. " +
               "Sage bei einem Vorschlag, dass er auf dem Bildschirm bestätigt werden muss.",
@@ -217,8 +238,30 @@ async function handleLiveSession(request: Request): Promise<Response> {
       providerRequestId: response.headers.get("x-request-id"),
     });
 
+    const sessionId = result.session.id;
+    after(async () => {
+      try {
+        await enforceLiveSessionLimit({
+          apiKey,
+          operationId,
+          requestSignal: request.signal,
+          sessionId,
+          userId: auth.user.id,
+          onSetupCancelled: () =>
+            releaseReservation(familyId, operationId, reserved),
+        });
+      } catch (error) {
+        Sentry.captureException(error, {
+          tags: {
+            area: "live_conversation",
+            live_refusal: "LIVE_LIMIT_HANGUP_FAILED",
+          },
+        });
+      }
+    });
+
     return Response.json({
-      session_id: result.session.id,
+      session_id: sessionId,
       sdp: result.transport.sdp,
       max_duration_ms: LIVE_CONVERSATION_MAX_DURATION_MS,
       model: LIVE_MODEL,

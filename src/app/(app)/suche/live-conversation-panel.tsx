@@ -3,6 +3,7 @@
 import { AudioLines, Crown, PhoneOff } from "lucide-react";
 
 import { OrdiloMark } from "@/components/ordilo/ordilo-mark";
+import { useChangeEffect } from "@/lib/hooks/use-change-effect";
 import { useLiveConversation } from "@/lib/realtime/use-live-conversation";
 import { cn } from "@/lib/utils";
 
@@ -20,14 +21,21 @@ export function LiveConversationPanel({
   premium,
   onTurn,
   onError,
+  onActiveChange,
+  disabled = false,
 }: {
   familyId: string;
   premium: boolean;
   onTurn: (transcript: string) => Promise<string | null>;
   onError: (message: string) => void;
+  onActiveChange?: (active: boolean) => void;
+  disabled?: boolean;
 }) {
   const live = useLiveConversation({ familyId, onTurn, onError });
   const active = live.status !== "idle";
+  useChangeEffect(() => {
+    onActiveChange?.(active);
+  }, [active, onActiveChange]);
 
   return (
     <div className="flex items-center gap-2">
@@ -59,9 +67,13 @@ export function LiveConversationPanel({
       ) : (
         <button
           type="button"
-          onClick={() => void live.start()}
+          onClick={() => {
+            onActiveChange?.(true);
+            void live.start();
+          }}
+          disabled={disabled}
           className={cn(
-            "flex min-h-9 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-xs font-medium transition-colors focus-ring",
+            "flex min-h-9 items-center gap-1.5 rounded-ordilo-sm px-2.5 text-xs font-medium transition-colors focus-ring disabled:cursor-not-allowed disabled:opacity-50",
             premium
               ? "bg-[var(--wash-sage-soft)] text-[var(--petrol)] hover:bg-[var(--sand-warm)]"
               : "border border-border bg-card text-muted-foreground hover:bg-[var(--sand-warm)]",

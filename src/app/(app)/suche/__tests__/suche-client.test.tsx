@@ -13,6 +13,7 @@ import type { SucheClientProps } from "@/app/(app)/suche/suche-client";
 
 const mockOpenDocument = vi.fn();
 const mockStartLive = vi.fn();
+let mockLiveStatus = "idle";
 vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({
     openDocument: mockOpenDocument,
@@ -23,7 +24,7 @@ vi.mock("@/lib/realtime/use-live-conversation", () => ({
   useLiveConversation: () => ({
     lastTranscript: "",
     start: mockStartLive,
-    status: "idle",
+    status: mockLiveStatus,
     stop: vi.fn(),
   }),
 }));
@@ -144,6 +145,8 @@ beforeEach(() => {
   mockPush.mockClear();
   mockOpenDocument.mockClear();
   mockStartLive.mockClear();
+  mockLiveStatus = "idle";
+  composerBusy = false;
   Element.prototype.scrollIntoView = vi.fn();
   global.fetch = vi.fn().mockResolvedValue(
     streamResponse([
@@ -198,11 +201,25 @@ describe("SucheClient — Empty State", () => {
   });
 
   it("starts the paid Live mode from the conversation header", () => {
+    mockStartLive.mockImplementationOnce(() => {
+      mockLiveStatus = "connecting";
+    });
     render(<SucheClient {...defaultProps} liveConversationPremium />);
     fireEvent.click(
       screen.getByRole("button", { name: "Live mit Ordilo sprechen" }),
     );
     expect(mockStartLive).toHaveBeenCalledOnce();
+    expect(composerBusy).toBe(true);
+  });
+
+  it("disables the global composer for the whole Live session", async () => {
+    const view = render(<SucheClient {...defaultProps} liveConversationPremium />);
+    expect(composerBusy).toBe(false);
+
+    mockLiveStatus = "listening";
+    view.rerender(<SucheClient {...defaultProps} liveConversationPremium />);
+
+    await waitFor(() => expect(composerBusy).toBe(true));
   });
 
   it("shows three personal example queries in the empty state", () => {

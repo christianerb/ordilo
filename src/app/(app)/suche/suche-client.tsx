@@ -138,6 +138,7 @@ export function SucheClient({
   const { setActiveHandler, setBusy } = useActiveSearch();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [liveActive, setLiveActive] = useState(false);
   const [error, setError] = useState(false);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const [streamingId, setStreamingId] = useState<string | null>(null);
@@ -145,6 +146,13 @@ export function SucheClient({
   const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
   const [showChatList, setShowChatList] = useState(initialShowHistory);
   const [quotedMessage, setQuotedMessage] = useState<{ text: string } | null>(null);
+  const handleLiveActiveChange = useCallback(
+    (active: boolean) => {
+      setLiveActive(active);
+      setBusy(active || isLoading);
+    },
+    [isLoading, setBusy],
+  );
   const exampleQueries = useMemo(
     () =>
       buildPersonalChatPrompts({
@@ -724,10 +732,10 @@ export function SucheClient({
         if (chatAbortRef.current === chatAbort) chatAbortRef.current = null;
         setStreamingId(null);
         setIsLoading(false);
-        setBusy(false);
+        setBusy(liveActive);
       }
     },
-    [familyId, isLoading, activeConversationId, conversations, setBusy, quotedMessage],
+    [familyId, isLoading, liveActive, activeConversationId, conversations, setBusy, quotedMessage],
   );
 
   // -------------------------------------------------------------------------
@@ -1061,6 +1069,8 @@ export function SucheClient({
           premium={liveConversationPremium}
           onTurn={(transcript) => handleSubmit(transcript)}
           onError={(message) => toast.error(message)}
+          onActiveChange={handleLiveActiveChange}
+          disabled={isLoading}
         />
 
         <button

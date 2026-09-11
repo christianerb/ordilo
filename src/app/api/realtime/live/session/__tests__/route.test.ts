@@ -10,6 +10,12 @@ const mocks = vi.hoisted(() => ({
   sentryMessage: vi.fn(),
   sentryException: vi.fn(),
   recordLiveStarted: vi.fn(),
+  after: vi.fn(),
+  enforceLimit: vi.fn(),
+}));
+
+vi.mock("next/server", () => ({
+  after: (...args: unknown[]) => mocks.after(...args),
 }));
 
 vi.mock("@/lib/auth/require-user", () => ({
@@ -31,6 +37,11 @@ vi.mock("@/lib/billing/live-conversation", () => ({
 vi.mock("@/lib/billing/quota", () => ({
   reserveMonthlyUsage: (...args: unknown[]) => mocks.reserve(...args),
   releaseMonthlyUsage: (...args: unknown[]) => mocks.release(...args),
+}));
+
+vi.mock("@/lib/realtime/live-session-control", () => ({
+  enforceLiveSessionLimit: (...args: unknown[]) =>
+    mocks.enforceLimit(...args),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -103,6 +114,7 @@ beforeEach(() => {
   });
   mocks.release.mockResolvedValue(true);
   mocks.recordLiveStarted.mockResolvedValue(undefined);
+  mocks.enforceLimit.mockResolvedValue(undefined);
   fetchMock.mockResolvedValue(
     new Response(
       JSON.stringify({
@@ -186,6 +198,7 @@ describe("POST /api/realtime/live/session", () => {
       userId: "user-1",
       providerRequestId: null,
     });
+    expect(mocks.after).toHaveBeenCalledOnce();
   });
 
   it("lets local preview sessions skip the free plan's zero quota", async () => {
@@ -196,6 +209,36 @@ describe("POST /api/realtime/live/session", () => {
     expect(response.status).toBe(201);
     expect(mocks.reserve).not.toHaveBeenCalled();
     expect(mocks.recordLiveStarted).toHaveBeenCalled();
+  });
+
+  it("registers a server-owned hangup and setup-disconnect cleanup", async () => {
+    const liveRequest = request();
+
+    const response = await POST(liveRequest);
+    expect(response.status).toBe(201);
+    const backgroundWork = mocks.after.mock.calls[0]?.[0] as
+      | (() => Promise<void>)
+      | undefined;
+    expect(backgroundWork).toBeTypeOf("function");
+
+    await backgroundWork?.();
+
+    expect(mocks.enforceLimit).toHaveBeenCalledWith({
+      apiKey: "test-key",
+      operationId,
+      requestSignal: liveRequest.signal,
+      sessionId: "live_test",
+      userId: "user-1",
+      onSetupCancelled: expect.any(Function),
+    });
+    const cleanup = mocks.enforceLimit.mock.calls[0]?.[0]
+      .onSetupCancelled as () => Promise<void>;
+    await cleanup();
+    expect(mocks.release).toHaveBeenCalledWith({
+      familyId,
+      metric: "live_conversation",
+      operationKey: operationId,
+    });
   });
 
   it("releases the monthly reservation when OpenAI refuses the session", async () => {
