@@ -10,17 +10,28 @@ import {
 const insert = vi.hoisted(() => vi.fn().mockResolvedValue({ error: null }));
 const update = vi.hoisted(() => vi.fn());
 const eq = vi.hoisted(() => vi.fn());
+const isNull = vi.hoisted(() => vi.fn());
+const select = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/supabase/admin", () => ({
   createClient: () => ({
     from: () => ({ insert, upsert: insert, update }),
   }),
 }));
+function mockFinalizeChain(rows: { id: string }[]): void {
+  const query = { eq, is: isNull, select };
+  update.mockReturnValue(query);
+  eq.mockReturnValue(query);
+  isNull.mockReturnValue(query);
+  select.mockResolvedValue({ data: rows, error: null });
+}
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.useRealTimers();
   insert.mockReset().mockResolvedValue({ error: null });
   update.mockReset();
   eq.mockReset();
+  isNull.mockReset();
+  select.mockReset();
 });
 
 describe("API metering", () => {
@@ -67,9 +78,7 @@ describe("API metering", () => {
     expect((await response.json()).usage.prompt_tokens).toBe(100);
   });
   it("records GPT Live duration in minutes at the advertised voice-layer rate", async () => {
-    eq.mockReturnValue({ eq });
-    eq.mockReturnValueOnce({ eq }).mockReturnValueOnce({ eq }).mockResolvedValueOnce({ error: null });
-    update.mockReturnValue({ eq });
+    mockFinalizeChain([{ id: "10000000-0000-4000-a000-000000000001" }]);
 
     await recordLiveConversationStarted({
       operationId: "10000000-0000-4000-a000-000000000001",
@@ -82,16 +91,56 @@ describe("API metering", () => {
       durationMillis: 150_000,
     });
 
-    expect(insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        operation: "live_conversation",
-        model: "gpt-live-1",
-        cost_usd: null,
-      }),
-    );
+    const startRow = insert.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(startRow).toMatchObject({
+      operation: "live_conversation",
+      model: "gpt-live-1",
+    });
+    // A delayed start checkpoint must not null out an early finalization.
+    expect(startRow).not.toHaveProperty("provider_units");
+    expect(startRow).not.toHaveProperty("cost_usd");
     expect(update).toHaveBeenCalledWith({
       provider_units: 2.5,
       cost_usd: 0.125,
     });
+    // Only still-open rows are finalized, so a later deadline task cannot
+    // overwrite the real duration of a normally ended session.
+    expect(isNull).toHaveBeenCalledWith("provider_units", null);
+    expect(insert).toHaveBeenCalledOnce();
+  });
+
+  it("inserts the finalized row when the start checkpoint is still pending", async () => {
+    mockFinalizeChain([]);
+
+    await recordLiveConversationEnded({
+      operationId: "10000000-0000-4000-a000-000000000001",
+      userId: "20000000-0000-4000-a000-000000000002",
+      durationMillis: 30_000,
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "10000000-0000-4000-a000-000000000001",
+        operation: "live_conversation",
+        provider_units: 0.5,
+        cost_usd: 0.025,
+      }),
+    );
+  });
+
+  it("retries finalization when the start row lands concurrently", async () => {
+    mockFinalizeChain([]);
+    insert.mockResolvedValueOnce({ error: { code: "23505" } });
+
+    await recordLiveConversationEnded({
+      operationId: "10000000-0000-4000-a000-000000000001",
+      userId: "20000000-0000-4000-a000-000000000002",
+      durationMillis: 300_000,
+    });
+
+    expect(insert).toHaveBeenCalledOnce();
+    // First attempt plus the conflict retry, both guarded to open rows.
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(isNull).toHaveBeenCalledWith("provider_units", null);
   });
 });

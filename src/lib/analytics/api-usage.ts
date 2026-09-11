@@ -57,8 +57,8 @@ export async function recordLiveConversationStarted(input: {
       provider: "openai",
       provider_request_id: input.providerRequestId,
       model: "gpt-live-1",
-      provider_units: null,
-      cost_usd: null,
+      // Omit the finalization columns: this bounded upsert can land after an
+      // early end checkpoint and must never null out its duration and cost.
     });
     if (error && error.code !== "23505") {
       console.warn("Live usage start checkpoint failed", { code: error.code });
@@ -73,19 +73,54 @@ export async function recordLiveConversationEnded(input: {
   userId: string;
 }): Promise<void> {
   const minutes = Math.max(0, input.durationMillis) / 60_000;
+  const finalization = {
+    provider_units: minutes,
+    cost_usd: minutes * GPT_LIVE_USD_PER_MINUTE,
+  };
   return boundedUsage(async () => {
     const client = createClient();
-    const { error } = await client
-      .from("api_usage")
-      .update({
-        provider_units: minutes,
-        cost_usd: minutes * GPT_LIVE_USD_PER_MINUTE,
-      })
-      .eq("id", input.operationId)
-      .eq("operation", "live_conversation")
-      .eq("user_id", input.userId);
+    // First finalization wins: the real duration reported by /session/end
+    // survives the server deadline task firing later, and a capped value
+    // survives a slower client report.
+    const finalizeOpenRow = () =>
+      client
+        .from("api_usage")
+        .update(finalization)
+        .eq("id", input.operationId)
+        .eq("operation", "live_conversation")
+        .eq("user_id", input.userId)
+        .is("provider_units", null)
+        .select("id");
+    const { data, error } = await finalizeOpenRow();
     if (error) {
       console.warn("Live usage end checkpoint failed", { code: error.code });
+      return;
+    }
+    if (data && data.length > 0) return;
+    // The bounded start checkpoint can still be in flight, so the row may
+    // not exist yet. Insert it finalized instead of losing the duration;
+    // the delayed start upsert preserves both columns (see above).
+    const { error: insertError } = await client.from("api_usage").insert({
+      id: input.operationId,
+      operation_id: input.operationId,
+      operation: "live_conversation",
+      user_id: input.userId,
+      provider: "openai",
+      model: "gpt-live-1",
+      ...finalization,
+    });
+    if (insertError?.code === "23505") {
+      // The start row landed concurrently; finalize it if it is still open.
+      const { error: retryError } = await finalizeOpenRow();
+      if (retryError) {
+        console.warn("Live usage end checkpoint failed", {
+          code: retryError.code,
+        });
+      }
+    } else if (insertError) {
+      console.warn("Live usage end checkpoint failed", {
+        code: insertError.code,
+      });
     }
   });
 }

@@ -29,6 +29,25 @@ vi.mock("@/lib/realtime/use-live-conversation", () => ({
   }),
 }));
 
+// Wrap the real panel so tests can invoke the spoken-turn handler exactly
+// the way the Live hook does when a delegation arrives.
+let liveOnTurn: ((transcript: string) => Promise<string | null>) | null =
+  null;
+vi.mock("@/app/(app)/suche/live-conversation-panel", async (importOriginal) => {
+  const mod =
+    await importOriginal<
+      typeof import("@/app/(app)/suche/live-conversation-panel")
+    >();
+  return {
+    LiveConversationPanel: (
+      props: Parameters<typeof mod.LiveConversationPanel>[0],
+    ) => {
+      liveOnTurn = props.onTurn;
+      return <mod.LiveConversationPanel {...props} />;
+    },
+  };
+});
+
 // Mock next/navigation useRouter
 const mockPush = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -146,6 +165,7 @@ beforeEach(() => {
   mockOpenDocument.mockClear();
   mockStartLive.mockClear();
   mockLiveStatus = "idle";
+  liveOnTurn = null;
   composerBusy = false;
   Element.prototype.scrollIntoView = vi.fn();
   global.fetch = vi.fn().mockResolvedValue(
@@ -210,6 +230,29 @@ describe("SucheClient — Empty State", () => {
     );
     expect(mockStartLive).toHaveBeenCalledOnce();
     expect(composerBusy).toBe(true);
+  });
+
+  it("speaks the completed Live answer when the stream cuts after answer_ready", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        { type: "text", content: "Der Vertrag läuft bis 2027." },
+        { type: "answer_ready" },
+        // The connection drops before the final done event.
+      ]),
+    );
+    render(<SucheClient {...defaultProps} liveConversationPremium />);
+
+    let spoken: string | null | undefined;
+    await act(async () => {
+      spoken = await liveOnTurn?.("Wann endet der Vertrag?");
+    });
+
+    expect(spoken).toBe("Der Vertrag läuft bis 2027.");
+    await waitFor(() => {
+      expect(
+        screen.getByText("Der Vertrag läuft bis 2027."),
+      ).toBeInTheDocument();
+    });
   });
 
   it("disables the global composer for the whole Live session", async () => {

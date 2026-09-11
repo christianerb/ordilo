@@ -480,6 +480,10 @@ export function SucheClient({
         ? `> ${quoted.text}\n\n${query}`
         : query;
 
+      // Hoisted so the recovery branch after a post-ready disconnect can
+      // return the answer that is already complete on screen.
+      let accumulatedText = "";
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -540,7 +544,6 @@ export function SucheClient({
         const reader = res.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let accumulatedText = "";
         let receivedDone = false;
         let receivedError = false;
 
@@ -705,7 +708,10 @@ export function SucheClient({
       } catch (streamError) {
         if (receivedReady && !repairRequest) {
           setMessages((prev) => prev.map((message) => message.id === aiMsg.id ? { ...message, saveWarning: !message.dbId } : message));
-          return null;
+          // The answer on screen is already complete; only the final
+          // bookkeeping event was lost. Live must speak this answer
+          // instead of its misunderstanding fallback.
+          return accumulatedText.trim() || null;
         }
         if (chatAbort.signal.aborted) {
           setMessages((prev) => prev.map((item) => item.id !== aiMsg.id ? item : repairRequest ? repairRequest.message : ({
