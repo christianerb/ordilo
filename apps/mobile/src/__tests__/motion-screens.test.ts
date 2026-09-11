@@ -109,6 +109,7 @@ describe("native motion wiring", () => {
 
   it("keeps the voice recorder visibly alive and responsive to speech", () => {
     const chat = source("src/components/chat.tsx");
+    const search = source("app/suche.tsx");
     const recorder = sourceSection(
       chat,
       "const VOICE_WAVE_SAMPLES",
@@ -123,6 +124,12 @@ describe("native motion wiring", () => {
     expect(recorder).toContain("clearInterval(interval)");
     expect(recorder).toContain("if (reduceMotion) return");
     expect(recorder).toContain("reduceMotion: REDUCE_MOTION");
+    expect(search).toContain("if (!permission.granted)");
+    expect(search).toContain(
+      'setVoiceError("Bitte erlaube Ordilo den Zugriff auf dein Mikrofon.")',
+    );
+    expect(search).toContain('"Kein Zugriff auf das Mikrofon."');
+    expect(search).toContain("resetVoiceUi()");
   });
 
   it("uses Reanimated's native CSS easing object for press transitions", () => {
