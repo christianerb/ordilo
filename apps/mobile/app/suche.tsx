@@ -10,7 +10,9 @@ import {
 } from "expo-audio";
 import {
   ChevronDown,
+  Crown,
   History,
+  AudioLines,
   MessageCircle,
   Plus,
   Sparkles,
@@ -43,6 +45,7 @@ import {
   SuggestionButton,
 } from "@/src/components/chat";
 import { ChatKeyboardFrame } from "@/src/components/chat-keyboard-frame";
+import { LiveConversationBar } from "@/src/components/live-conversation-bar";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -96,6 +99,9 @@ import {
 } from "@/src/lib/voice";
 import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import {
+  useNativeLiveConversation,
+} from "@/src/lib/live-conversation";
 
 const CHAT_ANSWER_ENTERING = contentEntering();
 
@@ -341,7 +347,7 @@ export default function SucheScreen() {
       },
       retryOperationId?: string,
     ) => {
-      if (!family) return;
+      if (!family) return null;
       const operationId = retryOperationId ?? crypto.randomUUID();
       chatOperationIds.current.set(assistantMessage.id, operationId);
       lastQuestion.current = question;
@@ -354,6 +360,7 @@ export default function SucheScreen() {
       let receivedReady = false;
       let receivedError = false;
       let pendingText = "";
+      let accumulatedText = "";
       let textFlushTimer: ReturnType<typeof setTimeout> | null = null;
       const flushPendingText = () => {
         if (textFlushTimer) {
@@ -386,9 +393,13 @@ export default function SucheScreen() {
           },
           (event) => {
             if (event.type === "text") {
+              accumulatedText += event.content;
               pendingText += event.content;
               textFlushTimer ??= setTimeout(flushPendingText, 32);
               return;
+            }
+            if (event.type === "replace") {
+              accumulatedText = event.content;
             }
             flushPendingText();
             if (event.type === "conversation") {
@@ -427,6 +438,7 @@ export default function SucheScreen() {
             }));
           }
         }
+        return accumulatedText.trim() || null;
       } catch (error) {
         if (textFlushTimer) {
           clearTimeout(textFlushTimer);
@@ -435,7 +447,7 @@ export default function SucheScreen() {
         pendingText = "";
         if (receivedReady && !repair) {
           updateMessage(assistantMessage.id, (message) => ({ ...message, saveWarning: !message.dbId }));
-          return;
+          return accumulatedText.trim() || null;
         }
         if (abort.signal.aborted) {
           updateMessage(assistantMessage.id, (message) => repair ? repair.originalMessage : ({
@@ -443,7 +455,7 @@ export default function SucheScreen() {
             status: "done", responseState: undefined,
           }));
           if (repair) throw error;
-          return;
+          return null;
         }
         const status = httpStatusOf(error);
         updateMessage(assistantMessage.id, (message) =>
@@ -462,6 +474,7 @@ export default function SucheScreen() {
         );
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         if (repair) throw error;
+        return null;
       } finally {
         flushPendingText();
         if (chatAbortRef.current === abort) chatAbortRef.current = null;
@@ -474,7 +487,7 @@ export default function SucheScreen() {
   const send = useCallback(
     async (question: string) => {
       const trimmed = question.trim();
-      if (!trimmed || busy || !family) return;
+      if (!trimmed || busy || !family) return null;
 
       const userMessage: ChatMessage = {
         id: nextId("user"),
@@ -496,7 +509,7 @@ export default function SucheScreen() {
       const history = buildChatHistory(messages);
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setInput("");
-      await runStream(trimmed, assistantMessage, history);
+      return runStream(trimmed, assistantMessage, history);
     },
     [busy, createAssistantMessage, family, messages, nextId, runStream],
   );
@@ -726,6 +739,17 @@ export default function SucheScreen() {
     },
     [router],
   );
+
+  const live = useNativeLiveConversation({
+    familyId: family?.id ?? "",
+    onTurn: send,
+    onError: (message) => {
+      setVoiceError(message);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void AccessibilityInfo.announceForAccessibility(message);
+    },
+  });
+  const liveActive = live.status !== "idle";
 
   const openContact = useCallback(
     (contactId: string) => {
@@ -969,6 +993,36 @@ export default function SucheScreen() {
           </View>
 
           <ChatKeyboardFrame footerStyle={styles.composerSafeArea} composer={<>
+              {liveActive ? (
+                <LiveConversationBar
+                  lastTranscript={live.lastTranscript}
+                  onStop={live.stop}
+                  status={live.status}
+                />
+              ) : (
+                <>
+                  <Pressable
+                    accessibilityHint="Startet ein Gespräch mit gesprochenen Antworten"
+                    accessibilityLabel="Live mit Ordilo sprechen, Premium"
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => {
+                      setVoiceError(null);
+                      void live.start();
+                    }}
+                    style={({ pressed }) => [
+                      styles.liveStart,
+                      pressed && styles.pressed,
+                      busy && styles.liveStartDisabled,
+                    ]}
+                  >
+                    <AudioLines color={colors.harborBlue} size={18} />
+                    <Text style={styles.liveStartText}>Live mit Ordilo sprechen</Text>
+                    <View style={styles.premiumBadge}>
+                      <Crown color={colors.harborBlue} size={12} />
+                      <Text style={styles.premiumBadgeText}>Premium</Text>
+                    </View>
+                  </Pressable>
               {voiceError ? (
                 <Text accessibilityRole="alert" style={styles.voiceError}>
                   {voiceError}
@@ -988,6 +1042,8 @@ export default function SucheScreen() {
                 voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
                 voiceStatus={voiceStatus}
               />
+                </>
+              )}
           </>}>
             <ScrollView
               contentContainerStyle={styles.content}
@@ -1382,6 +1438,36 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     gap: spacing.xs,
     paddingTop: spacing.sm,
+  },
+  liveStart: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: colors.washSageSoft,
+    borderColor: colors.harborLine,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 40,
+    paddingHorizontal: 14,
+  },
+  liveStartDisabled: { opacity: 0.5 },
+  liveStartText: {
+    color: colors.harborBlueDarker,
+    ...typography.label,
+  },
+  premiumBadge: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    flexDirection: "row",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  premiumBadgeText: {
+    color: colors.harborBlue,
+    ...typography.caption,
   },
   voiceError: { color: colors.destructive, ...typography.label },
   pressed: { opacity: 0.76 },

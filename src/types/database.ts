@@ -157,7 +157,10 @@ export type Database = {
           model?: string | null; provider_units?: number | null; input_tokens?: number | null; cached_input_tokens?: number | null;
           cache_write_tokens?: number | null; output_tokens?: number | null; cost_usd?: number | null; occurred_at?: string;
         };
-        Update: { cost_usd?: number | null };
+        Update: {
+          provider_units?: number | null;
+          cost_usd?: number | null;
+        };
         Relationships: [];
       };
       billing_plans: {

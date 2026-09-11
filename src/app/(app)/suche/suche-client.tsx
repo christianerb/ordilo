@@ -31,7 +31,9 @@ import {
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { MessageBubble, messageToPlainText, type ChatMessage } from "./message-bubble";
+import { LiveConversationPanel } from "./live-conversation-panel";
 import {
   FilterChips,
   type FilterType,
@@ -80,6 +82,8 @@ export interface SucheClientProps {
   conversations?: ConversationSummary[];
   /** Open the chat history dropdown immediately (from a `?history=1` deep link). */
   initialShowHistory?: boolean;
+  /** Paid GPT Live access resolved on the server. */
+  liveConversationPremium?: boolean;
 }
 
 /** Max length of a quoted excerpt shown in the composer preview and the reply bubble. */
@@ -106,6 +110,7 @@ export function SucheClient({
   conversationId: initialConversationId = "",
   conversations: initialConversations = [],
   initialShowHistory = false,
+  liveConversationPremium = false,
 }: SucheClientProps) {
   const router = useRouter();
   const { openDocument } = useDocumentViewer();
@@ -133,6 +138,7 @@ export function SucheClient({
   const { setActiveHandler, setBusy } = useActiveSearch();
 
   const [isLoading, setIsLoading] = useState(false);
+  const [liveActive, setLiveActive] = useState(false);
   const [error, setError] = useState(false);
   const [rateLimitError, setRateLimitError] = useState<string | null>(null);
   const [streamingId, setStreamingId] = useState<string | null>(null);
@@ -140,6 +146,13 @@ export function SucheClient({
   const [conversations, setConversations] = useState<ConversationSummary[]>(initialConversations);
   const [showChatList, setShowChatList] = useState(initialShowHistory);
   const [quotedMessage, setQuotedMessage] = useState<{ text: string } | null>(null);
+  const handleLiveActiveChange = useCallback(
+    (active: boolean) => {
+      setLiveActive(active);
+      setBusy(active || isLoading);
+    },
+    [isLoading, setBusy],
+  );
   const exampleQueries = useMemo(
     () =>
       buildPersonalChatPrompts({
@@ -386,7 +399,7 @@ export function SucheClient({
       },
       retryOperationId?: string,
     ) => {
-      if (!query.trim() || isLoading) return;
+      if (!query.trim() || isLoading) return null;
 
       setError(false);
       setRateLimitError(null);
@@ -467,6 +480,10 @@ export function SucheClient({
         ? `> ${quoted.text}\n\n${query}`
         : query;
 
+      // Hoisted so the recovery branch after a post-ready disconnect can
+      // return the answer that is already complete on screen.
+      let accumulatedText = "";
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -521,13 +538,12 @@ export function SucheClient({
           if (repairRequest) {
             throw new Error("Chat repair request failed");
           }
-          return;
+          return null;
         }
 
         const reader = res.body!.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
-        let accumulatedText = "";
         let receivedDone = false;
         let receivedError = false;
 
@@ -688,17 +704,21 @@ export function SucheClient({
         if (!receivedDone || receivedError) {
           throw new Error("Chat stream incomplete");
         }
+        return accumulatedText.trim() || null;
       } catch (streamError) {
         if (receivedReady && !repairRequest) {
           setMessages((prev) => prev.map((message) => message.id === aiMsg.id ? { ...message, saveWarning: !message.dbId } : message));
-          return;
+          // The answer on screen is already complete; only the final
+          // bookkeeping event was lost. Live must speak this answer
+          // instead of its misunderstanding fallback.
+          return accumulatedText.trim() || null;
         }
         if (chatAbort.signal.aborted) {
           setMessages((prev) => prev.map((item) => item.id !== aiMsg.id ? item : repairRequest ? repairRequest.message : ({
             ...item, content: "Antwort gestoppt.", sources: [], card: undefined, responseState: undefined,
           })));
           if (repairRequest) throw streamError;
-          return;
+          return null;
         }
         // Network error or stream interrupted — remove the empty AI
         // placeholder so the user doesn't see a blank bubble.
@@ -713,14 +733,15 @@ export function SucheClient({
         );
         setError(true);
         if (repairRequest) throw streamError;
+        return null;
       } finally {
         if (chatAbortRef.current === chatAbort) chatAbortRef.current = null;
         setStreamingId(null);
         setIsLoading(false);
-        setBusy(false);
+        setBusy(liveActive);
       }
     },
-    [familyId, isLoading, activeConversationId, conversations, setBusy, quotedMessage],
+    [familyId, isLoading, liveActive, activeConversationId, conversations, setBusy, quotedMessage],
   );
 
   // -------------------------------------------------------------------------
@@ -1048,6 +1069,15 @@ export function SucheClient({
             onClearAll={clearAllFilters}
           />
         )}
+
+        <LiveConversationPanel
+          familyId={familyId}
+          premium={liveConversationPremium}
+          onTurn={(transcript) => handleSubmit(transcript)}
+          onError={(message) => toast.error(message)}
+          onActiveChange={handleLiveActiveChange}
+          disabled={isLoading}
+        />
 
         <button
           type="button"

@@ -12,11 +12,41 @@ import { SucheClient } from "@/app/(app)/suche/suche-client";
 import type { SucheClientProps } from "@/app/(app)/suche/suche-client";
 
 const mockOpenDocument = vi.fn();
+const mockStartLive = vi.fn();
+let mockLiveStatus = "idle";
 vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({
     openDocument: mockOpenDocument,
   }),
 }));
+
+vi.mock("@/lib/realtime/use-live-conversation", () => ({
+  useLiveConversation: () => ({
+    lastTranscript: "",
+    start: mockStartLive,
+    status: mockLiveStatus,
+    stop: vi.fn(),
+  }),
+}));
+
+// Wrap the real panel so tests can invoke the spoken-turn handler exactly
+// the way the Live hook does when a delegation arrives.
+let liveOnTurn: ((transcript: string) => Promise<string | null>) | null =
+  null;
+vi.mock("@/app/(app)/suche/live-conversation-panel", async (importOriginal) => {
+  const mod =
+    await importOriginal<
+      typeof import("@/app/(app)/suche/live-conversation-panel")
+    >();
+  return {
+    LiveConversationPanel: (
+      props: Parameters<typeof mod.LiveConversationPanel>[0],
+    ) => {
+      liveOnTurn = props.onTurn;
+      return <mod.LiveConversationPanel {...props} />;
+    },
+  };
+});
 
 // Mock next/navigation useRouter
 const mockPush = vi.fn();
@@ -133,6 +163,10 @@ function pendingResponse(): Promise<Response> {
 beforeEach(() => {
   mockPush.mockClear();
   mockOpenDocument.mockClear();
+  mockStartLive.mockClear();
+  mockLiveStatus = "idle";
+  liveOnTurn = null;
+  composerBusy = false;
   Element.prototype.scrollIntoView = vi.fn();
   global.fetch = vi.fn().mockResolvedValue(
     streamResponse([
@@ -175,6 +209,60 @@ describe("SucheClient — Empty State", () => {
   it("does not render its own search bar (the global composer owns it)", () => {
     render(<SucheClient {...defaultProps} />);
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("marks Live as Premium for free families", () => {
+    render(<SucheClient {...defaultProps} />);
+    expect(
+      screen.getByRole("button", {
+        name: "Live mit Ordilo, Premium-Feature",
+      }),
+    ).toBeDefined();
+  });
+
+  it("starts the paid Live mode from the conversation header", () => {
+    mockStartLive.mockImplementationOnce(() => {
+      mockLiveStatus = "connecting";
+    });
+    render(<SucheClient {...defaultProps} liveConversationPremium />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Live mit Ordilo sprechen" }),
+    );
+    expect(mockStartLive).toHaveBeenCalledOnce();
+    expect(composerBusy).toBe(true);
+  });
+
+  it("speaks the completed Live answer when the stream cuts after answer_ready", async () => {
+    global.fetch = vi.fn().mockResolvedValue(
+      streamResponse([
+        { type: "text", content: "Der Vertrag läuft bis 2027." },
+        { type: "answer_ready" },
+        // The connection drops before the final done event.
+      ]),
+    );
+    render(<SucheClient {...defaultProps} liveConversationPremium />);
+
+    let spoken: string | null | undefined;
+    await act(async () => {
+      spoken = await liveOnTurn?.("Wann endet der Vertrag?");
+    });
+
+    expect(spoken).toBe("Der Vertrag läuft bis 2027.");
+    await waitFor(() => {
+      expect(
+        screen.getByText("Der Vertrag läuft bis 2027."),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("disables the global composer for the whole Live session", async () => {
+    const view = render(<SucheClient {...defaultProps} liveConversationPremium />);
+    expect(composerBusy).toBe(false);
+
+    mockLiveStatus = "listening";
+    view.rerender(<SucheClient {...defaultProps} liveConversationPremium />);
+
+    await waitFor(() => expect(composerBusy).toBe(true));
   });
 
   it("shows three personal example queries in the empty state", () => {

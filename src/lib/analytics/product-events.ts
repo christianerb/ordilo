@@ -19,6 +19,7 @@ export type ProductEventName =
   | "calendar_event_created"
   | "chat_answer_repair_started"
   | "chat_question_sent"
+  | "live_conversation_ended"
   | "search_completed"
   | "task_created"
   | "task_completed";

@@ -9,6 +9,7 @@ const OPERATION_LABELS: Record<string, string> = {
   search: "Suchanfrage",
   voice_transcription: "Spracheingabe",
   browser_voice: "Browser-Sprachsitzung (Verbrauch offen)",
+  live_conversation: "Live mit Ordilo",
   email_analysis: "E-Mail-Analyse",
 };
 
@@ -83,7 +84,7 @@ export async function AdminCostsTab() {
       <section className="overflow-x-auto rounded-ordilo-md border border-border bg-card p-5 shadow-card">
         <h2 className="text-lg font-semibold">API-Verbrauch und variable Kosten</h2>
         <p className="mt-2 text-sm text-muted-foreground">
-          USD-Schätzung ohne Fixkosten, maximal 12 Monate; ersetzt keine Anbieterrechnung. Browser-Sprachsitzungen fehlen noch in der Bepreisung.
+          USD-Schätzung ohne Fixkosten, maximal 12 Monate; ersetzt keine Anbieterrechnung. Nicht sauber beendete Live-Sitzungen bleiben als unbepreist sichtbar.
         </p>
 
         <h3 className="mt-6 text-base font-semibold">Verlauf nach Monat</h3>

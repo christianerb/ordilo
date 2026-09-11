@@ -49,6 +49,22 @@ conversational Q&A. Success means a family never loses track of an
 important document again, and finding any piece of information takes a
 natural-language question instead of a filing-cabinet hunt.
 
+## Premium: Mit Ordilo sprechen
+
+Premium-Familien können mit Ordilo ein natürliches, unterbrechbares
+Live-Gespräch führen. GPT‑Live‑1 übernimmt Zuhören, Sprechfluss und
+Audioausgabe; Fakten, Dokument-Fundstellen und Aktionsvorschläge kommen
+weiterhin aus dem bestehenden Ordilo-Chat. Schreibende Aktionen werden nie
+allein durch Sprache ausgeführt, sondern bleiben als Vorschlag auf dem
+Bildschirm, bis ein Familienmitglied sie bestätigt.
+
+Das kostenlose Mikrofon im Composer bleibt eine kurze Spracheingabe mit
+prüfbarem Text. Live ist bewusst getrennt und umfasst zunächst zehn
+Gespräche pro Premium-Familie und Monat mit höchstens fünf Minuten je
+Gespräch. Audio wird live an OpenAI übertragen, aber nicht von Ordilo
+gespeichert; nur die finalen Transkripte und Antworten werden wie normale
+Chat-Nachrichten im Familienverlauf gespeichert.
+
 ## Brand Personality
 
 Warm. Calm. Loving.

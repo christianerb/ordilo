@@ -1,5 +1,6 @@
 import {
   durations,
+  cssEaseOut,
   contentEntering,
   feedbackEntering,
   feedbackExiting,
@@ -29,6 +30,7 @@ jest.mock("react-native-reanimated", () => {
   };
 
   return {
+    cubicBezier: jest.fn((...points: number[]) => ({ points })),
     FadeIn: makeMockBuilder("fade"),
     FadeInDown: makeMockBuilder("down"),
     FadeInLeft: makeMockBuilder("left"),
@@ -47,6 +49,9 @@ jest.mock("react-native-reanimated", () => {
  * These tests pin the pure contract without touching Reanimated.
  */
 describe("motion tokens", () => {
+  it("uses the same strong ease-out curve for native CSS transitions", () => {
+    expect(cssEaseOut).toEqual({ points: [0.23, 1, 0.32, 1] });
+  });
   it("keeps state transitions inside the 150–250ms band", () => {
     expect(durations.fast).toBeGreaterThanOrEqual(150);
     expect(durations.base).toBeLessThanOrEqual(250);

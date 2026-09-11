@@ -10,6 +10,7 @@
  * remain because they preserve state continuity without movement.
  */
 import {
+  cubicBezier,
   Easing,
   FadeIn,
   FadeInDown,
@@ -34,6 +35,8 @@ const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1);
 /** Shared easings for places that drive shared values by hand. */
 export const easeOut = EASE_OUT;
 export const easeInOut = EASE_IN_OUT;
+/** CSS transitions need the native easing object, not a worklet function. */
+export const cssEaseOut = cubicBezier(0.23, 1, 0.32, 1);
 
 /** Canonical system setting for animation builders that accept it. */
 export const REDUCE_MOTION = ReduceMotion.System;

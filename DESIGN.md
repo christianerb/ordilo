@@ -367,6 +367,14 @@ vocabulary, with three deliberate differences that come from the phone:
 
 “Ordilo fragen” keeps the family-journal warmth in a quiet reading column: Figtree on Warm White, a compact Harbor Blue user bubble, and an open assistant answer. The answer, its supporting passage, and the next question establish the hierarchy.
 
+- **Premium Live conversation:** “Live mit Ordilo sprechen” is a separate,
+  paid mode, never a replacement for the free dictation microphone. While
+  active, one calm status surface replaces the composer and always shows
+  whether Ordilo is listening, checking, or answering, plus a 44pt stop
+  action. Spoken turns still appear in the normal conversation with sources
+  and confirmation cards. Live never performs a write without the visible
+  confirmation path.
+
 - **Answer first:** A cited source's factual highlight, when supplied, leads the native answer in Harbor Blue, Figtree 600 at 34/41pt. Supporting prose uses the regular body style with 25pt line height; headings, emphasis, lists, and horizontally scrollable tables retain Figtree. Do not invent a prominent fact when no cited highlight exists.
 - **Evidence as paper:** Show the best source first and reveal additional sources on demand. A cited document quotation sits in a Sand panel with a 12px radius, document title, and page reference when available. Warm Apricot Light marks only the matching factual phrase within the quotation. This is a local evidence annotation, an exception to the general apricot scarcity guidance; it does not become another action color.
 - **Reading surface:** Tapping the quotation opens “Die Fundstelle” in a native reading sheet, retaining the title, page reference, and highlighted original passage. “Original öffnen” is the Harbor Blue action; hide it for sources explicitly marked as having no original file, such as notes. “Zur Dokumentübersicht” remains secondary. Native image originals appear inside the sheet; other originals open through the system, with a page fragment when available. The web counterpart uses a scrollable dialog and exposes an original-file link after loading it. Loading and failure states use plain German copy.

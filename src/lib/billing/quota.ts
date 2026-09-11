@@ -8,6 +8,7 @@ import { planCodeSchema } from "./entitlements";
 export const quotaMetricSchema = z.enum([
   "document_processing",
   "chat_answer",
+  "live_conversation",
 ]);
 export type QuotaMetric = z.infer<typeof quotaMetricSchema>;
 

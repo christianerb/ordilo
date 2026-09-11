@@ -96,6 +96,34 @@ describe("native motion wiring", () => {
     expect(character).toContain("trumpet.set(processing ? 1 : 0)");
   });
 
+  it("uses interruptible state transitions instead of pretend audio activity", () => {
+    const suche = source("app/suche.tsx");
+    const bar = source("src/components/live-conversation-bar.tsx");
+
+    expect(suche).toContain("<LiveConversationBar");
+    expect(bar).toContain("contentEntering()");
+    expect(bar).toContain("feedbackExiting()");
+    expect(bar).toContain('transitionProperty: "opacity"');
+    expect(bar).toContain("transitionTimingFunction: cssEaseOut");
+    expect(bar).toContain("useReducedMotion()");
+    expect(bar).toContain("reduced || ready ? 1 : 0.94");
+    expect(bar).toContain('accessibilityLiveRegion="polite"');
+    expect(bar).toContain("<SpringPressable");
+    expect(bar).not.toContain("key={status}");
+    expect(bar).not.toContain("withRepeat");
+  });
+
+  it("aborts native setup so the server can close an accepted stale session", () => {
+    const live = source("src/lib/live-conversation.ts");
+
+    expect(live).toContain("const setupAbort = new AbortController()");
+    expect(live).toContain("signal: setupAbort.signal");
+    expect(live).toContain("setupAbortRef.current?.abort()");
+    expect(live.indexOf("setupAbortRef.current?.abort()")).toBeLessThan(
+      live.indexOf("peerRef.current?.close()"),
+    );
+  });
+
   it("explains background processing without promising notifications", () => {
     const scan = source("app/scan.tsx");
 
