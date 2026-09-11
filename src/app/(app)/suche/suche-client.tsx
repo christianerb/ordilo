@@ -31,7 +31,9 @@ import {
 import { DOCUMENT_TYPE_LABELS } from "@/lib/schemas/extraction";
 import { useMountEffect } from "@/lib/hooks/use-mount-effect";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { MessageBubble, messageToPlainText, type ChatMessage } from "./message-bubble";
+import { LiveConversationPanel } from "./live-conversation-panel";
 import {
   FilterChips,
   type FilterType,
@@ -80,6 +82,8 @@ export interface SucheClientProps {
   conversations?: ConversationSummary[];
   /** Open the chat history dropdown immediately (from a `?history=1` deep link). */
   initialShowHistory?: boolean;
+  /** Paid GPT Live access resolved on the server. */
+  liveConversationPremium?: boolean;
 }
 
 /** Max length of a quoted excerpt shown in the composer preview and the reply bubble. */
@@ -106,6 +110,7 @@ export function SucheClient({
   conversationId: initialConversationId = "",
   conversations: initialConversations = [],
   initialShowHistory = false,
+  liveConversationPremium = false,
 }: SucheClientProps) {
   const router = useRouter();
   const { openDocument } = useDocumentViewer();
@@ -386,7 +391,7 @@ export function SucheClient({
       },
       retryOperationId?: string,
     ) => {
-      if (!query.trim() || isLoading) return;
+      if (!query.trim() || isLoading) return null;
 
       setError(false);
       setRateLimitError(null);
@@ -521,7 +526,7 @@ export function SucheClient({
           if (repairRequest) {
             throw new Error("Chat repair request failed");
           }
-          return;
+          return null;
         }
 
         const reader = res.body!.getReader();
@@ -688,17 +693,18 @@ export function SucheClient({
         if (!receivedDone || receivedError) {
           throw new Error("Chat stream incomplete");
         }
+        return accumulatedText.trim() || null;
       } catch (streamError) {
         if (receivedReady && !repairRequest) {
           setMessages((prev) => prev.map((message) => message.id === aiMsg.id ? { ...message, saveWarning: !message.dbId } : message));
-          return;
+          return null;
         }
         if (chatAbort.signal.aborted) {
           setMessages((prev) => prev.map((item) => item.id !== aiMsg.id ? item : repairRequest ? repairRequest.message : ({
             ...item, content: "Antwort gestoppt.", sources: [], card: undefined, responseState: undefined,
           })));
           if (repairRequest) throw streamError;
-          return;
+          return null;
         }
         // Network error or stream interrupted — remove the empty AI
         // placeholder so the user doesn't see a blank bubble.
@@ -713,6 +719,7 @@ export function SucheClient({
         );
         setError(true);
         if (repairRequest) throw streamError;
+        return null;
       } finally {
         if (chatAbortRef.current === chatAbort) chatAbortRef.current = null;
         setStreamingId(null);
@@ -1048,6 +1055,13 @@ export function SucheClient({
             onClearAll={clearAllFilters}
           />
         )}
+
+        <LiveConversationPanel
+          familyId={familyId}
+          premium={liveConversationPremium}
+          onTurn={(transcript) => handleSubmit(transcript)}
+          onError={(message) => toast.error(message)}
+        />
 
         <button
           type="button"

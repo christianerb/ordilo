@@ -69,6 +69,13 @@ export default function DatenschutzPage() {
             Klartext.
           </li>
           <li>
+            <strong>Spracheingaben:</strong> Wenn du „Live mit Ordilo“
+            startest, wird dein Mikrofonsignal während des Gesprächs an
+            OpenAI übertragen. Ordilo speichert die Audiodaten nicht. Die
+            erkannten Fragen und Antworten werden wie andere
+            Chat-Nachrichten im Familienverlauf gespeichert.
+          </li>
+          <li>
             <strong>Technische Nutzungsdaten:</strong> Zeitpunkt der Anmeldung
             sowie inhaltsfreie Ereignisse wie Upload, Suche, Chat-Frage,
             Aufgabe oder Kalendertermin. Wir speichern dabei keine
@@ -88,6 +95,10 @@ export default function DatenschutzPage() {
           <li>
             Automatische Analyse deiner Dokumente, damit Ordilo sie
             einsortieren und Fragen dazu beantworten kann.
+          </li>
+          <li>
+            Beantwortung gesprochener Fragen und Audioausgabe während eines
+            von dir gestarteten Live-Gesprächs.
           </li>
           <li>
             Erinnerungs-E-Mails zu Fristen aus deinen bestätigten Aufgaben
@@ -135,8 +146,10 @@ export default function DatenschutzPage() {
           </li>
           <li>
             <strong>OpenAI</strong> (Dokumentenanalyse und
-            Antwort-Generierung) — Dokumenttexte werden zur Analyse an die
+            Antwort-Generierung sowie Live-Sprache) — Dokumenttexte und,
+            wenn du die Live-Funktion startest, Audiodaten werden an die
             OpenAI-API übermittelt und dort nicht zum Training verwendet.
+            Ordilo speichert das Live-Audio nicht.
           </li>
           <li>
             <strong>Datalab</strong> (Texterkennung/OCR gescannter

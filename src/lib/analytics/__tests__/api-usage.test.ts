@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { meteredOpenAIFetch, tokenCost, withUsageScope } from "../api-usage";
+import {
+  meteredOpenAIFetch,
+  recordLiveConversationEnded,
+  recordLiveConversationStarted,
+  tokenCost,
+  withUsageScope,
+} from "../api-usage";
 
 const insert = vi.hoisted(() => vi.fn().mockResolvedValue({ error: null }));
-vi.mock("@/lib/supabase/admin", () => ({ createClient: () => ({ from: () => ({ insert, upsert: insert }) }) }));
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); insert.mockReset().mockResolvedValue({ error: null }); });
+const update = vi.hoisted(() => vi.fn());
+const eq = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/supabase/admin", () => ({
+  createClient: () => ({
+    from: () => ({ insert, upsert: insert, update }),
+  }),
+}));
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+  insert.mockReset().mockResolvedValue({ error: null });
+  update.mockReset();
+  eq.mockReset();
+});
 
 describe("API metering", () => {
   it.each([false, true])("bounds stalled attempt and response checkpoints (stream=%s)", async (stream) => {
@@ -47,5 +65,33 @@ describe("API metering", () => {
     const response = await withUsageScope({ operation: "search", userId: "user-test" }, () => meteredOpenAIFetch("https://api.openai.com/v1/embeddings"));
     expect(response.status).toBe(200);
     expect((await response.json()).usage.prompt_tokens).toBe(100);
+  });
+  it("records GPT Live duration in minutes at the advertised voice-layer rate", async () => {
+    eq.mockReturnValue({ eq });
+    eq.mockReturnValueOnce({ eq }).mockReturnValueOnce({ eq }).mockResolvedValueOnce({ error: null });
+    update.mockReturnValue({ eq });
+
+    await recordLiveConversationStarted({
+      operationId: "10000000-0000-4000-a000-000000000001",
+      userId: "20000000-0000-4000-a000-000000000002",
+      providerRequestId: "request-1",
+    });
+    await recordLiveConversationEnded({
+      operationId: "10000000-0000-4000-a000-000000000001",
+      userId: "20000000-0000-4000-a000-000000000002",
+      durationMillis: 150_000,
+    });
+
+    expect(insert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "live_conversation",
+        model: "gpt-live-1",
+        cost_usd: null,
+      }),
+    );
+    expect(update).toHaveBeenCalledWith({
+      provider_units: 2.5,
+      cost_usd: 0.125,
+    });
   });
 });

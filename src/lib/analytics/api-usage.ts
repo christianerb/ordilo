@@ -39,6 +39,57 @@ export function withUsageScope<T>(scope: Omit<Scope, "operationId">, work: () =>
   return scopes.run({ ...scope, operationId: crypto.randomUUID() }, work);
 }
 
+const GPT_LIVE_USD_PER_MINUTE = 0.05;
+
+/** Start one minute-priced GPT Live row without retaining audio or transcript. */
+export async function recordLiveConversationStarted(input: {
+  operationId: string;
+  userId: string;
+  providerRequestId: string | null;
+}): Promise<void> {
+  return boundedUsage(async () => {
+    const client = createClient();
+    const { error } = await client.from("api_usage").upsert({
+      id: input.operationId,
+      operation_id: input.operationId,
+      operation: "live_conversation",
+      user_id: input.userId,
+      provider: "openai",
+      provider_request_id: input.providerRequestId,
+      model: "gpt-live-1",
+      provider_units: null,
+      cost_usd: null,
+    });
+    if (error && error.code !== "23505") {
+      console.warn("Live usage start checkpoint failed", { code: error.code });
+    }
+  });
+}
+
+/** Finalize duration in minutes and the advertised front-end voice cost. */
+export async function recordLiveConversationEnded(input: {
+  operationId: string;
+  durationMillis: number;
+  userId: string;
+}): Promise<void> {
+  const minutes = Math.max(0, input.durationMillis) / 60_000;
+  return boundedUsage(async () => {
+    const client = createClient();
+    const { error } = await client
+      .from("api_usage")
+      .update({
+        provider_units: minutes,
+        cost_usd: minutes * GPT_LIVE_USD_PER_MINUTE,
+      })
+      .eq("id", input.operationId)
+      .eq("operation", "live_conversation")
+      .eq("user_id", input.userId);
+    if (error) {
+      console.warn("Live usage end checkpoint failed", { code: error.code });
+    }
+  });
+}
+
 const count = z.number().int().nonnegative();
 const usageSchema = z.object({
   id: z.string().optional(), model: z.string().optional(),

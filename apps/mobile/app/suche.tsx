@@ -10,8 +10,11 @@ import {
 } from "expo-audio";
 import {
   ChevronDown,
+  Crown,
   History,
+  AudioLines,
   MessageCircle,
+  PhoneOff,
   Plus,
   Sparkles,
   Trash2,
@@ -96,6 +99,10 @@ import {
 } from "@/src/lib/voice";
 import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
+import {
+  useNativeLiveConversation,
+  type LiveConversationStatus,
+} from "@/src/lib/live-conversation";
 
 const CHAT_ANSWER_ENTERING = contentEntering();
 
@@ -118,6 +125,63 @@ const MAX_VOICE_RECORDING_MILLIS = 2 * 60 * 1_000;
 const VOICE_AUTO_STOP_MILLIS = MAX_VOICE_RECORDING_MILLIS - 1_000;
 
 type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
+
+const LIVE_STATUS_COPY: Record<LiveConversationStatus, string> = {
+  idle: "",
+  connecting: "Ordilo verbindet sich …",
+  listening: "Ordilo hört zu",
+  thinking: "Ordilo schaut nach …",
+  speaking: "Ordilo antwortet",
+  ending: "Ordilo beendet das Gespräch …",
+};
+
+function LiveConversationBar({
+  lastTranscript,
+  onStop,
+  status,
+}: {
+  lastTranscript: string;
+  onStop: () => void;
+  status: LiveConversationStatus;
+}) {
+  return (
+    <View
+      accessibilityLabel={LIVE_STATUS_COPY[status]}
+      accessibilityLiveRegion="polite"
+      style={styles.liveBar}
+    >
+      <View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        style={styles.liveMark}
+      >
+        <OrdiloMark size={32} />
+      </View>
+      <View style={styles.liveCopy}>
+        <Text style={styles.liveStatus}>{LIVE_STATUS_COPY[status]}</Text>
+        {lastTranscript ? (
+          <Text numberOfLines={1} style={styles.liveTranscript}>
+            „{lastTranscript}“
+          </Text>
+        ) : (
+          <Text style={styles.liveTranscript}>Du kannst jederzeit sprechen.</Text>
+        )}
+      </View>
+      <Pressable
+        accessibilityLabel="Live-Gespräch beenden"
+        accessibilityRole="button"
+        hitSlop={4}
+        onPress={onStop}
+        style={({ pressed }) => [
+          styles.liveStop,
+          pressed && styles.pressed,
+        ]}
+      >
+        <PhoneOff color={colors.warmWhite} size={18} />
+      </Pressable>
+    </View>
+  );
+}
 
 export default function SucheScreen() {
   const router = useRouter();
@@ -341,7 +405,7 @@ export default function SucheScreen() {
       },
       retryOperationId?: string,
     ) => {
-      if (!family) return;
+      if (!family) return null;
       const operationId = retryOperationId ?? crypto.randomUUID();
       chatOperationIds.current.set(assistantMessage.id, operationId);
       lastQuestion.current = question;
@@ -354,6 +418,7 @@ export default function SucheScreen() {
       let receivedReady = false;
       let receivedError = false;
       let pendingText = "";
+      let accumulatedText = "";
       let textFlushTimer: ReturnType<typeof setTimeout> | null = null;
       const flushPendingText = () => {
         if (textFlushTimer) {
@@ -386,9 +451,13 @@ export default function SucheScreen() {
           },
           (event) => {
             if (event.type === "text") {
+              accumulatedText += event.content;
               pendingText += event.content;
               textFlushTimer ??= setTimeout(flushPendingText, 32);
               return;
+            }
+            if (event.type === "replace") {
+              accumulatedText = event.content;
             }
             flushPendingText();
             if (event.type === "conversation") {
@@ -427,6 +496,7 @@ export default function SucheScreen() {
             }));
           }
         }
+        return accumulatedText.trim() || null;
       } catch (error) {
         if (textFlushTimer) {
           clearTimeout(textFlushTimer);
@@ -435,7 +505,7 @@ export default function SucheScreen() {
         pendingText = "";
         if (receivedReady && !repair) {
           updateMessage(assistantMessage.id, (message) => ({ ...message, saveWarning: !message.dbId }));
-          return;
+          return accumulatedText.trim() || null;
         }
         if (abort.signal.aborted) {
           updateMessage(assistantMessage.id, (message) => repair ? repair.originalMessage : ({
@@ -443,7 +513,7 @@ export default function SucheScreen() {
             status: "done", responseState: undefined,
           }));
           if (repair) throw error;
-          return;
+          return null;
         }
         const status = httpStatusOf(error);
         updateMessage(assistantMessage.id, (message) =>
@@ -462,6 +532,7 @@ export default function SucheScreen() {
         );
         void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         if (repair) throw error;
+        return null;
       } finally {
         flushPendingText();
         if (chatAbortRef.current === abort) chatAbortRef.current = null;
@@ -474,7 +545,7 @@ export default function SucheScreen() {
   const send = useCallback(
     async (question: string) => {
       const trimmed = question.trim();
-      if (!trimmed || busy || !family) return;
+      if (!trimmed || busy || !family) return null;
 
       const userMessage: ChatMessage = {
         id: nextId("user"),
@@ -496,7 +567,7 @@ export default function SucheScreen() {
       const history = buildChatHistory(messages);
       setMessages((current) => [...current, userMessage, assistantMessage]);
       setInput("");
-      await runStream(trimmed, assistantMessage, history);
+      return runStream(trimmed, assistantMessage, history);
     },
     [busy, createAssistantMessage, family, messages, nextId, runStream],
   );
@@ -726,6 +797,17 @@ export default function SucheScreen() {
     },
     [router],
   );
+
+  const live = useNativeLiveConversation({
+    familyId: family?.id ?? "",
+    onTurn: send,
+    onError: (message) => {
+      setVoiceError(message);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      void AccessibilityInfo.announceForAccessibility(message);
+    },
+  });
+  const liveActive = live.status !== "idle";
 
   const openContact = useCallback(
     (contactId: string) => {
@@ -969,6 +1051,36 @@ export default function SucheScreen() {
           </View>
 
           <ChatKeyboardFrame footerStyle={styles.composerSafeArea} composer={<>
+              {liveActive ? (
+                <LiveConversationBar
+                  lastTranscript={live.lastTranscript}
+                  onStop={live.stop}
+                  status={live.status}
+                />
+              ) : (
+                <>
+                  <Pressable
+                    accessibilityHint="Startet ein Gespräch mit gesprochenen Antworten"
+                    accessibilityLabel="Live mit Ordilo sprechen, Premium"
+                    accessibilityRole="button"
+                    disabled={busy}
+                    onPress={() => {
+                      setVoiceError(null);
+                      void live.start();
+                    }}
+                    style={({ pressed }) => [
+                      styles.liveStart,
+                      pressed && styles.pressed,
+                      busy && styles.liveStartDisabled,
+                    ]}
+                  >
+                    <AudioLines color={colors.harborBlue} size={18} />
+                    <Text style={styles.liveStartText}>Live mit Ordilo sprechen</Text>
+                    <View style={styles.premiumBadge}>
+                      <Crown color={colors.harborBlue} size={12} />
+                      <Text style={styles.premiumBadgeText}>Premium</Text>
+                    </View>
+                  </Pressable>
               {voiceError ? (
                 <Text accessibilityRole="alert" style={styles.voiceError}>
                   {voiceError}
@@ -988,6 +1100,8 @@ export default function SucheScreen() {
                 voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
                 voiceStatus={voiceStatus}
               />
+                </>
+              )}
           </>}>
             <ScrollView
               contentContainerStyle={styles.content}
@@ -1382,6 +1496,73 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warmWhite,
     gap: spacing.xs,
     paddingTop: spacing.sm,
+  },
+  liveStart: {
+    alignItems: "center",
+    alignSelf: "center",
+    backgroundColor: colors.washSageSoft,
+    borderColor: colors.harborLine,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 40,
+    paddingHorizontal: 14,
+  },
+  liveStartDisabled: { opacity: 0.5 },
+  liveStartText: {
+    color: colors.harborBlueDarker,
+    ...typography.label,
+  },
+  premiumBadge: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    flexDirection: "row",
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  premiumBadgeText: {
+    color: colors.harborBlue,
+    ...typography.caption,
+  },
+  liveBar: {
+    alignItems: "center",
+    backgroundColor: colors.washSageSoft,
+    borderColor: colors.harborLine,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 64,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  liveMark: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  liveCopy: { flex: 1, gap: 2, minWidth: 0 },
+  liveStatus: {
+    color: colors.harborBlueDarker,
+    ...typography.title,
+  },
+  liveTranscript: {
+    color: colors.mistDark,
+    ...typography.label,
+  },
+  liveStop: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
   },
   voiceError: { color: colors.destructive, ...typography.label },
   pressed: { opacity: 0.76 },

@@ -12,9 +12,19 @@ import { SucheClient } from "@/app/(app)/suche/suche-client";
 import type { SucheClientProps } from "@/app/(app)/suche/suche-client";
 
 const mockOpenDocument = vi.fn();
+const mockStartLive = vi.fn();
 vi.mock("@/lib/scan/scan-context", () => ({
   useDocumentViewer: () => ({
     openDocument: mockOpenDocument,
+  }),
+}));
+
+vi.mock("@/lib/realtime/use-live-conversation", () => ({
+  useLiveConversation: () => ({
+    lastTranscript: "",
+    start: mockStartLive,
+    status: "idle",
+    stop: vi.fn(),
   }),
 }));
 
@@ -133,6 +143,7 @@ function pendingResponse(): Promise<Response> {
 beforeEach(() => {
   mockPush.mockClear();
   mockOpenDocument.mockClear();
+  mockStartLive.mockClear();
   Element.prototype.scrollIntoView = vi.fn();
   global.fetch = vi.fn().mockResolvedValue(
     streamResponse([
@@ -175,6 +186,23 @@ describe("SucheClient — Empty State", () => {
   it("does not render its own search bar (the global composer owns it)", () => {
     render(<SucheClient {...defaultProps} />);
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+
+  it("marks Live as Premium for free families", () => {
+    render(<SucheClient {...defaultProps} />);
+    expect(
+      screen.getByRole("button", {
+        name: "Live mit Ordilo, Premium-Feature",
+      }),
+    ).toBeDefined();
+  });
+
+  it("starts the paid Live mode from the conversation header", () => {
+    render(<SucheClient {...defaultProps} liveConversationPremium />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Live mit Ordilo sprechen" }),
+    );
+    expect(mockStartLive).toHaveBeenCalledOnce();
   });
 
   it("shows three personal example queries in the empty state", () => {

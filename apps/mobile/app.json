@@ -67,6 +67,7 @@
     },
     "plugins": [
       "@sentry/react-native/expo",
+      "@config-plugins/react-native-webrtc",
       "expo-router",
       [
         "expo-local-authentication",

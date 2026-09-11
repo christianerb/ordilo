@@ -10,6 +10,7 @@ import {
   type ChatActionToolName,
 } from "@/lib/schemas/chat";
 import { isChatActionToolName } from "@ordilo/chat-contract";
+import { hasLiveConversationAccess } from "@/lib/billing/live-conversation";
 
 /**
  * Search / Chat page (server component).
@@ -139,6 +140,9 @@ export default async function SuchePage({
   // 6. Load messages for the selected conversation (if ?chat=<id> is present).
   let conversationId = "";
   let initialMessages: InitialMessage[] = [];
+  const liveConversationPremium = await hasLiveConversationAccess(
+    family.id,
+  ).catch(() => false);
 
   if (selectedConversation) {
     try {
@@ -197,6 +201,7 @@ export default async function SuchePage({
         updated_at: c.updated_at,
       }))}
       initialShowHistory={showHistory}
+      liveConversationPremium={liveConversationPremium}
     />
   );
 }
