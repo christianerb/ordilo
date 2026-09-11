@@ -13,6 +13,7 @@ import {
 } from "@/lib/billing/quota";
 import {
   hasLiveConversationAccess,
+  isLiveConversationPreview,
   LIVE_CONVERSATION_MAX_DURATION_MS,
 } from "@/lib/billing/live-conversation";
 import { createClient as createServerClient } from "@/lib/supabase/server";
@@ -89,34 +90,39 @@ async function handleLiveSession(request: Request): Promise<Response> {
     );
   }
 
+  // Local preview sessions exist to test devices before a payment provider
+  // can create an entitlement; they must not hit the free plan's zero limit.
+  const preview = isLiveConversationPreview();
   let reserved = false;
-  try {
-    const reservation = await reserveMonthlyUsage({
-      familyId,
-      metric: "live_conversation",
-      operationKey: operationId,
-    });
-    if (!reservation.allowed) {
+  if (!preview) {
+    try {
+      const reservation = await reserveMonthlyUsage({
+        familyId,
+        metric: "live_conversation",
+        operationKey: operationId,
+      });
+      if (!reservation.allowed) {
+        return refusal(
+          429,
+          "Deine Live-Gespräche für diesen Monat sind aufgebraucht.",
+          "MONTHLY_LIVE_QUOTA_EXCEEDED",
+        );
+      }
+      if (reservation.duplicate) {
+        return refusal(
+          409,
+          "Dieses Live-Gespräch wurde bereits gestartet.",
+          "DUPLICATE_LIVE_OPERATION",
+        );
+      }
+      reserved = true;
+    } catch {
       return refusal(
-        429,
-        "Deine Live-Gespräche für diesen Monat sind aufgebraucht.",
-        "MONTHLY_LIVE_QUOTA_EXCEEDED",
+        503,
+        "Dein Live-Kontingent konnte gerade nicht geprüft werden.",
+        "ENTITLEMENT_CHECK_UNAVAILABLE",
       );
     }
-    if (reservation.duplicate) {
-      return refusal(
-        409,
-        "Dieses Live-Gespräch wurde bereits gestartet.",
-        "DUPLICATE_LIVE_OPERATION",
-      );
-    }
-    reserved = true;
-  } catch {
-    return refusal(
-      503,
-      "Dein Live-Kontingent konnte gerade nicht geprüft werden.",
-      "ENTITLEMENT_CHECK_UNAVAILABLE",
-    );
   }
 
   const apiKey = process.env.OPENAI_API_KEY;

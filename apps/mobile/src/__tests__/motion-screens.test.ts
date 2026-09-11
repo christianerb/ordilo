@@ -79,6 +79,23 @@ describe("native motion wiring", () => {
     expect(character).toContain("trumpet.set(processing ? 1 : 0)");
   });
 
+  it("uses interruptible state transitions instead of pretend audio activity", () => {
+    const suche = source("app/suche.tsx");
+    const bar = source("src/components/live-conversation-bar.tsx");
+
+    expect(suche).toContain("<LiveConversationBar");
+    expect(bar).toContain("contentEntering()");
+    expect(bar).toContain("feedbackExiting()");
+    expect(bar).toContain('transitionProperty: "opacity"');
+    expect(bar).toContain("transitionTimingFunction: cssEaseOut");
+    expect(bar).toContain("useReducedMotion()");
+    expect(bar).toContain("reduced || ready ? 1 : 0.94");
+    expect(bar).toContain('accessibilityLiveRegion="polite"');
+    expect(bar).toContain("<SpringPressable");
+    expect(bar).not.toContain("key={status}");
+    expect(bar).not.toContain("withRepeat");
+  });
+
   it("explains background processing without promising notifications", () => {
     const scan = source("app/scan.tsx");
 

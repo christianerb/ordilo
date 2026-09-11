@@ -14,7 +14,6 @@ import {
   History,
   AudioLines,
   MessageCircle,
-  PhoneOff,
   Plus,
   Sparkles,
   Trash2,
@@ -46,6 +45,7 @@ import {
   SuggestionButton,
 } from "@/src/components/chat";
 import { ChatKeyboardFrame } from "@/src/components/chat-keyboard-frame";
+import { LiveConversationBar } from "@/src/components/live-conversation-bar";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
 import { OrdiloChatHero } from "@/src/components/ordilo-chat-hero";
 import { OrdiloMark } from "@/src/components/ordilo-mark";
@@ -101,7 +101,6 @@ import { contentEntering } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import {
   useNativeLiveConversation,
-  type LiveConversationStatus,
 } from "@/src/lib/live-conversation";
 
 const CHAT_ANSWER_ENTERING = contentEntering();
@@ -125,63 +124,6 @@ const MAX_VOICE_RECORDING_MILLIS = 2 * 60 * 1_000;
 const VOICE_AUTO_STOP_MILLIS = MAX_VOICE_RECORDING_MILLIS - 1_000;
 
 type VoiceStatus = "idle" | "starting" | "recording" | "transcribing";
-
-const LIVE_STATUS_COPY: Record<LiveConversationStatus, string> = {
-  idle: "",
-  connecting: "Ordilo verbindet sich …",
-  listening: "Ordilo hört zu",
-  thinking: "Ordilo schaut nach …",
-  speaking: "Ordilo antwortet",
-  ending: "Ordilo beendet das Gespräch …",
-};
-
-function LiveConversationBar({
-  lastTranscript,
-  onStop,
-  status,
-}: {
-  lastTranscript: string;
-  onStop: () => void;
-  status: LiveConversationStatus;
-}) {
-  return (
-    <View
-      accessibilityLabel={LIVE_STATUS_COPY[status]}
-      accessibilityLiveRegion="polite"
-      style={styles.liveBar}
-    >
-      <View
-        accessible={false}
-        importantForAccessibility="no-hide-descendants"
-        style={styles.liveMark}
-      >
-        <OrdiloMark size={32} />
-      </View>
-      <View style={styles.liveCopy}>
-        <Text style={styles.liveStatus}>{LIVE_STATUS_COPY[status]}</Text>
-        {lastTranscript ? (
-          <Text numberOfLines={1} style={styles.liveTranscript}>
-            „{lastTranscript}“
-          </Text>
-        ) : (
-          <Text style={styles.liveTranscript}>Du kannst jederzeit sprechen.</Text>
-        )}
-      </View>
-      <Pressable
-        accessibilityLabel="Live-Gespräch beenden"
-        accessibilityRole="button"
-        hitSlop={4}
-        onPress={onStop}
-        style={({ pressed }) => [
-          styles.liveStop,
-          pressed && styles.pressed,
-        ]}
-      >
-        <PhoneOff color={colors.warmWhite} size={18} />
-      </Pressable>
-    </View>
-  );
-}
 
 export default function SucheScreen() {
   const router = useRouter();
@@ -1526,43 +1468,6 @@ const styles = StyleSheet.create({
   premiumBadgeText: {
     color: colors.harborBlue,
     ...typography.caption,
-  },
-  liveBar: {
-    alignItems: "center",
-    backgroundColor: colors.washSageSoft,
-    borderColor: colors.harborLine,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 64,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  liveMark: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
-  },
-  liveCopy: { flex: 1, gap: 2, minWidth: 0 },
-  liveStatus: {
-    color: colors.harborBlueDarker,
-    ...typography.title,
-  },
-  liveTranscript: {
-    color: colors.mistDark,
-    ...typography.label,
-  },
-  liveStop: {
-    alignItems: "center",
-    backgroundColor: colors.harborBlue,
-    borderRadius: radii.pill,
-    height: 44,
-    justifyContent: "center",
-    width: 44,
   },
   voiceError: { color: colors.destructive, ...typography.label },
   pressed: { opacity: 0.76 },

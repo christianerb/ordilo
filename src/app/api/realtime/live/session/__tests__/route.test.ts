@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   requireUser: vi.fn(),
   membershipMaybeSingle: vi.fn(),
   hasAccess: vi.fn(),
+  isPreview: vi.fn(),
   reserve: vi.fn(),
   release: vi.fn(),
   sentryMessage: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("@/lib/analytics/api-usage", () => ({
 
 vi.mock("@/lib/billing/live-conversation", () => ({
   hasLiveConversationAccess: (...args: unknown[]) => mocks.hasAccess(...args),
+  isLiveConversationPreview: () => mocks.isPreview(),
   LIVE_CONVERSATION_MAX_DURATION_MS: 300_000,
 }));
 
@@ -88,6 +90,7 @@ beforeEach(() => {
     error: null,
   });
   mocks.hasAccess.mockResolvedValue(true);
+  mocks.isPreview.mockReturnValue(false);
   mocks.reserve.mockResolvedValue({
     allowed: true,
     duplicate: false,
@@ -183,6 +186,16 @@ describe("POST /api/realtime/live/session", () => {
       userId: "user-1",
       providerRequestId: null,
     });
+  });
+
+  it("lets local preview sessions skip the free plan's zero quota", async () => {
+    mocks.isPreview.mockReturnValue(true);
+
+    const response = await POST(request());
+
+    expect(response.status).toBe(201);
+    expect(mocks.reserve).not.toHaveBeenCalled();
+    expect(mocks.recordLiveStarted).toHaveBeenCalled();
   });
 
   it("releases the monthly reservation when OpenAI refuses the session", async () => {

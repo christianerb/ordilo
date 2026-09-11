@@ -1,5 +1,6 @@
 import { setAudioModeAsync } from "expo-audio";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 import {
   mediaDevices,
   MediaStream,
@@ -360,6 +361,9 @@ export function useNativeLiveConversation({
       const session = (await response.json().catch(() => null)) as
         | LiveSessionResponse
         | null;
+      // Stop during the in-flight setup request closed the peer and bumped
+      // the generation; never install a session or fail after that stop.
+      if (generation !== generationRef.current) return;
       if (
         !response.ok ||
         !session?.sdp ||
@@ -388,7 +392,9 @@ export function useNativeLiveConversation({
         session.max_duration_ms ?? FALLBACK_MAX_DURATION_MS,
       );
     } catch {
-      fail("Die Live-Verbindung konnte nicht aufgebaut werden.");
+      if (generation === generationRef.current) {
+        fail("Die Live-Verbindung konnte nicht aufgebaut werden.");
+      }
     }
   }
 
@@ -396,6 +402,17 @@ export function useNativeLiveConversation({
     () => () => stopSession("background"),
     [stopSession],
   );
+
+  // A mounted screen keeps running while the app is backgrounded, and the
+  // suspended JS side cannot meter the session. Stop on real backgrounding;
+  // "inactive" is ignored because Android fires it for the mic permission
+  // prompt during start().
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "background") stopSession("background");
+    });
+    return () => subscription.remove();
+  }, [stopSession]);
 
   return { lastTranscript, start, status, stop };
 }

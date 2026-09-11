@@ -326,6 +326,10 @@ export function useLiveConversation({
       const session = (await response.json().catch(() => null)) as
         | LiveSessionResponse
         | null;
+      // The user may have stopped while the setup request was in flight;
+      // cleanup() closed the peer and bumped the generation. Never install a
+      // session or report an error for a stop that already happened.
+      if (generation !== generationRef.current) return;
       if (
         !response.ok ||
         !session?.sdp ||
@@ -350,7 +354,9 @@ export function useLiveConversation({
         session.max_duration_ms ?? FALLBACK_MAX_DURATION_MS,
       );
     } catch {
-      fail("Die Live-Verbindung konnte nicht aufgebaut werden.");
+      if (generation === generationRef.current) {
+        fail("Die Live-Verbindung konnte nicht aufgebaut werden.");
+      }
     }
   }, [cleanup, fail, familyId, queueDelegation, stopSession]);
 
