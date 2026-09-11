@@ -17,6 +17,23 @@ function sourceSection(contents: string, start: string, end: string): string {
 }
 
 describe("native motion wiring", () => {
+  it("keeps shared navigation and actions usable with accessibility text", () => {
+    const ui = source("src/components/ui.tsx");
+    const sheet = source("src/components/sheet.tsx");
+    const buttons = sourceSection(
+      ui,
+      "buttonDefault: {",
+      "buttonPrimary: {",
+    );
+
+    expect(ui).toContain("maxFontSizeMultiplier={1.4}");
+    expect(sheet.match(/maxFontSizeMultiplier=\{1\.4\}/g)).toHaveLength(2);
+    expect(buttons).toContain("minHeight: 36");
+    expect(buttons).toContain("minHeight: 48");
+    expect(buttons).not.toMatch(/\bheight: (36|48)\b/);
+    expect(ui).toContain('textAlign: "center"');
+  });
+
   it("renders settings without repeated mount entrances", () => {
     const settings = source("app/einstellungen.tsx");
     expect(settings).not.toContain("FadeInView");
@@ -327,14 +344,11 @@ describe("native motion wiring", () => {
   it("keeps shared headers scalable and document rows recognizable", () => {
     const ui = source("src/components/ui.tsx");
     const library = source("app/(tabs)/ablage.tsx");
+    const document = source("app/document/[id].tsx");
 
-    expect(ui).toContain("const { fontScale } = useWindowDimensions()");
-    expect(ui).toContain(
-      "lineHeight: typography.largeTitle.lineHeight * fontScale",
-    );
-    expect(ui).toContain(
-      "lineHeight: typography.timestamp.lineHeight * fontScale",
-    );
+    expect(ui).not.toContain("lineHeight * fontScale");
+    expect(ui).not.toContain("lineHeight: typography.largeTitle.lineHeight * fontScale");
+    expect(ui).not.toContain("lineHeight: typography.timestamp.lineHeight * fontScale");
     expect(ui).toMatch(/header:\s*\{[^}]*minHeight: 80,/s);
     expect(ui).not.toMatch(/header:\s*\{[^}]*\bheight: 80,/s);
     // Every row leads with the document kind (icon + tint), never a generic
@@ -343,6 +357,9 @@ describe("native motion wiring", () => {
     expect(library).toContain("getDocumentKind(document.document_type)");
     expect(library).toContain("<AvatarStack people={people}");
     expect(library).toContain("groupLibraryDocuments(");
+    expect(document).toContain("const largeText = fontScale > 1.3");
+    expect(document).toContain("largeText && styles.bottomBarLargeText");
+    expect(document).toContain("largeText && styles.bottomActionLargeText");
   });
 
   // Confirmed editing is covered by document-corrections-rendering.test.js.

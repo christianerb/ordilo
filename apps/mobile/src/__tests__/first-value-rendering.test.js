@@ -23,6 +23,7 @@ describe("native first value", () => {
     await act(async () => tree.root.findByProps({ title: example.question }).props.onPress());
     expect(JSON.stringify(tree.toJSON())).toContain(example.answer);
     expect(JSON.stringify(tree.toJSON())).toContain(example.quote);
+    expect(JSON.stringify(tree.toJSON())).toContain(example.letter);
     expect(recordFirstValueEvent).not.toHaveBeenCalled();
     await act(async () => tree.root.findByProps({ title: "Beispiel schließen" }).props.onPress());
     expect(JSON.stringify(tree.toJSON())).not.toContain(example.answer);
