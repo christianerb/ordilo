@@ -26,15 +26,26 @@ import { colors, radii, spacing, typography } from "@/src/theme/tokens";
  *
  * The One-Screen Rule: the CTA must be visible without scrolling, so
  * short screens (SE class, < 730pt) get the compact rhythm — smaller
- * hero, tighter card — instead of a scrollable marketing page.
+ * hero, tighter card — instead of a scrollable marketing page. At
+ * accessibility text sizes, the action moves directly below the short
+ * promise and the decorative hero steps aside before the supporting copy.
  */
 export default function IntroScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
+  const { fontScale, height } = useWindowDimensions();
   const compact = height < 730;
+  const largeText = fontScale > 1.3;
 
   const goToLogin = () => router.push("/(auth)/login");
+  const primaryAction = (
+    <OrdiloButton
+      icon={<ArrowRight color={colors.warmWhite} size={20} />}
+      onPress={goToLogin}
+      size="lg"
+      title="Loslegen"
+    />
+  );
 
   return (
     <Screen>
@@ -57,16 +68,19 @@ export default function IntroScreen() {
             <Text style={[styles.tagline, compact && styles.taglineCompact]}>
               Ein Brief weniger im Kopf.
             </Text>
+            {largeText ? primaryAction : null}
             <Text style={[styles.intro, compact && styles.introCompact]}>
               Gib Ordilo einen Brief. Sieh, was wichtig ist, und übernimm
               passende Aufgaben und Termine mit einem Tippen.
             </Text>
           </View>
 
-          <AuthHeroIllustration
-            scale={compact ? 0.52 : 0.78}
-            variant="einstieg"
-          />
+          {largeText ? null : (
+            <AuthHeroIllustration
+              scale={compact ? 0.52 : 0.78}
+              variant="einstieg"
+            />
+          )}
 
           <View style={[styles.card, compact && styles.cardCompact]}>
             <View
@@ -108,12 +122,7 @@ export default function IntroScreen() {
             />
           </View>
 
-          <OrdiloButton
-            icon={<ArrowRight color={colors.warmWhite} size={20} />}
-            onPress={goToLogin}
-            size="lg"
-            title="Loslegen"
-          />
+          {largeText ? null : primaryAction}
           <FirstValueExample onContinue={goToLogin} />
 
           <Pressable

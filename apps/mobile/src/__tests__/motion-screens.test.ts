@@ -151,6 +151,10 @@ describe("native motion wiring", () => {
     expect(layout).toContain('router.replace("/(auth)/einstieg")');
     expect(einstieg).toContain("Deine Familie. Gut organisiert.");
     expect(einstieg).toContain('router.push("/(auth)/login")');
+    expect(einstieg).toContain("const largeText = fontScale > 1.3");
+    expect(einstieg).toContain("{largeText ? primaryAction : null}");
+    expect(einstieg).toContain("{largeText ? null : primaryAction}");
+    expect(einstieg).toContain("{largeText ? null : (");
     // The login screen offers the way back to the intro.
     expect(login).toContain("Zurück zur Übersicht");
     expect(login).toContain('router.replace("/(auth)/einstieg")');
