@@ -25,15 +25,13 @@ export function FirstValueExample({ onContinue }: { onContinue?: () => void }) {
           <Text style={styles.label}>Beispiel</Text>
           <Text style={styles.title}>{example.title}</Text>
           <Text style={styles.note}>{example.notice}</Text>
+          <Text style={styles.body}>{example.letter}</Text>
           {!answered ? (
-            <>
-              <Text style={styles.body}>{example.letter}</Text>
-              <OrdiloButton
-                title={example.question}
-                size="lg"
-                onPress={() => setAnswered(true)}
-              />
-            </>
+            <OrdiloButton
+              title={example.question}
+              size="lg"
+              onPress={() => setAnswered(true)}
+            />
           ) : (
             <View accessibilityLiveRegion="polite" style={styles.answer}>
               <Text style={styles.question}>{example.question}</Text>

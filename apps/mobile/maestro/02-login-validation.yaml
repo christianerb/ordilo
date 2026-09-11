@@ -2,7 +2,7 @@ appId: com.ordilo.app
 ---
 # The shared flow starts at the signed-out introduction and opens login.
 - runFlow: 01-app-gate.yaml
-- tapOn: "E-Mail-Adresse"
+- tapOn: "du@beispiel.de"
 - inputText: "keine-email"
 - hideKeyboard
 - scrollUntilVisible:

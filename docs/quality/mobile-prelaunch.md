@@ -1,9 +1,10 @@
 # Native prelaunch acceptance
 
-Status: automated checks and native build completed; flows authored against the
-current labels. **No completed Maestro run or real-device acceptance is claimed.**
-Java is installed, but the normal shell does not select it automatically. YAML
-parsing is only a syntax check, not a device result.
+Status (2026-09-10): automated checks, a locally signed Release simulator build,
+and the signed-out/authenticated simulator matrix are complete. Maximum Dynamic
+Type passed on an iPhone 16 and iPhone SE simulator. **Physical-device,
+VoiceOver, hardware capture, reliable permission-denial, network interruption
+and TestFlight acceptance remain open.**
 
 ## Disposable fixture contract
 
@@ -34,8 +35,10 @@ NODE_OPTIONS=--conditions=react-server npx tsx --env-file=.env.local scripts/cha
 ```
 
 Seed only after verifying this dedicated environment. These commands make backend
-writes and real analysis calls. No seed or production mutation was performed for
-this implementation.
+writes and real analysis calls. For the 2026-09-10 acceptance run, the verified
+disposable family was seeded with 15 analyzed, confirmed and indexed synthetic
+documents and a synthetic PDF. The local API handled fixture setup; the installed
+Release app reached the configured deployed API for chat. No real family was used.
 
 Sign in to the account through the app's existing “Mit Passwort anmelden” flow,
 using the private state file locally. Never paste its contents into a chat, CI
@@ -59,6 +62,25 @@ Authenticated smoke validates library read/search, real sourced chat, the local
 demo, intake controls and retained login after restart. It does not prove camera
 capture, a complete upload, correction propagation, or offline storage.
 
+### Completed simulator evidence (2026-09-10)
+
+Environment: Xcode iOS 26.5 simulators, locally signed Release build (`Sign to
+Run Locally`), Sentry upload disabled for the local build. The local signature is
+required because an unsigned simulator build cannot use the app's Keychain
+entitlement and therefore cannot validate SecureStore session persistence.
+
+| Check | Device and result | Sanitized report |
+| --- | --- | --- |
+| Signed-out intro and login handoff at maximum Dynamic Type | iPhone 16 — Pass | `/tmp/ordilo-maestro-large-text-intro-max-fixed.xml` |
+| Demo, source, intake chooser and retained login after restart at maximum Dynamic Type | iPhone 16 — Pass (1m 12s); iPhone SE — Pass (1m 15s) | `/tmp/ordilo-maestro-iphone16-large-text-demo-pass-final.xml`; `/tmp/ordilo-maestro-iphonese-large-text-demo-pass.xml` |
+| Library search, sourced chat, reading sheet and return to document at maximum Dynamic Type | iPhone 16 — Pass (1m 13s); iPhone SE — Pass (1m 7s) | `/tmp/ordilo-maestro-iphone16-large-text-evidence-pass-final.xml`; `/tmp/ordilo-maestro-iphonese-large-text-evidence-pass-final.xml` |
+| Confirmed-document correction fields reachable; cancel without saving | iPhone 16 — Pass (21s); iPhone SE — Pass (24s) | `/tmp/ordilo-maestro-iphone16-large-text-correction.xml`; `/tmp/ordilo-maestro-iphonese-large-text-correction.xml` |
+
+The exact standard-text evidence flow also passed earlier on both simulators:
+`/tmp/ordilo-maestro-iphone16-evidence-fixed.xml` and
+`/tmp/ordilo-maestro-iphonese-evidence-fixed.xml`. Simulator content size was
+restored to `large` after the accessibility run.
+
 ## Required device acceptance before launch
 
 Use at least an iPhone with a small viewport, a current iPhone, and an Android
@@ -73,9 +95,9 @@ All rows below start **pending** until supported by a run recording/report.
 | Connection lost during upload | Start upload, disconnect, terminate app, reconnect/reopen. Retry completes once with no duplicate document; failures stay actionable. | Pending |
 | Offline access | Save an original offline, disconnect, reopen it after restart. Verify saved timestamp, unsupported-file feedback, removal, sign-out/account-switch isolation. | Pending |
 | Family access | Invite a disposable second account; verify visible scope, current account list and removal. After removal, old session cannot fetch protected family records. | Pending |
-| Large text | At maximum accessibility text size, finish demo, scan chooser, document correction and source reading. No clipped essential values or unreachable actions. | Pending |
+| Large text | At maximum accessibility text size, finish demo, scan chooser, document correction and source reading. No clipped essential values or unreachable actions. | **Pass — iPhone 16 and iPhone SE simulators, iOS 26.5, locally signed Release build (2026-09-10). Physical device still required.** |
 | Screen reader | With VoiceOver/TalkBack: navigate and activate source, edit fields, hear errors and save result; focus order follows reading order. | Pending |
-| Permission denial | Deny camera/photos/notifications, then retry through the indicated settings path. No dead end or misleading success. | Pending |
+| Permission denial | Deny camera/photos/notifications, then retry through the indicated settings path. No dead end or misleading success. | Pending — simulator microphone revoke/reset continued to report access granted; denial UI branch and focused regressions pass, but hardware/system denial requires a physical device. |
 | Live chat errors | Disconnect during answer and retry; quota failure and stop controls remain understandable. Never show an unrelated source as supporting evidence. | Pending |
 
 For each failure, record steps, expected/actual behavior and a synthetic-only
@@ -145,7 +167,9 @@ do not certify the complete deployed database. CI runs them in a disposable
 PostgreSQL service.
 
 Web and mobile lint/type checks and unit tests pass; the production web build and
-fresh iOS simulator build pass. The simulator build was installed after the old
-binary was found to lack ExpoCrypto. This does not constitute a completed
-interactive device acceptance or native encryption round trip. The device matrix
-above intentionally remains pending.
+fresh iOS simulator build pass. Interactive simulator acceptance is complete for
+the rows explicitly marked Pass above. Focused offline, voice, notification and
+large-text regressions passed (39 tests), but `simctl` offers no isolated,
+reliable network cut for this setup, so connection-loss and offline restart rows
+remain pending. Native encryption round trips, hardware permissions, VoiceOver
+and the remaining device rows are not certified by simulator results.

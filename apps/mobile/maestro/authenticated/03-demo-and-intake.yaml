@@ -3,23 +3,52 @@ appId: com.ordilo.app
 # Precondition: manually signed in to the disposable fixture; onboarding complete.
 # No credentials enter Maestro output, screenshots, or flow variables.
 - launchApp
+- tapOn:
+    text: "Zurück"
+    optional: true
 - openLink: "ordilo://beispiel"
+- scrollUntilVisible:
+    element: "Ohne eigenen Brief ausprobieren"
+    visibilityPercentage: 30
+    centerElement: true
 - tapOn: "Ohne eigenen Brief ausprobieren"
+- scrollUntilVisible:
+    element: "Vorbereitetes Beispiel. Es wird nichts gespeichert."
+    visibilityPercentage: 30
+    centerElement: true
 - assertVisible: "Vorbereitetes Beispiel. Es wird nichts gespeichert."
 - scrollUntilVisible:
     element: 'Was muss ich mitgeben\?'
+    visibilityPercentage: 30
+    centerElement: true
 - tapOn: 'Was muss ich mitgeben\?'
 - scrollUntilVisible:
-    element: "Die Fundstelle im Beispielbrief"
+    element: "Eine Trinkflasche und eine Regenjacke."
+    visibilityPercentage: 30
+    centerElement: true
 - assertVisible: "Eine Trinkflasche und eine Regenjacke."
+- scrollUntilVisible:
+    element: "Die Fundstelle im Beispielbrief"
+    visibilityPercentage: 30
+    centerElement: true
 - assertVisible: "Die Fundstelle im Beispielbrief"
 - scrollUntilVisible:
     element: "Zur App"
+    visibilityPercentage: 30
 - tapOn: "Zur App"
 - tapOn: "Dokument hinzufügen"
 - assertVisible: "Etwas hinzufügen"
+- scrollUntilVisible:
+    element: "Dokument scannen"
+    visibilityPercentage: 30
 - assertVisible: "Dokument scannen"
+- scrollUntilVisible:
+    element: "Fotos auswählen"
+    visibilityPercentage: 30
 - assertVisible: "Fotos auswählen"
+- scrollUntilVisible:
+    element: "Datei auswählen"
+    visibilityPercentage: 30
 - assertVisible: "Datei auswählen"
 - tapOn: "Scanner schließen"
 - assertVisible: "Dokument hinzufügen"
