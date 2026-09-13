@@ -147,6 +147,7 @@ export default function HeuteScreen() {
   const load = useCallback(
     async (isRefresh = false) => {
       if (!family) {
+        setActivityItems([]);
         setLoading(false);
         return;
       }
@@ -154,10 +155,21 @@ export default function HeuteScreen() {
       else setLoading(true);
       setError(null);
       try {
-        const result = await loadHeuteData(family.id);
+        // Neuigkeiten ride along with every briefing refresh (focus,
+        // pull-to-refresh, midnight/foreground) instead of a separate
+        // effect, so the feed can never go stale within a session. The
+        // feed fails silently — it appears when ready and never blocks
+        // or breaks the briefing.
+        const [result, activity] = await Promise.all([
+          loadHeuteData(family.id),
+          loadFamilyActivity(family.id).catch(
+            () => [] as FamilyActivityItem[],
+          ),
+        ]);
         setData(result);
         setTasks(result.tasks);
         setDiscoveries(result.inboundDiscoveries);
+        setActivityItems(activity);
       } catch (caught) {
         setError(
           caught instanceof Error
@@ -173,23 +185,6 @@ export default function HeuteScreen() {
   );
 
   useFocusEffect(useCallback(() => { void load(true); }, [load]));
-
-  // Neuigkeiten load beside the briefing, never inside it: the section
-  // simply appears when the feed is ready and stays away when it is not.
-  useEffect(() => {
-    if (!family) return;
-    let cancelled = false;
-    loadFamilyActivity(family.id)
-      .then((items) => {
-        if (!cancelled) setActivityItems(items);
-      })
-      .catch(() => {
-        if (!cancelled) setActivityItems([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [family, clock]);
 
   // The permission primer asks exactly once, at the moment the family has
   // its first read document — before that, a notification would carry no

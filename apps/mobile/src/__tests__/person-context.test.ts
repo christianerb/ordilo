@@ -1,3 +1,8 @@
+/// <reference types="node" />
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { planSnapshotRows } from "../lib/plan-entries";
 import type { PlannerEvent } from "../lib/calendar";
 import {
@@ -133,5 +138,30 @@ describe("planSnapshotRows", () => {
         person: null,
       },
     ]);
+  });
+});
+
+describe("plan screen person context lifecycle", () => {
+  // Source contract: the "?person=…" context is tied to its deep link.
+  // A later plain visit must not inherit it (review finding, PR #191).
+  const planSource = readFileSync(
+    resolve(__dirname, "../../app/(tabs)/plan.tsx"),
+    "utf8",
+  );
+  const focusEffect = planSource.slice(
+    planSource.indexOf("paramsConsumedRef"),
+    planSource.indexOf("router.setParams"),
+  );
+
+  it("clears the context on a parameterless visit", () => {
+    expect(focusEffect).toContain("setPersonContext(null)");
+  });
+
+  it("replaces the context wholesale on every new deep link", () => {
+    expect(focusEffect).toContain("setPersonContext(contextPerson)");
+  });
+
+  it("keeps the context across its own setParams cleanup re-run", () => {
+    expect(focusEffect).toContain("paramsConsumedRef.current = false");
   });
 });

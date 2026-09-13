@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, PushDelivery } from "@/types/database";
-import { deliverPushNotifications, isPushQuietTime, localPushClock, pushCopy } from "@/lib/push";
+import { deliverPushNotifications, isPushQuietTime, localPushClock, pushCopy, queueDailyPushNotifications } from "@/lib/push";
 
 afterEach(() => vi.unstubAllGlobals());
 const now = new Date("2026-09-06T08:00:00Z");
 const delivery: PushDelivery = { id: "delivery", device_id: "device", user_id: "user", family_id: "family", event_key: "daily:family:2026-09-06", kind: "daily", document_id: null, task_id: null, state: "sending", attempts: 1, retry_at: now.toISOString(), receipt_id: null, created_at: now.toISOString() };
 
-function clientFor({ member = true, quiet = false, attempts = 1, due = true, eventKey = delivery.event_key } = {}) {
+function clientFor({ member = true, quiet = false, attempts = 1, due = true, eventKey = delivery.event_key, pref = true as boolean | null, prefError = false } = {}) {
   const updates: Record<string, unknown>[] = [];
   const deletions: string[] = [];
   const client = {
@@ -19,7 +19,13 @@ function clientFor({ member = true, quiet = false, attempts = 1, due = true, eve
         limit: vi.fn().mockResolvedValue({ data: [], error: null }),
         update: vi.fn((patch: Record<string, unknown>) => { updates.push(patch); mutation = true; return chain; }),
         delete: vi.fn(() => { deletions.push(table); mutation = true; return chain; }),
-        maybeSingle: vi.fn().mockResolvedValue({ data: table === "push_devices" ? { id: "device", user_id: "user", token: "ExpoPushToken[test]", timezone: quiet ? "Pacific/Honolulu" : "Europe/Berlin" } : member ? { user_id: "user" } : null, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue(
+          table === "notification_preferences"
+            ? prefError
+              ? { data: null, error: new Error("lookup failed") }
+              : { data: pref === null ? null : { enabled: pref }, error: null }
+            : { data: table === "push_devices" ? { id: "device", user_id: "user", token: "ExpoPushToken[test]", timezone: quiet ? "Pacific/Honolulu" : "Europe/Berlin" } : member ? { user_id: "user" } : null, error: null },
+        ),
         then: (resolve: (value: unknown) => void) => resolve({ error: null, data: mutation ? null : [], count: table === "tasks" && due ? 1 : 0 }),
       };
       return chain;
@@ -82,5 +88,45 @@ describe("durable private push delivery", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { status: "error", details: { error: "DeviceNotRegistered" } } }) }));
     await deliverPushNotifications(fixture.client, now);
     expect(fixture.deletions).toContain("push_devices");
+  });
+  it("drops queued notifications whose category the user switched off", async () => {
+    const fixture = clientFor({ pref: false });
+    const send = vi.fn(); vi.stubGlobal("fetch", send);
+    const result = await deliverPushNotifications(fixture.client, now);
+    expect(send).not.toHaveBeenCalled();
+    expect(result.accepted).toBe(0);
+    expect(fixture.deletions).toContain("push_deliveries");
+  });
+  it("treats a missing preference row as enabled", async () => {
+    const fixture = clientFor({ pref: null });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ data: { status: "ok", id: "ticket" } }) }));
+    expect((await deliverPushNotifications(fixture.client, now)).accepted).toBe(1);
+  });
+  it("retries instead of dropping when the preference lookup fails", async () => {
+    const fixture = clientFor({ prefError: true });
+    const send = vi.fn(); vi.stubGlobal("fetch", send);
+    const result = await deliverPushNotifications(fixture.client, now);
+    expect(send).not.toHaveBeenCalled();
+    expect(result.failed).toBe(1);
+    expect(fixture.updates[0]).toMatchObject({ state: "pending" });
+  });
+  it("does not queue the daily reminder for opted-out users", async () => {
+    const upserts: unknown[] = [];
+    const client = {
+      from: vi.fn((table: string) => {
+        const chain = {
+          select: vi.fn(() => chain),
+          order: vi.fn(() => chain),
+          eq: vi.fn(() => chain),
+          range: vi.fn().mockResolvedValue({ data: table === "push_devices" ? [{ id: "device", user_id: "user", timezone: "Europe/Berlin" }] : [], error: null }),
+          maybeSingle: vi.fn().mockResolvedValue({ data: table === "notification_preferences" ? { enabled: false } : null, error: null }),
+          upsert: vi.fn((row: unknown) => { upserts.push(row); return { error: null }; }),
+          then: (resolve: (value: unknown) => void) => resolve({ data: table === "family_memberships" ? [{ family_id: "family" }] : [], error: null }),
+        };
+        return chain;
+      }),
+    } as unknown as SupabaseClient<Database>;
+    expect(await queueDailyPushNotifications(client, now)).toBe(0);
+    expect(upserts).toHaveLength(0);
   });
 });

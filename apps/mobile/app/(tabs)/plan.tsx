@@ -229,18 +229,35 @@ export default function PlanScreen() {
   const [personContext, setPersonContext] = useState<string | null>(null);
   /** A "?create=task|event" request, opened once the first load settled. */
   const [createRequest, setCreateRequest] = useState<"task" | "event" | null>(null);
+  /**
+   * Distinguishes the focus re-run caused by our own setParams cleanup
+   * from a genuinely parameterless visit. Only the latter ends the
+   * person context — it belongs to the deep link that carried it in and
+   * must never leak into unrelated quick entries of a later visit.
+   */
+  const paramsConsumedRef = useRef(false);
   useFocusEffect(useCallback(() => {
     const requested = parsePlanTab(tab);
     const focusTask = typeof task === "string" ? task : null;
     const focusEvent = typeof event === "string" ? event : null;
     const contextPerson = typeof person === "string" && person ? person : null;
     const createKind = create === "task" || create === "event" ? create : null;
-    if (!requested && !focusTask && !focusEvent && !contextPerson && !createKind) return;
+    if (!requested && !focusTask && !focusEvent && !contextPerson && !createKind) {
+      if (paramsConsumedRef.current) {
+        paramsConsumedRef.current = false;
+        return;
+      }
+      setPersonContext(null);
+      return;
+    }
+    paramsConsumedRef.current = true;
     setView(requested ?? (focusEvent ? "calendar" : "list"));
     setPersonFilter(null);
     if (focusTask) focusRef.current = { kind: "task", id: focusTask };
     if (focusEvent) focusRef.current = { kind: "event", id: focusEvent };
-    if (contextPerson) setPersonContext(contextPerson);
+    // A fresh deep link replaces the context wholesale — including
+    // clearing it when the new link names no person.
+    setPersonContext(contextPerson);
     if (createKind) setCreateRequest(createKind);
     router.setParams({ tab: undefined, task: undefined, event: undefined, person: undefined, create: undefined });
   }, [create, event, person, router, tab, task]));
