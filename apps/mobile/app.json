@@ -75,7 +75,13 @@
           "faceIDPermission": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst."
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/notification-icon.png",
+          "color": "#305460"
+        }
+      ],
       [
         "expo-splash-screen",
         {
