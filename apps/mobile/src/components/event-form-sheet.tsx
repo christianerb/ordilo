@@ -46,6 +46,7 @@ const NO_ATTENDEES: string[] = [];
 export function EventFormSheet({
   defaultDate,
   event = null,
+  initialPerson = null,
   members,
   onClose,
   onSubmit,
@@ -54,6 +55,12 @@ export function EventFormSheet({
   defaultDate: string;
   /** The appointment being changed, or null to create a new one. */
   event?: PlannerEvent | null;
+  /**
+   * Create mode only: a preselected family member (from the
+   * "/plan?person=…" context) who is marked as attending. An edit
+   * always keeps the appointment's own attendees.
+   */
+  initialPerson?: string | null;
   members: FamilyMemberOption[];
   onClose: () => void;
   onSubmit: (
@@ -72,7 +79,11 @@ export function EventFormSheet({
   const initialEndsTime = event?.ends_time?.slice(0, 5) || "10:00";
   const initialLocation = event?.location ?? "";
   const initialNote = event?.note ?? "";
-  const initialAttendeeIds = event ? event.attendee_ids : NO_ATTENDEES;
+  const initialAttendeeIds = event
+    ? event.attendee_ids
+    : initialPerson && members.some((member) => member.id === initialPerson)
+      ? [initialPerson]
+      : NO_ATTENDEES;
 
   const [title, setTitle] = useState(initialTitle);
   const [dateInput, setDateInput] = useState(initialDateInput);

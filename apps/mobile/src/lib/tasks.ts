@@ -362,6 +362,33 @@ export function formatOverdueLabel(
 }
 
 // ---------------------------------------------------------------------------
+// Quick entry and person context
+// ---------------------------------------------------------------------------
+
+/**
+ * The trimmed quick-entry title, or null when there is nothing worth
+ * saving. The quick entry never invents metadata: no date, and no
+ * assignee beyond the person context the screen already carries.
+ */
+export function parseQuickTaskTitle(value: string): string | null {
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 200 ? trimmed : null;
+}
+
+/**
+ * A deep-linked person ("/plan?person=…"), resolved against the loaded
+ * members. An unknown or stale id is ignored silently, so a bad link
+ * never pre-fills a stranger into a form.
+ */
+export function resolveKnownMemberId(
+  members: FamilyMemberOption[],
+  memberId: string | null | undefined,
+): string | null {
+  if (!memberId) return null;
+  return members.some((member) => member.id === memberId) ? memberId : null;
+}
+
+// ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 

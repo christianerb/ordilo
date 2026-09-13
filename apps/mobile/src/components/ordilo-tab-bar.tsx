@@ -118,7 +118,13 @@ export function OrdiloTabBar({
                 >
                   <OrdiloMark size={54} />
                 </Pressable>
-                <Text style={styles.ordiloLabel}>Ordilo fragen</Text>
+                <Text
+                  maxFontSizeMultiplier={1.2}
+                  numberOfLines={1}
+                  style={styles.ordiloLabel}
+                >
+                  Ordilo fragen
+                </Text>
               </View>
             );
           }
@@ -142,7 +148,13 @@ export function OrdiloTabBar({
                 <View style={styles.scanIcon}>
                   <ScanLine color={colors.warmWhite} size={18} strokeWidth={2.3} />
                 </View>
-                <Text style={styles.tabLabel}>Scannen</Text>
+                <Text
+                  maxFontSizeMultiplier={1.2}
+                  numberOfLines={1}
+                  style={styles.tabLabel}
+                >
+                  Scannen
+                </Text>
               </Pressable>
             );
           }
@@ -184,7 +196,11 @@ export function OrdiloTabBar({
                   strokeWidth={focused ? 2.4 : 1.9}
                 />
               </View>
-              <Text style={[styles.tabLabel, focused && styles.tabLabelActive]}>
+              <Text
+                maxFontSizeMultiplier={1.2}
+                numberOfLines={1}
+                style={[styles.tabLabel, focused && styles.tabLabelActive]}
+              >
                 {config.label}
               </Text>
             </Pressable>

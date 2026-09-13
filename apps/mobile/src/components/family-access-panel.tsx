@@ -3,16 +3,23 @@ import { Text, View, StyleSheet } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { ConfirmDialog } from "./confirm-dialog";
 import { InlineNotice, ListGroup, ListRow, ListSkeleton, OrdiloButton, SectionHeader } from "./ui";
-import { getFamilyAccess, revokeFamilyAccess, type AccessMember, type AccessInvite, type FamilyAccess } from "@/src/lib/family-access";
+import { describeInviteDates, describeInviteStatus, describeInviteTitle, getFamilyAccess, revokeFamilyAccess, type AccessMember, type AccessInvite, type FamilyAccess } from "@/src/lib/family-access";
 import { colors, spacing, typography } from "@/src/theme/tokens";
 
 type Target = { member: AccessMember } | { invite: AccessInvite };
 
-export function FamilyAccessPanel({ familyId, isOwner, revision, onRevoked }: {
+export function FamilyAccessPanel({ familyId, isOwner, revision, onRevoked, onReshare, reshareDisabled = false }: {
   familyId: string;
   isOwner: boolean;
   revision: number;
   onRevoked: () => void;
+  /**
+   * "Erneut teilen" on an invite row. The stored token is never readable
+   * again, so the parent creates a fresh link (keeping the label) and
+   * opens the system share sheet — invites are links, nothing is emailed.
+   */
+  onReshare: (invite: AccessInvite) => void;
+  reshareDisabled?: boolean;
 }) {
   const [data, setData] = useState<FamilyAccess | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -57,12 +64,16 @@ export function FamilyAccessPanel({ familyId, isOwner, revision, onRevoked }: {
       />)}</ListGroup>
       {isOwner ? <>
         <SectionHeader title="Aktive Einladungslinks" />
-        <Text style={styles.copy}>Jede Person mit einem gültigen Link kann nach der Anmeldung beitreten. Teile Links nur mit Menschen, denen du alle Familienunterlagen anvertrauen möchtest.</Text>
+        <Text style={styles.copy}>Jede Person mit einem gültigen Link kann nach der Anmeldung beitreten. Teile Links nur mit Menschen, denen du alle Familienunterlagen anvertrauen möchtest. Ordilo verschickt keine E-Mails — du teilst den Link selbst.</Text>
         {data.invites.length === 0 ? <Text style={styles.copy}>Keine aktiven Einladungslinks.</Text> : <ListGroup>{data.invites.map((invite, index) => <ListRow
           key={invite.id} first={index === 0}
-          title={`Einladungslink ${index + 1}`}
-          subtitle={`Gültig bis ${new Date(invite.expires_at).toLocaleDateString("de-DE")}`}
-          trailing={<OrdiloButton title="Deaktivieren" variant="outline" onPress={() => select({ invite })} />}
+          title={describeInviteTitle(invite, index + 1)}
+          subtitle={describeInviteDates(invite) || null}
+          meta={<Text style={styles.inviteStatus}>{describeInviteStatus(invite)}</Text>}
+          trailing={<View style={styles.inviteActions}>
+            <OrdiloButton title="Erneut teilen" variant="ghost" disabled={reshareDisabled} onPress={() => onReshare(invite)} />
+            <OrdiloButton title="Deaktivieren" variant="outline" onPress={() => select({ invite })} />
+          </View>}
         />)}</ListGroup>}
       </> : <Text style={styles.copy}>Nur das Konto, das die Familie angelegt hat, kann einladen und den Zugriff anderer Konten beenden.</Text>}
     </>}
@@ -80,4 +91,6 @@ export function FamilyAccessPanel({ familyId, isOwner, revision, onRevoked }: {
 const styles = StyleSheet.create({
   section: { gap: spacing.sm },
   copy: { color: colors.mistDark, ...typography.body },
+  inviteStatus: { color: colors.mistDark, ...typography.caption },
+  inviteActions: { alignItems: "flex-end", gap: spacing.xs },
 });

@@ -14,6 +14,7 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
+        animation: "none",
         headerShown: false,
       }}
       tabBar={(props) => <OrdiloTabBar {...props} />}

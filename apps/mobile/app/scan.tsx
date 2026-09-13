@@ -32,6 +32,7 @@ import {
 import {
   ActivityIndicator,
   Alert,
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -79,7 +80,11 @@ import {
 } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { success, fail } from "@/src/lib/feedback";
-import { waitForIntake } from "@/src/lib/intake-worker";
+import { drainIntake, waitForIntake } from "@/src/lib/intake-worker";
+import {
+  describeScanCompletion,
+  waitForFirstOpenDocument,
+} from "@/src/lib/intake-status";
 import { mutateScanQueue } from "@/src/lib/scan";
 
 type UploadState = ScanQueueState | "done";
@@ -96,6 +101,12 @@ type ScanFlow =
       status: "uploading" | DocumentPipelineStatus;
       serverPipeline?: boolean;
       error?: string;
+    }
+  | {
+      // Several documents went in at once: a calm success state instead of
+      // an immediate jump into the library.
+      phase: "complete";
+      count: number;
     };
 
 function getProcessingStage(
@@ -214,7 +225,9 @@ async function combinePages(pages: ScannedDocument[]): Promise<ScannedDocument> 
  */
 export default function ScanModal() {
   const router = useRouter();
-  const { auto, resume } = useLocalSearchParams<{ auto?: string; resume?: string }>();
+  // `person` carries the family member a scan was started for; it is
+  // forwarded to the review so their link can be prefilled there.
+  const { auto, resume, person } = useLocalSearchParams<{ auto?: string; resume?: string; person?: string }>();
   const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
@@ -224,6 +237,7 @@ export default function ScanModal() {
   const [legacyAvailable, setLegacyAvailable] = useState(false);
   const [queueHydrated, setQueueHydrated] = useState(false);
   const [scannerBusy, setScannerBusy] = useState(false);
+  const [handoffBusy, setHandoffBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const queueRef = useRef<QueueItem[]>([]);
   const bodyRef = useRef<ScrollView>(null);
@@ -310,67 +324,26 @@ export default function ScanModal() {
     };
   }, []);
 
-  const addToQueue = useCallback(async (document: ScannedDocument): Promise<boolean> => {
+  const addToQueue = useCallback(async (document: ScannedDocument): Promise<QueueItem | null> => {
     const validationError = validateScannedDocument(document);
     if (validationError) {
       setError(validationError);
       void fail();
-      return false;
+      return null;
     }
     try {
       const staged = await stageScannedDocument(document, family?.id);
-      await updateQueue((current) => [
-        ...current,
-        { ...staged, state: "queued" },
-      ]);
+      const queued: QueueItem = { ...staged, state: "queued" };
+      await updateQueue((current) => [...current, queued]);
       setError(null);
       bodyRef.current?.scrollTo({ animated: false, y: 0 });
-      return true;
+      return queued;
     } catch {
       setError("Das Dokument konnte nicht sicher gespeichert werden. Bitte versuch es nochmal.");
       void fail();
-      return false;
+      return null;
     }
   }, [updateQueue, family]);
-
-  const runSystemScanner = useCallback(async () => {
-    if (scannerBusy) return;
-    setScannerBusy(true);
-    try {
-      const result = await launchScanner({ quality: 0.78 });
-      if (result.didCancel) return;
-      if (result.error || !result.images?.length) {
-        throw new Error(result.errorMessage ?? "Scanner returned no images.");
-      }
-
-      const pages = await Promise.all(
-        result.images.map((image, index) =>
-          prepareImage(image.uri, image.fileName || `Scan-${index + 1}.jpg`),
-        ),
-      );
-      if (await addToQueue(await combinePages(pages))) {
-        void success();
-        router.replace("/(tabs)/ablage");
-      }
-    } catch {
-      setError(
-        "Der Dokumentenscanner konnte nicht geöffnet werden. Bitte prüfe den Kamerazugriff oder wähle ein Foto aus.",
-      );
-      void fail();
-    } finally {
-      setScannerBusy(false);
-    }
-  }, [addToQueue, scannerBusy, router]);
-
-  useEffect(() => {
-    if (!queueHydrated || !autoLaunchRef.current) return;
-    autoLaunchRef.current = false;
-    const hasWork = queueRef.current.some(
-      (item) => item.state === "queued" || item.state === "failed",
-    );
-    if (hasWork) return;
-    void runSystemScanner();
-  }, [queueHydrated, runSystemScanner]);
 
   const processQueueItem = useCallback(
     async (item: QueueItem) => {
@@ -515,9 +488,18 @@ export default function ScanModal() {
         await removeStagedScannedDocument(item.uri);
         void success();
         if (followFlowRef.current) {
+          // The scan ends in the review, not in the library: the document
+          // screen shows the remaining processing and then the check.
           router.replace({
             pathname: "/document/[id]",
-            params: { id: documentId, source: "scan" },
+            params: {
+              id: documentId,
+              from: "intake",
+              // Keeps the review screen's post-confirm loop („Nächstes
+              // scannen“) working for this arrival too.
+              source: "scan",
+              ...(person ? { person } : {}),
+            },
           });
         }
       } catch (caughtError) {
@@ -556,7 +538,7 @@ export default function ScanModal() {
         }
       }
     },
-    [family, markQueueFailed, router, updateQueue],
+    [family, markQueueFailed, person, router, updateQueue],
   );
 
   const startQueueItem = useCallback(async (item: QueueItem) => {
@@ -568,11 +550,129 @@ export default function ScanModal() {
     }
   }, [processQueueItem]);
 
-  const uploadQueued = useCallback(async () => {
-    if (!family) return;
-    await mutateScanQueue(family.id, (items) => items.map((item) => ({ ...item, state: item.documentId ? "processing" : "queued", error: undefined })));
+  /**
+   * One new document goes straight through here — the family watches the
+   * processing and lands in the review. Without a loaded family the upload
+   * cannot start, so the library's intake banner takes over as before.
+   */
+  const reviewSingle = useCallback(
+    async (item: QueueItem) => {
+      if (!family) {
+        router.replace("/(tabs)/ablage");
+        return;
+      }
+      await startQueueItem(item);
+    },
+    [family, router, startQueueItem],
+  );
+
+  /** Hand the waiting queue to the background worker and leave for the library. */
+  const finishLater = useCallback(async () => {
+    if (family) {
+      try {
+        await mutateScanQueue(family.id, (items) =>
+          items.map((item) => ({
+            ...item,
+            state: item.documentId ? "processing" : "queued",
+            error: undefined,
+          })),
+        );
+      } catch {
+        // The durable queue still holds the items; the next drain retries.
+      }
+    }
     router.replace("/(tabs)/ablage");
   }, [family, router]);
+
+  /**
+   * „Jetzt prüfen“ after a multi-document intake: start the worker from
+   * here (the arrivals watcher pauses on this screen), then open the first
+   * document that still needs a review. If none shows up in time, the
+   * library's intake banner carries the state instead.
+   */
+  const reviewFirst = useCallback(async () => {
+    if (!family || handoffBusy) return;
+    setHandoffBusy(true);
+    try {
+      await mutateScanQueue(family.id, (items) =>
+        items.map((item) => ({
+          ...item,
+          state: item.documentId ? "processing" : "queued",
+          error: undefined,
+        })),
+      );
+      void drainIntake(family.id, () => AppState.currentState === "active").catch(() => undefined);
+      const documentId = await waitForFirstOpenDocument(family.id);
+      if (documentId) {
+        router.replace({
+          pathname: "/document/[id]",
+          params: { id: documentId, from: "intake", ...(person ? { person } : {}) },
+        });
+      } else {
+        router.replace("/(tabs)/ablage");
+      }
+    } catch {
+      router.replace("/(tabs)/ablage");
+    } finally {
+      setHandoffBusy(false);
+    }
+  }, [family, handoffBusy, person, router]);
+
+  const runSystemScanner = useCallback(async () => {
+    if (scannerBusy) return;
+    setScannerBusy(true);
+    try {
+      const result = await launchScanner({ quality: 0.78 });
+      if (result.didCancel) return;
+      if (result.error || !result.images?.length) {
+        throw new Error(result.errorMessage ?? "Scanner returned no images.");
+      }
+
+      const pages = await Promise.all(
+        result.images.map((image, index) =>
+          prepareImage(image.uri, image.fileName || `Scan-${index + 1}.jpg`),
+        ),
+      );
+      const queued = await addToQueue(await combinePages(pages));
+      if (queued) {
+        void success();
+        await reviewSingle(queued);
+      }
+    } catch {
+      setError(
+        "Der Dokumentenscanner konnte nicht geöffnet werden. Bitte prüfe den Kamerazugriff oder wähle ein Foto aus.",
+      );
+      void fail();
+    } finally {
+      setScannerBusy(false);
+    }
+  }, [addToQueue, reviewSingle, scannerBusy]);
+
+  useEffect(() => {
+    if (!queueHydrated || !autoLaunchRef.current) return;
+    autoLaunchRef.current = false;
+    const hasWork = queueRef.current.some(
+      (item) => item.state === "queued" || item.state === "failed",
+    );
+    if (hasWork) return;
+    void runSystemScanner();
+  }, [queueHydrated, runSystemScanner]);
+
+  const uploadQueued = useCallback(async () => {
+    if (!family) return;
+    const actionable = queueRef.current.filter(
+      (item) => item.state === "queued" || item.state === "failed",
+    );
+    if (actionable.length === 1) {
+      await startQueueItem(actionable[0]);
+      return;
+    }
+    if (actionable.length > 1) {
+      setFlow({ phase: "complete", count: actionable.length });
+      return;
+    }
+    router.replace("/(tabs)/ablage");
+  }, [family, router, startQueueItem]);
 
   const resumedRef = useRef(false);
   useEffect(() => {
@@ -594,14 +694,24 @@ export default function ScanModal() {
           prepareImage(asset.uri, asset.fileName ?? `Foto-${index + 1}.jpg`),
         ),
       );
-      let added = true;
-      for (const image of images) if (!(await addToQueue(image))) added = false;
-      if (added) router.replace("/(tabs)/ablage");
+      const queued: QueueItem[] = [];
+      for (const image of images) {
+        const item = await addToQueue(image);
+        if (item) queued.push(item);
+      }
+      // One document is processed and reviewed right away; several get the
+      // calm success state with „Jetzt prüfen“ / „Später prüfen“.
+      if (queued.length === 1) {
+        await reviewSingle(queued[0]);
+      } else if (queued.length > 1) {
+        void success();
+        setFlow({ phase: "complete", count: queued.length });
+      }
     } catch {
       setError("Das Foto konnte nicht vorbereitet werden. Bitte versuch es nochmal.");
       void fail();
     }
-  }, [addToQueue, router]);
+  }, [addToQueue, reviewSingle]);
 
   const pickFile = useCallback(async () => {
     const result = await DocumentPicker.getDocumentAsync({
@@ -610,15 +720,15 @@ export default function ScanModal() {
     });
     if (result.canceled) return;
     const asset = result.assets[0];
-    const added = await addToQueue({
+    const queued = await addToQueue({
       id: createDocumentId(),
       uri: asset.uri,
       name: asset.name,
       mimeType: getScanMimeType(asset.mimeType, asset.name),
       size: asset.size,
     });
-    if (added) router.replace("/(tabs)/ablage");
-  }, [addToQueue, router]);
+    if (queued) await reviewSingle(queued);
+  }, [addToQueue, reviewSingle]);
 
   const removeQueued = useCallback(async (item: QueueItem) => {
     try {
@@ -651,6 +761,63 @@ export default function ScanModal() {
     }
     if (router.canGoBack()) router.back(); else router.replace("/(tabs)");
   }, [router, updateQueue]);
+
+  if (flow.phase === "complete") {
+    const completion = describeScanCompletion(flow.count);
+    return (
+      <Screen
+        style={[
+          styles.processingScreen,
+          {
+            paddingBottom: Math.max(insets.bottom, spacing.md),
+            paddingTop: insets.top,
+          },
+        ]}
+      >
+        <View style={styles.processingTopBar}>
+          <View>
+            <Text style={styles.processingEyebrow}>Dokument aufnehmen</Text>
+            <Text style={styles.processingTopTitle}>Angekommen</Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Später prüfen"
+            onPress={() => void finishLater()}
+            style={styles.closeButton}
+          >
+            <X color={colors.graphite} size={22} />
+          </Pressable>
+        </View>
+
+        <View style={styles.completionContent}>
+          <Animated.View
+            entering={contentEntering()}
+            style={styles.completionBadge}
+          >
+            <Check color={colors.warmWhite} size={28} strokeWidth={3} />
+          </Animated.View>
+          <Animated.View entering={contentEntering()} style={styles.processingMessage}>
+            <Text style={styles.processingHeading}>{completion.title}</Text>
+            <Text style={styles.processingCopy}>{completion.detail}</Text>
+          </Animated.View>
+        </View>
+
+        <View style={styles.processingActions}>
+          <OrdiloButton
+            disabled={handoffBusy}
+            onPress={() => void reviewFirst()}
+            size="lg"
+            title={handoffBusy ? "Ordilo sucht das erste Dokument …" : "Jetzt prüfen"}
+          />
+          <OrdiloButton
+            onPress={() => void finishLater()}
+            size="lg"
+            title="Später prüfen"
+            variant="ghost"
+          />
+        </View>
+      </Screen>
+    );
+  }
 
   if (flow.phase === "processing") {
     const item = queue.find((candidate) => candidate.id === flow.itemId);
@@ -967,7 +1134,7 @@ export default function ScanModal() {
             accessibilityLabel="Datei auswählen"
             disabled={!queueHydrated}
             icon={<FilePlus2 color={colors.harborBlue} size={20} strokeWidth={1.8} />}
-            label="PDF oder Datei"
+            label="Datei"
             onPress={() => void pickFile()}
           />
         </View>
@@ -1150,6 +1317,23 @@ const styles = StyleSheet.create({
   },
   processingActions: {
     gap: spacing.sm,
+  },
+  completionContent: {
+    alignItems: "center",
+    alignSelf: "center",
+    flex: 1,
+    gap: spacing.lg,
+    justifyContent: "center",
+    maxWidth: 420,
+    width: "100%",
+  },
+  completionBadge: {
+    alignItems: "center",
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.pill,
+    height: 72,
+    justifyContent: "center",
+    width: 72,
   },
   scrollContent: {
     gap: spacing.lg,

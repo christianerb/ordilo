@@ -60,6 +60,7 @@ describe("document library helpers", () => {
         query: "kinderärztin",
         status: "needs_review",
         documentType: "medical",
+        personId: "all",
       }),
     ).toEqual([review]);
 
@@ -68,6 +69,7 @@ describe("document library helpers", () => {
         query: "stadtwerke",
         status: "all",
         documentType: "all",
+        personId: "all",
       }),
     ).toEqual([invoice]);
 
@@ -78,6 +80,7 @@ describe("document library helpers", () => {
           query: "rechnung.pdf",
           status: "all",
           documentType: "all",
+          personId: "all",
         },
       ),
     ).toHaveLength(1);

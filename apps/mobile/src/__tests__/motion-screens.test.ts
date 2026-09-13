@@ -27,11 +27,31 @@ describe("native motion wiring", () => {
     );
 
     expect(ui).toContain("maxFontSizeMultiplier={1.4}");
-    expect(sheet.match(/maxFontSizeMultiplier=\{1\.4\}/g)).toHaveLength(2);
+    expect(sheet.match(/maxFontSizeMultiplier=\{1\.4\}/g)).toHaveLength(4);
     expect(buttons).toContain("minHeight: 36");
     expect(buttons).toContain("minHeight: 48");
     expect(buttons).not.toMatch(/\bheight: (36|48)\b/);
     expect(ui).toContain('textAlign: "center"');
+  });
+
+  it("keeps compact Dokumente chrome intact with large Dynamic Type", () => {
+    const library = source("app/(tabs)/ablage.tsx");
+    const ui = source("src/components/ui.tsx");
+    const sheet = source("src/components/sheet.tsx");
+    const dock = source("src/components/ordilo-tab-bar.tsx");
+
+    expect(ui.match(/maxFontSizeMultiplier=\{1\.4\}/g)?.length).toBeGreaterThanOrEqual(6);
+    expect(ui).toContain("maxFontSizeMultiplier={1.3}");
+    expect(ui).toContain(
+      "hitSlop={{ bottom: 4, left: 0, right: 0, top: 4 }}",
+    );
+    expect(library).toContain("maxFontSizeMultiplier={1.3}");
+    expect(library).toContain("hitSlop={11}");
+    expect(library).toContain("minHeight: 46");
+    expect(library).not.toContain("height: 46");
+    expect(sheet).toContain("maxFontSizeMultiplier={1.4}");
+    expect(sheet).toContain("numberOfLines={1}");
+    expect(dock.match(/maxFontSizeMultiplier=\{1\.2\}/g)).toHaveLength(3);
   });
 
   it("renders settings without repeated mount entrances", () => {
@@ -41,12 +61,39 @@ describe("native motion wiring", () => {
     expect(settings).toContain("SpringPressable");
   });
 
+  it("presents Start as one personal day brief", () => {
+    const home = source("app/(tabs)/index.tsx");
+
+    expect(home).toContain("<HomeHeader");
+    expect(home).toContain("Eine Sache braucht heute deinen Blick.");
+    expect(home).toContain('title="Heute bei euch"');
+    expect(home).not.toContain("Was möchtest du wissen?");
+    expect(home).toContain("task.documentId ? onOpenDocument(task.documentId)");
+    expect(home).toContain("Schon erledigt");
+  });
+
+  it("turns family members into useful personal spaces", () => {
+    const family = source("app/familie.tsx");
+    const member = source("app/familie/[id].tsx");
+
+    expect(family).toContain("Eure Familie");
+    expect(family).toContain("Alles Wichtige. Für jeden von euch.");
+    expect(family).toContain("router.push(`/familie/${member.id}`)");
+    expect(family).toContain("Für euch gemeinsam");
+    expect(member).toContain("Alles für {member.name}");
+    expect(member).toContain("Griffbereit");
+    expect(member).toContain("Als Nächstes");
+    expect(member).toContain("mergeJournalDocuments(");
+  });
+
   it("shows new scan queue items before the tall capture surface", () => {
     const scan = source("app/scan.tsx");
 
     expect(scan.indexOf("{queue.length > 0 ? (")).toBeLessThan(
       scan.indexOf("style={styles.captureStage}"),
     );
+    expect(scan).toContain('label="Datei"');
+    expect(scan).not.toContain('label="PDF oder Datei"');
     expect(scan).toContain("bodyRef.current?.scrollTo");
     expect(scan).toContain("ref={bodyRef}");
   });
@@ -57,7 +104,11 @@ describe("native motion wiring", () => {
 
     expect(scan).toContain("waitForScannedDocumentAnalysis");
     expect(scan).toContain("getDocumentPipelineStepsCompleted");
-    expect(scan).toContain('params: { id: documentId, source: "scan" }');
+    // The params object may grow more entries (from, person) and wrap
+    // across lines; what matters is id + source arriving together.
+    expect(scan).toMatch(
+      /params:\s*\{[^}]*id: documentId,[^}]*source: "scan"/s,
+    );
     expect(scan).toContain("Im Hintergrund weiterlaufen");
     expect(scan).toContain("flow.serverPipeline === true");
     expect(scan).toContain("item.serverPipeline ?? false");
@@ -66,7 +117,48 @@ describe("native motion wiring", () => {
     expect(scan).toContain("detachServerPipelineRef.current = keepRunning");
     expect(document).toContain('source === "scan"');
     expect(document).toContain("Alles sicher abgelegt");
-    expect(document).toContain("Nächstes scannen");
+    expect(document).toContain('title="Fertig"');
+    expect(document).not.toContain("Nächstes scannen");
+    expect(document).not.toContain("Noch etwas scannen");
+    expect(document).not.toContain("An Aufgaben und Termine erinnern");
+  });
+
+  it("keeps shared button labels on one line", () => {
+    const ui = source("src/components/ui.tsx");
+    const button = ui.slice(
+      ui.indexOf("export function OrdiloButton"),
+      ui.indexOf("export function EmptyState"),
+    );
+
+    expect(button).toContain("numberOfLines={1}");
+    expect(button).toContain("accessibilityLabel={accessibilityLabel ?? title}");
+  });
+
+  it("keeps the saved-document footer short and decisive", () => {
+    const document = source("app/document/[id].tsx");
+    const askAction = document.slice(
+      document.lastIndexOf("<OrdiloButton", document.indexOf('title="Ordilo fragen"')),
+      document.indexOf("/>", document.indexOf('title="Ordilo fragen"')) + 2,
+    );
+
+    expect(document).toContain('accessibilityLabel="Angaben ändern"');
+    expect(document).toContain('title={loadingEditor ? "Laden …" : "Ändern"}');
+    expect(askAction).toContain('title="Ordilo fragen"');
+    expect(askAction).not.toContain('variant="outline"');
+    expect(document).toContain('title={saving ? "Speichern …" : "Passt so"}');
+    expect(document).not.toContain('title={saving ? "Wird gespeichert …" : "Passt so"}');
+  });
+
+  it("does not repeat family invitation actions at handoff points", () => {
+    const onboarding = source("app/onboarding.tsx");
+    const family = source("app/familie.tsx");
+    const access = source("src/components/family-access-panel.tsx");
+
+    expect(onboarding).not.toContain('title="Familie ergänzen"');
+    expect(family).not.toContain('title="Einladen & Zugriff"');
+    expect(family).toContain('"Person einladen"');
+    expect(family).toContain("<FamilyAccessPanel");
+    expect(access).toContain('<SectionHeader title="Wer Zugriff hat"');
   });
 
   it("animates real scan stages without ignoring reduced motion", () => {
@@ -98,9 +190,14 @@ describe("native motion wiring", () => {
 
   it("uses interruptible state transitions instead of pretend audio activity", () => {
     const suche = source("app/suche.tsx");
+    const chat = source("src/components/chat.tsx");
     const bar = source("src/components/live-conversation-bar.tsx");
 
     expect(suche).toContain("<LiveConversationBar");
+    expect(suche).toContain("onLiveStart={() => {");
+    expect(suche).not.toContain("styles.liveStart");
+    expect(chat).toContain('"Live mit Ordilo sprechen, Premium"');
+    expect(chat).toContain("<AudioLines");
     expect(bar).toContain("contentEntering()");
     expect(bar).toContain("feedbackExiting()");
     expect(bar).toContain('transitionProperty: "opacity"');
@@ -115,10 +212,15 @@ describe("native motion wiring", () => {
 
   it("aborts native setup so the server can close an accepted stale session", () => {
     const live = source("src/lib/live-conversation.ts");
+    const search = source("app/suche.tsx");
 
     expect(live).toContain("const setupAbort = new AbortController()");
     expect(live).toContain("signal: setupAbort.signal");
     expect(live).toContain("setupAbortRef.current?.abort()");
+    expect(live).toContain('import { randomUUID } from "expo-crypto"');
+    expect(live).not.toContain("crypto.randomUUID()");
+    expect(search).toContain('import { randomUUID } from "expo-crypto"');
+    expect(search).not.toContain("crypto.randomUUID()");
     expect(live.indexOf("setupAbortRef.current?.abort()")).toBeLessThan(
       live.indexOf("peerRef.current?.close()"),
     );
@@ -397,13 +499,82 @@ describe("native motion wiring", () => {
     expect(document).toContain("largeText && styles.bottomActionLargeText");
   });
 
+  it("keeps the document filter and sort actions visible", () => {
+    const library = source("app/(tabs)/ablage.tsx");
+    const filterSheet = sourceSection(
+      library,
+      "function LibraryFilterSheet",
+      "function SortPicker",
+    );
+
+    expect(library).toContain("<View style={styles.libraryToolbar}>");
+    expect(library).toContain("reviewFilterLabel");
+    expect(library).toContain(
+      'visibleReviewCount > 0 ||\n              filters.status === "needs_review"',
+    );
+    expect(library).toContain('title="Dokumente filtern"');
+    expect(library).toContain("<LibraryFilterSheet");
+    expect(library).toContain("hiddenFilterCount");
+    expect(library).toContain("compactSortLabel");
+    expect(library).toContain("<OrdiloFormFooter");
+    expect(library).toContain('<OrdiloFormField label="Status">');
+    expect(library).toContain('<OrdiloFormField label="Dokumentart">');
+    expect(library).toContain('<OrdiloFormField label="Person">');
+    expect(library).toContain("<OrdiloPickerOverlay");
+    expect(library).toContain("loadLibraryDocumentIdsForPerson(");
+    // Nested pickers are siblings of the scrolling form body. Keeping them
+    // inside that ScrollView clips the overlay to the grey body rectangle.
+    expect(filterSheet.indexOf("</OrdiloFormBody>")).toBeLessThan(
+      filterSheet.indexOf("<OrdiloPickerOverlay"),
+    );
+    expect(filterSheet.indexOf("<OrdiloFormFooter")).toBeLessThan(
+      filterSheet.indexOf("<OrdiloPickerOverlay"),
+    );
+    expect(library).not.toContain("styles.chipDivider");
+    expect(library).not.toContain("styles.filterOptions");
+  });
+
+  it("animates Dokumente state changes without animating search typing", () => {
+    const library = source("app/(tabs)/ablage.tsx");
+    const motion = source("src/theme/motion.ts");
+    const ui = source("src/components/ui.tsx");
+
+    expect(library).toContain("entering={stateEntering()}");
+    expect(library).toContain("entering={contentEntering()}");
+    expect(library).toContain("layout={DOCUMENT_ROW_LAYOUT}");
+    expect(library).toContain("if (!append && !filters.query.trim())");
+    expect(motion).toContain("export function stateEntering");
+    expect(ui).toContain("const indicatorX = useSharedValue(0)");
+    expect(ui).toContain("duration: durations.base");
+    expect(ui).toContain("easing: easeInOut");
+    expect(ui).toContain("if (!indicatorInitialized.current || reduceMotion)");
+  });
+
+  it("uses native navigation motion and keeps peer tabs still", () => {
+    const layout = source("app/_layout.tsx");
+    const tabs = source("app/(tabs)/_layout.tsx");
+    const appConfig = source("app.json");
+
+    expect(layout).toContain("const reduceMotion = useReducedMotion()");
+    expect(layout).toContain('animation: reduceMotion ? "fade" : "default"');
+    expect(tabs).toContain('animation: "none"');
+    expect(appConfig).toContain(
+      '"CADisableMinimumFrameDurationOnPhone": true',
+    );
+  });
+
   // Confirmed editing is covered by document-corrections-rendering.test.js.
 
   it("uses one shared compact picker sheet", () => {
     const pickerSheet = source("src/components/picker-sheet.tsx");
+    const sheet = source("src/components/sheet.tsx");
     expect(pickerSheet).toContain("<OrdiloSheet");
     expect(pickerSheet).toContain("detached");
     expect(pickerSheet).toContain("borderRadius: radii.md");
+    expect(sheet).toContain("function ContainedNestedSheet");
+    expect(sheet).toContain("scheduleOnRN(finishDismiss)");
+    expect(sheet).toContain("reduceMotion ? 0 : windowHeight");
+    expect(sheet).not.toContain("runOnJS");
 
     for (const path of [
       "app/(tabs)/ablage.tsx",

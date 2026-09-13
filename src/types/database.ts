@@ -320,6 +320,12 @@ export type Database = {
         };
         Relationships: [];
       };
+      notification_preferences: {
+        Row: { user_id: string; family_id: string; category: "deadlines" | "handoffs" | "processing" | "family"; enabled: boolean };
+        Insert: { user_id: string; family_id: string; category: "deadlines" | "handoffs" | "processing" | "family"; enabled?: boolean };
+        Update: { enabled?: boolean };
+        Relationships: [];
+      };
       push_devices: {
         Row: { id: string; user_id: string; token: string; timezone: string; updated_at: string };
         Insert: { id: string; user_id: string; token: string; timezone?: string; updated_at?: string };

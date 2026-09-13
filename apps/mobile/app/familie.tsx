@@ -1,17 +1,25 @@
 import * as Clipboard from "expo-clipboard";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   Cake,
   Check,
+  ChevronRight,
   Copy,
+  FolderOpen,
   LogOut,
   Mail,
+  Plus,
   Settings,
   Share2,
-  UserPlus,
   Users,
 } from "lucide-react-native";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -26,7 +34,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { FamilyAccessPanel } from "@/src/components/family-access-panel";
 import { ConfirmDialog } from "@/src/components/confirm-dialog";
-import { AvatarStack, PersonAvatar } from "@/src/components/person";
+import { PersonAvatar } from "@/src/components/person";
 import {
   OrdiloFormBody,
   OrdiloFormField,
@@ -44,13 +52,10 @@ import {
   ListSkeleton,
   OrdiloButton,
   Screen,
-  ScreenHeader,
   SectionHeader,
 } from "@/src/components/ui";
-import { getApiUrl } from "@/src/lib/api";
-import { formatFamilyTitle } from "@/src/lib/family";
 import { useFamily } from "@/src/lib/family-context";
-import { createFamilyInvite } from "@/src/lib/invites";
+import { buildInviteUrl, createFamilyInvite } from "@/src/lib/invites";
 import { listMembers, updateMember, type MemberRow } from "@/src/lib/onboarding-actions";
 import { AVATAR_COLORS } from "@/src/lib/onboarding";
 import { memberToPerson } from "@/src/lib/people";
@@ -66,6 +71,7 @@ import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
  */
 export default function FamilieScreen() {
   const router = useRouter();
+  const { edit } = useLocalSearchParams<{ edit?: string }>();
   const insets = useSafeAreaInsets();
   const { session, signOut } = useSession();
   const { family } = useFamily();
@@ -102,11 +108,19 @@ export default function FamilieScreen() {
     setMemberError(null);
     const result = await listMembers(family.id);
     if (sequence !== loadSeqRef.current) return;
-    if (result.success) setMembers(result.data);
-    else setMemberError(result.error);
+    if (result.success) {
+      setMembers(result.data);
+      if (edit) {
+        const requestedMember = result.data.find(
+          (candidate) => candidate.id === edit,
+        );
+        if (requestedMember) setEditingMember(requestedMember);
+        router.setParams({ edit: "" });
+      }
+    } else setMemberError(result.error);
     setLoading(false);
     setRefreshing(false);
-  }, [family]);
+  }, [edit, family, router]);
 
   useFocusEffect(useCallback(() => {
     void loadMembers({ silent: true });
@@ -127,12 +141,12 @@ export default function FamilieScreen() {
     }
   }, []);
 
-  const handleInvite = useCallback(async () => {
+  const handleInvite = useCallback(async (label?: string) => {
     if (creating || !family?.isOwner) return;
     setCreating(true);
     setInviteError(null);
 
-    const result = await createFamilyInvite(family.id);
+    const result = await createFamilyInvite(family.id, label);
     setCreating(false);
 
     if (!result.success) {
@@ -140,7 +154,7 @@ export default function FamilieScreen() {
       return;
     }
 
-    const url = `${getApiUrl()}/invite/${result.token}`;
+    const url = buildInviteUrl(result.token);
     setInviteUrl(url);
     setAccessRevision((value) => value + 1);
     await shareInvite(url);
@@ -175,16 +189,26 @@ export default function FamilieScreen() {
       : { success: false, error: result.error };
   }, [family]);
 
-  const people = useMemo(() => members.map(memberToPerson), [members]);
-  const subtitle = useMemo(() => {
-    if (loading && members.length === 0) return "Wird geladen …";
-    if (members.length === 0) return "Noch niemand eingetragen";
-    return members.length === 1 ? "1 Person" : `${members.length} Personen`;
-  }, [loading, members.length]);
-
   return (
     <Screen style={styles.screen}>
-      <DetailTopBar onBack={() => router.back()} />
+      <DetailTopBar
+        onBack={() => router.back()}
+        title="Start"
+        trailing={
+          <Pressable
+            accessibilityLabel="Einstellungen öffnen"
+            accessibilityRole="button"
+            hitSlop={6}
+            onPress={() => router.push("/einstellungen")}
+            style={({ pressed }) => [
+              styles.topAction,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Settings color={colors.harborBlue} size={22} strokeWidth={1.8} />
+          </Pressable>
+        }
+      />
       <ScrollView
         contentContainerStyle={[
           styles.content,
@@ -200,11 +224,12 @@ export default function FamilieScreen() {
         }
         showsVerticalScrollIndicator={false}
       >
-        <ScreenHeader
-          subtitle={subtitle}
-          title={formatFamilyTitle(family?.name)}
-          trailing={people.length > 0 ? <AvatarStack max={4} people={people} size={36} /> : undefined}
-        />
+        <View style={styles.hero}>
+          <Text style={styles.title}>Eure Familie</Text>
+          <Text style={styles.subtitle}>
+            Alles Wichtige. Für jeden von euch.
+          </Text>
+        </View>
 
         {loading && members.length === 0 ? (
           <ListSkeleton rows={3} />
@@ -217,42 +242,39 @@ export default function FamilieScreen() {
             <OrdiloButton onPress={() => void loadMembers()} size="lg" title="Erneut versuchen" />
           </EmptyState>
         ) : (
-          <View style={styles.section}>
-            <SectionHeader title="Wer dazugehört" />
-            <ListGroup>
+          <View style={styles.peopleList}>
+            <View style={styles.peopleRows}>
               {members.map((member, index) => (
-                <ListRow
-                  accessibilityHint="Öffnet Name, Farbe und Geburtstag zum Bearbeiten"
-                  accessibilityLabel={`${member.name} bearbeiten`}
-                  chevron
-                  first={index === 0}
+                <FamilyMemberRow
                   key={member.id}
-                  leading={<PersonAvatar person={memberToPerson(member)} size={sizes.tile} />}
-                  onPress={() => setEditingMember(member)}
-                  subtitle={describeMember(member)}
-                  title={member.name}
+                  member={member}
+                  onPress={() => router.push(`/familie/${member.id}`)}
+                  showDivider={index > 0}
                 />
               ))}
-              {family?.isOwner ? (
-                <ListRow
-                  accessibilityHint="Erstellt einen Einladungslink zum Teilen"
-                  accessibilityLabel="Person einladen"
-                  first={members.length === 0}
-                  leading={
-                    <IconTile tint={colors.washSage}>
-                      {creating ? (
-                        <ActivityIndicator color={colors.harborBlue} size="small" />
-                      ) : (
-                        <UserPlus color={colors.harborBlue} size={20} strokeWidth={2} />
-                      )}
-                    </IconTile>
-                  }
-                  onPress={() => setInviteConfirmOpen(true)}
-                  subtitle="Zugriff auf alle Familienunterlagen geben"
-                  title={creating ? "Einladung wird erstellt …" : "Person einladen"}
-                />
-              ) : null}
-            </ListGroup>
+            </View>
+            {family?.isOwner ? (
+              <Pressable
+                accessibilityHint="Erstellt einen Einladungslink zum Teilen"
+                accessibilityLabel="Person einladen"
+                accessibilityRole="button"
+                disabled={creating}
+                onPress={() => setInviteConfirmOpen(true)}
+                style={({ pressed }) => [
+                  styles.addPerson,
+                  pressed && styles.pressed,
+                ]}
+              >
+                {creating ? (
+                  <ActivityIndicator color={colors.harborBlue} size="small" />
+                ) : (
+                  <Plus color={colors.harborBlue} size={20} strokeWidth={1.8} />
+                )}
+                <Text style={styles.addPersonText}>
+                  {creating ? "Einladung wird erstellt …" : "Person einladen"}
+                </Text>
+              </Pressable>
+            ) : null}
             {inviteError ? <InlineNotice message={inviteError} /> : null}
             {inviteUrl ? (
               <View style={styles.linkPanel}>
@@ -278,16 +300,29 @@ export default function FamilieScreen() {
           </View>
         )}
 
+        <View style={styles.section}>
+          <SectionHeader title="Für euch gemeinsam" />
+          <View style={styles.sharedList}>
+            <SharedFamilyRow
+              icon={<FolderOpen color={colors.harborBlue} size={24} strokeWidth={1.7} />}
+              onPress={() => router.push("/(tabs)/ablage")}
+              title="Familienunterlagen"
+            />
+          </View>
+        </View>
+
         {family ? <FamilyAccessPanel
           key={family.id}
           familyId={family.id}
           isOwner={family.isOwner}
           revision={accessRevision}
           onRevoked={() => { setInviteUrl(null); setCopied(false); }}
+          onReshare={(invite) => void handleInvite(invite.label ?? undefined)}
+          reshareDisabled={creating}
         /> : null}
 
         <View style={styles.section}>
-          <SectionHeader title="App" />
+          <SectionHeader title="Mehr" />
           <ListGroup>
             <ListRow first chevron title="Post für Ordilo" subtitle="E-Mail-Adresse und Teilen aus anderen Apps" leading={<IconTile><Mail color={colors.harborBlue} size={20} /></IconTile>} onPress={() => router.push("/posteingang")} />
             <ListRow
@@ -343,6 +378,70 @@ export default function FamilieScreen() {
         visible={signOutOpen}
       />
     </Screen>
+  );
+}
+
+function FamilyMemberRow({
+  member,
+  onPress,
+  showDivider,
+}: {
+  member: MemberRow;
+  onPress: () => void;
+  showDivider: boolean;
+}) {
+  return (
+    <Pressable
+      accessibilityHint="Öffnet alles, was zu dieser Person gehört"
+      accessibilityLabel={member.name}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.memberRow,
+        showDivider && styles.rowDivider,
+        pressed && styles.memberRowPressed,
+      ]}
+    >
+      <PersonAvatar person={memberToPerson(member)} size={58} />
+      <View style={styles.memberCopy}>
+        <Text numberOfLines={1} style={styles.memberName}>
+          {member.name}
+        </Text>
+        <Text numberOfLines={1} style={styles.memberMeta}>
+          {describeMember(member)}
+        </Text>
+      </View>
+      <ChevronRight color={colors.mistDark} size={20} strokeWidth={1.8} />
+    </Pressable>
+  );
+}
+
+function SharedFamilyRow({
+  icon,
+  onPress,
+  showDivider = false,
+  title,
+}: {
+  icon: ReactNode;
+  onPress: () => void;
+  showDivider?: boolean;
+  title: string;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={title}
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.sharedRow,
+        showDivider && styles.rowDivider,
+        pressed && styles.memberRowPressed,
+      ]}
+    >
+      <View style={styles.sharedIcon}>{icon}</View>
+      <Text style={styles.sharedTitle}>{title}</Text>
+      <ChevronRight color={colors.mistDark} size={20} strokeWidth={1.8} />
+    </Pressable>
   );
 }
 
@@ -543,6 +642,75 @@ const styles = StyleSheet.create({
   screen: { paddingHorizontal: 0 },
   content: { gap: spacing.lg, paddingHorizontal: spacing.md },
   section: { gap: spacing.sm },
+  topAction: {
+    alignItems: "center",
+    height: sizes.touch,
+    justifyContent: "center",
+    marginLeft: "auto",
+    width: sizes.touch,
+  },
+  pressed: { opacity: 0.72 },
+  hero: { gap: 2, paddingHorizontal: spacing.xs },
+  title: {
+    color: colors.graphite,
+    ...typography.largeTitle,
+    fontSize: 32,
+    lineHeight: 38,
+  },
+  subtitle: { color: colors.mistDark, ...typography.timestamp },
+  peopleList: { gap: spacing.xs },
+  peopleRows: {
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  memberRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 14,
+    minHeight: 82,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 10,
+  },
+  memberRowPressed: { backgroundColor: colors.washSageSoft },
+  rowDivider: {
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  memberCopy: { flex: 1, gap: 2, minWidth: 0 },
+  memberName: { color: colors.graphite, ...typography.display },
+  memberMeta: { color: colors.mistDark, ...typography.timestamp },
+  addPerson: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: sizes.touch,
+    paddingHorizontal: spacing.xs,
+  },
+  addPersonText: { color: colors.graphite, ...typography.timestamp },
+  sharedList: {
+    borderBottomColor: colors.mistLight,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.mistLight,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  sharedRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 12,
+    minHeight: 64,
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.sm,
+  },
+  sharedIcon: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderRadius: radii.sm,
+    height: 44,
+    justifyContent: "center",
+    width: 52,
+  },
+  sharedTitle: { color: colors.graphite, flex: 1, ...typography.title },
   linkPanel: {
     backgroundColor: colors.washSageSoft,
     borderColor: colors.mistLight,

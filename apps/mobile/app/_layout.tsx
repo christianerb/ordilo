@@ -20,6 +20,7 @@ import { CloudOff } from "lucide-react-native";
 import { useEffect } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { useReducedMotion } from "react-native-reanimated";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { OrdiloButton, Screen } from "@/src/components/ui";
@@ -114,6 +115,7 @@ function RootLayout() {
 export default Sentry.wrap(RootLayout);
 
 function RootLayoutNav() {
+  const reduceMotion = useReducedMotion();
   const { session, isLoading: sessionLoading, signOut } = useSession();
   const {
     family,
@@ -231,6 +233,7 @@ function RootLayoutNav() {
       <NativeArrivals familyId={family && isOnboardingComplete(family) && !needsWelcomeIntro(family) ? family.id : null} userId={session?.user.id ?? null} />
       <Stack
         screenOptions={{
+          animation: reduceMotion ? "fade" : "default",
           headerShown: false,
           contentStyle: { backgroundColor: colors.warmWhite },
         }}

@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowDownAZ,
   BookOpen,
+  ChevronDown,
   FilePlus2,
   NotebookPen,
   Plus,
@@ -31,6 +32,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Animated from "react-native-reanimated";
 
 import { AmbientFields } from "@/src/components/ambient-fields";
 import { CreateChoiceSheet } from "@/src/components/create-choice-sheet";
@@ -40,9 +42,19 @@ import {
 } from "@/src/components/contacts";
 import { NoteFormSheet } from "@/src/components/note-form-sheet";
 import { MOBILE_DOCK_CONTENT_INSET } from "@/src/components/ordilo-tab-bar";
-import { AvatarStack } from "@/src/components/person";
-import { OrdiloPickerSheet } from "@/src/components/picker-sheet";
-import type { OrdiloSheetHandle } from "@/src/components/sheet";
+import { AvatarStack, PersonAvatar } from "@/src/components/person";
+import {
+  OrdiloPickerOverlay,
+  OrdiloPickerSheet,
+} from "@/src/components/picker-sheet";
+import {
+  OrdiloFormBody,
+  OrdiloFormField,
+  OrdiloFormFooter,
+  OrdiloFormSelect,
+  OrdiloFormSheet,
+  type OrdiloSheetHandle,
+} from "@/src/components/sheet";
 import {
   Chip,
   EmptyState,
@@ -79,6 +91,7 @@ import {
   formatDocumentDate,
   getDocumentSearchText,
   getDocumentStatusLabel,
+  getDocumentStatusGroup,
   getDocumentStatusTone,
   getDocumentTitle,
   getLibraryPageRange,
@@ -89,6 +102,7 @@ import {
   libraryPageSize,
   librarySortOptions,
   libraryStatusFilters,
+  loadLibraryDocumentIdsForPerson,
   loadLibraryDocumentPeople,
   mergeLibraryDocuments,
   subscribeToLibraryChanges,
@@ -100,6 +114,11 @@ import {
 import { formatPeopleLine, type Person } from "@/src/lib/people";
 import { getSupabase } from "@/src/lib/supabase";
 import { fetchFamilyMembers, type FamilyMemberOption } from "@/src/lib/tasks";
+import {
+  contentEntering,
+  listLayout,
+  stateEntering,
+} from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
 import { getManualNotePreview } from "@ordilo/document-contract";
 
@@ -109,6 +128,7 @@ const documentTypes = Object.entries(documentTypeLabels) as [
 ][];
 type LibraryView = "documents" | "notes" | "contacts";
 type CreateKind = "document" | "note" | "contact";
+const DOCUMENT_ROW_LAYOUT = listLayout();
 
 /**
  * Dokumente — the family's filing place. Three views (Unterlagen, Notizen,
@@ -128,8 +148,10 @@ export default function AblageScreen() {
   const [error, setError] = useState<string | null>(null);
   const [typePickerOpen, setTypePickerOpen] = useState(false);
   const [sortPickerOpen, setSortPickerOpen] = useState(false);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [createNoteOpen, setCreateNoteOpen] = useState(false);
   const [createContactOpen, setCreateContactOpen] = useState(false);
+  const [members, setMembers] = useState<FamilyMemberOption[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsLoading, setContactsLoading] = useState(false);
   const [contactsRefreshing, setContactsRefreshing] = useState(false);
@@ -140,10 +162,19 @@ export default function AblageScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [nextPage, setNextPage] = useState(1);
+  const [resultsRevision, setResultsRevision] = useState(0);
   const [filters, setFilters] = useState<LibraryFilters>({
     query: "",
     status: "all",
     documentType: "all",
+    personId: "all",
+  });
+  const [draftFilters, setDraftFilters] = useState<
+    Pick<LibraryFilters, "status" | "documentType" | "personId">
+  >({
+    status: "all",
+    documentType: "all",
+    personId: "all",
   });
   const requestGeneration = useRef(0);
   const createSheetRef = useRef<OrdiloSheetHandle>(null);
@@ -157,6 +188,7 @@ export default function AblageScreen() {
       .then((rows) => {
         if (cancelled) return;
         membersRef.current = rows;
+        setMembers(rows);
       })
       .catch(() => undefined);
     return () => {
@@ -190,6 +222,25 @@ export default function AblageScreen() {
       try {
         const range = getLibraryPageRange(page);
         const order = getLibrarySortOrder(sort);
+        const personDocumentIds =
+          filters.personId === "all"
+            ? null
+            : await loadLibraryDocumentIdsForPerson(
+                family.id,
+                filters.personId,
+              );
+        if (personDocumentIds?.length === 0) {
+          if (isCurrentRequest()) {
+            setDocuments([]);
+            setPeople(new Map());
+            setHasMore(false);
+            setNextPage(page);
+            if (!append && !filters.query.trim()) {
+              setResultsRevision((current) => current + 1);
+            }
+          }
+          return;
+        }
         // The explicit family predicate narrows the library to the resolved
         // family; RLS remains the authority for this anon-key client.
         let query = getSupabase()
@@ -210,6 +261,9 @@ export default function AblageScreen() {
         if (filters.documentType !== "all") {
           query = query.eq("document_type", filters.documentType);
         }
+        if (personDocumentIds) {
+          query = query.in("id", personDocumentIds);
+        }
         if (filters.query.trim()) {
           const pattern = toLibrarySearchPattern(filters.query);
           query = query.or(
@@ -227,6 +281,12 @@ export default function AblageScreen() {
           );
           setHasMore(next.length === libraryPageSize);
           setNextPage(next.length === libraryPageSize ? page + 1 : page);
+          // Filter and sort commits cross-fade the result once the requested
+          // data arrives. Typing in search stays instant so every keystroke
+          // does not replay an entrance.
+          if (!append && !filters.query.trim()) {
+            setResultsRevision((current) => current + 1);
+          }
         }
         if (view === "documents" && next.length > 0) {
           // People arrive a beat after the rows; the list never waits for them.
@@ -326,10 +386,31 @@ export default function AblageScreen() {
     setSortPickerOpen(false);
   }, []);
 
+  const openFilterSheet = useCallback(() => {
+    setDraftFilters({
+      status: filters.status,
+      documentType: filters.documentType,
+      personId: filters.personId,
+    });
+    setFilterSheetOpen(true);
+  }, [filters.documentType, filters.personId, filters.status]);
+
+  const applyFilters = useCallback(() => {
+    setFilters((current) => ({
+      ...current,
+      status: draftFilters.status,
+      documentType: draftFilters.documentType,
+      personId: draftFilters.personId,
+    }));
+    setFilterSheetOpen(false);
+  }, [draftFilters]);
+
   const sortedLabel = useMemo(
     () => librarySortOptions.find((option) => option.value === sort)?.label ?? "Neueste zuerst",
     [sort],
   );
+  const compactSortLabel =
+    sort === "oldest" ? "Älteste" : sort === "title" ? "Name" : "Neueste";
 
   const subtitle = useMemo(() => {
     if (view === "contacts") {
@@ -359,7 +440,26 @@ export default function AblageScreen() {
     [visibleDocuments, sort],
   );
   const activeFilterCount =
-    Number(filters.status !== "all") + Number(filters.documentType !== "all");
+    Number(filters.status !== "all") +
+    Number(filters.documentType !== "all") +
+    Number(filters.personId !== "all");
+  const hiddenFilterCount =
+    Number(
+      filters.status !== "all" && filters.status !== "needs_review",
+    ) +
+    Number(filters.documentType !== "all") +
+    Number(filters.personId !== "all");
+  const visibleReviewCount =
+    filters.status === "all" || filters.status === "needs_review"
+      ? documents.filter(
+          (document) =>
+            getDocumentStatusGroup(document.status) === "needs_review",
+        ).length
+      : 0;
+  const reviewFilterLabel =
+    visibleReviewCount > 0
+      ? `Zu prüfen ${visibleReviewCount}${hasMore ? "+" : ""}`
+      : "Zu prüfen";
   const hasActiveFilters =
     filters.query.trim() !== "" || activeFilterCount > 0;
   const selectedTypeLabel =
@@ -384,7 +484,12 @@ export default function AblageScreen() {
     setHasMore(false);
     setLoading(true);
     setNextPage(1);
-    setFilters({ query: "", status: "all", documentType: "all" });
+    setFilters({
+      query: "",
+      status: "all",
+      documentType: "all",
+      personId: "all",
+    });
     setView(nextView);
   }, [contacts.length, view]);
 
@@ -493,6 +598,11 @@ export default function AblageScreen() {
           ]}
         />
 
+        <Animated.View
+          entering={stateEntering()}
+          key={view}
+          style={styles.viewContent}
+        >
         {view === "contacts" ? (
           <ContactsView
             contacts={contacts}
@@ -523,6 +633,7 @@ export default function AblageScreen() {
                 ...current,
                 query: "",
                 documentType: "all",
+                personId: "all",
               }))
             }
             onSearchChange={(query) =>
@@ -545,43 +656,59 @@ export default function AblageScreen() {
               value={filters.query}
             />
 
-            <ScrollView
-              contentContainerStyle={styles.chips}
-              horizontal
-              keyboardShouldPersistTaps="handled"
-              showsHorizontalScrollIndicator={false}
-              style={styles.chipRow}
-            >
-              {libraryStatusFilters.map((filter) => (
+            <View style={styles.libraryToolbar}>
+              {visibleReviewCount > 0 ||
+              filters.status === "needs_review" ? (
                 <Chip
-                  key={filter.value}
-                  label={filter.label}
+                  accessibilityLabel={
+                    visibleReviewCount > 0
+                      ? `${visibleReviewCount}${hasMore ? " oder mehr" : ""} Dokumente zu prüfen`
+                      : "Dokumente zu prüfen"
+                  }
+                  label={reviewFilterLabel}
                   onPress={() =>
                     setFilters((current) => ({
                       ...current,
-                      status: filter.value,
+                      status:
+                        current.status === "needs_review"
+                          ? "all"
+                          : "needs_review",
                     }))
                   }
-                  selected={filters.status === filter.value}
-                  tone={filter.value === "needs_review" ? "attention" : "neutral"}
+                  selected={filters.status === "needs_review"}
+                  tone="attention"
                 />
-              ))}
-              <View style={styles.chipDivider} />
+              ) : null}
               <Chip
-                accessibilityLabel={`Dokumentart: ${selectedTypeLabel}`}
-                icon={filters.documentType === "all" ? SlidersHorizontal : undefined}
-                label={selectedTypeLabel}
-                onPress={() => setTypePickerOpen(true)}
-                selected={filters.documentType !== "all"}
+                accessibilityLabel={
+                  hiddenFilterCount > 0
+                    ? `${hiddenFilterCount} weitere Filter aktiv`
+                    : "Dokumente filtern"
+                }
+                icon={SlidersHorizontal}
+                label={
+                  hiddenFilterCount > 0
+                    ? `Filter ${hiddenFilterCount}`
+                    : "Filter"
+                }
+                onPress={openFilterSheet}
+                selected={hiddenFilterCount > 0}
               />
-              <Chip
-                accessibilityLabel={`Sortierung: ${sortedLabel}`}
-                icon={ArrowDownAZ}
-                label={sortedLabel}
-                onPress={() => setSortPickerOpen(true)}
-              />
-            </ScrollView>
+              <View style={styles.sortControl}>
+                <Chip
+                  accessibilityLabel={`Sortierung: ${sortedLabel}`}
+                  icon={ArrowDownAZ}
+                  label={compactSortLabel}
+                  onPress={() => setSortPickerOpen(true)}
+                />
+              </View>
+            </View>
 
+            <Animated.View
+              entering={contentEntering()}
+              key={resultsRevision}
+              style={styles.resultsContent}
+            >
             {error ? (
               <InlineNotice
                 actionLabel="Erneut versuchen"
@@ -603,19 +730,23 @@ export default function AblageScreen() {
                     <Text style={styles.groupLabel}>{group.label}</Text>
                     <ListGroup>
                       {group.documents.map((document, index) => (
-                        <DocumentRow
-                          document={document}
-                          first={index === 0}
-                          key={document.id}
-                          onPress={() =>
-                            router.push(
-                              isManualNote(document)
-                                ? `/note/${document.id}`
-                                : `/document/${document.id}`,
-                            )
-                          }
-                          people={people.get(document.id) ?? []}
-                        />
+                          <Animated.View
+                            key={document.id}
+                            layout={DOCUMENT_ROW_LAYOUT}
+                          >
+                            <DocumentRow
+                              document={document}
+                              first={index === 0}
+                              onPress={() =>
+                                router.push(
+                                  isManualNote(document)
+                                    ? `/note/${document.id}`
+                                    : `/document/${document.id}`,
+                                )
+                              }
+                              people={people.get(document.id) ?? []}
+                            />
+                          </Animated.View>
                       ))}
                     </ListGroup>
                   </View>
@@ -637,10 +768,16 @@ export default function AblageScreen() {
                 query={filters.query}
                 onLoadMore={hasMore ? loadMore : undefined}
                 onReset={() =>
-                  setFilters({ query: "", status: "all", documentType: "all" })
+                  setFilters({
+                    query: "",
+                    status: "all",
+                    documentType: "all",
+                    personId: "all",
+                  })
                 }
               />
             )}
+            </Animated.View>
           </>
         ) : (
           <EmptyState
@@ -656,6 +793,7 @@ export default function AblageScreen() {
             />
           </EmptyState>
         )}
+        </Animated.View>
       </ScrollView>
 
       <DocumentTypePicker
@@ -666,6 +804,31 @@ export default function AblageScreen() {
         }}
         selected={filters.documentType}
         visible={typePickerOpen}
+      />
+      <LibraryFilterSheet
+        documentType={draftFilters.documentType}
+        members={members}
+        onApply={applyFilters}
+        onClose={() => setFilterSheetOpen(false)}
+        onDocumentTypeChange={(documentType) =>
+          setDraftFilters((current) => ({ ...current, documentType }))
+        }
+        onReset={() =>
+          setDraftFilters({
+            status: "all",
+            documentType: "all",
+            personId: "all",
+          })
+        }
+        onPersonChange={(personId) =>
+          setDraftFilters((current) => ({ ...current, personId }))
+        }
+        onStatusChange={(status) =>
+          setDraftFilters((current) => ({ ...current, status }))
+        }
+        status={draftFilters.status}
+        personId={draftFilters.personId}
+        visible={filterSheetOpen}
       />
       <SortPicker
         onClose={() => setSortPickerOpen(false)}
@@ -739,6 +902,7 @@ function SearchField({
         accessibilityLabel={accessibilityLabel}
         autoCapitalize="none"
         autoCorrect={false}
+        maxFontSizeMultiplier={1.3}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.mistDark}
@@ -750,7 +914,7 @@ function SearchField({
         <Pressable
           accessibilityLabel="Suche löschen"
           accessibilityRole="button"
-          hitSlop={8}
+          hitSlop={11}
           onPress={() => onChangeText("")}
           style={styles.searchClear}
         >
@@ -1094,6 +1258,7 @@ function DocumentRow({
         ]}
       >
         <Text
+          maxFontSizeMultiplier={1.3}
           numberOfLines={1}
           style={[
             styles.statusText,
@@ -1211,6 +1376,212 @@ function DocumentTypePicker({
   );
 }
 
+function LibraryFilterSheet({
+  documentType,
+  members,
+  onApply,
+  onClose,
+  onDocumentTypeChange,
+  onPersonChange,
+  onReset,
+  onStatusChange,
+  personId,
+  status,
+  visible,
+}: {
+  documentType: DocumentType | "all";
+  members: FamilyMemberOption[];
+  onApply: () => void;
+  onClose: () => void;
+  onDocumentTypeChange: (documentType: DocumentType | "all") => void;
+  onPersonChange: (personId: string | "all") => void;
+  onReset: () => void;
+  onStatusChange: (status: LibraryFilters["status"]) => void;
+  personId: string | "all";
+  status: LibraryFilters["status"];
+  visible: boolean;
+}) {
+  const [picker, setPicker] = useState<
+    "status" | "documentType" | "person" | null
+  >(null);
+  const statusLabel =
+    libraryStatusFilters.find((filter) => filter.value === status)?.label ??
+    "Alle";
+  const documentTypeLabel =
+    documentType === "all"
+      ? "Alle Arten"
+      : documentTypeLabels[documentType];
+  const member = members.find((option) => option.id === personId) ?? null;
+  const personLabel = member?.name ?? "Alle Personen";
+  const closeSheet = () => {
+    setPicker(null);
+    onClose();
+  };
+
+  return (
+    <OrdiloFormSheet
+      closeAccessibilityLabel="Filter schließen"
+      onClose={closeSheet}
+      subtitle="Wähle aus, was du sehen möchtest."
+      title="Dokumente filtern"
+      visible={visible}
+    >
+      <OrdiloFormBody contentContainerStyle={styles.filterSheetBody}>
+        <OrdiloFormField label="Status">
+          <OrdiloFormSelect
+            accessibilityHint="Öffnet die Statusauswahl"
+            accessibilityLabel={`Status: ${statusLabel}`}
+            onPress={() => setPicker("status")}
+            trailing={<ChevronDown color={colors.mist} size={18} />}
+            value={statusLabel}
+          />
+        </OrdiloFormField>
+        <OrdiloFormField label="Dokumentart">
+          <OrdiloFormSelect
+            accessibilityHint="Öffnet die Auswahl der Dokumentart"
+            accessibilityLabel={`Dokumentart: ${documentTypeLabel}`}
+            onPress={() => setPicker("documentType")}
+            trailing={<ChevronDown color={colors.mist} size={18} />}
+            value={documentTypeLabel}
+          />
+        </OrdiloFormField>
+        <OrdiloFormField label="Person">
+          <OrdiloFormSelect
+            accessibilityHint="Öffnet die Personenauswahl"
+            accessibilityLabel={`Person: ${personLabel}`}
+            leading={
+              member ? (
+                <PersonAvatar
+                  person={{
+                    color: member.avatar_color,
+                    name: member.name,
+                  }}
+                  size={30}
+                />
+              ) : (
+                <Users color={colors.mistDark} size={18} strokeWidth={1.9} />
+              )
+            }
+            onPress={() => setPicker("person")}
+            trailing={<ChevronDown color={colors.mist} size={18} />}
+            value={personLabel}
+          />
+        </OrdiloFormField>
+      </OrdiloFormBody>
+      <OrdiloFormFooter
+        primary={
+          <OrdiloButton
+            onPress={onApply}
+            size="lg"
+            title="Anwenden"
+          />
+        }
+        secondary={
+          <OrdiloButton
+            onPress={onReset}
+            size="lg"
+            title="Zurücksetzen"
+            variant="outline"
+          />
+        }
+      />
+      {/* Picker overlays must be siblings of the scrolling body. Rendering
+          them inside it clips the nested sheet to the body's viewport. */}
+        <OrdiloPickerOverlay
+          onClose={() => setPicker(null)}
+          options={libraryStatusFilters.map((filter) => ({
+            key: filter.value,
+            label: filter.label,
+            onPress: () => {
+              onStatusChange(filter.value);
+              setPicker(null);
+            },
+            selected: status === filter.value,
+          }))}
+          title="Status"
+          visible={picker === "status"}
+        />
+        <OrdiloPickerOverlay
+          onClose={() => setPicker(null)}
+          options={[
+            {
+              key: "all",
+              label: "Alle Arten",
+              onPress: () => {
+                onDocumentTypeChange("all");
+                setPicker(null);
+              },
+              selected: documentType === "all",
+            },
+            ...documentTypes.map(([value, label]) => {
+              const kind = getDocumentKind(value);
+              const KindIcon = kind.icon;
+              return {
+                key: value,
+                label,
+                leading: (
+                  <IconTile size={32} tint={kind.tint}>
+                    <KindIcon
+                      color={kind.ink}
+                      size={16}
+                      strokeWidth={1.9}
+                    />
+                  </IconTile>
+                ),
+                onPress: () => {
+                  onDocumentTypeChange(value);
+                  setPicker(null);
+                },
+                selected: documentType === value,
+              };
+            }),
+          ]}
+          title="Dokumentart"
+          visible={picker === "documentType"}
+        />
+        <OrdiloPickerOverlay
+          onClose={() => setPicker(null)}
+          options={[
+            {
+              key: "all",
+              label: "Alle Personen",
+              leading: (
+                <IconTile size={32} tint={colors.sandLight}>
+                  <Users color={colors.mistDark} size={16} strokeWidth={1.9} />
+                </IconTile>
+              ),
+              onPress: () => {
+                onPersonChange("all");
+                setPicker(null);
+              },
+              selected: personId === "all",
+            },
+            ...members.map((option) => ({
+              key: option.id,
+              label: option.name,
+              leading: (
+                <PersonAvatar
+                  person={{
+                    color: option.avatar_color,
+                    name: option.name,
+                  }}
+                  size={32}
+                />
+              ),
+              onPress: () => {
+                onPersonChange(option.id);
+                setPicker(null);
+              },
+              selected: personId === option.id,
+            })),
+          ]}
+          title="Person"
+          visible={picker === "person"}
+        />
+    </OrdiloFormSheet>
+  );
+}
+
 function SortPicker({
   onClose,
   onSelect,
@@ -1250,11 +1621,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    height: 46,
+    minHeight: 46,
     paddingLeft: 12,
     paddingRight: 6,
   },
-  searchInput: { color: colors.graphite, flex: 1, height: 44, ...typography.body },
+  searchInput: {
+    color: colors.graphite,
+    flex: 1,
+    minHeight: 44,
+    ...typography.body,
+  },
   searchClear: {
     alignItems: "center",
     backgroundColor: colors.mistLight,
@@ -1263,14 +1639,22 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 22,
   },
+  libraryToolbar: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  resultsContent: { gap: spacing.md },
+  viewContent: { gap: spacing.md },
+  sortControl: {
+    alignItems: "flex-end",
+    flex: 1,
+  },
   chipRow: { marginHorizontal: -spacing.md },
   chips: { gap: spacing.xs, paddingHorizontal: spacing.md },
-  chipDivider: {
-    alignSelf: "center",
-    backgroundColor: colors.mistLight,
-    height: 20,
-    marginHorizontal: spacing.xs,
-    width: 1,
+  filterSheetBody: {
+    gap: spacing.md,
+    paddingBottom: spacing.lg,
   },
   group: { gap: spacing.xs },
   groupLabel: {

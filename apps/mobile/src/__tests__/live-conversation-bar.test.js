@@ -35,7 +35,15 @@ async function render(props = {}) {
   let tree;
   await act(async () => {
     tree = renderer.create(
-      <LiveConversationBar lastTranscript="" onStop={() => {}} status="listening" {...props} />,
+      <LiveConversationBar
+        lastTranscript=""
+        muted={false}
+        onStop={() => {}}
+        onToggleMute={() => {}}
+        previousTranscript=""
+        status="listening"
+        {...props}
+      />,
     );
   });
   trees.push(tree);
@@ -49,6 +57,8 @@ afterEach(async () => {
 
 const labels = (tree) => tree.root.findAllByType(Text)
   .filter((node) => node.props.testID?.startsWith("live-label-"));
+const stopButton = (tree) => tree.root.findAllByType("SpringPressable")
+  .find((node) => /beend/.test(node.props.accessibilityLabel ?? ""));
 
 describe("Live conversation motion", () => {
   it("retargets persistent layers through quick interruptions without remounting", async () => {
@@ -91,7 +101,7 @@ describe("Live conversation motion", () => {
     expect(StyleSheet.flatten(spacer.props.style).opacity).toBe(0);
     expect(spacer.props.numberOfLines).toBeUndefined();
     expect(spacer.props.allowFontScaling).not.toBe(false);
-    const button = tree.root.findByType("SpringPressable");
+    const button = stopButton(tree);
     expect(StyleSheet.flatten(button.props.style)).toMatchObject({ width: 48, height: 48 });
     act(() => button.props.onPress());
     expect(stop).toHaveBeenCalledTimes(1);
@@ -105,7 +115,7 @@ describe("Live conversation motion", () => {
       expect(node.props.accessibilityElementsHidden).toBe(true);
       expect(node.props.importantForAccessibility).toBe("no-hide-descendants");
     });
-    expect(tree.root.findByType("SpringPressable").props.accessibilityLabel)
+    expect(stopButton(tree).props.accessibilityLabel)
       .toBe("Live-Gespräch beenden");
   });
 
@@ -127,7 +137,7 @@ describe("Live conversation motion", () => {
       expect(tree.root.findAllByType(Text).map((node) => node.props.children))
         .not.toContain("Du kannst jederzeit sprechen.");
     }
-    expect(ending.root.findByType("SpringPressable").props.disabled).toBe(true);
+    expect(stopButton(ending).props.disabled).toBe(true);
     expect(StyleSheet.flatten(ending.root.findByProps({ testID: "live-state-halo" }).props.style).opacity).toBe(0);
   });
 

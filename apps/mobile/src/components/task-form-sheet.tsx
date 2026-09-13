@@ -61,6 +61,7 @@ export type TaskFormSubmit = (
  * the one destructive action, "Verwerfen", behind a confirmation.
  */
 export function TaskFormSheet({
+  initialPerson = null,
   initialTask,
   members,
   onClose,
@@ -68,6 +69,12 @@ export function TaskFormSheet({
   onSubmit,
   visible,
 }: {
+  /**
+   * Create mode only: a preselected family member (from the
+   * "/plan?person=…" context), already resolved against `members` by
+   * the caller. An edit always keeps the task's own assignee.
+   */
+  initialPerson?: string | null;
   /** Set for edit mode; undefined means "Neue Aufgabe". */
   initialTask?: PlannerTask | null;
   members: FamilyMemberOption[];
@@ -88,6 +95,10 @@ export function TaskFormSheet({
   const [personPickerOpen, setPersonPickerOpen] = useState(false);
   const [discardDraftOpen, setDiscardDraftOpen] = useState(false);
 
+  // The assignee the sheet opens with: the task's own when editing,
+  // otherwise the person context the screen carried in.
+  const initialAssignedTo = initialTask?.assigned_to ?? initialPerson ?? "";
+
   // Re-seed the draft every time the sheet opens so a stale edit never
   // leaks into the next task. Render-time adjustment instead of an
   // effect — the official pattern for derived resets.
@@ -98,7 +109,7 @@ export function TaskFormSheet({
       setTitle(initialTask?.title ?? "");
       setDescription(initialTask?.description ?? "");
       setDueDate(initialTask?.due_date ?? "");
-      setAssignedTo(initialTask?.assigned_to ?? "");
+      setAssignedTo(initialAssignedTo);
       setError(null);
       setSubmitting(false);
       setTodayStr(todayLocalDate());
@@ -129,7 +140,7 @@ export function TaskFormSheet({
     title !== (initialTask?.title ?? "") ||
     description !== (initialTask?.description ?? "") ||
     dueDate !== (initialTask?.due_date ?? "") ||
-    assignedTo !== (initialTask?.assigned_to ?? "");
+    assignedTo !== initialAssignedTo;
 
   const requestClose = useCallback(() => {
     // A save in flight owns the sheet: closing now would hide a failure

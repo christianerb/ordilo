@@ -3,6 +3,9 @@ import { Directory, File, Paths } from "expo-file-system";
 import * as SecureStore from "expo-secure-store";
 import * as Sharing from "expo-sharing";
 
+import { loadOriginalFile } from "./document-review";
+import { getSupabase } from "./supabase";
+
 export type OfflineSnapshot = {
   id: string;
   title: string;
@@ -175,8 +178,49 @@ export async function shareOfflineOriginal(document: OfflineDocument): Promise<v
   const file = new File(directory, `${safeId(document.id)}.${extension}`);
   try {
     file.write(document.original, { encoding: "base64" });
-    await Sharing.shareAsync(file.uri, { mimeType: document.mimeType, dialogTitle: "Original öffnen oder teilen" });
+    await Sharing.shareAsync(file.uri, { mimeType: document.mimeType, dialogTitle: "Offline-Kopie öffnen" });
   } finally {
     if (file.exists) file.delete();
+  }
+}
+
+/**
+ * Re-downloads the sealed copy of a document that is marked for offline
+ * use, so corrections (title, summary, OCR text, re-scanned original)
+ * never leave a stale copy on the device. A safe no-op when the document
+ * is not cached, the session is gone, or the device is offline — it never
+ * throws, callers fire and forget after saving corrections.
+ */
+export async function refreshOfflineCopy(documentId: string): Promise<void> {
+  try {
+    const { data } = await getSupabase().auth.getSession();
+    const userId = data.session?.user.id;
+    if (!userId) return;
+    const cached = (await listOfflineDocuments(userId))
+      .find((entry) => entry.id === documentId);
+    if (!cached) return;
+    const { data: documentRow, error } = await getSupabase()
+      .from("documents")
+      .select("title, mime_type, summary, ocr_text")
+      .eq("id", documentId)
+      .maybeSingle();
+    const row = documentRow as {
+      title?: string | null;
+      mime_type?: string | null;
+      summary?: string | null;
+      ocr_text?: string | null;
+    } | null;
+    if (error || !row?.mime_type) return;
+    await saveOfflineDocument(userId, cached.familyId, {
+      id: documentId,
+      title: row.title ?? cached.title,
+      mimeType: row.mime_type,
+      summary: row.summary ?? null,
+      ocrText: row.ocr_text ?? null,
+    }, async () => (await loadOriginalFile(documentId)).url);
+  } catch (error) {
+    // Offline, revoked family access, or an unsupported format: the old
+    // copy (or none) stays, which is the honest offline answer.
+    console.warn("refreshOfflineCopy failed", error);
   }
 }

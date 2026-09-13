@@ -36,6 +36,43 @@ function headers(): HeadersInit {
   return { "Content-Type": "application/json", ...(process.env.EXPO_ACCESS_TOKEN ? { Authorization: `Bearer ${process.env.EXPO_ACCESS_TOKEN}` } : {}) };
 }
 
+/**
+ * Every push kind answers to one of the per-category switches from
+ * migration 0083 (public.notification_preferences). "family" currently
+ * has no push kind; it covers in-app surfaces only.
+ */
+type NotificationCategory = Database["public"]["Tables"]["notification_preferences"]["Row"]["category"];
+
+const PUSH_KIND_CATEGORY: Record<PushDelivery["kind"], NotificationCategory> = {
+  document_ready: "processing",
+  document_failed: "processing",
+  task_assigned: "handoffs",
+  task_accepted: "handoffs",
+  daily: "deadlines",
+};
+
+/**
+ * A missing row means the category is on — the table only stores
+ * overrides. Checked at send time (not only at queue time) so a switch
+ * flipped after queueing still wins.
+ */
+async function isPushKindEnabled(
+  client: Client,
+  userId: string,
+  familyId: string,
+  kind: PushDelivery["kind"],
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("notification_preferences")
+    .select("enabled")
+    .eq("user_id", userId)
+    .eq("family_id", familyId)
+    .eq("category", PUSH_KIND_CATEGORY[kind])
+    .maybeSingle();
+  if (error) throw new Error("Push preference lookup failed");
+  return data?.enabled !== false;
+}
+
 /** Durable delivery is at-least-once; OS/provider acceptance is not a read receipt. */
 export async function deliverPushNotifications(client: Client, now = new Date()) {
   const summary = { accepted: 0, failed: 0, deferred: 0, receipts: 0 };
@@ -69,6 +106,11 @@ export async function deliverPushNotifications(client: Client, now = new Date())
       ]);
       if (deviceError || membershipError) throw new Error("Push authorization lookup failed");
       if (!device || !membership) {
+        await client.from("push_deliveries").delete().eq("id", delivery.id);
+        continue;
+      }
+      // Category switches win even over already queued rows (migration 0083).
+      if (!(await isPushKindEnabled(client, delivery.user_id, delivery.family_id, delivery.kind))) {
         await client.from("push_deliveries").delete().eq("id", delivery.id);
         continue;
       }
@@ -142,6 +184,7 @@ export async function queueDailyPushNotifications(client: Client, now = new Date
       const { data: memberships, error } = await client.from("family_memberships").select("family_id").eq("user_id", device.user_id);
       if (error) throw new Error("Membership query failed");
       for (const membership of memberships ?? []) {
+        if (!await isPushKindEnabled(client, device.user_id, membership.family_id, "daily")) continue;
         if (!await familyNeedsReminder(client, membership.family_id, day)) continue;
         const result = await client.from("push_deliveries").upsert({ device_id: device.id, user_id: device.user_id, family_id: membership.family_id, event_key: `daily:${membership.family_id}:${day}`, kind: "daily" }, { onConflict: "device_id,event_key", ignoreDuplicates: true });
         if (result.error) throw new Error("Reminder enqueue failed");

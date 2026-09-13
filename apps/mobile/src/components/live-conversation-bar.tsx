@@ -1,4 +1,4 @@
-import { AudioLines, Link, Mic, PhoneOff, Search } from "lucide-react-native";
+import { AudioLines, Link, Mic, MicOff, PhoneOff, Search } from "lucide-react-native";
 import { StyleSheet, Text, View, useWindowDimensions, type ViewStyle } from "react-native";
 import Animated, { useReducedMotion, type AnimatedStyle } from "react-native-reanimated";
 
@@ -36,11 +36,17 @@ const HALO_TRANSITION = {
 
 export function LiveConversationBar({
   lastTranscript,
+  muted,
   onStop,
+  onToggleMute,
+  previousTranscript,
   status,
 }: {
   lastTranscript: string;
+  muted: boolean;
   onStop: () => void;
+  onToggleMute: () => void;
+  previousTranscript: string;
   status: LiveConversationStatus;
 }) {
   const reduced = useReducedMotion();
@@ -55,9 +61,11 @@ export function LiveConversationBar({
     ? "Einen Moment, gleich geht’s los."
     : status === "ending"
       ? "Das Gespräch wird beendet."
-      : lastTranscript
-        ? `„${lastTranscript}“`
-        : "Du kannst jederzeit sprechen.";
+      : muted
+        ? "Mikrofon aus. Tippe auf das Mikrofon, um weiterzusprechen."
+        : lastTranscript
+          ? `„${lastTranscript}“`
+          : "Du kannst jederzeit sprechen.";
 
   return (
     <Animated.View
@@ -135,6 +143,16 @@ export function LiveConversationBar({
             </Animated.Text>
           ))}
         </View>
+        {/* The finished turn above the live one — quieter, never animated. */}
+        {previousTranscript ? (
+          <Text
+            numberOfLines={1}
+            style={styles.previous}
+            testID="live-previous-transcript"
+          >
+            {`„${previousTranscript}“`}
+          </Text>
+        ) : null}
         <Text
           numberOfLines={1}
           style={styles.transcript}
@@ -142,14 +160,28 @@ export function LiveConversationBar({
           {helper}
         </Text>
       </View>
-      <SpringPressable
-        accessibilityLabel={status === "ending" ? "Gespräch wird beendet" : "Live-Gespräch beenden"}
-        disabled={status === "ending"}
-        onPress={onStop}
-        style={[styles.stop, largeText && styles.largeStop]}
-      >
-        <PhoneOff color={colors.warmWhite} size={18} />
-      </SpringPressable>
+      <View style={[styles.actions, largeText && styles.largeActions]}>
+        <SpringPressable
+          accessibilityHint={muted ? "Schaltet das Mikrofon wieder an" : "Ordilo hört dann nicht mehr zu"}
+          accessibilityLabel={muted ? "Mikrofon einschalten. Mikrofon ist aus" : "Mikrofon ausschalten. Mikrofon ist an"}
+          accessibilityRole="button"
+          disabled={status === "connecting" || status === "ending"}
+          onPress={onToggleMute}
+          style={[styles.mute, muted && styles.muteActive]}
+        >
+          {muted
+            ? <MicOff color={colors.harborBlueDarker} size={18} />
+            : <Mic color={colors.harborBlue} size={18} />}
+        </SpringPressable>
+        <SpringPressable
+          accessibilityLabel={status === "ending" ? "Gespräch wird beendet" : "Live-Gespräch beenden"}
+          disabled={status === "ending"}
+          onPress={onStop}
+          style={styles.stop}
+        >
+          <PhoneOff color={colors.warmWhite} size={18} />
+        </SpringPressable>
+      </View>
     </Animated.View>
   );
 }
@@ -168,7 +200,27 @@ const styles = StyleSheet.create({
   },
   largeBar: { flexDirection: "column", alignItems: "stretch" },
   largeCopy: { flex: 0 },
-  largeStop: { alignSelf: "flex-end" },
+  largeActions: { alignSelf: "flex-end" },
+  actions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs,
+  },
+  mute: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.harborLine,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    width: 44,
+  },
+  // Muted is unmistakable: filled warm surface, darker icon, hint in the copy.
+  muteActive: {
+    backgroundColor: colors.sandWarm,
+    borderColor: colors.harborBlue,
+  },
   mark: {
     alignItems: "center",
     height: 48,
@@ -208,6 +260,7 @@ const styles = StyleSheet.create({
     transform: [{ translateY: "-50%" }],
   },
   transcript: { color: colors.mistDark, ...typography.label },
+  previous: { color: colors.mistDark, ...typography.timestamp },
   stop: {
     alignItems: "center",
     backgroundColor: colors.harborBlue,
