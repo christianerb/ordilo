@@ -31,12 +31,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
-  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 
 import { durations, easeInOut, easeOut } from "@/src/theme/motion";
 import { colors, radii, spacing, typography } from "@/src/theme/tokens";
@@ -260,7 +260,7 @@ export function AnimatedSheetModal({
   }, [onDismiss]);
 
   // Mount synchronously on open (React's guarded render adjustment) so the
-  // entry animation has something to animate; exit unmounts via runOnJS.
+  // entry animation has something to animate; exit unmounts via scheduleOnRN.
   if (visible && !mounted) {
     setMounted(true);
   }
@@ -269,31 +269,31 @@ export function AnimatedSheetModal({
     if (!mounted) return;
     if (visible) {
       // Entry: the overlay fades in while the sheet slides up.
-      overlayOpacity.value = 0;
-      sheetOffset.value = reduceMotion ? 0 : windowHeight;
-      overlayOpacity.value = withTiming(1, {
+      overlayOpacity.set(0);
+      sheetOffset.set(reduceMotion ? 0 : windowHeight);
+      overlayOpacity.set(withTiming(1, {
         duration: durations.base,
         easing: easeOut,
-      });
-      sheetOffset.value = withTiming(0, {
+      }));
+      sheetOffset.set(withTiming(0, {
         duration: reduceMotion ? durations.fast : 250,
         easing: easeOut,
-      });
+      }));
       return;
     }
     // Exit: reverse motion, then unmount — the overlay never travels.
-    overlayOpacity.value = withTiming(0, {
+    overlayOpacity.set(withTiming(0, {
       duration: durations.fast,
       easing: easeInOut,
-    });
-    sheetOffset.value = withTiming(
+    }));
+    sheetOffset.set(withTiming(
       reduceMotion ? 0 : windowHeight,
       { duration: durations.fast, easing: easeInOut },
       (finished) => {
         "worklet";
-        if (finished) runOnJS(finishDismiss)();
+        if (finished) scheduleOnRN(finishDismiss);
       },
-    );
+    ));
   }, [
     visible,
     mounted,
@@ -304,9 +304,9 @@ export function AnimatedSheetModal({
     finishDismiss,
   ]);
 
-  const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.value }));
+  const overlayStyle = useAnimatedStyle(() => ({ opacity: overlayOpacity.get() }));
   const sheetAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: sheetOffset.value }],
+    transform: [{ translateY: sheetOffset.get() }],
   }));
 
   if (!mounted) return null;
@@ -387,9 +387,8 @@ export function OrdiloNestedSheet({
   onClose: () => void;
   visible: boolean;
 }) {
-  if (!visible) return null;
-
   if (!contained) {
+    if (!visible) return null;
     return (
       <AnimatedSheetModal
         closeAccessibilityLabel={closeAccessibilityLabel}
@@ -404,22 +403,116 @@ export function OrdiloNestedSheet({
   }
 
   return (
+    <ContainedNestedSheet
+      closeAccessibilityLabel={closeAccessibilityLabel}
+      dismissDisabled={dismissDisabled}
+      onClose={onClose}
+      visible={visible}
+    >
+      {children}
+    </ContainedNestedSheet>
+  );
+}
+
+/**
+ * A picker inside a form sheet stays in that sheet's visual hierarchy.
+ * It therefore needs its own mount lifetime so dismissal can reverse the
+ * same path before React removes it. Motion stays on the UI runtime; Reduce
+ * Motion keeps only the opacity cue.
+ */
+function ContainedNestedSheet({
+  children,
+  closeAccessibilityLabel,
+  dismissDisabled,
+  onClose,
+  visible,
+}: {
+  children: ReactNode;
+  closeAccessibilityLabel: string;
+  dismissDisabled: boolean;
+  onClose: () => void;
+  visible: boolean;
+}) {
+  const reduceMotion = useReducedMotion();
+  const { height: windowHeight } = useWindowDimensions();
+  const [mounted, setMounted] = useState(visible);
+  const overlayOpacity = useSharedValue(0);
+  const sheetOffset = useSharedValue(windowHeight);
+  const finishDismiss = useCallback(() => setMounted(false), []);
+
+  if (visible && !mounted) {
+    setMounted(true);
+  }
+
+  useEffect(() => {
+    if (!mounted) return;
+    if (visible) {
+      overlayOpacity.set(0);
+      sheetOffset.set(reduceMotion ? 0 : windowHeight);
+      overlayOpacity.set(withTiming(1, {
+        duration: durations.base,
+        easing: easeOut,
+      }));
+      sheetOffset.set(withTiming(0, {
+        duration: reduceMotion ? durations.fast : 250,
+        easing: easeOut,
+      }));
+      return;
+    }
+
+    overlayOpacity.set(withTiming(0, {
+      duration: durations.fast,
+      easing: easeInOut,
+    }));
+    sheetOffset.set(withTiming(
+      reduceMotion ? 0 : windowHeight,
+      { duration: durations.fast, easing: easeInOut },
+      (finished) => {
+        "worklet";
+        if (finished) scheduleOnRN(finishDismiss);
+      },
+    ));
+  }, [
+    finishDismiss,
+    mounted,
+    overlayOpacity,
+    reduceMotion,
+    sheetOffset,
+    visible,
+    windowHeight,
+  ]);
+
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.get(),
+  }));
+  const sheetStyle = useAnimatedStyle(() => ({
+    opacity: overlayOpacity.get(),
+    transform: [{ translateY: sheetOffset.get() }],
+  }));
+
+  if (!mounted) return null;
+
+  return (
     <View
       accessibilityViewIsModal
       importantForAccessibility="yes"
       style={styles.nestedOverlay}
     >
-      <Pressable
-        accessibilityLabel={closeAccessibilityLabel}
-        accessibilityRole="button"
-        disabled={dismissDisabled}
-        onPress={onClose}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={styles.nestedPanel}>
+      <Animated.View
+        style={[StyleSheet.absoluteFill, styles.nestedBackdrop, overlayStyle]}
+      >
+        <Pressable
+          accessibilityLabel={closeAccessibilityLabel}
+          accessibilityRole="button"
+          disabled={dismissDisabled}
+          onPress={onClose}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+      <Animated.View style={[styles.nestedPanel, sheetStyle]}>
         <View style={styles.floatingHandle} />
         {children}
-      </View>
+      </Animated.View>
     </View>
   );
 }
@@ -512,7 +605,9 @@ export function OrdiloFormField({
 }) {
   return (
     <View style={[styles.formField, style]}>
-      <Text style={styles.formFieldLabel}>{label}</Text>
+      <Text maxFontSizeMultiplier={1.4} style={styles.formFieldLabel}>
+        {label}
+      </Text>
       {children}
       {error ? (
         <Text accessibilityRole="alert" style={styles.formFieldError}>
@@ -617,7 +712,13 @@ export function OrdiloFormSelect({
       ]}
     >
       {leading}
-      <Text style={styles.formSelectValue}>{value}</Text>
+      <Text
+        maxFontSizeMultiplier={1.4}
+        numberOfLines={1}
+        style={styles.formSelectValue}
+      >
+        {value}
+      </Text>
       {trailing}
     </Pressable>
   );
@@ -775,7 +876,6 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   nestedOverlay: {
-    backgroundColor: "rgba(38, 36, 33, 0.28)",
     bottom: 0,
     elevation: 20,
     justifyContent: "flex-end",
@@ -785,6 +885,9 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     zIndex: 20,
+  },
+  nestedBackdrop: {
+    backgroundColor: "rgba(38, 36, 33, 0.28)",
   },
   nestedPanel: {
     backgroundColor: colors.warmWhite,

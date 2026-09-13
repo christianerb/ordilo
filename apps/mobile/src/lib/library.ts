@@ -26,6 +26,7 @@ export type LibraryFilters = {
   query: string;
   status: LibraryStatusFilter;
   documentType: DocumentType | "all";
+  personId: string | "all";
 };
 
 export type LibrarySort = "newest" | "oldest" | "title";
@@ -92,7 +93,7 @@ export const libraryStatusFilters: {
   label: string;
 }[] = [
   { value: "all", label: "Alle" },
-  { value: "needs_review", label: "Prüfen" },
+  { value: "needs_review", label: "Zu prüfen" },
   { value: "confirmed", label: "Gespeichert" },
   { value: "processing", label: "In Arbeit" },
   { value: "failed", label: "Fehler" },
@@ -333,4 +334,23 @@ export async function loadLibraryDocumentPeople(
     result.set(documentId, resolveDocumentPeople(rows, members));
   }
   return result;
+}
+
+/** Resolves one family member to the documents that explicitly link them. */
+export async function loadLibraryDocumentIdsForPerson(
+  familyId: string,
+  personId: string,
+): Promise<string[]> {
+  const { data, error } = await getSupabase()
+    .from("extracted_entities")
+    .select("document_id")
+    .eq("family_id", familyId)
+    .eq("entity_type", "person")
+    .eq("linked_object_id", personId);
+  if (error) throw error;
+  return [
+    ...new Set(
+      (data ?? []).map((row: { document_id: string }) => row.document_id),
+    ),
+  ];
 }

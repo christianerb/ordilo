@@ -174,3 +174,127 @@ export async function clearStoredPushToken(): Promise<void> {
     // Best-effort housekeeping.
   }
 }
+
+// ---------------------------------------------------------------------------
+// Per-category preferences (public.notification_preferences, migration 0083)
+// ---------------------------------------------------------------------------
+
+export type NotificationCategory =
+  | "deadlines"
+  | "handoffs"
+  | "processing"
+  | "family";
+
+export const NOTIFICATION_CATEGORIES: NotificationCategory[] = [
+  "deadlines",
+  "handoffs",
+  "processing",
+  "family",
+];
+
+export type NotificationPreferences = Record<NotificationCategory, boolean>;
+
+/** A missing row means the category is on — the table only stores overrides. */
+export function resolveNotificationPreferences(
+  rows: { category: string; enabled: boolean }[],
+): NotificationPreferences {
+  const preferences: NotificationPreferences = {
+    deadlines: true,
+    handoffs: true,
+    processing: true,
+    family: true,
+  };
+  for (const row of rows) {
+    if ((NOTIFICATION_CATEGORIES as string[]).includes(row.category)) {
+      preferences[row.category as NotificationCategory] = row.enabled;
+    }
+  }
+  return preferences;
+}
+
+const PREFERENCES_LOAD_ERROR =
+  "Die Einstellungen konnten nicht geladen werden. Bitte versuch es nochmal.";
+const PREFERENCES_SAVE_ERROR =
+  "Deine Auswahl konnte nicht gespeichert werden. Bitte versuch es nochmal.";
+
+/** RLS already limits the rows to the caller; family_id scopes the set. */
+export async function loadNotificationPreferences(
+  familyId: string,
+): Promise<NotificationPreferences> {
+  const { data, error } = await getSupabase()
+    .from("notification_preferences")
+    .select("category, enabled")
+    .eq("family_id", familyId);
+  if (error) throw new Error(PREFERENCES_LOAD_ERROR);
+  return resolveNotificationPreferences(data ?? []);
+}
+
+export async function setNotificationPreference(input: {
+  familyId: string;
+  category: NotificationCategory;
+  enabled: boolean;
+}): Promise<void> {
+  const supabase = getSupabase();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error(PREFERENCES_SAVE_ERROR);
+  const { error } = await supabase.from("notification_preferences").upsert(
+    {
+      user_id: user.id,
+      family_id: input.familyId,
+      category: input.category,
+      enabled: input.enabled,
+    },
+    { onConflict: "user_id,family_id,category" },
+  );
+  if (error) throw new Error(PREFERENCES_SAVE_ERROR);
+}
+
+// ---------------------------------------------------------------------------
+// Contextual permission primer — asked once, when the value just landed
+// ---------------------------------------------------------------------------
+
+// Expo SecureStore accepts only letters, digits, `.`, `-` and `_` in keys.
+const PRIMER_KEY_PREFIX = "ordilo.notification-primer.";
+
+/**
+ * The primer appears exactly once: when the OS permission was never asked
+ * AND the family has its first processed document — the moment a
+ * notification would actually carry news. Never on first app open.
+ */
+export function shouldShowNotificationPrimer(input: {
+  permission: PushPermissionState;
+  processedDocuments: number;
+  alreadyShown: boolean;
+}): boolean {
+  return (
+    input.permission === "ask" &&
+    input.processedDocuments > 0 &&
+    !input.alreadyShown
+  );
+}
+
+export async function hasNotificationPrimerBeenShown(
+  familyId: string,
+): Promise<boolean> {
+  try {
+    return (
+      (await SecureStore.getItemAsync(PRIMER_KEY_PREFIX + familyId)) ===
+      "shown"
+    );
+  } catch {
+    // Keychain unavailable — fail closed; a primer must never nag.
+    return true;
+  }
+}
+
+export async function markNotificationPrimerShown(
+  familyId: string,
+): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(PRIMER_KEY_PREFIX + familyId, "shown");
+  } catch {
+    // Best effort — worst case the sheet appears once more.
+  }
+}

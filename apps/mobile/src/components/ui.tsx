@@ -1,10 +1,11 @@
 import { ChevronLeft, ChevronRight, type LucideIcon } from "lucide-react-native";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Pressable,
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
@@ -23,6 +24,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { tap } from "@/src/lib/feedback";
 import {
+  durations,
+  easeInOut,
   pressDuration,
   pressScale,
 } from "@/src/theme/motion";
@@ -201,8 +204,9 @@ export function Screen({
  * The one screen header: a large, quiet title with an optional eyebrow
  * (date, count) and subtitle, plus room on the right for one action or
  * a custom control (the family faces on Start). No card, no border —
- * the title is the header, like a well-made iOS app. Text scales with
- * the system font size instead of clipping.
+ * the title is the header, like a well-made iOS app. Compact page chrome
+ * follows Dynamic Type up to 1.4× so it stays readable without pushing the
+ * primary action off-screen.
  */
 export function ScreenHeader({
   action,
@@ -227,6 +231,7 @@ export function ScreenHeader({
       <View style={styles.headerCopy}>
         {eyebrow ? (
           <Text
+            maxFontSizeMultiplier={1.4}
             numberOfLines={1}
             style={[typography.caption, styles.headerEyebrow]}
           >
@@ -234,6 +239,7 @@ export function ScreenHeader({
           </Text>
         ) : null}
         <Text
+          maxFontSizeMultiplier={1.4}
           numberOfLines={2}
           style={[typography.largeTitle, styles.headerTitle]}
         >
@@ -241,6 +247,7 @@ export function ScreenHeader({
         </Text>
         {subtitle ? (
           <Text
+            maxFontSizeMultiplier={1.4}
             numberOfLines={2}
             style={[typography.timestamp, styles.headerSubtitle]}
           >
@@ -499,6 +506,7 @@ export function Chip({
       accessibilityLabel={accessibilityLabel ?? label}
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      hitSlop={{ bottom: 4, left: 0, right: 0, top: 4 }}
       onPress={() => {
         tap();
         onPress();
@@ -518,6 +526,7 @@ export function Chip({
         />
       ) : null}
       <Text
+        maxFontSizeMultiplier={1.3}
         numberOfLines={1}
         style={[
           styles.chipText,
@@ -578,8 +587,62 @@ export function SegmentedControl({
   }[];
   style?: StyleProp<ViewStyle>;
 }) {
+  const reduceMotion = useReducedMotion();
+  const [layouts, setLayouts] = useState<
+    Record<string, { width: number; x: number }>
+  >({});
+  const indicatorInitialized = useRef(false);
+  const indicatorX = useSharedValue(0);
+  const indicatorWidth = useSharedValue(0);
+  const activeKey = items.find((item) => item.selected)?.label ?? "";
+  const activeLayout = layouts[activeKey];
+
+  useEffect(() => {
+    if (!activeLayout) return;
+    if (!indicatorInitialized.current || reduceMotion) {
+      indicatorX.set(activeLayout.x);
+      indicatorWidth.set(activeLayout.width);
+      indicatorInitialized.current = true;
+      return;
+    }
+    indicatorX.set(withTiming(activeLayout.x, {
+      duration: durations.base,
+      easing: easeInOut,
+    }));
+    indicatorWidth.set(withTiming(activeLayout.width, {
+      duration: durations.base,
+      easing: easeInOut,
+    }));
+  }, [
+    activeLayout,
+    indicatorWidth,
+    indicatorX,
+    reduceMotion,
+  ]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: indicatorX.get() }],
+    width: indicatorWidth.get(),
+  }));
+  const rememberLayout = (
+    key: string,
+    event: LayoutChangeEvent,
+  ) => {
+    const { width, x } = event.nativeEvent.layout;
+    setLayouts((current) => {
+      const previous = current[key];
+      if (previous?.width === width && previous.x === x) return current;
+      return { ...current, [key]: { width, x } };
+    });
+  };
+
   return (
     <View style={[styles.segmented, style]}>
+      <Animated.View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[styles.segmentIndicator, indicatorStyle]}
+      />
       {items.map((item) => {
         const ItemIcon = item.icon;
         return (
@@ -587,10 +650,11 @@ export function SegmentedControl({
             accessibilityRole="button"
             accessibilityState={{ selected: item.selected }}
             key={item.label}
+            onLayout={(event) => rememberLayout(item.label, event)}
             onPress={item.onPress}
             style={({ pressed }) => [
               styles.segment,
-              item.selected && styles.segmentSelected,
+              item.selected && !activeLayout && styles.segmentSelected,
               pressed && styles.segmentPressed,
             ]}
           >
@@ -599,6 +663,8 @@ export function SegmentedControl({
               size={17}
             />
             <Text
+              maxFontSizeMultiplier={1.3}
+              numberOfLines={1}
               style={[
                 styles.segmentText,
                 item.selected && styles.segmentTextSelected,
@@ -680,6 +746,7 @@ export function OrdiloButton({
   size = "default",
   disabled = false,
   icon,
+  accessibilityLabel,
 }: {
   title: string;
   onPress: () => void;
@@ -687,9 +754,11 @@ export function OrdiloButton({
   size?: "default" | "lg";
   disabled?: boolean;
   icon?: ReactNode;
+  accessibilityLabel?: string;
 }) {
   return (
     <SpringPressable
+      accessibilityLabel={accessibilityLabel ?? title}
       accessibilityRole="button"
       disabled={disabled}
       haptic={false}
@@ -705,6 +774,8 @@ export function OrdiloButton({
     >
       {icon}
       <Text
+        maxFontSizeMultiplier={1.4}
+        numberOfLines={1}
         style={[
           typography.body,
           styles.buttonText,
@@ -900,8 +971,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    height: 36,
     justifyContent: "center",
+    minHeight: 36,
     paddingHorizontal: 12,
   },
   chipSelected: {
@@ -956,6 +1027,15 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     padding: spacing.xs,
+    position: "relative",
+  },
+  segmentIndicator: {
+    backgroundColor: colors.harborBlue,
+    borderRadius: radii.base,
+    bottom: spacing.xs,
+    left: 0,
+    position: "absolute",
+    top: spacing.xs,
   },
   segment: {
     alignItems: "center",
@@ -965,6 +1045,7 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     height: 40,
     justifyContent: "center",
+    zIndex: 1,
   },
   segmentSelected: { backgroundColor: colors.harborBlue },
   segmentPressed: { opacity: 0.76 },

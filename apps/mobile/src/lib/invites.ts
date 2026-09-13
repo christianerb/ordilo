@@ -1,3 +1,4 @@
+import { getApiUrl } from "./api";
 import { getSupabase } from "./supabase";
 import { FRIENDLY_ERROR } from "./onboarding";
 
@@ -324,12 +325,21 @@ export async function mergeOwnedFamilyIntoInvite(
   }
 }
 
+/** The shareable web URL for an invite token (same shape as the web). */
+export function buildInviteUrl(token: string): string {
+  return `${getApiUrl()}/invite/${token}`;
+}
+
 /**
  * Create a shareable invite link for the own family (owner-only via RLS).
- * Multi-use, valid 14 days — same defaults as the web action.
+ * Multi-use, valid 14 days — same defaults as the web action. An optional
+ * label ("Für Oma") helps the owner remember who a link was for; it is
+ * stored on the invite row (migration 0083) and only sent when non-empty
+ * so older rows and inserts stay untouched.
  */
 export async function createFamilyInvite(
   familyId: string,
+  label?: string,
 ): Promise<
   { success: true; token: string } | { success: false; error: string }
 > {
@@ -341,9 +351,14 @@ export async function createFamilyInvite(
     return { success: false, error: FRIENDLY_ERROR };
   }
 
+  const trimmedLabel = label?.trim() ?? "";
   const { data, error } = await supabase
     .from("family_invites")
-    .insert({ family_id: familyId, created_by: user.id })
+    .insert({
+      family_id: familyId,
+      created_by: user.id,
+      ...(trimmedLabel ? { label: trimmedLabel } : {}),
+    })
     .select("token")
     .single();
 

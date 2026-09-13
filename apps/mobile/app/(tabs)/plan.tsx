@@ -15,6 +15,8 @@ import {
   List,
   Plus,
   Undo2,
+  UserRound,
+  X,
 } from "lucide-react-native";
 import {
   useCallback,
@@ -25,6 +27,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  ActivityIndicator,
   Alert,
   AppState,
   Pressable,
@@ -32,6 +35,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import ReanimatedSwipeable, {
@@ -91,8 +95,10 @@ import {
   planEntryForEvent,
   planEntryKey,
   planEntryMemberIds,
+  planSnapshotRows,
   type PlanEntry,
 } from "@/src/lib/plan-entries";
+import { cachePlanSnapshot } from "@/src/lib/plan-offline";
 import { useFamily } from "@/src/lib/family-context";
 import { fail, select, success } from "@/src/lib/feedback";
 import {
@@ -101,7 +107,9 @@ import {
   fetchPlannerTasks,
   formatPlanHeaderSubtitle,
   formatTaskDayHint,
+  parseQuickTaskTitle,
   patchTask,
+  resolveKnownMemberId,
   resolveSchedulePreset,
   TASK_SCHEDULE_PRESET_LABELS,
   TASK_SCHEDULE_PRESETS,
@@ -166,12 +174,20 @@ interface UndoState {
  */
 export default function PlanScreen() {
   const router = useRouter();
-  const { tab, task, event } = useLocalSearchParams<{
+  const { create, tab, task, event, person } = useLocalSearchParams<{
     tab?: string;
     /** Deep link: open this task's detail sheet (used by chat actions). */
     task?: string;
     /** Deep link: open this appointment's detail sheet. */
     event?: string;
+    /**
+     * Person context ("Aufgabe für Karina" aus dem Familienprofil):
+     * preselected in the quick entry and in newly opened create forms.
+     * An unknown id is ignored silently.
+     */
+    person?: string;
+    /** Deep link: open the create form directly — "task" or "event". */
+    create?: string;
   }>();
   const reduceMotion = useReducedMotion();
   const { family } = useFamily();
@@ -209,18 +225,30 @@ export default function PlanScreen() {
   const pendingDetailRef = useRef<(() => void) | null>(null);
   /** A deep link ("?event=…") waiting for its row to arrive from the server. */
   const focusRef = useRef<{ kind: "task" | "event"; id: string } | null>(null);
+  /** The "?person=…" context, preselected in quick entry and create forms. */
+  const [personContext, setPersonContext] = useState<string | null>(null);
+  /** A "?create=task|event" request, opened once the first load settled. */
+  const [createRequest, setCreateRequest] = useState<"task" | "event" | null>(null);
   useFocusEffect(useCallback(() => {
     const requested = parsePlanTab(tab);
     const focusTask = typeof task === "string" ? task : null;
     const focusEvent = typeof event === "string" ? event : null;
-    if (!requested && !focusTask && !focusEvent) return;
+    const contextPerson = typeof person === "string" && person ? person : null;
+    const createKind = create === "task" || create === "event" ? create : null;
+    if (!requested && !focusTask && !focusEvent && !contextPerson && !createKind) return;
     setView(requested ?? (focusEvent ? "calendar" : "list"));
     setPersonFilter(null);
     if (focusTask) focusRef.current = { kind: "task", id: focusTask };
     if (focusEvent) focusRef.current = { kind: "event", id: focusEvent };
-    router.setParams({ tab: undefined, task: undefined, event: undefined });
-  }, [event, router, tab, task]));
+    if (contextPerson) setPersonContext(contextPerson);
+    if (createKind) setCreateRequest(createKind);
+    router.setParams({ tab: undefined, task: undefined, event: undefined, person: undefined, create: undefined });
+  }, [create, event, person, router, tab, task]));
   const [assignTask, setAssignTask] = useState<PlannerTask | null>(null);
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickBusy, setQuickBusy] = useState(false);
+  /** The task the quick entry just made — the row the Wann?/Wer? bar points at. */
+  const [quickTaskId, setQuickTaskId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [activeMonth, setActiveMonth] = useState(() => monthStart(new Date()));
   const undoSeqRef = useRef(0);
@@ -261,7 +289,28 @@ export default function PlanScreen() {
         setTasks(taskRows);
         setEvents(eventRows);
         setMembers(memberRows);
-        setTodayStr(todayLocalDate());
+        const loadedToday = todayLocalDate();
+        setTodayStr(loadedToday);
+        // Keep the offline snapshot in step with what the plan shows.
+        // Fire-and-forget: rendering never waits on the cache.
+        try {
+          const snapshotSections = groupPlanEntries(taskRows, eventRows, loadedToday);
+          void cachePlanSnapshot(
+            family.id,
+            planSnapshotRows(
+              [
+                ...snapshotSections.now,
+                ...snapshotSections.next,
+                ...snapshotSections.undated,
+                ...snapshotSections.done,
+              ],
+              memberRows,
+              loadedToday,
+            ),
+          );
+        } catch {
+          // The snapshot is a convenience — it never blocks the plan.
+        }
         if (session?.user.id) {
           const handoffs = await loadTaskHandoffs(family.id, session.user.id);
           setAccepted(handoffs.accepted);
@@ -326,6 +375,87 @@ export default function PlanScreen() {
     () => members.find((member) => member.id === personFilter) ?? null,
     [members, personFilter],
   );
+
+  /**
+   * The "?person=…" context, resolved against the loaded members.
+   * Unknown ids silently fall back to "no person", never to a wrong one.
+   */
+  const personContextMember = useMemo(
+    () => resolveKnownMemberId(members, personContext),
+    [members, personContext],
+  );
+
+  /**
+   * The quick entry ("Neue Aufgabe …"): one line, Enter, done. The new
+   * task shows up immediately and is replaced by the server row when the
+   * write lands; a failure puts the title back into the input.
+   */
+  const submitQuickEntry = useCallback(async () => {
+    if (!family || quickBusy) return;
+    const title = parseQuickTaskTitle(quickTitle);
+    if (!title) return;
+    const assignee = personContextMember;
+    const tempId = `quick-${Date.now()}`;
+    const optimistic: PlannerTask = {
+      id: tempId,
+      family_id: family.id,
+      document_id: null,
+      title,
+      description: null,
+      due_date: null,
+      status: "open",
+      confidence: 1,
+      confirmed: true,
+      created_at: new Date().toISOString(),
+      tags: [],
+      assigned_to: assignee,
+      completed_at: null,
+    };
+    setTasks((prev) => [optimistic, ...prev]);
+    setQuickTitle("");
+    setQuickBusy(true);
+    try {
+      const result = await createTask(family.id, {
+        title,
+        assignedTo: assignee ?? "",
+      });
+      if (!result.success) throw new Error(result.error);
+      setTasks((prev) => prev.map((item) => (item.id === tempId ? result.task : item)));
+      setQuickTaskId(result.task.id);
+      void success();
+    } catch {
+      setTasks((prev) => prev.filter((item) => item.id !== tempId));
+      setQuickTitle(title);
+      void fail();
+      Alert.alert("Das hat nicht geklappt", "Bitte versuche es erneut.");
+    } finally {
+      setQuickBusy(false);
+    }
+  }, [family, personContextMember, quickBusy, quickTitle]);
+
+  /** The fresh quick-entry task the Wann?/Wer? bar belongs to. */
+  const quickTask = useMemo(() => {
+    if (!quickTaskId) return null;
+    const found = tasks.find((item) => item.id === quickTaskId);
+    return found && found.status === "open" ? found : null;
+  }, [quickTaskId, tasks]);
+
+  /**
+   * A "?create=task|event" deep link opens the matching form once the
+   * first load has settled, so the person context prefill resolves
+   * against real members instead of being guessed. Render-time
+   * adjustment (same pattern as the sheets' reopen reset): only this
+   * screen's own state is set, and React re-renders immediately.
+   */
+  if (createRequest && !loading) {
+    setCreateRequest(null);
+    if (createRequest === "task") {
+      setEditingTask(null);
+      setFormOpen(true);
+    } else {
+      setEventFormOpen(true);
+    }
+  }
 
   /** Tasks and appointments in one grouped list — the Liste view. */
   const grouped = useMemo(
@@ -877,6 +1007,54 @@ export default function PlanScreen() {
           <PlanHeader onCreate={openCreateMenu} subtitle={headerSubtitle} />
           <SegmentedControl items={tabItems} style={styles.viewTabs} />
           {personFilterRow}
+          <QuickTaskEntry
+            busy={quickBusy}
+            onChange={setQuickTitle}
+            onSubmit={() => void submitQuickEntry()}
+            value={quickTitle}
+          />
+          {quickTask ? (
+            <View style={styles.quickContext}>
+              <Text numberOfLines={1} style={styles.quickContextTitle}>
+                {quickTask.title}
+              </Text>
+              <Pressable
+                accessibilityHint="Öffnet die Auswahl für das Datum"
+                accessibilityLabel="Wann ist das dran?"
+                accessibilityRole="button"
+                onPress={() => setRescheduleTask(quickTask)}
+                style={({ pressed }) => [
+                  styles.quickContextButton,
+                  pressed && styles.quickContextButtonPressed,
+                ]}
+              >
+                <CalendarDays color={colors.harborBlue} size={16} strokeWidth={2} />
+                <Text style={styles.quickContextAction}>Wann?</Text>
+              </Pressable>
+              <Pressable
+                accessibilityHint="Öffnet die Auswahl für die verantwortliche Person"
+                accessibilityLabel="Wer macht das?"
+                accessibilityRole="button"
+                onPress={() => setAssignTask(quickTask)}
+                style={({ pressed }) => [
+                  styles.quickContextButton,
+                  pressed && styles.quickContextButtonPressed,
+                ]}
+              >
+                <UserRound color={colors.harborBlue} size={16} strokeWidth={2} />
+                <Text style={styles.quickContextAction}>Wer?</Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Schnelleintrag-Hinweis schließen"
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => setQuickTaskId(null)}
+                style={styles.quickContextClose}
+              >
+                <X color={colors.mistDark} size={16} strokeWidth={2} />
+              </Pressable>
+            </View>
+          ) : null}
           {entryCount === 0 ? (
             filterPerson ? (
               <EmptyState
@@ -1020,6 +1198,7 @@ export default function PlanScreen() {
       )}
 
       <TaskFormSheet
+        initialPerson={personContextMember}
         initialTask={editingTask}
         members={members}
         onClose={() => {
@@ -1036,6 +1215,7 @@ export default function PlanScreen() {
           view === "calendar" ? selectedDate : new Date(),
         )}
         event={editingEvent}
+        initialPerson={personContextMember}
         key={editingEvent ? `event-${editingEvent.id}` : "event-new"}
         members={members}
         onClose={() => {
@@ -1195,6 +1375,47 @@ function PlanHeader({ onCreate, subtitle }: { onCreate: () => void; subtitle: st
       subtitle={subtitle}
       title="Plan"
     />
+  );
+}
+
+/**
+ * The one-line quick entry above the sections (TickTick pattern): type
+ * a title, press Enter, and the task exists — unscheduled, with the
+ * current person context if there is one. The full form stays behind
+ * the "+" path; this line is for the thought that cannot wait.
+ */
+function QuickTaskEntry({
+  busy,
+  onChange,
+  onSubmit,
+  value,
+}: {
+  busy: boolean;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  value: string;
+}) {
+  return (
+    <View style={styles.quickEntry}>
+      <Plus color={colors.mistDark} size={18} strokeWidth={2} />
+      <TextInput
+        accessibilityLabel="Neue Aufgabe schnell anlegen"
+        autoCapitalize="sentences"
+        blurOnSubmit={false}
+        editable={!busy}
+        maxLength={200}
+        onChangeText={onChange}
+        onSubmitEditing={onSubmit}
+        placeholder="Neue Aufgabe …"
+        placeholderTextColor={colors.mistDark}
+        returnKeyType="done"
+        style={styles.quickEntryInput}
+        value={value}
+      />
+      {busy ? (
+        <ActivityIndicator color={colors.harborBlue} size="small" />
+      ) : null}
+    </View>
   );
 }
 
@@ -2062,6 +2283,65 @@ const styles = StyleSheet.create({
   },
   personChipRow: { marginBottom: spacing.md, marginHorizontal: -spacing.md },
   personChips: { gap: spacing.xs, paddingHorizontal: spacing.md },
+  quickEntry: {
+    alignItems: "center",
+    backgroundColor: colors.warmWhite,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+    minHeight: 44,
+    paddingHorizontal: spacing.md,
+  },
+  quickEntryInput: {
+    color: colors.graphite,
+    flex: 1,
+    minHeight: 44,
+    paddingVertical: spacing.sm,
+    ...typography.body,
+  },
+  quickContext: {
+    alignItems: "center",
+    backgroundColor: colors.sand,
+    borderColor: colors.mistLight,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.xs,
+    marginBottom: spacing.md,
+    marginTop: -spacing.sm,
+    minHeight: 44,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.xs,
+    paddingVertical: spacing.xs,
+  },
+  quickContextTitle: {
+    color: colors.graphite,
+    flex: 1,
+    minWidth: 0,
+    ...typography.timestamp,
+  },
+  quickContextButton: {
+    alignItems: "center",
+    borderRadius: radii.base,
+    flexDirection: "row",
+    gap: 4,
+    minHeight: 36,
+    paddingHorizontal: spacing.sm,
+  },
+  quickContextButtonPressed: { backgroundColor: colors.sandWarm },
+  quickContextAction: {
+    color: colors.harborBlue,
+    ...typography.label,
+  },
+  quickContextClose: {
+    alignItems: "center",
+    height: 36,
+    justifyContent: "center",
+    width: 36,
+  },
   taskBody: {
     flex: 1,
     gap: 2,

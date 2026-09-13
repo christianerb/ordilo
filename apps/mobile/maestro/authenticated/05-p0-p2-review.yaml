@@ -1,0 +1,49 @@
+appId: com.ordilo.app
+---
+# QA pass for the P0–P2 review work. Precondition: signed in to the
+# disposable fixture, onboarding complete, some documents/tasks present.
+- launchApp
+
+# --- P0.2: Posteingang is a real inbox ---
+- openLink: "ordilo://posteingang"
+- assertVisible: "Eingegangene Post"
+- assertVisible: "Eure Familienadresse"
+- takeScreenshot: "qa-posteingang"
+
+# --- P0.4 + P0.3: quick task entry in Plan ---
+- openLink: "ordilo://plan"
+- assertVisible: "Neue Aufgabe …"
+- tapOn: "Neue Aufgabe …"
+- inputText: "QA-Aufgabe Lauf Drei"
+- pressKey: enter
+- assertVisible: "QA-Aufgabe Lauf Drei"
+- extendedWaitUntil:
+    visible: "Wann ist das dran?"
+    timeout: 15000
+- assertVisible: "Wer macht das?"
+- takeScreenshot: "qa-plan-quickentry"
+
+# --- P1.2: Neuigkeiten on Start (optional — needs activity rows) ---
+- openLink: "ordilo://"
+- scrollUntilVisible:
+    element: "Neuigkeiten"
+    visibilityPercentage: 30
+    centerElement: true
+    optional: true
+- takeScreenshot: "qa-start"
+
+# --- P1.1b: notification categories in Einstellungen ---
+- openLink: "ordilo://einstellungen"
+- scrollUntilVisible:
+    element: "Übergaben"
+    visibilityPercentage: 30
+    centerElement: true
+- assertVisible: "Fristen"
+- assertVisible: "Verarbeitung"
+- takeScreenshot: "qa-einstellungen-mitteilungen"
+
+# --- P2.3: offline screen with plan snapshot (optional) ---
+- openLink: "ordilo://offline"
+- assertVisible: "Ohne Internet"
+- assertVisible: "Plan"
+- takeScreenshot: "qa-offline"

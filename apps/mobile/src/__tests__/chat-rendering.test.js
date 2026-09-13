@@ -21,6 +21,39 @@ describe("native conversation rendering", () => {
     expect(stop).toHaveBeenCalledTimes(1);
     await act(async () => tree.unmount());
   });
+  it("uses one primary composer action for live voice and sending", async () => {
+    const live = jest.fn();
+    const send = jest.fn();
+    const props = {
+      busy: false,
+      inputRef: { current: null },
+      onChange: () => {},
+      onLiveStart: live,
+      onSend: send,
+    };
+    let tree;
+    await act(async () => {
+      tree = renderer.create(<ChatComposer {...props} value="" />);
+    });
+    const liveControl = tree.root.findByProps({
+      accessibilityLabel: "Live mit Ordilo sprechen, Premium",
+    });
+    expect(liveControl.props.disabled).toBe(false);
+    act(() => liveControl.props.onPress());
+    expect(live).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      tree.update(<ChatComposer {...props} value="Was steht morgen an?" />);
+    });
+    expect(tree.root.findAllByProps({
+      accessibilityLabel: "Live mit Ordilo sprechen, Premium",
+    })).toHaveLength(0);
+    const sendControl = tree.root.findByProps({ accessibilityLabel: "Frage senden" });
+    expect(sendControl.props.disabled).toBe(false);
+    act(() => sendControl.props.onPress());
+    expect(send).toHaveBeenCalledTimes(1);
+    await act(async () => tree.unmount());
+  });
   it("renders bold values and table cells without exposing Markdown syntax", async () => {
     let tree;
     await act(async () => { tree = renderer.create(<ChatMarkdown text={"Gültig bis **31. August 2027**.\n\n| Person | Ticket |\n| --- | --- |\n| Hannah | gültig |"} />); });

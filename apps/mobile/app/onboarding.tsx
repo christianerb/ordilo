@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Camera,
   Check,
+  Share2,
   UserPlus,
 } from "lucide-react-native";
 import { useCallback, useEffect, useState } from "react";
@@ -13,6 +14,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -26,6 +28,7 @@ import { OrdiloMark } from "@/src/components/ordilo-mark";
 import { OrdiloButton, Screen } from "@/src/components/ui";
 import { useFamily } from "@/src/lib/family-context";
 import { isOnboardingComplete } from "@/src/lib/family";
+import { buildInviteUrl, createFamilyInvite } from "@/src/lib/invites";
 import {
   addMember,
   completeOnboarding,
@@ -33,7 +36,11 @@ import {
   listMembers,
   type MemberRow,
 } from "@/src/lib/onboarding-actions";
-import { ROLE_CHIPS } from "@/src/lib/onboarding";
+import {
+  nextOnboardingStep,
+  ROLE_CHIPS,
+  type OnboardingStep,
+} from "@/src/lib/onboarding";
 import {
   stepEntering,
   stepExiting,
@@ -47,16 +54,15 @@ import { success } from "@/src/lib/feedback";
  * (src/app/(app)/onboarding/onboarding-flow.tsx), same steps and copy:
  *
  * 1. "Wer seid ihr?" — family name + own first name, ONE submit.
- * 2. "Wer gehört dazu?" — optional quick-add loop with one-tap role
- *    chips; finishing is always one tap away.
+ * 2. "Wen gibt es noch in eurer Familie?" — optional quick-add loop with
+ *    one-tap role chips plus "Einladungslink teilen" for the accounts of
+ *    partners or grandparents; skipping ("Später") is always one tap away.
  * 3. Ready springboard — straight into the first scan.
  *
  * The flow resumes where a previous run stopped: the app gate routes here
  * whenever the family exists but onboarding_completed_at is NULL, and this
  * screen then starts directly on the quick-add step with members loaded.
  */
-
-type OnboardingStep = "family-name" | "add-member" | "ready";
 
 const NETWORK_ERROR = "Das hat nicht geklappt. Bitte versuch's nochmal.";
 
@@ -94,6 +100,7 @@ export default function OnboardingScreen() {
   const [membersError, setMembersError] = useState<string | null>(null);
   const [membersReloadKey, setMembersReloadKey] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [inviteSharing, setInviteSharing] = useState(false);
 
   // Load existing members when resuming into the quick-add step. A failed
   // load is shown with a retry — never silently treated as "no members",
@@ -154,7 +161,7 @@ export default function OnboardingScreen() {
 
       setFamilyNameInput("");
       setStepDirection("forward");
-      setStepChoice("ready");
+      setStepChoice(nextOnboardingStep("family-name"));
     } catch {
       setServerError(NETWORK_ERROR);
     } finally {
@@ -199,6 +206,29 @@ export default function OnboardingScreen() {
       setIsSubmitting(false);
     }
   }, [familyId, memberName, memberRole]);
+
+  // One tap creates a fresh link and opens the system share sheet — the
+  // same link the Familie screen creates; nothing is sent by e-mail.
+  const handleInviteShare = useCallback(async () => {
+    if (!familyId || inviteSharing) return;
+    setServerError(null);
+    setInviteSharing(true);
+    try {
+      const result = await createFamilyInvite(familyId);
+      if (!result.success) {
+        setServerError(result.error);
+        return;
+      }
+      await Share.share({
+        title: "Ordilo — Familieneinladung",
+        message: `Komm in unseren Ordilo-Familienordner:\n${buildInviteUrl(result.token)}`,
+      });
+    } catch {
+      setServerError(NETWORK_ERROR);
+    } finally {
+      setInviteSharing(false);
+    }
+  }, [familyId, inviteSharing]);
 
   // ---------------------------------------------------------------------------
   // Step 3: complete + springboard into the scanner
@@ -349,8 +379,9 @@ export default function OnboardingScreen() {
             >
               <OnboardingProgress currentStep={2} />
               <MascotBubble>
-                {familyName ? `Schön, ${familyName}!` : "Schön!"} Wer gehört
-                noch dazu? Du kannst das auch jederzeit später ergänzen.
+                {familyName ? `Schön, ${familyName}!` : "Schön!"} Wen gibt es
+                noch in eurer Familie? Trag ein, wer dazugehört, oder teile
+                den Einladungslink — beides geht auch später.
               </MascotBubble>
 
               <View style={styles.card}>
@@ -444,12 +475,31 @@ export default function OnboardingScreen() {
                   variant="outline"
                 />
 
+                <View style={styles.fieldGroup}>
+                  <Text style={[typography.label, styles.hint]}>
+                    Mit einem Link bekommen Partner oder Großeltern ein
+                    eigenes Konto und sehen alles.
+                  </Text>
+                  <OrdiloButton
+                    disabled={isSubmitting || inviteSharing}
+                    icon={<Share2 color={colors.graphite} size={18} />}
+                    onPress={() => void handleInviteShare()}
+                    size="lg"
+                    title={
+                      inviteSharing
+                        ? "Link wird erstellt…"
+                        : "Einladungslink teilen"
+                    }
+                    variant="outline"
+                  />
+                </View>
+
                 <OrdiloButton
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || inviteSharing}
                   icon={<Check color={colors.warmWhite} size={18} />}
                   onPress={() => {
                     setStepDirection("forward");
-                    setStepChoice("ready");
+                    setStepChoice(nextOnboardingStep("add-member"));
                   }}
                   size="lg"
                   title={
@@ -493,7 +543,6 @@ export default function OnboardingScreen() {
                   isSubmitting ? "Einen Moment…" : "Erstes Dokument scannen"
                 }
               />
-              <OrdiloButton title="Familie ergänzen" variant="ghost" disabled={isSubmitting} onPress={() => { setStepDirection("backward"); setStepChoice("add-member"); }} />
               <OrdiloButton
                 disabled={isSubmitting}
                 onPress={() => void finishOnboarding(false)}

@@ -60,6 +60,24 @@ export type NormalizedMemberInput = {
 export const FRIENDLY_ERROR =
   "Etwas ist schiefgelaufen. Bitte versuche es erneut.";
 
+/**
+ * The onboarding step sequence. After the family exists, the members step
+ * ("Wen gibt es noch in eurer Familie?") always comes before the ready
+ * springboard — it is the one optional stop, never a wall: quick-add,
+ * sharing an invite link, and "Später" all move forward from it. A run
+ * that stops mid-flow resumes on "add-member" (the app gate routes any
+ * family without the completion marker back into the flow), and a
+ * completed family never re-enters at all.
+ */
+export const ONBOARDING_STEPS = ["family-name", "add-member", "ready"] as const;
+export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+
+/** The next step in ONBOARDING_STEPS; the last step maps to itself. */
+export function nextOnboardingStep(step: OnboardingStep): OnboardingStep {
+  const index = ONBOARDING_STEPS.indexOf(step);
+  return ONBOARDING_STEPS[Math.min(index + 1, ONBOARDING_STEPS.length - 1)];
+}
+
 export function validateFamilyName(
   name: string,
 ):

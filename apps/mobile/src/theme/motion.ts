@@ -62,6 +62,17 @@ export function contentEntering(): BaseAnimationBuilder {
 }
 
 /**
+ * A frequent in-place state switch gets only a quick opacity cue. Tabs and
+ * screens still use their platform behavior; this is for segmented lenses
+ * whose content would otherwise teleport.
+ */
+export function stateEntering(): BaseAnimationBuilder {
+  return FadeIn.duration(durations.fast)
+    .easing(EASE_OUT)
+    .reduceMotion(ReduceMotion.Never);
+}
+
+/**
  * Rare, meaningful multi-step flows use 12px of direction to explain
  * progress. Reduce Motion keeps the state continuity but drops travel.
  */

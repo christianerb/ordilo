@@ -2,16 +2,20 @@ import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
+  AlarmClock,
+  ArrowLeftRight,
   Bell,
   ChevronRight,
   Download,
   EyeOff,
+  FileCheck,
   FileText,
   LogOut,
   Mail,
   Scale,
   ScanFace,
   Trash2,
+  Users,
 } from "lucide-react-native";
 import { useCallback, useState, type ReactNode } from "react";
 import {
@@ -46,6 +50,10 @@ import {
   enablePushNotifications,
   getPushPermission,
   isPushRegistered,
+  loadNotificationPreferences,
+  setNotificationPreference,
+  type NotificationCategory,
+  type NotificationPreferences,
   type PushPermissionState,
 } from "@/src/lib/notifications";
 import { useSession } from "@/src/lib/session";
@@ -74,6 +82,11 @@ export default function EinstellungenScreen() {
   const [pushBusy, setPushBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
   const [signOutOpen, setSignOutOpen] = useState(false);
+  const [categoryPrefs, setCategoryPrefs] =
+    useState<NotificationPreferences | null>(null);
+  const [categoryBusy, setCategoryBusy] = useState<NotificationCategory | null>(
+    null,
+  );
 
   // Re-read on focus: the user may have just come back from the iOS
   // system settings, where they changed the permission behind our back.
@@ -81,8 +94,40 @@ export default function EinstellungenScreen() {
     useCallback(() => {
       void getPushPermission().then(setPushState);
       void isPushRegistered().then(setPushRegistered).catch(() => setPushRegistered(false));
-    }, []),
+      if (family) {
+        void loadNotificationPreferences(family.id)
+          .then(setCategoryPrefs)
+          .catch(() => setCategoryPrefs(null));
+      }
+    }, [family]),
   );
+
+  // Optimistic toggle; a failed write snaps the switch back.
+  async function handleCategoryToggle(
+    category: NotificationCategory,
+    enabled: boolean,
+  ) {
+    if (!family || categoryBusy) return;
+    const previous = categoryPrefs;
+    setCategoryBusy(category);
+    setCategoryPrefs((current) =>
+      current ? { ...current, [category]: enabled } : current,
+    );
+    try {
+      await setNotificationPreference({ familyId: family.id, category, enabled });
+    } catch (error) {
+      setCategoryPrefs(previous);
+      haptics.warning();
+      Alert.alert(
+        "Nicht gespeichert",
+        error instanceof Error
+          ? error.message
+          : "Deine Auswahl konnte nicht gespeichert werden. Bitte versuch es nochmal.",
+      );
+    } finally {
+      setCategoryBusy(null);
+    }
+  }
 
   async function handlePushToggle(enable: boolean) {
     if (pushBusy) return;
@@ -206,7 +251,10 @@ export default function EinstellungenScreen() {
           />
         </SettingsSection>
 
-        <SettingsSection title="Mitteilungen">
+        <SettingsSection
+          footer="Ordilo meldet sich nur für das, was ihr auswählt."
+          title="Mitteilungen"
+        >
           <SettingsToggleRow
             description={
               pushState === "granted"
@@ -221,6 +269,23 @@ export default function EinstellungenScreen() {
             title="Mitteilungen"
             value={pushState === "granted" && pushRegistered}
           />
+          {family && categoryPrefs
+            ? NOTIFICATION_CATEGORY_ROWS.map((row) => (
+                <View key={row.category}>
+                  <SettingsDivider />
+                  <SettingsToggleRow
+                    description={row.description}
+                    disabled={categoryBusy !== null}
+                    icon={row.icon}
+                    onToggle={(value) =>
+                      void handleCategoryToggle(row.category, value)
+                    }
+                    title={row.title}
+                    value={categoryPrefs[row.category]}
+                  />
+                </View>
+              ))
+            : null}
         </SettingsSection>
 
         <SettingsSection title="Rechtliches">
@@ -438,17 +503,61 @@ function DeleteZone({
 // Rows and sections
 // ---------------------------------------------------------------------------
 
+/**
+ * The four notification categories of public.notification_preferences
+ * (migration 0083), in the order a family thinks about them.
+ */
+const NOTIFICATION_CATEGORY_ROWS: {
+  category: NotificationCategory;
+  title: string;
+  description: string;
+  icon: ReactNode;
+}[] = [
+  {
+    category: "deadlines",
+    title: "Fristen",
+    description: "Wenn eine Frist nah ist oder etwas überfällig wird.",
+    icon: <AlarmClock color={colors.harborBlue} size={20} strokeWidth={1.75} />,
+  },
+  {
+    category: "handoffs",
+    title: "Übergaben",
+    description: "Wenn dir jemand aus der Familie etwas übergibt.",
+    icon: <ArrowLeftRight color={colors.harborBlue} size={20} strokeWidth={1.75} />,
+  },
+  {
+    category: "processing",
+    title: "Verarbeitung",
+    description: "Wenn Ordilo ein Dokument fertig gelesen hat.",
+    icon: <FileCheck color={colors.harborBlue} size={20} strokeWidth={1.75} />,
+  },
+  {
+    category: "family",
+    title: "Familie",
+    description: "Wenn jemand dazukommt oder etwas mit euch teilt.",
+    icon: <Users color={colors.harborBlue} size={20} strokeWidth={1.75} />,
+  },
+];
+
 function SettingsSection({
   children,
+  footer,
   title,
 }: {
   children: ReactNode;
+  /** Quiet helper line under the card. */
+  footer?: string;
   title: string;
 }) {
   return (
     <View style={styles.section}>
       <Text style={[typography.label, styles.sectionTitle]}>{title}</Text>
       <View style={styles.sectionCard}>{children}</View>
+      {footer ? (
+        <Text style={[typography.timestamp, styles.sectionFooter]}>
+          {footer}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -541,6 +650,10 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   sectionTitle: {
+    color: colors.mistDark,
+    paddingHorizontal: spacing.xs,
+  },
+  sectionFooter: {
     color: colors.mistDark,
     paddingHorizontal: spacing.xs,
   },

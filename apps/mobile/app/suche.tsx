@@ -8,11 +8,10 @@ import {
   useAudioRecorder,
   useAudioRecorderState,
 } from "expo-audio";
+import { randomUUID } from "expo-crypto";
 import {
   ChevronDown,
-  Crown,
   History,
-  AudioLines,
   MessageCircle,
   Plus,
   Sparkles,
@@ -22,7 +21,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
+  Alert,
   AppState,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -348,7 +349,7 @@ export default function SucheScreen() {
       retryOperationId?: string,
     ) => {
       if (!family) return null;
-      const operationId = retryOperationId ?? crypto.randomUUID();
+      const operationId = retryOperationId ?? randomUUID();
       chatOperationIds.current.set(assistantMessage.id, operationId);
       lastQuestion.current = question;
       void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -751,6 +752,18 @@ export default function SucheScreen() {
   });
   const liveActive = live.status !== "idle";
 
+  /** iOS and Android both open this app's system settings; the alert is
+   *  the fallback for builds where the intent is rejected. */
+  const openMicSettings = useCallback(() => {
+    void Haptics.selectionAsync();
+    Linking.openSettings().catch(() => {
+      Alert.alert(
+        "Mikrofon erlauben",
+        "Öffne die Einstellungen deines Geräts und erlaube Ordilo das Mikrofon.",
+      );
+    });
+  }, []);
+
   const openContact = useCallback(
     (contactId: string) => {
       router.push(`/contacts/${contactId}`);
@@ -996,52 +1009,56 @@ export default function SucheScreen() {
               {liveActive ? (
                 <LiveConversationBar
                   lastTranscript={live.lastTranscript}
+                  muted={live.muted}
                   onStop={live.stop}
+                  onToggleMute={() => {
+                    void Haptics.selectionAsync();
+                    live.toggleMute();
+                  }}
+                  previousTranscript={live.previousTranscript}
                   status={live.status}
                 />
               ) : (
                 <>
-                  <Pressable
-                    accessibilityHint="Startet ein Gespräch mit gesprochenen Antworten"
-                    accessibilityLabel="Live mit Ordilo sprechen, Premium"
-                    accessibilityRole="button"
-                    disabled={busy}
-                    onPress={() => {
+                  {voiceError ? (
+                    <View style={styles.voiceErrorBlock}>
+                      <Text accessibilityRole="alert" style={styles.voiceError}>
+                        {voiceError}
+                      </Text>
+                      {live.micBlocked ? (
+                        <Pressable
+                          accessibilityHint="Öffnet die Geräte-Einstellungen für Ordilo"
+                          accessibilityLabel="Einstellungen öffnen"
+                          accessibilityRole="button"
+                          hitSlop={8}
+                          onPress={openMicSettings}
+                          style={styles.voiceErrorAction}
+                        >
+                          <Text style={styles.voiceErrorActionText}>
+                            Einstellungen öffnen
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  ) : null}
+                  <ChatComposer
+                    busy={busy}
+                    inputRef={inputRef}
+                    onChange={setInput}
+                    onLiveStart={() => {
                       setVoiceError(null);
                       void live.start();
                     }}
-                    style={({ pressed }) => [
-                      styles.liveStart,
-                      pressed && styles.pressed,
-                      busy && styles.liveStartDisabled,
-                    ]}
-                  >
-                    <AudioLines color={colors.harborBlue} size={18} />
-                    <Text style={styles.liveStartText}>Live mit Ordilo sprechen</Text>
-                    <View style={styles.premiumBadge}>
-                      <Crown color={colors.harborBlue} size={12} />
-                      <Text style={styles.premiumBadgeText}>Premium</Text>
-                    </View>
-                  </Pressable>
-              {voiceError ? (
-                <Text accessibilityRole="alert" style={styles.voiceError}>
-                  {voiceError}
-                </Text>
-              ) : null}
-              <ChatComposer
-                busy={busy}
-                inputRef={inputRef}
-                onChange={setInput}
-                onSend={() => void send(input)}
-                onStop={() => chatAbortRef.current?.abort()}
-                onVoiceStart={() => void startVoice()}
-                onVoiceCancel={() => void discardVoiceRecording()}
-                onVoiceFinish={() => void finishVoice()}
-                value={input}
-                voiceDurationMillis={recorderState.durationMillis}
-                voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
-                voiceStatus={voiceStatus}
-              />
+                    onSend={() => void send(input)}
+                    onStop={() => chatAbortRef.current?.abort()}
+                    onVoiceStart={() => void startVoice()}
+                    onVoiceCancel={() => void discardVoiceRecording()}
+                    onVoiceFinish={() => void finishVoice()}
+                    value={input}
+                    voiceDurationMillis={recorderState.durationMillis}
+                    voiceLevel={Math.max(0, Math.min(1, ((recorderState.metering ?? -60) + 60) / 60))}
+                    voiceStatus={voiceStatus}
+                  />
                 </>
               )}
           </>}>
@@ -1439,36 +1456,16 @@ const styles = StyleSheet.create({
     gap: spacing.xs,
     paddingTop: spacing.sm,
   },
-  liveStart: {
-    alignItems: "center",
-    alignSelf: "center",
-    backgroundColor: colors.washSageSoft,
-    borderColor: colors.harborLine,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 40,
-    paddingHorizontal: 14,
-  },
-  liveStartDisabled: { opacity: 0.5 },
-  liveStartText: {
-    color: colors.harborBlueDarker,
-    ...typography.label,
-  },
-  premiumBadge: {
-    alignItems: "center",
-    backgroundColor: colors.warmWhite,
-    borderRadius: radii.pill,
-    flexDirection: "row",
-    gap: 3,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-  },
-  premiumBadgeText: {
-    color: colors.harborBlue,
-    ...typography.caption,
-  },
   voiceError: { color: colors.destructive, ...typography.label },
+  voiceErrorBlock: { gap: spacing.xs },
+  voiceErrorAction: {
+    alignSelf: "flex-start",
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  voiceErrorActionText: {
+    color: colors.harborBlue,
+    ...typography.title,
+  },
   pressed: { opacity: 0.76 },
 });

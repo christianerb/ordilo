@@ -1,4 +1,5 @@
-import { setAudioModeAsync } from "expo-audio";
+import { AudioModule, setAudioModeAsync } from "expo-audio";
+import { randomUUID } from "expo-crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState } from "react-native";
 import {
@@ -75,6 +76,13 @@ export function useNativeLiveConversation({
 }) {
   const [status, setStatus] = useState<LiveConversationStatus>("idle");
   const [lastTranscript, setLastTranscript] = useState("");
+  const [previousTranscript, setPreviousTranscript] = useState("");
+  const [muted, setMuted] = useState(false);
+  // True when the microphone is denied and iOS will not ask again — the
+  // only way forward is the system settings, so the screen can offer that.
+  const [micBlocked, setMicBlocked] = useState(false);
+  const lastTranscriptRef = useRef("");
+  const mutedRef = useRef(false);
   const peerRef = useRef<RTCPeerConnection | null>(null);
   const microphoneRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
@@ -158,7 +166,11 @@ export function useNativeLiveConversation({
     remoteStreamRef.current?.release();
     remoteStreamRef.current = null;
     void setAudioModeAsync({ allowsRecording: false }).catch(() => undefined);
+    lastTranscriptRef.current = "";
+    mutedRef.current = false;
     setLastTranscript("");
+    setPreviousTranscript("");
+    setMuted(false);
     setStatus("idle");
   }, [familyId]);
 
@@ -181,6 +193,20 @@ export function useNativeLiveConversation({
 
   const stop = useCallback(() => stopSession("user"), [stopSession]);
 
+  /**
+   * Local mute: disabling the audio track stops the microphone's RTP frames
+   * at the device, so GPT Live hears silence while the session stays open.
+   * No server change needed; the remote side simply waits for speech again.
+   */
+  const toggleMute = useCallback(() => {
+    const next = !mutedRef.current;
+    mutedRef.current = next;
+    for (const track of microphoneRef.current?.getAudioTracks() ?? []) {
+      track.enabled = !next;
+    }
+    setMuted(next);
+  }, []);
+
   const fail = useCallback(
     (message: string) => {
       stopSession("error");
@@ -195,7 +221,7 @@ export function useNativeLiveConversation({
     channel.send(
       JSON.stringify({
         type: "session.commentary.append",
-        event_id: crypto.randomUUID(),
+        event_id: randomUUID(),
         delegation_id: delegationId,
         content,
       }),
@@ -209,6 +235,7 @@ export function useNativeLiveConversation({
       return;
     }
     turnRunningRef.current = true;
+    lastTranscriptRef.current = turn.transcript;
     setLastTranscript(turn.transcript);
     setStatus("thinking");
     try {
@@ -253,7 +280,10 @@ export function useNativeLiveConversation({
     if (peerRef.current) return;
     const generation = ++generationRef.current;
     setStatus("connecting");
+    lastTranscriptRef.current = "";
     setLastTranscript("");
+    setPreviousTranscript("");
+    setMicBlocked(false);
 
     const { data } = await getSupabase().auth.getSession();
     const token = data.session?.access_token;
@@ -306,8 +336,15 @@ export function useNativeLiveConversation({
         if (event.type === "session.started") {
           setStatus("listening");
         } else if (event.type === "session.input_transcript.delta") {
+          // A fresh spoken turn begins: the finished line moves up as the
+          // previous transcript so the bar can show the last two turns.
+          if (!transcriptRef.current && lastTranscriptRef.current) {
+            setPreviousTranscript(lastTranscriptRef.current);
+          }
           transcriptRef.current += event.delta ?? "";
-          setLastTranscript(transcriptRef.current.trim());
+          const current = transcriptRef.current.trim();
+          lastTranscriptRef.current = current;
+          setLastTranscript(current);
           setStatus("listening");
         } else if (event.type === "session.delegation.created") {
           const delegationId = event.delegation?.id;
@@ -343,7 +380,7 @@ export function useNativeLiveConversation({
       const sdp = peer.localDescription?.sdp;
       if (!sdp) throw new Error("Missing SDP");
 
-      const operationId = crypto.randomUUID();
+      const operationId = randomUUID();
       stopReasonRef.current = null;
       providerSecondsRef.current = 0;
       const setupAbort = new AbortController();
@@ -403,9 +440,23 @@ export function useNativeLiveConversation({
         session.max_duration_ms ?? FALLBACK_MAX_DURATION_MS,
       );
     } catch {
-      if (generation === generationRef.current) {
-        fail("Die Live-Verbindung konnte nicht aufgebaut werden.");
+      if (generation !== generationRef.current) return;
+      // A denied microphone lands here too. Ask the system which failure it
+      // was so the screen can offer the way into the settings when iOS will
+      // not show the permission prompt again.
+      const permission = await AudioModule.getRecordingPermissionsAsync()
+        .catch(() => null);
+      if (generation !== generationRef.current) return;
+      if (permission && !permission.granted) {
+        setMicBlocked(!permission.canAskAgain);
+        fail(
+          permission.canAskAgain
+            ? "Bitte erlaube Ordilo den Zugriff auf dein Mikrofon."
+            : "Ordilo darf das Mikrofon nicht benutzen. Erlaube es in den Einstellungen deines Geräts.",
+        );
+        return;
       }
+      fail("Die Live-Verbindung konnte nicht aufgebaut werden.");
     }
   }
 
@@ -425,5 +476,14 @@ export function useNativeLiveConversation({
     return () => subscription.remove();
   }, [stopSession]);
 
-  return { lastTranscript, start, status, stop };
+  return {
+    lastTranscript,
+    previousTranscript,
+    micBlocked,
+    muted,
+    start,
+    status,
+    stop,
+    toggleMute,
+  };
 }

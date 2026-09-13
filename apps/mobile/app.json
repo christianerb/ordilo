@@ -15,6 +15,7 @@
         "applinks:www.ordilo.de"
       ],
       "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true,
         "NSCameraUsageDescription": "Ordilo braucht die Kamera, um Dokumente zu scannen.",
         "NSFaceIDUsageDescription": "Ordilo sperrt die App auf Wunsch mit Face ID, damit nur du die Dokumente deiner Familie siehst.",
         "NSLocationWhenInUseUsageDescription": "Ordilo verwendet deinen Standort nicht. Diese Beschreibung ist f\u00fcr die Scanner-Bibliothek erforderlich.",

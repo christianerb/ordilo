@@ -1,5 +1,6 @@
 import {
   ArrowUpRight,
+  AudioLines,
   CalendarPlus,
   Check,
   ChevronDown,
@@ -874,6 +875,7 @@ export function ChatComposer({
   busy,
   inputRef,
   onChange,
+  onLiveStart,
   onSend,
   onStop,
   onVoiceStart,
@@ -887,6 +889,7 @@ export function ChatComposer({
   busy: boolean;
   inputRef: React.RefObject<TextInput | null>;
   onChange: (value: string) => void;
+  onLiveStart?: () => void;
   onSend: () => void;
   onStop?: () => void;
   onVoiceStart?: () => void;
@@ -902,6 +905,14 @@ export function ChatComposer({
   const recording = voiceStatus === "recording";
   const voiceWorking = voiceStatus === "starting" || voiceStatus === "transcribing";
   const voiceEnabled = !busy && !voiceWorking;
+  const primaryDisabled = !busy && !canSend && (!onLiveStart || !voiceEnabled);
+  const primaryLabel = busy
+    ? "Antwort stoppen"
+    : canSend
+      ? "Frage senden"
+      : onLiveStart
+        ? "Live mit Ordilo sprechen, Premium"
+        : "Frage senden";
   return (
     <View style={styles.composerStack}>
       {recording ? (
@@ -953,25 +964,31 @@ export function ChatComposer({
                 <Mic color={colors.harborBlue} size={19} strokeWidth={2.2} />
               )}
             </Pressable>
-            {(
-              <Pressable
-                accessibilityLabel={busy ? "Antwort stoppen" : "Frage senden"}
-                accessibilityRole="button"
-                onPress={busy ? onStop : onSend}
-                disabled={!busy && !canSend}
-                style={({ pressed }) => [
-                  styles.composerSend,
-                  !busy && !canSend && styles.composerSendDisabled,
-                  pressed && styles.pressed,
-                ]}
-              >
-                {busy ? (
-                  <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
-                ) : (
-                  <Send color={colors.warmWhite} size={18} strokeWidth={2} />
-                )}
-              </Pressable>
-            )}
+            <Pressable
+              accessibilityHint={
+                !busy && !canSend && onLiveStart
+                  ? "Startet ein Gespräch mit gesprochenen Antworten"
+                  : undefined
+              }
+              accessibilityLabel={primaryLabel}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: primaryDisabled }}
+              onPress={busy ? onStop : canSend ? onSend : onLiveStart}
+              disabled={primaryDisabled}
+              style={({ pressed }) => [
+                styles.composerSend,
+                primaryDisabled && styles.composerSendDisabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              {busy ? (
+                <Square color={colors.warmWhite} fill={colors.warmWhite} size={15} />
+              ) : canSend || !onLiveStart ? (
+                <Send color={colors.warmWhite} size={18} strokeWidth={2} />
+              ) : (
+                <AudioLines color={colors.warmWhite} size={19} strokeWidth={2.2} />
+              )}
+            </Pressable>
           </View>
         </View>
       )}

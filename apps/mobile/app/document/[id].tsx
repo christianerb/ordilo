@@ -7,7 +7,6 @@ import { BottomSheetModalProvider } from "@gorhom/bottom-sheet";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { confirmedDocumentOutcomes } from "@/src/lib/document-review";
-import { enablePushNotifications, isPushRegistered } from "@/src/lib/notifications";
 import { loadPersistedScanQueue } from "@/src/lib/scan";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
@@ -109,6 +108,32 @@ import { colors, radii, sizes, spacing, typography } from "@/src/theme/tokens";
 
 type Icon = typeof Tag;
 
+/** Pipeline statuses in which the document is still becoming reviewable. */
+const STILL_PROCESSING = new Set([
+  "uploaded",
+  "ocr_processing",
+  "ocr_done",
+  "analyzing",
+]);
+
+/**
+ * Ask the offline copy to follow a fresh save. `refreshOfflineCopy` is
+ * added to offline-documents by the offline worker; until that export
+ * exists — or if a reload ever loses it — the refresh is simply skipped.
+ * A saved correction or confirmation must never wait on an offline copy,
+ * so this is fire-and-forget and swallows every failure.
+ */
+function refreshOfflineCopyQuietly(documentId: string): void {
+  void import("@/src/lib/offline-documents")
+    .then((offline) => {
+      const refresh = (
+        offline as { refreshOfflineCopy?: (id: string) => Promise<unknown> }
+      ).refreshOfflineCopy;
+      return refresh ? refresh(documentId) : undefined;
+    })
+    .catch(() => undefined);
+}
+
 /**
  * A document, understood first. The screen leads with what Ordilo made of
  * it — title, one-line meaning, whom it concerns — and then "was das
@@ -124,10 +149,18 @@ export default function DocumentReviewScreen() {
   const largeText = fontScale > 1.3;
   const { family } = useFamily();
   const { session } = useSession();
-  const { id, source } = useLocalSearchParams<{
+  const { id, source, from, person } = useLocalSearchParams<{
     id: string;
     source?: string;
+    /** "intake" marks an arrival straight from the scan/email handoff. */
+    from?: string;
+    /** Family member the intake was started for; prefills an unlinked person. */
+    person?: string;
   }>();
+  // Both spellings mean "fresh from the intake": the review starts in the
+  // overview, keeps an eye on unfinished processing, and offers the scan
+  // loop after confirming.
+  const fromIntake = source === "scan" || from === "intake";
   const [document, setDocument] = useState<DocumentReview | null>(null);
   const [members, setMembers] = useState<FamilyMemberOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -147,9 +180,6 @@ export default function DocumentReviewScreen() {
   const [summaryExpanded, setSummaryExpanded] = useState(false);
   const [calendarDates, setCalendarDates] = useState<Set<number>>(new Set());
   const [remainingImports, setRemainingImports] = useState(0);
-  const [reminderReady, setReminderReady] = useState(false);
-  const [reminderBusy, setReminderBusy] = useState(false);
-  const [reminderError, setReminderError] = useState<string | null>(null);
   const [confirmed, setConfirmed] = useState<ConfirmDocumentResult | null>(null);
   const menuRef = useRef<OrdiloSheetHandle>(null);
   const pendingMenuRef = useRef<"original" | "delete" | null>(null);
@@ -168,7 +198,7 @@ export default function DocumentReviewScreen() {
   const applyLoaded = useCallback(
     (value: DocumentReview | null) => {
       setDocument(value);
-      if (value && source === "scan" && canReviewDocument(value.status)) {
+      if (value && fromIntake && canReviewDocument(value.status)) {
         // A fresh scan starts in the overview too: the family confirms what
         // Ordilo read before they correct anything.
         setEditing(false);
@@ -181,7 +211,7 @@ export default function DocumentReviewScreen() {
       }
       if (!value) setError("Das Dokument wurde nicht gefunden oder kann gerade nicht geladen werden.");
     },
-    [source],
+    [fromIntake],
   );
 
   const load = useCallback(async () => {
@@ -240,6 +270,57 @@ export default function DocumentReviewScreen() {
       cancelled = true;
     };
   }, [family]);
+
+  // Arriving straight from the intake the document can still be on its way
+  // through OCR and analysis. Keep looking until there is something to
+  // review (or a clear failure) instead of stranding the family on the
+  // „Ordilo liest noch“ note.
+  const awaitingAnalysis = Boolean(
+    fromIntake &&
+      document &&
+      !("summary" in document) &&
+      STILL_PROCESSING.has(document.status),
+  );
+  useEffect(() => {
+    if (!awaitingAnalysis || !id) return;
+    const timer = setInterval(() => {
+      void loadDocumentReview(id).then(applyLoaded).catch(() => undefined);
+    }, 4_000);
+    return () => clearInterval(timer);
+  }, [applyLoaded, awaitingAnalysis, id]);
+
+  // A scan started on a person's space carries their id. When Ordilo read
+  // exactly one person it could not link, prefill that link — the family
+  // corrects it in one tap if it is wrong. Existing links and ambiguous
+  // reads (none or several unlinked people) stay untouched.
+  const personPrefillRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!person || !document || !("family_members" in document)) return;
+    if (personPrefillRef.current === `${id}:${person}`) return;
+    const member = members.find((candidate) => candidate.id === person);
+    if (!member) return;
+    const unlinked = document.family_members.filter(
+      (entry) => !entry.person_id && entry.name.trim(),
+    );
+    if (unlinked.length !== 1) return;
+    personPrefillRef.current = `${id}:${person}`;
+    // Deferred like the missing-id error above: the link lands right after
+    // the document has painted, not synchronously inside the effect.
+    void Promise.resolve().then(() => {
+      setDocument((current) =>
+        current && "family_members" in current
+          ? {
+              ...current,
+              family_members: current.family_members.map((entry) =>
+                !entry.person_id && entry.name.trim()
+                  ? { ...entry, name: member.name, person_id: member.id }
+                  : entry,
+              ),
+            }
+          : current,
+      );
+    });
+  }, [document, id, members, person]);
 
   // Images get an inline thumbnail: seeing the letter is part of
   // understanding it. PDFs keep the explicit "Original ansehen".
@@ -301,8 +382,8 @@ export default function DocumentReviewScreen() {
       });
       await success();
       refreshLibraryDocuments();
+      refreshOfflineCopyQuietly(id);
       setConfirmed(result);
-      void isPushRegistered().then(setReminderReady).catch(() => setReminderReady(false));
       if (family) void loadPersistedScanQueue(family.id).then((queue) => setRemainingImports(queue.length)).catch(() => setRemainingImports(0));
     } catch {
       await fail();
@@ -323,6 +404,7 @@ export default function DocumentReviewScreen() {
       await saveDocumentCorrections(id, baselineRef.current, document);
       await success();
       refreshLibraryDocuments();
+      refreshOfflineCopyQuietly(id);
       baselineRef.current = null;
       setEditing(false);
       await load();
@@ -509,34 +591,36 @@ export default function DocumentReviewScreen() {
           </Card>
         </Animated.View>
         <View style={styles.confirmedActions}>
-          <DocumentNextStep
-            documentId={id}
-            title={document.title ?? "Dokument"}
-            eventsCreated={confirmed.eventsCreated}
-            tasksKept={confirmed.tasksKept}
-            variant={remainingImports > 0 ? "outline" : "primary"}
-          />
-          {outcome.length > 0 ? <>
-            {reminderReady ? <Text style={styles.confirmedCopy}>Mitteilungen sind eingerichtet. Wenn Aufgaben oder Termine anstehen, gibt es morgens einen Hinweis.</Text> : <OrdiloButton title={reminderBusy ? "Wird eingerichtet …" : "An Aufgaben und Termine erinnern"} variant="outline" disabled={reminderBusy} onPress={() => {
-              setReminderBusy(true); setReminderError(null);
-              void enablePushNotifications().then((result) => { setReminderReady(Boolean(result.token)); if (!result.token) setReminderError("Noch nicht eingerichtet. Prüfe die Mitteilungen in den App-Einstellungen."); }).finally(() => setReminderBusy(false));
-            }} />}
-            {reminderError ? <Text style={styles.confirmedCopy}>{reminderError}</Text> : null}
-          </> : null}
-          {source === "scan" ? (
-            <OrdiloButton
-              onPress={() => router.replace({ pathname: "/scan", params: remainingImports > 0 ? { resume: "1" } : { auto: "1" } })}
-              size="lg"
-              variant={remainingImports > 0 ? "primary" : "outline"}
-              title={remainingImports > 0 ? `Weiter mit ${remainingImports} ${remainingImports === 1 ? "Dokument" : "Dokumenten"}` : "Nächstes scannen"}
-            />
-          ) : null}
-          <OrdiloButton
-            onPress={() => router.replace("/(tabs)")}
-            size="lg"
-            title="Für jetzt fertig"
-            variant="ghost"
-          />
+          {remainingImports > 0 ? (
+            <>
+              <OrdiloButton
+                onPress={() => router.replace({ pathname: "/scan", params: { resume: "1" } })}
+                size="lg"
+                title={`Weiter mit ${remainingImports} ${remainingImports === 1 ? "Dokument" : "Dokumenten"}`}
+              />
+              <OrdiloButton
+                onPress={() => router.replace("/(tabs)")}
+                size="lg"
+                title="Für jetzt fertig"
+                variant="ghost"
+              />
+            </>
+          ) : (
+            <>
+              <OrdiloButton
+                onPress={() => router.replace("/(tabs)")}
+                size="lg"
+                title="Fertig"
+              />
+              <DocumentNextStep
+                documentId={id}
+                title={document.title ?? "Dokument"}
+                eventsCreated={confirmed.eventsCreated}
+                tasksKept={confirmed.tasksKept}
+                variant="outline"
+              />
+            </>
+          )}
         </View>
         </ScrollView>
       </Screen>
@@ -911,7 +995,7 @@ export default function DocumentReviewScreen() {
                     }
                     onPress={() => void saveCorrections()}
                     size="lg"
-                    title={saving ? "Wird gespeichert …" : "Änderungen speichern"}
+                    title={saving ? "Speichern …" : "Änderungen speichern"}
                   />
                   <OrdiloButton
                     title="Abbrechen"
@@ -926,7 +1010,7 @@ export default function DocumentReviewScreen() {
                     icon={saving ? <ActivityIndicator color={colors.warmWhite} /> : <Check color={colors.warmWhite} size={19} />}
                     onPress={() => void confirm()}
                     size="lg"
-                    title={saving ? "Wird gespeichert …" : "Passt so"}
+                    title={saving ? "Speichern …" : "Passt so"}
                   />
                   <OrdiloButton title="Zurück zur Übersicht" variant="ghost" onPress={cancelEditing} />
                 </>
@@ -972,7 +1056,7 @@ export default function DocumentReviewScreen() {
                   icon={saving ? <ActivityIndicator color={colors.warmWhite} size="small" /> : <Check color={colors.warmWhite} size={19} strokeWidth={2.4} />}
                   onPress={() => void confirm()}
                   size="lg"
-                  title={saving ? "Wird gespeichert …" : "Passt so"}
+                  title={saving ? "Speichern …" : "Passt so"}
                 />
               </View>
             </>
@@ -985,11 +1069,12 @@ export default function DocumentReviewScreen() {
                 ]}
               >
                 <OrdiloButton
+                  accessibilityLabel="Angaben ändern"
                   disabled={loadingEditor}
                   icon={<Pencil color={colors.graphite} size={17} strokeWidth={2} />}
                   onPress={() => void beginEditing()}
                   size="lg"
-                  title={loadingEditor ? "Wird geladen …" : "Angaben ändern"}
+                  title={loadingEditor ? "Laden …" : "Ändern"}
                   variant="outline"
                 />
               </View>
@@ -1010,7 +1095,6 @@ export default function DocumentReviewScreen() {
                   }}
                   size="lg"
                   title="Ordilo fragen"
-                  variant="outline"
                 />
               </View>
             </>

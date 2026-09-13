@@ -151,12 +151,13 @@ for these device observations.
 
 ### Migrations and validation boundaries
 
-Apply `0077_document_corrections.sql`, `0078_family_access_management.sql` and
-`0081_family_entitlements.sql` before deploying their dependent app/API code.
-All three are idempotent. No linked Supabase schema was modified by this work.
-The linked-project dry run still requires valid CLI access. Local disposable
-PostgreSQL contracts do not replace a linked-project dry run and controlled
-deployment.
+Remote migration state was verified on 2026-09-13 with
+`supabase migration list`: `0077_document_corrections.sql`,
+`0078_family_access_management.sql`, `0081_family_entitlements.sql`,
+`0083_invite_status_and_notification_prefs.sql` and
+`0084_family_activity_view.sql` all match the linked project. Their migration
+files remain the source of record and must stay in the repository. No database
+migration deployment remains for this branch.
 
 `supabase/tests/document_corrections.sql`, `family_access.sql`,
 `family_entitlements.sql` and `family_entitlements_concurrency.sql` cover

@@ -8,6 +8,7 @@ import {
   upcomingPlannerEvents,
   type PlannerEvent,
 } from "./calendar";
+import type { PlanSnapshotRow } from "./plan-offline";
 import {
   formatOverdueLabel,
   formatTaskDueLabel,
@@ -252,6 +253,25 @@ export function planEntryMemberIds(entry: PlanEntry): string[] {
     ids.add(entry.event.responsible_member_id);
   }
   return [...ids];
+}
+
+/**
+ * The offline snapshot rows for the entries currently on screen: just
+ * what a cold start without network needs to answer "was steht an?" —
+ * what it is, what it is called, when it is due, and who it concerns.
+ */
+export function planSnapshotRows(
+  entries: PlanEntry[],
+  members: FamilyMemberOption[],
+  todayStr: string,
+): PlanSnapshotRow[] {
+  return entries.map((entry) => ({
+    id: entry.id,
+    kind: entry.kind,
+    title: entry.kind === "task" ? entry.task.title : entry.event.title,
+    when: formatPlanEntryWhen(entry, todayStr),
+    person: formatPlanEntryPeople(entry, members),
+  }));
 }
 
 /** Counts for the "Plan" header line, tasks and appointments together. */
